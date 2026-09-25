@@ -1,0 +1,3 @@
+[submodule "external/physics_sim"]
+	path = external/physics_sim
+	url = ../physics_sim
