@@ -1,0 +1,8 @@
+out/
+build/
+.vs/
+*.user
+/CMakeUserPresets.json
+.godot/
+*.import
+__pycache__/
