@@ -145,6 +145,15 @@ if (-not $SkipBuild) {
 
 $godotExe = if ($NoConsole) { Find-GodotExe } else { Find-GodotConsoleExe }
 
+if (-not $Editor -and -not $DryRun) {
+    # -Editor already runs its own import scan on open; a non-editor launch
+    # against a checkout that has never been opened in the editor needs the
+    # same one-shot --import pass smoke_test.ps1 uses (see
+    # Ensure-GodotProjectImported's own comment in common.ps1) or the
+    # GDExtension silently never loads.
+    Ensure-GodotProjectImported -GameDir $gameDir -GodotExe $godotExe
+}
+
 $launchArgs = New-Object System.Collections.Generic.List[string]
 $launchArgs.Add('--path')
 $launchArgs.Add($gameDir)

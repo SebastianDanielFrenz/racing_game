@@ -111,10 +111,23 @@ func _build_scene() -> void:
 	camera.name = "ChaseCam"
 	camera.current = true
 	camera.fov = 70.0
+	# NodePaths below are literal "../<sibling>" rather than
+	# self.get_path_to(_simulation): every one of these nodes ends up a
+	# direct child of Main (this node), same as _simulation/_input_map, so
+	# the relative path is known up front from the tree layout this function
+	# itself builds. This also sidesteps a real ordering bug found during
+	# R0's own smoke-test debugging: get_path_to() needs the CALLING node
+	# already inside the tree (so it has to run after add_child()), but
+	# add_child() calls the child's _ready() SYNCHRONOUSLY when the parent
+	# is already inside the tree (true here - Main is the running scene
+	# root) - so an export like simulation_path set AFTER add_child() is set
+	# too late, after _ready() already read the not-yet-assigned (empty)
+	# value. Setting a literal NodePath before add_child() avoids both
+	# failure modes at once.
 	var chase_cam_script := load("res://scripts/chase_cam.gd")
 	camera.set_script(chase_cam_script)
-	camera.simulation_path = camera.get_path_to(_simulation)
 	camera.chassis_body_name = "chassis"
+	camera.simulation_path = NodePath("../Simulation")
 	add_child(camera)
 
 	# --- input ---
@@ -132,20 +145,20 @@ func _build_scene() -> void:
 	readout.position = Vector2(16, 16)
 	readout.add_theme_font_size_override("font_size", 14)
 	hud.add_child(readout)
-	add_child(hud)
-	hud.simulation_path = hud.get_path_to(_simulation)
-	hud.input_map_path = hud.get_path_to(_input_map)
+	hud.simulation_path = NodePath("../Simulation")
+	hud.input_map_path = NodePath("../InputMap")
 	hud.vehicle_name = VEHICLE_NAME
+	add_child(hud)
 
 	# --- tach/speed gauge ---
 	var gauge := Control.new()
 	gauge.name = "TachGauge"
 	var gauge_script := load("res://scripts/tach_gauge.gd")
 	gauge.set_script(gauge_script)
-	add_child(gauge)
-	gauge.simulation_path = gauge.get_path_to(_simulation)
-	gauge.input_map_path = gauge.get_path_to(_input_map)
+	gauge.simulation_path = NodePath("../Simulation")
+	gauge.input_map_path = NodePath("../InputMap")
 	gauge.vehicle_name = VEHICLE_NAME
+	add_child(gauge)
 
 func _process(_delta: float) -> void:
 	if _simulation == null or not bool(_simulation.is_running()):

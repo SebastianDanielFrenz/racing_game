@@ -111,6 +111,36 @@ function Test-DllLocked {
     }
 }
 
+# A fresh checkout's game/ has no .godot/ cache. Godot's GDExtension loader
+# reads the list of .gdextension files to load from game/.godot/extension_list.cfg,
+# which only the EDITOR writes (during its own project-import scan) - a
+# --headless (non-editor) run never populates it and, discovered the hard
+# way during R0, silently loads NO extension at all if it's missing (no
+# warning/error either way - ClassDB.instantiate("RgSimulation") just
+# returns null later, with no diagnostic pointing back at this cause). Godot
+# 4's own --import CLI flag ("start the editor, wait for import, quit") is
+# the documented one-shot fix; on this project it reliably writes
+# extension_list.cfg but then the editor's OWN shutdown sequence can crash
+# (STATUS_ACCESS_VIOLATION, observed during R0 - after the cache file is
+# already written, so it doesn't matter here) - exit code is therefore
+# deliberately NOT checked, only the cache file's presence afterward.
+function Ensure-GodotProjectImported {
+    param(
+        [Parameter(Mandatory)][string]$GameDir,
+        [Parameter(Mandatory)][string]$GodotExe
+    )
+    $extensionList = Join-Path $GameDir '.godot\extension_list.cfg'
+    if (Test-Path $extensionList) { return }
+    Write-Host "-- importing Godot project (no .godot/extension_list.cfg yet - first run against this checkout) --" -ForegroundColor Cyan
+    $previousEap = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
+    & $GodotExe --headless --path $GameDir --import *>$null
+    $ErrorActionPreference = $previousEap
+    if (-not (Test-Path $extensionList)) {
+        throw "Godot --import did not produce $extensionList - GDExtension will not load headless"
+    }
+}
+
 # Ensures the external/physics_sim submodule is checked out, ALWAYS passing
 # -c protocol.file.allow=always (D9: the submodule's URL is a local absolute
 # file:// path - git >= 2.38 refuses "transport 'file' not allowed" without

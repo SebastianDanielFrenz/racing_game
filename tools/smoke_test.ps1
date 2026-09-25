@@ -110,6 +110,7 @@ if ($script:Failures.Count -eq 0) {
 
 if ($script:Failures.Count -eq 0) {
     $godotExe = Find-GodotConsoleExe
+    Ensure-GodotProjectImported -GameDir $gameDir -GodotExe $godotExe
     Write-Host "`n-- headless run: $godotExe --quit-after $QuitAfterFrames --" -ForegroundColor Cyan
 
     # stdout/stderr to separate files - see physics_sim's own smoke_test.ps1
