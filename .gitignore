@@ -6,3 +6,7 @@ build/
 .godot/
 *.import
 __pycache__/
+
+# rg_godot GDExtension build output (game/bin/librg_godot.dll + .pdb) -
+# rebuilt by tools/run.ps1/smoke_test.ps1/ci.ps1, never committed.
+game/bin/
