@@ -375,6 +375,7 @@ Rules:
   - junction height continuity < 1 cm between all incoming edges;
   - no step > 5 mm between carved road and blend at any sample;
   - bridge deck/approach step ≤ 2 cm;
+  - contact/`Fz` spike where heightfield meets a static bridge or structure mesh stays within the R3 seam bound. physics_sim reported an open 162 m/s² heightfield-vs-mesh spike on test_ground (x = −500), not covered by R3 at 5c648a5. Report measurements back to the physics session;
   - golden hashes Windows = Linux;
   - bytes/km² and CPU-s/km² measured (replacing 3.8's estimates).
 
