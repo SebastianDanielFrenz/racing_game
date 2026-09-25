@@ -552,6 +552,7 @@ Nothing below has been downloaded or installed. The setup scripts will install o
 | D5 | The hypercar lives only in racing_game (`racing_game/data/vehicles`), not in physics_sim. It can be copied over later | R7 is no longer a physics request. R8 becomes game-side: data plus validation tests in racing_game's own test suite, run against the pinned `ps_core` (same public `load_vehicle_json` API). |
 | D7 | geo2map_engine may be open source: MIT | The repo is created with an MIT LICENSE. ODbL attribution stays wherever OSM-derived data is shown. Share-alike for a publicly served database matters only if the server is ever opened beyond private use; get a legal check before then. |
 | downloads | §13's source dependencies and dev datasets approved | Downloads go to `S:\claude_code\geo2map_data` (outside every repo; `G2M_DATA_DIR`). The later hosted-server items in §13 still need their own approval. |
+| D16 | R1 (per-tile vertical datum) and R3 (tile-seam spike) briefed to the physics session on 2026-09-25, with owner approval; R2 and R4-R6 to be briefed when needed; R7 dropped (D5) | R2 (drive real terrain) waits for both to land in physics_sim, then for a submodule pin bump. |
 
 ---
 
