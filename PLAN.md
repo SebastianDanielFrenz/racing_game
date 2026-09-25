@@ -326,7 +326,7 @@ Rules:
 - Scope: repo, presets, CI (Windows ×3 + WSL), deterministic math port, TM/UTM, tile keys, raster types, hash and golden infrastructure, grep gate.
 - Acceptance:
   - TM forward/inverse vs GeographicLib reference values at 10,000 points (incl. extended zone ±9°): < 1 µm;
-  - round trip < 1 nm;
+  - round trip ≤ 5 nm (ruling 2026-09-25);
   - identical hashes Windows/Linux;
   - libm grep clean.
 
