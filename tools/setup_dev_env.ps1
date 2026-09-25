@@ -114,8 +114,10 @@ if ($godotExe) {
 # git that predates the guard, or one some other config has locked down
 # further, is caught before the first clone rather than mid-CI.
 try {
-    $gitVerOut = (& git --version) -replace '[^\d\.]', ' '
-    $gitVer = [version]($gitVerOut.Trim().Split(' ')[0])
+    $gitVerRaw = & git --version
+    $gitVerMatch = [regex]::Match($gitVerRaw, '(\d+)\.(\d+)\.(\d+)')
+    if (-not $gitVerMatch.Success) { throw "could not parse '$gitVerRaw'" }
+    $gitVer = [version]("{0}.{1}.{2}" -f $gitVerMatch.Groups[1].Value, $gitVerMatch.Groups[2].Value, $gitVerMatch.Groups[3].Value)
     if ($gitVer -ge [version]'2.38.0') {
         Write-Ok "git submodule file-transport guard applies (git $gitVer >= 2.38) - run.ps1/ci.ps1 always pass -c protocol.file.allow=always"
     } else {
