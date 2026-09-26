@@ -68,7 +68,7 @@ racing_game/
       test_session.cpp                rg::Session tests: step stability, control-channel round-trip, snapshot/wheel-state sanity
       test_terrain_view_streamer.cpp  rg::TerrainViewStreamer tests (R8) over a synthetic, optionally gated tile store: exact key diff, hole-free adds-then-removals at every step (plus a wrong-order negative control), no work while stationary, 1-vs-8 build-thread identical diffs, coalescing while busy, cancel+join on destruction
       test_route_check.cpp            rg::route_check tests on synthetic terrain (seam counting incl. negative indices/corners, grade window max/p99, NoData, corner radius, start/length criteria, sample_l0_height across tile borders, load_route errors); one hidden `[.][realdata]` case runs the committed route on the real store, SKIP unless RG_G2M_HOME is set
-      test_world_terrain.cpp          rg::WorldTerrain / build_static_view_from_lookup tests (PLAN.md R2.1) over a synthetic in-memory TileKey->HeightTile map - no TileStore/Server/geo2map decode machinery needed; chunk selection, session-local origin math, 1-vs-N-thread byte-identical output
+      test_world_terrain.cpp          rg::WorldTerrain / build_static_view_from_lookup tests (PLAN.md R2.1) over a synthetic in-memory TileKey->HeightTile map - no TileStore/Server needed; chunk selection, session-local origin math, 1-vs-N-thread byte-identical output; fetch_height_tile_cached concurrency; decode_height_tile_container on synthetic containers (height_offset of both signs with NoData kept, int32 overflow / NoData-collision rejection, layer/key mismatch, truncation)
       CMakeLists.txt                  rg_test_catch_main + rg_unit_tests targets, CTest registration
   tools/
     common.ps1                        shared PowerShell helpers (VS dev-shell entry, Godot exe lookup, cmake wrappers, submodule update) - dot-sourced by run.ps1/smoke_test.ps1/ci.ps1
@@ -200,7 +200,12 @@ selected chunk (`gather_window` + `build_chunk`) into `out` as
 result is byte-identical for any thread count. `height_tile()` is a
 mutex-guarded, cached blocking fetch+decode (per-tile cache, decode work
 outside the lock) - `fetch_stats()` reports `cache_hits`/`server_ok`/
-`server_miss` since `open()`. `RenderChunk` (`rg/terrain_render.h`):
+`server_miss` since `open()`. The decode is the free function
+`decode_height_tile_container(container, expect_layer, expect_key)`
+(mirrors geo2map's `TransportHeightTileFetch`: `parse_container`, header
+layer/key must match, heap `HeightTile`, the header's `height_offset` added
+to every non-NoData sample, `Status::Internal` if a sum would reach NoData
+or overflow int32). `RenderChunk` (`rg/terrain_render.h`):
 `mesh` (geo2map_engine's own built `TerrainChunkMesh` - positions/normals/
 indices, Z-up, local to `mesh.origin`), `origin_session[3]` (`mesh.origin -
 (E0, N0, 0)`, still session-local metres, double precision), `rgba` (one

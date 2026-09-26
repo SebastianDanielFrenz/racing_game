@@ -30,7 +30,9 @@
 #include <memory>
 #include <mutex>
 #include <optional>
+#include <span>
 #include <string>
+#include <string_view>
 #include <vector>
 
 namespace rg {
@@ -98,6 +100,22 @@ struct HeightTileFetchResult {
     g2m::Status status = g2m::Status::Internal;
     std::shared_ptr<const g2m::HeightTile> tile;
 };
+
+// Decodes one height-tile container (HEADER || BODY, as a g2m::TileResponse
+// carries it) exactly the way geo2map_engine's own
+// g2m::phys::TransportHeightTileFetch does (geo2map 5d6d29b,
+// src/phys/height_tile_loader.cpp - not in the pinned submodule yet, so the
+// logic is mirrored here): g2m::parse_container (body size + SHA-256), the
+// header's layer and key must equal `expect_layer`/`expect_key`,
+// decode_body, decode_height_tile into a HEAP tile (vault TOOL-039: 256 KiB),
+// then the header's height_offset (1/256 m) is added to every sample that is
+// not g2m::kHeightNoData, in int64; a result <= kHeightNoData or above
+// INT32_MAX fails the whole tile. NoData samples and has_nodata are left as
+// decoded. Any failure returns Status::Internal with a null tile.
+// WorldTerrain::fetch_and_decode calls this; tests call it directly with
+// synthetic containers.
+HeightTileFetchResult decode_height_tile_container(std::span<const std::uint8_t> container,
+                                                   std::string_view expect_layer, const g2m::TileKey& expect_key);
 
 // Performs the actual (uncached) fetch + decode for one tile - called by
 // fetch_height_tile_cached OUTSIDE any lock. WorldTerrain::height_tile_shared
@@ -205,9 +223,10 @@ public:
 private:
     WorldTerrain() = default;
 
-    // Server::tile() + container decode for one terrain.height tile (any
-    // level); status/tile are as they sound (tile is null on any failure:
-    // out of coverage, a non-Ok status, a decode error). The tile is
+    // Server::tile() + container decode (decode_height_tile_container, so
+    // the header's height_offset is applied) for one terrain.height tile
+    // (any level); status/tile are as they sound (tile is null on any
+    // failure: out of coverage, a non-Ok status, a decode error). The tile is
     // heap-allocated (vault TOOL-039: g2m::HeightTile is 256 KiB, never by
     // value or on the stack, std::optional included). Updates
     // fetch_stats_ (server_ok/server_miss). Does NOT touch height_cache_ -

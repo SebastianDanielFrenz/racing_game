@@ -11,6 +11,8 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdint>
+#include <limits>
 #include <memory>
 #include <span>
 #include <thread>
@@ -263,25 +265,48 @@ WorldTerrain::FetchDecodeResult WorldTerrain::fetch_and_decode(const g2m::TileKe
         return FetchDecodeResult{response_status, nullptr};
     }
 
-    std::size_t consumed = 0;
-    g2m::Result<g2m::TileHeader> header_result = g2m::decode_header(tile_response->container, &consumed);
-    if (!header_result.ok()) {
-        return FetchDecodeResult{g2m::Status::Internal, nullptr};
+    HeightTileFetchResult decoded = decode_height_tile_container(tile_response->container, terrain_height_layer_, key);
+    return FetchDecodeResult{decoded.status, std::move(decoded.tile)};
+}
+
+HeightTileFetchResult decode_height_tile_container(std::span<const std::uint8_t> container,
+                                                   std::string_view expect_layer, const g2m::TileKey& expect_key) {
+    const g2m::Result<g2m::ContainerView> view = g2m::parse_container(container);
+    if (!view.ok()) {
+        return HeightTileFetchResult{g2m::Status::Internal, nullptr};
     }
-    const std::span<const std::uint8_t> body_bytes(tile_response->container.data() + consumed,
-                                                    tile_response->container.size() - consumed);
-    g2m::Result<g2m::TileBody> body_result = g2m::decode_body(body_bytes);
-    if (!body_result.ok()) {
-        return FetchDecodeResult{g2m::Status::Internal, nullptr};
+    if (view.value().header.layer != expect_layer || !(view.value().header.key == expect_key)) {
+        return HeightTileFetchResult{g2m::Status::Internal, nullptr};
+    }
+    const g2m::Result<g2m::TileBody> body = g2m::decode_body(view.value().body);
+    if (!body.ok()) {
+        return HeightTileFetchResult{g2m::Status::Internal, nullptr};
     }
 
     // Heap, never the stack (vault TOOL-039: g2m::HeightTile is 256 KiB).
     auto tile = std::make_shared<g2m::HeightTile>();
-    g2m::Result<void> decode_result = g2m::decode_height_tile(body_result.value(), key, *tile);
-    if (!decode_result.ok()) {
-        return FetchDecodeResult{g2m::Status::Internal, nullptr};
+    if (!g2m::decode_height_tile(body.value(), expect_key, *tile).ok()) {
+        return HeightTileFetchResult{g2m::Status::Internal, nullptr};
     }
-    return FetchDecodeResult{g2m::Status::Ok, std::move(tile)};
+
+    // Same arithmetic as geo2map's TransportHeightTileFetch: NoData stays
+    // NoData, everything else gets the offset in int64, and a sum that would
+    // collide with NoData or overflow int32 rejects the tile.
+    const std::int32_t offset = view.value().header.height_offset;
+    if (offset != 0) {
+        for (std::int32_t& h : tile->h) {
+            if (h == g2m::kHeightNoData) {
+                continue;
+            }
+            const std::int64_t v = static_cast<std::int64_t>(h) + offset;
+            if (v <= static_cast<std::int64_t>(g2m::kHeightNoData) ||
+                v > static_cast<std::int64_t>(std::numeric_limits<std::int32_t>::max())) {
+                return HeightTileFetchResult{g2m::Status::Internal, nullptr};
+            }
+            h = static_cast<std::int32_t>(v);
+        }
+    }
+    return HeightTileFetchResult{g2m::Status::Ok, std::move(tile)};
 }
 
 HeightTileFetchResult fetch_height_tile_cached(std::mutex& cache_mutex,

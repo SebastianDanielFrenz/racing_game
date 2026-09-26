@@ -4,7 +4,10 @@
 // machinery at all - this project links geo2map_engine with
 // G2M_BUILD_IMPORT/TESTS/APPS/FUZZERS all OFF, so none of that is available
 // here anyway) gives a sorted, 2:1-balanced chunk set, exact origin_session
-// values, and byte-identical output for 1 vs N worker threads.
+// values, and byte-identical output for 1 vs N worker threads. The
+// decode_height_tile_container cases at the end build real containers with
+// geo2map_engine's own encode_height_tile/encode_body/assemble_container
+// (all in g2m_core) to pin the header height_offset handling.
 //
 // TOOL-030/031 note (vault, physics_sim): SyntheticStore's cache is a
 // std::mutex-guarded std::unordered_map, never a vector<bool> (TOOL-030,
@@ -14,6 +17,9 @@
 // plain C++ methods and geo2map_engine's own mesh-building free functions.
 #include "rg/world_terrain.h"
 
+#include "g2m/layer/terrain_layers.h"
+#include "g2m/layer/tile_container.h"
+
 #include <catch2/catch_test_macros.hpp>
 
 #include <array>
@@ -21,9 +27,12 @@
 #include <chrono>
 #include <cmath>
 #include <cstdint>
+#include <limits>
 #include <map>
 #include <memory>
 #include <mutex>
+#include <span>
+#include <string>
 #include <thread>
 #include <unordered_map>
 #include <vector>
@@ -457,4 +466,143 @@ TEST_CASE("fetch_height_tile_cached: 8 threads hammering overlapping keys observ
     const int calls = fetch_call_count.load();
     CHECK(calls >= kKeyCount);
     CHECK(calls <= kThreadCount * kIterationsPerThread);
+}
+
+// --- decode_height_tile_container (the header's height_offset, applied the
+// way geo2map's TransportHeightTileFetch applies it) ---
+
+namespace {
+
+const g2m::TileKey kOffsetTestKey{g2m::geo::UtmZone{32, g2m::geo::Hemisphere::North}, /*level=*/0, /*x=*/1813,
+                                  /*y=*/21714};
+
+// A heap tile (TOOL-039) with a per-sample pattern, 1/256 m.
+std::unique_ptr<g2m::HeightTile> make_pattern_tile() {
+    auto tile = std::make_unique<g2m::HeightTile>();
+    tile->key = kOffsetTestKey;
+    for (std::size_t i = 0; i < tile->h.size(); ++i) {
+        tile->h[i] = 100 * 256 + static_cast<std::int32_t>(i % 997) - 400;
+    }
+    tile->has_nodata = false;
+    return tile;
+}
+
+// HEADER || BODY for `tile`, the header carrying `height_offset`, `layer` and
+// `header_key` - the exact bytes a g2m::TileResponse would carry.
+std::vector<std::uint8_t> make_container(const g2m::HeightTile& tile, std::int32_t height_offset,
+                                         std::string layer = std::string(g2m::kTerrainHeightLayer),
+                                         const g2m::TileKey& header_key = kOffsetTestKey) {
+    g2m::Result<g2m::TileBody> body = g2m::encode_height_tile(tile);
+    REQUIRE(body.ok());
+    g2m::Result<std::vector<std::uint8_t>> body_bytes = g2m::encode_body(body.value());
+    REQUIRE(body_bytes.ok());
+    g2m::TileHeader header;
+    header.layer = std::move(layer);
+    header.key = header_key;
+    header.height_offset = height_offset;
+    g2m::Result<std::vector<std::uint8_t>> container =
+        g2m::assemble_container(header, std::span<const std::uint8_t>(body_bytes.value()));
+    REQUIRE(container.ok());
+    return std::move(container).value();
+}
+
+rg::HeightTileFetchResult decode_for_test_key(const std::vector<std::uint8_t>& container) {
+    return rg::decode_height_tile_container(container, g2m::kTerrainHeightLayer, kOffsetTestKey);
+}
+
+} // namespace
+
+TEST_CASE("decode_height_tile_container: offset 0 returns the stored heights unchanged", "[world_terrain]") {
+    const std::unique_ptr<g2m::HeightTile> raw = make_pattern_tile();
+    const rg::HeightTileFetchResult result = decode_for_test_key(make_container(*raw, 0));
+    REQUIRE(result.status == g2m::Status::Ok);
+    REQUIRE(result.tile != nullptr);
+    CHECK(result.tile->key == kOffsetTestKey);
+    CHECK(result.tile->h == raw->h);
+    CHECK_FALSE(result.tile->has_nodata);
+}
+
+TEST_CASE("decode_height_tile_container: a non-zero height_offset is added to every sample except NoData",
+         "[world_terrain]") {
+    std::unique_ptr<g2m::HeightTile> raw = make_pattern_tile();
+    // NoData at a corner, an edge and the middle.
+    const std::array<std::size_t, 3> nodata_at{0, 255, 128 * 256 + 77};
+    for (std::size_t i : nodata_at) {
+        raw->h[i] = g2m::kHeightNoData;
+    }
+    raw->has_nodata = true;
+
+    // +10 m and -150.5 m: both signs, and a non-whole-metre value.
+    for (const std::int32_t offset : {10 * 256, -(150 * 256 + 128)}) {
+        const rg::HeightTileFetchResult result = decode_for_test_key(make_container(*raw, offset));
+        REQUIRE(result.status == g2m::Status::Ok);
+        REQUIRE(result.tile != nullptr);
+        CHECK(result.tile->has_nodata);
+        std::size_t mismatches = 0;
+        std::size_t nodata_seen = 0;
+        for (std::size_t i = 0; i < raw->h.size(); ++i) {
+            if (raw->h[i] == g2m::kHeightNoData) {
+                ++nodata_seen;
+                if (result.tile->h[i] != g2m::kHeightNoData) {
+                    ++mismatches;
+                }
+            } else if (result.tile->h[i] != raw->h[i] + offset) {
+                ++mismatches;
+            }
+        }
+        CHECK(nodata_seen == nodata_at.size());
+        CHECK(mismatches == 0);
+    }
+}
+
+TEST_CASE("decode_height_tile_container: an offset that overflows int32 or lands on NoData rejects the tile",
+         "[world_terrain]") {
+    std::unique_ptr<g2m::HeightTile> raw = make_pattern_tile();
+    const std::int32_t int_max = std::numeric_limits<std::int32_t>::max();
+
+    SECTION("a sum above INT32_MAX") {
+        raw->h[1000] = int_max - 10;
+        const rg::HeightTileFetchResult result = decode_for_test_key(make_container(*raw, 11));
+        CHECK(result.status == g2m::Status::Internal);
+        CHECK(result.tile == nullptr);
+    }
+    SECTION("a sum of exactly INT32_MAX is still accepted") {
+        raw->h[1000] = int_max - 10;
+        const rg::HeightTileFetchResult result = decode_for_test_key(make_container(*raw, 10));
+        REQUIRE(result.status == g2m::Status::Ok);
+        REQUIRE(result.tile != nullptr);
+        CHECK(result.tile->h[1000] == int_max);
+    }
+    SECTION("a sum equal to kHeightNoData") {
+        raw->h[1000] = g2m::kHeightNoData + 5;
+        const rg::HeightTileFetchResult result = decode_for_test_key(make_container(*raw, -5));
+        CHECK(result.status == g2m::Status::Internal);
+        CHECK(result.tile == nullptr);
+    }
+}
+
+TEST_CASE("decode_height_tile_container: a header layer or key other than the requested one rejects the tile",
+         "[world_terrain]") {
+    const std::unique_ptr<g2m::HeightTile> raw = make_pattern_tile();
+
+    SECTION("layer") {
+        const rg::HeightTileFetchResult result = decode_for_test_key(make_container(*raw, 256, "g2m.elev.base"));
+        CHECK(result.status == g2m::Status::Internal);
+        CHECK(result.tile == nullptr);
+    }
+    SECTION("key") {
+        g2m::TileKey other = kOffsetTestKey;
+        other.x += 1;
+        const rg::HeightTileFetchResult result =
+            decode_for_test_key(make_container(*raw, 256, std::string(g2m::kTerrainHeightLayer), other));
+        CHECK(result.status == g2m::Status::Internal);
+        CHECK(result.tile == nullptr);
+    }
+    SECTION("a truncated container") {
+        std::vector<std::uint8_t> container = make_container(*raw, 256);
+        container.resize(container.size() - 1);
+        const rg::HeightTileFetchResult result = decode_for_test_key(container);
+        CHECK(result.status == g2m::Status::Internal);
+        CHECK(result.tile == nullptr);
+    }
 }
