@@ -23,6 +23,16 @@ namespace {
 
 std::string to_std_string(const String& s) { return std::string(s.utf8().get_data()); }
 
+// Mirrors physics_sim's own ps_simulation.cpp::wheel_desc() - the static
+// (never changes per tick) wheel geometry a vehicle_visual.gd-style script
+// needs, read from rg::Session::vehicle_desc() rather than the per-tick
+// FrameSnapshot (see rg_simulation.h's "Vehicle visual" doc comment).
+const ps::vehicle::WheelDesc* wheel_desc(const rg::Session& session, std::int64_t wheel_index) {
+    const auto& wheels = session.vehicle_desc().wheels;
+    if (wheel_index < 0 || static_cast<std::size_t>(wheel_index) >= wheels.size()) return nullptr;
+    return &wheels[static_cast<std::size_t>(wheel_index)];
+}
+
 const char* shift_phase_name(ps::drivetrain::ShiftPhase p) {
     using ps::drivetrain::ShiftPhase;
     switch (p) {
@@ -412,6 +422,47 @@ String RgSimulation::get_wheel_surface_name(const String& vehicle_name, std::int
     return String(session_->surface_table().name_for(surface).c_str());
 }
 
+godot::Vector3 RgSimulation::get_wheel_attachment_local(const String& vehicle_name, std::int64_t wheel_index) const {
+    if (!has_vehicle(vehicle_name)) return godot::Vector3();
+    const ps::vehicle::WheelDesc* w = wheel_desc(*session_, wheel_index);
+    if (w == nullptr) return godot::Vector3();
+    return godot::Vector3(static_cast<float>(w->attachment_local.x), static_cast<float>(w->attachment_local.y),
+                          static_cast<float>(w->attachment_local.z));
+}
+
+bool RgSimulation::get_wheel_steered(const String& vehicle_name, std::int64_t wheel_index) const {
+    if (!has_vehicle(vehicle_name)) return false;
+    const ps::vehicle::WheelDesc* w = wheel_desc(*session_, wheel_index);
+    return w != nullptr && w->steered;
+}
+
+bool RgSimulation::get_wheel_is_front(const String& vehicle_name, std::int64_t wheel_index) const {
+    if (!has_vehicle(vehicle_name)) return false;
+    const ps::vehicle::WheelDesc* w = wheel_desc(*session_, wheel_index);
+    return w != nullptr && w->is_front;
+}
+
+float RgSimulation::get_wheel_compression(const String& vehicle_name, std::int64_t wheel_index) const {
+    if (!has_vehicle(vehicle_name)) return 0.0f;
+    const auto& wheels = session_->snapshot().wheels;
+    if (wheel_index < 0 || static_cast<std::size_t>(wheel_index) >= wheels.size()) return 0.0f;
+    return static_cast<float>(wheels[static_cast<std::size_t>(wheel_index)].state.suspension_travel);
+}
+
+float RgSimulation::get_wheel_spin_angle(const String& vehicle_name, std::int64_t wheel_index) const {
+    if (!has_vehicle(vehicle_name)) return 0.0f;
+    const auto& wheels = session_->snapshot().wheels;
+    if (wheel_index < 0 || static_cast<std::size_t>(wheel_index) >= wheels.size()) return 0.0f;
+    return static_cast<float>(wheels[static_cast<std::size_t>(wheel_index)].state.spin_angle);
+}
+
+float RgSimulation::get_wheel_steer_angle(const String& vehicle_name, std::int64_t wheel_index) const {
+    if (!has_vehicle(vehicle_name)) return 0.0f;
+    const auto& wheels = session_->snapshot().wheels;
+    if (wheel_index < 0 || static_cast<std::size_t>(wheel_index) >= wheels.size()) return 0.0f;
+    return static_cast<float>(wheels[static_cast<std::size_t>(wheel_index)].state.steer_angle);
+}
+
 godot::Dictionary RgSimulation::get_vehicle_gauge_info(const String& vehicle_name) const {
     godot::Dictionary d;
     if (!has_vehicle(vehicle_name)) return d;
@@ -541,6 +592,13 @@ void RgSimulation::_bind_methods() {
     godot::ClassDB::bind_method(D_METHOD("get_wheel_slip_ratio", "vehicle_name", "wheel_index"), &RgSimulation::get_wheel_slip_ratio);
     godot::ClassDB::bind_method(D_METHOD("get_wheel_slip_angle", "vehicle_name", "wheel_index"), &RgSimulation::get_wheel_slip_angle);
     godot::ClassDB::bind_method(D_METHOD("get_wheel_surface_name", "vehicle_name", "wheel_index"), &RgSimulation::get_wheel_surface_name);
+
+    godot::ClassDB::bind_method(D_METHOD("get_wheel_attachment_local", "vehicle_name", "wheel_index"), &RgSimulation::get_wheel_attachment_local);
+    godot::ClassDB::bind_method(D_METHOD("get_wheel_steered", "vehicle_name", "wheel_index"), &RgSimulation::get_wheel_steered);
+    godot::ClassDB::bind_method(D_METHOD("get_wheel_is_front", "vehicle_name", "wheel_index"), &RgSimulation::get_wheel_is_front);
+    godot::ClassDB::bind_method(D_METHOD("get_wheel_compression", "vehicle_name", "wheel_index"), &RgSimulation::get_wheel_compression);
+    godot::ClassDB::bind_method(D_METHOD("get_wheel_spin_angle", "vehicle_name", "wheel_index"), &RgSimulation::get_wheel_spin_angle);
+    godot::ClassDB::bind_method(D_METHOD("get_wheel_steer_angle", "vehicle_name", "wheel_index"), &RgSimulation::get_wheel_steer_angle);
 
     godot::ClassDB::bind_method(D_METHOD("get_vehicle_gauge_info", "vehicle_name"), &RgSimulation::get_vehicle_gauge_info);
     godot::ClassDB::bind_method(D_METHOD("get_vehicle_powertrain", "vehicle_name"), &RgSimulation::get_vehicle_powertrain);

@@ -20,11 +20,13 @@ const KEY_HELP := "V mode (drive/free cam)  F8 world (flat/real)  R reset car  W
 @export var simulation_path: NodePath
 @export var input_map_path: NodePath
 @export var director_path: NodePath
+@export var body_visuals_path: NodePath
 @export var vehicle_name: String = ""
 
 var _simulation: Node
 var _input_map: Node
 var _director: Node
+var _body_visuals: Node
 var _label: Label
 var _streaming_label: Label
 
@@ -45,6 +47,7 @@ func _ready() -> void:
 	_simulation = get_node_or_null(simulation_path)
 	_input_map = get_node_or_null(input_map_path)
 	_director = get_node_or_null(director_path)
+	_body_visuals = get_node_or_null(body_visuals_path)
 	_label = get_node("Readout")
 	_streaming_label = get_node_or_null("Streaming")
 	_window_start_s = Time.get_ticks_msec() / 1000.0
@@ -106,6 +109,8 @@ func _process(_delta: float) -> void:
 		Engine.get_frames_per_second(), _last_avg_frame_time_us / 1000.0, _last_max_frame_time_us / 1000.0])
 	lines.append("sim time: %.2f s   ticks: %d   speed: %.1f km/h" % [
 		_simulation.get_sim_time(), ticks, _simulation.get_body_speed_mps("chassis") * 3.6])
+	if _body_visuals != null and not bool(_body_visuals.vehicle_model_ok()):
+		lines.append("WARNING: car_sedan.glb failed to load - showing placeholder box (see console)")
 	if terrain_mode:
 		var chunks: int = 0
 		var rebases: int = 0

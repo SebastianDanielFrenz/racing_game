@@ -20,6 +20,13 @@ const SNAP_M := 60.0
 @export var follow_distance_m: float = 7.0
 @export var follow_height_m: float = 2.5
 @export var look_height_m: float = 1.0
+# Lateral offset (world metres, + = the car's left - basis.y, frame_convert.h's
+# ISO y) added to the "behind" position, still looking at the centreline.
+# Zero for every normal chase view; drive_tour.gd's steering_close shot is the
+# only caller that sets this nonzero - a directly-behind camera can never see
+# a front wheel at all (the body occludes it face-on), so a 3/4 view needs
+# some sideways offset to reveal the near-side wheels' profile/steer angle.
+@export var side_offset_m: float = 0.0
 @export var position_lag: float = 6.0 # higher = snappier
 @export var orbit_deadzone: float = 0.2
 @export var orbit_lag: float = 14.0 # higher = snappier; <= 0 = no smoothing
@@ -66,7 +73,8 @@ func update_rig(delta: float, simulation: Node, input_map: Node, camera_input_li
 	# basis.x is the car's FORWARD direction in Godot space (frame_convert.h:
 	# column i = the sim's local axis i, ISO 8855 x-forward).
 	var behind := -chassis_xform.basis.x.normalized() * follow_distance_m
-	var desired_pos := chassis_pos + behind + Vector3.UP * follow_height_m
+	var side := chassis_xform.basis.y.normalized() * side_offset_m
+	var desired_pos := chassis_pos + behind + side + Vector3.UP * follow_height_m
 	var look_at_pos := chassis_pos + Vector3.UP * look_height_m
 
 	if not _initialized or _smoothed_pos.distance_to(desired_pos) > SNAP_M:

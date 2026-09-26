@@ -39,7 +39,7 @@ racing_game/
   godot_ext/
     src/
       register_types.h/.cpp           GDExtension entry point (rg_godot_library_init), registers RgSimulation + RgTerrainView
-      rg_simulation.h/.cpp            RgSimulation : godot::Node - the one GDScript-facing class; owns one rg::Session and one rg::PlayerModeMachine; initialize_terrain() (R7) builds a terrain-mode Session on a worker thread, polled via get_init_status() - see "Godot bindings for Session terrain (R7)" and "Player modes and world switch (R9)" below
+      rg_simulation.h/.cpp            RgSimulation : godot::Node - the one GDScript-facing class; owns one rg::Session and one rg::PlayerModeMachine; initialize_terrain() (R7) builds a terrain-mode Session on a worker thread, polled via get_init_status() - see "Godot bindings for Session terrain (R7)" and "Player modes and world switch (R9)" below; get_wheel_attachment_local/_steered/_is_front (static, from Session::vehicle_desc())/_compression/_spin_angle/_steer_angle (per-frame, from FrameSnapshot::wheels[i].state) feed vehicle_visual.gd - see "Vehicle visual (carvis)" below
       rg_terrain_view.h/.cpp          RgTerrainView : godot::Node3D (PLAN.md R2.1) - LOD terrain preview seam, streamed around a focus since R8; see "Terrain preview (R2.1)", "Render LOD streaming (R8)" and "Godot bindings for Session terrain (R7)" below
       frame_convert.h                 rg_godot-namespaced wrapper around physics_sim's frame_convert_core.h (Vec3f/basis/pose -> godot::Vector3/Basis/Transform3D)
     CMakeLists.txt                    rg_godot SHARED target (the GDExtension DLL)
@@ -53,16 +53,17 @@ racing_game/
       main.gd                         the one game scene (R9), built in _ready(): flat or real world, Drive or FreeCam, runtime mode/world switching, the loading flow, forwarding input to RgSimulation (process priority -2000); flags in its own header and in "Player modes and world switch (R9)" below. A `--terrain-preview` cmdline user-arg (after `--`) branches into the R2.1 static-terrain-plus-fly-camera scene instead - see "Terrain preview (R2.1)" below; in that scene the fly camera drives `RgTerrainView.update_focus` every frame (R8) except under `--screenshots`/`--stream-test`; `--bindings-test` (R7) runs a flat-mode-only RgSimulation/RgTerrainView bindings smoke check instead - see "Godot bindings for Session terrain (R7)" below
       terrain_stream_test.gd          `--terrain-preview --stream-test` (R8 headless check): after the initial upload, moves the LOD focus through 5 fixed steps from spawn, waits for each streamed diff to be fully applied, prints one line per step + `terrain stream test done: ...`, quits (180 s wall-clock timeout)
       camera_director.gd              (R9) owns the camera rigs; floating-origin rebase by the ACTIVE rig only (moves rig ROOTS), set_render_origin in the same frame, update_focus from the active camera (priority -1000)
-      chase_rig.gd                    (R9) Drive rig: root + Camera3D, lagged chase of the chassis, look-around from the camera input group; replaces R0's chase_cam.gd
+      chase_rig.gd                    (R9) Drive rig: root + Camera3D, lagged chase of the chassis, look-around from the camera input group; replaces R0's chase_cam.gd. side_offset_m (carvis, 2026-09-27, default 0.0 - no behaviour change for any normal chase view): adds a lateral offset (chassis basis.y, ISO left) to the "behind" position, still looking at the centreline - a directly-behind camera can never show a front wheel (the body occludes it face-on); drive_tour.gd's steering_close shot is the only caller that sets it nonzero, for a 3/4-rear angle
       free_rig.gd                     (R9) FreeCam rig: root (position, yaw) + Camera3D (pitch), driven only by the camera input group; place(pos, yaw, pitch)
-      body_visuals.gd                 (R9) placeholder meshes: the chassis box (CHASSIS_HALF_EXTENTS, unswapped) and the flat world's ground box, from get_body_transform() (priority 0)
+      body_visuals.gd                 (R9; carvis) ChassisRoot (Node3D, transform = get_body_transform("chassis") every frame, priority 0) carries two children: ChassisBox (the red placeholder, CHASSIS_HALF_EXTENTS, unswapped) and VehicleVisual (vehicle_visual.gd, the real car_sedan.glb); the box is hidden once the model reports loaded, shown as fallback otherwise (vehicle_model_ok(), read by hud.gd). Also the flat world's ground box. on_session_ready() (called by main.gd right after a Session starts/re-starts) rebuilds VehicleVisual's wheel bindings for the new Session
+      vehicle_visual.gd               (carvis, 2026-09-26) near-copy port of physics_sim's adapters/godot/demo/scripts/vehicle_visual.gd (read-only reference): loads external/physics_sim/data/models/car_sedan/car_sedan.glb at runtime via GLTFDocument (data/models is owned by another session - read, never copied into this repo), binds susp_*/steer_*/wheel_* nodes by name from car_sedan.rig.json, aligns the model to the physics wheel attachment points, and drives suspension travel/steer angle/spin angle from RgSimulation's per-wheel accessors every frame - no client-side spin integration (unlike the reference) since rg::vehicle::WheelState already carries an integrated spin_angle. Keyed by a model-name string (vehicle_name) so a future car_hyper reuses it. rebuild() re-binds wheel nodes without reloading the .glb - called by body_visuals.gd's on_session_ready() after a runtime world switch (R7/R9) rebuilds the Session
       loading_overlay.gd              (R9) CanvasLayer shown while a real-world load runs (get_init_status() numbers) or after it failed
       drive_smoke.gd                  (R9) `--drive --drive-smoke`: scripted drive, relocation (with --g2m-fetch-delay-ms), mode round trip, world round trip incl. a cancelled load; prints RG_DRIVE lines for tools/smoke_test.ps1 -Drive
-      drive_tour.gd                   (R9) `--drive --screenshots <dir>`: loading overlay, spawn, driving and free-cam proof shots plus poses.txt
+      drive_tour.gd                   (R9; carvis) `--screenshots <dir>`, with or without `--drive` (a flat-world run skips the loading-overlay shot and runs the same tour unattended): loading overlay, spawn chase, a steering-lock close-up (front wheels turned, proves per-wheel steer_angle), driving and free-cam proof shots plus poses.txt
       fly_cam.gd                      free-fly camera script for `--terrain-preview` (PLAN.md R2.1): WASD + Space/E up + Ctrl/Q down, Shift x6 speed, right-mouse-button capture + look, Esc releases capture; no RgSimulation dependency (plain Camera3D script)
       gauge_logic.gd                  copied verbatim from physics_sim's demo (engine-neutral static math, no Godot Control dependency)
       tach_gauge.gd                   reused near-verbatim from physics_sim's demo (round tach/speed/gear/lamp gauge)
-      hud.gd                          trimmed port of physics_sim's demo hud.gd (debug text HUD); R9: mode/world line, terrain stats line, "STREAMING TERRAIN... (n)" while the gate is frozen, one-line key help
+      hud.gd                          trimmed port of physics_sim's demo hud.gd (debug text HUD); R9: mode/world line, terrain stats line, "STREAMING TERRAIN... (n)" while the gate is frozen, one-line key help; carvis: a WARNING line while body_visuals.vehicle_model_ok() is false (console already gets vehicle_visual.gd's own push_warning either way)
       input_map.gd                    new plain-GDScript input node (not a C++ GDExtension class like physics_sim's PsInputMap) - keyboard+gamepad polling, larger-magnitude-wins merge; R9: separate driving and camera input groups plus mode/world/reset edge actions (keys in "Player modes and world switch (R9)" below)
     shaders/
       terrain.gdshader                hypsometric terrain shader (PLAN.md R2.1): `ALBEDO = COLOR.rgb` (reads RgTerrainView's per-vertex RGBA8 colours); no world-space coordinates anywhere (object-space VERTEX/NORMAL and Godot's own per-fragment builtins only), so it survives the floating-origin rebase unmodified
@@ -539,9 +540,10 @@ rigs, the input mapping and the HUD.
 
 Command line (`main.gd`, user args after `--`): none = flat scene + Drive;
 `--drive` = real world + Drive; `--free-cam` = start in FreeCam;
-`--g2m-fetch-delay-ms N`; `--drive-smoke`; `--screenshots <dir>` (with
-`--drive`: `drive_tour.gd`); `--terrain-preview` and `--bindings-test`
-unchanged. Flags pick only the start; mode and world change at runtime.
+`--g2m-fetch-delay-ms N`; `--drive-smoke`; `--screenshots <dir>` (with or
+without `--drive`: `drive_tour.gd`, see "Vehicle visual (carvis)" below);
+`--terrain-preview` and `--bindings-test` unchanged. Flags pick only the
+start; mode and world change at runtime.
 
 Keys (`input_map.gd`; the HUD shows a one-line summary):
 
@@ -557,6 +559,73 @@ Keys (`input_map.gd`; the HUD shows a one-line summary):
 | auto-shift toggle (starts on) | F5 | D-pad left |
 | free cam: move / up / down / fast | WASD / E, Space / Q, Ctrl / Shift | left stick / RB, RT / LB, LT / L3 |
 | look (both rigs) | arrows; right mouse button captures the mouse, Esc releases | right stick |
+
+## Vehicle visual (carvis, 2026-09-26)
+
+The drivable car uses physics_sim's own art (`external/physics_sim/data/
+models/car_sedan/car_sedan.glb` + `car_sedan.rig.json`) instead of the red
+placeholder box, ported from `external/physics_sim/adapters/godot/demo/
+scripts/vehicle_visual.gd` (read-only reference - `data/models` is owned by
+another session; read it, never copy/edit it into this repo).
+
+- `game/scripts/vehicle_visual.gd` loads the `.glb` at runtime via
+  `GLTFDocument` (not through the editor's `res://` import pipeline), binds
+  `susp_<corner>`/`steer_<corner>`/`wheel_<corner>` nodes by name
+  (`car_sedan.rig.json`'s own names, corner in `{FL,FR,RL,RR}`), aligns the
+  model root to the physics wheel attachment points (mean per-axis offset,
+  per-wheel residual bias), and every frame sets suspension travel/steer
+  angle/spin angle from `RgSimulation`'s per-wheel accessors. Keyed by a
+  model-name string (`vehicle_name`) so a future `car_hyper` reuses it
+  unchanged. No `-90 deg X` rotation and no client-side spin integration
+  (see the file's own header comment for both, and physics_sim's reference
+  file for the full model-space derivation) - `rg::vehicle::WheelState`
+  already carries an integrated `spin_angle`.
+- `game/scripts/body_visuals.gd` parents `VehicleVisual` (and the red
+  `ChassisBox` fallback) under `ChassisRoot`, the one node whose transform
+  is set from `get_body_transform("chassis")` each frame - a floating-origin
+  rebase moves both together. The box is hidden once the model reports
+  loaded (`VehicleVisual.model_loaded()`); it stays visible as a fallback if
+  the `.glb` fails to load, and `vehicle_model_ok()` lets `hud.gd` show a
+  matching HUD warning (`vehicle_visual.gd` also `push_warning()`s to the
+  console either way).
+- `RgSimulation` additions (`godot_ext/src/rg_simulation.h/.cpp`):
+  `get_wheel_attachment_local`/`get_wheel_steered`/`get_wheel_is_front`
+  (static per-vehicle geometry, read from `rg::Session::vehicle_desc()`,
+  cached at spawn - mirrors physics_sim's own `ps_simulation.cpp::
+  wheel_desc()` pattern) and `get_wheel_compression`/`get_wheel_spin_angle`/
+  `get_wheel_steer_angle` (per-frame, read from the race-free
+  `Session::snapshot().wheels[i].state`, i.e. `ps::vehicle::WheelState` -
+  NEVER a live `World` accessor called from the Godot thread; the sim runs
+  on its own thread, see "Session terrain mode (R4)" above).
+- World-switch survival (R7/R9): `body_visuals.gd.on_session_ready()`
+  (called by `main.gd` right after a Session starts/re-starts, both the
+  flat and the real-world path) calls `VehicleVisual.rebuild()`, which
+  re-runs wheel-node binding and model alignment against whatever `Session`
+  `RgSimulation` now holds - cheap (no `.glb` reload) - since a world switch
+  rebuilds `rg::Session` from under the same `RgSimulation` node, and the
+  wheel count/attachment points `VehicleVisual` cached at its own `_ready()`
+  may belong to a destroyed Session by then.
+- `drive_tour.gd` (`--screenshots <dir>`, with or without `--drive` - a
+  flat-world run has no loading phase, so the tour just skips that one shot
+  and runs the same sequence unattended) captures: `01_spawn_chase.png`
+  (chase cam at spawn), `02_steering_close.png` (car held stationary on
+  brake+handbrake, full steer lock, chase rig zoomed in AND swung to a 3/4-
+  rear angle via `chase_rig.gd`'s `side_offset_m` - proves the front wheels
+  turn under a real per-wheel `steer_angle`; a dead-on rear view, tried
+  first, cannot show a front wheel at all - the body occludes it face-on
+  whatever the distance/height), `03_drive_chase.png`, `04_free_cam_above.png`,
+  and (real-world only, if the load is slow enough) `05_loading_overlay.png`.
+  `poses.txt`'s `wheel_ride_height_m` (carvis, 2026-09-27:
+  `chassis_session_position().z + attachment_local.z + get_wheel_compression()
+  - wheel_radius`, per wheel) is the ride-height check the carvis brief asked
+  for - exactly 0 at the flat world's settled spawn (`[0.0000, 0.0000, 0.0000,
+  0.0000]`), a few mm to ~3 cm while driving/braking (load transfer, not a
+  bug). Only meaningful as "metres above ground" in the flat world, where
+  session z is literally height above the z=0 plane - real-world session z is
+  an absolute terrain-relative elevation (no ground-height-at-XY query is
+  exposed), so the same field there is a large near-constant number, not a
+  clearance; the real-world ride-height claim rests on the screenshots'
+  visible ground contact shadow instead.
 
 ## Targets
 

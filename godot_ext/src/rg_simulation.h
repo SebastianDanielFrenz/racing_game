@@ -168,6 +168,25 @@ public:
     [[nodiscard]] float get_wheel_slip_angle(const godot::String& vehicle_name, std::int64_t wheel_index) const;
     [[nodiscard]] godot::String get_wheel_surface_name(const godot::String& vehicle_name, std::int64_t wheel_index) const;
 
+    // --- Vehicle visual (carvis brief, 2026-09-26): everything
+    // game/scripts/vehicle_visual.gd (ported from physics_sim's own
+    // adapters/godot/demo/scripts/vehicle_visual.gd) needs to place and
+    // animate the real car_sedan.glb art instead of the red placeholder box.
+    // Static geometry (attachment_local/steered/is_front) comes straight
+    // from rg::Session::vehicle_desc() (cached at spawn, mirrors
+    // physics_sim's own ps_simulation.h wheel_desc() pattern); the per-frame
+    // fields (compression/spin_angle/steer_angle) come from
+    // rg::Session::snapshot().wheels[i].state - the SAME race-free
+    // FrameSnapshot get_wheel_load_n/slip_ratio/slip_angle above already
+    // read (rg::Session::capture_frame_snapshot() fills it, on the sim
+    // thread, from ps::World::wheel_state - never called live from here). ---
+    [[nodiscard]] godot::Vector3 get_wheel_attachment_local(const godot::String& vehicle_name, std::int64_t wheel_index) const;
+    [[nodiscard]] bool get_wheel_steered(const godot::String& vehicle_name, std::int64_t wheel_index) const;
+    [[nodiscard]] bool get_wheel_is_front(const godot::String& vehicle_name, std::int64_t wheel_index) const;
+    [[nodiscard]] float get_wheel_compression(const godot::String& vehicle_name, std::int64_t wheel_index) const; // m, suspension_travel: 0 = full extension
+    [[nodiscard]] float get_wheel_spin_angle(const godot::String& vehicle_name, std::int64_t wheel_index) const; // rad, integrated, unbounded
+    [[nodiscard]] float get_wheel_steer_angle(const godot::String& vehicle_name, std::int64_t wheel_index) const; // rad, this wheel's own post-Ackermann angle
+
     [[nodiscard]] godot::Dictionary get_vehicle_gauge_info(const godot::String& vehicle_name) const;
     [[nodiscard]] godot::Dictionary get_vehicle_powertrain(const godot::String& vehicle_name) const;
     [[nodiscard]] float get_vehicle_ground_speed_mps(const godot::String& vehicle_name) const;

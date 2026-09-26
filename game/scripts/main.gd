@@ -327,11 +327,15 @@ func _build_scene(user_args: PackedStringArray) -> void:
 	_input_map.name = "InputMap"
 	add_child(_input_map)
 
-	# --- placeholder body meshes ---
+	# --- placeholder/real body meshes (VEHICLE_NAME doubles as the
+	# physics_sim data/models/<id>/<id>.glb id - see body_visuals.gd/
+	# vehicle_visual.gd header comments) ---
 	_visuals = Node3D.new()
 	_visuals.name = "BodyVisuals"
 	_visuals.set_script(load("res://scripts/body_visuals.gd"))
 	_visuals.simulation = _simulation
+	_visuals.vehicle_name = VEHICLE_NAME
+	_visuals.model_absolute_path = _data_path("models/%s/%s.glb" % [VEHICLE_NAME, VEHICLE_NAME])
 	add_child(_visuals)
 
 	# --- camera rigs + director (floating origin, render focus) ---
@@ -385,6 +389,7 @@ func _build_scene(user_args: PackedStringArray) -> void:
 	_hud.simulation_path = NodePath("../Simulation")
 	_hud.input_map_path = NodePath("../InputMap")
 	_hud.director_path = NodePath("../CameraDirector")
+	_hud.body_visuals_path = NodePath("../BodyVisuals")
 	_hud.vehicle_name = VEHICLE_NAME
 	add_child(_hud)
 
@@ -466,6 +471,7 @@ func _load_world(kind: String) -> void:
 		world_state = "running"
 		ready_sim_time = 0.0
 		_overlay.hide_overlay()
+		_visuals.on_session_ready()
 		print("RG_WORLD ready world=flat")
 	else:
 		_simulation.initialize_terrain(_world_config_path(), vehicle_json, surface_table_json)
@@ -520,6 +526,7 @@ func _attach_world_view() -> void:
 	world_state = "running"
 	ready_sim_time = float(_simulation.get_sim_time())
 	_overlay.hide_overlay()
+	_visuals.on_session_ready()
 	var ss: Dictionary = _simulation.get_streaming_status()
 	print("RG_DRIVE ready world=real_world load_s=%.2f startup_ms=%.0f resident_l0=%d prime_ticks=%d chassis_session=(%.2f, %.2f, %.2f) chunks=%d fetch_delay_ms=%d mode=%s" % [
 		(Time.get_ticks_msec() - _load_started_ms) / 1000.0, float(ss.get("startup_ms", 0.0)),
