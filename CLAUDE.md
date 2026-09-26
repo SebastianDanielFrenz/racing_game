@@ -175,6 +175,11 @@ release/`linux-release` preset's populated FetchContent sources. Override
 with `-DRG_G2M_DEPS_DIR=...` if that path differs on another machine; a
 `message(WARNING ...)` fires if the directory does not exist.
 
+Bumped to `b401a6e` (R-1 of the roads-visibility work, 2026-09-27) to bring
+in `g2m::layer::osm_roads` (`RoadStyle`/`extract_road_segments`/
+`rasterize_road_segments`), consumed by `rg/road_classes.h` - see "Terrain
+preview" below.
+
 ## World config
 
 `data/world/world_config.json` (schema `rg.world/1`, PLAN.md R2.0) names one
