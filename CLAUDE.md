@@ -19,7 +19,8 @@ racing_game/
     geo2map_engine/                    git submodule, READ-ONLY from this repo (another session owns it), pinned by commit - see "geo2map_engine submodule" below
   core/
     include/rg/
-      session.h                       rg::Session, SessionConfig (optional `terrain`), FrameSnapshot, WheelSnapshot, StreamingStatus, kControlChannelNames[]/kControlChannelCount - see "Session terrain mode (R4)" below
+      session.h                       rg::Session, SessionConfig (optional `terrain`, optional `startup`), FrameSnapshot, WheelSnapshot, StreamingStatus, kControlChannelNames[]/kControlChannelCount; R9: StartupProgress/SessionCancelled, set_vehicle_control, request_relocate/request_reset_to_spawn, make_session() - see "Session terrain mode (R4)" and "Player modes and world switch (R9)" below
+      player_mode.h                   rg::PlayerMode/ModeRules/rules_for/PlayerModeMachine/unattended_controls (R9, engine-neutral mode state machine) - see "Player modes and world switch (R9)" below
       terrain_mode.h                  rg::TerrainModeConfig (SessionConfig::terrain), rg::HeightTileSharedFetch (g2m::phys::IHeightTileFetch over a HeightTileFetchFn - WorldTerrain::height_tile_shared), make_terrain_mode(WorldConfig, WorldTerrain) + a pure (WorldConfig, SessionFrame, fetch) overload
       drive_script.h                  rg::DriveScript (header-only, Godot-free): tick-indexed sample-and-hold control events in DRIVE ticks (since spawn) plus an optional per-tick controller hook (the R5 autopilot's extension point); Session::set_drive_script
       fixed_rate_loop.h               rg::FixedRateLoop: fixed-rate wall-clock loop around a bool try_step() (frozen tick resyncs the deadline - no catch-up burst), LoopStats; runs Session::start()'s ticks
@@ -27,7 +28,8 @@ racing_game/
       terrain_view_streamer.h         rg::TerrainViewStreamer (R2.2 R8): render LOD follows a focus point - background reselect + build, key diff {added, removed}, adapter ordering contract in the header; see "Render LOD streaming (R8)" below
       route_check.h                   rg::Route + load_route() ("rg.route/1", exception-free, optional "criteria" object -> RouteCriteria), apply_route_criteria() (RouteCheckParams defaults < route file < CLI, field by field), phys_tile_index()/count_seam_crossings() (255 m physics grid, origin 0.5), sample_l0_height() (bilinear on the L0 cell-centre lattice through any tile lookup), check_route() (length, 10 m-window max/p99 grade plus a steep_stretches list above grade_report_threshold, seam crossings, elevation range, NoData, corner radius = circle through the points +-corner_window_m (10 m) along the route at every 1 m sample (waypoint-density independent) plus a tight_corners list below corner_report_radius_m, start offset vs RouteCheckParams' R5 criteria), route_matches_world(), check_route_on_world() (the same over WorldTerrain::height_tile_shared) - used by tools/route_check and the [realdata] test
     src/
-      session.cpp                     Session implementation - builds a ps::World by hand (flat: ground box + chassis + one vehicle; terrain: streamed G2mTerrainSource + chassis + one vehicle), never parses a scenario JSON; the terrain gate, start-up, priming, spawn rays, StreamingStatus atomics
+      session.cpp                     Session implementation - builds a ps::World by hand (flat: ground box + chassis + one vehicle; terrain: streamed G2mTerrainSource + chassis + one vehicle), never parses a scenario JSON; the terrain gate, start-up, priming, spawn rays, StreamingStatus atomics, relocation, make_session
+      player_mode.cpp                 player_mode.h implementation
       terrain_mode.cpp                terrain_mode.h implementation
       fixed_rate_loop.cpp             FixedRateLoop implementation
       world_config.cpp                load_world_config() implementation - strict, exception-free JSON validation (see "World config" below)
@@ -37,7 +39,7 @@ racing_game/
   godot_ext/
     src/
       register_types.h/.cpp           GDExtension entry point (rg_godot_library_init), registers RgSimulation + RgTerrainView
-      rg_simulation.h/.cpp            RgSimulation : godot::Node - the one GDScript-facing class; owns one rg::Session; initialize_terrain() (R7) builds a terrain-mode Session on a worker thread, polled via get_init_status() - see "Godot bindings for Session terrain (R7)" below
+      rg_simulation.h/.cpp            RgSimulation : godot::Node - the one GDScript-facing class; owns one rg::Session and one rg::PlayerModeMachine; initialize_terrain() (R7) builds a terrain-mode Session on a worker thread, polled via get_init_status() - see "Godot bindings for Session terrain (R7)" and "Player modes and world switch (R9)" below
       rg_terrain_view.h/.cpp          RgTerrainView : godot::Node3D (PLAN.md R2.1) - LOD terrain preview seam, streamed around a focus since R8; see "Terrain preview (R2.1)", "Render LOD streaming (R8)" and "Godot bindings for Session terrain (R7)" below
       frame_convert.h                 rg_godot-namespaced wrapper around physics_sim's frame_convert_core.h (Vec3f/basis/pose -> godot::Vector3/Basis/Transform3D)
     CMakeLists.txt                    rg_godot SHARED target (the GDExtension DLL)
@@ -48,14 +50,20 @@ racing_game/
     scenes/
       main.tscn                       one-node stub (Node3D + main.gd) - the scene is built procedurally, see main.gd's own comment
     scripts/
-      main.gd                         builds the whole R0 scene in _ready(); per-frame input -> RgSimulation.set_control() wiring; a `--terrain-preview` cmdline user-arg (after `--`) branches into the R2.1 static-terrain-plus-fly-camera scene instead - see "Terrain preview (R2.1)" below; in that scene the fly camera drives `RgTerrainView.update_focus` every frame (R8) except under `--screenshots`/`--stream-test`; `--bindings-test` (R7) runs a flat-mode-only RgSimulation/RgTerrainView bindings smoke check instead - see "Godot bindings for Session terrain (R7)" below
+      main.gd                         the one game scene (R9), built in _ready(): flat or real world, Drive or FreeCam, runtime mode/world switching, the loading flow, forwarding input to RgSimulation (process priority -2000); flags in its own header and in "Player modes and world switch (R9)" below. A `--terrain-preview` cmdline user-arg (after `--`) branches into the R2.1 static-terrain-plus-fly-camera scene instead - see "Terrain preview (R2.1)" below; in that scene the fly camera drives `RgTerrainView.update_focus` every frame (R8) except under `--screenshots`/`--stream-test`; `--bindings-test` (R7) runs a flat-mode-only RgSimulation/RgTerrainView bindings smoke check instead - see "Godot bindings for Session terrain (R7)" below
       terrain_stream_test.gd          `--terrain-preview --stream-test` (R8 headless check): after the initial upload, moves the LOD focus through 5 fixed steps from spawn, waits for each streamed diff to be fully applied, prints one line per step + `terrain stream test done: ...`, quits (180 s wall-clock timeout)
-      chase_cam.gd                    reused near-verbatim from physics_sim's demo (same RgSimulation method names)
+      camera_director.gd              (R9) owns the camera rigs; floating-origin rebase by the ACTIVE rig only (moves rig ROOTS), set_render_origin in the same frame, update_focus from the active camera (priority -1000)
+      chase_rig.gd                    (R9) Drive rig: root + Camera3D, lagged chase of the chassis, look-around from the camera input group; replaces R0's chase_cam.gd
+      free_rig.gd                     (R9) FreeCam rig: root (position, yaw) + Camera3D (pitch), driven only by the camera input group; place(pos, yaw, pitch)
+      body_visuals.gd                 (R9) placeholder meshes: the chassis box (CHASSIS_HALF_EXTENTS, unswapped) and the flat world's ground box, from get_body_transform() (priority 0)
+      loading_overlay.gd              (R9) CanvasLayer shown while a real-world load runs (get_init_status() numbers) or after it failed
+      drive_smoke.gd                  (R9) `--drive --drive-smoke`: scripted drive, relocation (with --g2m-fetch-delay-ms), mode round trip, world round trip incl. a cancelled load; prints RG_DRIVE lines for tools/smoke_test.ps1 -Drive
+      drive_tour.gd                   (R9) `--drive --screenshots <dir>`: loading overlay, spawn, driving and free-cam proof shots plus poses.txt
       fly_cam.gd                      free-fly camera script for `--terrain-preview` (PLAN.md R2.1): WASD + Space/E up + Ctrl/Q down, Shift x6 speed, right-mouse-button capture + look, Esc releases capture; no RgSimulation dependency (plain Camera3D script)
       gauge_logic.gd                  copied verbatim from physics_sim's demo (engine-neutral static math, no Godot Control dependency)
       tach_gauge.gd                   reused near-verbatim from physics_sim's demo (round tach/speed/gear/lamp gauge)
-      hud.gd                          trimmed port of physics_sim's demo hud.gd (debug text HUD; no terrain-tile/haptics lines - R0 has neither)
-      input_map.gd                    new plain-GDScript input node (not a C++ GDExtension class like physics_sim's PsInputMap) - keyboard+gamepad polling, larger-magnitude-wins merge
+      hud.gd                          trimmed port of physics_sim's demo hud.gd (debug text HUD); R9: mode/world line, terrain stats line, "STREAMING TERRAIN... (n)" while the gate is frozen, one-line key help
+      input_map.gd                    new plain-GDScript input node (not a C++ GDExtension class like physics_sim's PsInputMap) - keyboard+gamepad polling, larger-magnitude-wins merge; R9: separate driving and camera input groups plus mode/world/reset edge actions (keys in "Player modes and world switch (R9)" below)
     shaders/
       terrain.gdshader                hypsometric terrain shader (PLAN.md R2.1): `ALBEDO = COLOR.rgb` (reads RgTerrainView's per-vertex RGBA8 colours); no world-space coordinates anywhere (object-space VERTEX/NORMAL and Godot's own per-fragment builtins only), so it survives the floating-origin rebase unmodified
   data/
@@ -71,7 +79,8 @@ racing_game/
     unit/
       catch_main.cpp                  custom Catch2 v3 entry point (installs headless CRT handlers via physics_sim's always-built ps_headless_env)
       test_session.cpp                rg::Session tests: step stability, control-channel round-trip, snapshot/wheel-state sanity
-      test_session_terrain.cpp        rg::Session terrain mode (R4, tag [session_terrain]) on a synthetic in-memory IHeightTileFetch (sine hills in 1/256 m, a NoData patch, 404 outside +-3 km, a switchable 503 storm): spawn ride height vs flat mode, 30 s scripted drive (0 falls/fill misses, state_hash identical at 1 vs 4 workers, fetch delay 0 vs 20 ms, and with a forced mid-drive freeze on Failed (503) keys lifted by retry_failed_tiles), spawn over NoData throws, coverage edge never freezes, 503 storm freezes the real-time loop with no step and resumes without a burst
+      test_player_mode.cpp            rg::PlayerModeMachine/rules_for/unattended_controls (R9), Session::set_vehicle_control on a flat Session, reset to spawn
+      test_session_terrain.cpp        rg::Session terrain mode (R4, tag [session_terrain]); R9 adds StartupProgress/cancel incl. make_session, relocation with a forced freeze, and a hidden `[.][realdata]` real-store cancel-at-several-points case; on a synthetic in-memory IHeightTileFetch (sine hills in 1/256 m, a NoData patch, 404 outside +-3 km, a switchable 503 storm): spawn ride height vs flat mode, 30 s scripted drive (0 falls/fill misses, state_hash identical at 1 vs 4 workers, fetch delay 0 vs 20 ms, and with a forced mid-drive freeze on Failed (503) keys lifted by retry_failed_tiles), spawn over NoData throws, coverage edge never freezes, 503 storm freezes the real-time loop with no step and resumes without a burst
       test_terrain_mode.cpp           rg/terrain_mode.h (R4, tag [terrain_mode]): physics heights (HeightTileSharedFetch -> ResidentHeightSet -> G2mTerrainSource::fill_tile) == render heights (same cache -> build_render_chunks L0 meshes) == (raw + height_offset)/256 for containers with non-zero offsets, one decode per tile; racing_game's container decode == geo2map's TransportHeightTileFetch; status pass-through; make_terrain_mode conversion
       test_fixed_rate_loop.cpp        rg::FixedRateLoop tests: no catch-up burst after a freeze, prompt stop(), stats
       test_terrain_view_streamer.cpp  rg::TerrainViewStreamer tests (R8) over a synthetic, optionally gated tile store: exact key diff, hole-free adds-then-removals at every step (plus a wrong-order negative control), no work while stationary, 1-vs-8 build-thread identical diffs, coalescing while busy, cancel+join on destruction
@@ -81,8 +90,8 @@ racing_game/
   tools/
     common.ps1                        shared PowerShell helpers (VS dev-shell entry, Godot exe lookup, cmake wrappers, submodule update) - dot-sourced by run.ps1/smoke_test.ps1/ci.ps1
     setup_dev_env.ps1                 -CheckOnly only (installs nothing - see its own header)
-    run.ps1, run.cmd                  incremental build + launch Godot on game/ - pass `-- --terrain-preview` (see run.ps1's own pass-through-args comment) to launch the R2.1 terrain preview instead of the R0 drivable scene
-    smoke_test.ps1                    headless Godot smoke test (build, ctest, headless run, assert no errors + sim thread ticking); `-TerrainPreview` runs the R2.1 headless check instead (asserts >= 150 chunks selected and a completed upload, see its own header comment); `-TerrainStream` (implies -TerrainPreview, R8) adds `--stream-test` and asserts `steps=5 diffs=5 ... missing_removals=0` - with the 0-ERROR-lines check this is the RID-leak check after streamed add/remove diffs
+    run.ps1, run.cmd                  incremental build + launch Godot on game/ - starts the real world in Drive mode (`--drive`) by default, `-Flat` the flat scene; pass `-- --terrain-preview` (see run.ps1's own pass-through-args comment) to launch the R2.1 terrain preview instead
+    smoke_test.ps1                    headless Godot smoke test (build, ctest, headless run, assert no errors + sim thread ticking); `-TerrainPreview` runs the R2.1 headless check instead (asserts >= 150 chunks selected and a completed upload, see its own header comment); `-TerrainStream` (implies -TerrainPreview, R8) adds `--stream-test` and asserts `steps=5 diffs=5 ... missing_removals=0` - with the 0-ERROR-lines check this is the RID-leak check after streamed add/remove diffs; `-Drive` (R9) runs `--drive --drive-smoke` and asserts `RG_DRIVE ready`, falls=0 misses=0 on every RG_DRIVE numbers line, ticks > 0 and result=ok; `-DriveDelayMs N` adds `--g2m-fetch-delay-ms N` and asserts relocate_freezes >= 1 and advanced_after_relocate > 0; both SKIP (exit 0) without a geo2map store
     ci.ps1                            Windows CI: debug + release legs (configure, build, ctest) + smoke_test - this repo's ci.ps1 has NO Linux leg (unlike physics_sim's tools/ci.ps1)
     lod_measure/
       main.cpp, CMakeLists.txt        lod_measure executable (PLAN.md R2.1): measures rg::WorldTerrain::build_static_view cold/warm wall time + chunk/vertex counts against the real data/world/world_config.json at max_distance_m in {6000, 12000, 20000} - see "Terrain preview (R2.1)" below for the measured table and chosen default
@@ -408,8 +417,9 @@ copy.
 
 Binding layer only (owner rule: no game logic in `godot_ext` - a future
 UE5 port reuses `rg_core` unchanged); the mode framework, `--drive`, HUD and
-the flat<->terrain world switch UI are R9. `main.gd`/the scenes are
-unchanged except a `--bindings-test` smoke path (below).
+the flat<->terrain world switch UI came with R9 (see "Player modes and world
+switch (R9)" below). R7 itself added only a `--bindings-test` smoke path to
+`main.gd` (below).
 
 `RgSimulation` (`godot_ext/src/rg_simulation.h/.cpp`) additions:
 - `initialize_terrain(world_config_path, vehicle_json_path,
@@ -419,13 +429,12 @@ unchanged except a `--bindings-test` smoke path (below).
   "Session terrain mode (R4)" above) runs on a worker thread; returns
   `true` once the thread has been STARTED, not once the Session is ready.
 - `get_init_status() -> Dictionary` - `{state: "idle"|"loading"|"ready"|
-  "error", message: String, resident_l0: int, missing_required: int}`,
-  meant to be polled every frame by GDScript for a loading screen.
-  `resident_l0`/`missing_required` read `session_->streaming_status()` and
-  are only live once `state == "ready"`; both report `0` while `"loading"`/
-  `"error"` (`rg::Session`'s constructor has no progress callback, so there
-  is no finer-grained figure to report mid-flight - a limitation, not a
-  bug, see this section's own note below).
+  "error", message: String, stage: "opening"|"waiting_for_gate"|"priming"|
+  "spawning"|"done", resident_l0, missing_required, inflight, failed,
+  prime_done, prime_total}`, polled every frame by GDScript for the loading
+  overlay. Since R9 the figures are live while `"loading"`: they read the
+  in-flight start-up's `rg::StartupProgress` atomics (`SessionConfig::
+  startup`); once `"ready"` they read `session_->streaming_status()`.
 - `start()` is only valid once `get_init_status().state == "ready"` (it is
   a no-op - `session_` still null - before that).
 - `is_terrain_mode() -> bool`, `get_streaming_status() -> Dictionary`
@@ -440,7 +449,8 @@ unchanged except a `--bindings-test` smoke path (below).
 Threading contract (`initialize_terrain`'s worker thread,
 `run_terrain_init_worker`): an atomic `InitPhase{Idle,Loading,Ready,Error}`
 state machine, release-stored by the worker after it builds the `Session`
-(or catches `std::exception`) into a staged `pending_session_`,
+via `rg::make_session` (nullptr + message on any failure) into a staged
+`pending_session_`,
 acquire-loaded by the main thread before adopting it into `session_`.
 `reap_init_thread(bool wait)` is the one join point:
   - `wait=false` (`get_init_status()`, `start()`, every per-frame poll
@@ -448,13 +458,24 @@ acquire-loaded by the main thread before adopting it into `session_`.
     `Loading` - never blocks the render thread.
   - `wait=true` (`stop()`, `teardown_current()`, the destructor): always
     `std::thread::join()`s. The thread is NEVER detached.
-Cancel-vs-wait choice (the brief's own open question): a re-init or
-teardown that lands while a previous `initialize_terrain` is still loading
-WAITS for it (blocking join) rather than cancelling it - `rg::Session`'s
-constructor/`setup_terrain()` has no cancellation seam (its blocking gate/
-priming loop is keyed only on `physics.startup_timeout_s`); threading a
-cancel flag through `Session` itself was judged out of scope for this
-binding-layer change.
+Cancel-then-join (R9, replaces R7's wait): a re-init (`teardown_current()`)
+or the destructor that lands while an `initialize_terrain` is still loading
+first sets that start-up's `StartupProgress::cancel` (`cancel_init()`), then
+joins. `Session`'s constructor polls the flag in its gate and priming loops
+and throws `SessionCancelled`, which `rg::make_session` turns into nullptr.
+The flag is also checked by the worker between its steps (after the config
+load and after `WorldTerrain::open`) and by `setup_terrain` around the
+TileManager pool construction (slow in a debug build); only those steps
+themselves are uninterruptible. `stop()` still waits without cancelling.
+
+No exception crosses into, or is caught in, `godot_ext`: godot-cpp's default
+`GODOTCPP_DISABLE_EXCEPTIONS` puts `-D_HAS_EXCEPTIONS=0` on `rg_godot`, which
+makes MSVC STL's `std::exception` name `stdext::exception` in that TU - a
+different type from what `rg_core` throws, so a `catch (const
+std::exception&)` there never matches and the exception ends in
+`std::terminate` (exit 0xC0000409 - the R9 cancel-during-load crash). Every
+`Session` construction therefore goes through `rg::make_session`
+(`session.h`), which catches inside `rg_core`.
 
 `RgTerrainView` (`godot_ext/src/rg_terrain_view.h/.cpp`) additions:
 - `initialize_shared(sim: RgSimulation) -> bool` - reuses the Session's
@@ -479,6 +500,63 @@ counterpart: builds a terrain Session on a synthetic fetch and destroys it,
 a flat Session, a terrain Session again, all in one process, then checks a
 flat-mode `state_hash()` (the `hash_check`-style scenario) is unchanged
 across that whole sequence.
+
+## Player modes and world switch (R9)
+
+State machine in `rg_core` (`rg/player_mode.h`, engine-neutral), bound by
+`RgSimulation` (`set_player_mode(name)`, `cycle_player_mode()`,
+`get_player_mode()`, `get_mode_state()` -> `{mode, implemented,
+vehicle_control, driving_inputs_live, camera_inputs_live, camera_rig,
+world_kind, world_phase, other_world, revision}`); GDScript holds only the
+rigs, the input mapping and the HUD.
+
+| mode | implemented | car | driving inputs | camera inputs | rig |
+|---|---|---|---|---|---|
+| `drive` | yes | player | live | live (look-around) | `chase` |
+| `free_cam` | yes | unattended | - | live | `free` |
+| `drone_follow` | no (R9b) | - | - | - | `drone` |
+| `cockpit` | no (R9b) | - | - | - | `seat` |
+| `on_foot` | no (R9c) | - | - | - | `walker` |
+
+- `request_mode` refuses an unimplemented mode; `cycle_mode` skips them.
+- World switch: `begin_world_load(kind)` -> Loading (supersedes a load in
+  flight) -> `finish_world_load(serial, ok)` -> Ready/Failed. The mode is
+  kept across a switch; while the world is not Ready, `effective_rules()`
+  masks the driving inputs. No automatic fallback on failure.
+- Unattended car (`unattended_controls(speed)`, applied by `Session` itself
+  to its real-time loop's control copy): steer/throttle/starter 0, clutch 1,
+  brake 0.6 above 2 m/s, then brake 1 + handbrake 1.
+- Render streaming follows the ACTIVE camera (`camera_director.gd` ->
+  `RgTerrainView.update_focus`); physics interest follows the vehicle.
+- `RgSimulation.initialize()`/`initialize_terrain()` call
+  `begin_world_load`/`finish_world_load` themselves; the binding pushes
+  `effective_rules().vehicle_control` into the Session after every change.
+- Relocation (`Session::request_relocate`/`request_reset_to_spawn`, bound as
+  `relocate_vehicle(x, y, yaw_deg)`/`reset_vehicle_to_spawn()`; counted in
+  `StreamingStatus::relocations`/`relocate_failures`): the "reset car" key
+  and the smoke test's forced gate freeze. `set_fetch_delay_ms(ms)` wraps the
+  next `initialize_terrain`'s fetch in `g2m::phys::DelayedFetch`.
+
+Command line (`main.gd`, user args after `--`): none = flat scene + Drive;
+`--drive` = real world + Drive; `--free-cam` = start in FreeCam;
+`--g2m-fetch-delay-ms N`; `--drive-smoke`; `--screenshots <dir>` (with
+`--drive`: `drive_tour.gd`); `--terrain-preview` and `--bindings-test`
+unchanged. Flags pick only the start; mode and world change at runtime.
+
+Keys (`input_map.gd`; the HUD shows a one-line summary):
+
+| action | keyboard | gamepad |
+|---|---|---|
+| cycle mode (drive / free cam) | V | Back |
+| switch world (flat / real; also cancels a load) | F8 | - |
+| reset car to spawn | R | Y |
+| drive: steer / throttle / brake | A, D / W / S | left stick / RT / LT |
+| drive: shift up / down | E / Q | B / X |
+| drive: handbrake / clutch | Space / C | A / LB |
+| ignition toggle (starts on) / starter (hold) | I / K | D-pad up / Start |
+| auto-shift toggle (starts on) | F5 | D-pad left |
+| free cam: move / up / down / fast | WASD / E, Space / Q, Ctrl / Shift | left stick / RB, RT / LB, LT / L3 |
+| look (both rigs) | arrows; right mouse button captures the mouse, Esc releases | right stick |
 
 ## Targets
 
@@ -644,10 +722,14 @@ cmake --preset debug -DRG_BUILD_GODOT_EXTENSION=ON
 cmake --build --preset debug
 ctest --preset debug --output-on-failure
 
-tools\run.ps1              # incremental build + launch Godot on game/
+tools\run.ps1              # incremental build + launch Godot on game/: real world, Drive mode
+tools\run.cmd              # the same from cmd.exe
+tools\run.cmd -Flat        # ... start in the flat test scene instead
 tools\run.cmd -- --terrain-preview   # ... or launch the R2.1 static-terrain fly-camera preview instead
 tools\smoke_test.ps1        # headless build + ctest + headless Godot run
 tools\smoke_test.ps1 -TerrainPreview # ... or the R2.1 terrain-preview headless check
 tools\smoke_test.ps1 -TerrainStream  # ... or the R8 streamed-LOD headless check (focus moved in 5 steps)
+tools\smoke_test.ps1 -Drive          # ... or the R9 real-world drive + mode/world round trip (SKIP without a store)
+tools\smoke_test.ps1 -DriveDelayMs 200  # ... the same with delayed fetches, a relocation and a forced gate freeze
 tools\ci.ps1                 # debug + release legs + smoke_test
 ```

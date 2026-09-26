@@ -24,7 +24,16 @@
         run.ps1
         run.ps1 -SkipBuild
         run.ps1 -NoConsole
+        run.ps1 -Flat
         run.cmd -- --some-godot-flag
+
+    WHAT STARTS (R9): by default the game starts in the real world
+    (home region, needs the geo2map store - see game/scripts/main.gd) in
+    Drive mode, i.e. `--drive` is forwarded to Godot. -Flat starts the flat
+    test scene instead (no store needed). Either way the world and the
+    player mode switch at runtime (F8 / V) - the flag picks only the start.
+    Nothing is added when the forwarded args already choose a start
+    (--drive, --terrain-preview, --bindings-test).
 
 .PARAMETER -SkipBuild
     Skip the configure/build step entirely and launch whatever is already
@@ -32,6 +41,10 @@
 
 .PARAMETER -NoConsole
     Launch the non-console Godot executable (no extra terminal window).
+
+.PARAMETER -Flat
+    Start in the flat test scene instead of the real world (Drive mode
+    either way).
 
 .PARAMETER -Editor
     Open the Godot editor on game/ instead of running it.
@@ -54,6 +67,7 @@ $dllPath  = Join-Path $gameDir 'bin\librg_godot.dll'
 $SkipBuild = $false
 $NoConsole = $false
 $Editor    = $false
+$Flat      = $false
 $DryRun    = $false
 $Preset    = 'debug'
 $GodotArgs = New-Object System.Collections.Generic.List[string]
@@ -67,6 +81,7 @@ foreach ($a in $args) {
         '^--?SkipBuild$' { $SkipBuild = $true; continue }
         '^--?NoConsole$' { $NoConsole = $true; continue }
         '^--?Editor$'    { $Editor    = $true; continue }
+        '^--?Flat$'      { $Flat      = $true; continue }
         '^--?DryRun$'    { $DryRun    = $true; continue }
         '^--?Preset$'    { $expectPresetValue = $true; continue }
         '^--$'           { $sawSeparator = $true; continue }
@@ -76,7 +91,15 @@ foreach ($a in $args) {
 
 $buildDir = Join-Path $repoRoot "out\build\$Preset"
 
-Write-Host "=== run: build + launch racing_game R0 ===" -ForegroundColor Cyan
+# R9: the start world. Real-world Drive unless -Flat or the forwarded args
+# already choose a start themselves.
+$choosesStart = @($GodotArgs | Where-Object { $_ -in @('--drive', '--terrain-preview', '--bindings-test') }).Count -gt 0
+if (-not $Flat -and -not $choosesStart) {
+    $GodotArgs.Insert(0, '--drive')
+}
+$startLabel = if ($Flat) { 'flat scene' } elseif ($GodotArgs -contains '--drive') { 'real world' } else { 'chosen by the forwarded args' }
+
+Write-Host "=== run: build + launch racing_game ($startLabel) ===" -ForegroundColor Cyan
 Write-Host "repo root: $repoRoot"
 Write-Host "build dir: $buildDir"
 Write-Host "game dir:  $gameDir"

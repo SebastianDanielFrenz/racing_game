@@ -62,6 +62,29 @@
     FLAT mode only (no RG_G2M_HOME/geo2map cache needed, so this runs in CI).
     Asserts no ERROR/SCRIPT ERROR line, a clean exit code, and the script's
     own "bindings test: ok ..." line.
+
+.PARAMETER Drive
+    R2.2 R9 real-world drive check: launches with
+    `-- --drive --drive-smoke` (game/scripts/drive_smoke.gd). Needs the
+    geo2map store (tiles.sqlite3 in $env:RG_G2M_HOME, or in the default
+    <repo>/cache/g2m/home-r1 when RG_G2M_HOME is unset); without it the
+    headless part prints SKIP and the script exits 0. The scripted run loads
+    the real world, drives straight for 6 s of sim time, cycles the player
+    mode drive -> free_cam -> drive, switches the world real -> flat -> real,
+    cancels one real-world load mid-way with another switch, and loads the
+    real world once more. Asserts everything the default run does (no
+    ERROR lines, exit 0) plus: an "RG_DRIVE ready" line; falls=0 misses=0 on
+    every RG_DRIVE numbers line; ticks > 0 and result=ok on the final
+    "RG_DRIVE done" line. --quit-after is raised to 200000 (the script
+    quits itself; 300 s wall-clock timeout).
+
+.PARAMETER DriveDelayMs
+    Implies -Drive and forwards `--g2m-fetch-delay-ms N` (every tile fetch
+    is delayed by N ms), and drive_smoke.gd then relocates the car ~3 km
+    along the route into non-resident terrain. Additionally asserts that the
+    terrain gate froze the clock at least once (relocate_freezes >= 1) and
+    that the tick count advanced after the relocation landed
+    (advanced_after_relocate > 0). Typical: -DriveDelayMs 200.
 #>
 [CmdletBinding()]
 param(
@@ -69,7 +92,9 @@ param(
     [switch]$SkipBuild,
     [switch]$TerrainPreview,
     [switch]$TerrainStream,
-    [switch]$BindingsTest
+    [switch]$BindingsTest,
+    [switch]$Drive,
+    [int]$DriveDelayMs = 0
 )
 
 $ErrorActionPreference = 'Stop'
@@ -77,8 +102,10 @@ if ($TerrainStream) {
     $TerrainPreview = $true
     if (-not $PSBoundParameters.ContainsKey('QuitAfterFrames')) { $QuitAfterFrames = 200000 }
 }
-if ($BindingsTest -and $TerrainPreview) {
-    throw "smoke_test.ps1: -BindingsTest and -TerrainPreview/-TerrainStream are mutually exclusive"
+if ($DriveDelayMs -gt 0) { $Drive = $true }
+if ($Drive -and -not $PSBoundParameters.ContainsKey('QuitAfterFrames')) { $QuitAfterFrames = 200000 }
+if ((@($BindingsTest, $TerrainPreview, $Drive) | Where-Object { $_ }).Count -gt 1) {
+    throw "smoke_test.ps1: -BindingsTest, -TerrainPreview/-TerrainStream and -Drive/-DriveDelayMs are mutually exclusive"
 }
 $repoRoot = Split-Path -Parent $PSScriptRoot
 $gameDir  = Join-Path $repoRoot 'game'
@@ -154,7 +181,21 @@ if ($script:Failures.Count -eq 0) {
     }
 }
 
-if ($script:Failures.Count -eq 0) {
+# -Drive needs the geo2map store (world_config.json's ${RG_G2M_HOME},
+# defaulting to <repo>/cache/g2m/home-r1 - rg_core's world_config.cpp).
+$script:DriveSkipped = $false
+if ($Drive -and $script:Failures.Count -eq 0) {
+    $g2mHome = if ($env:RG_G2M_HOME) { $env:RG_G2M_HOME } else { Join-Path $repoRoot 'cache\g2m\home-r1' }
+    $store = Join-Path $g2mHome 'tiles.sqlite3'
+    if (-not (Test-Path $store)) {
+        Write-Host "`nSKIP: -Drive needs the geo2map store, none at $store (set RG_G2M_HOME)" -ForegroundColor Yellow
+        $script:DriveSkipped = $true
+    } else {
+        Write-Host "`n-Drive: geo2map store $store"
+    }
+}
+
+if ($script:Failures.Count -eq 0 -and -not $script:DriveSkipped) {
     $godotExe = Find-GodotConsoleExe
     Ensure-GodotProjectImported -GameDir $gameDir -GodotExe $godotExe
 
@@ -164,6 +205,9 @@ if ($script:Failures.Count -eq 0) {
         if ($TerrainStream) { $godotArgs += @('--stream-test') }
     } elseif ($BindingsTest) {
         $godotArgs += @('--', '--bindings-test')
+    } elseif ($Drive) {
+        $godotArgs += @('--', '--drive', '--drive-smoke')
+        if ($DriveDelayMs -gt 0) { $godotArgs += @('--g2m-fetch-delay-ms', $DriveDelayMs) }
     }
     Write-Host "`n-- headless run: $godotExe $($godotArgs -join ' ') --" -ForegroundColor Cyan
 
@@ -237,6 +281,38 @@ if ($script:Failures.Count -eq 0) {
                 }
             }
         }
+    } elseif ($Drive) {
+        $readyLine = $logContent | Select-String -Pattern 'RG_DRIVE ready' | Select-Object -First 1
+        if ($readyLine) {
+            Report-Ok "real world became drivable: $($readyLine.Line)"
+        } else {
+            Report-Fail "no 'RG_DRIVE ready' line - the real world never became drivable"
+        }
+        $numberLines = @($logContent | Select-String -Pattern 'RG_DRIVE .*falls=')
+        $badLines = @($numberLines | Where-Object { $_.Line -notmatch 'falls=0 misses=0' })
+        if ($numberLines.Count -eq 0) {
+            Report-Fail "no RG_DRIVE line carries falls=/misses= numbers"
+        } elseif ($badLines.Count -gt 0) {
+            Report-Fail "a fall or a wheel-cast miss was reported:`n$($badLines -join "`n")"
+        } else {
+            Report-Ok "falls=0 misses=0 on all $($numberLines.Count) RG_DRIVE numbers lines"
+        }
+        $doneLine = $logContent | Select-String -Pattern 'RG_DRIVE done .*' | Select-Object -Last 1
+        if (-not $doneLine) {
+            Report-Fail "no 'RG_DRIVE done' line - drive_smoke.gd did not finish"
+        } else {
+            $done = $doneLine.Line
+            Write-Host "drive smoke: $done"
+            $ticks = if ($done -match ' ticks=(\d+)') { [int]$Matches[1] } else { -1 }
+            if ($ticks -gt 0) { Report-Ok "ticks=$ticks > 0 at the end" } else { Report-Fail "ticks=$ticks at the end (expected > 0)" }
+            if ($done -match 'result=ok') { Report-Ok "drive smoke result=ok" } else { Report-Fail "drive smoke did not report result=ok" }
+            if ($DriveDelayMs -gt 0) {
+                $freezes = if ($done -match 'relocate_freezes=(-?\d+)') { [int]$Matches[1] } else { -1 }
+                $advanced = if ($done -match 'advanced_after_relocate=(-?\d+)') { [int]$Matches[1] } else { -1 }
+                if ($freezes -ge 1) { Report-Ok "the terrain gate froze the clock (relocate_freezes=$freezes)" } else { Report-Fail "relocate_freezes=$freezes (expected >= 1 with a $DriveDelayMs ms fetch delay)" }
+                if ($advanced -gt 0) { Report-Ok "ticks advanced after the relocation (advanced_after_relocate=$advanced)" } else { Report-Fail "advanced_after_relocate=$advanced (expected > 0)" }
+            }
+        }
     } elseif ($BindingsTest) {
         $doneLine = $logContent | Select-String -Pattern 'bindings test: ok' | Select-Object -Last 1
         if ($doneLine) {
@@ -255,7 +331,10 @@ if ($script:Failures.Count -eq 0) {
 }
 
 Write-Host "`n=== summary ===" -ForegroundColor Cyan
-if ($script:Failures.Count -eq 0) {
+if ($script:Failures.Count -eq 0 -and $script:DriveSkipped) {
+    Write-Host "SKIP: -Drive headless run skipped (no geo2map store); build and ctest passed" -ForegroundColor Yellow
+    exit 0
+} elseif ($script:Failures.Count -eq 0) {
     Write-Host "PASS: headless smoke test" -ForegroundColor Green
     exit 0
 } else {
