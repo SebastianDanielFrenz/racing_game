@@ -16,6 +16,7 @@ add_executable(rg_unit_tests
   test_world_terrain.cpp
   test_fixed_rate_loop.cpp
   test_terrain_view_streamer.cpp
+  test_route_check.cpp
 )
 
 target_link_libraries(rg_unit_tests

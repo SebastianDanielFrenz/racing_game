@@ -223,6 +223,7 @@ endif()
 add_subdirectory(core)
 add_subdirectory(tools/hash_check)
 add_subdirectory(tools/lod_measure)
+add_subdirectory(tools/route_check)
 
 if(RG_BUILD_GODOT_EXTENSION)
   add_subdirectory(godot_ext)
