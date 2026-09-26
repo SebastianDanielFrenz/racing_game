@@ -206,14 +206,16 @@ private:
     WorldTerrain() = default;
 
     // Server::tile() + container decode for one terrain.height tile (any
-    // level); status/tile are as they sound (tile is nullopt on any
-    // failure: out of coverage, a non-Ok status, a decode error). Updates
+    // level); status/tile are as they sound (tile is null on any failure:
+    // out of coverage, a non-Ok status, a decode error). The tile is
+    // heap-allocated (vault TOOL-039: g2m::HeightTile is 256 KiB, never by
+    // value or on the stack, std::optional included). Updates
     // fetch_stats_ (server_ok/server_miss). Does NOT touch height_cache_ -
     // height_tile_shared() (the cached, public entry point) does that, via
     // fetch_height_tile_cached.
     struct FetchDecodeResult {
         g2m::Status status = g2m::Status::Internal;
-        std::optional<g2m::HeightTile> tile;
+        std::shared_ptr<const g2m::HeightTile> tile;
     };
     FetchDecodeResult fetch_and_decode(const g2m::TileKey& key);
 

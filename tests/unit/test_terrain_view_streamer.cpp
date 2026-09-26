@@ -46,15 +46,17 @@ public:
         std::lock_guard<std::mutex> lk(mutex_);
         auto it = tiles_.find(key);
         if (it == tiles_.end()) {
-            g2m::HeightTile tile;
-            tile.key = key;
+            // Heap, never the stack or by value in the map (vault TOOL-039:
+            // g2m::HeightTile is 256 KiB).
+            auto tile = std::make_unique<g2m::HeightTile>();
+            tile->key = key;
             // A gentle, key-dependent height so different tiles are not all
             // byte-identical (keeps the determinism comparison meaningful).
-            tile.h.fill(100 * 256 + static_cast<std::int32_t>((key.x * 7 + key.y * 13 + key.level) % 64));
-            tile.has_nodata = false;
+            tile->h.fill(100 * 256 + static_cast<std::int32_t>((key.x * 7 + key.y * 13 + key.level) % 64));
+            tile->has_nodata = false;
             it = tiles_.emplace(key, std::move(tile)).first;
         }
-        return &it->second;
+        return it->second.get();
     }
 
     void set_gate(bool open) {
@@ -72,7 +74,7 @@ public:
 
 private:
     std::mutex mutex_;
-    std::map<g2m::TileKey, g2m::HeightTile> tiles_;
+    std::map<g2m::TileKey, std::unique_ptr<g2m::HeightTile>> tiles_;
     std::mutex gate_mutex_;
     std::condition_variable gate_cv_;
     bool gate_open_ = true;

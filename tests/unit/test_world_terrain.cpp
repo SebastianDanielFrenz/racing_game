@@ -44,21 +44,23 @@ public:
         std::lock_guard<std::mutex> lk(mutex_);
         auto it = tiles_.find(packed);
         if (it != tiles_.end()) {
-            return &it->second;
+            return it->second.get();
         }
-        g2m::HeightTile tile;
-        tile.key = key;
+        // Heap, never the stack or by value in the map (vault TOOL-039:
+        // g2m::HeightTile is 256 KiB).
+        auto tile = std::make_unique<g2m::HeightTile>();
+        tile->key = key;
         // 100 m flat, exact in 1/256 m fixed point (100 * 256 = 25600).
-        tile.h.fill(100 * 256);
-        tile.has_nodata = false;
+        tile->h.fill(100 * 256);
+        tile->has_nodata = false;
         auto [inserted_it, inserted] = tiles_.emplace(packed, std::move(tile));
         (void)inserted; // a racing insert of the identical key is fine - same bytes either way
-        return &inserted_it->second;
+        return inserted_it->second.get();
     }
 
 private:
     std::mutex mutex_;
-    std::unordered_map<std::uint64_t, g2m::HeightTile> tiles_;
+    std::unordered_map<std::uint64_t, std::unique_ptr<g2m::HeightTile>> tiles_;
 };
 
 const g2m::HeightTile* synthetic_lookup(void* ctx, const g2m::TileKey& key) {
@@ -375,11 +377,11 @@ TEST_CASE("fetch_height_tile_cached: 8 threads hammering overlapping keys observ
         // likely to actually race on the SAME key rather than serialising by
         // accident.
         std::this_thread::sleep_for(std::chrono::microseconds(200));
-        g2m::HeightTile tile;
-        tile.key = key;
-        tile.h.fill(key.x * 1000 + key.y);
-        tile.has_nodata = false;
-        return rg::HeightTileFetchResult{g2m::Status::Ok, std::make_shared<const g2m::HeightTile>(std::move(tile))};
+        auto tile = std::make_shared<g2m::HeightTile>(); // heap: TOOL-039
+        tile->key = key;
+        tile->h.fill(key.x * 1000 + key.y);
+        tile->has_nodata = false;
+        return rg::HeightTileFetchResult{g2m::Status::Ok, std::move(tile)};
     };
 
     std::mutex cache_mutex;

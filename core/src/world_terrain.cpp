@@ -11,6 +11,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <memory>
 #include <span>
 #include <thread>
 #include <utility>
@@ -259,25 +260,26 @@ WorldTerrain::FetchDecodeResult WorldTerrain::fetch_and_decode(const g2m::TileKe
         }
     }
     if (tile_response == nullptr || tile_response->meta.status != g2m::Status::Ok) {
-        return FetchDecodeResult{response_status, std::nullopt};
+        return FetchDecodeResult{response_status, nullptr};
     }
 
     std::size_t consumed = 0;
     g2m::Result<g2m::TileHeader> header_result = g2m::decode_header(tile_response->container, &consumed);
     if (!header_result.ok()) {
-        return FetchDecodeResult{g2m::Status::Internal, std::nullopt};
+        return FetchDecodeResult{g2m::Status::Internal, nullptr};
     }
     const std::span<const std::uint8_t> body_bytes(tile_response->container.data() + consumed,
                                                     tile_response->container.size() - consumed);
     g2m::Result<g2m::TileBody> body_result = g2m::decode_body(body_bytes);
     if (!body_result.ok()) {
-        return FetchDecodeResult{g2m::Status::Internal, std::nullopt};
+        return FetchDecodeResult{g2m::Status::Internal, nullptr};
     }
 
-    g2m::HeightTile tile;
-    g2m::Result<void> decode_result = g2m::decode_height_tile(body_result.value(), key, tile);
+    // Heap, never the stack (vault TOOL-039: g2m::HeightTile is 256 KiB).
+    auto tile = std::make_shared<g2m::HeightTile>();
+    g2m::Result<void> decode_result = g2m::decode_height_tile(body_result.value(), key, *tile);
     if (!decode_result.ok()) {
-        return FetchDecodeResult{g2m::Status::Internal, std::nullopt};
+        return FetchDecodeResult{g2m::Status::Internal, nullptr};
     }
     return FetchDecodeResult{g2m::Status::Ok, std::move(tile)};
 }
@@ -317,11 +319,10 @@ HeightTileFetchResult fetch_height_tile_cached(std::mutex& cache_mutex,
 HeightTileFetchResult WorldTerrain::height_tile_shared(const g2m::TileKey& key) {
     HeightTileFetchFn fetch_fn = [this](const g2m::TileKey& k) -> HeightTileFetchResult {
         FetchDecodeResult result = fetch_and_decode(k);
-        if (!result.tile.has_value()) {
+        if (!result.tile) {
             return HeightTileFetchResult{result.status, nullptr};
         }
-        return HeightTileFetchResult{g2m::Status::Ok,
-                                     std::make_shared<const g2m::HeightTile>(std::move(*result.tile))};
+        return HeightTileFetchResult{g2m::Status::Ok, std::move(result.tile)};
     };
 
     bool was_cache_hit = false;
