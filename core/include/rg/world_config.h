@@ -69,8 +69,17 @@ struct WorldConfig {
 // Placeholder expansion: "${NAME}" inside any string field (source_store.dir
 // and derived_store.dir; no other field is expanded) is replaced by the
 // environment variable NAME. RG_G2M_HOME is special-cased: if unset, it
-// defaults to a fixed path (see the .cpp) instead of being an error. Any
-// other unset/unknown "${NAME}" is a validation error.
+// defaults to "<repo root>/cache/g2m/home-r1" (repo root = the nearest
+// ancestor of THIS CONFIG FILE with a CMakeLists.txt - see the .cpp's
+// find_repo_root; that directory is gitignored, PLAN.md R2.1 coordinator
+// update 2026-09-26 - a local copy of the source store, never the original
+// external geo2map_cache directory) instead of being an error. Any other
+// unset/unknown "${NAME}" is a validation error.
+//
+// RG_G2M_DERIVED (checked directly, not a "${NAME}" placeholder): if set and
+// non-empty, overrides the resolved derived_store.dir entirely (used as-is).
+// Optional - world_config.json's own "derived_store.dir":
+// "${RG_G2M_HOME}/derived" already tracks the RG_G2M_HOME default above.
 std::optional<WorldConfig> load_world_config(const std::string& path, std::string* err);
 
 } // namespace rg

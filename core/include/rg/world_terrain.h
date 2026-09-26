@@ -1,0 +1,146 @@
+// rg/world_terrain.h — rg::WorldTerrain: the engine-neutral seam between
+// geo2map_engine's offline in-process server/mesh stack and the game
+// (PLAN.md R2.1). Owns one local geo2map_engine release built from a
+// WorldConfig's source/derived stores and serves g2m::mesh::TerrainChunkMesh
+// chunks around a camera point, with LOD (g2m::mesh::select_chunks) and a
+// blocking, cached height-tile fetch path.
+//
+// No Godot type anywhere in this header or its .cpp (PLAN.md 11.1) -
+// godot_ext/src/rg_terrain_view.h/.cpp is the only place a RenderChunk's
+// data crosses into godot:: RenderingServer calls.
+#pragma once
+
+#include "rg/terrain_render.h"
+#include "rg/world_config.h"
+
+#include "g2m/core/geo/session_frame.h"
+#include "g2m/layer/height_tile.h"
+#include "g2m/mesh/lod_select.h"
+#include "g2m/mesh/terrain_chunk.h"
+#include "g2m/server/builtin_release.h"
+#include "g2m/server/server.h"
+#include "g2m/server/tile_store.h"
+#include "g2m/server/upstream.h"
+#include "g2m/client/in_process_transport.h"
+
+#include <cstdint>
+#include <map>
+#include <memory>
+#include <mutex>
+#include <optional>
+#include <string>
+#include <vector>
+
+namespace rg {
+
+// Testable seam, independent of the Server/TileStore stack entirely (PLAN.md
+// R2.1 acceptance: "build_static_view over a synthetic in-memory store" -
+// tests/unit/test_world_terrain.cpp uses a plain std::map<TileKey,
+// HeightTile> as `ctx`/`lookup` here, no TileStore/Server/geo2map decode
+// machinery needed at all). WorldTerrain::build_static_view (below) is a
+// thin wrapper calling this with its own height_tile() as the lookup.
+//
+// (cam_x, cam_y) are SESSION-LOCAL metres (rg::WorldConfig::spawn's own
+// frame: x east of e0, y north of n0); e0/n0 are the session origin's own
+// UTM easting/northing (rg::WorldConfig::session_origin_utm). Builds every
+// selected chunk (g2m::mesh::select_chunks, then gather_window + build_chunk
+// per chunk) using up to `thread_count` std::thread workers (1 = no threads
+// spawned, runs on the caller's thread); `out` is resized to
+// `select_chunks`'s own key count and each worker writes directly into its
+// assigned index, so the result is byte-identical for any thread_count >= 1
+// (PLAN.md R2.1 acceptance: "same output for 1 vs N threads") - select_chunks'
+// own sort order is therefore also `out`'s final order.
+void build_static_view_from_lookup(double cam_x, double cam_y, const g2m::mesh::LodParams& params, double e0,
+                                   double n0, g2m::mesh::TileLookup lookup, void* ctx, unsigned thread_count,
+                                   std::vector<RenderChunk>& out);
+
+class WorldTerrain {
+public:
+    ~WorldTerrain();
+    WorldTerrain(const WorldTerrain&) = delete;
+    WorldTerrain& operator=(const WorldTerrain&) = delete;
+
+    // Opens the source store (read-only) and derived store (read-write) from
+    // `config`, builds the one local release over
+    // config.source_store.scope's raw tiles (g2m::builtin_local_release_params
+    // + g2m::make_local_release - the SAME wiring g2m_tiler's own `bake`
+    // subcommand and geo2map_engine's own golden tests use, PLAN.md decision
+    // 10: "prebake and on-demand share the same resolver"), and adds it to an
+    // offline g2m::Server (config.offline = true: the only IUpstream is a
+    // g2m::LocalSourceUpstream over the source store, which never touches
+    // the network - see g2m/server/upstream.h). On any failure (a store that
+    // fails to open, a malformed release) returns nullptr and, if err is
+    // non-null, sets *err to a human-readable message (the g2m::Error's own
+    // ErrorCode/message - never throws, matching this repo's other loaders,
+    // e.g. world_config.cpp's own TOOL-019 reasoning: geo2map_engine's own
+    // Result<T> is exception-free throughout, so nothing here needs to
+    // catch anything).
+    static std::unique_ptr<WorldTerrain> open(const WorldConfig& config, std::string* err);
+
+    // Blocking fetch + decode of one terrain.height tile (any level),
+    // cached in a std::map keyed by TileKey (thread-safe: a std::mutex
+    // guards the cache; the actual Server::tile()/decode work for a miss
+    // runs OUTSIDE the lock, so concurrent misses for different tiles don't
+    // serialise on it - see the .cpp; g2m::Server itself is documented safe
+    // for concurrent resolves of the very same tile, "both write identical
+    // bytes"). Returns nullptr if the tile is out of coverage or the
+    // request otherwise fails (a missing tile in a LOD hole is expected at
+    // the edge of the imported region - callers must handle it, see
+    // g2m::mesh::gather_window's own NoData contract).
+    const g2m::HeightTile* height_tile(const g2m::TileKey& key);
+
+    // Builds every LOD-selected chunk around (cam_x, cam_y) (session-local
+    // metres) using this WorldTerrain's own store/server and
+    // lod_params() - see build_static_view_from_lookup's doc comment above
+    // for the determinism/threading contract this wraps.
+    void build_static_view(double cam_x, double cam_y, std::vector<RenderChunk>& out);
+
+    [[nodiscard]] const g2m::mesh::LodParams& lod_params() const { return lod_params_; }
+    void set_lod_params(const g2m::mesh::LodParams& params) { lod_params_ = params; }
+
+    [[nodiscard]] const g2m::geo::SessionFrame& frame() const { return *frame_; }
+    [[nodiscard]] const g2m::ReleaseId& release_id() const { return manifest_rid_; }
+
+    // Diagnostics (PLAN.md R2.1's own "log clearly whether a tile came from
+    // cache or was derived" requirement) - counts since open().
+    struct FetchStats {
+        std::uint64_t cache_hits = 0;   // height_tile() calls served from height_cache_
+        std::uint64_t server_ok = 0;    // Server::tile() calls that returned 200
+        std::uint64_t server_miss = 0;  // Server::tile() calls that returned anything else
+    };
+    [[nodiscard]] FetchStats fetch_stats() const;
+
+private:
+    WorldTerrain() = default;
+
+    // Server::tile() + container decode for one terrain.height tile (any
+    // level); nullopt on any failure (out of coverage, a non-200 status, a
+    // decode error). Updates fetch_stats_ (server_ok/server_miss). Does NOT
+    // touch height_cache_ - height_tile() (the cached, public entry point)
+    // does that.
+    std::optional<g2m::HeightTile> fetch_and_decode(const g2m::TileKey& key);
+
+    // Declaration order is the destruction-order contract this class relies
+    // on (members destruct in REVERSE declaration order): local_upstream_
+    // and transport_ both hold references into earlier members and must be
+    // torn down first; server_'s ServerConfig holds pointers into derivers_
+    // and local_upstream_, so it must go before them but after transport_.
+    std::unique_ptr<g2m::TileStore> source_store_;
+    std::unique_ptr<g2m::TileStore> derived_store_;
+    g2m::BuiltinTerrainDerivers derivers_;
+    std::optional<g2m::LocalSourceUpstream> local_upstream_;
+    std::unique_ptr<g2m::Server> server_;
+    std::optional<g2m::InProcessTransport> transport_;
+    std::unique_ptr<g2m::geo::SessionFrame> frame_;
+
+    g2m::ReleaseId manifest_rid_{};
+    std::string terrain_height_layer_;
+    g2m::mesh::LodParams lod_params_;
+
+    std::mutex cache_mutex_;
+    std::map<g2m::TileKey, g2m::HeightTile> height_cache_;
+    mutable std::mutex stats_mutex_;
+    FetchStats stats_;
+};
+
+} // namespace rg

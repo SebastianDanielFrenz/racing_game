@@ -223,14 +223,41 @@ TEST_CASE("load_world_config: ${RG_G2M_HOME} is expanded in dir fields", "[world
     CHECK(cfg->derived_store.dir == "S:/some/test/g2m/home");
 }
 
-TEST_CASE("load_world_config: RG_G2M_HOME defaults when unset", "[world_config]") {
+TEST_CASE("load_world_config: RG_G2M_HOME defaults to <repo root>/cache/g2m/home-r1 when unset", "[world_config]") {
+    // R2.1 coordinator update (2026-09-26): the default moved from a fixed
+    // S:\claude_code\geo2map_cache\home-r1 path to a repo-relative,
+    // gitignored copy. TempFile writes under "<RG_SOURCE_DIR>/out/test_tmp",
+    // so find_repo_root() resolves to RG_SOURCE_DIR itself here.
     ScopedEnvVar env("RG_G2M_HOME"); // ensure unset for this test
+    ScopedEnvVar derived_env("RG_G2M_DERIVED"); // ensure unset: isolate this test from the override below
     TempFile file = TempFile::from_json(valid_world_config_json());
     std::string err;
     auto cfg = rg::load_world_config(file.path(), &err);
     REQUIRE(cfg.has_value());
-    CHECK(cfg->source_store.dir == "S:\\claude_code\\geo2map_cache\\home-r1");
-    CHECK(cfg->derived_store.dir == "S:\\claude_code\\geo2map_cache\\home-r1");
+    const fs::path expected = (fs::path(std::string(RG_SOURCE_DIR)) / "cache" / "g2m" / "home-r1").lexically_normal();
+    CHECK(fs::path(cfg->source_store.dir).lexically_normal() == expected);
+    CHECK(fs::path(cfg->derived_store.dir).lexically_normal() == expected);
+}
+
+TEST_CASE("load_world_config: RG_G2M_DERIVED overrides derived_store.dir entirely", "[world_config]") {
+    ScopedEnvVar env("RG_G2M_HOME", "S:/some/test/g2m/home");
+    ScopedEnvVar derived_env("RG_G2M_DERIVED", "S:/some/other/scratch/derived");
+    TempFile file = TempFile::from_json(valid_world_config_json());
+    std::string err;
+    auto cfg = rg::load_world_config(file.path(), &err);
+    REQUIRE(cfg.has_value());
+    CHECK(cfg->source_store.dir == "S:/some/test/g2m/home"); // unaffected
+    CHECK(cfg->derived_store.dir == "S:/some/other/scratch/derived");
+}
+
+TEST_CASE("load_world_config: empty RG_G2M_DERIVED does not override", "[world_config]") {
+    ScopedEnvVar env("RG_G2M_HOME", "S:/some/test/g2m/home");
+    ScopedEnvVar derived_env("RG_G2M_DERIVED", ""); // set but empty
+    TempFile file = TempFile::from_json(valid_world_config_json());
+    std::string err;
+    auto cfg = rg::load_world_config(file.path(), &err);
+    REQUIRE(cfg.has_value());
+    CHECK(cfg->derived_store.dir == "S:/some/test/g2m/home"); // the normal ${RG_G2M_HOME} expansion stands
 }
 
 TEST_CASE("load_world_config: surface_map/palette resolve against the config file's own repo root", "[world_config]") {

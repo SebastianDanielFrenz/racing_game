@@ -31,11 +31,25 @@ namespace {
 namespace fs = std::filesystem;
 using json = nlohmann::json;
 
-// This machine's pinned home-region geo2map_engine store (PLAN.md R2.0's
-// own spec for this default - see world_config.h's doc comment). Only
-// RG_G2M_HOME gets a default; every other "${NAME}" placeholder is an error
-// if the environment variable is not set.
-constexpr const char* kDefaultRgG2mHome = "S:\\claude_code\\geo2map_cache\\home-r1";
+// RG_G2M_HOME's default, when unset (R2.1 coordinator update, 2026-09-26 -
+// supersedes the earlier fixed S:\claude_code\geo2map_cache\home-r1
+// default): a repo-relative, gitignored copy of the source store at
+// "<repo root>/cache/g2m/home-r1" (the external geo2map_cache directory
+// stays untouched and read-only; see .gitignore's "cache/" entry and
+// racing_game/CLAUDE.md's layout section for how that copy is populated).
+// "Repo root" is the same nearest-ancestor-with-CMakeLists.txt search
+// find_repo_root() below already does for surface_map/palette resolution -
+// computed once per load_world_config() call and threaded through to
+// expand_placeholders(). Only RG_G2M_HOME gets a default; every other
+// "${NAME}" placeholder is an error if the environment variable is not set.
+constexpr const char* kDefaultRgG2mHomeRelative = "cache/g2m/home-r1";
+
+// RG_G2M_DERIVED (checked directly, not a "${NAME}" placeholder): when set,
+// overrides derived_store.dir entirely (used as-is, no further expansion)
+// after the normal "${RG_G2M_HOME}/derived" expansion below - a cheap escape
+// hatch for a test/CI run wanting the derived store somewhere other than
+// alongside RG_G2M_HOME, independent of the default-relocation above.
+constexpr const char* kDerivedStoreOverrideEnvVar = "RG_G2M_DERIVED";
 
 bool fail(std::string* err, const std::string& path, const std::string& message) {
     if (err != nullptr) {
@@ -105,9 +119,11 @@ std::optional<fs::path> find_repo_root(fs::path dir) {
 }
 
 // Expands every "${NAME}" placeholder in `in`. Returns nullopt (with *err
-// set) on an unterminated placeholder or an unknown/unset variable other
-// than RG_G2M_HOME.
-std::optional<std::string> expand_placeholders(const std::string& in, const std::string& path, std::string* err) {
+// set) on an unterminated placeholder, an unknown/unset variable other than
+// RG_G2M_HOME, or (RG_G2M_HOME specifically, env var unset) no repo_root to
+// build its default from.
+std::optional<std::string> expand_placeholders(const std::string& in, const std::string& path,
+                                               const std::optional<fs::path>& repo_root, std::string* err) {
     std::string out;
     out.reserve(in.size());
     std::size_t i = 0;
@@ -126,7 +142,17 @@ std::optional<std::string> expand_placeholders(const std::string& in, const std:
             std::string value;
             if (name == "RG_G2M_HOME") {
                 std::optional<std::string> env = safe_getenv(name);
-                value = env.has_value() ? *env : std::string(kDefaultRgG2mHome);
+                if (env.has_value()) {
+                    value = *env;
+                } else if (repo_root.has_value()) {
+                    value = (*repo_root / fs::path(kDefaultRgG2mHomeRelative)).lexically_normal().string();
+                } else {
+                    fail(err, path,
+                         "RG_G2M_HOME is not set and no repo root (nearest ancestor with a CMakeLists.txt) "
+                         "was found to build its default (\"" +
+                             std::string(kDefaultRgG2mHomeRelative) + "\") from");
+                    return std::nullopt;
+                }
             } else {
                 std::optional<std::string> env = safe_getenv(name);
                 if (!env.has_value()) {
@@ -253,6 +279,17 @@ std::optional<WorldConfig> load_world_config(const std::string& path, std::strin
     WorldConfig cfg;
     cfg.format = format;
 
+    // Repo root (nearest ancestor of the CONFIG FILE with a CMakeLists.txt):
+    // computed once, used both for RG_G2M_HOME's default (below) and for
+    // surface_map/palette resolution (bottom of this function). A config
+    // file with no repo root above it can still load successfully as long as
+    // it never actually needs one - RG_G2M_HOME set explicitly and both
+    // surface_map/palette already absolute - so this is looked up eagerly
+    // but only turned into an error at the point something actually needs it
+    // (expand_placeholders / the surface_map+palette block).
+    const fs::path config_file_abs = to_absolute(path);
+    const std::optional<fs::path> repo_root = find_repo_root(config_file_abs.parent_path());
+
     if (!get_string(root, "region", path, "top level", &cfg.region, err)) {
         return std::nullopt;
     }
@@ -302,7 +339,7 @@ std::optional<WorldConfig> load_world_config(const std::string& path, std::strin
     if (!get_string(source_store, "dir", path, "\"source_store\"", &source_dir_raw, err)) {
         return std::nullopt;
     }
-    auto source_dir_expanded = expand_placeholders(source_dir_raw, path, err);
+    auto source_dir_expanded = expand_placeholders(source_dir_raw, path, repo_root, err);
     if (!source_dir_expanded.has_value()) {
         return std::nullopt;
     }
@@ -327,11 +364,18 @@ std::optional<WorldConfig> load_world_config(const std::string& path, std::strin
     if (!get_string(derived_store, "dir", path, "\"derived_store\"", &derived_dir_raw, err)) {
         return std::nullopt;
     }
-    auto derived_dir_expanded = expand_placeholders(derived_dir_raw, path, err);
+    auto derived_dir_expanded = expand_placeholders(derived_dir_raw, path, repo_root, err);
     if (!derived_dir_expanded.has_value()) {
         return std::nullopt;
     }
     cfg.derived_store.dir = *derived_dir_expanded;
+    // RG_G2M_DERIVED: a cheap, direct (non-"${NAME}") override of the whole
+    // derived_store.dir value, used as-is (no further expansion) - see
+    // kDerivedStoreOverrideEnvVar's doc comment above.
+    if (std::optional<std::string> derived_override = safe_getenv(kDerivedStoreOverrideEnvVar);
+        derived_override.has_value() && !derived_override->empty()) {
+        cfg.derived_store.dir = *derived_override;
+    }
     if (!get_string(derived_store, "name", path, "\"derived_store\"", &cfg.derived_store.name, err)) {
         return std::nullopt;
     }
@@ -365,11 +409,9 @@ std::optional<WorldConfig> load_world_config(const std::string& path, std::strin
         return std::nullopt;
     }
 
-    const fs::path config_file_abs = to_absolute(path);
     fs::path resolved_surface_map(surface_map_raw);
     fs::path resolved_palette(palette_raw);
     if (!resolved_surface_map.is_absolute() || !resolved_palette.is_absolute()) {
-        std::optional<fs::path> repo_root = find_repo_root(config_file_abs.parent_path());
         if (!repo_root.has_value()) {
             fail(err, path,
                  "cannot resolve repo-root-relative paths (\"surface_map\"/\"palette\"): "

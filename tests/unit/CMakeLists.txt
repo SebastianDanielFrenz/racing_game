@@ -13,6 +13,7 @@ add_executable(rg_unit_tests
   test_session.cpp
   test_world_config.cpp
   test_g2m_link_smoke.cpp
+  test_world_terrain.cpp
 )
 
 target_link_libraries(rg_unit_tests

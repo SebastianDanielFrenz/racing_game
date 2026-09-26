@@ -18,19 +18,26 @@
 # fix to e.g. SimThread's catch-up logic is picked up here automatically on
 # the next submodule pin bump, not duplicated-and-forgotten).
 
-# g2m_server/g2m_client/g2m_layers (geo2map_engine submodule, PLAN.md R2.0):
-# rg::load_world_config (world_config.h/.cpp) is the only rg_core file that
-# touches geo2map_engine directly today (validates data/world/world_config.json
-# and expands its ${RG_G2M_HOME} placeholder; does not yet open a store).
-# g2m_mesh does NOT exist yet on geo2map_engine's current pin (main,
-# 216775fd45a64014fc2fd89200555b3f1426509e) - only g2m_server/g2m_client/
-# g2m_layers are linked; add g2m_mesh here once geo2map_engine's G2.3
-# increment lands it.
+# g2m_server/g2m_client/g2m_layers/g2m_mesh (geo2map_engine submodule):
+# rg::load_world_config (world_config.h/.cpp) validates data/world/
+# world_config.json and expands its ${RG_G2M_HOME}/${RG_G2M_DERIVED}
+# placeholders; rg::WorldTerrain (world_terrain.h/.cpp, PLAN.md R2.1) is the
+# real consumer - it opens the source/derived TileStores, builds one offline
+# g2m::Server + local release (g2m::builtin_local_release_params +
+# g2m::make_local_release, the same wiring g2m_tiler's own `bake` subcommand
+# and geo2map_engine's golden tests use), and serves g2m::mesh::
+# TerrainChunkMesh chunks via g2m::mesh::select_chunks/gather_window/
+# build_chunk. g2m_mesh landed on the submodule pin with G2.3 (bumped
+# 2026-09-26, commit da07f4c) - it links only g2m_core + g2m_layers (always
+# built, unconditional on every G2M_BUILD_* option this project forces OFF),
+# so it is safe to link here even with G2M_BUILD_IMPORT/TESTS/APPS/FUZZERS
+# all OFF.
 set(PS_ADAPTER_SRC_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../external/physics_sim/adapters/godot/src")
 
 add_library(rg_core STATIC
     src/session.cpp
     src/world_config.cpp
+    src/world_terrain.cpp
     "${PS_ADAPTER_SRC_DIR}/frame_convert_core.cpp"
 )
 
@@ -55,6 +62,7 @@ target_link_libraries(rg_core
         g2m_server
         g2m_client
         g2m_layers
+        g2m_mesh
     PRIVATE
         rg_options
         nlohmann_json::nlohmann_json
