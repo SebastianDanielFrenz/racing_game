@@ -185,7 +185,7 @@ json valid_world_config_json() {
     j["region"] = "home";
     j["session_origin_utm"] = {{"zone", 32}, {"e0", 464000}, {"n0", 5559000}};
     j["source_store"] = {{"dir", "${RG_G2M_HOME}"}, {"scope", "home-2026-09r1"}, {"read_only", true}};
-    j["derived_store"] = {{"dir", "${RG_G2M_HOME}"}, {"name", "derived"}};
+    j["derived_store"] = {{"dir", "${RG_G2M_HOME}/baked"}, {"name", "tiles"}};
     j["spawn"] = {{"e", 462500.0}, {"n", 5559500.0}, {"yaw_deg", 0}};
     j["surface_map"] = "data/world/landclass_surfaces.json";
     j["palette"] = "data/world/landclass_palette.json";
@@ -208,7 +208,8 @@ TEST_CASE("load_world_config: the real committed data/world/world_config.json pa
     CHECK(cfg->session_origin_utm.n0 == 5559000.0);
     CHECK(cfg->source_store.scope == "home-2026-09r1");
     CHECK(cfg->source_store.read_only == true);
-    CHECK(cfg->derived_store.name == "derived");
+    // g2m_tiler bake output (always <dir>/tiles.sqlite3).
+    CHECK(cfg->derived_store.name == "tiles");
     CHECK(cfg->spawn.e == 462500.0);
     CHECK(cfg->spawn.n == 5559500.0);
     // R2.1 LOD-distance measurement sweep's chosen default (see repo
@@ -225,7 +226,7 @@ TEST_CASE("load_world_config: ${RG_G2M_HOME} is expanded in dir fields", "[world
     auto cfg = rg::load_world_config(file.path(), &err);
     REQUIRE(cfg.has_value());
     CHECK(cfg->source_store.dir == "S:/some/test/g2m/home");
-    CHECK(cfg->derived_store.dir == "S:/some/test/g2m/home");
+    CHECK(cfg->derived_store.dir == "S:/some/test/g2m/home/baked");
 }
 
 TEST_CASE("load_world_config: RG_G2M_HOME defaults to <repo root>/cache/g2m/home-r1 when unset", "[world_config]") {
@@ -241,7 +242,7 @@ TEST_CASE("load_world_config: RG_G2M_HOME defaults to <repo root>/cache/g2m/home
     REQUIRE(cfg.has_value());
     const fs::path expected = (fs::path(std::string(RG_SOURCE_DIR)) / "cache" / "g2m" / "home-r1").lexically_normal();
     CHECK(fs::path(cfg->source_store.dir).lexically_normal() == expected);
-    CHECK(fs::path(cfg->derived_store.dir).lexically_normal() == expected);
+    CHECK(fs::path(cfg->derived_store.dir).lexically_normal() == (expected / "baked").lexically_normal());
 }
 
 TEST_CASE("load_world_config: RG_G2M_DERIVED overrides derived_store.dir entirely", "[world_config]") {
@@ -262,7 +263,7 @@ TEST_CASE("load_world_config: empty RG_G2M_DERIVED does not override", "[world_c
     std::string err;
     auto cfg = rg::load_world_config(file.path(), &err);
     REQUIRE(cfg.has_value());
-    CHECK(cfg->derived_store.dir == "S:/some/test/g2m/home"); // the normal ${RG_G2M_HOME} expansion stands
+    CHECK(cfg->derived_store.dir == "S:/some/test/g2m/home/baked"); // the normal ${RG_G2M_HOME} expansion stands
 }
 
 TEST_CASE("load_world_config: surface_map/palette resolve against the config file's own repo root", "[world_config]") {
