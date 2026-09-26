@@ -13,7 +13,17 @@
 // visibly swim the instant RgTerrainView.set_render_origin moves a chunk's
 // instance transform).
 shader_type spatial;
-render_mode cull_back, diffuse_lambert, specular_disabled;
+// cull_disabled, not cull_back: the base grid's winding is fixed up for
+// Godot's clockwise-front-facing convention on upload (see
+// RgTerrainView::upload_one_chunk's index swap), but a chunk's skirt quads
+// (terrain_chunk.h's write_skirt, vertical strips hung from every border to
+// hide the crack against a coarser/finer LOD neighbour) are not guaranteed to
+// face the camera the same way the top surface does - a skirt can be seen
+// from either side depending on which way the neighbouring LOD steps.
+// Disabling backface culling entirely is the robust choice for this preview
+// shader; revisit only if a later pass gives skirts their own outward-facing
+// winding.
+render_mode cull_disabled, diffuse_lambert, specular_disabled;
 
 // A small ambient floor so the far (unlit, night) side of a slope doesn't
 // go fully black - terrain has no bounce-light/GI in this preview.

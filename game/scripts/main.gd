@@ -143,6 +143,21 @@ func _build_terrain_preview_scene() -> void:
 	camera.set_script(load("res://scripts/fly_cam.gd"))
 	add_child(camera)
 
+	# --screenshots <dir>: auto-capture a fixed pose list, then quit
+	# (screenshot_tour.gd). Needs a real renderer, not --headless.
+	var user_args := OS.get_cmdline_user_args()
+	var shot_index := user_args.find("--screenshots")
+	if shot_index >= 0 and shot_index + 1 < user_args.size():
+		camera.set_process(false)
+		camera.set_process_input(false)
+		var tour := Node.new()
+		tour.name = "ScreenshotTour"
+		tour.set_script(load("res://scripts/screenshot_tour.gd"))
+		tour.camera = camera
+		tour.terrain_view = terrain_view
+		tour.out_dir = user_args[shot_index + 1]
+		add_child(tour)
+
 func _build_scene() -> void:
 	# --- simulation node ---
 	_simulation = ClassDB.instantiate("RgSimulation")

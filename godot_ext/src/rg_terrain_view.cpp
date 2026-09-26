@@ -196,8 +196,16 @@ void RgTerrainView::upload_one_chunk(const rg::RenderChunk& chunk) {
 
         godot::PackedInt32Array indices;
         indices.resize(static_cast<std::int64_t>(chunk.mesh.indices.size()));
-        for (std::size_t i = 0; i < chunk.mesh.indices.size(); ++i) {
-            indices[static_cast<std::int64_t>(i)] = static_cast<std::int32_t>(chunk.mesh.indices[i]);
+        // g2m::mesh emits counter-clockwise triangles (seen from above, +Z);
+        // Godot treats CLOCKWISE as front-facing, so swap each triangle's
+        // last two indices or cull_back removes every top face (the preview
+        // then shows only the sky's ground colour plus the backs of steep
+        // slopes). The basis change itself is a proper rotation and keeps
+        // winding, so this is purely Godot's front-face convention.
+        for (std::size_t t = 0; t + 2 < chunk.mesh.indices.size(); t += 3) {
+            indices[static_cast<std::int64_t>(t)] = static_cast<std::int32_t>(chunk.mesh.indices[t]);
+            indices[static_cast<std::int64_t>(t + 1)] = static_cast<std::int32_t>(chunk.mesh.indices[t + 2]);
+            indices[static_cast<std::int64_t>(t + 2)] = static_cast<std::int32_t>(chunk.mesh.indices[t + 1]);
         }
 
         godot::Array arrays;
