@@ -27,7 +27,15 @@ namespace rg {
 // lands terrain.class (every LandClass is Unknown), so build_static_view
 // shades by height/slope (a hypsometric ramp) instead of a LandClass
 // palette - see world_terrain.cpp's chunk_vertex_color().
+//
+// `key` (R2.2 plan section 3, R8) is the chunk's own g2m ChunkKey (zone,
+// level, cx, cy) - the identity rg::TerrainViewStreamer diffs a new LOD
+// selection against the resident set by. Always equal to mesh.key (both are
+// set from the same select_chunks key by build_one_chunk); it is a separate
+// field so a renderer tracks chunks by a RenderChunk-level identity and never
+// has to know that TerrainChunkMesh happens to carry one too.
 struct RenderChunk {
+    g2m::mesh::ChunkKey key{};
     g2m::mesh::TerrainChunkMesh mesh;
     double origin_session[3] = {0.0, 0.0, 0.0};
     std::vector<std::uint32_t> rgba;

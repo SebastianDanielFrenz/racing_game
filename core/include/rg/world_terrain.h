@@ -23,6 +23,7 @@
 #include "g2m/server/upstream.h"
 #include "g2m/client/in_process_transport.h"
 
+#include <atomic>
 #include <cstdint>
 #include <functional>
 #include <map>
@@ -54,6 +55,39 @@ namespace rg {
 void build_static_view_from_lookup(double cam_x, double cam_y, const g2m::mesh::LodParams& params, double e0,
                                    double n0, g2m::mesh::TileLookup lookup, void* ctx, unsigned thread_count,
                                    std::vector<RenderChunk>& out);
+
+// The two halves build_static_view_from_lookup is made of (R2.2 R8 split
+// them out so rg::TerrainViewStreamer can select, diff by key, and then build
+// ONLY the chunks that are new):
+//
+// select_view_keys: g2m::mesh::select_chunks around the session-local point
+// (cam_x, cam_y) - `out` in select_chunks' own order (level desc, cy, cx).
+void select_view_keys(double cam_x, double cam_y, const g2m::mesh::LodParams& params, double e0, double n0,
+                      std::vector<g2m::mesh::ChunkKey>& out);
+
+// build_render_chunks: builds one RenderChunk per key into `out` (resized to
+// keys.size(), out[i] <-> keys[i]) with up to `thread_count` workers, each
+// writing only its own indices - byte-identical for any thread_count >= 1.
+// `cancel` (optional): checked before each chunk; once it reads true the
+// remaining chunks are skipped and the function returns false (`out` is then
+// partially built and must be discarded). Returns true when every chunk was
+// built.
+bool build_render_chunks(const std::vector<g2m::mesh::ChunkKey>& keys, g2m::mesh::TileLookup lookup, void* ctx,
+                         double e0, double n0, unsigned thread_count, std::vector<RenderChunk>& out,
+                         const std::atomic<bool>* cancel = nullptr);
+
+// Everything a chunk selection + build needs, bundled: the LOD params, the
+// session origin (e0, n0) and the tile lookup. `lookup(ctx, key)` must be
+// safe to call from several threads at once (WorldTerrain::height_tile is;
+// so is the tests' synthetic store) and `ctx` must outlive whoever holds this
+// struct. WorldTerrain::view_source() returns one over itself.
+struct TerrainViewSource {
+    g2m::mesh::LodParams params;
+    double e0 = 0.0;
+    double n0 = 0.0;
+    g2m::mesh::TileLookup lookup = nullptr;
+    void* ctx = nullptr;
+};
 
 // R2.2 plan section 3 / [AMEND] "R3 decoupling": racing_game's own small
 // result struct for a cached height-tile lookup, built from EXISTING g2m
@@ -146,6 +180,12 @@ public:
     // lod_params() - see build_static_view_from_lookup's doc comment above
     // for the determinism/threading contract this wraps.
     void build_static_view(double cam_x, double cam_y, std::vector<RenderChunk>& out);
+
+    // A TerrainViewSource over this WorldTerrain (lod_params() as of THIS
+    // call, the session origin, height_tile() as the lookup) for
+    // rg::TerrainViewStreamer. The returned struct points at `this`: the
+    // streamer holding it must be destroyed before this WorldTerrain.
+    [[nodiscard]] TerrainViewSource view_source();
 
     [[nodiscard]] const g2m::mesh::LodParams& lod_params() const { return lod_params_; }
     void set_lod_params(const g2m::mesh::LodParams& params) { lod_params_ = params; }

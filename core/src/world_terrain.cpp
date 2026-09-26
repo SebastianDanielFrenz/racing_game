@@ -69,6 +69,7 @@ void build_one_chunk(const g2m::mesh::ChunkKey& key, g2m::mesh::TileLookup looku
     g2m::mesh::HeightWindow window;
     g2m::mesh::gather_window(key, lookup, ctx, window);
     g2m::mesh::build_chunk(key, window, /*classes=*/nullptr, out_chunk.mesh);
+    out_chunk.key = key;
     out_chunk.origin_session[0] = out_chunk.mesh.origin[0] - e0;
     out_chunk.origin_session[1] = out_chunk.mesh.origin[1] - n0;
     out_chunk.origin_session[2] = out_chunk.mesh.origin[2];
@@ -81,27 +82,30 @@ const g2m::HeightTile* world_terrain_lookup(void* ctx, const g2m::TileKey& key) 
 
 } // namespace
 
-void build_static_view_from_lookup(double cam_x, double cam_y, const g2m::mesh::LodParams& params, double e0,
-                                   double n0, g2m::mesh::TileLookup lookup, void* ctx, unsigned thread_count,
-                                   std::vector<RenderChunk>& out) {
-    const double cam_e = cam_x + e0;
-    const double cam_n = cam_y + n0;
+void select_view_keys(double cam_x, double cam_y, const g2m::mesh::LodParams& params, double e0, double n0,
+                      std::vector<g2m::mesh::ChunkKey>& out) {
+    g2m::mesh::select_chunks(cam_x + e0, cam_y + n0, params, out);
+}
 
-    std::vector<g2m::mesh::ChunkKey> keys;
-    g2m::mesh::select_chunks(cam_e, cam_n, params, keys);
-
+bool build_render_chunks(const std::vector<g2m::mesh::ChunkKey>& keys, g2m::mesh::TileLookup lookup, void* ctx,
+                         double e0, double n0, unsigned thread_count, std::vector<RenderChunk>& out,
+                         const std::atomic<bool>* cancel) {
     out.clear();
     out.resize(keys.size());
     if (keys.empty()) {
-        return;
+        return true;
     }
+    auto cancelled = [cancel]() { return cancel != nullptr && cancel->load(std::memory_order_relaxed); };
 
     const unsigned n_threads = std::max(1u, std::min(thread_count, static_cast<unsigned>(keys.size())));
     if (n_threads <= 1) {
         for (std::size_t i = 0; i < keys.size(); ++i) {
+            if (cancelled()) {
+                return false;
+            }
             build_one_chunk(keys[i], lookup, ctx, e0, n0, out[i]);
         }
-        return;
+        return !cancelled();
     }
 
     const std::size_t total = keys.size();
@@ -114,8 +118,11 @@ void build_static_view_from_lookup(double cam_x, double cam_y, const g2m::mesh::
             break;
         }
         const std::size_t end = std::min(total, begin + per_thread);
-        workers.emplace_back([&keys, &out, lookup, ctx, e0, n0, begin, end]() {
+        workers.emplace_back([&keys, &out, &cancelled, lookup, ctx, e0, n0, begin, end]() {
             for (std::size_t i = begin; i < end; ++i) {
+                if (cancelled()) {
+                    return;
+                }
                 build_one_chunk(keys[i], lookup, ctx, e0, n0, out[i]);
             }
         });
@@ -123,6 +130,15 @@ void build_static_view_from_lookup(double cam_x, double cam_y, const g2m::mesh::
     for (std::thread& w : workers) {
         w.join();
     }
+    return !cancelled();
+}
+
+void build_static_view_from_lookup(double cam_x, double cam_y, const g2m::mesh::LodParams& params, double e0,
+                                   double n0, g2m::mesh::TileLookup lookup, void* ctx, unsigned thread_count,
+                                   std::vector<RenderChunk>& out) {
+    std::vector<g2m::mesh::ChunkKey> keys;
+    select_view_keys(cam_x, cam_y, params, e0, n0, keys);
+    build_render_chunks(keys, lookup, ctx, e0, n0, thread_count, out);
 }
 
 WorldTerrain::~WorldTerrain() = default;
@@ -327,6 +343,16 @@ void WorldTerrain::build_static_view(double cam_x, double cam_y, std::vector<Ren
     const unsigned threads = hw == 0 ? 4u : std::min(hw, 8u);
     build_static_view_from_lookup(cam_x, cam_y, lod_params_, static_cast<double>(frame_->e0_m()),
                                   static_cast<double>(frame_->n0_m()), &world_terrain_lookup, this, threads, out);
+}
+
+TerrainViewSource WorldTerrain::view_source() {
+    TerrainViewSource source;
+    source.params = lod_params_;
+    source.e0 = static_cast<double>(frame_->e0_m());
+    source.n0 = static_cast<double>(frame_->n0_m());
+    source.lookup = &world_terrain_lookup;
+    source.ctx = this;
+    return source;
 }
 
 WorldTerrain::FetchStats WorldTerrain::fetch_stats() const {

@@ -300,6 +300,8 @@ TEST_CASE("build_static_view_from_lookup: identical output for 1 vs N worker thr
         const rg::RenderChunk& a = single_threaded[i];
         const rg::RenderChunk& b = multi_threaded[i];
         CHECK(a.mesh.key == b.mesh.key);
+        CHECK(a.key == b.key);         // R8: RenderChunk.key
+        CHECK(a.key == a.mesh.key);
         CHECK(a.mesh.origin[0] == b.mesh.origin[0]);
         CHECK(a.mesh.origin[1] == b.mesh.origin[1]);
         CHECK(a.mesh.origin[2] == b.mesh.origin[2]);

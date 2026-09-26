@@ -21,9 +21,11 @@ racing_game/
     include/rg/
       session.h                       rg::Session, SessionConfig, FrameSnapshot, WheelSnapshot, kControlChannelNames[]/kControlChannelCount
       world_config.h                  rg::WorldConfig, rg::load_world_config() - see "World config" below
+      terrain_view_streamer.h         rg::TerrainViewStreamer (R2.2 R8): render LOD follows a focus point - background reselect + build, key diff {added, removed}, adapter ordering contract in the header; see "Render LOD streaming (R8)" below
     src/
       session.cpp                     Session implementation - builds a ps::World by hand (ground + chassis + one vehicle), never parses a scenario JSON
       world_config.cpp                load_world_config() implementation - strict, exception-free JSON validation (see "World config" below)
+      terrain_view_streamer.cpp       TerrainViewStreamer implementation (one worker thread, one diff in flight, coalescing)
     CMakeLists.txt                    rg_core STATIC target
   godot_ext/
     src/
@@ -59,6 +61,7 @@ racing_game/
     unit/
       catch_main.cpp                  custom Catch2 v3 entry point (installs headless CRT handlers via physics_sim's always-built ps_headless_env)
       test_session.cpp                rg::Session tests: step stability, control-channel round-trip, snapshot/wheel-state sanity
+      test_terrain_view_streamer.cpp  rg::TerrainViewStreamer tests (R8) over a synthetic, optionally gated tile store: exact key diff, hole-free adds-then-removals at every step (plus a wrong-order negative control), no work while stationary, 1-vs-8 build-thread identical diffs, coalescing while busy, cancel+join on destruction
       test_world_terrain.cpp          rg::WorldTerrain / build_static_view_from_lookup tests (PLAN.md R2.1) over a synthetic in-memory TileKey->HeightTile map - no TileStore/Server/geo2map decode machinery needed; chunk selection, session-local origin math, 1-vs-N-thread byte-identical output
       CMakeLists.txt                  rg_test_catch_main + rg_unit_tests targets, CTest registration
   tools/
@@ -266,6 +269,30 @@ touching each tile for the first time", 70-116 s regardless of distance;
 `g2m_tiler bake` into `cache/g2m/home-r1/derived` was denied by the
 session's own permission classifier and was not retried, so only the warm
 number is representative of a real pre-baked/pre-derived run.
+
+## Render LOD streaming (R8)
+
+`RenderChunk::key` (`rg/terrain_render.h`) is the chunk's g2m `ChunkKey`
+(always equal to `mesh.key`). `build_static_view_from_lookup` is now
+`select_view_keys` (selection only) + `build_render_chunks` (build a given
+key list, index-parallel, optional cancel flag), both public in
+`rg/world_terrain.h`; `TerrainViewSource` bundles LOD params, session origin
+and a thread-safe tile lookup (`WorldTerrain::view_source()` returns one over
+itself - destroy the streamer before the `WorldTerrain`).
+
+`rg::TerrainViewStreamer` (`rg/terrain_view_streamer.h/.cpp`, Godot-free):
+`build_initial(x, y, out)` (synchronous first selection, optional),
+`update_focus(x, y)` (non-blocking; starts one background selection once the
+focus is more than `Options::reselect_distance_m` = 128 m from the last
+selection's focus), `poll(diff)` (non-blocking), `commit(serial)`.
+`TerrainViewDiff{serial, focus, added (built RenderChunks), removed (keys)}`,
+both sorted by key; only keys not already resident are built. Adapter
+contract: upload every add (any per-frame budget), THEN free the removals and
+`commit()` - never the other way round, so the view never drops below one
+complete selection. One diff in flight: no new selection while a diff is
+Ready/Applying; `commit()` starts one follow-up for the latest focus (moves
+while busy coalesce). Phases `Idle/Building/Ready/Applying`; `stats()`.
+Destructor cancels (checked before each chunk) and joins the worker.
 
 ## Targets
 
