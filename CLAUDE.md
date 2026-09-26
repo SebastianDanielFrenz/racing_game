@@ -31,7 +31,7 @@ racing_game/
     src/
       register_types.h/.cpp           GDExtension entry point (rg_godot_library_init), registers RgSimulation + RgTerrainView
       rg_simulation.h/.cpp            RgSimulation : godot::Node - the one GDScript-facing class; owns one rg::Session
-      rg_terrain_view.h/.cpp          RgTerrainView : godot::Node3D (PLAN.md R2.1) - static LOD terrain preview seam; see "Terrain preview (R2.1)" below
+      rg_terrain_view.h/.cpp          RgTerrainView : godot::Node3D (PLAN.md R2.1) - LOD terrain preview seam, streamed around a focus since R8; see "Terrain preview (R2.1)" and "Render LOD streaming (R8)" below
       frame_convert.h                 rg_godot-namespaced wrapper around physics_sim's frame_convert_core.h (Vec3f/basis/pose -> godot::Vector3/Basis/Transform3D)
     CMakeLists.txt                    rg_godot SHARED target (the GDExtension DLL)
   game/                                Godot project (res:// root)
@@ -41,7 +41,8 @@ racing_game/
     scenes/
       main.tscn                       one-node stub (Node3D + main.gd) - the scene is built procedurally, see main.gd's own comment
     scripts/
-      main.gd                         builds the whole R0 scene in _ready(); per-frame input -> RgSimulation.set_control() wiring; a `--terrain-preview` cmdline user-arg (after `--`) branches into the R2.1 static-terrain-plus-fly-camera scene instead - see "Terrain preview (R2.1)" below
+      main.gd                         builds the whole R0 scene in _ready(); per-frame input -> RgSimulation.set_control() wiring; a `--terrain-preview` cmdline user-arg (after `--`) branches into the R2.1 static-terrain-plus-fly-camera scene instead - see "Terrain preview (R2.1)" below; in that scene the fly camera drives `RgTerrainView.update_focus` every frame (R8) except under `--screenshots`/`--stream-test`
+      terrain_stream_test.gd          `--terrain-preview --stream-test` (R8 headless check): after the initial upload, moves the LOD focus through 5 fixed steps from spawn, waits for each streamed diff to be fully applied, prints one line per step + `terrain stream test done: ...`, quits (180 s wall-clock timeout)
       chase_cam.gd                    reused near-verbatim from physics_sim's demo (same RgSimulation method names)
       fly_cam.gd                      free-fly camera script for `--terrain-preview` (PLAN.md R2.1): WASD + Space/E up + Ctrl/Q down, Shift x6 speed, right-mouse-button capture + look, Esc releases capture; no RgSimulation dependency (plain Camera3D script)
       gauge_logic.gd                  copied verbatim from physics_sim's demo (engine-neutral static math, no Godot Control dependency)
@@ -68,7 +69,7 @@ racing_game/
     common.ps1                        shared PowerShell helpers (VS dev-shell entry, Godot exe lookup, cmake wrappers, submodule update) - dot-sourced by run.ps1/smoke_test.ps1/ci.ps1
     setup_dev_env.ps1                 -CheckOnly only (installs nothing - see its own header)
     run.ps1, run.cmd                  incremental build + launch Godot on game/ - pass `-- --terrain-preview` (see run.ps1's own pass-through-args comment) to launch the R2.1 terrain preview instead of the R0 drivable scene
-    smoke_test.ps1                    headless Godot smoke test (build, ctest, headless run, assert no errors + sim thread ticking); `-TerrainPreview` runs the R2.1 headless check instead (asserts >= 150 chunks selected and a completed upload, see its own header comment)
+    smoke_test.ps1                    headless Godot smoke test (build, ctest, headless run, assert no errors + sim thread ticking); `-TerrainPreview` runs the R2.1 headless check instead (asserts >= 150 chunks selected and a completed upload, see its own header comment); `-TerrainStream` (implies -TerrainPreview, R8) adds `--stream-test` and asserts `steps=5 diffs=5 ... missing_removals=0` - with the 0-ERROR-lines check this is the RID-leak check after streamed add/remove diffs
     ci.ps1                            Windows CI: debug + release legs (configure, build, ctest) + smoke_test - this repo's ci.ps1 has NO Linux leg (unlike physics_sim's tools/ci.ps1)
     lod_measure/
       main.cpp, CMakeLists.txt        lod_measure executable (PLAN.md R2.1): measures rg::WorldTerrain::build_static_view cold/warm wall time + chunk/vertex counts against the real data/world/world_config.json at max_distance_m in {6000, 12000, 20000} - see "Terrain preview (R2.1)" below for the measured table and chosen default
@@ -294,6 +295,26 @@ Ready/Applying; `commit()` starts one follow-up for the latest focus (moves
 while busy coalesce). Phases `Idle/Building/Ready/Applying`; `stats()`.
 Destructor cancels (checked before each chunk) and joins the worker.
 
+Godot side (`RgTerrainView`): `load_preview` seeds a streamer via
+`build_initial` (same chunk set/order as `build_static_view`) and uploads it
+with the 8-chunks/frame count budget (a loading phase). After that,
+`update_focus(session_x, session_y)` forwards to the streamer and `_process`
+runs `apply_diff`: poll -> append adds to the upload queue -> upload under
+`upload_budget_ms` (default 0.8 ms, steady clock, at least one operation per
+frame) -> once every add is up, free removed chunks' RIDs under the same
+budget (possibly over several frames) -> `commit`. `chunks_`/`mesh_rids_`/
+`instance_rids_` stay index-aligned (append; swap-remove all three) with a
+`std::map<ChunkKey, size_t>` key->index map. `is_fully_uploaded()` is also
+false while a diff is half-applied; `is_stream_idle()`; `godot_to_session()`
+(render-frame position -> session XY for the focus); `get_stream_stats()`
+(pending_adds/removals, last_diff_added/removed, upload_ms_this_frame,
+last_remove_ms, diffs_applied, diff_errors, resident_chunks,
+selections_started, last_build_ms, streamer_phase). Not wired into drive
+mode (R9). `tools/smoke_test.ps1 -TerrainStream` (debug DLL, real home-r1
+store): 5 steps, 708 added / 708 removed, 76-226 adds per diff, background
+build 108-293 ms, streaming frames 1.6-2.0 ms max (one op may overshoot the
+0.8 ms budget), removals 4-9 ms per diff spread over frames.
+
 ## Targets
 
 - `rg_core` (STATIC, `core/`): `rg::Session` - owns one `ps::World` (one
@@ -437,5 +458,6 @@ tools\run.ps1              # incremental build + launch Godot on game/
 tools\run.cmd -- --terrain-preview   # ... or launch the R2.1 static-terrain fly-camera preview instead
 tools\smoke_test.ps1        # headless build + ctest + headless Godot run
 tools\smoke_test.ps1 -TerrainPreview # ... or the R2.1 terrain-preview headless check
+tools\smoke_test.ps1 -TerrainStream  # ... or the R8 streamed-LOD headless check (focus moved in 5 steps)
 tools\ci.ps1                 # debug + release legs + smoke_test
 ```

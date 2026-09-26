@@ -37,6 +37,9 @@ var _origin_root: Node3D # everything positioned in the sim's floating-origin fr
 var _terrain_material: ShaderMaterial
 var _terrain_view: Node
 var _terrain_preview_reported: bool = false
+# --terrain-preview without --screenshots/--stream-test: the fly camera whose
+# position drives RgTerrainView.update_focus every frame (R2.2 R8).
+var _terrain_focus_camera: Camera3D
 
 func _data_path(relative: String) -> String:
 	# game/ is its own Godot project root (res://); external/physics_sim/data
@@ -157,6 +160,20 @@ func _build_terrain_preview_scene() -> void:
 		tour.terrain_view = terrain_view
 		tour.out_dir = user_args[shot_index + 1]
 		add_child(tour)
+	elif "--stream-test" in user_args:
+		# R2.2 R8 headless check (tools/smoke_test.ps1 -TerrainStream):
+		# terrain_stream_test.gd drives the LOD focus itself, in steps.
+		var stream_test := Node.new()
+		stream_test.name = "TerrainStreamTest"
+		stream_test.set_script(load("res://scripts/terrain_stream_test.gd"))
+		stream_test.terrain_view = terrain_view
+		stream_test.spawn = Vector2(spawn_x, spawn_y)
+		add_child(stream_test)
+	else:
+		# R2.2 R8: the fly camera drives the render LOD focus (_process). Not
+		# in --screenshots mode, so the tour keeps its fixed spawn chunk set
+		# and its 5 poses unchanged.
+		_terrain_focus_camera = camera
 
 func _build_scene() -> void:
 	# --- simulation node ---
@@ -285,6 +302,9 @@ func _process(_delta: float) -> void:
 			_terrain_view.get_chunk_count(), _terrain_view.get_total_vertex_count(),
 			_terrain_view.get_total_upload_time_ms()
 		])
+	if _terrain_view != null and _terrain_focus_camera != null:
+		var focus: Vector3 = _terrain_view.godot_to_session(_terrain_focus_camera.global_position)
+		_terrain_view.update_focus(focus.x, focus.y)
 
 	if _simulation == null or not bool(_simulation.is_running()):
 		return

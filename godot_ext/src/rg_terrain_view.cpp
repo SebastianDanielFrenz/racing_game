@@ -10,6 +10,7 @@
 #include <godot_cpp/classes/rendering_server.hpp>
 #include <godot_cpp/classes/world3d.hpp>
 #include <godot_cpp/core/class_db.hpp>
+#include <godot_cpp/variant/utility_functions.hpp>
 #include <godot_cpp/variant/array.hpp>
 #include <godot_cpp/variant/color.hpp>
 #include <godot_cpp/variant/packed_color_array.hpp>
@@ -41,12 +42,31 @@ godot::Color unpack_rgba(std::uint32_t packed) {
 
 } // namespace
 
-RgTerrainView::~RgTerrainView() { free_all_uploaded(); }
+RgTerrainView::~RgTerrainView() {
+    streamer_.reset(); // cancel + join the worker before anything else goes
+    free_all_uploaded();
+}
 
-bool RgTerrainView::initialize(const String& world_config_absolute_path) {
+void RgTerrainView::reset_chunks() {
     free_all_uploaded();
     chunks_.clear();
+    index_of_.clear();
     next_upload_index_ = 0;
+    bulk_loading_ = false;
+    diff_in_progress_ = false;
+    diff_serial_ = 0;
+    diff_removed_.clear();
+    diff_remove_next_ = 0;
+    last_diff_added_ = 0;
+    last_diff_removed_ = 0;
+    last_remove_ms_ = 0.0;
+    diffs_applied_ = 0;
+    diff_errors_ = 0;
+}
+
+bool RgTerrainView::initialize(const String& world_config_absolute_path) {
+    streamer_.reset(); // before terrain_: its TerrainViewSource points into it
+    reset_chunks();
     terrain_.reset();
     spawn_x_session_ = 0.0;
     spawn_y_session_ = 0.0;
@@ -78,15 +98,23 @@ bool RgTerrainView::load_preview(float spawn_x, float spawn_y) {
         return false;
     }
 
-    free_all_uploaded();
-    chunks_.clear();
-    next_upload_index_ = 0;
+    streamer_.reset();
+    reset_chunks();
     total_upload_time_ms_ = 0.0;
 
+    // R8: the preview's own chunk set is the streamer's initial selection
+    // (TerrainViewStreamer::build_initial == build_static_view for the same
+    // point, same chunk order), so update_focus() can stream from here on.
+    streamer_ = std::make_unique<rg::TerrainViewStreamer>(terrain_->view_source(),
+                                                          rg::TerrainViewStreamer::Options{});
     const auto start = std::chrono::steady_clock::now();
-    terrain_->build_static_view(static_cast<double>(spawn_x), static_cast<double>(spawn_y), chunks_);
+    streamer_->build_initial(static_cast<double>(spawn_x), static_cast<double>(spawn_y), chunks_);
     const auto end = std::chrono::steady_clock::now();
     last_build_time_ms_ = std::chrono::duration<double, std::milli>(end - start).count();
+    for (std::size_t i = 0; i < chunks_.size(); ++i) {
+        index_of_[chunks_[i].key] = i;
+    }
+    bulk_loading_ = true;
 
     mesh_rids_.reserve(chunks_.size());
     instance_rids_.reserve(chunks_.size());
@@ -131,6 +159,51 @@ std::int64_t RgTerrainView::get_total_vertex_count() const {
 
 void RgTerrainView::set_upload_budget_per_frame(std::int64_t chunks_per_frame) {
     upload_budget_per_frame_ = chunks_per_frame > 0 ? chunks_per_frame : 1;
+}
+
+void RgTerrainView::set_upload_budget_ms(double budget_ms) { upload_budget_ms_ = budget_ms > 0.0 ? budget_ms : 0.0; }
+
+void RgTerrainView::update_focus(double session_x, double session_y) {
+    if (streamer_ != nullptr) {
+        streamer_->update_focus(session_x, session_y);
+    }
+}
+
+godot::Vector3 RgTerrainView::godot_to_session(godot::Vector3 godot_pos) const {
+    const ps::Vec3 render_origin_session{static_cast<ps::real>(render_origin_session_.x),
+                                         static_cast<ps::real>(render_origin_session_.y),
+                                         static_cast<ps::real>(render_origin_session_.z)};
+    const ps::Vec3 session = godot_to_iso(godot_pos, render_origin_session);
+    return godot::Vector3(static_cast<float>(session.x), static_cast<float>(session.y), static_cast<float>(session.z));
+}
+
+bool RgTerrainView::is_stream_idle() const {
+    return is_fully_uploaded() &&
+           (streamer_ == nullptr || streamer_->phase() == rg::TerrainViewStreamer::Phase::Idle);
+}
+
+godot::Dictionary RgTerrainView::get_stream_stats() const {
+    godot::Dictionary d;
+    d["pending_adds"] = static_cast<std::int64_t>(chunks_.size() - next_upload_index_);
+    d["pending_removals"] = static_cast<std::int64_t>(diff_removed_.size() - diff_remove_next_);
+    d["last_diff_added"] = last_diff_added_;
+    d["last_diff_removed"] = last_diff_removed_;
+    d["upload_ms_this_frame"] = upload_ms_this_frame_;
+    d["last_remove_ms"] = last_remove_ms_;
+    d["diffs_applied"] = diffs_applied_;
+    d["diff_errors"] = diff_errors_;
+    d["resident_chunks"] = static_cast<std::int64_t>(chunks_.size());
+    if (streamer_ != nullptr) {
+        const rg::TerrainViewStreamer::Stats st = streamer_->stats();
+        d["selections_started"] = static_cast<std::int64_t>(st.selections_started);
+        d["last_build_ms"] = st.last_build_ms;
+        d["streamer_phase"] = static_cast<std::int64_t>(streamer_->phase());
+    } else {
+        d["selections_started"] = static_cast<std::int64_t>(0);
+        d["last_build_ms"] = 0.0;
+        d["streamer_phase"] = static_cast<std::int64_t>(0);
+    }
+    return d;
 }
 
 godot::Transform3D RgTerrainView::chunk_instance_transform(const rg::RenderChunk& chunk) const {
@@ -246,14 +319,110 @@ void RgTerrainView::free_all_uploaded() {
     mesh_rids_.clear();
 }
 
+void RgTerrainView::remove_chunk_at(std::size_t index) {
+    // Only called with the whole queue uploaded, so all three arrays have the
+    // same length and swap-remove keeps them index-aligned.
+    godot::RenderingServer* rs = godot::RenderingServer::get_singleton();
+    if (instance_rids_[index].is_valid()) rs->free_rid(instance_rids_[index]);
+    if (mesh_rids_[index].is_valid()) rs->free_rid(mesh_rids_[index]);
+    index_of_.erase(chunks_[index].key);
+    const std::size_t last = chunks_.size() - 1;
+    if (index != last) {
+        chunks_[index] = std::move(chunks_[last]);
+        mesh_rids_[index] = mesh_rids_[last];
+        instance_rids_[index] = instance_rids_[last];
+        index_of_[chunks_[index].key] = index;
+    }
+    chunks_.pop_back();
+    mesh_rids_.pop_back();
+    instance_rids_.pop_back();
+    next_upload_index_ = chunks_.size();
+}
+
+void RgTerrainView::apply_diff(std::chrono::steady_clock::time_point frame_start) {
+    // 1. Take a ready diff (only one in progress at a time - the streamer
+    //    itself never has more than one). Its adds join the upload queue.
+    if (!diff_in_progress_ && streamer_ != nullptr) {
+        rg::TerrainViewDiff diff;
+        if (streamer_->poll(diff)) {
+            diff_in_progress_ = true;
+            diff_serial_ = diff.serial;
+            diff_removed_ = std::move(diff.removed);
+            diff_remove_next_ = 0;
+            last_remove_ms_ = 0.0;
+            last_diff_added_ = static_cast<std::int64_t>(diff.added.size());
+            last_diff_removed_ = static_cast<std::int64_t>(diff_removed_.size());
+            chunks_.reserve(chunks_.size() + diff.added.size());
+            for (rg::RenderChunk& chunk : diff.added) {
+                index_of_[chunk.key] = chunks_.size();
+                chunks_.push_back(std::move(chunk));
+            }
+        }
+    }
+
+    // 2. Upload. The initial preview load is a loading phase (count budget);
+    //    streamed adds get the steady-clock time budget. `work` counts this
+    //    frame's uploads + removals: the first one always runs, so a diff
+    //    always makes progress.
+    int work = 0;
+    const auto over_budget = [&]() {
+        return work > 0 &&
+               std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - frame_start).count() >=
+                   upload_budget_ms_;
+    };
+    if (bulk_loading_) {
+        const std::size_t end_index =
+            std::min(chunks_.size(), next_upload_index_ + static_cast<std::size_t>(upload_budget_per_frame_));
+        for (; next_upload_index_ < end_index; ++next_upload_index_) {
+            upload_one_chunk(chunks_[next_upload_index_]);
+            ++work;
+        }
+        if (next_upload_index_ >= chunks_.size()) {
+            bulk_loading_ = false;
+        }
+    } else {
+        while (next_upload_index_ < chunks_.size() && !over_budget()) {
+            upload_one_chunk(chunks_[next_upload_index_]);
+            ++next_upload_index_;
+            ++work;
+        }
+    }
+
+    // 3. Every add of the diff is uploaded: only now free the removed chunks
+    //    (no holes - their replacements are already up), within the same
+    //    frame budget, possibly over several frames (overlap, never a hole).
+    if (diff_in_progress_ && next_upload_index_ >= chunks_.size()) {
+        const auto remove_start = std::chrono::steady_clock::now();
+        while (diff_remove_next_ < diff_removed_.size() && !over_budget()) {
+            const g2m::mesh::ChunkKey key = diff_removed_[diff_remove_next_++];
+            ++work;
+            auto it = index_of_.find(key);
+            if (it == index_of_.end()) {
+                ++diff_errors_;
+                godot::UtilityFunctions::push_error("RgTerrainView: streamed diff removes a chunk that is not resident");
+                continue;
+            }
+            remove_chunk_at(it->second);
+        }
+        last_remove_ms_ +=
+            std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - remove_start).count();
+    }
+
+    // 4. Every add uploaded and every removal freed: commit.
+    if (diff_in_progress_ && next_upload_index_ >= chunks_.size() && diff_remove_next_ >= diff_removed_.size()) {
+        diff_removed_.clear();
+        diff_remove_next_ = 0;
+        diff_in_progress_ = false;
+        ++diffs_applied_;
+        streamer_->commit(diff_serial_); // may start the next selection at once (coalesced focus)
+    }
+}
+
 void RgTerrainView::_process(double /*delta*/) {
-    if (next_upload_index_ >= chunks_.size()) {
-        return;
-    }
-    const std::size_t end_index = std::min(chunks_.size(), next_upload_index_ + static_cast<std::size_t>(upload_budget_per_frame_));
-    for (; next_upload_index_ < end_index; ++next_upload_index_) {
-        upload_one_chunk(chunks_[next_upload_index_]);
-    }
+    const auto frame_start = std::chrono::steady_clock::now();
+    apply_diff(frame_start);
+    upload_ms_this_frame_ =
+        std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - frame_start).count();
 }
 
 void RgTerrainView::_bind_methods() {
@@ -273,6 +442,12 @@ void RgTerrainView::_bind_methods() {
     godot::ClassDB::bind_method(D_METHOD("set_upload_budget_per_frame", "chunks_per_frame"),
                                 &RgTerrainView::set_upload_budget_per_frame);
     godot::ClassDB::bind_method(D_METHOD("get_upload_budget_per_frame"), &RgTerrainView::get_upload_budget_per_frame);
+    godot::ClassDB::bind_method(D_METHOD("set_upload_budget_ms", "budget_ms"), &RgTerrainView::set_upload_budget_ms);
+    godot::ClassDB::bind_method(D_METHOD("get_upload_budget_ms"), &RgTerrainView::get_upload_budget_ms);
+    godot::ClassDB::bind_method(D_METHOD("update_focus", "session_x", "session_y"), &RgTerrainView::update_focus);
+    godot::ClassDB::bind_method(D_METHOD("godot_to_session", "godot_pos"), &RgTerrainView::godot_to_session);
+    godot::ClassDB::bind_method(D_METHOD("is_stream_idle"), &RgTerrainView::is_stream_idle);
+    godot::ClassDB::bind_method(D_METHOD("get_stream_stats"), &RgTerrainView::get_stream_stats);
 }
 
 } // namespace rg_godot

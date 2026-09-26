@@ -39,15 +39,32 @@
     least 150 chunks (PLAN.md R2.1's own smoke-test acceptance bar - the
     real committed data/world/world_config.json's 20000 m LOD default
     selects 488 around its own spawn point, well above this).
+
+.PARAMETER TerrainStream
+    PLAN.md R2.2 R8 streaming check, implies -TerrainPreview: launches with
+    `-- --terrain-preview --stream-test` (game/scripts/terrain_stream_test.gd)
+    which, once the preview is uploaded, moves RgTerrainView's LOD focus
+    through 5 steps (each > 128 m) and waits for every streamed diff to be
+    fully applied (adds uploaded, removed RIDs freed). Asserts everything
+    -TerrainPreview does plus the script's own "terrain stream test done:
+    steps=5 diffs=5 ... missing_removals=0" line; the 0-ERROR-lines check is then the
+    RID-leak check after several add/remove diffs. --quit-after is raised to
+    200000 frames (the script quits itself; it has its own 180 s wall-clock
+    timeout, headless frames being uncapped).
 #>
 [CmdletBinding()]
 param(
     [int]$QuitAfterFrames = 300,
     [switch]$SkipBuild,
-    [switch]$TerrainPreview
+    [switch]$TerrainPreview,
+    [switch]$TerrainStream
 )
 
 $ErrorActionPreference = 'Stop'
+if ($TerrainStream) {
+    $TerrainPreview = $true
+    if (-not $PSBoundParameters.ContainsKey('QuitAfterFrames')) { $QuitAfterFrames = 200000 }
+}
 $repoRoot = Split-Path -Parent $PSScriptRoot
 $gameDir  = Join-Path $repoRoot 'game'
 $buildDir = Join-Path $repoRoot 'out\build\debug'
@@ -129,6 +146,7 @@ if ($script:Failures.Count -eq 0) {
     $godotArgs = @('--headless', '--path', $gameDir, '--quit-after', $QuitAfterFrames)
     if ($TerrainPreview) {
         $godotArgs += @('--', '--terrain-preview')
+        if ($TerrainStream) { $godotArgs += @('--stream-test') }
     }
     Write-Host "`n-- headless run: $godotExe $($godotArgs -join ' ') --" -ForegroundColor Cyan
 
@@ -180,6 +198,27 @@ if ($script:Failures.Count -eq 0) {
         } else {
             Write-Host "terrain preview: $($loadedLine.Line)"
             Report-Ok "terrain preview fully uploaded (0 RID leaks, see the ERROR-line check above)"
+        }
+        if ($TerrainStream) {
+            $logContent | Select-String -Pattern 'terrain stream step ' | ForEach-Object { Write-Host "terrain stream: $($_.Line)" }
+            $doneLine = $logContent | Select-String -Pattern 'terrain stream test done: steps=(\d+) diffs=(\d+) added=(\d+) removed=(\d+) chunks=(\d+) missing_removals=(\d+)' | Select-Object -Last 1
+            if (-not $doneLine) {
+                Report-Fail "no 'terrain stream test done' line found - terrain_stream_test.gd did not finish"
+            } else {
+                $g = $doneLine.Matches[0].Groups
+                Write-Host "terrain stream: $($doneLine.Line)"
+                $steps = [int]$g[1].Value; $diffs = [int]$g[2].Value; $added = [int]$g[3].Value
+                $removed = [int]$g[4].Value; $errs = [int]$g[6].Value
+                if ($steps -ne 5 -or $diffs -ne 5) {
+                    Report-Fail "terrain stream: expected steps=5 diffs=5, got steps=$steps diffs=$diffs"
+                } elseif ($errs -ne 0) {
+                    Report-Fail "terrain stream: $errs removal(s) of a non-resident chunk"
+                } elseif ($added -le 0 -or $removed -le 0) {
+                    Report-Fail "terrain stream: no chunk streamed (added=$added removed=$removed)"
+                } else {
+                    Report-Ok "terrain stream: 5 diffs applied, added=$added removed=$removed, 0 errors"
+                }
+            }
         }
     } else {
         $tickLine = $logContent | Select-String -Pattern 'measured sim tick rate|sim thread running' | Select-Object -Last 1
