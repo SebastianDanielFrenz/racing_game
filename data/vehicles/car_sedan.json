@@ -1,0 +1,58 @@
+{
+  "format": "physics_sim.vehicle/2",
+  "name": "car_sedan",
+  "source": "racing_game-owned variant of external/physics_sim's data/vehicles/car_sedan.json (physics_sim is read-only from this repo - see racing_game's CLAUDE.md - so this file is a full copy, not an override/patch). Owner request (2026-09-27, coordinator brief 'engine30'): 'Beef the engine up a bit, maybe make it a 3.0L.' EVERY field below is byte-identical to physics_sim's car_sedan.json (same geometry/mass/tyres/brakes/gearbox/steering/aero/controllers - see that file's own 'source' field for the full derivation of all of it, not repeated here) EXCEPT: (1) the wheel tyre / gearbox powertrain-component refs, which now point back into external/physics_sim/data/... (this file resolves refs relative to ITS OWN directory, data/vehicles/ - vehicle_io.cpp's resolve_component_ref - two levels up from here, not one, since this file lives in racing_game/data/vehicles/ rather than physics_sim/data/vehicles/); (2) the engine component, now data/engines/n52b30_3l_na.json (racing_game-owned, this repo's own directory, one level up - see that file's own 'source' field for the full engine derivation/citations) instead of physics_sim's i4_2l_na.json; (3) the clutch capacity, raised to fit the bigger engine's peak torque. Clutch: kinetic capacity_nm 300.0 -> 450.0, static_factor UNCHANGED at 1.15 (static capacity 517.5 N*m) - same 1.5x-kinetic-over-peak-engine-torque convention the original file itself documents ('kinetic capacity 300 N*m = 1.5 x engine peak torque (typical passenger-car reserve 1.3-1.8)'): the new engine's own peak WOT torque is 300 N*m (n52b30_3l_na.json's plateau), so 300*1.5=450 kinetic, 450*1.15=517.5 static = 1.725x peak, comfortably above the 'clutch static capacity >= 1.2x engine peak torque' floor tests/unit/test_vehicle_data.cpp checks. Everything else - gearbox ratios, differential, TCU/auto-clutch/auto-blip tuning, brakes, suspension, tyres, steering, aero, mass (set outside this file, rg::SessionConfig::chassis_mass_kg, untouched) - is deliberately UNCHANGED (owner ruling, this brief: 'Don't overthink: test ONLY the clutch... There is no launch, stall, top-speed or other test; the owner finds anything else by driving'). Wheelspin under the bigger engine is EXPECTED and explicitly not to be tuned away (owner ruling, same brief: 'Wheelspin is allowed. Do not tune it away, and do not gate or test on it.').",
+  "wheels": [
+    { "name": "FL", "attachment_local": [1.08, 0.78, -0.343], "wheel_radius": 0.317, "wheel_width": 0.225, "wheel_mass": 18.0, "wheel_inertia": 0.905,
+      "suspension": { "axis": [0, 0, 1], "travel_max": 0.18, "spring_rate": 73575.0, "damper_bump_rate": 4000.0, "damper_rebound_rate": 5900.0, "bump_stop_rate": 400000.0, "arb_rate": 15000.0 },
+      "arb_partner": 1, "tyre": "../../external/physics_sim/data/tyres/passenger_car_225_45r17.json", "steered": true, "is_front": true },
+    { "name": "FR", "attachment_local": [1.08, -0.78, -0.343], "wheel_radius": 0.317, "wheel_width": 0.225, "wheel_mass": 18.0, "wheel_inertia": 0.905,
+      "suspension": { "axis": [0, 0, 1], "travel_max": 0.18, "spring_rate": 73575.0, "damper_bump_rate": 4000.0, "damper_rebound_rate": 5900.0, "bump_stop_rate": 400000.0, "arb_rate": 15000.0 },
+      "arb_partner": 0, "tyre": "../../external/physics_sim/data/tyres/passenger_car_225_45r17.json", "steered": true, "is_front": true },
+    { "name": "RL", "attachment_local": [-1.62, 0.78, -0.343], "wheel_radius": 0.317, "wheel_width": 0.225, "wheel_mass": 18.0, "wheel_inertia": 0.905,
+      "suspension": { "axis": [0, 0, 1], "travel_max": 0.18, "spring_rate": 49050.0, "damper_bump_rate": 2700.0, "damper_rebound_rate": 4000.0, "bump_stop_rate": 400000.0, "arb_rate": 10000.0 },
+      "arb_partner": 3, "tyre": "../../external/physics_sim/data/tyres/passenger_car_225_45r17.json", "steered": false, "is_front": false },
+    { "name": "RR", "attachment_local": [-1.62, -0.78, -0.343], "wheel_radius": 0.317, "wheel_width": 0.225, "wheel_mass": 18.0, "wheel_inertia": 0.905,
+      "suspension": { "axis": [0, 0, 1], "travel_max": 0.18, "spring_rate": 49050.0, "damper_bump_rate": 2700.0, "damper_rebound_rate": 4000.0, "bump_stop_rate": 400000.0, "arb_rate": 10000.0 },
+      "arb_partner": 2, "tyre": "../../external/physics_sim/data/tyres/passenger_car_225_45r17.json", "steered": false, "is_front": false }
+  ],
+  "steering": { "max_wheel_angle": 0.5236, "ackermann_fraction": 1.0, "rear_steer_fraction": 0.0, "steer_rate_limit": 0.0 },
+  "brake_system": {
+    "type": "direct_torque",
+    "corners": [ { "wheel": "FL", "max_torque_nm": 2800.0 }, { "wheel": "FR", "max_torque_nm": 2800.0 },
+                 { "wheel": "RL", "max_torque_nm": 1600.0 }, { "wheel": "RR", "max_torque_nm": 1600.0 } ],
+    "handbrake": { "wheels": ["RL", "RR"], "max_torque_nm": 1600.0 }
+  },
+  "aero": { "drag_area_m2": 0.68 },
+  "powertrain": {
+    "components": [
+      { "id": "engine",  "type": "engine",  "ref": "../engines/n52b30_3l_na.json" },
+      { "id": "clutch",  "type": "clutch",  "capacity_nm": 450.0, "static_factor": 1.15,
+        "engagement_vs_pedal": { "x": [0.0, 0.30, 0.45, 0.60, 0.75, 1.0], "y": [1.0, 1.0, 0.55, 0.15, 0.0, 0.0] },
+        "out_inertia_kgm2": 0.004, "axis_local": [0, 1, 0] },
+      { "id": "gearbox", "type": "gearbox", "ref": "../../external/physics_sim/data/gearboxes/sedan_6mt.json" },
+      { "id": "diff",    "type": "differential", "kind": "open", "ratio": 4.06, "efficiency": 0.97,
+        "carrier_inertia_kgm2": 0.02, "carrier_axis_local": [0, 1, 0] }
+    ],
+    "shafts": [
+      { "ports": ["engine.crank", "clutch.in"] },
+      { "ports": ["clutch.out", "gearbox.in"] },
+      { "ports": ["gearbox.out", "diff.carrier"] },
+      { "ports": ["diff.left", "wheel:FL"] },
+      { "ports": ["diff.right", "wheel:FR"] }
+    ],
+    "compliance": "rigid",
+    "rotor_reaction": true
+  },
+  "controllers": [
+    { "id": "tcu", "type": "manual_tcu", "gearbox": "gearbox", "clutch": "clutch", "engine": "engine",
+      "auto_clutch": { "enabled": true, "bite_rpm": 1100, "full_rpm_min": 1600, "full_rpm_max": 3000, "lock_slip_rpm": 80,
+                       "anti_stall_rpm": 750, "engage_rate_per_s": 4.0, "release_rate_per_s": 12.0, "open_time_s": 0.08, "close_time_s": 0.10,
+                       "sync_time_s": 0.30, "max_sync_torque_nm": 50.0 },
+      "auto_blip":   { "enabled": true, "kp_per_rpm": 0.002, "max_throttle": 1.0, "upshift_cut": true,
+                       "upshift_cut_release_slip_rpm": 300, "upshift_cut_max_hold_s": 0.6, "upshift_torque_ramp_s": 0.10 },
+      "auto_shift":  { "enabled": false, "up_rpm_at_zero_throttle": 2500, "up_rpm_at_full_throttle": 6300,
+                       "down_rpm_at_zero_throttle": 1300, "down_rpm_at_full_throttle": 2800, "min_time_in_gear_s": 1.0 },
+      "max_pending_steps": 2 }
+  ]
+}

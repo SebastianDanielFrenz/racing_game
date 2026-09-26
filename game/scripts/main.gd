@@ -91,6 +91,15 @@ func _world_config_path() -> String:
 	var project_root: String = ProjectSettings.globalize_path("res://")
 	return (project_root.path_join("../data/world/world_config.json")).simplify_path()
 
+# racing_game's OWN data/ (data/vehicles/, data/engines/ - carvis brief
+# 2026-09-27, the racing_game-owned 3.0 L sedan variant: physics_sim is
+# read-only, so a vehicle file that needs its OWN engine/clutch numbers lives
+# here instead of in external/physics_sim/data/vehicles). Sibling of
+# external/, same "one level up from res://" pattern as _data_path.
+func _rg_data_path(relative: String) -> String:
+	var project_root: String = ProjectSettings.globalize_path("res://")
+	return (project_root.path_join("../data").path_join(relative)).simplify_path()
+
 func _ready() -> void:
 	var user_args := OS.get_cmdline_user_args()
 	if "--bindings-test" in user_args:
@@ -115,7 +124,7 @@ func _run_bindings_test() -> void:
 	sim.name = "BindingsTestSim"
 	add_child(sim)
 
-	var vehicle_json: String = _data_path("vehicles/car_sedan.json")
+	var vehicle_json: String = _rg_data_path("vehicles/car_sedan.json")
 	var surface_table_json: String = _data_path("surfaces/surfaces.json")
 
 	var ok: bool = sim.initialize(vehicle_json, surface_table_json)
@@ -463,7 +472,7 @@ func _load_world(kind: String) -> void:
 	_load_started_ms = Time.get_ticks_msec()
 	_hud.reset_tick_window()
 	_visuals.show_ground = kind == "flat"
-	var vehicle_json: String = _data_path("vehicles/car_sedan.json")
+	var vehicle_json: String = _rg_data_path("vehicles/car_sedan.json")
 	var surface_table_json: String = _data_path("surfaces/surfaces.json")
 	if kind == "flat":
 		if not _simulation.initialize(vehicle_json, surface_table_json):

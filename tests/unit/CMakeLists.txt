@@ -22,6 +22,7 @@ add_executable(rg_unit_tests
   test_session_terrain.cpp
   test_session_reinit.cpp
   test_player_mode.cpp
+  test_vehicle_data.cpp
 )
 
 target_link_libraries(rg_unit_tests
