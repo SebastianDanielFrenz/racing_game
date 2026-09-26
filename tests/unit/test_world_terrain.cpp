@@ -142,6 +142,100 @@ TEST_CASE("build_static_view_from_lookup: sorted, 2:1-balanced, non-empty chunk 
     }
 }
 
+TEST_CASE("build_static_view_from_lookup: LOD-transition chunk footprints are offset by half the finer level's cell",
+         "[world_terrain]") {
+    // R2.1 crack-lines investigation (2026-09-26): g2m_mesh gives every
+    // chunk's footprint origin as (64*cx + 0.5) * 2^level (height_tile.h's
+    // cell-registered "sample i's centre = min + (i+0.5)*step" convention,
+    // terrain_chunk.h/lod_select.h both use the identical formula), applied
+    // independently PER LEVEL with no cross-level nesting. A level-(L+1)
+    // chunk at cx=C therefore does NOT cover the same footprint as its own 4
+    // children combined: parent origin_e = (64*C+0.5)*2*step_L, first child
+    // (cx=2*C) origin_e = (128*C+0.5)*step_L - the parent's whole footprint
+    // sits exactly 0.5*step_L further east/north than its children's, purely
+    // from the chunk-footprint formula, independent of any height data.
+    //
+    // At an ACTUAL selected 2:1 LOD boundary this is a systematic mismatch
+    // between a coarse leaf's edge and its real finer neighbour's edge: a
+    // GAP of exactly 0.5*step_finer on the coarse chunk's west/south border
+    // (it starts 0.5 fine-cells short of where the finer neighbour ends) and
+    // an OVERLAP of exactly 0.5*step_finer on its east/north border (it
+    // extends 0.5 fine-cells past where the finer neighbour begins) - matching
+    // both crack appearances seen in the R2.1 screenshots (a solid dark line
+    // where the gap exposes whatever is behind the terrain, a dotted/moire
+    // line where the overlapping near-coplanar surfaces z-fight).
+    //
+    // This is pinned here against the REAL select_chunks/build_chunk
+    // pipeline (not reimplemented) with flat synthetic height data, because
+    // the mismatch is pure chunk-footprint geometry - no height/pyramid data
+    // is needed to reproduce it. It is g2m_mesh's own chunk-footprint
+    // convention (terrain_chunk.h + lod_select.h), not a racing_game adapter
+    // bug: see the R2.1 crack-lines report for the geo2map_engine proposal.
+    // If a future g2m_mesh version makes LOD levels nest exactly, this test
+    // should start failing (lod_boundary_edges > 0 with gap/overlap == 0) -
+    // that is the intended trip-wire, update the assertions then.
+    SyntheticStore store;
+    g2m::mesh::LodParams params;
+    params.zone = g2m::geo::UtmZone{32, g2m::geo::Hemisphere::North};
+    params.range0_m = 64.0;
+    params.max_level = 2;
+    params.max_distance_m = 300.0;
+
+    std::vector<rg::RenderChunk> out;
+    rg::build_static_view_from_lookup(0.0, 0.0, params, /*e0=*/0.0, /*n0=*/0.0, &synthetic_lookup, &store,
+                                      /*thread_count=*/1, out);
+    REQUIRE_FALSE(out.empty());
+
+    int lod_boundary_edges = 0;
+    double max_gap = 0.0;
+    double max_overlap = 0.0;
+    constexpr double kExact = 1e-9; // every quantity here is exact in double (powers of two, half-integers)
+
+    for (const rg::RenderChunk& ci : out) {
+        const g2m::mesh::ChunkKey& ki = ci.mesh.key;
+        const Footprint fi = footprint_of(ci.mesh);
+        for (const rg::RenderChunk& cj : out) {
+            const g2m::mesh::ChunkKey& kj = cj.mesh.key;
+            if (kj.level + 1 != ki.level) continue; // fi = coarse, fj = its finer neighbour; each edge seen once
+            const Footprint fj = footprint_of(cj.mesh);
+            const double step_fine = static_cast<double>(std::int64_t{1} << kj.level);
+            const bool x_overlaps = fi.x0 < fj.x1 - 1e-6 && fj.x0 < fi.x1 - 1e-6;
+            const bool y_overlaps = fi.y0 < fj.y1 - 1e-6 && fj.y0 < fi.y1 - 1e-6;
+
+            if (y_overlaps && std::abs(fi.x0 - fj.x1) < step_fine) { // coarse west border
+                const double gap = fi.x0 - fj.x1;
+                CHECK(std::abs(gap - 0.5 * step_fine) < kExact);
+                max_gap = std::max(max_gap, gap);
+                ++lod_boundary_edges;
+            }
+            if (y_overlaps && std::abs(fi.x1 - fj.x0) < step_fine) { // coarse east border
+                const double overlap = fi.x1 - fj.x0;
+                CHECK(std::abs(overlap - 0.5 * step_fine) < kExact);
+                max_overlap = std::max(max_overlap, overlap);
+                ++lod_boundary_edges;
+            }
+            if (x_overlaps && std::abs(fi.y0 - fj.y1) < step_fine) { // coarse south border
+                const double gap = fi.y0 - fj.y1;
+                CHECK(std::abs(gap - 0.5 * step_fine) < kExact);
+                max_gap = std::max(max_gap, gap);
+                ++lod_boundary_edges;
+            }
+            if (x_overlaps && std::abs(fi.y1 - fj.y0) < step_fine) { // coarse north border
+                const double overlap = fi.y1 - fj.y0;
+                CHECK(std::abs(overlap - 0.5 * step_fine) < kExact);
+                max_overlap = std::max(max_overlap, overlap);
+                ++lod_boundary_edges;
+            }
+        }
+    }
+
+    WARN("LOD-boundary edges checked: " << lod_boundary_edges << ", max gap: " << max_gap
+                                        << " m, max overlap: " << max_overlap << " m");
+    // The test's own params must actually produce at least one 2:1 transition,
+    // or the checks above never ran.
+    CHECK(lod_boundary_edges > 0);
+}
+
 TEST_CASE("build_static_view_from_lookup: identical output for 1 vs N worker threads", "[world_terrain]") {
     SyntheticStore store;
     g2m::mesh::LodParams params;
