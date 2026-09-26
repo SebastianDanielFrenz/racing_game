@@ -1,0 +1,7 @@
+{"format":"g2m.regions/1","regions":[
+  {"name":"home","scheme":"utm32n","halo_m":2000,"parts":[
+    {"kind":"osm_admin","relation":62382,"expect_name":"Main-Taunus-Kreis","expect_admin_level":6},
+    {"kind":"osm_admin","relation":62566,"expect_name":"Hochtaunuskreis","expect_admin_level":6},
+    {"kind":"osm_admin","relation":4209939,"expect_name":"Höchst","expect_admin_level":10}
+  ]}
+]}

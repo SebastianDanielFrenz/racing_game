@@ -41,6 +41,11 @@ racing_game/
       tach_gauge.gd                   reused near-verbatim from physics_sim's demo (round tach/speed/gear/lamp gauge)
       hud.gd                          trimmed port of physics_sim's demo hud.gd (debug text HUD; no terrain-tile/haptics lines - R0 has neither)
       input_map.gd                    new plain-GDScript input node (not a C++ GDExtension class like physics_sim's PsInputMap) - keyboard+gamepad polling, larger-magnitude-wins merge
+  data/
+    world/
+      regions.json                    g2m.regions/1 (geo2map_engine G1c I7): region "home" (Main-Taunus-Kreis,
+                                       Hochtaunuskreis, Frankfurt-Höchst), halo_m 2000 - consumed by
+                                       `g2m_tiler import ...regions.json#home ...` (S:\claude_code\geo2map_engine)
   tests/
     unit/
       catch_main.cpp                  custom Catch2 v3 entry point (installs headless CRT handlers via physics_sim's always-built ps_headless_env)
