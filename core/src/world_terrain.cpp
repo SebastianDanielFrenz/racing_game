@@ -216,9 +216,14 @@ std::unique_ptr<WorldTerrain> WorldTerrain::open(const WorldConfig& config, std:
 
     wt->terrain_height_layer_ = std::string(g2m::kTerrainHeightLayer);
     wt->lod_params_.zone = wt->frame_->zone();
-    // range0_m/max_level/max_distance_m keep LodParams's own defaults here;
-    // WorldTerrain::set_lod_params (called from the game/tooling side once
-    // the LOD-distance measurement below picks a default) overrides them.
+    // max_distance_m comes from config (WorldConfig::Lod, PLAN.md R2.1: "make
+    // max_distance a config value ... not a hard-coded constant") - defaults
+    // to LodParams's own 6000.0 when world_config.json has no "lod" section.
+    // range0_m/max_level keep LodParams's own defaults (not yet
+    // config-exposed - only max_distance_m was swept/measured for R2.1).
+    // WorldTerrain::set_lod_params still overrides all of it if a caller
+    // wants to.
+    wt->lod_params_.max_distance_m = config.lod.max_distance_m;
 
     return wt;
 }

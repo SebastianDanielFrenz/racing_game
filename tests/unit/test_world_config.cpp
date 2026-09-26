@@ -211,6 +211,11 @@ TEST_CASE("load_world_config: the real committed data/world/world_config.json pa
     CHECK(cfg->derived_store.name == "derived");
     CHECK(cfg->spawn.e == 462500.0);
     CHECK(cfg->spawn.n == 5559500.0);
+    // R2.1 LOD-distance measurement sweep's chosen default (see repo
+    // CLAUDE.md's measurement table) - the goal's own "visible terrain to
+    // 16-20 km" is best met by 20000, and the measured warm build time at
+    // that distance (~33 ms) is barely worse than at 6000 (~23 ms).
+    CHECK(cfg->lod.max_distance_m == 20000.0);
 }
 
 TEST_CASE("load_world_config: ${RG_G2M_HOME} is expanded in dir fields", "[world_config]") {
@@ -492,6 +497,66 @@ TEST_CASE("load_world_config: unknown placeholder is an error", "[world_config]"
 TEST_CASE("load_world_config: unterminated placeholder is an error", "[world_config]") {
     json j = valid_world_config_json();
     j["source_store"]["dir"] = "${RG_G2M_HOME";
+    TempFile file = TempFile::from_json(j);
+    std::string err;
+    auto cfg = rg::load_world_config(file.path(), &err);
+    CHECK_FALSE(cfg.has_value());
+    CHECK_FALSE(err.empty());
+}
+
+// --- "lod" (PLAN.md R2.1: max_distance_m is a config value, not a hard-coded
+// constant) ---
+
+TEST_CASE("load_world_config: lod absent defaults to 6000.0", "[world_config]") {
+    ScopedEnvVar env("RG_G2M_HOME", "S:/some/test/g2m/home");
+    json j = valid_world_config_json();
+    REQUIRE_FALSE(j.contains("lod"));
+    TempFile file = TempFile::from_json(j);
+    std::string err;
+    auto cfg = rg::load_world_config(file.path(), &err);
+    REQUIRE(cfg.has_value());
+    CHECK(err.empty());
+    CHECK(cfg->lod.max_distance_m == 6000.0);
+}
+
+TEST_CASE("load_world_config: lod.max_distance_m overrides the default", "[world_config]") {
+    ScopedEnvVar env("RG_G2M_HOME", "S:/some/test/g2m/home");
+    json j = valid_world_config_json();
+    j["lod"] = {{"max_distance_m", 12000.0}};
+    TempFile file = TempFile::from_json(j);
+    std::string err;
+    auto cfg = rg::load_world_config(file.path(), &err);
+    REQUIRE(cfg.has_value());
+    CHECK(err.empty());
+    CHECK(cfg->lod.max_distance_m == 12000.0);
+}
+
+TEST_CASE("load_world_config: lod.max_distance_m must be > 0", "[world_config]") {
+    ScopedEnvVar env("RG_G2M_HOME", "S:/some/test/g2m/home");
+    json j = valid_world_config_json();
+    j["lod"] = {{"max_distance_m", 0.0}};
+    TempFile file = TempFile::from_json(j);
+    std::string err;
+    auto cfg = rg::load_world_config(file.path(), &err);
+    CHECK_FALSE(cfg.has_value());
+    CHECK_FALSE(err.empty());
+}
+
+TEST_CASE("load_world_config: lod.max_distance_m wrong type", "[world_config]") {
+    ScopedEnvVar env("RG_G2M_HOME", "S:/some/test/g2m/home");
+    json j = valid_world_config_json();
+    j["lod"] = {{"max_distance_m", "far"}};
+    TempFile file = TempFile::from_json(j);
+    std::string err;
+    auto cfg = rg::load_world_config(file.path(), &err);
+    CHECK_FALSE(cfg.has_value());
+    CHECK_FALSE(err.empty());
+}
+
+TEST_CASE("load_world_config: lod is not an object", "[world_config]") {
+    ScopedEnvVar env("RG_G2M_HOME", "S:/some/test/g2m/home");
+    json j = valid_world_config_json();
+    j["lod"] = 6000.0;
     TempFile file = TempFile::from_json(j);
     std::string err;
     auto cfg = rg::load_world_config(file.path(), &err);

@@ -34,12 +34,25 @@ struct WorldConfig {
         double yaw_deg = 0.0;
     };
 
+    // Optional top-level "lod" object (PLAN.md R2.1: "make max_distance a
+    // config value ... not a hard-coded constant"). Absent entirely -> every
+    // field keeps g2m::mesh::LodParams's own default (max_distance_m =
+    // 6000.0) - a pre-R2.1 world_config.json with no "lod" key still loads
+    // unchanged. rg::WorldTerrain::open reads this into its LodParams'
+    // max_distance_m; range0_m/max_level are not yet config-exposed (R2.1's
+    // own measurement only swept max_distance_m - see the repo CLAUDE.md's
+    // LOD-distance table).
+    struct Lod {
+        double max_distance_m = 6000.0;
+    };
+
     std::string format; // always "rg.world/1" once successfully loaded
     std::string region;
     UtmOrigin session_origin_utm;
     SourceStore source_store;
     DerivedStore derived_store;
     Spawn spawn;
+    Lod lod;
     std::string surface_map; // resolved to an absolute path (see below)
     std::string palette;     // resolved to an absolute path (see below)
 };

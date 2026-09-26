@@ -399,6 +399,24 @@ std::optional<WorldConfig> load_world_config(const std::string& path, std::strin
         return std::nullopt;
     }
 
+    // --- lod (optional; absent -> WorldConfig::Lod's own default) ---
+    if (root.contains("lod")) {
+        const json& lod = root.at("lod");
+        if (!require_object(lod, path, "\"lod\"", err)) {
+            return std::nullopt;
+        }
+        if (lod.contains("max_distance_m")) {
+            if (!get_number(lod, "max_distance_m", path, "\"lod\"", &cfg.lod.max_distance_m, err)) {
+                return std::nullopt;
+            }
+            if (cfg.lod.max_distance_m <= 0.0) {
+                fail(err, path, "\"lod.max_distance_m\" must be > 0 (got " +
+                                    std::to_string(cfg.lod.max_distance_m) + ")");
+                return std::nullopt;
+            }
+        }
+    }
+
     // --- surface_map / palette: repo-root-relative (see world_config.h) ---
     std::string surface_map_raw;
     if (!get_string(root, "surface_map", path, "top level", &surface_map_raw, err)) {

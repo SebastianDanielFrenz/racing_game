@@ -5,6 +5,7 @@
   "source_store": { "dir": "${RG_G2M_HOME}", "scope": "home-2026-09r1", "read_only": true },
   "derived_store": { "dir": "${RG_G2M_HOME}", "name": "derived" },
   "spawn": { "e": 462500.0, "n": 5559500.0, "yaw_deg": 0 },
+  "lod": { "max_distance_m": 20000.0 },
   "surface_map": "data/world/landclass_surfaces.json",
   "palette": "data/world/landclass_palette.json"
 }
