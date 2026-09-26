@@ -13,6 +13,7 @@ add_executable(rg_unit_tests
   test_session.cpp
   test_world_config.cpp
   test_g2m_link_smoke.cpp
+  test_g2m_ps_bridge_link_smoke.cpp
   test_world_terrain.cpp
   test_fixed_rate_loop.cpp
   test_terrain_view_streamer.cpp

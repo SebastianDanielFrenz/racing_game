@@ -129,6 +129,17 @@ libosmium), `G2M_BUILD_FUZZERS=OFF`. Also forces `CMAKE_C_COMPILER` to match
 zstd/SQLite; only its `deps_decoders.cmake`, skipped here via
 `G2M_BUILD_IMPORT=OFF`, has its own such guard).
 
+R2.2 G1-G9 added `g2m_phys` (built unconditionally, no `G2M_BUILD_*` gate)
+and `g2m_ps_bridge` (`bridges/physics_sim/`, gated by its own
+`if(TARGET ps_core)` check in geo2map_engine's top-level `CMakeLists.txt` -
+satisfied here because `external/physics_sim`'s `add_subdirectory` above
+runs first). `bridges/physics_sim/physics_sim.pin` records the exact
+physics_sim commit the bridge is built/tested against on geo2map_engine's
+own CI (its `bridge-release` leg); it must equal this repo's own
+`external/physics_sim` submodule sha (`git submodule status`) - both are
+`5c648a5` as of the R2.2 R1 submodule bump. A mismatch is a coordination
+error between the two submodule pins, not something CMake itself checks.
+
 Even with every `G2M_BUILD_*` option OFF, `deps_core.cmake` still
 `FetchContent_Declare`s `g2m_zstd`/`g2m_sqlite`/`g2m_json` (needed by
 `g2m_layers`/`g2m_server`/`g2m_client` themselves). `RG_G2M_DEPS_DIR` (cache
@@ -354,6 +365,21 @@ build 108-293 ms, streaming frames 1.6-2.0 ms max (one op may overshoot the
   R2.1, landed on the submodule pin with G2.3) adds `rg::WorldTerrain`
   (`world_terrain.h`/`.cpp`) + `rg::RenderChunk`/`build_static_view_from_
   lookup` (`terrain_render.h`) - see "Terrain preview (R2.1)" above.
+  `g2m_phys`/`g2m_ps_bridge` (R2.2 R1, landed on the submodule pin with G9)
+  are also linked PUBLIC: `g2m_phys` is geo2map_engine's own ps-free
+  physics-tile-grid library (`PhysicsTileGrid`/`ResidentHeightSet`/
+  `fill_physics_heights`/`HeightTileLoader`/`PhysicsTerrainStreamer`);
+  `g2m_ps_bridge` (`bridges/physics_sim/` on the geo2map_engine submodule,
+  built only via its own `if(TARGET ps_core)` guard - satisfied because this
+  repo's own top-level `CMakeLists.txt` `add_subdirectory`s `external/
+  physics_sim` before `external/geo2map_engine`) adds `g2m::ps_bridge::
+  G2mTerrainSource : ps::terrain::ITerrainSource` +
+  `make_terrain_config(interest_radius_m, fills_per_tick)`. PUBLIC, not
+  PRIVATE, because R2.2 R4 puts a `G2mTerrainSource` inside `rg::Session`,
+  so it will be named in `session.h` (a public header) the same way
+  `ps::World` already is - see `core/CMakeLists.txt`'s own comment.
+  `test_g2m_ps_bridge_link_smoke.cpp` (below) proves the link; `Session`
+  itself does not use either library yet (R4's job).
 - `rg_godot` (SHARED, `godot_ext/`): the GDExtension DLL
   (`game/bin/librg_godot.dll`). Two classes registered: `RgSimulation :
   godot::Node` owns one `rg::Session` and exposes it to GDScript (body
@@ -385,7 +411,14 @@ build 108-293 ms, streaming frames 1.6-2.0 ms max (one op may overshoot the
   (`test_g2m_link_smoke.cpp` - constructs a `g2m::TileKey` and round-trips
   `packed()`/`unpack()`, both defined out of line in `g2m_core`, proving
   `rg_core` actually LINKS a geo2map_engine symbol, not just compiles
-  against its headers) and `rg::WorldTerrain`/`build_static_view_from_lookup`
+  against its headers), a physics-bridge link-smoke test (R2.2 R1,
+  `test_g2m_ps_bridge_link_smoke.cpp` - `g2m::ps_bridge::make_terrain_config
+  (400.0, 1)` gives `max_resident_tiles == 49`/`max_tile_fills_per_tick == 1`
+  (the pool-49/F-stays-1 decision geo2map_engine PLAN.md 8.5 records "as
+  built"), plus a bare `g2m::phys::PhysicsTileGrid` `PhysTileIndex`
+  pack/unpack round trip - no real-data access, proves `rg_core` LINKS
+  `g2m_phys`/`g2m_ps_bridge`, not just compiles against their headers) and
+  `rg::WorldTerrain`/`build_static_view_from_lookup`
   coverage (`test_world_terrain.cpp` - PLAN.md R2.1, synthetic in-memory
   `TileKey`->`HeightTile` map, see "Terrain preview (R2.1)" above). Catch2
   v3 via `rg_test_catch_main`, plus `nlohmann_json::nlohmann_json` PRIVATE

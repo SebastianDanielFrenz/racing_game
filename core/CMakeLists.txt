@@ -18,6 +18,21 @@
 # fix to e.g. SimThread's catch-up logic is picked up here automatically on
 # the next submodule pin bump, not duplicated-and-forgotten).
 
+# g2m_phys/g2m_ps_bridge (geo2map_engine submodule, R2.2 R1): g2m_phys is
+# ps-free (PhysicsTileGrid/ResidentHeightSet/fill_physics_heights/
+# HeightTileLoader/PhysicsTerrainStreamer); g2m_ps_bridge (bridges/
+# physics_sim/, built only because physics_sim's own add_subdirectory above
+# runs before geo2map_engine's, so ps_core already exists as a target when
+# geo2map_engine's `if(TARGET ps_core)` guard is evaluated) adds
+# g2m::ps_bridge::G2mTerrainSource : ps::terrain::ITerrainSource. Linked
+# PUBLIC, not PRIVATE: R2.2 R4 puts a G2mTerrainSource inside rg::Session,
+# so it will be named in session.h (a PUBLIC header of this target) the same
+# way ps::World already is - a PRIVATE link would compile rg_core itself but
+# fail every downstream consumer of session.h (godot_ext, tests/unit,
+# tools/hash_check et al.) with missing types/unresolved symbols the moment
+# R4 lands. Matches the existing ps_core/g2m_server/g2m_client/g2m_layers/
+# g2m_mesh PUBLIC precedent above for the same reason.
+#
 # g2m_server/g2m_client/g2m_layers/g2m_mesh (geo2map_engine submodule):
 # rg::load_world_config (world_config.h/.cpp) validates data/world/
 # world_config.json and expands its ${RG_G2M_HOME}/${RG_G2M_DERIVED}
@@ -66,6 +81,8 @@ target_link_libraries(rg_core
         g2m_client
         g2m_layers
         g2m_mesh
+        g2m_phys
+        g2m_ps_bridge
     PRIVATE
         rg_options
         nlohmann_json::nlohmann_json
