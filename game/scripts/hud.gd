@@ -1,23 +1,32 @@
 extends CanvasLayer
-# game/scripts/hud.gd — trimmed debug/diagnostic text HUD, adapted from
-# physics_sim's own adapters/godot/demo/scripts/hud.gd (read-only reference,
-# not a submodule file). Dropped relative to that file, both because R0 has
-# neither subsystem at all: terrain tile resident/starved counts (R0's
-# ground is one static box, not TileManager-streamed) and the haptics
-# per-source debug readout (RUMBLE stays permanently off, input_map.gd's
-# get_rumble_enabled() stub). Gear/rpm/speed/assist-lamp status lives in the
-# round gauge (tach_gauge.gd, reused verbatim), same split as the reference.
+# game/scripts/hud.gd — debug/diagnostic text HUD (drawing only), adapted from
+# physics_sim's adapters/godot/demo/scripts/hud.gd (read-only reference).
+# Gear/rpm/speed/assist lamps live in the round gauge (tach_gauge.gd), same
+# split as the reference. It reads state through RgSimulation's getters
+# (get_mode_state - rg_core's mode framework - and get_streaming_status) and
+# the camera director; it decides nothing. A future world-space XR HUD
+# replaces this CanvasLayer and reads the same getters.
 #
-# Expects a child Label named "Readout" (created by main.gd when it builds
-# the scene) - same contract as the reference file.
+# Expects child Labels "Readout" (top-left text) and "Streaming" (the big
+# centred "STREAMING TERRAIN... (n)" line while the terrain gate holds the
+# clock), created by main.gd.
+#
+# tools/smoke_test.ps1 greps the two print() lines below ("sim thread
+# running, first observed tick count" and "measured sim tick rate over last
+# window") - keep their wording.
+
+const KEY_HELP := "V mode (drive/free cam)  F8 world (flat/real)  R reset car  WASD drive | fly  E/Q shift | up/down  Space handbrake  C clutch  I ignition  K starter  F5 auto-shift  arrows/right stick/RMB+mouse look"
 
 @export var simulation_path: NodePath
 @export var input_map_path: NodePath
+@export var director_path: NodePath
 @export var vehicle_name: String = ""
 
 var _simulation: Node
 var _input_map: Node
+var _director: Node
 var _label: Label
+var _streaming_label: Label
 
 # Rolling one-second measurement window for the sim's own tick rate,
 # independent of Godot's render fps - same technique as the reference file.
@@ -35,13 +44,20 @@ var _last_max_frame_time_us: int = 0
 func _ready() -> void:
 	_simulation = get_node_or_null(simulation_path)
 	_input_map = get_node_or_null(input_map_path)
+	_director = get_node_or_null(director_path)
 	_label = get_node("Readout")
+	_streaming_label = get_node_or_null("Streaming")
 	_window_start_s = Time.get_ticks_msec() / 1000.0
 
 func _bar(value01: float, width: int = 20) -> String:
 	var v: float = clampf(value01, 0.0, 1.0)
 	var filled: int = int(round(v * width))
 	return "[" + "#".repeat(filled) + "-".repeat(width - filled) + "]"
+
+# A world switch builds a new Session whose tick count restarts at 0.
+func reset_tick_window() -> void:
+	_window_start_s = Time.get_ticks_msec() / 1000.0
+	_window_start_ticks = 0
 
 func _process(_delta: float) -> void:
 	if _simulation == null:
@@ -72,20 +88,48 @@ func _process(_delta: float) -> void:
 			_last_measured_hz, _simulation.get_tick_rate_hz(), Engine.get_frames_per_second(),
 			_last_avg_frame_time_us / 1000.0, _last_max_frame_time_us / 1000.0])
 
+	var mode: Dictionary = _simulation.get_mode_state()
+	var ss: Dictionary = _simulation.get_streaming_status()
+	var terrain_mode: bool = bool(ss.get("terrain_mode", false))
+
+	if _streaming_label != null:
+		var frozen: bool = terrain_mode and bool(ss.get("frozen", false))
+		_streaming_label.visible = frozen
+		if frozen:
+			_streaming_label.text = "STREAMING TERRAIN... (%d)" % int(ss.get("missing_required", 0))
+
 	var lines := PackedStringArray()
-	lines.append("racing_game R0 - test drive")
+	lines.append("racing_game R9 - mode: %s   world: %s (%s)   car: %s" % [
+		mode.get("mode", "?"), mode.get("world_kind", "?"), mode.get("world_phase", "?"), mode.get("vehicle_control", "?")])
 	lines.append("sim tick rate: target %.1f Hz  measured %.2f Hz" % [_simulation.get_tick_rate_hz(), _last_measured_hz])
 	lines.append("godot fps: %.1f    adapter main-thread: avg %.3f ms  max %.3f ms" % [
 		Engine.get_frames_per_second(), _last_avg_frame_time_us / 1000.0, _last_max_frame_time_us / 1000.0])
-	lines.append("sim time: %.2f s   ticks: %d   bodies: %d" % [_simulation.get_sim_time(), ticks, _simulation.get_body_count()])
+	lines.append("sim time: %.2f s   ticks: %d   speed: %.1f km/h" % [
+		_simulation.get_sim_time(), ticks, _simulation.get_body_speed_mps("chassis") * 3.6])
+	if terrain_mode:
+		var chunks: int = 0
+		var rebases: int = 0
+		if _director != null:
+			rebases = int(_director.rebase_count)
+			if _director.terrain_view != null:
+				chunks = int(_director.terrain_view.get_chunk_count())
+		lines.append("terrain: L0 %d  missing %d  inflight %d  failed %d  tiles %d  starved %d | freezes %d  frozen ticks %d | falls %d  misses %d | resets %d | chunks %d  rebases %d" % [
+			int(ss.get("resident_l0", 0)), int(ss.get("missing_required", 0)), int(ss.get("inflight", 0)),
+			int(ss.get("failed", 0)), int(ss.get("resident_tiles", 0)), int(ss.get("starved_tiles", 0)),
+			int(ss.get("freeze_count", 0)), int(ss.get("frozen_attempts", 0)), int(ss.get("falls", 0)),
+			int(ss.get("fill_misses", 0)), int(ss.get("relocations", 0)), chunks, rebases])
 	lines.append("")
 
 	if vehicle_name != "" and _simulation.get_vehicle_names().has(vehicle_name):
-		if _input_map != null:
+		if _input_map != null and bool(mode.get("driving_inputs_live", false)):
 			lines.append("steer     %+.2f %s" % [_input_map.get_steer(), _bar((_input_map.get_steer() + 1.0) * 0.5)])
 			lines.append("throttle  %5.2f %s" % [_input_map.get_throttle(), _bar(_input_map.get_throttle())])
 			lines.append("brake     %5.2f %s" % [_input_map.get_brake(), _bar(_input_map.get_brake())])
-			lines.append("handbrake %5.2f  clutch %5.2f" % [_input_map.get_handbrake(), _input_map.get_clutch()])
+			lines.append("handbrake %5.2f  clutch %5.2f   ignition %s  auto-shift %s" % [
+				_input_map.get_handbrake(), _input_map.get_clutch(),
+				"on" if _input_map.get_ignition() else "off", "on" if _input_map.get_auto_shift() else "off"])
+		else:
+			lines.append("car unattended: brakes held, clutch pressed")
 		lines.append("")
 		var wheel_count: int = _simulation.get_vehicle_wheel_count(vehicle_name)
 		lines.append("wheel  load(N)  slip_ratio  slip_angle(deg)  surface")
@@ -102,8 +146,5 @@ func _process(_delta: float) -> void:
 		lines.append("(no vehicle spawned)")
 
 	lines.append("")
-	lines.append("controls: gamepad (steer/throttle/brake/handbrake) + WASD/space keyboard fallback")
-	lines.append("E/Q or B/X(joy) shift up/down   C or LB(joy) clutch (hold)")
-	lines.append("I or D-pad Up ignition (hold)   K or Start(joy) starter (hold)")
-	lines.append("Tab hold assist.auto_shift")
+	lines.append(KEY_HELP)
 	_label.text = "\n".join(lines)

@@ -14,6 +14,7 @@
 
 #pragma once
 
+#include "rg/player_mode.h"
 #include "rg/session.h"
 #include "rg/world_config.h"
 #include "rg/world_terrain.h"
@@ -70,22 +71,44 @@ public:
     // (run_terrain_init_worker). Returns true once that thread has been
     // STARTED, not once it has succeeded; poll get_init_status() every frame
     // for a loading screen and call start() only once its state is "ready".
-    // Re-entrant exactly like initialize() above - teardown_current() joins
-    // (waits for, never cancels - see that method's own doc comment) any
-    // init still in flight before starting the new one.
+    // Re-entrant exactly like initialize() above - teardown_current()
+    // CANCELS (R2.2 R9: rg::StartupProgress::cancel) and then joins any init
+    // still in flight before starting the new one, so a world switch during
+    // loading returns within a few milliseconds.
     bool initialize_terrain(const godot::String& world_config_absolute_path,
                             const godot::String& vehicle_json_absolute_path,
                             const godot::String& surface_table_absolute_path);
 
     // {state: "idle"|"loading"|"ready"|"error", message: String,
-    //  resident_l0: int, missing_required: int}. Non-blocking - safe to poll
-    // every frame from GDScript for a loading screen (see
-    // reap_init_thread()'s doc comment for exactly why this never blocks).
-    // resident_l0/missing_required are live (session_->streaming_status())
-    // once "ready"; both read 0 while "loading" or "error" - rg::Session's
-    // constructor is one blocking call with no progress callback, so no
-    // finer-grained progress exists to report mid-flight (see hand-back).
+    //  resident_l0: int, missing_required: int, inflight: int, failed: int,
+    //  stage: "opening"|"waiting_for_gate"|"priming"|"spawning"|"done",
+    //  prime_done: int, prime_total: int}. Non-blocking - safe to poll every
+    // frame from GDScript for a loading screen (see reap_init_thread()'s doc
+    // comment for exactly why this never blocks). While "loading" the
+    // figures come from the worker's rg::StartupProgress (R2.2 R9, live gate
+    // figures while the Session constructor blocks); once "ready" from
+    // session_->streaming_status().
     [[nodiscard]] godot::Dictionary get_init_status();
+
+    // Test/smoke only (smoke_test.ps1 -DriveDelayMs): every height-tile fetch
+    // of the NEXT initialize_terrain() sleeps D..2D ms first
+    // (g2m::phys::DelayedFetch). 0 = off (default).
+    void set_fetch_delay_ms(std::int64_t ms) { fetch_delay_ms_ = ms > 0 ? ms : 0; }
+
+    // --- Player modes (R2.2 R9, rg/player_mode.h). The mode machine lives
+    // here, not in the Session: it outlives world switches (the mode is kept
+    // across initialize()/initialize_terrain()). Every change pushes the
+    // effective rules' vehicle control into the Session. Mode names are
+    // rg::to_string's ("drive", "free_cam", ...). ---
+    // "changed" | "no_change" | "not_implemented" | "unknown_mode"
+    godot::String set_player_mode(const godot::String& mode_name);
+    godot::String cycle_player_mode(); // returns the new mode's name
+    [[nodiscard]] godot::String get_player_mode() const;
+    // {mode, implemented, vehicle_control, driving_inputs_live,
+    //  camera_inputs_live, camera_rig, world_kind, world_phase, other_world,
+    //  revision} - the EFFECTIVE rules (driving inputs masked while the world
+    //  is not ready).
+    [[nodiscard]] godot::Dictionary get_mode_state();
 
     void start();
     void stop();
@@ -97,6 +120,12 @@ public:
     [[nodiscard]] godot::Dictionary get_streaming_status() const; // every rg::StreamingStatus field, snake_case
     [[nodiscard]] godot::Vector3 get_render_origin_session() const; // RAW session-frame (east, north, up)
     void retry_failed_tiles();
+    // rg::Session::request_relocate / request_reset_to_spawn (R2.2 R9):
+    // move the car (session XY, yaw in degrees about +Z, 0 = east) - it
+    // freezes through the terrain gate until the target is resident. Both
+    // modes; no-op without a Session.
+    void relocate_vehicle(double session_x, double session_y, double yaw_deg);
+    void reset_vehicle_to_spawn();
 
     [[nodiscard]] std::int64_t get_step_count() const;
     [[nodiscard]] double get_sim_time() const;
@@ -164,8 +193,11 @@ private:
 
     enum class InitPhase : int { Idle, Loading, Ready, Error };
 
+    // Pushes modes_.effective_rules().vehicle_control into session_.
+    void apply_mode_to_session();
+
     // Tears down whatever this object currently holds - an in-flight init
-    // worker (joined, never cancelled: see its own doc comment) and/or a
+    // worker (cancelled, then joined - R2.2 R9) and/or a
     // Session (stopped then destroyed) - leaving the object equivalent to a
     // freshly constructed one. Called at the start of initialize() and
     // initialize_terrain() (the "runtime world switch": R2.2 R7 task 1) and
@@ -181,27 +213,26 @@ private:
     // already returned) - this call then joins and, on Ready, adopts
     // pending_session_ into session_.
     //
-    // reap_init_thread(wait=true): the three lifecycle points the brief
-    // names (stop/re-init/destruction) - always joins, blocking the caller
-    // for as long as an in-flight terrain start-up takes to finish (up to
-    // startup_timeout_s). This project's chosen answer to "cancel or wait":
-    // WAIT. rg::Session's constructor/setup_terrain() has no cancellation
-    // seam (its blocking gate/priming loop is keyed only on
-    // physics.startup_timeout_s), so cutting it short would need a
-    // rg_core-side cancel flag threaded through Session - out of this
-    // change's scope. A re-init while terrain is still loading therefore
-    // blocks briefly (see hand-back for the measured/expected impact).
+    // reap_init_thread(wait=true): the lifecycle points (stop/re-init/
+    // destruction) - always joins. Since R2.2 R9 re-init and destruction
+    // first set the in-flight start-up's rg::StartupProgress::cancel
+    // (cancel_init()), so the join returns within a few gate checks; stop()
+    // does not cancel (it waits for the start-up, as in R7).
     void reap_init_thread(bool wait);
+    void cancel_init();
 
     // Runs entirely on init_thread_: parses world_config_absolute_path,
     // opens the WorldTerrain, builds a terrain-mode SessionConfig via
     // rg::make_terrain_mode, and constructs rg::Session (the up-to-30 s
-    // blocking start-up) - every failure (a bad path, a malformed config, a
-    // Session std::runtime_error) is caught and reported through
-    // init_message_/InitPhase::Error rather than crossing the thread
-    // boundary as an exception.
+    // blocking start-up, via rg::make_session) - every failure (a bad path,
+    // a malformed config, a Session exception incl. SessionCancelled) is
+    // reported through init_message_/InitPhase::Error. No exception is thrown
+    // or caught in this TU: godot-cpp's -D_HAS_EXCEPTIONS=0 makes its
+    // `std::exception` a different type (stdext::exception) from rg_core's,
+    // so only rg_core itself can catch rg_core's exceptions.
     void run_terrain_init_worker(std::string world_config_path, std::string vehicle_json_path,
-                                 std::string surface_table_path);
+                                 std::string surface_table_path, std::shared_ptr<rg::StartupProgress> progress,
+                                 std::int64_t fetch_delay_ms);
 
     std::unique_ptr<rg::Session> session_;
     godot::String last_error_;
@@ -219,6 +250,11 @@ private:
     std::atomic<InitPhase> init_phase_{InitPhase::Idle};
     std::string init_message_;
     std::unique_ptr<rg::Session> pending_session_;
+    std::shared_ptr<rg::StartupProgress> init_progress_; // the in-flight terrain init's (main thread owns the pointer)
+    std::int64_t fetch_delay_ms_ = 0;
+
+    rg::PlayerModeMachine modes_{rg::PlayerMode::Drive};
+    std::uint64_t world_load_serial_ = 0; // modes_' serial of the load this object is running
 };
 
 } // namespace rg_godot

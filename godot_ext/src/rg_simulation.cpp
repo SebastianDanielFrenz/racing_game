@@ -2,12 +2,14 @@
 
 #include "frame_convert.h"
 
+#include "g2m/phys/height_tile_loader.h"
+
 #include "ps/drivetrain/powertrain_desc.h"
 
 #include <godot_cpp/core/class_db.hpp>
 
+#include <chrono>
 #include <optional>
-#include <stdexcept>
 #include <string>
 #include <utility>
 #include <variant>
@@ -48,12 +50,18 @@ const char* engine_state_name(ps::drivetrain::EngineState s) {
 } // namespace
 
 RgSimulation::~RgSimulation() {
+    cancel_init();
     reap_init_thread(/*wait=*/true);
     session_.reset(); // Session's own destructor stops its loop
     origin_rebase_ = nullptr;
 }
 
+void RgSimulation::cancel_init() {
+    if (init_progress_) init_progress_->cancel.store(true, std::memory_order_relaxed);
+}
+
 void RgSimulation::teardown_current() {
+    cancel_init();                   // R2.2 R9: cancel-then-join
     reap_init_thread(/*wait=*/true); // joins any in-flight worker first (see its own doc comment)
     if (session_) session_->stop();
     session_.reset();
@@ -72,58 +80,98 @@ void RgSimulation::reap_init_thread(bool wait) {
         if (init_phase_.load(std::memory_order_acquire) == InitPhase::Loading) return;
     }
     init_thread_.join(); // wait==true: blocks until the worker returns; wait==false: already finished, returns at once
-    if (init_phase_.load(std::memory_order_acquire) == InitPhase::Ready) {
+    const bool ready = init_phase_.load(std::memory_order_acquire) == InitPhase::Ready;
+    if (ready) {
         session_ = std::move(pending_session_);
         origin_rebase_ = &session_->origin_rebase();
     }
     pending_session_.reset(); // no-op on the Ready path (already moved out); frees nothing on Error (never set)
+    init_progress_.reset();
+    modes_.finish_world_load(world_load_serial_, ready); // ignored when a newer load superseded it
+    apply_mode_to_session();
+}
+
+void RgSimulation::apply_mode_to_session() {
+    if (session_) session_->set_vehicle_control(modes_.effective_rules().vehicle_control);
 }
 
 void RgSimulation::run_terrain_init_worker(std::string world_config_path, std::string vehicle_json_path,
-                                           std::string surface_table_path) {
-    try {
-        std::string err;
-        std::optional<rg::WorldConfig> world_config = rg::load_world_config(world_config_path, &err);
-        if (!world_config.has_value()) {
-            throw std::runtime_error("load_world_config: " + err);
-        }
-
-        std::string open_err;
-        std::shared_ptr<rg::WorldTerrain> terrain(rg::WorldTerrain::open(*world_config, &open_err));
-        if (terrain == nullptr) {
-            throw std::runtime_error("WorldTerrain::open: " + open_err);
-        }
-
-        rg::SessionConfig config;
-        config.vehicle_json_path = std::move(vehicle_json_path);
-        config.surface_table_path = std::move(surface_table_path);
-        config.terrain = rg::make_terrain_mode(*world_config, terrain); // start-up blocks inside the Session ctor below
-
-        auto session = std::make_unique<rg::Session>(config);
-        pending_session_ = std::move(session);
-        init_message_ = "ready";
-        init_phase_.store(InitPhase::Ready, std::memory_order_release);
-    } catch (const std::exception& e) {
+                                           std::string surface_table_path,
+                                           std::shared_ptr<rg::StartupProgress> progress,
+                                           std::int64_t fetch_delay_ms) {
+    // No C++ exception may be thrown or caught here: this TU is built with
+    // godot-cpp's -D_HAS_EXCEPTIONS=0, where `std::exception` names
+    // stdext::exception, so a `catch (const std::exception&)` here would never
+    // match what rg_core throws (the R9 cancel-during-load crash:
+    // SessionCancelled ended in std::terminate, exit 0xC0000409).
+    // rg::make_session catches inside rg_core instead.
+    const auto fail = [this](std::string message) {
         pending_session_.reset();
-        init_message_ = e.what();
+        init_message_ = std::move(message);
         init_phase_.store(InitPhase::Error, std::memory_order_release);
+    };
+    std::string err;
+    std::optional<rg::WorldConfig> world_config = rg::load_world_config(world_config_path, &err);
+    if (!world_config.has_value()) {
+        fail("load_world_config: " + err);
+        return;
     }
+
+    const auto cancelled = [&progress] { return progress && progress->cancel.load(std::memory_order_relaxed); };
+    if (cancelled()) {
+        fail("Session: terrain start-up cancelled");
+        return;
+    }
+    std::string open_err;
+    std::shared_ptr<rg::WorldTerrain> terrain(rg::WorldTerrain::open(*world_config, &open_err));
+    if (terrain == nullptr) {
+        fail("WorldTerrain::open: " + open_err);
+        return;
+    }
+
+    if (cancelled()) { // opening the WorldTerrain cannot be interrupted; check right after it
+        fail("Session: terrain start-up cancelled");
+        return;
+    }
+
+    rg::SessionConfig config;
+    config.vehicle_json_path = std::move(vehicle_json_path);
+    config.surface_table_path = std::move(surface_table_path);
+    config.terrain = rg::make_terrain_mode(*world_config, terrain); // start-up blocks inside make_session below
+    config.startup = progress;
+    if (fetch_delay_ms > 0) {
+        config.terrain->fetch = std::make_shared<g2m::phys::DelayedFetch>(
+            config.terrain->fetch, std::chrono::milliseconds(fetch_delay_ms), 7u);
+    }
+
+    std::string session_err;
+    std::unique_ptr<rg::Session> session = rg::make_session(config, &session_err);
+    if (session == nullptr) {
+        fail(std::move(session_err)); // includes "Session: terrain start-up cancelled"
+        return;
+    }
+    pending_session_ = std::move(session);
+    init_message_ = "ready";
+    init_phase_.store(InitPhase::Ready, std::memory_order_release);
 }
 
 bool RgSimulation::initialize(const String& vehicle_json_absolute_path, const String& surface_table_absolute_path) {
     teardown_current();
+    world_load_serial_ = modes_.begin_world_load(rg::WorldKind::Flat);
     rg::SessionConfig config;
     config.vehicle_json_path = to_std_string(vehicle_json_absolute_path);
     config.surface_table_path = to_std_string(surface_table_absolute_path);
-    try {
-        session_ = std::make_unique<rg::Session>(config);
-    } catch (const std::exception& e) {
-        last_error_ = String(e.what());
-        session_.reset();
+    std::string err;
+    session_ = rg::make_session(config, &err); // never throws (see run_terrain_init_worker)
+    if (session_ == nullptr) {
+        last_error_ = String(err.c_str());
+        modes_.finish_world_load(world_load_serial_, false);
         return false;
     }
     origin_rebase_ = &session_->origin_rebase();
     last_error_ = String();
+    modes_.finish_world_load(world_load_serial_, true);
+    apply_mode_to_session();
     return true;
 }
 
@@ -133,6 +181,8 @@ bool RgSimulation::initialize_terrain(const String& world_config_absolute_path,
     teardown_current();
     last_error_ = String();
     init_message_.clear();
+    world_load_serial_ = modes_.begin_world_load(rg::WorldKind::RealWorld);
+    init_progress_ = std::make_shared<rg::StartupProgress>();
     init_phase_.store(InitPhase::Loading, std::memory_order_release);
 
     std::string world_config_path = to_std_string(world_config_absolute_path);
@@ -140,9 +190,10 @@ bool RgSimulation::initialize_terrain(const String& world_config_absolute_path,
     std::string surface_table_path = to_std_string(surface_table_absolute_path);
     init_thread_ = std::thread([this, world_config_path = std::move(world_config_path),
                                vehicle_json_path = std::move(vehicle_json_path),
-                               surface_table_path = std::move(surface_table_path)]() mutable {
+                               surface_table_path = std::move(surface_table_path), progress = init_progress_,
+                               delay = fetch_delay_ms_]() mutable {
         run_terrain_init_worker(std::move(world_config_path), std::move(vehicle_json_path),
-                                std::move(surface_table_path));
+                                std::move(surface_table_path), std::move(progress), delay);
     });
     return true; // started, not necessarily succeeded - see get_init_status()
 }
@@ -160,17 +211,38 @@ godot::Dictionary RgSimulation::get_init_status() {
     }
     d["state"] = String(state);
     d["message"] = String(init_message_.c_str());
+    std::int64_t resident = 0, missing = 0, inflight = 0, failed = 0, prime_done = 0, prime_total = 0;
+    const char* stage = "done";
     if (phase == InitPhase::Ready && session_) {
         const rg::StreamingStatus s = session_->streaming_status();
-        d["resident_l0"] = static_cast<std::int64_t>(s.resident_l0);
-        d["missing_required"] = static_cast<std::int64_t>(s.missing_required);
-    } else {
-        // rg::Session's constructor is one blocking call with no progress
-        // callback (see this method's own header doc comment) - no
-        // finer-grained figure exists to report while "loading"/"error".
-        d["resident_l0"] = static_cast<std::int64_t>(0);
-        d["missing_required"] = static_cast<std::int64_t>(0);
+        resident = s.resident_l0;
+        missing = s.missing_required;
+        inflight = s.inflight;
+        failed = s.failed;
+        prime_done = prime_total = s.prime_ticks;
+    } else if (phase == InitPhase::Loading && init_progress_) {
+        const rg::StartupProgress& p = *init_progress_;
+        resident = p.resident_l0.load(std::memory_order_relaxed);
+        missing = p.missing_required.load(std::memory_order_relaxed);
+        inflight = p.inflight.load(std::memory_order_relaxed);
+        failed = p.failed.load(std::memory_order_relaxed);
+        prime_done = p.prime_done.load(std::memory_order_relaxed);
+        prime_total = p.prime_total.load(std::memory_order_relaxed);
+        switch (p.stage.load(std::memory_order_relaxed)) {
+            case rg::StartupProgress::NotStarted: stage = "opening"; break;
+            case rg::StartupProgress::WaitingForGate: stage = "waiting_for_gate"; break;
+            case rg::StartupProgress::Priming: stage = "priming"; break;
+            case rg::StartupProgress::Spawning: stage = "spawning"; break;
+            default: stage = "done"; break;
+        }
     }
+    d["resident_l0"] = resident;
+    d["missing_required"] = missing;
+    d["inflight"] = inflight;
+    d["failed"] = failed;
+    d["stage"] = String(stage);
+    d["prime_done"] = prime_done;
+    d["prime_total"] = prime_total;
     return d;
 }
 
@@ -209,6 +281,8 @@ godot::Dictionary RgSimulation::get_streaming_status() const {
     d["relief_overflow"] = static_cast<std::int64_t>(s.relief_overflow);
     d["startup_ms"] = s.startup_ms;
     d["prime_ticks"] = static_cast<std::int64_t>(s.prime_ticks);
+    d["relocations"] = static_cast<std::int64_t>(s.relocations);
+    d["relocate_failures"] = static_cast<std::int64_t>(s.relocate_failures);
     return d;
 }
 
@@ -220,6 +294,14 @@ godot::Vector3 RgSimulation::get_render_origin_session() const {
 
 void RgSimulation::retry_failed_tiles() {
     if (session_) session_->retry_failed_tiles();
+}
+
+void RgSimulation::relocate_vehicle(double session_x, double session_y, double yaw_deg) {
+    if (session_) session_->request_relocate(session_x, session_y, yaw_deg * (3.14159265358979323846 / 180.0));
+}
+
+void RgSimulation::reset_vehicle_to_spawn() {
+    if (session_) session_->request_reset_to_spawn();
 }
 
 std::int64_t RgSimulation::get_step_count() const {
@@ -378,10 +460,53 @@ float RgSimulation::get_vehicle_ground_speed_mps(const String& vehicle_name) con
     return static_cast<float>(session_->snapshot().chassis_motion.linear.length());
 }
 
+godot::String RgSimulation::set_player_mode(const String& mode_name) {
+    const std::optional<rg::PlayerMode> mode = rg::player_mode_from_string(to_std_string(mode_name));
+    if (!mode.has_value()) return String("unknown_mode");
+    const rg::PlayerModeMachine::Result r = modes_.request_mode(*mode);
+    apply_mode_to_session();
+    switch (r) {
+        case rg::PlayerModeMachine::Result::Changed: return String("changed");
+        case rg::PlayerModeMachine::Result::NoChange: return String("no_change");
+        case rg::PlayerModeMachine::Result::NotImplemented: return String("not_implemented");
+    }
+    return String("unknown_mode");
+}
+
+godot::String RgSimulation::cycle_player_mode() {
+    const rg::PlayerMode m = modes_.cycle_mode();
+    apply_mode_to_session();
+    return String(rg::to_string(m));
+}
+
+godot::String RgSimulation::get_player_mode() const { return String(rg::to_string(modes_.mode())); }
+
+godot::Dictionary RgSimulation::get_mode_state() {
+    reap_init_thread(/*wait=*/false); // a just-finished load updates the world phase
+    const rg::ModeRules r = modes_.effective_rules();
+    godot::Dictionary d;
+    d["mode"] = String(rg::to_string(modes_.mode()));
+    d["implemented"] = r.implemented;
+    d["vehicle_control"] = String(rg::to_string(r.vehicle_control));
+    d["driving_inputs_live"] = r.driving_inputs_live;
+    d["camera_inputs_live"] = r.camera_inputs_live;
+    d["camera_rig"] = String(rg::to_string(r.camera_rig));
+    d["world_kind"] = String(rg::to_string(modes_.world_kind()));
+    d["world_phase"] = String(rg::to_string(modes_.world_phase()));
+    d["other_world"] = String(rg::to_string(modes_.other_world()));
+    d["revision"] = static_cast<std::int64_t>(modes_.revision());
+    return d;
+}
+
 void RgSimulation::_bind_methods() {
     godot::ClassDB::bind_method(D_METHOD("initialize", "vehicle_json_absolute_path", "surface_table_absolute_path"), &RgSimulation::initialize);
     godot::ClassDB::bind_method(D_METHOD("initialize_terrain", "world_config_absolute_path", "vehicle_json_absolute_path", "surface_table_absolute_path"), &RgSimulation::initialize_terrain);
     godot::ClassDB::bind_method(D_METHOD("get_init_status"), &RgSimulation::get_init_status);
+    godot::ClassDB::bind_method(D_METHOD("set_fetch_delay_ms", "ms"), &RgSimulation::set_fetch_delay_ms);
+    godot::ClassDB::bind_method(D_METHOD("set_player_mode", "mode_name"), &RgSimulation::set_player_mode);
+    godot::ClassDB::bind_method(D_METHOD("cycle_player_mode"), &RgSimulation::cycle_player_mode);
+    godot::ClassDB::bind_method(D_METHOD("get_player_mode"), &RgSimulation::get_player_mode);
+    godot::ClassDB::bind_method(D_METHOD("get_mode_state"), &RgSimulation::get_mode_state);
     godot::ClassDB::bind_method(D_METHOD("start"), &RgSimulation::start);
     godot::ClassDB::bind_method(D_METHOD("stop"), &RgSimulation::stop);
     godot::ClassDB::bind_method(D_METHOD("is_running"), &RgSimulation::is_running);
@@ -389,6 +514,9 @@ void RgSimulation::_bind_methods() {
     godot::ClassDB::bind_method(D_METHOD("get_streaming_status"), &RgSimulation::get_streaming_status);
     godot::ClassDB::bind_method(D_METHOD("get_render_origin_session"), &RgSimulation::get_render_origin_session);
     godot::ClassDB::bind_method(D_METHOD("retry_failed_tiles"), &RgSimulation::retry_failed_tiles);
+    godot::ClassDB::bind_method(D_METHOD("relocate_vehicle", "session_x", "session_y", "yaw_deg"),
+                                &RgSimulation::relocate_vehicle);
+    godot::ClassDB::bind_method(D_METHOD("reset_vehicle_to_spawn"), &RgSimulation::reset_vehicle_to_spawn);
     godot::ClassDB::bind_method(D_METHOD("get_step_count"), &RgSimulation::get_step_count);
     godot::ClassDB::bind_method(D_METHOD("get_sim_time"), &RgSimulation::get_sim_time);
     godot::ClassDB::bind_method(D_METHOD("get_tick_rate_hz"), &RgSimulation::get_tick_rate_hz);

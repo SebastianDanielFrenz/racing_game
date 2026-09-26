@@ -10,6 +10,7 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include <chrono>
+#include <cmath>
 #include <cstdint>
 #include <stdexcept>
 #include <string>
@@ -165,4 +166,25 @@ TEST_CASE("player mode: an unattended session overrides the driving channels in 
     session.set_vehicle_control(rg::VehicleControl::Player);
     run_loop_ticks(session, 5);
     CHECK(session.world().get_control("throttle") == 1.0);
+}
+
+TEST_CASE("player mode: reset to spawn puts the car back at rest (flat)", "[player_mode]") {
+    rg::Session session(flat_config());
+    const ps::Pose spawn = session.world().get_pose(session.chassis_body());
+    ps::Pose away = spawn;
+    away.position = ps::Vec3{50.0, 20.0, spawn.position.z};
+    session.world().backend().set_pose(session.chassis_body(), away);
+    session.world().backend().set_motion(session.chassis_body(), ps::Motion{ps::Vec3{10.0, 0.0, 0.0}, ps::Vec3{}});
+
+    session.request_reset_to_spawn();
+    session.step(); // the relocation attempt
+    const ps::Pose p = session.world().get_pose(session.chassis_body());
+    const ps::Motion m = session.world().get_motion(session.chassis_body());
+    CHECK(std::abs(p.position.x - spawn.position.x) < 1e-9);
+    CHECK(std::abs(p.position.y - spawn.position.y) < 1e-9);
+    CHECK(std::abs(p.position.z - spawn.position.z) < 1e-6); // ground top z = 0, + chassis_z_m
+    CHECK(m.linear.length() == 0.0);
+    CHECK(session.streaming_status().relocations == 1);
+    session.step(); // the next attempt drives again
+    CHECK(session.streaming_status().relocations == 1);
 }

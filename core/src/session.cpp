@@ -9,6 +9,7 @@
 #include "ps/backend/shape_desc.h"
 #include "ps/io/vehicle_io.h"
 #include "ps/math/transcendental.h"
+#include "ps/vehicle/vehicle_reset.h"
 
 // ps_godot::FallDetector, reused BY PATH from physics_sim's adapter (see
 // session.h's top comment) - Godot-free.
@@ -127,6 +128,9 @@ void Session::build_world_contents(const SessionConfig& config) {
 
     if (config.terrain) {
         chassis_pose = setup_terrain(*config.terrain);
+        spawn_x_ = config.terrain->spawn_x;
+        spawn_y_ = config.terrain->spawn_y;
+        spawn_yaw_rad_ = config.terrain->spawn_yaw_rad;
     } else {
         // Ground: one large flat static box, top face at world z=0 - mirrors
         // external/physics_sim/data/scenarios/vehicle_step_steer.json's own
@@ -176,10 +180,15 @@ ps::Pose Session::setup_terrain(const TerrainModeConfig& tm) {
                                     "' is not in the surface table");
     }
 
+    // R9: the cancel flag is also checked around the (in a debug build
+    // slow, uncancellable) TileManager pool construction, not only in the
+    // gate and priming loops below.
+    throw_if_cancelled();
     terrain_ = std::make_unique<Terrain>(tm, surface);
     world_->set_terrain_source(terrain_->source,
                                g2m::ps_bridge::make_terrain_config(phys.radius_m, phys.max_tile_fills_per_tick));
 
+    throw_if_cancelled();
     StartupProgress* progress = config_.startup.get();
     if (progress) progress->stage.store(StartupProgress::WaitingForGate, std::memory_order_relaxed);
 
@@ -236,35 +245,126 @@ ps::Pose Session::setup_terrain(const TerrainModeConfig& tm) {
     throw_if_cancelled();
     if (progress) progress->stage.store(StartupProgress::Spawning, std::memory_order_relaxed);
 
-    // 3. Spawn: five rays straight down (centre + the four yaw-rotated
-    // chassis-footprint corners), from z = +3000 over 6000 m; the chassis
-    // centre goes chassis_z_m + spawn_clearance_m above the highest hit.
+    // 3. Spawn: five rays straight down (ray_spawn_pose).
+    ps::Pose pose;
+    double miss_x = 0.0, miss_y = 0.0;
+    if (!ray_spawn_pose(tm.spawn_x, tm.spawn_y, tm.spawn_yaw_rad, phys.spawn_clearance_m, pose, miss_x, miss_y)) {
+        char msg[160];
+        std::snprintf(msg, sizeof msg, "Session: spawn over NoData (no ground under (%.2f, %.2f))", miss_x, miss_y);
+        throw std::runtime_error(msg);
+    }
+    if (progress) progress->stage.store(StartupProgress::Done, std::memory_order_relaxed);
+    return pose;
+}
+
+bool Session::ray_spawn_pose(double x, double y, double yaw_rad, double clearance_m, ps::Pose& out, double& miss_x,
+                             double& miss_y) const {
+    // Five rays straight down (centre + the four yaw-rotated chassis-
+    // footprint corners), from z = +3000 over 6000 m; the chassis centre
+    // goes chassis_z_m + clearance_m above the highest hit.
     double s_yaw = 0.0, c_yaw = 1.0;
-    ps::math::sincos(tm.spawn_yaw_rad, s_yaw, c_yaw);
+    ps::math::sincos(yaw_rad, s_yaw, c_yaw);
     const double hx = config_.chassis_half_extents.x;
     const double hy = config_.chassis_half_extents.y;
     const double corners[5][2] = {{0.0, 0.0}, {hx, hy}, {hx, -hy}, {-hx, hy}, {-hx, -hy}};
     double z_max = -1.0e300;
     for (const auto& lc : corners) {
-        const double wx = tm.spawn_x + c_yaw * lc[0] - s_yaw * lc[1];
-        const double wy = tm.spawn_y + s_yaw * lc[0] + c_yaw * lc[1];
+        const double wx = x + c_yaw * lc[0] - s_yaw * lc[1];
+        const double wy = y + s_yaw * lc[0] + c_yaw * lc[1];
         const ps::RayCastHit hit =
             world_->backend().ray_cast(ps::Vec3{wx, wy, 3000.0}, ps::Vec3{0.0, 0.0, -1.0}, 6000.0);
         if (!hit.hit) {
-            char msg[160];
-            std::snprintf(msg, sizeof msg, "Session: spawn over NoData (no ground under (%.2f, %.2f))", wx, wy);
-            throw std::runtime_error(msg);
+            miss_x = wx;
+            miss_y = wy;
+            return false;
         }
         z_max = std::max(z_max, static_cast<double>(hit.point.z));
     }
 
     double s_half = 0.0, c_half = 1.0;
-    ps::math::sincos(0.5 * tm.spawn_yaw_rad, s_half, c_half);
+    ps::math::sincos(0.5 * yaw_rad, s_half, c_half);
+    out.position = ps::Vec3{x, y, z_max + config_.chassis_z_m + clearance_m};
+    out.orientation = ps::Quat{0.0, 0.0, s_half, c_half};
+    return true;
+}
+
+void Session::request_relocate(double x, double y, double yaw_rad) {
+    {
+        std::lock_guard<std::mutex> lock(relocate_mutex_);
+        relocate_request_ = RelocateTarget{x, y, yaw_rad};
+    }
+    relocate_pending_.store(true, std::memory_order_release);
+}
+
+void Session::request_reset_to_spawn() { request_relocate(spawn_x_, spawn_y_, spawn_yaw_rad_); }
+
+void Session::take_relocate_request() {
+    if (!have_vehicle_ || !relocate_pending_.load(std::memory_order_acquire)) return;
+    std::lock_guard<std::mutex> lock(relocate_mutex_);
+    relocate_pending_.store(false, std::memory_order_relaxed);
+    relocation_ = relocate_request_; // a newer request replaces one still waiting for its gate
+}
+
+void Session::finish_relocation() {
+    const RelocateTarget target = *relocation_;
+    relocation_.reset();
+
+    // Park the chassis far above the target (above the spawn rays' start, so
+    // they never hit it), at rest.
+    ps::Pose park;
+    park.position = ps::Vec3{target.x, target.y, kRelocateParkZ};
+    const ps::Motion still{};
+    const auto park_chassis = [&] {
+        world_->backend().set_pose(chassis_body_, park);
+        world_->backend().set_motion(chassis_body_, still);
+    };
+    park_chassis();
+
+    double clearance = 0.0;
+    if (terrain_) {
+        // The gate around the target is ready; TileManager's interest point
+        // is already there (gate_check). Step its priming ticks with the
+        // chassis held parked so the pool fills the target's square before
+        // anything touches the ground - the start-up priming, repeated.
+        const WorldConfig::PhysicsTerrainConfig& phys = terrain_->config.physics;
+        clearance = phys.spawn_clearance_m;
+        const int r_tm = static_cast<int>(std::ceil(phys.radius_m / terrain_->grid.tile_size_m()));
+        const std::size_t side = static_cast<std::size_t>(2 * r_tm + 1);
+        const int ticks = terrain_->config.prime_ticks > 0
+                              ? terrain_->config.prime_ticks
+                              : static_cast<int>((side * side + phys.max_tile_fills_per_tick - 1) /
+                                                 phys.max_tile_fills_per_tick) +
+                                    1;
+        for (int k = 0; k < ticks; ++k) {
+            world_->step();
+            park_chassis();
+        }
+    }
+
     ps::Pose pose;
-    pose.position = ps::Vec3{tm.spawn_x, tm.spawn_y, z_max + config_.chassis_z_m + phys.spawn_clearance_m};
-    pose.orientation = ps::Quat{0.0, 0.0, s_half, c_half};
-    if (progress) progress->stage.store(StartupProgress::Done, std::memory_order_relaxed);
-    return pose;
+    double miss_x = 0.0, miss_y = 0.0;
+    if (!ray_spawn_pose(target.x, target.y, target.yaw_rad, clearance, pose, miss_x, miss_y)) {
+        // Not over ground: leave the car where it was asked to go, parked,
+        // and say so - the caller picked a target outside the data.
+        status_.relocate_failures.fetch_add(1, std::memory_order_relaxed);
+        std::fprintf(stderr, "rg::Session: relocation to (%.1f, %.1f) failed: no ground under (%.2f, %.2f)\n",
+                     target.x, target.y, miss_x, miss_y);
+        return;
+    }
+    world_->backend().set_pose(chassis_body_, pose);
+    world_->backend().set_motion(chassis_body_, still);
+
+    // Drivetrain at rest: neutral, hubs stopped, slip relaxation cleared; an
+    // engine that was not off is left running (a stalled one restarts).
+    ps::vehicle::VehicleResetOptions opts;
+    opts.gear = 0;
+    opts.hubs_roll_with_chassis = false;
+    opts.clutch_locked = false;
+    opts.engine_state = world_->powertrain_state(vehicle_id_).engine_state == ps::drivetrain::EngineState::Off
+                            ? ps::drivetrain::EngineState::Off
+                            : ps::drivetrain::EngineState::Running;
+    world_->reset_vehicle(vehicle_id_, opts);
+    status_.relocations.fetch_add(1, std::memory_order_relaxed);
 }
 
 std::span<const g2m::phys::InterestPoint> Session::physics_interest_points() {
@@ -277,7 +377,12 @@ std::span<const g2m::phys::InterestPoint> Session::physics_interest_points() {
     std::vector<g2m::phys::InterestPoint>& out = t.interest_points;
     out.clear(); // capacity reserved in Terrain's constructor: no allocation per tick
     double x = t.config.spawn_x, y = t.config.spawn_y, vx = 0.0, vy = 0.0;
-    if (have_vehicle_) {
+    if (relocation_) {
+        // A relocation in progress: the terrain must come to the target
+        // before the car can (R2.2 R9, request_relocate).
+        x = relocation_->x;
+        y = relocation_->y;
+    } else if (have_vehicle_) {
         const ps::Vec3 p = world_->get_pose(chassis_body_).position;
         const ps::Vec3 v = world_->get_motion(chassis_body_).linear;
         x = p.x;
@@ -317,6 +422,7 @@ bool Session::gate_check() {
 }
 
 bool Session::step_once(bool from_loop) {
+    take_relocate_request();
     if (terrain_) {
         if (!gate_check()) {
             status_.frozen.store(true, std::memory_order_relaxed);
@@ -331,6 +437,14 @@ bool Session::step_once(bool from_loop) {
         }
         status_.frozen.store(false, std::memory_order_relaxed);
         in_freeze_ = false;
+    }
+
+    if (relocation_) {
+        // This attempt moves the car instead of driving it (its priming
+        // ticks step the World); the next attempt drives again.
+        finish_relocation();
+        post_step(from_loop);
+        return true;
     }
 
     if (have_vehicle_ && drive_script_) {
@@ -455,6 +569,8 @@ StreamingStatus Session::streaming_status() const {
     s.relief_overflow = status_.relief_overflow.load(std::memory_order_relaxed);
     s.startup_ms = status_.startup_ms.load(std::memory_order_relaxed);
     s.prime_ticks = status_.prime_ticks.load(std::memory_order_relaxed);
+    s.relocations = status_.relocations.load(std::memory_order_relaxed);
+    s.relocate_failures = status_.relocate_failures.load(std::memory_order_relaxed);
     return s;
 }
 
@@ -494,6 +610,27 @@ FrameSnapshot Session::capture_frame_snapshot() const {
         snap.wheels.push_back(std::move(ws));
     }
     return snap;
+}
+
+std::unique_ptr<Session> make_session(const SessionConfig& config, std::string* error, SessionFailure* failure) {
+    SessionFailure why = SessionFailure::Error;
+    std::string text;
+    try {
+        auto session = std::make_unique<Session>(config);
+        if (failure != nullptr) *failure = SessionFailure::None;
+        if (error != nullptr) error->clear();
+        return session;
+    } catch (const SessionCancelled& e) {
+        why = SessionFailure::Cancelled;
+        text = e.what();
+    } catch (const std::exception& e) {
+        text = e.what();
+    } catch (...) {
+        text = "Session: constructor threw a non-std exception";
+    }
+    if (failure != nullptr) *failure = why;
+    if (error != nullptr) *error = std::move(text);
+    return nullptr;
 }
 
 } // namespace rg

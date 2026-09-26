@@ -18,6 +18,8 @@
 // is on the test thread, reading atomics (streaming_status, loop_stats).
 #include "rg/session.h"
 #include "rg/terrain_mode.h"
+#include "rg/world_config.h"
+#include "rg/world_terrain.h"
 
 #include "g2m/core/geo/session_frame.h"
 #include "g2m/phys/height_tile_loader.h"
@@ -495,6 +497,33 @@ TEST_CASE("session terrain: a set cancel flag makes the constructor throw Sessio
     CHECK_THROWS_AS(rg::Session(config), rg::SessionCancelled);
 }
 
+TEST_CASE("session terrain: make_session reports a cancel and an error without throwing", "[session_terrain]") {
+    // rg_godot cannot catch rg_core's exceptions (godot-cpp's
+    // -D_HAS_EXCEPTIONS=0 - see make_session's doc comment); make_session is
+    // its only way to construct a Session.
+    auto fetch = std::make_shared<SyntheticFetch>();
+    rg::SessionConfig config = terrain_config(1, fetch, 100.0, 50.0);
+    config.startup = std::make_shared<rg::StartupProgress>();
+    config.startup->cancel.store(true);
+    std::string err;
+    rg::SessionFailure why = rg::SessionFailure::None;
+    CHECK(rg::make_session(config, &err, &why) == nullptr);
+    CHECK(why == rg::SessionFailure::Cancelled);
+    CHECK(err == "Session: terrain start-up cancelled");
+
+    rg::SessionConfig bad = terrain_config(1, fetch, 100.0, 50.0);
+    bad.vehicle_json_path = "does/not/exist.json";
+    err.clear();
+    CHECK(rg::make_session(bad, &err, &why) == nullptr);
+    CHECK(why == rg::SessionFailure::Error);
+    CHECK_FALSE(err.empty());
+
+    rg::SessionConfig good = terrain_config(1, fetch, 100.0, 50.0);
+    CHECK(rg::make_session(good, &err, &why) != nullptr);
+    CHECK(why == rg::SessionFailure::None);
+    CHECK(err.empty());
+}
+
 TEST_CASE("session terrain: cancelling a start-up blocked by a 503 storm returns promptly", "[session_terrain]") {
     auto fetch = std::make_shared<SyntheticFetch>();
     fetch->storm.store(true); // the gate can never be met
@@ -533,4 +562,103 @@ TEST_CASE("session terrain: cancelling a start-up blocked by a 503 storm returns
     CHECK(seen);
     CHECK(outcome.load() == 1);
     CHECK(cancel_ms < 2000.0); // the start-up timeout is 30 s; a cancel returns within a few gate checks
+}
+
+// --- R2.2 R9: relocation (Session::request_relocate) ---
+
+TEST_CASE("session terrain: a relocation freezes through the gate, then lands the car at rest at the target",
+          "[session_terrain]") {
+    auto fetch = std::make_shared<SyntheticFetch>();
+    rg::Session session(terrain_config(1, fetch, 100.0, 50.0, 8));
+    // Unattended: the brakes hold the car on the sine hills after landing.
+    session.set_vehicle_control(rg::VehicleControl::Unattended);
+
+    // Storm on: the target (~1.9 km east) is far outside everything resident,
+    // so the relocation must freeze until the storm is over.
+    fetch->storm.store(true);
+    const double tx = 2000.0, ty = 50.0, tyaw = 0.5;
+    session.request_relocate(tx, ty, tyaw);
+    session.start();
+    const bool failed_seen = wait_for([&] { return session.streaming_status().failed > 0; }, 20.0);
+    const rg::FixedRateLoop::LoopStats frozen_stats = session.loop_stats();
+    const rg::StreamingStatus frozen_st = session.streaming_status();
+    fetch->storm.store(false);
+    session.retry_failed_tiles();
+    const bool relocated = wait_for([&] { return session.streaming_status().relocations == 1; }, 20.0);
+    const bool drove_on = wait_for([&] { return session.loop_stats().stepped_count > 480; }, 20.0);
+    session.stop();
+
+    const ps::Vec3 p = session.world().get_pose(session.chassis_body()).position;
+    const double speed = session.world().get_motion(session.chassis_body()).linear.length();
+    const double ride = p.z - ground_below_chassis(session);
+    const rg::StreamingStatus st = session.streaming_status();
+    std::printf("[session_terrain] relocation: frozen stepped %llu, freeze episodes %llu, relocations %llu, "
+                "failures %llu, landed at (%.2f, %.2f) ride %.4f m, speed %.4f m/s, falls %llu, misses %llu\n",
+                static_cast<unsigned long long>(frozen_stats.stepped_count),
+                static_cast<unsigned long long>(st.freeze_count), static_cast<unsigned long long>(st.relocations),
+                static_cast<unsigned long long>(st.relocate_failures), p.x, p.y, ride, speed,
+                static_cast<unsigned long long>(st.falls), static_cast<unsigned long long>(st.fill_misses));
+
+    REQUIRE(failed_seen);
+    CHECK(frozen_stats.stepped_count == 0); // frozen from the first attempt: the World waited for the target
+    CHECK(frozen_st.frozen);
+    REQUIRE(relocated);
+    REQUIRE(drove_on);
+    CHECK(st.freeze_count >= 1);
+    CHECK(st.relocate_failures == 0);
+    CHECK(std::hypot(p.x - tx, p.y - ty) < 0.5);
+    CHECK(ride > 0.2);
+    CHECK(ride < 1.0);
+    CHECK(speed < 0.2);
+    CHECK(st.falls == 0);
+    CHECK(st.fill_misses == 0);
+    CHECK(st.starved_tiles == 0);
+}
+
+TEST_CASE("session terrain: a relocation over NoData leaves the car and counts a failure", "[session_terrain]") {
+    auto fetch = std::make_shared<SyntheticFetch>();
+    rg::Session session(terrain_config(1, fetch, 100.0, 50.0, 8));
+    session.request_relocate(-390.0, 110.0, 0.0); // the NoData patch
+    session.step();
+    const rg::StreamingStatus st = session.streaming_status();
+    CHECK(st.relocations == 0);
+    CHECK(st.relocate_failures == 1);
+}
+
+// Real data: cancelling a start-up on the real home-r1 store at several
+// points (the Godot world switch's cancel-then-join). Hidden ([.]) - reads
+// cache/ through RG_G2M_HOME's default like the game does.
+TEST_CASE("session terrain: cancelling a real-store start-up at several points", "[.][realdata][session_terrain]") {
+    std::string err;
+    const auto world = rg::load_world_config(std::string(RG_SOURCE_DIR) + "/data/world/world_config.json", &err);
+    INFO(err);
+    REQUIRE(world.has_value());
+    for (const int delay_ms : {0, 1, 5, 20, 100, 200}) {
+        std::shared_ptr<rg::WorldTerrain> terrain(rg::WorldTerrain::open(*world, &err));
+        REQUIRE(terrain != nullptr);
+        rg::SessionConfig config;
+        config.vehicle_json_path = std::string(RG_SOURCE_DIR) + "/external/physics_sim/data/vehicles/car_sedan.json";
+        config.surface_table_path = std::string(RG_SOURCE_DIR) + "/external/physics_sim/data/surfaces/surfaces.json";
+        config.terrain = rg::make_terrain_mode(*world, terrain);
+        auto progress = std::make_shared<rg::StartupProgress>();
+        config.startup = progress;
+        std::atomic<int> outcome{0};
+        std::thread worker([&] {
+            try {
+                rg::Session session(config);
+                outcome.store(3);
+            } catch (const rg::SessionCancelled&) {
+                outcome.store(1);
+            } catch (const std::exception& e) {
+                std::printf("[session_terrain] real cancel: other exception %s\n", e.what());
+                outcome.store(2);
+            }
+        });
+        std::this_thread::sleep_for(std::chrono::milliseconds(delay_ms));
+        progress->cancel.store(true);
+        worker.join();
+        std::printf("[session_terrain] real cancel after %d ms: outcome %d stage %d\n", delay_ms, outcome.load(),
+                    progress->stage.load());
+        CHECK((outcome.load() == 1 || outcome.load() == 3));
+    }
 }

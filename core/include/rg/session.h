@@ -49,6 +49,7 @@
 #include <atomic>
 #include <cstdint>
 #include <memory>
+#include <mutex>
 #include <optional>
 #include <span>
 #include <stdexcept>
@@ -191,6 +192,8 @@ struct StreamingStatus {
     // and how many priming ticks it stepped before spawning.
     double startup_ms = 0.0;
     std::uint32_t prime_ticks = 0;
+    std::uint64_t relocations = 0;       // request_relocate placements done (R9)
+    std::uint64_t relocate_failures = 0; // relocations with no ground at the target
 };
 
 // The full list of control channels Session pre-seeds at construction (see
@@ -276,6 +279,26 @@ public:
     }
     [[nodiscard]] VehicleControl vehicle_control() const { return vehicle_control_.load(std::memory_order_relaxed); }
 
+    // Relocation (R2.2 R9): move the car to session XY (x, y) facing yaw_rad
+    // (about +Z, 0 = east), at rest in neutral. Any thread; consumed by the
+    // next tick attempt on the stepping thread (a newer request replaces one
+    // not yet consumed or still waiting for its terrain). Terrain mode: the
+    // physics interest point moves to the target first, so the clock freezes
+    // through the gate (a real freeze, counted in freeze_count) until the
+    // target's tiles are resident; then one attempt steps the TileManager
+    // priming ticks with the chassis parked at kRelocateParkZ, places it with
+    // the spawn's five rays (chassis_z_m + spawn_clearance_m above the
+    // highest hit) and resets the drivetrain (World::reset_vehicle: gear 0,
+    // hubs stopped, engine left running unless off). A target with no ground
+    // under it counts relocate_failures and leaves the chassis at the park
+    // height over the target (it then falls: pick targets inside the data).
+    // Flat mode: the same placement, no gate or priming. The game's "reset
+    // car" key (request_reset_to_spawn) and the smoke test's forced freeze
+    // use it; nothing calls it on its own, so hashes are unaffected.
+    void request_relocate(double x, double y, double yaw_rad);
+    void request_reset_to_spawn(); // the config's spawn (flat mode: the origin, yaw 0)
+    static constexpr double kRelocateParkZ = 4000.0;
+
     // Replaces the drive script (rewound: every event already due at the
     // current drive tick is applied on the next stepped tick). While a
     // script is set it is the only control source of try_step()/step() and
@@ -355,6 +378,12 @@ private:
     void throw_if_cancelled() const;
     // The real-time loop's control copy (atomics, or the unattended override).
     void apply_live_controls();
+    // The five spawn rays at (x, y, yaw); false (+ the first missing ray's
+    // XY) when one misses.
+    bool ray_spawn_pose(double x, double y, double yaw_rad, double clearance_m, ps::Pose& out, double& miss_x,
+                        double& miss_y) const;
+    void take_relocate_request(); // stepping thread
+    void finish_relocation();     // stepping thread, gate ready at the target
     void post_step(bool from_loop);
     [[nodiscard]] FrameSnapshot capture_frame_snapshot() const;
 
@@ -390,6 +419,8 @@ private:
         std::atomic<std::uint64_t> relief_overflow{0};
         std::atomic<double> startup_ms{0.0};
         std::atomic<std::uint32_t> prime_ticks{0};
+        std::atomic<std::uint64_t> relocations{0};
+        std::atomic<std::uint64_t> relocate_failures{0};
     };
     StatusAtomics status_;
     bool in_freeze_ = false; // stepping thread only
@@ -400,9 +431,34 @@ private:
     std::unordered_map<std::string, std::atomic<double>> control_channels_;
     std::atomic<VehicleControl> vehicle_control_{VehicleControl::Player};
 
+    struct RelocateTarget {
+        double x = 0.0;
+        double y = 0.0;
+        double yaw_rad = 0.0;
+    };
+    double spawn_x_ = 0.0, spawn_y_ = 0.0, spawn_yaw_rad_ = 0.0;
+    std::mutex relocate_mutex_;         // guards relocate_request_
+    RelocateTarget relocate_request_;   // latest request (any thread)
+    std::atomic<bool> relocate_pending_{false};
+    std::optional<RelocateTarget> relocation_; // stepping thread: accepted, waiting for its gate
+
     // Its thread runs step_once over every member above; ~Session() stops it
     // before anything is destroyed.
     FixedRateLoop loop_;
 };
+
+// Why constructing a Session failed (make_session below).
+enum class SessionFailure : int { None = 0, Cancelled = 1, Error = 2 };
+
+// Constructs a Session and turns ANY exception its constructor throws into
+// nullptr plus *error (e.what(), or a fixed text for a non-std exception) and
+// *failure (Cancelled for SessionCancelled). For callers that must not - or
+// cannot - catch rg_core's exceptions themselves: a TU built with godot-cpp's
+// default GODOTCPP_DISABLE_EXCEPTIONS (-D_HAS_EXCEPTIONS=0) sees MSVC STL's
+// `std::exception` as stdext::exception, a DIFFERENT type from the one
+// rg_core throws, so its `catch (const std::exception&)` never matches and
+// the exception ends in std::terminate. Both out-pointers may be null.
+std::unique_ptr<Session> make_session(const SessionConfig& config, std::string* error = nullptr,
+                                      SessionFailure* failure = nullptr);
 
 } // namespace rg
