@@ -180,11 +180,16 @@ ps::Pose Session::setup_terrain(const TerrainModeConfig& tm) {
     world_->set_terrain_source(terrain_->source,
                                g2m::ps_bridge::make_terrain_config(phys.radius_m, phys.max_tile_fills_per_tick));
 
+    StartupProgress* progress = config_.startup.get();
+    if (progress) progress->stage.store(StartupProgress::WaitingForGate, std::memory_order_relaxed);
+
     // 1. Start-up: block until the gate around the spawn point is ready.
     // Failed keys are retried here (a transient 5xx at start-up must not be
-    // fatal); the timeout is the one hard error.
+    // fatal); the timeout is the one hard error (a cancellation, R9, throws
+    // SessionCancelled instead).
     const Clock::time_point t0 = Clock::now();
     while (!gate_check()) {
+        throw_if_cancelled();
         if (status_.failed.load(std::memory_order_relaxed) > 0) terrain_->streamer.retry_failed();
         if (ms_since(t0) > phys.startup_timeout_s * 1000.0) {
             throw std::runtime_error(
@@ -207,7 +212,15 @@ ps::Pose Session::setup_terrain(const TerrainModeConfig& tm) {
                                 : static_cast<int>((square + phys.max_tile_fills_per_tick - 1) /
                                                    phys.max_tile_fills_per_tick) +
                                       1;
-    for (int k = 0; k < prime_ticks; ++k) step_blocking("terrain priming");
+    if (progress) {
+        progress->prime_total.store(static_cast<std::uint32_t>(prime_ticks), std::memory_order_relaxed);
+        progress->stage.store(StartupProgress::Priming, std::memory_order_relaxed);
+    }
+    for (int k = 0; k < prime_ticks; ++k) {
+        throw_if_cancelled();
+        step_blocking("terrain priming");
+        if (progress) progress->prime_done.store(static_cast<std::uint32_t>(k + 1), std::memory_order_relaxed);
+    }
     status_.prime_ticks.store(static_cast<std::uint32_t>(prime_ticks), std::memory_order_relaxed);
 
     const std::size_t resident = world_->terrain_resident_tile_count();
@@ -219,6 +232,9 @@ ps::Pose Session::setup_terrain(const TerrainModeConfig& tm) {
                                  std::to_string(square) + ", starved " + std::to_string(starved) +
                                  ", fill misses " + std::to_string(misses) + ")");
     }
+
+    throw_if_cancelled();
+    if (progress) progress->stage.store(StartupProgress::Spawning, std::memory_order_relaxed);
 
     // 3. Spawn: five rays straight down (centre + the four yaw-rotated
     // chassis-footprint corners), from z = +3000 over 6000 m; the chassis
@@ -247,6 +263,7 @@ ps::Pose Session::setup_terrain(const TerrainModeConfig& tm) {
     ps::Pose pose;
     pose.position = ps::Vec3{tm.spawn_x, tm.spawn_y, z_max + config_.chassis_z_m + phys.spawn_clearance_m};
     pose.orientation = ps::Quat{0.0, 0.0, s_half, c_half};
+    if (progress) progress->stage.store(StartupProgress::Done, std::memory_order_relaxed);
     return pose;
 }
 
@@ -290,6 +307,12 @@ bool Session::gate_check() {
     status_.inflight.store(gs.inflight, std::memory_order_relaxed);
     status_.resident_l0.store(gs.resident, std::memory_order_relaxed);
     status_.failed.store(gs.failed, std::memory_order_relaxed);
+    if (StartupProgress* progress = config_.startup.get(); progress != nullptr && !have_vehicle_) {
+        progress->missing_required.store(gs.missing_required, std::memory_order_relaxed);
+        progress->inflight.store(gs.inflight, std::memory_order_relaxed);
+        progress->resident_l0.store(gs.resident, std::memory_order_relaxed);
+        progress->failed.store(gs.failed, std::memory_order_relaxed);
+    }
     return gs.ready;
 }
 
@@ -313,17 +336,37 @@ bool Session::step_once(bool from_loop) {
     if (have_vehicle_ && drive_script_) {
         drive_script_->apply(DriveTickContext{drive_tick(), chassis_body_, vehicle_id_}, *world_);
     } else if (from_loop) {
-        // Copies this session's own control_channels_ into ps::World right
-        // before the tick (session.h's set_control doc comment explains why
-        // this hand-off has to happen on the stepping thread).
-        for (auto& [name, value] : control_channels_) {
-            world_->set_control(name, value.load(std::memory_order_relaxed));
-        }
+        apply_live_controls();
     }
 
     world_->step();
     post_step(from_loop);
     return true;
+}
+
+void Session::apply_live_controls() {
+    // Copies this session's own control_channels_ into ps::World right
+    // before the tick (session.h's set_control doc comment explains why this
+    // hand-off has to happen on the stepping thread).
+    for (auto& [name, value] : control_channels_) {
+        world_->set_control(name, value.load(std::memory_order_relaxed));
+    }
+    if (vehicle_control_.load(std::memory_order_relaxed) != VehicleControl::Unattended || !have_vehicle_) return;
+    // Unattended (R2.2 R9): the driving channels come from the policy, not
+    // from the player's input (rg/player_mode.h's unattended_controls).
+    const ps::Vec3 v = world_->get_motion(chassis_body_).linear;
+    const UnattendedControls u = unattended_controls(v.length());
+    world_->set_control("steer", u.steer);
+    world_->set_control("throttle", u.throttle);
+    world_->set_control("brake", u.brake);
+    world_->set_control("handbrake", u.handbrake);
+    world_->set_control("clutch", u.clutch);
+    world_->set_control("starter", u.starter);
+}
+
+void Session::throw_if_cancelled() const {
+    if (have_vehicle_) return; // cancellation is a start-up seam only
+    if (config_.startup && config_.startup->cancel.load(std::memory_order_relaxed)) throw SessionCancelled();
 }
 
 void Session::post_step(bool from_loop) {
@@ -355,6 +398,7 @@ void Session::step_blocking(const char* what) {
     const Clock::time_point t0 = Clock::now();
     const double timeout_ms = terrain_ ? terrain_->config.physics.startup_timeout_s * 1000.0 : 0.0;
     while (!step_once(false)) {
+        throw_if_cancelled();
         if (ms_since(t0) > timeout_ms) {
             throw std::runtime_error(std::string("Session: ") + what + ": terrain gate stayed frozen for " +
                                      std::to_string(timeout_ms / 1000.0) + " s (missing " +

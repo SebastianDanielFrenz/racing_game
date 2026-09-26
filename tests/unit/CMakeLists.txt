@@ -21,6 +21,7 @@ add_executable(rg_unit_tests
   test_terrain_mode.cpp
   test_session_terrain.cpp
   test_session_reinit.cpp
+  test_player_mode.cpp
 )
 
 target_link_libraries(rg_unit_tests

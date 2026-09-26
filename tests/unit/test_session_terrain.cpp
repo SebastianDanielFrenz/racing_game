@@ -465,3 +465,72 @@ TEST_CASE("session terrain: a 503 storm freezes the loop without stepping; it re
     CHECK(st.fill_misses == 0);
     CHECK(st.falls == 0);
 }
+
+// --- R2.2 R9: start-up progress and cancellation (rg::StartupProgress) ---
+
+TEST_CASE("session terrain: start-up progress is published while the constructor blocks", "[session_terrain]") {
+    auto fetch = std::make_shared<SyntheticFetch>();
+    rg::SessionConfig config = terrain_config(1, fetch, 100.0, 50.0);
+    auto progress = std::make_shared<rg::StartupProgress>();
+    config.startup = progress;
+
+    rg::Session session(config);
+    const rg::StreamingStatus st = session.streaming_status();
+    std::printf("[session_terrain] progress: stage %d, prime %u/%u, resident L0 %u, missing %u\n",
+                progress->stage.load(), progress->prime_done.load(), progress->prime_total.load(),
+                progress->resident_l0.load(), progress->missing_required.load());
+    CHECK(progress->stage.load() == rg::StartupProgress::Done);
+    CHECK(progress->prime_total.load() == st.prime_ticks);
+    CHECK(progress->prime_done.load() == st.prime_ticks);
+    CHECK(progress->resident_l0.load() > 0);
+    CHECK(progress->missing_required.load() == 0);
+    CHECK(session.spawn_tick() == 26); // the progress mirror changes nothing it computes
+}
+
+TEST_CASE("session terrain: a set cancel flag makes the constructor throw SessionCancelled", "[session_terrain]") {
+    auto fetch = std::make_shared<SyntheticFetch>();
+    rg::SessionConfig config = terrain_config(1, fetch, 100.0, 50.0);
+    config.startup = std::make_shared<rg::StartupProgress>();
+    config.startup->cancel.store(true);
+    CHECK_THROWS_AS(rg::Session(config), rg::SessionCancelled);
+}
+
+TEST_CASE("session terrain: cancelling a start-up blocked by a 503 storm returns promptly", "[session_terrain]") {
+    auto fetch = std::make_shared<SyntheticFetch>();
+    fetch->storm.store(true); // the gate can never be met
+    rg::SessionConfig config = terrain_config(1, fetch, 100.0, 50.0);
+    auto progress = std::make_shared<rg::StartupProgress>();
+    config.startup = progress;
+
+    std::atomic<int> outcome{0}; // 0 running, 1 cancelled, 2 other exception, 3 constructed
+    std::thread worker([&] {
+        try {
+            rg::Session session(config);
+            outcome.store(3);
+        } catch (const rg::SessionCancelled&) {
+            outcome.store(1);
+        } catch (...) {
+            outcome.store(2);
+        }
+    });
+    // Progress is live while the constructor blocks: the gate's figures.
+    const bool seen = wait_for(
+        [&] {
+            return progress->stage.load() == rg::StartupProgress::WaitingForGate &&
+                   progress->missing_required.load() > 0 && progress->failed.load() > 0;
+        },
+        20.0);
+    const std::uint32_t missing = progress->missing_required.load();
+    const std::uint32_t failed = progress->failed.load();
+    const auto t0 = std::chrono::steady_clock::now();
+    progress->cancel.store(true);
+    worker.join();
+    const double cancel_ms =
+        std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t0).count();
+    std::printf("[session_terrain] cancel: missing %u, failed %u while blocked; constructor returned %.1f ms after "
+                "cancel\n",
+                missing, failed, cancel_ms);
+    CHECK(seen);
+    CHECK(outcome.load() == 1);
+    CHECK(cancel_ms < 2000.0); // the start-up timeout is 30 s; a cancel returns within a few gate checks
+}

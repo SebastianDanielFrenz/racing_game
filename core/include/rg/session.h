@@ -33,6 +33,7 @@
 
 #include "rg/drive_script.h"
 #include "rg/fixed_rate_loop.h"
+#include "rg/player_mode.h"
 #include "rg/terrain_mode.h"
 
 #include "ps/drivetrain/powertrain_state.h"
@@ -50,6 +51,7 @@
 #include <memory>
 #include <optional>
 #include <span>
+#include <stdexcept>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -62,6 +64,34 @@ struct InterestPoint;
 }
 
 namespace rg {
+
+// Terrain-mode start-up progress and cancellation (R2.2 R9), shared between
+// the thread constructing a Session (which may block in setup_terrain for up
+// to physics.startup_timeout_s) and any other thread: the constructor
+// mirrors the gate's figures into it after every gate check, and polls
+// `cancel` in its start-up and priming loops - a set flag makes the
+// constructor throw SessionCancelled within about one gate check (1 ms
+// sleeps), instead of running to completion or the timeout. Optional
+// (SessionConfig::startup null = no progress, no cancellation, the pre-R9
+// behaviour); never read by the simulation itself, so it cannot move a
+// state hash.
+struct StartupProgress {
+    enum Stage : int { NotStarted = 0, WaitingForGate = 1, Priming = 2, Spawning = 3, Done = 4 };
+    std::atomic<int> stage{NotStarted};
+    std::atomic<std::uint32_t> missing_required{0};
+    std::atomic<std::uint32_t> inflight{0};
+    std::atomic<std::uint32_t> resident_l0{0};
+    std::atomic<std::uint32_t> failed{0};
+    std::atomic<std::uint32_t> prime_done{0};
+    std::atomic<std::uint32_t> prime_total{0};
+    std::atomic<bool> cancel{false};
+};
+
+// Thrown by Session's constructor when StartupProgress::cancel was set.
+class SessionCancelled : public std::runtime_error {
+public:
+    SessionCancelled() : std::runtime_error("Session: terrain start-up cancelled") {}
+};
 
 struct SessionConfig {
     double tick_rate_hz = 240.0;
@@ -100,6 +130,10 @@ struct SessionConfig {
 
     // Terrain mode (R2.2 R4) when set; flat mode otherwise.
     std::optional<TerrainModeConfig> terrain;
+
+    // Start-up progress/cancellation (R2.2 R9, terrain mode only; see
+    // StartupProgress). Null = none.
+    std::shared_ptr<StartupProgress> startup;
 };
 
 struct WheelSnapshot {
@@ -230,6 +264,18 @@ public:
     void set_control(const std::string& channel, double value);
     [[nodiscard]] double get_control(const std::string& channel) const;
 
+    // Who drives the car (R2.2 R9, rg/player_mode.h): Player (default) -
+    // the real-time loop copies the set_control atomics as before;
+    // Unattended - the loop overrides steer/throttle/brake/handbrake/clutch/
+    // starter with rg::unattended_controls(chassis speed) and copies every
+    // other channel. Only the real-time loop's control copy reads it (a
+    // drive script or the synchronous step() are unaffected), so a Player
+    // session's behaviour and hashes are exactly the pre-R9 ones. Any thread.
+    void set_vehicle_control(VehicleControl control) {
+        vehicle_control_.store(control, std::memory_order_relaxed);
+    }
+    [[nodiscard]] VehicleControl vehicle_control() const { return vehicle_control_.load(std::memory_order_relaxed); }
+
     // Replaces the drive script (rewound: every event already due at the
     // current drive tick is applied on the next stepped tick). While a
     // script is set it is the only control source of try_step()/step() and
@@ -303,8 +349,12 @@ private:
     // for R4 exactly one entry, the chassis. Sim thread only; the span points
     // into Terrain's reused buffer (valid until the next call).
     std::span<const g2m::phys::InterestPoint> physics_interest_points();
-    // Retries step_once(false) until it steps; throws after the stall timeout.
+    // Retries step_once(false) until it steps; throws after the stall
+    // timeout, or SessionCancelled once config_.startup->cancel is set.
     void step_blocking(const char* what);
+    void throw_if_cancelled() const;
+    // The real-time loop's control copy (atomics, or the unattended override).
+    void apply_live_controls();
     void post_step(bool from_loop);
     [[nodiscard]] FrameSnapshot capture_frame_snapshot() const;
 
@@ -348,6 +398,7 @@ private:
     ps_godot::OriginRebase origin_rebase_;
 
     std::unordered_map<std::string, std::atomic<double>> control_channels_;
+    std::atomic<VehicleControl> vehicle_control_{VehicleControl::Player};
 
     // Its thread runs step_once over every member above; ~Session() stops it
     // before anything is destroyed.

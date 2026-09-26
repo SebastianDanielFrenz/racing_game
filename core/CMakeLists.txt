@@ -53,6 +53,7 @@ set(PS_ADAPTER_SRC_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../external/physics_sim/adap
 
 add_library(rg_core STATIC
     src/session.cpp
+    src/player_mode.cpp
     src/terrain_mode.cpp
     src/world_config.cpp
     src/world_terrain.cpp
