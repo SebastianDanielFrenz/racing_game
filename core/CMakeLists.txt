@@ -7,11 +7,13 @@
 # promises "no GODOT type", so exposing ps:: types in rg::Session's API is
 # in scope and simplifies godot_ext considerably).
 #
-# Four headers (plus one .cpp) are reused BY PATH from physics_sim's own
+# Headers (plus one .cpp) are reused BY PATH from physics_sim's own
 # adapters/godot/src, rather than copied, per this task's own instruction to
 # state which and why (see session.h's top comment for the per-file
-# reasoning): sim_thread.h, triple_buffer.h, origin_rebase.h,
-# frame_convert_core.h/.cpp. All four are already Godot-free (verified by
+# reasoning): triple_buffer.h, origin_rebase.h, fall_detector.h (R2.2 R4:
+# terrain mode's fall diagnostic), sim_thread.h (precise_sleep_until, used by
+# fixed_rate_loop.cpp - rg::Session itself now runs on rg::FixedRateLoop),
+# frame_convert_core.h/.cpp. All are Godot-free (verified by
 # reading them - none includes any godot:: type), so reusing them by path
 # creates no dependency on godot-cpp and no risk of drifting from the
 # read-only submodule's own copy silently going stale (a future physics_sim
@@ -51,6 +53,7 @@ set(PS_ADAPTER_SRC_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../external/physics_sim/adap
 
 add_library(rg_core STATIC
     src/session.cpp
+    src/terrain_mode.cpp
     src/world_config.cpp
     src/world_terrain.cpp
     src/fixed_rate_loop.cpp

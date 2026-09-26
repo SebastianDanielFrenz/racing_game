@@ -18,9 +18,9 @@
 // that would otherwise cause a catch-up BURST once the callback starts
 // stepping again (R2.2 plan section 2's own "no catch-up burst" requirement).
 //
-// NOT yet wired into rg::Session (that is R4, per the R2.2 plan's commit
-// sequence, section 6) - this is the standalone primitive plus its own test
-// coverage (tests/unit/test_fixed_rate_loop.cpp).
+// rg::Session::start() runs its tick attempts on one of these (R2.2 R4);
+// the primitive's own coverage is tests/unit/test_fixed_rate_loop.cpp, the
+// Session-level freeze/no-burst check tests/unit/test_session_terrain.cpp.
 #pragma once
 
 #include <array>

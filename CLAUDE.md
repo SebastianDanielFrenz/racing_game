@@ -19,12 +19,17 @@ racing_game/
     geo2map_engine/                    git submodule, READ-ONLY from this repo (another session owns it), pinned by commit - see "geo2map_engine submodule" below
   core/
     include/rg/
-      session.h                       rg::Session, SessionConfig, FrameSnapshot, WheelSnapshot, kControlChannelNames[]/kControlChannelCount
+      session.h                       rg::Session, SessionConfig (optional `terrain`), FrameSnapshot, WheelSnapshot, StreamingStatus, kControlChannelNames[]/kControlChannelCount - see "Session terrain mode (R4)" below
+      terrain_mode.h                  rg::TerrainModeConfig (SessionConfig::terrain), rg::HeightTileSharedFetch (g2m::phys::IHeightTileFetch over a HeightTileFetchFn - WorldTerrain::height_tile_shared), make_terrain_mode(WorldConfig, WorldTerrain) + a pure (WorldConfig, SessionFrame, fetch) overload
+      drive_script.h                  rg::DriveScript (header-only, Godot-free): tick-indexed sample-and-hold control events in DRIVE ticks (since spawn) plus an optional per-tick controller hook (the R5 autopilot's extension point); Session::set_drive_script
+      fixed_rate_loop.h               rg::FixedRateLoop: fixed-rate wall-clock loop around a bool try_step() (frozen tick resyncs the deadline - no catch-up burst), LoopStats; runs Session::start()'s ticks
       world_config.h                  rg::WorldConfig, rg::load_world_config() - see "World config" below
       terrain_view_streamer.h         rg::TerrainViewStreamer (R2.2 R8): render LOD follows a focus point - background reselect + build, key diff {added, removed}, adapter ordering contract in the header; see "Render LOD streaming (R8)" below
       route_check.h                   rg::Route + load_route() ("rg.route/1", exception-free, optional "criteria" object -> RouteCriteria), apply_route_criteria() (RouteCheckParams defaults < route file < CLI, field by field), phys_tile_index()/count_seam_crossings() (255 m physics grid, origin 0.5), sample_l0_height() (bilinear on the L0 cell-centre lattice through any tile lookup), check_route() (length, 10 m-window max/p99 grade plus a steep_stretches list above grade_report_threshold, seam crossings, elevation range, NoData, corner radius = circle through the points +-corner_window_m (10 m) along the route at every 1 m sample (waypoint-density independent) plus a tight_corners list below corner_report_radius_m, start offset vs RouteCheckParams' R5 criteria), route_matches_world(), check_route_on_world() (the same over WorldTerrain::height_tile_shared) - used by tools/route_check and the [realdata] test
     src/
-      session.cpp                     Session implementation - builds a ps::World by hand (ground + chassis + one vehicle), never parses a scenario JSON
+      session.cpp                     Session implementation - builds a ps::World by hand (flat: ground box + chassis + one vehicle; terrain: streamed G2mTerrainSource + chassis + one vehicle), never parses a scenario JSON; the terrain gate, start-up, priming, spawn rays, StreamingStatus atomics
+      terrain_mode.cpp                terrain_mode.h implementation
+      fixed_rate_loop.cpp             FixedRateLoop implementation
       world_config.cpp                load_world_config() implementation - strict, exception-free JSON validation (see "World config" below)
       terrain_view_streamer.cpp       TerrainViewStreamer implementation (one worker thread, one diff in flight, coalescing)
       route_check.cpp                 route_check.h implementation
@@ -66,6 +71,9 @@ racing_game/
     unit/
       catch_main.cpp                  custom Catch2 v3 entry point (installs headless CRT handlers via physics_sim's always-built ps_headless_env)
       test_session.cpp                rg::Session tests: step stability, control-channel round-trip, snapshot/wheel-state sanity
+      test_session_terrain.cpp        rg::Session terrain mode (R4, tag [session_terrain]) on a synthetic in-memory IHeightTileFetch (sine hills in 1/256 m, a NoData patch, 404 outside +-3 km, a switchable 503 storm): spawn ride height vs flat mode, 30 s scripted drive (0 falls/fill misses, state_hash identical at 1 vs 4 workers, fetch delay 0 vs 20 ms, and with a forced mid-drive freeze on Failed (503) keys lifted by retry_failed_tiles), spawn over NoData throws, coverage edge never freezes, 503 storm freezes the real-time loop with no step and resumes without a burst
+      test_terrain_mode.cpp           rg/terrain_mode.h (R4, tag [terrain_mode]): physics heights (HeightTileSharedFetch -> ResidentHeightSet -> G2mTerrainSource::fill_tile) == render heights (same cache -> build_render_chunks L0 meshes) == (raw + height_offset)/256 for containers with non-zero offsets, one decode per tile; racing_game's container decode == geo2map's TransportHeightTileFetch; status pass-through; make_terrain_mode conversion
+      test_fixed_rate_loop.cpp        rg::FixedRateLoop tests: no catch-up burst after a freeze, prompt stop(), stats
       test_terrain_view_streamer.cpp  rg::TerrainViewStreamer tests (R8) over a synthetic, optionally gated tile store: exact key diff, hole-free adds-then-removals at every step (plus a wrong-order negative control), no work while stationary, 1-vs-8 build-thread identical diffs, coalescing while busy, cancel+join on destruction
       test_route_check.cpp            rg::route_check tests on synthetic terrain (seam counting incl. negative indices/corners, grade window max/p99, NoData, corner radius, start/length criteria, sample_l0_height across tile borders, load_route errors, steep-stretch and tight-corner lists, corner radius on arcs/kinks and its density independence, "criteria" loading + apply_route_criteria precedence); one hidden `[.][realdata]` case runs the committed route on the real store under its own "criteria", SKIP unless RG_G2M_HOME is set
       test_world_terrain.cpp          rg::WorldTerrain / build_static_view_from_lookup tests (PLAN.md R2.1) over a synthetic in-memory TileKey->HeightTile map - no TileStore/Server needed; chunk selection, session-local origin math, 1-vs-N-thread byte-identical output; fetch_height_tile_cached concurrency; decode_height_tile_container on synthetic containers (height_offset of both signs with NoData kept, int32 overflow / NoData-collision rejection, layer/key mismatch, truncation)
@@ -345,13 +353,60 @@ store): 5 steps, 708 added / 708 removed, 76-226 adds per diff, background
 build 108-293 ms, streaming frames 1.6-2.0 ms max (one op may overshoot the
 0.8 ms budget), removals 4-9 ms per diff spread over frames.
 
+## Session terrain mode (R4)
+
+`SessionConfig::terrain` (`std::optional<TerrainModeConfig>`) switches
+`rg::Session` from the flat ground box to streamed geo2map terrain; unset,
+Session builds exactly what it built before (flat-mode `step()` is still
+one plain `World::step()`, so `hash_check` is unchanged).
+
+Per session (`session.cpp`'s `Session::Terrain`): `g2m::phys::
+PhysicsTileGrid` (the config's `SessionFrame`, 256 samples), a shared
+`ResidentHeightSet`, a `HeightTileLoader` (`physics.loader_workers`) over
+`TerrainModeConfig::fetch`, a `PhysicsTerrainStreamer` (default
+`StreamerConfig`: gate r_tm+1, prefetch r_tm+2, 3 s look-ahead) and a
+`g2m::ps_bridge::G2mTerrainSource` installed via `World::
+set_terrain_source(source, make_terrain_config(physics.radius_m,
+physics.max_tile_fills_per_tick))` (pool 49 at r = 400 m, one interest
+point).
+
+Tick attempt (`step_once`, used by `try_step()`, `step()` and the loop):
+`physics_interest_points()` (a list; R4: exactly the chassis
+pose/velocity, id 0) -> `streamer.update(points)` +
+`World::set_terrain_interest_point` per point -> gate not ready: return
+false with the World untouched (StreamingStatus frozen/frozen_attempts/
+freeze_count) -> else drive script (or, from the loop, the set_control
+atomics) -> `World::step()` -> fall detector + StreamingStatus. `step()`
+blocks (1 ms retries, `startup_timeout_s` hard error) until the tick runs.
+`retry_failed_tiles()` asks the next gate check to call
+`streamer.retry_failed()`.
+
+Construction (terrain): validate (fetch, radius, fills, timeout, surface
+name) -> block until the gate around the spawn is ready (Failed keys
+retried; `startup_timeout_s` -> `std::runtime_error`) -> K priming ticks
+with no vehicle, K = ceil(side^2/F)+1, side = 2*ceil(r/255)+1 (26 at the
+defaults; `TerrainModeConfig::prime_ticks` overrides) -> assert resident
+tiles >= side^2, 0 starved, 0 fill misses -> five downward rays (centre +
+the yaw-rotated chassis corners, from z = 3000 over 6000 m; a miss ->
+`std::runtime_error` "spawn over NoData") -> chassis at max hit +
+`chassis_z_m` + `physics.spawn_clearance_m`, yaw about +Z -> vehicle.
+`spawn_tick()` = K; `drive_tick()` = ticks since.
+
+Real game wiring: `make_terrain_mode(world_config, world_terrain)` -
+spawn converted into the session frame, fetch = `HeightTileSharedFetch`
+over `WorldTerrain::height_tile_shared` (the render path's own decoded-tile
+cache; the physics and render paths share one `HeightTile` object per key).
+
 ## Targets
 
-- `rg_core` (STATIC, `core/`): `rg::Session` - owns one `ps::World` (one
-  static ground box, one dynamic chassis body, one vehicle built from
-  `ps::io::load_vehicle_json`), a `ps_godot::SimThread` (240 Hz fixed-rate
-  sim thread, reused BY PATH from `external/physics_sim/adapters/godot/
-  src/sim_thread.h` - Godot-free), a `ps_godot::TripleBuffer<FrameSnapshot>`
+- `rg_core` (STATIC, `core/`): `rg::Session` - owns one `ps::World` (a
+  static ground box in flat mode or streamed terrain in terrain mode, one
+  dynamic chassis body, one vehicle built from `ps::io::load_vehicle_json`),
+  an `rg::FixedRateLoop` (240 Hz fixed-rate loop thread; its sleep is
+  `ps_godot::detail::precise_sleep_until`, reused BY PATH from `external/
+  physics_sim/adapters/godot/src/sim_thread.h` - Godot-free), a
+  `ps_godot::FallDetector` (terrain mode, reused by path, `fall_detector.h`),
+  a `ps_godot::TripleBuffer<FrameSnapshot>`
   (reused by path, `triple_buffer.h`) for race-free snapshot publication,
   and a `ps_godot::OriginRebase` (reused by path, `origin_rebase.h`/
   `frame_convert_core.cpp`) for floating-origin support. Also `rg::
@@ -378,8 +433,8 @@ build 108-293 ms, streaming frames 1.6-2.0 ms max (one op may overshoot the
   PRIVATE, because R2.2 R4 puts a `G2mTerrainSource` inside `rg::Session`,
   so it will be named in `session.h` (a public header) the same way
   `ps::World` already is - see `core/CMakeLists.txt`'s own comment.
-  `test_g2m_ps_bridge_link_smoke.cpp` (below) proves the link; `Session`
-  itself does not use either library yet (R4's job).
+  `test_g2m_ps_bridge_link_smoke.cpp` (below) proves the link; `Session`'s
+  terrain mode uses both (see "Session terrain mode (R4)").
 - `rg_godot` (SHARED, `godot_ext/`): the GDExtension DLL
   (`game/bin/librg_godot.dll`). Two classes registered: `RgSimulation :
   godot::Node` owns one `rg::Session` and exposes it to GDScript (body
