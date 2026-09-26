@@ -38,6 +38,7 @@ add_library(rg_core STATIC
     src/session.cpp
     src/world_config.cpp
     src/world_terrain.cpp
+    src/fixed_rate_loop.cpp
     "${PS_ADAPTER_SRC_DIR}/frame_convert_core.cpp"
 )
 
