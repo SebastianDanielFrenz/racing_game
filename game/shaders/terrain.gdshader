@@ -36,6 +36,14 @@ void fragment() {
 	// default (opaque).
 	SPECULAR = 0.0;
 	ROUGHNESS = 1.0;
+	// cull_disabled makes Godot negate NORMAL on back faces. A skirt seen
+	// from behind (through a 2:1 T-junction sliver) would then be lit from
+	// below, i.e. only by ambient_floor, and show as black pixel specks
+	// along chunk borders. Skirt vertices carry their border vertex's
+	// upward normal, so undo the flip: skirts shade like the ground above.
+	if (!FRONT_FACING) {
+		NORMAL = -NORMAL;
+	}
 }
 
 void light() {
