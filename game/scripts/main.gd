@@ -440,6 +440,9 @@ func get_overlay() -> Node:
 func get_world_view() -> Node:
 	return _world_view
 
+func get_body_visuals() -> Node:
+	return _visuals
+
 func chassis_session_position() -> Vector3:
 	return _world_view.godot_to_session(_simulation.get_body_transform("chassis").origin)
 

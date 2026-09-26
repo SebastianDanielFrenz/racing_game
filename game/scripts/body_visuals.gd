@@ -45,10 +45,22 @@ func _ready() -> void:
 	add_child(_ground_anchor)
 	var ground := MeshInstance3D.new()
 	ground.name = "Ground"
+	# Size/position are authored in ISO order (x fwd, y left, z up) - like
+	# CHASSIS_HALF_EXTENTS/chassis_box below, NOT native Godot (x right, y up,
+	# z back) - because _ground_anchor.transform (see _process()) is
+	# get_body_transform("ground")'s ISO->Godot basis, the same convention the
+	# chassis box relies on. Bug found 2026-09-27 (owner report: "a green
+	# plane sideways through the middle of the car"): this mesh was authored
+	# Y-up (native Godot), so that basis rotated the flat plate onto its edge
+	# (thin-in-Godot-X, ~2000 units tall) - invisible from most angles, a
+	# looming vertical wall from others. Z is the thin/up axis here, matching
+	# the sim's own ground box (session.cpp: BoxShape half-extents
+	# {ground_half_extent_m, ground_half_extent_m, 0.5}, pose.position
+	# {0, 0, -0.5} - top face at local z=0).
 	var ground_mesh := BoxMesh.new()
-	ground_mesh.size = Vector3(GROUND_HALF_EXTENT_M * 2.0, 1.0, GROUND_HALF_EXTENT_M * 2.0)
+	ground_mesh.size = Vector3(GROUND_HALF_EXTENT_M * 2.0, GROUND_HALF_EXTENT_M * 2.0, 1.0)
 	ground.mesh = ground_mesh
-	ground.position = Vector3(0.0, -0.5, 0.0)
+	ground.position = Vector3(0.0, 0.0, -0.5)
 	var ground_mat := StandardMaterial3D.new()
 	ground_mat.albedo_color = Color(0.25, 0.32, 0.22)
 	ground.material_override = ground_mat
@@ -99,6 +111,12 @@ func on_session_ready() -> void:
 # false while still showing the red placeholder fallback.
 func vehicle_model_ok() -> bool:
 	return _vehicle_visual != null and _vehicle_visual.model_loaded()
+
+# carvis steering-proof fix (2026-09-27): see vehicle_visual.gd's own doc
+# comment - forwarded so drive_tour.gd does not need a direct reference to
+# the VehicleVisual child.
+func get_wheel_visual_steer_angle_rad(wheel_index: int) -> float:
+	return _vehicle_visual.get_wheel_visual_steer_angle_rad(wheel_index) if _vehicle_visual != null else 0.0
 
 func _process(_delta: float) -> void:
 	var live: bool = simulation != null and int(simulation.get_step_count()) > 0

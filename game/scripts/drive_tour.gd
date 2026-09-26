@@ -15,9 +15,11 @@ extends Node
 #                          initial terrain chunk uploaded
 #  02_steering_close.png   car held stationary (brake+handbrake), full steer
 #                          lock applied - front wheels turned, chase cam
-#                          swung to a closer 3/4-rear angle (side_offset_m)
-#                          so the near-side front wheel is actually visible
-#                          (a dead-on rear view hides it behind the body)
+#                          swung to a closer FRONT 3/4 angle (negative
+#                          follow_distance_m + side_offset_m) so both turned
+#                          front wheels are actually visible (a dead-on rear
+#                          OR front view, or a rear 3/4 view, all hide the
+#                          front wheels behind the body/cabin)
 #  03_drive_chase.png      after DRIVE_S of sim time at throttle 0.5, steering
 #                          straight (main.scripted_controls - no autopilot)
 #  04_free_cam_above.png   FreeCam mode (the car goes unattended and brakes; shot once stopped),
@@ -39,23 +41,41 @@ const FREE_UP_M := 22.0
 # used for every other chase shot (already proven correct there), just
 # parameterized closer/lower AND with a lateral offset (chase_rig.gd's
 # side_offset_m, added 2026-09-27 for exactly this shot) - a directly-behind
-# camera can never show a front wheel at all (the body is face-on and
-# occludes it completely, whatever the distance/height); a 3/4 angle is
-# needed to see the near-side wheels' profile and steer angle.
+# OR directly-in-front camera can never show a front wheel at all (the body
+# is face-on and occludes it completely, whatever the distance/height); a 3/4
+# angle is needed to see the near-side wheel's profile and steer angle.
 #
-# 2026-09-27 history: the first cut (distance 2.6, height 0.55, look_height
-# 0.15, no side offset) put the camera INSIDE the car - car_sedan's own rig
+# 2026-09-27 history, two rounds:
+# Round 1: the first cut (distance 2.6, height 0.55, look_height 0.15, no
+# side offset) put the camera INSIDE the car - car_sedan's own rig
 # (car_sedan.rig.json overall_bounds) spans local x [-2.28, 2.3041] about its
 # ground-plane origin, and the chassis rigid body's own origin sits ~0.27 m
 # off that same axle-midpoint (data/vehicles/car_sedan.json wheel
 # attachment_local: front +1.08, rear -1.62, mean -0.27) - so the visible
 # body's rear extent from the CHASSIS origin chase_rig measures "behind" from
 # is close to -2.0..-2.55 m, well past a 2.6 m follow_distance_m. Widening the
-# distance alone (verified via a screenshot) fixed the clipping but was still
-# a dead-on rear view with both front wheels hidden behind the body. Adding
-# side_offset_m and aiming this shot from behind-and-to-one-side (a
-# conventional "3/4 rear" angle) is what actually reveals a front wheel.
-const CLOSE_DISTANCE_M := 3.4
+# distance alone (verified via a screenshot) fixed the clipping, and adding a
+# positive side_offset_m (chase_rig.gd's "+= the car's left", basis.y) swung
+# the camera to a REAR 3/4 angle - but a rear 3/4 view's near-side wheel is
+# the REAR-left one (next to the tail lamp): on a sedan the cabin/greenhouse
+# sits between the rear wheel and the front wheel on that same side, so the
+# turned FRONT wheel this shot exists to prove stayed hidden behind the body
+# the whole time (caught by review, not by this tour's own numbers - hence
+# poses.txt's wheel_steer_phys_rad/wheel_steer_visual_rad columns added in
+# round 2, so a framing regression like this shows up in the log even
+# without eyeballing the PNG).
+# Round 2 (this fix): follow_distance_m NEGATIVE instead of positive - the
+# SAME chase_rig.gd "behind = -basis.x * follow_distance_m" formula, with a
+# negative distance, places the camera in FRONT of the car instead
+# (-basis.x * negative = +basis.x, i.e. forward) - a front 3/4 angle, whose
+# near-side wheel is the FRONT-left one (the front end has no cabin mass
+# between the wheel arches, so both front wheels' turned angle is visible,
+# unlike the rear 3/4 case above). side_offset_m stays positive (car's left)
+# so the near wheel is front-left, the INNER wheel under the tour's left
+# steer input (steer 0.6, ISO 8855 positive = left - drive_tour.gd's
+# "steer_close" phase) - the more dramatically turned of the two front
+# wheels under Ackermann.
+const CLOSE_DISTANCE_M := -3.4
 const CLOSE_SIDE_M := 3.2
 const CLOSE_HEIGHT_M := 1.1
 const CLOSE_LOOK_HEIGHT_M := 0.25
@@ -82,9 +102,12 @@ const WHEEL_RADIUS_M := 0.317
 
 func _numbers() -> String:
 	var sim: Node = main.get_simulation()
+	var visuals: Node = main.get_body_visuals()
 	var p: Vector3 = main.chassis_session_position()
 	var loads := PackedStringArray()
 	var ride_heights := PackedStringArray()
+	var steer_phys := PackedStringArray()
+	var steer_visual := PackedStringArray()
 	var load_sum := 0.0
 	for i in range(sim.get_vehicle_wheel_count(main.VEHICLE_NAME)):
 		var l: float = sim.get_wheel_load_n(main.VEHICLE_NAME, i)
@@ -102,10 +125,23 @@ func _numbers() -> String:
 		var compression: float = sim.get_wheel_compression(main.VEHICLE_NAME, i)
 		var ride_height: float = p.z + attach.z + compression - WHEEL_RADIUS_M
 		ride_heights.append("%.4f" % ride_height)
+		# Physics vs visual steer angle (carvis brief 2026-09-27's steering
+		# proof fix): get_wheel_steer_angle is WheelState::steer_angle
+		# (ackermann_wheel_angle()'s real per-wheel result, rad, ISO
+		# convention - positive = left, input_map.gd:135); the visual number
+		# is the steer_<corner> glb node's own local Y rotation as last
+		# applied by vehicle_visual.gd's _process. Identical numbers here only
+		# prove the ASSIGNMENT is wired straight through (no stale/zeroed
+		# node) - whether that local rotation reads as a visual left turn on
+		# screen is confirmed by 02_steering_close.png itself, not by this
+		# log line alone.
+		steer_phys.append("%+.4f" % sim.get_wheel_steer_angle(main.VEHICLE_NAME, i))
+		steer_visual.append("%+.4f" % (visuals.get_wheel_visual_steer_angle_rad(i) if visuals != null else 0.0))
 	var pt: Dictionary = sim.get_vehicle_powertrain(main.VEHICLE_NAME)
 	var cam: Camera3D = main.get_director().active_camera()
-	return "session=(%.2f, %.2f, %.2f) speed_kmh=%.1f wheel_loads_n=[%s] sum=%.0f wheel_ride_height_m=[%s] engine=%s gear=%d rpm=%.0f surface=%s mode=%s cam_godot=%s chunks=%d fps=%.1f" % [
+	return "session=(%.2f, %.2f, %.2f) speed_kmh=%.1f wheel_loads_n=[%s] sum=%.0f wheel_ride_height_m=[%s] wheel_steer_phys_rad=[%s] wheel_steer_visual_rad=[%s] engine=%s gear=%d rpm=%.0f surface=%s mode=%s cam_godot=%s chunks=%d fps=%.1f" % [
 		p.x, p.y, p.z, sim.get_body_speed_mps("chassis") * 3.6, ", ".join(loads), load_sum, ", ".join(ride_heights),
+		", ".join(steer_phys), ", ".join(steer_visual),
 		pt.get("engine_state", "?"), int(pt.get("gear", 0)), float(pt.get("rpm", 0.0)),
 		sim.get_wheel_surface_name(main.VEHICLE_NAME, 0), sim.get_player_mode(),
 		cam.global_position if cam != null else Vector3.ZERO, int(main.get_world_view().get_chunk_count()),

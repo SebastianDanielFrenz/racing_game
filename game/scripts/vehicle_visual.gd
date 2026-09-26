@@ -54,6 +54,20 @@ func _ready() -> void:
 func model_loaded() -> bool:
 	return _load_ok
 
+# carvis steering-proof fix (2026-09-27): the steer_<corner> node's own local
+# Y rotation, exactly as _process below last set it (or 0.0 if that wheel has
+# no steer node/is not steered) - read back by drive_tour.gd for poses.txt so
+# a sign/axis mismatch between the physics steer angle
+# (RgSimulation.get_wheel_steer_angle) and what actually got applied to the
+# visual shows up as two numbers side by side, not just a screenshot.
+func get_wheel_visual_steer_angle_rad(wheel_index: int) -> float:
+	if wheel_index < 0 or wheel_index >= _wheel_nodes.size():
+		return 0.0
+	var w = _wheel_nodes[wheel_index]
+	if w["steer"] == null or not w["steered"]:
+		return 0.0
+	return w["steer"].rotation.y
+
 # Re-binds wheel nodes and recomputes the model-to-physics alignment against
 # whatever Session `simulation` currently holds - cheap (no .glb reload), see
 # file header comment. Safe to call with no vehicle yet (wheel_count 0).
@@ -90,6 +104,23 @@ func _bind_wheel_nodes() -> void:
 	if simulation == null or _model_root == null or vehicle_name == "":
 		return
 	var wheel_count: int = simulation.get_vehicle_wheel_count(vehicle_name)
+	if wheel_count == 0:
+		# Bug found 2026-09-27 (poses.txt's wheel_steer_visual_rad stuck at
+		# 0.0 for every wheel, every frame): the flat world's _load_world()
+		# calls on_session_ready() (-> rebuild() -> here) synchronously right
+		# after Session::start(), same frame - but the sim itself runs on its
+		# own thread (PLAN.md D3) and does not create its vehicle until its
+		# FIRST tick, so get_vehicle_wheel_count() here still reads 0 at that
+		# exact instant (has_vehicle() false) and _wheel_nodes silently stays
+		# empty forever - no warning fires (this path returns before the
+		# missing-node check below, which is for a DIFFERENT problem: a node
+		# absent from the .glb, not zero wheels at all). _process() below
+		# retries this same call every frame while _wheel_nodes is still
+		# empty, so the real world's own already-correct step_count-gated
+		# on_session_ready() call (main.gd's _attach_world_view) keeps working
+		# unchanged and the flat world self-heals the frame the vehicle
+		# actually exists (get_step_count() > 0) instead of staying empty.
+		return
 	var missing := 0
 	for i in range(wheel_count):
 		var wname: String = simulation.get_wheel_name(vehicle_name, i)
@@ -150,8 +181,15 @@ func _align_model_to_physics_wheels() -> void:
 		_wheel_nodes[i]["susp_bias"] = (diffs[i] - d_mean) if diffs[i] != null else Vector3.ZERO
 
 func _process(delta: float) -> void:
-	if simulation == null or vehicle_name == "" or _wheel_nodes.is_empty():
+	if simulation == null or vehicle_name == "":
 		return
+	# Self-heal the "bound too early" race documented on _bind_wheel_nodes'
+	# own wheel_count==0 branch above: retry every frame while empty, cheap
+	# (one int RPC) and self-limiting (stops retrying the instant it binds).
+	if _wheel_nodes.is_empty():
+		_bind_wheel_nodes()
+		if _wheel_nodes.is_empty():
+			return
 	var t0 := Time.get_ticks_usec()
 
 	for i in range(_wheel_nodes.size()):

@@ -127,11 +127,25 @@ func _process(_delta: float) -> void:
 
 	if vehicle_name != "" and _simulation.get_vehicle_names().has(vehicle_name):
 		if _input_map != null and bool(mode.get("driving_inputs_live", false)):
-			lines.append("steer     %+.2f %s" % [_input_map.get_steer(), _bar((_input_map.get_steer() + 1.0) * 0.5)])
-			lines.append("throttle  %5.2f %s" % [_input_map.get_throttle(), _bar(_input_map.get_throttle())])
-			lines.append("brake     %5.2f %s" % [_input_map.get_brake(), _bar(_input_map.get_brake())])
+			# Read back the value actually sent to the sim THIS frame
+			# (RgSimulation.get_control, main.gd's own set_control channel
+			# names) rather than input_map.gd's raw device reading: while
+			# main.scripted_controls drives the car (drive_smoke.gd/
+			# drive_tour.gd), main.gd._forward_driving sends the scripted
+			# values instead of input_map's, and input_map's own getters would
+			# then read 0/stale here even though a different value is being
+			# driven into the sim - see carvis brief 2026-09-27's steering
+			# proof shot fix.
+			var steer: float = _simulation.get_control("steer")
+			var throttle: float = _simulation.get_control("throttle")
+			var brake: float = _simulation.get_control("brake")
+			var handbrake: float = _simulation.get_control("handbrake")
+			var clutch: float = _simulation.get_control("clutch")
+			lines.append("steer     %+.2f %s" % [steer, _bar((steer + 1.0) * 0.5)])
+			lines.append("throttle  %5.2f %s" % [throttle, _bar(throttle)])
+			lines.append("brake     %5.2f %s" % [brake, _bar(brake)])
 			lines.append("handbrake %5.2f  clutch %5.2f   ignition %s  auto-shift %s" % [
-				_input_map.get_handbrake(), _input_map.get_clutch(),
+				handbrake, clutch,
 				"on" if _input_map.get_ignition() else "off", "on" if _input_map.get_auto_shift() else "off"])
 		else:
 			lines.append("car unattended: brakes held, clutch pressed")
