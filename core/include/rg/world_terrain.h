@@ -24,6 +24,7 @@
 #include "g2m/client/in_process_transport.h"
 
 #include <cstdint>
+#include <functional>
 #include <map>
 #include <memory>
 #include <mutex>
@@ -54,6 +55,48 @@ void build_static_view_from_lookup(double cam_x, double cam_y, const g2m::mesh::
                                    double n0, g2m::mesh::TileLookup lookup, void* ctx, unsigned thread_count,
                                    std::vector<RenderChunk>& out);
 
+// R2.2 plan section 3 / [AMEND] "R3 decoupling": racing_game's own small
+// result struct for a cached height-tile lookup, built from EXISTING g2m
+// types only (g2m::phys::IHeightTileFetch does not exist yet in the pinned
+// geo2map_engine submodule - R4 will add the adapter to it once it lands).
+// `tile` is non-null iff `status == g2m::Status::Ok`.
+struct HeightTileFetchResult {
+    g2m::Status status = g2m::Status::Internal;
+    std::shared_ptr<const g2m::HeightTile> tile;
+};
+
+// Performs the actual (uncached) fetch + decode for one tile - called by
+// fetch_height_tile_cached OUTSIDE any lock. WorldTerrain::height_tile_shared
+// wraps its own private fetch_and_decode() into one of these;
+// tests/unit/test_world_terrain.cpp's concurrency test instead supplies a
+// synthetic lambda, with no Server/TileStore involved at all (same
+// "testable seam" precedent as build_static_view_from_lookup's own
+// TileLookup above).
+using HeightTileFetchFn = std::function<HeightTileFetchResult(const g2m::TileKey&)>;
+
+// Double-checked-insert cache: WorldTerrain::height_tile_shared's own
+// implementation, factored out so it can be exercised directly (a synthetic
+// fetch_fn, no real store) by the concurrency test. Locking scheme (see also
+// the header's file-level comment): `cache_mutex` guards ONLY the `cache`
+// map itself (the find and the eventual emplace), never `fetch_fn`'s own
+// call, which always runs unlocked; two threads racing on the same missing
+// key therefore both call `fetch_fn` concurrently (redundant but safe - the
+// underlying store/decode work is independently idempotent, "both write
+// identical bytes" per g2m::Server's own documented contract), and whichever
+// thread's `cache.emplace` runs first wins the map slot - std::map::emplace
+// never overwrites an existing key, so every later racer's own freshly
+// fetched tile is simply discarded and every caller (winner and losers
+// alike) returns the SAME shared_ptr, read back from the map after the
+// emplace. A failed fetch (status != Ok) is never inserted, so a transient
+// failure can be retried on the next call rather than being pinned forever.
+// `was_cache_hit`, if non-null, is set to whether this call's initial lookup
+// already found the key (WorldTerrain uses this for FetchStats::cache_hits;
+// a fetch that then fails is not counted as a hit).
+HeightTileFetchResult fetch_height_tile_cached(std::mutex& cache_mutex,
+                                               std::map<g2m::TileKey, std::shared_ptr<const g2m::HeightTile>>& cache,
+                                               const g2m::TileKey& key, const HeightTileFetchFn& fetch_fn,
+                                               bool* was_cache_hit = nullptr);
+
 class WorldTerrain {
 public:
     ~WorldTerrain();
@@ -77,17 +120,26 @@ public:
     // catch anything).
     static std::unique_ptr<WorldTerrain> open(const WorldConfig& config, std::string* err);
 
-    // Blocking fetch + decode of one terrain.height tile (any level),
-    // cached in a std::map keyed by TileKey (thread-safe: a std::mutex
-    // guards the cache; the actual Server::tile()/decode work for a miss
-    // runs OUTSIDE the lock, so concurrent misses for different tiles don't
-    // serialise on it - see the .cpp; g2m::Server itself is documented safe
-    // for concurrent resolves of the very same tile, "both write identical
-    // bytes"). Returns nullptr if the tile is out of coverage or the
-    // request otherwise fails (a missing tile in a LOD hole is expected at
-    // the edge of the imported region - callers must handle it, see
-    // g2m::mesh::gather_window's own NoData contract).
+    // Blocking fetch + decode of one terrain.height tile (any level), cached
+    // (thread-safe double-checked insert - see fetch_height_tile_cached's
+    // own doc comment above for the exact locking scheme this wraps).
+    // Returns nullptr if the tile is out of coverage or the request
+    // otherwise fails (a missing tile in a LOD hole is expected at the edge
+    // of the imported region - callers must handle it, see
+    // g2m::mesh::gather_window's own NoData contract). Thin wrapper around
+    // height_tile_shared() below with unchanged behaviour - the returned raw
+    // pointer stays valid for WorldTerrain's own lifetime (the cache never
+    // erases an entry, so the shared_ptr it holds never expires).
     const g2m::HeightTile* height_tile(const g2m::TileKey& key);
+
+    // Same lookup as height_tile(), but returns the full
+    // HeightTileFetchResult (status plus a shared_ptr the caller can hold
+    // onto beyond WorldTerrain's own lifetime, e.g. to hand a tile to
+    // another thread) instead of a bare raw pointer. [AMEND] "R3
+    // decoupling": this is racing_game's own result type, built from
+    // existing g2m types - R4 adapts it to g2m::phys::IHeightTileFetch once
+    // that interface exists in the pinned geo2map_engine submodule.
+    HeightTileFetchResult height_tile_shared(const g2m::TileKey& key);
 
     // Builds every LOD-selected chunk around (cam_x, cam_y) (session-local
     // metres) using this WorldTerrain's own store/server and
@@ -114,11 +166,16 @@ private:
     WorldTerrain() = default;
 
     // Server::tile() + container decode for one terrain.height tile (any
-    // level); nullopt on any failure (out of coverage, a non-200 status, a
-    // decode error). Updates fetch_stats_ (server_ok/server_miss). Does NOT
-    // touch height_cache_ - height_tile() (the cached, public entry point)
-    // does that.
-    std::optional<g2m::HeightTile> fetch_and_decode(const g2m::TileKey& key);
+    // level); status/tile are as they sound (tile is nullopt on any
+    // failure: out of coverage, a non-Ok status, a decode error). Updates
+    // fetch_stats_ (server_ok/server_miss). Does NOT touch height_cache_ -
+    // height_tile_shared() (the cached, public entry point) does that, via
+    // fetch_height_tile_cached.
+    struct FetchDecodeResult {
+        g2m::Status status = g2m::Status::Internal;
+        std::optional<g2m::HeightTile> tile;
+    };
+    FetchDecodeResult fetch_and_decode(const g2m::TileKey& key);
 
     // Declaration order is the destruction-order contract this class relies
     // on (members destruct in REVERSE declaration order): local_upstream_
@@ -138,7 +195,7 @@ private:
     g2m::mesh::LodParams lod_params_;
 
     std::mutex cache_mutex_;
-    std::map<g2m::TileKey, g2m::HeightTile> height_cache_;
+    std::map<g2m::TileKey, std::shared_ptr<const g2m::HeightTile>> height_cache_;
     mutable std::mutex stats_mutex_;
     FetchStats stats_;
 };

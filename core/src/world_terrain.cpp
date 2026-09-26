@@ -228,11 +228,12 @@ std::unique_ptr<WorldTerrain> WorldTerrain::open(const WorldConfig& config, std:
     return wt;
 }
 
-std::optional<g2m::HeightTile> WorldTerrain::fetch_and_decode(const g2m::TileKey& key) {
+WorldTerrain::FetchDecodeResult WorldTerrain::fetch_and_decode(const g2m::TileKey& key) {
     g2m::TileRequest request{manifest_rid_, terrain_height_layer_, key, std::nullopt};
     g2m::Response response = transport_->send(g2m::Request{request});
 
     const auto* tile_response = std::get_if<g2m::TileResponse>(&response);
+    const g2m::Status response_status = tile_response != nullptr ? tile_response->meta.status : g2m::Status::Internal;
     {
         std::lock_guard<std::mutex> lk(stats_mutex_);
         if (tile_response != nullptr && tile_response->meta.status == g2m::Status::Ok) {
@@ -242,54 +243,83 @@ std::optional<g2m::HeightTile> WorldTerrain::fetch_and_decode(const g2m::TileKey
         }
     }
     if (tile_response == nullptr || tile_response->meta.status != g2m::Status::Ok) {
-        return std::nullopt;
+        return FetchDecodeResult{response_status, std::nullopt};
     }
 
     std::size_t consumed = 0;
     g2m::Result<g2m::TileHeader> header_result = g2m::decode_header(tile_response->container, &consumed);
     if (!header_result.ok()) {
-        return std::nullopt;
+        return FetchDecodeResult{g2m::Status::Internal, std::nullopt};
     }
     const std::span<const std::uint8_t> body_bytes(tile_response->container.data() + consumed,
                                                     tile_response->container.size() - consumed);
     g2m::Result<g2m::TileBody> body_result = g2m::decode_body(body_bytes);
     if (!body_result.ok()) {
-        return std::nullopt;
+        return FetchDecodeResult{g2m::Status::Internal, std::nullopt};
     }
 
     g2m::HeightTile tile;
     g2m::Result<void> decode_result = g2m::decode_height_tile(body_result.value(), key, tile);
     if (!decode_result.ok()) {
-        return std::nullopt;
+        return FetchDecodeResult{g2m::Status::Internal, std::nullopt};
     }
-    return tile;
+    return FetchDecodeResult{g2m::Status::Ok, std::move(tile)};
 }
 
-const g2m::HeightTile* WorldTerrain::height_tile(const g2m::TileKey& key) {
+HeightTileFetchResult fetch_height_tile_cached(std::mutex& cache_mutex,
+                                               std::map<g2m::TileKey, std::shared_ptr<const g2m::HeightTile>>& cache,
+                                               const g2m::TileKey& key, const HeightTileFetchFn& fetch_fn,
+                                               bool* was_cache_hit) {
+    if (was_cache_hit != nullptr) {
+        *was_cache_hit = false;
+    }
     {
-        std::lock_guard<std::mutex> lk(cache_mutex_);
-        auto it = height_cache_.find(key);
-        if (it != height_cache_.end()) {
-            std::lock_guard<std::mutex> stats_lk(stats_mutex_);
-            ++stats_.cache_hits;
-            return &it->second;
+        std::lock_guard<std::mutex> lk(cache_mutex);
+        auto it = cache.find(key);
+        if (it != cache.end()) {
+            if (was_cache_hit != nullptr) {
+                *was_cache_hit = true;
+            }
+            return HeightTileFetchResult{g2m::Status::Ok, it->second};
         }
     }
 
     // Deliberately outside the lock: two threads racing to fetch the same
-    // missing tile just both fetch it (g2m::Server itself documents this as
-    // safe - "both write identical bytes", server.h's own thread-safety
-    // note); the redundant work is bounded and rare (a tile is fetched at
-    // most a handful of times before the cache absorbs every further call).
-    std::optional<g2m::HeightTile> fetched = fetch_and_decode(key);
-    if (!fetched.has_value()) {
-        return nullptr;
+    // missing tile just both call fetch_fn (see this function's own doc
+    // comment in world_terrain.h for why that is safe/bounded).
+    HeightTileFetchResult fetched = fetch_fn(key);
+    if (fetched.status != g2m::Status::Ok || !fetched.tile) {
+        return fetched; // not cached: let a transient failure be retried later
     }
 
-    std::lock_guard<std::mutex> lk(cache_mutex_);
-    auto [it, inserted] = height_cache_.emplace(key, std::move(*fetched));
-    (void)inserted; // if another thread just inserted the same key, keep its copy (identical bytes anyway)
-    return &it->second;
+    std::lock_guard<std::mutex> lk(cache_mutex);
+    auto [it, inserted] = cache.emplace(key, std::move(fetched.tile));
+    (void)inserted; // first inserted value wins; a later racer's own fetch is discarded here
+    return HeightTileFetchResult{g2m::Status::Ok, it->second};
+}
+
+HeightTileFetchResult WorldTerrain::height_tile_shared(const g2m::TileKey& key) {
+    HeightTileFetchFn fetch_fn = [this](const g2m::TileKey& k) -> HeightTileFetchResult {
+        FetchDecodeResult result = fetch_and_decode(k);
+        if (!result.tile.has_value()) {
+            return HeightTileFetchResult{result.status, nullptr};
+        }
+        return HeightTileFetchResult{g2m::Status::Ok,
+                                     std::make_shared<const g2m::HeightTile>(std::move(*result.tile))};
+    };
+
+    bool was_cache_hit = false;
+    HeightTileFetchResult out = fetch_height_tile_cached(cache_mutex_, height_cache_, key, fetch_fn, &was_cache_hit);
+    if (was_cache_hit) {
+        std::lock_guard<std::mutex> lk(stats_mutex_);
+        ++stats_.cache_hits;
+    }
+    return out;
+}
+
+const g2m::HeightTile* WorldTerrain::height_tile(const g2m::TileKey& key) {
+    HeightTileFetchResult result = height_tile_shared(key);
+    return result.tile.get();
 }
 
 void WorldTerrain::build_static_view(double cam_x, double cam_y, std::vector<RenderChunk>& out) {

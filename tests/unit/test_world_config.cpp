@@ -564,3 +564,228 @@ TEST_CASE("load_world_config: lod is not an object", "[world_config]") {
     CHECK_FALSE(cfg.has_value());
     CHECK_FALSE(err.empty());
 }
+
+// --- "physics" (R2.2 plan section 3: PhysicsTerrainConfig, the terrain
+// streaming gate's tuning knobs - not yet consumed by anything, R3 is
+// config-only) ---
+
+TEST_CASE("load_world_config: physics absent defaults to radius_m 400", "[world_config]") {
+    ScopedEnvVar env("RG_G2M_HOME", "S:/some/test/g2m/home");
+    json j = valid_world_config_json();
+    REQUIRE_FALSE(j.contains("physics"));
+    TempFile file = TempFile::from_json(j);
+    std::string err;
+    auto cfg = rg::load_world_config(file.path(), &err);
+    REQUIRE(cfg.has_value());
+    CHECK(err.empty());
+    CHECK(cfg->physics.radius_m == 400.0);
+    CHECK(cfg->physics.terrain_surface == "asphalt");
+    CHECK(cfg->physics.max_tile_fills_per_tick == 1);
+    CHECK(cfg->physics.loader_workers == 2);
+    CHECK(cfg->physics.spawn_clearance_m == 0.10);
+    CHECK(cfg->physics.startup_timeout_s == 30.0);
+}
+
+TEST_CASE("load_world_config: physics fields override every default", "[world_config]") {
+    ScopedEnvVar env("RG_G2M_HOME", "S:/some/test/g2m/home");
+    json j = valid_world_config_json();
+    j["physics"] = {{"radius_m", 750.0},
+                     {"terrain_surface", "dirt"},
+                     {"max_tile_fills_per_tick", 4},
+                     {"loader_workers", 6},
+                     {"spawn_clearance_m", 0.25},
+                     {"startup_timeout_s", 12.5}};
+    TempFile file = TempFile::from_json(j);
+    std::string err;
+    auto cfg = rg::load_world_config(file.path(), &err);
+    REQUIRE(cfg.has_value());
+    CHECK(err.empty());
+    CHECK(cfg->physics.radius_m == 750.0);
+    CHECK(cfg->physics.terrain_surface == "dirt");
+    CHECK(cfg->physics.max_tile_fills_per_tick == 4);
+    CHECK(cfg->physics.loader_workers == 6);
+    CHECK(cfg->physics.spawn_clearance_m == 0.25);
+    CHECK(cfg->physics.startup_timeout_s == 12.5);
+}
+
+TEST_CASE("load_world_config: physics is not an object", "[world_config]") {
+    ScopedEnvVar env("RG_G2M_HOME", "S:/some/test/g2m/home");
+    json j = valid_world_config_json();
+    j["physics"] = 400.0;
+    TempFile file = TempFile::from_json(j);
+    std::string err;
+    auto cfg = rg::load_world_config(file.path(), &err);
+    CHECK_FALSE(cfg.has_value());
+    CHECK_FALSE(err.empty());
+}
+
+TEST_CASE("load_world_config: physics.radius_m must be > 0", "[world_config]") {
+    ScopedEnvVar env("RG_G2M_HOME", "S:/some/test/g2m/home");
+    json j = valid_world_config_json();
+    j["physics"] = {{"radius_m", 0.0}};
+    TempFile file = TempFile::from_json(j);
+    std::string err;
+    auto cfg = rg::load_world_config(file.path(), &err);
+    CHECK_FALSE(cfg.has_value());
+    CHECK_FALSE(err.empty());
+}
+
+TEST_CASE("load_world_config: physics.radius_m wrong type", "[world_config]") {
+    ScopedEnvVar env("RG_G2M_HOME", "S:/some/test/g2m/home");
+    json j = valid_world_config_json();
+    j["physics"] = {{"radius_m", "far"}};
+    TempFile file = TempFile::from_json(j);
+    std::string err;
+    auto cfg = rg::load_world_config(file.path(), &err);
+    CHECK_FALSE(cfg.has_value());
+    CHECK_FALSE(err.empty());
+}
+
+TEST_CASE("load_world_config: physics.terrain_surface must not be empty", "[world_config]") {
+    ScopedEnvVar env("RG_G2M_HOME", "S:/some/test/g2m/home");
+    json j = valid_world_config_json();
+    j["physics"] = {{"terrain_surface", ""}};
+    TempFile file = TempFile::from_json(j);
+    std::string err;
+    auto cfg = rg::load_world_config(file.path(), &err);
+    CHECK_FALSE(cfg.has_value());
+    CHECK_FALSE(err.empty());
+}
+
+TEST_CASE("load_world_config: physics.terrain_surface wrong type", "[world_config]") {
+    ScopedEnvVar env("RG_G2M_HOME", "S:/some/test/g2m/home");
+    json j = valid_world_config_json();
+    j["physics"] = {{"terrain_surface", 42}};
+    TempFile file = TempFile::from_json(j);
+    std::string err;
+    auto cfg = rg::load_world_config(file.path(), &err);
+    CHECK_FALSE(cfg.has_value());
+    CHECK_FALSE(err.empty());
+}
+
+TEST_CASE("load_world_config: physics.max_tile_fills_per_tick must be >= 1", "[world_config]") {
+    ScopedEnvVar env("RG_G2M_HOME", "S:/some/test/g2m/home");
+    json j = valid_world_config_json();
+    j["physics"] = {{"max_tile_fills_per_tick", 0}};
+    TempFile file = TempFile::from_json(j);
+    std::string err;
+    auto cfg = rg::load_world_config(file.path(), &err);
+    CHECK_FALSE(cfg.has_value());
+    CHECK_FALSE(err.empty());
+}
+
+TEST_CASE("load_world_config: physics.max_tile_fills_per_tick rejects a negative value", "[world_config]") {
+    ScopedEnvVar env("RG_G2M_HOME", "S:/some/test/g2m/home");
+    json j = valid_world_config_json();
+    j["physics"] = {{"max_tile_fills_per_tick", -1}};
+    TempFile file = TempFile::from_json(j);
+    std::string err;
+    auto cfg = rg::load_world_config(file.path(), &err);
+    CHECK_FALSE(cfg.has_value());
+    CHECK_FALSE(err.empty());
+}
+
+TEST_CASE("load_world_config: physics.max_tile_fills_per_tick wrong type", "[world_config]") {
+    ScopedEnvVar env("RG_G2M_HOME", "S:/some/test/g2m/home");
+    json j = valid_world_config_json();
+    j["physics"] = {{"max_tile_fills_per_tick", "one"}};
+    TempFile file = TempFile::from_json(j);
+    std::string err;
+    auto cfg = rg::load_world_config(file.path(), &err);
+    CHECK_FALSE(cfg.has_value());
+    CHECK_FALSE(err.empty());
+}
+
+TEST_CASE("load_world_config: physics.loader_workers must be >= 1", "[world_config]") {
+    ScopedEnvVar env("RG_G2M_HOME", "S:/some/test/g2m/home");
+    json j = valid_world_config_json();
+    j["physics"] = {{"loader_workers", 0}};
+    TempFile file = TempFile::from_json(j);
+    std::string err;
+    auto cfg = rg::load_world_config(file.path(), &err);
+    CHECK_FALSE(cfg.has_value());
+    CHECK_FALSE(err.empty());
+}
+
+TEST_CASE("load_world_config: physics.loader_workers wrong type", "[world_config]") {
+    ScopedEnvVar env("RG_G2M_HOME", "S:/some/test/g2m/home");
+    json j = valid_world_config_json();
+    j["physics"] = {{"loader_workers", "two"}};
+    TempFile file = TempFile::from_json(j);
+    std::string err;
+    auto cfg = rg::load_world_config(file.path(), &err);
+    CHECK_FALSE(cfg.has_value());
+    CHECK_FALSE(err.empty());
+}
+
+TEST_CASE("load_world_config: physics.spawn_clearance_m must be >= 0", "[world_config]") {
+    ScopedEnvVar env("RG_G2M_HOME", "S:/some/test/g2m/home");
+    json j = valid_world_config_json();
+    j["physics"] = {{"spawn_clearance_m", -0.01}};
+    TempFile file = TempFile::from_json(j);
+    std::string err;
+    auto cfg = rg::load_world_config(file.path(), &err);
+    CHECK_FALSE(cfg.has_value());
+    CHECK_FALSE(err.empty());
+}
+
+TEST_CASE("load_world_config: physics.spawn_clearance_m wrong type", "[world_config]") {
+    ScopedEnvVar env("RG_G2M_HOME", "S:/some/test/g2m/home");
+    json j = valid_world_config_json();
+    j["physics"] = {{"spawn_clearance_m", "none"}};
+    TempFile file = TempFile::from_json(j);
+    std::string err;
+    auto cfg = rg::load_world_config(file.path(), &err);
+    CHECK_FALSE(cfg.has_value());
+    CHECK_FALSE(err.empty());
+}
+
+TEST_CASE("load_world_config: physics.startup_timeout_s must be > 0", "[world_config]") {
+    ScopedEnvVar env("RG_G2M_HOME", "S:/some/test/g2m/home");
+    json j = valid_world_config_json();
+    j["physics"] = {{"startup_timeout_s", 0.0}};
+    TempFile file = TempFile::from_json(j);
+    std::string err;
+    auto cfg = rg::load_world_config(file.path(), &err);
+    CHECK_FALSE(cfg.has_value());
+    CHECK_FALSE(err.empty());
+}
+
+TEST_CASE("load_world_config: physics.startup_timeout_s wrong type", "[world_config]") {
+    ScopedEnvVar env("RG_G2M_HOME", "S:/some/test/g2m/home");
+    json j = valid_world_config_json();
+    j["physics"] = {{"startup_timeout_s", "forever"}};
+    TempFile file = TempFile::from_json(j);
+    std::string err;
+    auto cfg = rg::load_world_config(file.path(), &err);
+    CHECK_FALSE(cfg.has_value());
+    CHECK_FALSE(err.empty());
+}
+
+TEST_CASE("load_world_config: the real committed data/world/world_config.json still loads with physics defaults",
+          "[world_config]") {
+    // RG_SOURCE_DIR is compiled in by tests/unit/CMakeLists.txt
+    // (target_compile_definitions) - same fixture the pre-existing "the real
+    // committed data/world/world_config.json parses" test above already
+    // uses. Confirms that file has no "physics" key of its own (this R3
+    // change is additive/optional) and that the absent block still resolves
+    // to PhysicsTerrainConfig's defaults, not a validation failure.
+    const fs::path real_config = fs::path(RG_SOURCE_DIR) / "data" / "world" / "world_config.json";
+    std::ifstream in(real_config, std::ios::binary);
+    REQUIRE(in.is_open());
+    json real_json = json::parse(in, /*cb=*/nullptr, /*allow_exceptions=*/false);
+    REQUIRE_FALSE(real_json.is_discarded());
+    REQUIRE_FALSE(real_json.contains("physics"));
+
+    ScopedEnvVar env("RG_G2M_HOME", "S:/some/test/g2m/home");
+    std::string err;
+    auto cfg = rg::load_world_config(real_config.string(), &err);
+    REQUIRE(cfg.has_value());
+    CHECK(err.empty());
+    CHECK(cfg->physics.radius_m == 400.0);
+    CHECK(cfg->physics.terrain_surface == "asphalt");
+    CHECK(cfg->physics.max_tile_fills_per_tick == 1);
+    CHECK(cfg->physics.loader_workers == 2);
+    CHECK(cfg->physics.spawn_clearance_m == 0.10);
+    CHECK(cfg->physics.startup_timeout_s == 30.0);
+}

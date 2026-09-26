@@ -16,10 +16,17 @@
 
 #include <catch2/catch_test_macros.hpp>
 
+#include <array>
+#include <atomic>
+#include <chrono>
 #include <cmath>
 #include <cstdint>
+#include <map>
+#include <memory>
 #include <mutex>
+#include <thread>
 #include <unordered_map>
+#include <vector>
 
 namespace {
 
@@ -329,4 +336,121 @@ TEST_CASE("build_static_view_from_lookup: degenerate max_distance still covers t
     rg::build_static_view_from_lookup(0.0, 0.0, params, 0.0, 0.0, &synthetic_lookup, &store, /*thread_count=*/4, out);
     CHECK(out.size() == 1);
     CHECK(out[0].mesh.key.level == 0);
+}
+
+// --- fetch_height_tile_cached (R2.2 plan section 3: the double-checked-
+// insert cache behind WorldTerrain::height_tile_shared) ---
+
+TEST_CASE("fetch_height_tile_cached: 8 threads hammering overlapping keys observe one identical tile per key",
+         "[world_terrain]") {
+    // Concurrency coverage for the double-checked-insert cache, exercised
+    // directly via a synthetic fetch_fn - no g2m::Server/TileStore involved
+    // at all (same "testable seam" precedent as this file's other tests,
+    // e.g. SyntheticStore above). Under a release (non-sanitizer) build this
+    // is a smoke test only - a genuine data race is not guaranteed to be
+    // caught without TSan - see world_terrain.h's own fetch_height_tile_cached
+    // doc comment for the locking scheme this pins.
+    //
+    // TOOL-031: no Catch2 assertion runs on a worker thread. Each thread
+    // writes only into its OWN row of a preallocated per-thread result
+    // vector (never another thread's row) - every CHECK/REQUIRE below runs
+    // on the test's own thread, after every worker has been joined.
+    constexpr int kThreadCount = 8;
+    constexpr int kIterationsPerThread = 200;
+    constexpr int kKeyCount = 4;
+
+    const g2m::geo::UtmZone zone{32, g2m::geo::Hemisphere::North};
+    std::array<g2m::TileKey, kKeyCount> keys;
+    for (int i = 0; i < kKeyCount; ++i) {
+        keys[static_cast<std::size_t>(i)] = g2m::TileKey{zone, /*level=*/3, /*x=*/i, /*y=*/i * 2};
+    }
+
+    std::atomic<int> fetch_call_count{0};
+    auto fetch_fn = [&](const g2m::TileKey& key) -> rg::HeightTileFetchResult {
+        fetch_call_count.fetch_add(1, std::memory_order_relaxed);
+        // A brief sleep widens the race window between the cache-miss check
+        // and the eventual insert, so overlapping threads are much more
+        // likely to actually race on the SAME key rather than serialising by
+        // accident.
+        std::this_thread::sleep_for(std::chrono::microseconds(200));
+        g2m::HeightTile tile;
+        tile.key = key;
+        tile.h.fill(key.x * 1000 + key.y);
+        tile.has_nodata = false;
+        return rg::HeightTileFetchResult{g2m::Status::Ok, std::make_shared<const g2m::HeightTile>(std::move(tile))};
+    };
+
+    std::mutex cache_mutex;
+    std::map<g2m::TileKey, std::shared_ptr<const g2m::HeightTile>> cache;
+
+    // Each thread's own row: one result (tile + which key it asked for) per
+    // iteration, written only by that thread.
+    std::vector<std::vector<std::shared_ptr<const g2m::HeightTile>>> per_thread_tile(
+        kThreadCount, std::vector<std::shared_ptr<const g2m::HeightTile>>(kIterationsPerThread));
+    std::vector<std::vector<int>> per_thread_key_index(kThreadCount,
+                                                        std::vector<int>(kIterationsPerThread));
+
+    std::vector<std::thread> workers;
+    workers.reserve(kThreadCount);
+    for (int t = 0; t < kThreadCount; ++t) {
+        workers.emplace_back([&, t]() {
+            for (int i = 0; i < kIterationsPerThread; ++i) {
+                const int key_index = (t + i) % kKeyCount;
+                rg::HeightTileFetchResult result = rg::fetch_height_tile_cached(
+                    cache_mutex, cache, keys[static_cast<std::size_t>(key_index)], fetch_fn);
+                per_thread_tile[static_cast<std::size_t>(t)][static_cast<std::size_t>(i)] = result.tile;
+                per_thread_key_index[static_cast<std::size_t>(t)][static_cast<std::size_t>(i)] = key_index;
+            }
+        });
+    }
+    for (std::thread& w : workers) {
+        w.join();
+    }
+
+    // Every call must have succeeded and returned CORRECT content, and every
+    // caller asking for the same key must have received the exact same
+    // shared_ptr (the winning insert) - not merely equal content.
+    std::array<const g2m::HeightTile*, kKeyCount> winning_ptr{};
+    winning_ptr.fill(nullptr);
+
+    for (int t = 0; t < kThreadCount; ++t) {
+        for (int i = 0; i < kIterationsPerThread; ++i) {
+            const int key_index = per_thread_key_index[static_cast<std::size_t>(t)][static_cast<std::size_t>(i)];
+            const std::shared_ptr<const g2m::HeightTile>& tile =
+                per_thread_tile[static_cast<std::size_t>(t)][static_cast<std::size_t>(i)];
+            const g2m::TileKey& key = keys[static_cast<std::size_t>(key_index)];
+
+            REQUIRE(tile != nullptr);
+            CHECK(tile->key == key);
+            CHECK(tile->h[0] == key.x * 1000 + key.y);
+
+            const std::size_t ki = static_cast<std::size_t>(key_index);
+            if (winning_ptr[ki] == nullptr) {
+                winning_ptr[ki] = tile.get();
+            } else {
+                CHECK(winning_ptr[ki] == tile.get());
+            }
+        }
+    }
+
+    // The cache map itself ended up with exactly one entry per key, each
+    // holding the same winning pointer every caller observed.
+    {
+        std::lock_guard<std::mutex> lk(cache_mutex);
+        CHECK(cache.size() == static_cast<std::size_t>(kKeyCount));
+        for (int i = 0; i < kKeyCount; ++i) {
+            auto it = cache.find(keys[static_cast<std::size_t>(i)]);
+            REQUIRE(it != cache.end());
+            CHECK(it->second.get() == winning_ptr[static_cast<std::size_t>(i)]);
+        }
+    }
+
+    // Loose sanity bound (not a tight assertion): fetch_fn was almost
+    // certainly called more than kKeyCount times (racing threads before the
+    // cache absorbed each key) but never more than the total call count -
+    // redundant concurrent fetches for the same missing key are expected and
+    // bounded, not eliminated (see world_terrain.h's own doc comment).
+    const int calls = fetch_call_count.load();
+    CHECK(calls >= kKeyCount);
+    CHECK(calls <= kThreadCount * kIterationsPerThread);
 }

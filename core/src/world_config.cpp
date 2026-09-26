@@ -18,6 +18,7 @@
 
 #include <nlohmann/json.hpp>
 
+#include <cstdint>
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
@@ -242,6 +243,25 @@ bool get_int(const json& obj, const char* key, const std::string& path, const st
     return true;
 }
 
+// Like get_int, but rejects a negative value (nlohmann::json's own
+// is_number_unsigned() would reject a literal "1" typed as a signed integer
+// in some builds, so this checks the signed value's sign instead - same
+// pattern this file already uses elsewhere for range checks after parsing).
+bool get_uint32(const json& obj, const char* key, const std::string& path, const std::string& what,
+                 std::uint32_t* out, std::string* err) {
+    int signed_value = 0;
+    if (!get_int(obj, key, path, what, &signed_value, err)) {
+        return false;
+    }
+    if (signed_value < 0) {
+        fail(err, path, what + ": field \"" + key + "\" must not be negative (got " +
+                            std::to_string(signed_value) + ")");
+        return false;
+    }
+    *out = static_cast<std::uint32_t>(signed_value);
+    return true;
+}
+
 } // namespace
 
 std::optional<WorldConfig> load_world_config(const std::string& path, std::string* err) {
@@ -412,6 +432,77 @@ std::optional<WorldConfig> load_world_config(const std::string& path, std::strin
             if (cfg.lod.max_distance_m <= 0.0) {
                 fail(err, path, "\"lod.max_distance_m\" must be > 0 (got " +
                                     std::to_string(cfg.lod.max_distance_m) + ")");
+                return std::nullopt;
+            }
+        }
+    }
+
+    // --- physics (optional; absent -> WorldConfig::PhysicsTerrainConfig's
+    // own defaults) ---
+    if (root.contains("physics")) {
+        const json& physics = root.at("physics");
+        if (!require_object(physics, path, "\"physics\"", err)) {
+            return std::nullopt;
+        }
+        if (physics.contains("radius_m")) {
+            if (!get_number(physics, "radius_m", path, "\"physics\"", &cfg.physics.radius_m, err)) {
+                return std::nullopt;
+            }
+            if (cfg.physics.radius_m <= 0.0) {
+                fail(err, path,
+                     "\"physics.radius_m\" must be > 0 (got " + std::to_string(cfg.physics.radius_m) + ")");
+                return std::nullopt;
+            }
+        }
+        if (physics.contains("terrain_surface")) {
+            if (!get_string(physics, "terrain_surface", path, "\"physics\"", &cfg.physics.terrain_surface, err)) {
+                return std::nullopt;
+            }
+            if (cfg.physics.terrain_surface.empty()) {
+                fail(err, path, "\"physics.terrain_surface\" must not be empty");
+                return std::nullopt;
+            }
+        }
+        if (physics.contains("max_tile_fills_per_tick")) {
+            if (!get_uint32(physics, "max_tile_fills_per_tick", path, "\"physics\"",
+                             &cfg.physics.max_tile_fills_per_tick, err)) {
+                return std::nullopt;
+            }
+            if (cfg.physics.max_tile_fills_per_tick < 1) {
+                fail(err, path, "\"physics.max_tile_fills_per_tick\" must be >= 1 (got " +
+                                    std::to_string(cfg.physics.max_tile_fills_per_tick) + ")");
+                return std::nullopt;
+            }
+        }
+        if (physics.contains("loader_workers")) {
+            if (!get_int(physics, "loader_workers", path, "\"physics\"", &cfg.physics.loader_workers, err)) {
+                return std::nullopt;
+            }
+            if (cfg.physics.loader_workers < 1) {
+                fail(err, path, "\"physics.loader_workers\" must be >= 1 (got " +
+                                    std::to_string(cfg.physics.loader_workers) + ")");
+                return std::nullopt;
+            }
+        }
+        if (physics.contains("spawn_clearance_m")) {
+            if (!get_number(physics, "spawn_clearance_m", path, "\"physics\"", &cfg.physics.spawn_clearance_m,
+                            err)) {
+                return std::nullopt;
+            }
+            if (cfg.physics.spawn_clearance_m < 0.0) {
+                fail(err, path, "\"physics.spawn_clearance_m\" must be >= 0 (got " +
+                                    std::to_string(cfg.physics.spawn_clearance_m) + ")");
+                return std::nullopt;
+            }
+        }
+        if (physics.contains("startup_timeout_s")) {
+            if (!get_number(physics, "startup_timeout_s", path, "\"physics\"", &cfg.physics.startup_timeout_s,
+                            err)) {
+                return std::nullopt;
+            }
+            if (cfg.physics.startup_timeout_s <= 0.0) {
+                fail(err, path, "\"physics.startup_timeout_s\" must be > 0 (got " +
+                                    std::to_string(cfg.physics.startup_timeout_s) + ")");
                 return std::nullopt;
             }
         }

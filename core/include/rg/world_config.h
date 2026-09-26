@@ -5,6 +5,7 @@
 // Engine-neutral (no Godot type), same rule as session.h.
 #pragma once
 
+#include <cstdint>
 #include <optional>
 #include <string>
 
@@ -46,6 +47,28 @@ struct WorldConfig {
         double max_distance_m = 6000.0;
     };
 
+    // Optional top-level "physics" object (R2.2 plan section 3): the terrain
+    // streaming gate's own tuning knobs - how far around the vehicle tiles
+    // must be resident (radius_m), which data/surfaces/surfaces.json entry a
+    // real-terrain vehicle's tyres see (terrain_surface), how many tile
+    // fills a tick may spend catching up (max_tile_fills_per_tick, mirrors
+    // ps::terrain::TerrainConfig::max_tile_fills_per_tick), how many worker
+    // threads the (not-yet-built, R3 scope is config-only) tile loader may
+    // use (loader_workers), how much extra clearance a spawn-point tile
+    // check demands beyond bare contact (spawn_clearance_m), and how long
+    // Session may wait for the initial required tiles before giving up
+    // (startup_timeout_s). Absent entirely -> every field keeps its default
+    // below; not yet consumed by anything (R4 wires FixedRateLoop and the
+    // streaming gate itself into Session).
+    struct PhysicsTerrainConfig {
+        double radius_m = 400.0;
+        std::string terrain_surface = "asphalt";
+        std::uint32_t max_tile_fills_per_tick = 1;
+        int loader_workers = 2;
+        double spawn_clearance_m = 0.10;
+        double startup_timeout_s = 30.0;
+    };
+
     std::string format; // always "rg.world/1" once successfully loaded
     std::string region;
     UtmOrigin session_origin_utm;
@@ -53,6 +76,7 @@ struct WorldConfig {
     DerivedStore derived_store;
     Spawn spawn;
     Lod lod;
+    PhysicsTerrainConfig physics;
     std::string surface_map; // resolved to an absolute path (see below)
     std::string palette;     // resolved to an absolute path (see below)
 };
