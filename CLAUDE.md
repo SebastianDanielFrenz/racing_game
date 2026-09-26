@@ -37,8 +37,8 @@ racing_game/
   godot_ext/
     src/
       register_types.h/.cpp           GDExtension entry point (rg_godot_library_init), registers RgSimulation + RgTerrainView
-      rg_simulation.h/.cpp            RgSimulation : godot::Node - the one GDScript-facing class; owns one rg::Session
-      rg_terrain_view.h/.cpp          RgTerrainView : godot::Node3D (PLAN.md R2.1) - LOD terrain preview seam, streamed around a focus since R8; see "Terrain preview (R2.1)" and "Render LOD streaming (R8)" below
+      rg_simulation.h/.cpp            RgSimulation : godot::Node - the one GDScript-facing class; owns one rg::Session; initialize_terrain() (R7) builds a terrain-mode Session on a worker thread, polled via get_init_status() - see "Godot bindings for Session terrain (R7)" below
+      rg_terrain_view.h/.cpp          RgTerrainView : godot::Node3D (PLAN.md R2.1) - LOD terrain preview seam, streamed around a focus since R8; see "Terrain preview (R2.1)", "Render LOD streaming (R8)" and "Godot bindings for Session terrain (R7)" below
       frame_convert.h                 rg_godot-namespaced wrapper around physics_sim's frame_convert_core.h (Vec3f/basis/pose -> godot::Vector3/Basis/Transform3D)
     CMakeLists.txt                    rg_godot SHARED target (the GDExtension DLL)
   game/                                Godot project (res:// root)
@@ -48,7 +48,7 @@ racing_game/
     scenes/
       main.tscn                       one-node stub (Node3D + main.gd) - the scene is built procedurally, see main.gd's own comment
     scripts/
-      main.gd                         builds the whole R0 scene in _ready(); per-frame input -> RgSimulation.set_control() wiring; a `--terrain-preview` cmdline user-arg (after `--`) branches into the R2.1 static-terrain-plus-fly-camera scene instead - see "Terrain preview (R2.1)" below; in that scene the fly camera drives `RgTerrainView.update_focus` every frame (R8) except under `--screenshots`/`--stream-test`
+      main.gd                         builds the whole R0 scene in _ready(); per-frame input -> RgSimulation.set_control() wiring; a `--terrain-preview` cmdline user-arg (after `--`) branches into the R2.1 static-terrain-plus-fly-camera scene instead - see "Terrain preview (R2.1)" below; in that scene the fly camera drives `RgTerrainView.update_focus` every frame (R8) except under `--screenshots`/`--stream-test`; `--bindings-test` (R7) runs a flat-mode-only RgSimulation/RgTerrainView bindings smoke check instead - see "Godot bindings for Session terrain (R7)" below
       terrain_stream_test.gd          `--terrain-preview --stream-test` (R8 headless check): after the initial upload, moves the LOD focus through 5 fixed steps from spawn, waits for each streamed diff to be fully applied, prints one line per step + `terrain stream test done: ...`, quits (180 s wall-clock timeout)
       chase_cam.gd                    reused near-verbatim from physics_sim's demo (same RgSimulation method names)
       fly_cam.gd                      free-fly camera script for `--terrain-preview` (PLAN.md R2.1): WASD + Space/E up + Ctrl/Q down, Shift x6 speed, right-mouse-button capture + look, Esc releases capture; no RgSimulation dependency (plain Camera3D script)
@@ -396,6 +396,89 @@ Real game wiring: `make_terrain_mode(world_config, world_terrain)` -
 spawn converted into the session frame, fetch = `HeightTileSharedFetch`
 over `WorldTerrain::height_tile_shared` (the render path's own decoded-tile
 cache; the physics and render paths share one `HeightTile` object per key).
+
+`Session::world_terrain()` (R2.2 R7) returns the `shared_ptr<WorldTerrain>`
+a terrain-mode Session was built from (null in flat mode, or when the
+`TerrainModeConfig` was hand-assembled rather than built via
+`make_terrain_mode(world_config, world_terrain)`) - `RgTerrainView::
+initialize_shared` (below) reuses it instead of opening/decoding a second
+copy.
+
+## Godot bindings for Session terrain (R7)
+
+Binding layer only (owner rule: no game logic in `godot_ext` - a future
+UE5 port reuses `rg_core` unchanged); the mode framework, `--drive`, HUD and
+the flat<->terrain world switch UI are R9. `main.gd`/the scenes are
+unchanged except a `--bindings-test` smoke path (below).
+
+`RgSimulation` (`godot_ext/src/rg_simulation.h/.cpp`) additions:
+- `initialize_terrain(world_config_path, vehicle_json_path,
+  surface_table_path) -> bool` - builds a terrain-mode `rg::Session` via
+  `make_terrain_mode(...)`. NON-BLOCKING: the whole `Session` construction
+  (which can block up to `startup_timeout_s`, 30 s, on real data - see
+  "Session terrain mode (R4)" above) runs on a worker thread; returns
+  `true` once the thread has been STARTED, not once the Session is ready.
+- `get_init_status() -> Dictionary` - `{state: "idle"|"loading"|"ready"|
+  "error", message: String, resident_l0: int, missing_required: int}`,
+  meant to be polled every frame by GDScript for a loading screen.
+  `resident_l0`/`missing_required` read `session_->streaming_status()` and
+  are only live once `state == "ready"`; both report `0` while `"loading"`/
+  `"error"` (`rg::Session`'s constructor has no progress callback, so there
+  is no finer-grained figure to report mid-flight - a limitation, not a
+  bug, see this section's own note below).
+- `start()` is only valid once `get_init_status().state == "ready"` (it is
+  a no-op - `session_` still null - before that).
+- `is_terrain_mode() -> bool`, `get_streaming_status() -> Dictionary`
+  (every `rg::StreamingStatus` field, snake_case keys),
+  `get_render_origin_session() -> Vector3`, `retry_failed_tiles()`.
+- Both `initialize(vehicle_json_path, surface_table_path)` (flat) and
+  `initialize_terrain(...)` (terrain) are RE-ENTRANT: calling either again
+  on an `RgSimulation` that already holds a Session (loading or running)
+  tears the old one down first (`teardown_current()`) and builds the new
+  one - the runtime flat<->terrain world switch. No restart, no leak.
+
+Threading contract (`initialize_terrain`'s worker thread,
+`run_terrain_init_worker`): an atomic `InitPhase{Idle,Loading,Ready,Error}`
+state machine, release-stored by the worker after it builds the `Session`
+(or catches `std::exception`) into a staged `pending_session_`,
+acquire-loaded by the main thread before adopting it into `session_`.
+`reap_init_thread(bool wait)` is the one join point:
+  - `wait=false` (`get_init_status()`, `start()`, every per-frame poll
+    path): peeks the atomic first and returns WITHOUT joining while still
+    `Loading` - never blocks the render thread.
+  - `wait=true` (`stop()`, `teardown_current()`, the destructor): always
+    `std::thread::join()`s. The thread is NEVER detached.
+Cancel-vs-wait choice (the brief's own open question): a re-init or
+teardown that lands while a previous `initialize_terrain` is still loading
+WAITS for it (blocking join) rather than cancelling it - `rg::Session`'s
+constructor/`setup_terrain()` has no cancellation seam (its blocking gate/
+priming loop is keyed only on `physics.startup_timeout_s`); threading a
+cancel flag through `Session` itself was judged out of scope for this
+binding-layer change.
+
+`RgTerrainView` (`godot_ext/src/rg_terrain_view.h/.cpp`) additions:
+- `initialize_shared(sim: RgSimulation) -> bool` - reuses the Session's
+  `WorldTerrain` via a friend-class accessor (`RgSimulation::
+  shared_world_terrain()`, private - not Variant-bound) instead of opening/
+  decoding a second copy; `terrain_` is now a `shared_ptr<WorldTerrain>` (was
+  `unique_ptr`) so it can hold either a privately-owned copy (`initialize`)
+  or a shared one (`initialize_shared`).
+- `release()` - frees every uploaded chunk and drops the shared terrain (for
+  a world switch); `initialize`/`initialize_shared` may be called again
+  after it.
+- `update_focus(x, y)` is unchanged - GDScript passes the ACTIVE camera's
+  position (not necessarily the car's, per the R9 mode framework), no C++
+  change needed for that.
+
+`--bindings-test` (`main.gd`, wired into `tools/smoke_test.ps1 -BindingsTest`
+and a second `tools/ci.ps1` smoke leg): a flat-mode-only smoke check (no
+`RG_G2M_HOME`/geo2map cache, so it runs in CI) proving the new methods exist
+and a flat `initialize` -> `initialize` re-init cycle runs without a crash.
+`tests/unit/test_session_reinit.cpp` is the rg_core-only (no Godot)
+counterpart: builds a terrain Session on a synthetic fetch and destroys it,
+a flat Session, a terrain Session again, all in one process, then checks a
+flat-mode `state_hash()` (the `hash_check`-style scenario) is unchanged
+across that whole sequence.
 
 ## Targets
 

@@ -59,10 +59,85 @@ func _world_config_path() -> String:
 	return (project_root.path_join("../data/world/world_config.json")).simplify_path()
 
 func _ready() -> void:
-	if "--terrain-preview" in OS.get_cmdline_user_args():
+	var user_args := OS.get_cmdline_user_args()
+	if "--bindings-test" in user_args:
+		_run_bindings_test()
+	elif "--terrain-preview" in user_args:
 		_build_terrain_preview_scene()
 	else:
 		_build_scene()
+
+func _run_bindings_test() -> void:
+	# R2.2 R7 smoke-only check (tools/smoke_test.ps1 -BindingsTest, task 3 of
+	# that milestone's brief): proves the new RgSimulation/RgTerrainView
+	# methods exist and that a flat initialize() -> initialize() re-init
+	# cycle (the "runtime world switch", no restart) completes without a
+	# crash. Deliberately never calls initialize_terrain()/
+	# RgTerrainView.initialize_shared() with real data - that needs
+	# RG_G2M_HOME plus a geo2map cache, unavailable in CI. Does not touch
+	# _build_scene()/_build_terrain_preview_scene() or any of their nodes -
+	# a fully separate path, same "leaves the other branches alone" pattern
+	# _build_terrain_preview_scene() already follows.
+	var sim: Node = ClassDB.instantiate("RgSimulation")
+	sim.name = "BindingsTestSim"
+	add_child(sim)
+
+	var vehicle_json: String = _data_path("vehicles/car_sedan.json")
+	var surface_table_json: String = _data_path("surfaces/surfaces.json")
+
+	var ok: bool = sim.initialize(vehicle_json, surface_table_json)
+	if not ok:
+		push_error("bindings test: first initialize() failed: %s" % sim.get_last_error())
+		get_tree().quit(1)
+		return
+	sim.start()
+
+	# New methods exist and read sanely in flat mode.
+	if bool(sim.is_terrain_mode()):
+		push_error("bindings test: is_terrain_mode() true right after a flat initialize()")
+		get_tree().quit(1)
+		return
+	var init_status: Dictionary = sim.get_init_status()
+	var streaming_status: Dictionary = sim.get_streaming_status()
+	if bool(streaming_status.get("terrain_mode", true)):
+		push_error("bindings test: get_streaming_status().terrain_mode true in flat mode")
+		get_tree().quit(1)
+		return
+	var _origin: Vector3 = sim.get_render_origin_session() # must not crash
+	sim.retry_failed_tiles() # must not crash (a documented no-op without a terrain Session)
+
+	# Re-init cycle (Task 1's own requirement): initialize() again on an
+	# object that already holds a running Session must stop/destroy the old
+	# one cleanly and build the new one - no restart, no leak, no deadlock.
+	ok = sim.initialize(vehicle_json, surface_table_json)
+	if not ok:
+		push_error("bindings test: second initialize() (re-init) failed: %s" % sim.get_last_error())
+		get_tree().quit(1)
+		return
+	sim.start()
+	if not bool(sim.is_running()):
+		push_error("bindings test: sim not running after re-init")
+		get_tree().quit(1)
+		return
+	sim.stop()
+
+	# RgTerrainView: methods exist; a null-sim call fails cleanly (no
+	# crash); release() is safe to call again on an already-empty view.
+	var terrain_view: Node = ClassDB.instantiate("RgTerrainView")
+	terrain_view.name = "BindingsTestTerrainView"
+	add_child(terrain_view)
+	var shared_ok: bool = terrain_view.initialize_shared(null)
+	if shared_ok:
+		push_error("bindings test: initialize_shared(null) unexpectedly returned true")
+		get_tree().quit(1)
+		return
+	terrain_view.release()
+	terrain_view.release() # idempotent - must not crash called twice
+
+	print("bindings test: ok init_status_state=%s streaming_terrain_mode=%s" % [
+		init_status.get("state", "?"), streaming_status.get("terrain_mode", true)
+	])
+	get_tree().quit(0)
 
 func _build_terrain_preview_scene() -> void:
 	# PLAN.md R2.1: "a --terrain-preview branch in main.gd ... Camera3D (near

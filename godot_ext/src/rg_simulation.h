@@ -15,6 +15,8 @@
 #pragma once
 
 #include "rg/session.h"
+#include "rg/world_config.h"
+#include "rg/world_terrain.h"
 
 #include <godot_cpp/classes/node.hpp>
 #include <godot_cpp/variant/dictionary.hpp>
@@ -25,30 +27,76 @@
 
 #include <atomic>
 #include <memory>
+#include <string>
+#include <thread>
 
 namespace rg_godot {
+
+class RgTerrainView; // shared_world_terrain() friend access, see below
 
 class RgSimulation : public godot::Node {
     GDCLASS(RgSimulation, godot::Node)
 
 public:
     RgSimulation() = default;
-    ~RgSimulation() override = default;
+    ~RgSimulation() override;
 
-    // Builds the rg::Session (ground + car_sedan-shaped chassis + vehicle -
-    // see rg::SessionConfig's own doc comment for the exact geometry).
-    // Paths are absolute, globalized (ProjectSettings.globalize_path) by
-    // the GDScript caller - this class does no res:// resolution itself,
-    // same "no Godot resource-path convention leaks into rg_core" reasoning
-    // as SessionConfig's own doc comment. Returns false and sets
-    // get_last_error() on failure (e.g. a malformed vehicle JSON) instead
-    // of letting rg::io::load_vehicle_json's std::runtime_error cross the
-    // GDExtension boundary uncaught.
+    // Builds a FLAT-mode rg::Session (ground + car_sedan-shaped chassis +
+    // vehicle - see rg::SessionConfig's own doc comment for the exact
+    // geometry). Paths are absolute, globalized (ProjectSettings.
+    // globalize_path) by the GDScript caller - this class does no res://
+    // resolution itself, same "no Godot resource-path convention leaks into
+    // rg_core" reasoning as SessionConfig's own doc comment. Returns false
+    // and sets get_last_error() on failure (e.g. a malformed vehicle JSON)
+    // instead of letting rg::io::load_vehicle_json's std::runtime_error
+    // cross the GDExtension boundary uncaught. Synchronous (flat start-up is
+    // fast - no worker thread, unlike initialize_terrain() below).
+    //
+    // Re-entrant (R2.2 R7 "runtime world switch"): may be called again on an
+    // object that already holds a Session (flat or terrain, loading or
+    // running) - the old Session/init worker is torn down first (see
+    // teardown_current()), never leaked, never left running alongside the
+    // new one.
     bool initialize(const godot::String& vehicle_json_absolute_path, const godot::String& surface_table_absolute_path);
+
+    // Builds a TERRAIN-mode rg::Session (rg::make_terrain_mode +
+    // rg::Session) - opens the WorldTerrain named by world_config_absolute_path
+    // itself (RgTerrainView::initialize_shared() then reuses it, no second
+    // decode). R4's start-up can block for up to
+    // WorldConfig::PhysicsTerrainConfig::startup_timeout_s (30 s) waiting for
+    // real tile data, so the ENTIRE build - world_config parse, WorldTerrain::
+    // open, make_terrain_mode, and the rg::Session constructor's own blocking
+    // start-up/priming - runs on a background worker thread
+    // (run_terrain_init_worker). Returns true once that thread has been
+    // STARTED, not once it has succeeded; poll get_init_status() every frame
+    // for a loading screen and call start() only once its state is "ready".
+    // Re-entrant exactly like initialize() above - teardown_current() joins
+    // (waits for, never cancels - see that method's own doc comment) any
+    // init still in flight before starting the new one.
+    bool initialize_terrain(const godot::String& world_config_absolute_path,
+                            const godot::String& vehicle_json_absolute_path,
+                            const godot::String& surface_table_absolute_path);
+
+    // {state: "idle"|"loading"|"ready"|"error", message: String,
+    //  resident_l0: int, missing_required: int}. Non-blocking - safe to poll
+    // every frame from GDScript for a loading screen (see
+    // reap_init_thread()'s doc comment for exactly why this never blocks).
+    // resident_l0/missing_required are live (session_->streaming_status())
+    // once "ready"; both read 0 while "loading" or "error" - rg::Session's
+    // constructor is one blocking call with no progress callback, so no
+    // finer-grained progress exists to report mid-flight (see hand-back).
+    [[nodiscard]] godot::Dictionary get_init_status();
 
     void start();
     void stop();
     [[nodiscard]] bool is_running() const;
+
+    // --- Terrain mode (R2.2 R7; all zero/false/empty in flat mode or before
+    // a successful initialize_terrain()) ---
+    [[nodiscard]] bool is_terrain_mode() const;
+    [[nodiscard]] godot::Dictionary get_streaming_status() const; // every rg::StreamingStatus field, snake_case
+    [[nodiscard]] godot::Vector3 get_render_origin_session() const; // RAW session-frame (east, north, up)
+    void retry_failed_tiles();
 
     [[nodiscard]] std::int64_t get_step_count() const;
     [[nodiscard]] double get_sim_time() const;
@@ -99,12 +147,78 @@ protected:
     static void _bind_methods();
 
 private:
+    friend class RgTerrainView; // shared_world_terrain() below
+
     [[nodiscard]] bool has_vehicle(const godot::String& vehicle_name) const;
+
+    // The Session's shared WorldTerrain (null in flat mode or before a
+    // successful initialize_terrain()) - RgTerrainView::initialize_shared()
+    // is the one caller, reached across the GDExtension boundary via a
+    // friend rather than a bound (GDScript-visible) method, since a raw
+    // rg::WorldTerrain is not a Variant-compatible type and has no business
+    // being exposed to script (R2.2 R7's "adapter stays thin" rule: this is
+    // plumbing between two adapter classes, not game logic).
+    [[nodiscard]] std::shared_ptr<rg::WorldTerrain> shared_world_terrain() const {
+        return session_ ? session_->world_terrain() : nullptr;
+    }
+
+    enum class InitPhase : int { Idle, Loading, Ready, Error };
+
+    // Tears down whatever this object currently holds - an in-flight init
+    // worker (joined, never cancelled: see its own doc comment) and/or a
+    // Session (stopped then destroyed) - leaving the object equivalent to a
+    // freshly constructed one. Called at the start of initialize() and
+    // initialize_terrain() (the "runtime world switch": R2.2 R7 task 1) and
+    // from the destructor; never leaves a thread un-joined or a Session
+    // running.
+    void teardown_current();
+
+    // reap_init_thread(wait=false): the per-frame poll path
+    // (get_init_status()/start()) - peeks init_phase_ first and returns
+    // immediately WITHOUT joining while it is still Loading, so a GDScript
+    // per-frame poll never blocks the render thread for up to 30 s. Once the
+    // worker has reached Ready/Error, joining is a formality (the thread has
+    // already returned) - this call then joins and, on Ready, adopts
+    // pending_session_ into session_.
+    //
+    // reap_init_thread(wait=true): the three lifecycle points the brief
+    // names (stop/re-init/destruction) - always joins, blocking the caller
+    // for as long as an in-flight terrain start-up takes to finish (up to
+    // startup_timeout_s). This project's chosen answer to "cancel or wait":
+    // WAIT. rg::Session's constructor/setup_terrain() has no cancellation
+    // seam (its blocking gate/priming loop is keyed only on
+    // physics.startup_timeout_s), so cutting it short would need a
+    // rg_core-side cancel flag threaded through Session - out of this
+    // change's scope. A re-init while terrain is still loading therefore
+    // blocks briefly (see hand-back for the measured/expected impact).
+    void reap_init_thread(bool wait);
+
+    // Runs entirely on init_thread_: parses world_config_absolute_path,
+    // opens the WorldTerrain, builds a terrain-mode SessionConfig via
+    // rg::make_terrain_mode, and constructs rg::Session (the up-to-30 s
+    // blocking start-up) - every failure (a bad path, a malformed config, a
+    // Session std::runtime_error) is caught and reported through
+    // init_message_/InitPhase::Error rather than crossing the thread
+    // boundary as an exception.
+    void run_terrain_init_worker(std::string world_config_path, std::string vehicle_json_path,
+                                 std::string surface_table_path);
 
     std::unique_ptr<rg::Session> session_;
     godot::String last_error_;
     ps_godot::OriginRebase* origin_rebase_ = nullptr; // points at session_->origin_rebase(), valid once session_ exists
     std::atomic<std::int64_t> adapter_time_us_accum_{0}; // main-thread-only in practice (Godot single main thread)
+
+    // Background terrain-init worker (R2.2 R7). init_message_/pending_session_
+    // are plain (non-atomic) fields the worker writes and the main thread
+    // reads - safe ONLY because every write happens-before the worker's
+    // release-store into init_phase_, and the main thread never reads them
+    // until its OWN acquire-load of init_phase_ has observed Ready/Error
+    // (the same release/acquire hand-off pattern as
+    // rg::TerrainViewStreamer). Never detached - see reap_init_thread().
+    std::thread init_thread_;
+    std::atomic<InitPhase> init_phase_{InitPhase::Idle};
+    std::string init_message_;
+    std::unique_ptr<rg::Session> pending_session_;
 };
 
 } // namespace rg_godot

@@ -254,6 +254,14 @@ public:
     // over). Any thread; consumed on the thread that steps.
     void retry_failed_tiles() { retry_failed_requested_.store(true, std::memory_order_relaxed); }
 
+    // The WorldTerrain this Session's terrain mode was built from (R2.2 R7:
+    // "render and physics share decoded tiles since R4" - RgTerrainView's
+    // initialize_shared() reuses this instead of opening/decoding a second
+    // copy). Null in flat mode, or if this Session's TerrainModeConfig was
+    // built directly (tests, tools/hash_check) rather than via the real
+    // make_terrain_mode(WorldConfig, shared_ptr<WorldTerrain>) overload.
+    [[nodiscard]] std::shared_ptr<WorldTerrain> world_terrain() const;
+
     // --- Direct access: synchronous-mode / test / hash-check-tool only.
     // NOT race-free against a running loop - never call these while
     // running() from a thread other than the one driving step().

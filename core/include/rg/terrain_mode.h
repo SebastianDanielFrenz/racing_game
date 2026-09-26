@@ -48,6 +48,16 @@ struct TerrainModeConfig {
     g2m::geo::SessionFrame frame;
     std::shared_ptr<g2m::phys::IHeightTileFetch> fetch; // required (Session throws on null)
 
+    // The WorldTerrain the real game's make_terrain_mode(WorldConfig,
+    // shared_ptr<WorldTerrain>) overload was built from, kept alongside
+    // `fetch` (which only captures it inside a closure) so Session can expose
+    // it again via Session::world_terrain() (R2.2 R7: RgTerrainView reuses
+    // it instead of opening/decoding a second copy). Null when a
+    // TerrainModeConfig is built directly (tests, tools/hash_check) via the
+    // "pure" make_terrain_mode(WorldConfig, SessionFrame, fetch) overload, or
+    // hand-assembled with a synthetic fetch.
+    std::shared_ptr<WorldTerrain> world_terrain;
+
     double spawn_x = 0.0;
     double spawn_y = 0.0;
     // Heading of the chassis' forward (+x) axis in RADIANS: 0 = +x (east),

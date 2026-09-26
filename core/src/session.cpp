@@ -418,6 +418,10 @@ const g2m::ps_bridge::G2mTerrainSource* Session::terrain_source() const {
     return terrain_ ? terrain_->source.get() : nullptr;
 }
 
+std::shared_ptr<WorldTerrain> Session::world_terrain() const {
+    return terrain_ ? terrain_->config.world_terrain : nullptr;
+}
+
 void Session::set_control(const std::string& channel, double value) {
     const auto it = control_channels_.find(channel);
     if (it == control_channels_.end()) return; // unknown channel - see doc comment

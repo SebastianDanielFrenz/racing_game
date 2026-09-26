@@ -33,7 +33,9 @@ TerrainModeConfig make_terrain_mode(const WorldConfig& config, std::shared_ptr<W
     const g2m::geo::SessionFrame frame = terrain->frame();
     auto fetch = std::make_shared<HeightTileSharedFetch>(
         [terrain](const g2m::TileKey& key) { return terrain->height_tile_shared(key); });
-    return make_terrain_mode(config, frame, std::move(fetch));
+    TerrainModeConfig out = make_terrain_mode(config, frame, std::move(fetch));
+    out.world_terrain = std::move(terrain);
+    return out;
 }
 
 } // namespace rg

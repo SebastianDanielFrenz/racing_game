@@ -4,8 +4,10 @@
     racing_game R0 CI: Windows legs only (clang-cl debug, release), each
     configuring with RG_BUILD_GODOT_EXTENSION=ON, building rg_core/hash_check/
     rg_godot/rg_unit_tests, running ctest, then running tools/smoke_test.ps1
-    once (against the debug build - smoke_test.ps1 always targets
-    out/build/debug, see its own header). Trimmed relative to physics_sim's
+    twice (against the debug build - smoke_test.ps1 always targets
+    out/build/debug, see its own header): once normally, once with
+    -BindingsTest (R2.2 R7 task 3 - reuses the same build, -SkipBuild).
+    Trimmed relative to physics_sim's
     much larger tools/ci.ps1 (no -Affected/-Topic path-based selection, no
     WSL/sanitizer legs, no asan/msvc-release legs) - R0 scope per PLAN.md
     12's "tools/ci.ps1 (Windows legs at least: clang-cl debug/release;
@@ -106,6 +108,23 @@ if (-not $SkipSmoke) {
     } else {
         Report-Fail "smoke_test exited $smokeExit"
         $script:LegResults['smoke_test'] = "FAIL ($($smokeSw.Elapsed.ToString('mm\:ss')))"
+    }
+
+    # R2.2 R7 task 3: the new RgSimulation/RgTerrainView bindings smoke check
+    # (flat-mode only, no RG_G2M_HOME/geo2map cache needed) - reuses the
+    # binary the leg above just built (-SkipBuild), same "already-built DLL"
+    # pattern as -TerrainPreview would use.
+    Write-Host "`n=== leg: smoke_test (bindings) ===" -ForegroundColor Cyan
+    $bindingsSw = [System.Diagnostics.Stopwatch]::StartNew()
+    & (Join-Path $PSScriptRoot 'smoke_test.ps1') -SkipBuild -BindingsTest
+    $bindingsExit = $LASTEXITCODE
+    $bindingsSw.Stop()
+    if ($bindingsExit -eq 0) {
+        Report-Ok "smoke_test (bindings)"
+        $script:LegResults['smoke_test_bindings'] = "PASS ($($bindingsSw.Elapsed.ToString('mm\:ss')))"
+    } else {
+        Report-Fail "smoke_test (bindings) exited $bindingsExit"
+        $script:LegResults['smoke_test_bindings'] = "FAIL ($($bindingsSw.Elapsed.ToString('mm\:ss')))"
     }
 }
 

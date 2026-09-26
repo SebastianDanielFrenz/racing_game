@@ -6,7 +6,10 @@
 
 #include <godot_cpp/core/class_db.hpp>
 
+#include <optional>
+#include <stdexcept>
 #include <string>
+#include <utility>
 #include <variant>
 
 using godot::D_METHOD;
@@ -44,7 +47,71 @@ const char* engine_state_name(ps::drivetrain::EngineState s) {
 
 } // namespace
 
+RgSimulation::~RgSimulation() {
+    reap_init_thread(/*wait=*/true);
+    session_.reset(); // Session's own destructor stops its loop
+    origin_rebase_ = nullptr;
+}
+
+void RgSimulation::teardown_current() {
+    reap_init_thread(/*wait=*/true); // joins any in-flight worker first (see its own doc comment)
+    if (session_) session_->stop();
+    session_.reset();
+    origin_rebase_ = nullptr;
+    init_phase_.store(InitPhase::Idle, std::memory_order_relaxed);
+    init_message_.clear();
+}
+
+void RgSimulation::reap_init_thread(bool wait) {
+    if (!init_thread_.joinable()) return;
+    if (!wait) {
+        // Non-blocking peek: never join while the worker might still be
+        // inside rg::Session's blocking terrain start-up (up to 30 s) - a
+        // per-frame GDScript poll (get_init_status()/start()) must never
+        // stall the render thread.
+        if (init_phase_.load(std::memory_order_acquire) == InitPhase::Loading) return;
+    }
+    init_thread_.join(); // wait==true: blocks until the worker returns; wait==false: already finished, returns at once
+    if (init_phase_.load(std::memory_order_acquire) == InitPhase::Ready) {
+        session_ = std::move(pending_session_);
+        origin_rebase_ = &session_->origin_rebase();
+    }
+    pending_session_.reset(); // no-op on the Ready path (already moved out); frees nothing on Error (never set)
+}
+
+void RgSimulation::run_terrain_init_worker(std::string world_config_path, std::string vehicle_json_path,
+                                           std::string surface_table_path) {
+    try {
+        std::string err;
+        std::optional<rg::WorldConfig> world_config = rg::load_world_config(world_config_path, &err);
+        if (!world_config.has_value()) {
+            throw std::runtime_error("load_world_config: " + err);
+        }
+
+        std::string open_err;
+        std::shared_ptr<rg::WorldTerrain> terrain(rg::WorldTerrain::open(*world_config, &open_err));
+        if (terrain == nullptr) {
+            throw std::runtime_error("WorldTerrain::open: " + open_err);
+        }
+
+        rg::SessionConfig config;
+        config.vehicle_json_path = std::move(vehicle_json_path);
+        config.surface_table_path = std::move(surface_table_path);
+        config.terrain = rg::make_terrain_mode(*world_config, terrain); // start-up blocks inside the Session ctor below
+
+        auto session = std::make_unique<rg::Session>(config);
+        pending_session_ = std::move(session);
+        init_message_ = "ready";
+        init_phase_.store(InitPhase::Ready, std::memory_order_release);
+    } catch (const std::exception& e) {
+        pending_session_.reset();
+        init_message_ = e.what();
+        init_phase_.store(InitPhase::Error, std::memory_order_release);
+    }
+}
+
 bool RgSimulation::initialize(const String& vehicle_json_absolute_path, const String& surface_table_absolute_path) {
+    teardown_current();
     rg::SessionConfig config;
     config.vehicle_json_path = to_std_string(vehicle_json_absolute_path);
     config.surface_table_path = to_std_string(surface_table_absolute_path);
@@ -60,15 +127,100 @@ bool RgSimulation::initialize(const String& vehicle_json_absolute_path, const St
     return true;
 }
 
+bool RgSimulation::initialize_terrain(const String& world_config_absolute_path,
+                                      const String& vehicle_json_absolute_path,
+                                      const String& surface_table_absolute_path) {
+    teardown_current();
+    last_error_ = String();
+    init_message_.clear();
+    init_phase_.store(InitPhase::Loading, std::memory_order_release);
+
+    std::string world_config_path = to_std_string(world_config_absolute_path);
+    std::string vehicle_json_path = to_std_string(vehicle_json_absolute_path);
+    std::string surface_table_path = to_std_string(surface_table_absolute_path);
+    init_thread_ = std::thread([this, world_config_path = std::move(world_config_path),
+                               vehicle_json_path = std::move(vehicle_json_path),
+                               surface_table_path = std::move(surface_table_path)]() mutable {
+        run_terrain_init_worker(std::move(world_config_path), std::move(vehicle_json_path),
+                                std::move(surface_table_path));
+    });
+    return true; // started, not necessarily succeeded - see get_init_status()
+}
+
+godot::Dictionary RgSimulation::get_init_status() {
+    reap_init_thread(/*wait=*/false);
+    godot::Dictionary d;
+    const InitPhase phase = init_phase_.load(std::memory_order_acquire);
+    const char* state = "idle";
+    switch (phase) {
+        case InitPhase::Idle: state = "idle"; break;
+        case InitPhase::Loading: state = "loading"; break;
+        case InitPhase::Ready: state = "ready"; break;
+        case InitPhase::Error: state = "error"; break;
+    }
+    d["state"] = String(state);
+    d["message"] = String(init_message_.c_str());
+    if (phase == InitPhase::Ready && session_) {
+        const rg::StreamingStatus s = session_->streaming_status();
+        d["resident_l0"] = static_cast<std::int64_t>(s.resident_l0);
+        d["missing_required"] = static_cast<std::int64_t>(s.missing_required);
+    } else {
+        // rg::Session's constructor is one blocking call with no progress
+        // callback (see this method's own header doc comment) - no
+        // finer-grained figure exists to report while "loading"/"error".
+        d["resident_l0"] = static_cast<std::int64_t>(0);
+        d["missing_required"] = static_cast<std::int64_t>(0);
+    }
+    return d;
+}
+
 void RgSimulation::start() {
+    reap_init_thread(/*wait=*/false); // opportunistically adopt a just-finished terrain init
     if (session_) session_->start();
 }
 
 void RgSimulation::stop() {
+    reap_init_thread(/*wait=*/true); // per brief: join the init thread on stop
     if (session_) session_->stop();
 }
 
 bool RgSimulation::is_running() const { return session_ && session_->running(); }
+
+bool RgSimulation::is_terrain_mode() const { return session_ && session_->terrain_mode(); }
+
+godot::Dictionary RgSimulation::get_streaming_status() const {
+    godot::Dictionary d;
+    rg::StreamingStatus s; // default-constructed = every field zero/false, terrain_mode = false
+    if (session_) s = session_->streaming_status();
+    d["terrain_mode"] = s.terrain_mode;
+    d["ready"] = s.ready;
+    d["frozen"] = s.frozen;
+    d["missing_required"] = static_cast<std::int64_t>(s.missing_required);
+    d["inflight"] = static_cast<std::int64_t>(s.inflight);
+    d["resident_l0"] = static_cast<std::int64_t>(s.resident_l0);
+    d["failed"] = static_cast<std::int64_t>(s.failed);
+    d["frozen_attempts"] = static_cast<std::int64_t>(s.frozen_attempts);
+    d["freeze_count"] = static_cast<std::int64_t>(s.freeze_count);
+    d["fill_misses"] = static_cast<std::int64_t>(s.fill_misses);
+    d["nodata_fills"] = static_cast<std::int64_t>(s.nodata_fills);
+    d["falls"] = static_cast<std::int64_t>(s.falls);
+    d["resident_tiles"] = static_cast<std::int64_t>(s.resident_tiles);
+    d["starved_tiles"] = static_cast<std::int64_t>(s.starved_tiles);
+    d["relief_overflow"] = static_cast<std::int64_t>(s.relief_overflow);
+    d["startup_ms"] = s.startup_ms;
+    d["prime_ticks"] = static_cast<std::int64_t>(s.prime_ticks);
+    return d;
+}
+
+godot::Vector3 RgSimulation::get_render_origin_session() const {
+    if (!origin_rebase_) return godot::Vector3();
+    const ps::Vec3 o = origin_rebase_->origin(); // RAW session-frame (east, north, up) - no basis conversion
+    return godot::Vector3(static_cast<float>(o.x), static_cast<float>(o.y), static_cast<float>(o.z));
+}
+
+void RgSimulation::retry_failed_tiles() {
+    if (session_) session_->retry_failed_tiles();
+}
 
 std::int64_t RgSimulation::get_step_count() const {
     return session_ ? static_cast<std::int64_t>(session_->snapshot().tick) : 0;
@@ -228,9 +380,15 @@ float RgSimulation::get_vehicle_ground_speed_mps(const String& vehicle_name) con
 
 void RgSimulation::_bind_methods() {
     godot::ClassDB::bind_method(D_METHOD("initialize", "vehicle_json_absolute_path", "surface_table_absolute_path"), &RgSimulation::initialize);
+    godot::ClassDB::bind_method(D_METHOD("initialize_terrain", "world_config_absolute_path", "vehicle_json_absolute_path", "surface_table_absolute_path"), &RgSimulation::initialize_terrain);
+    godot::ClassDB::bind_method(D_METHOD("get_init_status"), &RgSimulation::get_init_status);
     godot::ClassDB::bind_method(D_METHOD("start"), &RgSimulation::start);
     godot::ClassDB::bind_method(D_METHOD("stop"), &RgSimulation::stop);
     godot::ClassDB::bind_method(D_METHOD("is_running"), &RgSimulation::is_running);
+    godot::ClassDB::bind_method(D_METHOD("is_terrain_mode"), &RgSimulation::is_terrain_mode);
+    godot::ClassDB::bind_method(D_METHOD("get_streaming_status"), &RgSimulation::get_streaming_status);
+    godot::ClassDB::bind_method(D_METHOD("get_render_origin_session"), &RgSimulation::get_render_origin_session);
+    godot::ClassDB::bind_method(D_METHOD("retry_failed_tiles"), &RgSimulation::retry_failed_tiles);
     godot::ClassDB::bind_method(D_METHOD("get_step_count"), &RgSimulation::get_step_count);
     godot::ClassDB::bind_method(D_METHOD("get_sim_time"), &RgSimulation::get_sim_time);
     godot::ClassDB::bind_method(D_METHOD("get_tick_rate_hz"), &RgSimulation::get_tick_rate_hz);

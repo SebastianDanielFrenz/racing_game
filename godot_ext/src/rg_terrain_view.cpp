@@ -1,6 +1,7 @@
 #include "rg_terrain_view.h"
 
 #include "frame_convert.h"
+#include "rg_simulation.h"
 
 #include "ps/math/pose.h"
 #include "ps/math/quat.h"
@@ -64,12 +65,16 @@ void RgTerrainView::reset_chunks() {
     diff_errors_ = 0;
 }
 
-bool RgTerrainView::initialize(const String& world_config_absolute_path) {
+void RgTerrainView::teardown_terrain() {
     streamer_.reset(); // before terrain_: its TerrainViewSource points into it
     reset_chunks();
     terrain_.reset();
     spawn_x_session_ = 0.0;
     spawn_y_session_ = 0.0;
+}
+
+bool RgTerrainView::initialize(const String& world_config_absolute_path) {
+    teardown_terrain();
 
     std::string err;
     auto config = rg::load_world_config(to_std_string(world_config_absolute_path), &err);
@@ -79,7 +84,7 @@ bool RgTerrainView::initialize(const String& world_config_absolute_path) {
     }
 
     std::string open_err;
-    terrain_ = rg::WorldTerrain::open(*config, &open_err);
+    terrain_ = rg::WorldTerrain::open(*config, &open_err); // unique_ptr -> shared_ptr (refcount 1)
     if (terrain_ == nullptr) {
         last_error_ = String(open_err.c_str());
         return false;
@@ -90,6 +95,29 @@ bool RgTerrainView::initialize(const String& world_config_absolute_path) {
 
     last_error_ = String();
     return true;
+}
+
+bool RgTerrainView::initialize_shared(RgSimulation* sim) {
+    teardown_terrain();
+
+    if (sim == nullptr) {
+        last_error_ = String("RgTerrainView::initialize_shared: null RgSimulation");
+        return false;
+    }
+    std::shared_ptr<rg::WorldTerrain> shared = sim->shared_world_terrain();
+    if (shared == nullptr) {
+        last_error_ = String("RgTerrainView::initialize_shared: RgSimulation has no terrain-mode Session");
+        return false;
+    }
+    terrain_ = std::move(shared); // shares ownership with the Session's TerrainModeConfig - no second decode
+
+    last_error_ = String();
+    return true;
+}
+
+void RgTerrainView::release() {
+    teardown_terrain();
+    last_error_ = String();
 }
 
 bool RgTerrainView::load_preview(float spawn_x, float spawn_y) {
@@ -427,6 +455,8 @@ void RgTerrainView::_process(double /*delta*/) {
 
 void RgTerrainView::_bind_methods() {
     godot::ClassDB::bind_method(D_METHOD("initialize", "world_config_absolute_path"), &RgTerrainView::initialize);
+    godot::ClassDB::bind_method(D_METHOD("initialize_shared", "sim"), &RgTerrainView::initialize_shared);
+    godot::ClassDB::bind_method(D_METHOD("release"), &RgTerrainView::release);
     godot::ClassDB::bind_method(D_METHOD("get_spawn_x"), &RgTerrainView::get_spawn_x);
     godot::ClassDB::bind_method(D_METHOD("get_spawn_y"), &RgTerrainView::get_spawn_y);
     godot::ClassDB::bind_method(D_METHOD("load_preview", "spawn_x", "spawn_y"), &RgTerrainView::load_preview);

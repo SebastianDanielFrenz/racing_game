@@ -51,19 +51,34 @@
     RID-leak check after several add/remove diffs. --quit-after is raised to
     200000 frames (the script quits itself; it has its own 180 s wall-clock
     timeout, headless frames being uncapped).
+
+.PARAMETER BindingsTest
+    R2.2 R7 task 3: launches with `-- --bindings-test` (main.gd's own
+    _run_bindings_test) instead of the normal scene, which proves the new
+    RgSimulation (initialize_terrain/get_init_status/get_streaming_status/
+    get_render_origin_session/retry_failed_tiles/is_terrain_mode) and
+    RgTerrainView (initialize_shared/release) methods exist and that a flat
+    initialize() -> initialize() re-init cycle runs without a crash - all in
+    FLAT mode only (no RG_G2M_HOME/geo2map cache needed, so this runs in CI).
+    Asserts no ERROR/SCRIPT ERROR line, a clean exit code, and the script's
+    own "bindings test: ok ..." line.
 #>
 [CmdletBinding()]
 param(
     [int]$QuitAfterFrames = 300,
     [switch]$SkipBuild,
     [switch]$TerrainPreview,
-    [switch]$TerrainStream
+    [switch]$TerrainStream,
+    [switch]$BindingsTest
 )
 
 $ErrorActionPreference = 'Stop'
 if ($TerrainStream) {
     $TerrainPreview = $true
     if (-not $PSBoundParameters.ContainsKey('QuitAfterFrames')) { $QuitAfterFrames = 200000 }
+}
+if ($BindingsTest -and $TerrainPreview) {
+    throw "smoke_test.ps1: -BindingsTest and -TerrainPreview/-TerrainStream are mutually exclusive"
 }
 $repoRoot = Split-Path -Parent $PSScriptRoot
 $gameDir  = Join-Path $repoRoot 'game'
@@ -147,6 +162,8 @@ if ($script:Failures.Count -eq 0) {
     if ($TerrainPreview) {
         $godotArgs += @('--', '--terrain-preview')
         if ($TerrainStream) { $godotArgs += @('--stream-test') }
+    } elseif ($BindingsTest) {
+        $godotArgs += @('--', '--bindings-test')
     }
     Write-Host "`n-- headless run: $godotExe $($godotArgs -join ' ') --" -ForegroundColor Cyan
 
@@ -219,6 +236,13 @@ if ($script:Failures.Count -eq 0) {
                     Report-Ok "terrain stream: 5 diffs applied, added=$added removed=$removed, 0 errors"
                 }
             }
+        }
+    } elseif ($BindingsTest) {
+        $doneLine = $logContent | Select-String -Pattern 'bindings test: ok' | Select-Object -Last 1
+        if ($doneLine) {
+            Report-Ok "bindings test: $($doneLine.Line)"
+        } else {
+            Report-Fail "no 'bindings test: ok' line found in Godot output - main.gd's --bindings-test branch may not have completed"
         }
     } else {
         $tickLine = $logContent | Select-String -Pattern 'measured sim tick rate|sim thread running' | Select-Object -Last 1

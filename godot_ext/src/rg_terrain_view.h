@@ -61,6 +61,8 @@
 
 namespace rg_godot {
 
+class RgSimulation; // initialize_shared()
+
 class RgTerrainView : public godot::Node3D {
     GDCLASS(RgTerrainView, godot::Node3D)
 
@@ -68,15 +70,39 @@ public:
     RgTerrainView() = default;
     ~RgTerrainView() override;
 
-    // Opens rg::WorldTerrain from a world_config.json ABSOLUTE path (the
-    // GDScript caller resolves res:// -> filesystem path itself, same
+    // Opens its OWN rg::WorldTerrain from a world_config.json ABSOLUTE path
+    // (the GDScript caller resolves res:// -> filesystem path itself, same
     // "no Godot resource-path convention leaks into rg_core" rule as
     // RgSimulation::initialize's own vehicle/surface JSON paths). Returns
     // false and sets get_last_error() on failure (a malformed config, a
     // store that fails to open) instead of letting rg::WorldTerrain::open's
     // std::string* err cross the GDExtension boundary as anything but a
-    // godot::String.
+    // godot::String. Use this for a standalone preview (no running Session,
+    // e.g. --terrain-preview); use initialize_shared() below once a
+    // RgSimulation is running in terrain mode, so the decoded tiles are not
+    // fetched/decoded twice.
     bool initialize(const godot::String& world_config_absolute_path);
+
+    // R2.2 R7: reuses `sim`'s Session-owned WorldTerrain (render and physics
+    // share the same decoded tiles since R4) instead of opening/decoding a
+    // second copy. Frees any previously uploaded preview (own or shared)
+    // first, same as initialize(). Returns false and sets get_last_error()
+    // if `sim` is null or has no terrain-mode Session yet (call this only
+    // once RgSimulation::get_init_status()'s state is "ready", or after
+    // RgSimulation::is_terrain_mode() is true). get_spawn_x()/get_spawn_y()
+    // are NOT populated by this path (WorldTerrain carries no spawn point of
+    // its own - read RgSimulation::get_render_origin_session() /
+    // world().get_pose(chassis) instead); both stay 0.0. Callable again
+    // after release() (or after another initialize()/initialize_shared()
+    // call, which tears down the previous one first).
+    bool initialize_shared(RgSimulation* sim);
+
+    // Frees every uploaded chunk and drops the WorldTerrain (owned or
+    // shared) - for a world switch (terrain -> flat, or reloading a
+    // different terrain). initialize()/initialize_shared() may be called
+    // again afterward; this method itself is also safe to call again
+    // (idempotent no-op once already released).
+    void release();
 
     // The world_config.json's own spawn point, expressed session-local
     // (WorldConfig::Spawn::e/n minus WorldConfig::UtmOrigin::e0/n0 -
@@ -177,6 +203,13 @@ protected:
 private:
     void free_all_uploaded();
     void reset_chunks();
+    // Common prologue for initialize()/initialize_shared()/release(): cancels
+    // + joins the streamer (its TerrainViewSource points into terrain_),
+    // frees every uploaded chunk, and drops terrain_ - either the sole owner
+    // (own preview) or one of several (shared with a Session), so a shared
+    // WorldTerrain stays alive iff the Session (or something else) still
+    // holds it.
+    void teardown_terrain();
     // One frame of streaming (see the file comment): take a ready diff, upload
     // within budget, then (all adds in) free removals within budget, then
     // (all removals done) commit.
@@ -185,7 +218,12 @@ private:
     void upload_one_chunk(const rg::RenderChunk& chunk);
     [[nodiscard]] godot::Transform3D chunk_instance_transform(const rg::RenderChunk& chunk) const;
 
-    std::unique_ptr<rg::WorldTerrain> terrain_;
+    // R2.2 R7: shared_ptr (not unique_ptr) so initialize_shared() can hold
+    // the SAME WorldTerrain a RgSimulation's terrain-mode Session owns
+    // (rg::Session::world_terrain()) instead of opening a second copy;
+    // initialize() still owns its copy outright (refcount 1) exactly as
+    // before, just via a shared_ptr now.
+    std::shared_ptr<rg::WorldTerrain> terrain_;
     // Declared AFTER terrain_ so it is destroyed (worker cancelled + joined)
     // BEFORE the WorldTerrain its TerrainViewSource points into.
     std::unique_ptr<rg::TerrainViewStreamer> streamer_;
