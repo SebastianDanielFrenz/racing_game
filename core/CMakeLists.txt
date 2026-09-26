@@ -18,10 +18,19 @@
 # fix to e.g. SimThread's catch-up logic is picked up here automatically on
 # the next submodule pin bump, not duplicated-and-forgotten).
 
+# g2m_server/g2m_client/g2m_layers (geo2map_engine submodule, PLAN.md R2.0):
+# rg::load_world_config (world_config.h/.cpp) is the only rg_core file that
+# touches geo2map_engine directly today (validates data/world/world_config.json
+# and expands its ${RG_G2M_HOME} placeholder; does not yet open a store).
+# g2m_mesh does NOT exist yet on geo2map_engine's current pin (main,
+# 216775fd45a64014fc2fd89200555b3f1426509e) - only g2m_server/g2m_client/
+# g2m_layers are linked; add g2m_mesh here once geo2map_engine's G2.3
+# increment lands it.
 set(PS_ADAPTER_SRC_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../external/physics_sim/adapters/godot/src")
 
 add_library(rg_core STATIC
     src/session.cpp
+    src/world_config.cpp
     "${PS_ADAPTER_SRC_DIR}/frame_convert_core.cpp"
 )
 
@@ -43,6 +52,10 @@ target_include_directories(rg_core
 target_link_libraries(rg_core
     PUBLIC
         ps_core
+        g2m_server
+        g2m_client
+        g2m_layers
     PRIVATE
         rg_options
+        nlohmann_json::nlohmann_json
 )

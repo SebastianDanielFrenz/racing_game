@@ -11,6 +11,8 @@ target_link_libraries(rg_test_catch_main
 
 add_executable(rg_unit_tests
   test_session.cpp
+  test_world_config.cpp
+  test_g2m_link_smoke.cpp
 )
 
 target_link_libraries(rg_unit_tests
@@ -19,6 +21,10 @@ target_link_libraries(rg_unit_tests
     rg_test_catch_main
     rg_warnings
     rg_options
+    # test_world_config.cpp builds its own fixture JSON directly with
+    # nlohmann::json (same precedent as physics_sim's own
+    # test_terrain_golden.cpp linking nlohmann_json into ps_unit_tests).
+    nlohmann_json::nlohmann_json
 )
 
 target_compile_definitions(rg_unit_tests PRIVATE RG_SOURCE_DIR="${CMAKE_SOURCE_DIR}")

@@ -57,7 +57,7 @@ Write-Host "=== racing_game R0 headless smoke test ===" -ForegroundColor Cyan
 Write-Host "repo root: $repoRoot"
 Write-Host "build dir: $buildDir"
 
-Update-PhysicsSimSubmodule -RepoRoot $repoRoot
+Update-Submodules -RepoRoot $repoRoot
 
 if (-not $SkipBuild) {
     Enter-VsDevShell

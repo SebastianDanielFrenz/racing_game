@@ -141,18 +141,22 @@ function Ensure-GodotProjectImported {
     }
 }
 
-# Ensures the external/physics_sim submodule is checked out, ALWAYS passing
-# -c protocol.file.allow=always (D9: the submodule's URL is a local absolute
-# file:// path - git >= 2.38 refuses "transport 'file' not allowed" without
-# this flag on every clone/update, confirmed empirically during R0 setup;
-# every script in this repo that touches the submodule must pass it).
-function Update-PhysicsSimSubmodule {
+# Ensures BOTH submodules (external/physics_sim, external/geo2map_engine -
+# PLAN.md R2.0) are checked out, ALWAYS passing -c protocol.file.allow=always
+# (D9: both submodules' URLs are local absolute file:// paths - git >= 2.38
+# refuses "transport 'file' not allowed" without this flag on every
+# clone/update, confirmed empirically during R0 setup; every script in this
+# repo that touches either submodule must pass it). No path argument is
+# passed to `submodule update`, so this one git invocation updates every
+# submodule listed in .gitmodules - a single function has covered both since
+# geo2map_engine was added, nothing else needed to change here.
+function Update-Submodules {
     param([Parameter(Mandatory)][string]$RepoRoot)
     Push-Location $RepoRoot
     try {
         & git -c protocol.file.allow=always submodule update --init --recursive | Out-Host
         if ($LASTEXITCODE -ne 0) {
-            throw "git submodule update failed (exit $LASTEXITCODE) - external/physics_sim not checked out"
+            throw "git submodule update failed (exit $LASTEXITCODE) - external/physics_sim / external/geo2map_engine not checked out"
         }
     } finally {
         Pop-Location

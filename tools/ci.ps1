@@ -49,7 +49,7 @@ Write-Host "repo root: $repoRoot"
 Write-Host "legs: $($Only -join ', ')"
 
 Write-Host "`n-- submodule --" -ForegroundColor Cyan
-Update-PhysicsSimSubmodule -RepoRoot $repoRoot
+Update-Submodules -RepoRoot $repoRoot
 
 Enter-VsDevShell
 

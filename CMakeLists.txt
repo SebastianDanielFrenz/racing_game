@@ -11,6 +11,44 @@ if(POLICY CMP0091)
 endif()
 set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 
+# clang-cl + AddressSanitizer runtime, linked explicitly (Windows "asan"
+# preset only) - same issue and same fix as physics_sim's own top-level
+# CMakeLists.txt (see its comment for the full story): CMake's Ninja
+# generator for clang-cl invokes lld-link.exe/link.exe DIRECTLY as the link
+# step, which does not understand "-fsanitize=address" and never links the
+# ASan runtime in, so it must be named explicitly via /WHOLEARCHIVE. This is
+# racing_game's OWN copy of that block, not a reuse of physics_sim's: CMake
+# directory-scoped variables (a plain set() with no PARENT_SCOPE/CACHE, which
+# is what physics_sim's own top-level CMakeLists.txt uses for
+# CMAKE_EXE_LINKER_FLAGS) do not propagate out of the directory they were set
+# in - physics_sim's block only ever affects targets built inside
+# external/physics_sim's own add_subdirectory() scope, never racing_game's
+# sibling directories (core/, godot_ext/, tests/unit/, tools/hash_check/).
+# Unconditional (no top-level-only guard, unlike geo2map_engine's copy of
+# this same block) because racing_game itself IS always the top-level
+# CMakeLists.txt for its own build - CMAKE_SOURCE_DIR ==
+# CMAKE_CURRENT_SOURCE_DIR is always true here.
+if(CMAKE_CXX_COMPILER MATCHES "clang-cl" AND CMAKE_CXX_FLAGS MATCHES "-fsanitize=address")
+  execute_process(
+    COMMAND "${CMAKE_CXX_COMPILER}" -print-resource-dir
+    OUTPUT_VARIABLE RG_CLANG_RESOURCE_DIR
+    OUTPUT_STRIP_TRAILING_WHITESPACE
+  )
+  set(RG_CLANG_ASAN_LIB_DIR "${RG_CLANG_RESOURCE_DIR}/lib/windows")
+  set(RG_ASAN_LINK_FLAGS " /LIBPATH:\"${RG_CLANG_ASAN_LIB_DIR}\" /WHOLEARCHIVE:clang_rt.asan-x86_64.lib \"${RG_CLANG_ASAN_LIB_DIR}/clang_rt.asan-x86_64.lib\" /WHOLEARCHIVE:clang_rt.asan_cxx-x86_64.lib \"${RG_CLANG_ASAN_LIB_DIR}/clang_rt.asan_cxx-x86_64.lib\" /INFERASANLIBS:NO")
+  # Applied to EXE, SHARED and MODULE link steps alike - CMAKE_EXE_LINKER_FLAGS
+  # alone (the original form of this block) covers ps_run/sweep/the test
+  # executables but not godot_ext/'s rg_godot (add_library(rg_godot SHARED)):
+  # that DLL link step went unexercised by every asan-preset build until R2.0
+  # actually built it, at which point it failed with undefined __asan_*
+  # symbols (lld-link never implicitly links the ASan runtime for clang-cl,
+  # same root cause as the comment above, just a different linker-flags
+  # variable for a non-EXE target type).
+  set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS}${RG_ASAN_LINK_FLAGS}")
+  set(CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS}${RG_ASAN_LINK_FLAGS}")
+  set(CMAKE_MODULE_LINKER_FLAGS "${CMAKE_MODULE_LINKER_FLAGS}${RG_ASAN_LINK_FLAGS}")
+endif()
+
 project(racing_game LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 20)
@@ -52,6 +90,84 @@ include(FetchContent)
 set(PS_BUILD_TESTS OFF CACHE BOOL "" FORCE)
 set(PS_BUILD_GODOT_ADAPTER OFF CACHE BOOL "" FORCE)
 add_subdirectory(external/physics_sim EXCLUDE_FROM_ALL)
+
+# ---------------------------------------------------------------------------
+# geo2map_engine (submodule, pinned - PLAN.md R2.0). EXCLUDE_FROM_ALL, same
+# reasoning as physics_sim above: rg_core only needs g2m_server/g2m_client/
+# g2m_layers, never geo2map_engine's own tests/apps/decoders.
+# G2M_BUILD_TESTS/G2M_BUILD_APPS/G2M_BUILD_IMPORT/G2M_BUILD_FUZZERS=OFF: this
+# repo never builds geo2map_engine's own Catch2 suite, its g2m_tiler CLI, its
+# OSM/GeoTIFF decoder stack (libdeflate/zlib-ng/protozero/libosmium - none of
+# that is needed by a pure consumer reading an already-built store) or its
+# libFuzzer targets. This exact combination matches geo2map_engine's own
+# CMakePresets.json "consumer-check" preset, so neither of its
+# G2M_BUILD_APPS-requires-G2M_BUILD_IMPORT / G2M_BUILD_TESTS-requires-
+# G2M_BUILD_IMPORT FATAL_ERROR guards fires.
+# ---------------------------------------------------------------------------
+set(G2M_BUILD_TESTS OFF CACHE BOOL "" FORCE)
+set(G2M_BUILD_APPS OFF CACHE BOOL "" FORCE)
+set(G2M_BUILD_IMPORT OFF CACHE BOOL "" FORCE)
+set(G2M_BUILD_FUZZERS OFF CACHE BOOL "" FORCE)
+
+# geo2map_engine's own cmake/deps_core.cmake calls enable_language(C)
+# UNCONDITIONALLY (zstd/SQLite are C) - unlike its cmake/deps_decoders.cmake
+# (only included when G2M_BUILD_IMPORT=ON, which we force OFF above), it has
+# no guard of its own forcing CMAKE_C_COMPILER to match CMAKE_CXX_COMPILER.
+# Standalone, geo2map_engine's own CMakePresets.json sets CMAKE_C_COMPILER
+# explicitly (its clang-cl-base preset), so this never bites there; consumed
+# via add_subdirectory from a parent whose own presets set CMAKE_CXX_COMPILER
+# but never CMAKE_C_COMPILER (racing_game's clang-cl presets - CXX-only
+# LANGUAGES), CMake's C-language detection instead falls back to whatever
+# bare "clang"/"cc" the VS dev shell's PATH exposes (the GNU-style driver
+# bundled alongside clang-cl, not clang-cl itself) - that C compiler then
+# fails CMake's own ABI-detection check outright ("Check for working C
+# compiler ... - broken"), discovered by actually running the release
+# preset's configure step, not by inspection. Fix mirrors deps_decoders.cmake's
+# own guard exactly (see that file's comment for the full reasoning), applied
+# here instead since we cannot edit the read-only geo2map_engine submodule.
+if(CMAKE_CXX_COMPILER MATCHES "clang-cl" AND NOT CMAKE_C_COMPILER)
+  set(CMAKE_C_COMPILER "${CMAKE_CXX_COMPILER}" CACHE FILEPATH "C compiler (forced to match clang-cl for geo2map_engine's deps_core.cmake - see CMakeLists.txt's own comment)" FORCE)
+endif()
+
+# With every G2M_BUILD_* option above OFF, geo2map_engine's own
+# cmake/deps_core.cmake still FetchContent_Declare()s g2m_zstd/g2m_sqlite/
+# g2m_json (needed by g2m_layers/g2m_server/g2m_client themselves, not just
+# the importer) - the owner has not approved a network fetch for this
+# increment. RG_G2M_DEPS_DIR points FETCHCONTENT_SOURCE_DIR_<NAME> at an
+# already-populated geo2map_engine build's own _deps directory instead (its
+# consumer-check/release preset on Windows, its linux-release preset under
+# WSL - both already exist on this machine from geo2map_engine's own CI), so
+# FetchContent finds the source already there and never reaches the network.
+# Override with -DRG_G2M_DEPS_DIR=... for a machine where that path differs.
+if(WIN32)
+  set(RG_G2M_DEPS_DIR_DEFAULT "S:/claude_code/geo2map_engine/out/build/release/_deps")
+else()
+  set(RG_G2M_DEPS_DIR_DEFAULT "$ENV{HOME}/build/geo2map_engine/linux-release/_deps")
+endif()
+set(RG_G2M_DEPS_DIR "${RG_G2M_DEPS_DIR_DEFAULT}" CACHE PATH
+    "Directory holding an already-populated geo2map_engine build's FetchContent _deps (avoids a network fetch for g2m_zstd/g2m_sqlite/g2m_json etc.)")
+
+if(NOT EXISTS "${RG_G2M_DEPS_DIR}")
+  message(WARNING "RG_G2M_DEPS_DIR (${RG_G2M_DEPS_DIR}) does not exist - "
+                  "geo2map_engine's FetchContent deps (g2m_zstd/g2m_sqlite/g2m_json) "
+                  "will try to reach the network. Build geo2map_engine's own "
+                  "release/consumer-check preset first, or pass -DRG_G2M_DEPS_DIR=...")
+else()
+  # Defensive: also cover the decoder-only deps (libdeflate/zlib-ng/protozero/
+  # libosmium) and catch2, in case a future increment turns G2M_BUILD_IMPORT
+  # or G2M_BUILD_TESTS back on without revisiting this list. Harmless no-ops
+  # today (none of these FetchContent_Declare calls execute while both stay
+  # OFF).
+  foreach(_rg_g2m_dep g2m_zstd g2m_sqlite g2m_json catch2 libdeflate libosmium protozero zlibng)
+    set(_rg_g2m_dep_src "${RG_G2M_DEPS_DIR}/${_rg_g2m_dep}-src")
+    if(EXISTS "${_rg_g2m_dep_src}")
+      string(TOUPPER "${_rg_g2m_dep}" _rg_g2m_dep_upper)
+      set(FETCHCONTENT_SOURCE_DIR_${_rg_g2m_dep_upper} "${_rg_g2m_dep_src}" CACHE PATH "" FORCE)
+    endif()
+  endforeach()
+endif()
+
+add_subdirectory(external/geo2map_engine EXCLUDE_FROM_ALL)
 
 # ---------------------------------------------------------------------------
 # godot-cpp (branch 4.5, same pin as physics_sim's own adapter - PLAN.md

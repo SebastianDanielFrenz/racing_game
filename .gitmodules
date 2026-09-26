@@ -1,3 +1,6 @@
 [submodule "external/physics_sim"]
 	path = external/physics_sim
 	url = S:/claude_code/physics_sim
+[submodule "external/geo2map_engine"]
+	path = external/geo2map_engine
+	url = S:/claude_code/geo2map_engine

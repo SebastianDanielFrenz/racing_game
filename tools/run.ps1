@@ -91,7 +91,7 @@ Write-Host "`n-- submodule --" -ForegroundColor Cyan
 if ($DryRun) {
     Write-Host "would run: git -c protocol.file.allow=always submodule update --init --recursive"
 } else {
-    Update-PhysicsSimSubmodule -RepoRoot $repoRoot
+    Update-Submodules -RepoRoot $repoRoot
 }
 
 if (-not $SkipBuild) {
