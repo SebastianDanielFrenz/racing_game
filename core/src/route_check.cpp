@@ -112,6 +112,79 @@ void resample(const std::vector<RoutePoint>& pts, double step, double total, std
     }
 }
 
+// The polyline point at arc length s (clamped to [0, total]); `cum` holds
+// the cumulative arc length at every waypoint (cum[0] = 0).
+RoutePoint point_at(const std::vector<RoutePoint>& pts, const std::vector<double>& cum, double s) {
+    const auto it = std::upper_bound(cum.begin(), cum.end(), s);
+    const auto idx = static_cast<std::size_t>(it - cum.begin());
+    const std::size_t seg = std::min(idx == 0 ? std::size_t{0} : idx - 1, pts.size() - 2);
+    const double len = cum[seg + 1] - cum[seg];
+    const double t = len > 0.0 ? std::clamp((s - cum[seg]) / len, 0.0, 1.0) : 0.0;
+    const RoutePoint& a = pts[seg];
+    const RoutePoint& b = pts[seg + 1];
+    return RoutePoint{a.x + t * (b.x - a.x), a.y + t * (b.y - a.y)};
+}
+
+// Radius of the circle through a, b, c (b between them along the route).
+// Collinear: infinity going straight on, 0 for a full reversal at b.
+double circumradius(const RoutePoint& a, const RoutePoint& b, const RoutePoint& c) {
+    const double ab = dist(a, b);
+    const double bc = dist(b, c);
+    const double ca = dist(c, a);
+    const double cross2 = std::abs((b.x - a.x) * (c.y - a.y) - (b.y - a.y) * (c.x - a.x)); // 2 * area
+    if (cross2 == 0.0) {
+        const double dot = (b.x - a.x) * (c.x - b.x) + (b.y - a.y) * (c.y - b.y);
+        return dot < 0.0 ? 0.0 : std::numeric_limits<double>::infinity();
+    }
+    return ab * bc * ca / (2.0 * cross2);
+}
+
+// Optional "criteria" object of a route file; unknown keys are an error (a
+// misspelt limit must not silently fall back to the default).
+bool load_criteria(const json& root, const std::string& path, RouteCriteria* out, std::string* err) {
+    if (!root.contains("criteria")) {
+        return true;
+    }
+    const json& c = root.at("criteria");
+    if (!c.is_object()) {
+        return fail(err, path, "\"criteria\" must be an object");
+    }
+    const std::string where = "\"criteria\"";
+    for (auto it = c.begin(); it != c.end(); ++it) {
+        const std::string& key = it.key();
+        if (key != "min_length_m" && key != "max_grade_pct" && key != "min_seam_crossings" &&
+            key != "min_corner_radius_m") {
+            return fail(err, path, "unknown key \"" + key + "\" in " + where);
+        }
+        double v = 0.0;
+        if (!get_number(c, key.c_str(), path, where, &v, err)) {
+            return false;
+        }
+        if (key == "min_length_m") {
+            if (v < 0.0) {
+                return fail(err, path, "\"criteria.min_length_m\" must be >= 0");
+            }
+            out->min_length_m = v;
+        } else if (key == "max_grade_pct") {
+            if (!(v > 0.0)) {
+                return fail(err, path, "\"criteria.max_grade_pct\" must be > 0");
+            }
+            out->max_grade = v / 100.0;
+        } else if (key == "min_seam_crossings") {
+            if (v != std::floor(v) || v < 0.0 || v > 1.0e6) {
+                return fail(err, path, "\"criteria.min_seam_crossings\" must be an integer >= 0");
+            }
+            out->min_seam_crossings = static_cast<int>(v);
+        } else {
+            if (v < 0.0) {
+                return fail(err, path, "\"criteria.min_corner_radius_m\" must be >= 0");
+            }
+            out->min_corner_radius_m = v;
+        }
+    }
+    return true;
+}
+
 } // namespace
 
 std::optional<Route> load_route(const std::string& path, std::string* err) {
@@ -192,7 +265,25 @@ std::optional<Route> load_route(const std::string& path, std::string* err) {
         fail(err, path, "\"waypoints\" needs at least 2 points");
         return std::nullopt;
     }
+    if (!load_criteria(root, path, &route.criteria, err)) {
+        return std::nullopt;
+    }
     return route;
+}
+
+void apply_route_criteria(const RouteCriteria& criteria, RouteCheckParams& params) {
+    if (criteria.min_length_m.has_value()) {
+        params.min_length_m = *criteria.min_length_m;
+    }
+    if (criteria.max_grade.has_value()) {
+        params.max_grade = *criteria.max_grade;
+    }
+    if (criteria.min_seam_crossings.has_value()) {
+        params.min_seam_crossings = *criteria.min_seam_crossings;
+    }
+    if (criteria.min_corner_radius_m.has_value()) {
+        params.min_corner_radius_m = *criteria.min_corner_radius_m;
+    }
 }
 
 std::int64_t phys_tile_index(double v, double tile_size_m, double origin_m) {
@@ -311,6 +402,9 @@ RouteCheckReport check_route(const std::vector<RoutePoint>& waypoints, const Rou
     const double window_len = static_cast<double>(window_steps) * params.sample_step_m;
     std::vector<double> grades;
     double sum_abs = 0.0;
+    rep.grade_report_threshold = params.grade_report_threshold;
+    bool in_steep = false;
+    RouteSteepStretch steep;
     for (std::size_t k = 0; k + static_cast<std::size_t>(window_steps) < samples.size(); ++k) {
         const std::size_t k2 = k + static_cast<std::size_t>(window_steps);
         if (samples[k2].s - samples[k].s < window_len - 1e-6) {
@@ -326,6 +420,24 @@ RouteCheckReport check_route(const std::vector<RoutePoint>& waypoints, const Rou
         }
         sum_abs += g;
         grades.push_back(g);
+        if (g > params.grade_report_threshold) {
+            if (!in_steep) {
+                in_steep = true;
+                steep = RouteSteepStretch{g, samples[k].s, samples[k].p.x, samples[k].p.y, samples[k].s, 0.0};
+            } else if (g > steep.max_grade) {
+                steep.max_grade = g;
+                steep.at_m = samples[k].s;
+                steep.x = samples[k].p.x;
+                steep.y = samples[k].p.y;
+            }
+            steep.end_m = samples[k2].s;
+        } else if (in_steep) {
+            rep.steep_stretches.push_back(steep);
+            in_steep = false;
+        }
+    }
+    if (in_steep) {
+        rep.steep_stretches.push_back(steep);
     }
     rep.grade_window_count = static_cast<int>(grades.size());
     if (!grades.empty()) {
@@ -346,26 +458,49 @@ RouteCheckReport check_route(const std::vector<RoutePoint>& waypoints, const Rou
     }
     rep.seam_crossings = rep.seam_crossings_x + rep.seam_crossings_y;
 
-    // --- corners ---
+    // --- corners: circle through s - w, s, s + w at every sample with a
+    // full window; consecutive samples below the report radius form one
+    // listed stretch ---
     rep.min_corner_radius_m = std::numeric_limits<double>::infinity();
-    for (std::size_t k = 1; k + 1 < waypoints.size(); ++k) {
-        const double ax = waypoints[k].x - waypoints[k - 1].x;
-        const double ay = waypoints[k].y - waypoints[k - 1].y;
-        const double bx = waypoints[k + 1].x - waypoints[k].x;
-        const double by = waypoints[k + 1].y - waypoints[k].y;
-        const double la = std::hypot(ax, ay);
-        const double lb = std::hypot(bx, by);
-        if (la <= 0.0 || lb <= 0.0) {
-            continue;
+    rep.corner_report_radius_m = params.corner_report_radius_m;
+    {
+        std::vector<double> cum(waypoints.size(), 0.0);
+        for (std::size_t i = 1; i < waypoints.size(); ++i) {
+            cum[i] = cum[i - 1] + dist(waypoints[i - 1], waypoints[i]);
         }
-        const double theta = std::abs(std::atan2(ax * by - ay * bx, ax * bx + ay * by)); // turn angle, [0, pi]
-        if (theta < 1e-9) {
-            continue;
+        const double w = params.corner_window_m;
+        bool in_run = false;
+        RouteCorner run;
+        for (const Sample& smp : samples) {
+            if (!(w > 0.0) || smp.s - w < -1e-9 || smp.s + w > rep.length_m + 1e-9) {
+                continue;
+            }
+            const double radius =
+                circumradius(point_at(waypoints, cum, smp.s - w), smp.p, point_at(waypoints, cum, smp.s + w));
+            if (radius < rep.min_corner_radius_m) {
+                rep.min_corner_radius_m = radius;
+                rep.min_corner_at_m = smp.s;
+                rep.min_corner_x = smp.p.x;
+                rep.min_corner_y = smp.p.y;
+            }
+            if (radius < params.corner_report_radius_m) {
+                if (!in_run) {
+                    in_run = true;
+                    run = RouteCorner{radius, smp.s, smp.p.x, smp.p.y, smp.s, smp.s};
+                } else if (radius < run.radius_m) {
+                    run.radius_m = radius;
+                    run.at_m = smp.s;
+                    run.x = smp.p.x;
+                    run.y = smp.p.y;
+                }
+                run.end_m = smp.s;
+            } else if (in_run) {
+                rep.tight_corners.push_back(run);
+                in_run = false;
+            }
         }
-        const double radius = (std::min(la, lb) / 2.0) / std::tan(theta / 2.0);
-        if (radius < rep.min_corner_radius_m) {
-            rep.min_corner_radius_m = radius;
-            rep.min_corner_waypoint = static_cast<int>(k);
+        if (in_run) {
+            rep.tight_corners.push_back(run);
         }
     }
 
@@ -394,9 +529,10 @@ RouteCheckReport check_route(const std::vector<RoutePoint>& waypoints, const Rou
                                std::to_string(params.min_seam_crossings));
     }
     if (rep.min_corner_radius_m < params.min_corner_radius_m) {
-        rep.failures.push_back("corner: radius " + fmt("%.1f", rep.min_corner_radius_m) + " m at waypoint " +
-                               std::to_string(rep.min_corner_waypoint) + " < " +
-                               fmt("%.1f", params.min_corner_radius_m) + " m");
+        rep.failures.push_back("corner: radius " + fmt("%.1f", rep.min_corner_radius_m) + " m at s=" +
+                               fmt("%.1f", rep.min_corner_at_m) + " m (" + fmt("%.1f", rep.min_corner_x) + ", " +
+                               fmt("%.1f", rep.min_corner_y) + ") < " + fmt("%.1f", params.min_corner_radius_m) +
+                               " m");
     }
     return rep;
 }
@@ -415,6 +551,15 @@ std::string format_route_report(const RouteCheckReport& r) {
                   r.grade_window_count, r.max_grade * 100.0, r.max_grade_at_m, r.p99_grade * 100.0,
                   r.mean_abs_grade * 100.0);
     o << buf;
+    std::snprintf(buf, sizeof(buf), "steep_stretches=%zu (grade > %.2f %%)\n", r.steep_stretches.size(),
+                  r.grade_report_threshold * 100.0);
+    o << buf;
+    for (const RouteSteepStretch& st : r.steep_stretches) {
+        std::snprintf(buf, sizeof(buf),
+                      "  steep max_grade_pct=%.2f at s=%.1f m (x=%.1f y=%.1f), s=%.1f..%.1f m\n",
+                      st.max_grade * 100.0, st.at_m, st.x, st.y, st.begin_m, st.end_m);
+        o << buf;
+    }
     std::snprintf(buf, sizeof(buf), "seam_crossings=%d (x=%d y=%d)\n", r.seam_crossings, r.seam_crossings_x,
                   r.seam_crossings_y);
     o << buf;
@@ -423,9 +568,17 @@ std::string format_route_report(const RouteCheckReport& r) {
     std::snprintf(buf, sizeof(buf), "nodata_samples=%d first_nodata_at_m=%.1f\n", r.nodata_samples,
                   r.first_nodata_at_m);
     o << buf;
-    std::snprintf(buf, sizeof(buf), "min_corner_radius_m=%.1f (waypoint %d)\n", r.min_corner_radius_m,
-                  r.min_corner_waypoint);
+    std::snprintf(buf, sizeof(buf), "min_corner_radius_m=%.1f (at s=%.1f m, x=%.1f y=%.1f)\n",
+                  r.min_corner_radius_m, r.min_corner_at_m, r.min_corner_x, r.min_corner_y);
     o << buf;
+    std::snprintf(buf, sizeof(buf), "tight_corners=%zu (radius < %.1f m)\n", r.tight_corners.size(),
+                  r.corner_report_radius_m);
+    o << buf;
+    for (const RouteCorner& c : r.tight_corners) {
+        std::snprintf(buf, sizeof(buf), "  corner radius_m=%.1f at s=%.1f m (x=%.1f y=%.1f), s=%.1f..%.1f m\n",
+                      c.radius_m, c.at_m, c.x, c.y, c.begin_m, c.end_m);
+        o << buf;
+    }
     for (const std::string& f : r.failures) {
         o << "FAIL " << f << "\n";
     }

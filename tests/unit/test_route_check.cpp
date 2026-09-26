@@ -1,9 +1,10 @@
 // test_route_check.cpp — rg::route_check coverage (R2.2 plan R5 route
 // criteria): physics-tile seam counting (incl. negative indices and corner
-// crossings), the 10 m grade window (max, nearest-rank p99), NoData
-// detection, corner radius, the start/length criteria, sample_l0_height's
-// bilinear read across L0 tile borders, load_route's error paths and
-// route_matches_world. Everything runs on synthetic terrain - CI never reads
+// crossings), the 10 m grade window (max, nearest-rank p99, the steep-stretch
+// list), NoData detection, the +-10 m corner radius and its tight-corner
+// list, the start/length criteria, sample_l0_height's bilinear read across
+// L0 tile borders, load_route (incl. the optional "criteria" object) and its
+// error paths, apply_route_criteria and route_matches_world. Everything runs on synthetic terrain - CI never reads
 // cache/. The one real-data case is hidden ([.][realdata]) and SKIPs unless
 // RG_G2M_HOME is set.
 //
@@ -187,6 +188,21 @@ TEST_CASE("route_check: the 10 m grade window - max, its position and the neares
     // rank ceil(0.99 * 991) = 982 -> the 10th non-zero value ascending = 0.10.
     CHECK(r.p99_grade == Approx(0.10));
     CHECK(r.ok()); // loose params
+    // Steep-stretch listing (default threshold 12 %). At 13 % (clear of the
+    // 0.12 windows' rounding) the windows starting at s = 497 .. 503
+    // (0.14 .. 0.2 .. 0.14) form one stretch ending at 503 + 10.
+    CHECK(r.grade_report_threshold == Approx(0.12));
+    CHECK(r.steep_stretches.size() == 1);
+    rg::RouteCheckParams listing = loose();
+    listing.grade_report_threshold = 0.13;
+    const rg::RouteCheckReport l = rg::check_route(straight_east(1000.0), {0.0, 0.0}, bump, listing);
+    REQUIRE(l.steep_stretches.size() == 1);
+    CHECK(l.steep_stretches[0].max_grade == Approx(0.2));
+    CHECK(l.steep_stretches[0].at_m == Approx(500.0));
+    CHECK(l.steep_stretches[0].x == Approx(500.0));
+    CHECK(l.steep_stretches[0].begin_m == Approx(497.0));
+    CHECK(l.steep_stretches[0].end_m == Approx(513.0));
+    CHECK(l.ok()); // listing only, never a failure
 
     rg::RouteCheckParams strict = loose();
     strict.max_grade = 0.12;
@@ -257,27 +273,99 @@ TEST_CASE("route_check: start, length, seam and corner criteria", "[route_check]
     CHECK(has_failure(s, "seams:"));
     CHECK(has_failure(s, "corner:")); // and every reversal is a ~0 m radius corner
 
-    // Corner: a 90 deg turn with 100 m legs has tangent-arc radius 50 m ...
+    // Corner: a sharp 90 deg kink reads as the circle through the points
+    // 10 m either side of it, (90, 0), (100, 0), (100, 10): 10 / sqrt(2),
+    // at the kink itself, whatever the leg length.
     const std::vector<RoutePoint> right_angle = {{0.0, 0.0}, {100.0, 0.0}, {100.0, 100.0}};
-    const rg::RouteCheckReport ra = rg::check_route(right_angle, {0.0, 0.0}, flat, loose());
-    CHECK(ra.min_corner_radius_m == Approx(50.0));
-    CHECK(ra.min_corner_waypoint == 1);
-    // ... with 20 m legs 10 m, below the 30 m default.
-    const std::vector<RoutePoint> tight = {{0.0, 0.0}, {20.0, 0.0}, {20.0, 20.0}};
     rg::RouteCheckParams p = loose();
     p.min_corner_radius_m = 30.0;
-    const rg::RouteCheckReport tr = rg::check_route(tight, {0.0, 0.0}, flat, p);
-    CHECK(tr.min_corner_radius_m == Approx(10.0));
-    CHECK(has_failure(tr, "corner:"));
+    const rg::RouteCheckReport ra = rg::check_route(right_angle, {0.0, 0.0}, flat, p);
+    CHECK(ra.min_corner_radius_m == Approx(10.0 / std::sqrt(2.0)));
+    CHECK(ra.min_corner_at_m == Approx(100.0));
+    CHECK(ra.min_corner_x == Approx(100.0));
+    CHECK(ra.min_corner_y == Approx(0.0));
+    CHECK(has_failure(ra, "corner:"));
+    // Listed as one stretch around the kink (the radius is < 30 m from
+    // s = 90 to 110 at the most, since the window must straddle the kink).
+    CHECK(ra.corner_report_radius_m == Approx(30.0));
+    REQUIRE(ra.tight_corners.size() == 1);
+    CHECK(ra.tight_corners[0].radius_m == Approx(10.0 / std::sqrt(2.0)));
+    CHECK(ra.tight_corners[0].at_m == Approx(100.0));
+    CHECK(ra.tight_corners[0].begin_m > 90.0);
+    CHECK(ra.tight_corners[0].begin_m < 100.0);
+    CHECK(ra.tight_corners[0].end_m > 100.0);
+    CHECK(ra.tight_corners[0].end_m < 110.0);
+}
 
-    // A regular polyline on a 40 m circle at 10 deg steps: R*cos(5 deg).
-    std::vector<RoutePoint> arc;
-    for (int k = 0; k <= 9; ++k) {
-        const double a = k * 10.0 * 3.14159265358979323846 / 180.0;
-        arc.push_back({40.0 * std::sin(a), 40.0 - 40.0 * std::cos(a)});
+TEST_CASE("route_check: the corner radius is the circle through s - 10 m, s, s + 10 m", "[route_check]") {
+    const auto flat = [](double, double) -> std::optional<double> { return 0.0; };
+    const double pi = 3.14159265358979323846;
+    // Straight, then a circular arc of radius r over `sweep_deg` at `step_deg`
+    // polyline spacing, then straight again.
+    const auto arc_route = [pi](double r, double sweep_deg, double step_deg) {
+        std::vector<RoutePoint> pts = {{-100.0, 0.0}};
+        const int n = static_cast<int>(std::lround(sweep_deg / step_deg));
+        for (int k = 0; k <= n; ++k) {
+            const double a = k * step_deg * pi / 180.0;
+            pts.push_back({r * std::sin(a), r - r * std::cos(a)});
+        }
+        const double a_end = sweep_deg * pi / 180.0;
+        pts.push_back({pts.back().x + 100.0 * std::cos(a_end), pts.back().y + 100.0 * std::sin(a_end)});
+        return pts;
+    };
+
+    // A polyline arc approximates the circle: within 1 % at 1 and 2 deg steps.
+    for (const double step_deg : {1.0, 2.0}) {
+        const std::vector<RoutePoint> pts = arc_route(40.0, 120.0, step_deg);
+        const rg::RouteCheckReport r = rg::check_route(pts, pts.front(), flat, loose());
+        INFO("step_deg " << step_deg);
+        CHECK(r.min_corner_radius_m == Approx(40.0).epsilon(0.01));
+        CHECK(r.tight_corners.empty()); // never below 30 m
     }
-    const rg::RouteCheckReport ar = rg::check_route(arc, arc.front(), flat, loose());
-    CHECK(ar.min_corner_radius_m == Approx(40.0 * std::cos(5.0 * 3.14159265358979323846 / 180.0)));
+
+    // Density independence: splitting every segment into 5 collinear pieces
+    // (as the ~5 m route densification does) leaves the measured curve, and
+    // so the radius, unchanged. The retired tangent-arc-per-vertex measure
+    // shrank with the vertex spacing instead.
+    const std::vector<RoutePoint> coarse = arc_route(40.0, 120.0, 10.0);
+    std::vector<RoutePoint> dense = {coarse.front()};
+    for (std::size_t i = 1; i < coarse.size(); ++i) {
+        for (int k = 1; k <= 5; ++k) {
+            const double t = k / 5.0;
+            dense.push_back({coarse[i - 1].x + t * (coarse[i].x - coarse[i - 1].x),
+                             coarse[i - 1].y + t * (coarse[i].y - coarse[i - 1].y)});
+        }
+    }
+    const rg::RouteCheckReport rc = rg::check_route(coarse, coarse.front(), flat, loose());
+    const rg::RouteCheckReport rd = rg::check_route(dense, dense.front(), flat, loose());
+    CHECK(rd.min_corner_radius_m == Approx(rc.min_corner_radius_m).epsilon(1e-9));
+    CHECK(rc.min_corner_radius_m > 30.0); // a 40 m bend at 10 deg steps is still no tight corner
+
+    // 20 m radius: below the 30 m default -> one listed stretch, a failure.
+    const std::vector<RoutePoint> tight = arc_route(20.0, 90.0, 2.0);
+    const rg::RouteCheckReport tr = rg::check_route(tight, tight.front(), flat);
+    INFO(rg::format_route_report(tr));
+    CHECK(tr.min_corner_radius_m == Approx(20.0).epsilon(0.01));
+    CHECK(has_failure(tr, "corner:"));
+    REQUIRE(tr.tight_corners.size() == 1);
+    // The arc starts at s = 100 and is 20 * pi / 2 = 31.4 m long.
+    CHECK(tr.tight_corners[0].begin_m > 90.0);
+    CHECK(tr.tight_corners[0].end_m < 100.0 + 31.5 + 10.0);
+
+    // Two separate tight bends make two listed stretches, in route order.
+    std::vector<RoutePoint> two = {{0.0, 0.0}, {200.0, 0.0}, {200.0, 200.0}, {400.0, 200.0}};
+    const rg::RouteCheckReport tw = rg::check_route(two, two.front(), flat, loose());
+    REQUIRE(tw.tight_corners.size() == 2);
+    CHECK(tw.tight_corners[0].at_m == Approx(200.0));
+    CHECK(tw.tight_corners[1].at_m == Approx(400.0));
+
+    // A full reversal is radius 0; a route shorter than two windows has no
+    // measurable corner.
+    const rg::RouteCheckReport rv = rg::check_route({{0.0, 0.0}, {50.0, 0.0}, {0.0, 0.0}}, {0.0, 0.0}, flat, loose());
+    CHECK(rv.min_corner_radius_m == 0.0);
+    const rg::RouteCheckReport sh = rg::check_route({{0.0, 0.0}, {10.0, 0.0}, {10.0, 5.0}}, {0.0, 0.0}, flat, loose());
+    CHECK(std::isinf(sh.min_corner_radius_m));
+    CHECK(sh.min_corner_at_m == -1.0);
 
     // Degenerate input is a failure, not UB.
     CHECK_FALSE(rg::check_route({{0.0, 0.0}}, {0.0, 0.0}, flat).ok());
@@ -382,6 +470,56 @@ TEST_CASE("route_check: load_route reads rg.route/1 and ignores unknown keys", "
     REQUIRE(r->waypoints.size() == 3);
     CHECK(r->waypoints[1].x == -800.5);
     CHECK(r->waypoints[1].y == 250.25);
+    // No "criteria" object: nothing overridden.
+    CHECK_FALSE(r->criteria.min_length_m.has_value());
+    CHECK_FALSE(r->criteria.max_grade.has_value());
+    CHECK_FALSE(r->criteria.min_seam_crossings.has_value());
+    CHECK_FALSE(r->criteria.min_corner_radius_m.has_value());
+}
+
+TEST_CASE("route_check: a route file's criteria override the defaults, field by field", "[route_check]") {
+    const std::string text = replace(kValidRoute, "\"waypoints\"",
+                                     "\"criteria\": {\"max_grade_pct\": 31.5, \"min_corner_radius_m\": 7}, \"waypoints\"");
+    const TempFile f(text);
+    std::string err;
+    const std::optional<rg::Route> r = rg::load_route(f.path(), &err);
+    INFO(err);
+    REQUIRE(r.has_value());
+    REQUIRE(r->criteria.max_grade.has_value());
+    CHECK(*r->criteria.max_grade == Approx(0.315));
+    REQUIRE(r->criteria.min_corner_radius_m.has_value());
+    CHECK(*r->criteria.min_corner_radius_m == 7.0);
+    CHECK_FALSE(r->criteria.min_length_m.has_value());
+    CHECK_FALSE(r->criteria.min_seam_crossings.has_value());
+
+    rg::RouteCheckParams params;
+    rg::apply_route_criteria(r->criteria, params);
+    CHECK(params.max_grade == Approx(0.315));
+    CHECK(params.min_corner_radius_m == 7.0);
+    CHECK(params.min_length_m == 3000.0); // defaults kept
+    CHECK(params.min_seam_crossings == 12);
+
+    // A later layer (the tool's command line) wins over the route file.
+    rg::RouteCriteria cli;
+    cli.min_seam_crossings = 3;
+    cli.max_grade = 0.2;
+    rg::apply_route_criteria(cli, params);
+    CHECK(params.max_grade == Approx(0.2));
+    CHECK(params.min_seam_crossings == 3);
+    CHECK(params.min_corner_radius_m == 7.0);
+
+    // All four keys.
+    const TempFile all(replace(kValidRoute, "\"waypoints\"",
+                               "\"criteria\": {\"min_length_m\": 9000, \"max_grade_pct\": 8, "
+                               "\"min_seam_crossings\": 40, \"min_corner_radius_m\": 12.5}, \"waypoints\""));
+    const std::optional<rg::Route> ra = rg::load_route(all.path(), &err);
+    REQUIRE(ra.has_value());
+    rg::RouteCheckParams pa;
+    rg::apply_route_criteria(ra->criteria, pa);
+    CHECK(pa.min_length_m == 9000.0);
+    CHECK(pa.max_grade == Approx(0.08));
+    CHECK(pa.min_seam_crossings == 40);
+    CHECK(pa.min_corner_radius_m == 12.5);
 }
 
 TEST_CASE("route_check: load_route error paths", "[route_check]") {
@@ -402,6 +540,19 @@ TEST_CASE("route_check: load_route error paths", "[route_check]") {
         {replace(base, "[-800.5, 250.25]", "[-800.5]"), "waypoint 1 must be an [x, y] pair"},
         {replace(base, "[-800.5, 250.25]", "[-800.5, \"y\"]"), "waypoint 1 must be an [x, y] pair"},
         {replace(base, "[0, 0]]", "[0, 0, 0]]"), "waypoint 2 must be an [x, y] pair"},
+        {replace(base, "\"waypoints\"", "\"criteria\": [], \"waypoints\""), "\"criteria\" must be an object"},
+        {replace(base, "\"waypoints\"", "\"criteria\": {\"max_grade\": 0.3}, \"waypoints\""),
+         "unknown key \"max_grade\" in \"criteria\""},
+        {replace(base, "\"waypoints\"", "\"criteria\": {\"max_grade_pct\": \"31\"}, \"waypoints\""),
+         "\"max_grade_pct\" in \"criteria\" must be a number"},
+        {replace(base, "\"waypoints\"", "\"criteria\": {\"max_grade_pct\": 0}, \"waypoints\""),
+         "\"criteria.max_grade_pct\" must be > 0"},
+        {replace(base, "\"waypoints\"", "\"criteria\": {\"min_seam_crossings\": 2.5}, \"waypoints\""),
+         "\"criteria.min_seam_crossings\" must be an integer >= 0"},
+        {replace(base, "\"waypoints\"", "\"criteria\": {\"min_corner_radius_m\": -1}, \"waypoints\""),
+         "\"criteria.min_corner_radius_m\" must be >= 0"},
+        {replace(base, "\"waypoints\"", "\"criteria\": {\"min_length_m\": -1}, \"waypoints\""),
+         "\"criteria.min_length_m\" must be >= 0"},
     };
     for (const auto& [text, needle] : cases) {
         const TempFile f(text);
@@ -448,7 +599,9 @@ TEST_CASE("route_check: the committed home_r1_drive route passes on the real sto
     REQUIRE(route.has_value());
     std::unique_ptr<rg::WorldTerrain> terrain = rg::WorldTerrain::open(*world, &err);
     REQUIRE(terrain != nullptr);
-    const rg::RouteCheckReport r = rg::check_route_on_world(*route, *world, *terrain);
+    rg::RouteCheckParams params;
+    rg::apply_route_criteria(route->criteria, params); // the route's own limits, as tools/route_check applies them
+    const rg::RouteCheckReport r = rg::check_route_on_world(*route, *world, *terrain, params);
     INFO(rg::format_route_report(r));
     CHECK(r.ok());
 }

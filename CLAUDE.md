@@ -22,7 +22,7 @@ racing_game/
       session.h                       rg::Session, SessionConfig, FrameSnapshot, WheelSnapshot, kControlChannelNames[]/kControlChannelCount
       world_config.h                  rg::WorldConfig, rg::load_world_config() - see "World config" below
       terrain_view_streamer.h         rg::TerrainViewStreamer (R2.2 R8): render LOD follows a focus point - background reselect + build, key diff {added, removed}, adapter ordering contract in the header; see "Render LOD streaming (R8)" below
-      route_check.h                   rg::Route + load_route() ("rg.route/1", exception-free), phys_tile_index()/count_seam_crossings() (255 m physics grid, origin 0.5), sample_l0_height() (bilinear on the L0 cell-centre lattice through any tile lookup), check_route() (length, 10 m-window max/p99 grade, seam crossings, elevation range, NoData, tightest corner, start offset vs RouteCheckParams' R5 criteria), route_matches_world(), check_route_on_world() (the same over WorldTerrain::height_tile_shared) - used by tools/route_check and the [realdata] test
+      route_check.h                   rg::Route + load_route() ("rg.route/1", exception-free, optional "criteria" object -> RouteCriteria), apply_route_criteria() (RouteCheckParams defaults < route file < CLI, field by field), phys_tile_index()/count_seam_crossings() (255 m physics grid, origin 0.5), sample_l0_height() (bilinear on the L0 cell-centre lattice through any tile lookup), check_route() (length, 10 m-window max/p99 grade plus a steep_stretches list above grade_report_threshold, seam crossings, elevation range, NoData, corner radius = circle through the points +-corner_window_m (10 m) along the route at every 1 m sample (waypoint-density independent) plus a tight_corners list below corner_report_radius_m, start offset vs RouteCheckParams' R5 criteria), route_matches_world(), check_route_on_world() (the same over WorldTerrain::height_tile_shared) - used by tools/route_check and the [realdata] test
     src/
       session.cpp                     Session implementation - builds a ps::World by hand (ground + chassis + one vehicle), never parses a scenario JSON
       world_config.cpp                load_world_config() implementation - strict, exception-free JSON validation (see "World config" below)
@@ -60,14 +60,14 @@ racing_game/
                                        Hochtaunuskreis, Frankfurt-Höchst), halo_m 2000 - consumed by
                                        `g2m_tiler import ...regions.json#home ...` (S:\claude_code\geo2map_engine)
     routes/
-      home_r1_drive.json              rg.route/1 (R2.2 R5): the scripted-drive route, waypoints in the session frame + the spawn it starts from; checked by tools/route_check
+      home_r1_drive.json              rg.route/1 (R2.2 R5): the scripted-drive route, waypoints in the session frame + the spawn it starts from; checked by tools/route_check. Spawn (Engelsruhe, Frankfurt-Unterliederbach) -> B 8 -> the Koenigstein city-limit sign, 9.85 km, 2103 OSM-centreline waypoints densified to <= 5 m; its "criteria" (max_grade_pct 31, min_corner_radius_m 7) and every measured number are in its own "source" field
   cache/                               gitignored, LOCAL ONLY - never committed, never read by CI. `cache/g2m/home-r1/` is this machine's copy of the geo2map_engine source/derived store that `data/world/world_config.json`'s `${RG_G2M_HOME}` placeholder (default `S:\claude_code\geo2map_cache\home-r1`, `world_config.cpp`'s `kDefaultRgG2mHome`) resolves against - populated by pointing at (or copying from) an existing geo2map_engine store; nothing in this repo bakes it (`g2m_tiler.exe bake` run from here was denied, see the R2.1 task report). A checkout with no such store cannot open `rg::WorldTerrain` yet. `tools/lod_measure`'s own `RG_G2M_DERIVED` (default `out/g2m_derived/home-r1`, also gitignored) is a SEPARATE on-demand derived-tile cache this repo's own tools populate themselves and is unrelated to `cache/`.
   tests/
     unit/
       catch_main.cpp                  custom Catch2 v3 entry point (installs headless CRT handlers via physics_sim's always-built ps_headless_env)
       test_session.cpp                rg::Session tests: step stability, control-channel round-trip, snapshot/wheel-state sanity
       test_terrain_view_streamer.cpp  rg::TerrainViewStreamer tests (R8) over a synthetic, optionally gated tile store: exact key diff, hole-free adds-then-removals at every step (plus a wrong-order negative control), no work while stationary, 1-vs-8 build-thread identical diffs, coalescing while busy, cancel+join on destruction
-      test_route_check.cpp            rg::route_check tests on synthetic terrain (seam counting incl. negative indices/corners, grade window max/p99, NoData, corner radius, start/length criteria, sample_l0_height across tile borders, load_route errors); one hidden `[.][realdata]` case runs the committed route on the real store, SKIP unless RG_G2M_HOME is set
+      test_route_check.cpp            rg::route_check tests on synthetic terrain (seam counting incl. negative indices/corners, grade window max/p99, NoData, corner radius, start/length criteria, sample_l0_height across tile borders, load_route errors, steep-stretch and tight-corner lists, corner radius on arcs/kinks and its density independence, "criteria" loading + apply_route_criteria precedence); one hidden `[.][realdata]` case runs the committed route on the real store under its own "criteria", SKIP unless RG_G2M_HOME is set
       test_world_terrain.cpp          rg::WorldTerrain / build_static_view_from_lookup tests (PLAN.md R2.1) over a synthetic in-memory TileKey->HeightTile map - no TileStore/Server needed; chunk selection, session-local origin math, 1-vs-N-thread byte-identical output; fetch_height_tile_cached concurrency; decode_height_tile_container on synthetic containers (height_offset of both signs with NoData kept, int32 overflow / NoData-collision rejection, layer/key mismatch, truncation)
       CMakeLists.txt                  rg_test_catch_main + rg_unit_tests targets, CTest registration
   tools/
@@ -81,7 +81,7 @@ racing_game/
     hash_check/
       main.cpp, CMakeLists.txt        hash_check executable - the R0 acceptance check, see "Hash comparison acceptance check" below
     route_check/
-      main.cpp, CMakeLists.txt        route_check executable (R2.2 R5, links rg_core only): `route_check [--world-config PATH] [--route PATH]` (defaults data/world/world_config.json, data/routes/home_r1_drive.json) - prints rg::check_route_on_world's report; exit 0 pass, 1 criterion failed, 2 load/usage error
+      main.cpp, CMakeLists.txt        route_check executable (R2.2 R5, links rg_core only): `route_check [--world-config PATH] [--route PATH] [--min-length-m M] [--max-grade-pct P] [--min-seams N] [--min-corner-radius-m R]` (defaults data/world/world_config.json, data/routes/home_r1_drive.json; the four limits override the route file's "criteria", which override RouteCheckParams' defaults) - prints the effective criteria, then rg::check_route_on_world's report; exit 0 pass, 1 criterion failed, 2 load/usage error
 ```
 
 ## physics_sim submodule
@@ -147,7 +147,7 @@ with `-DRG_G2M_DEPS_DIR=...` if that path differs on another machine; a
 drivable world region: `format` (must be exactly `"rg.world/1"`), `region`,
 `session_origin_utm` (`{zone, e0, n0}` - zone `1..60`, `g2m::geo::UtmZone`'s
 own range), `source_store`/`derived_store` (`{dir, scope|name, read_only}` -
-geo2map_engine store locations), `spawn` (`{e, n, yaw_deg}`), `surface_map`/
+geo2map_engine store locations), `spawn` (`{e, n, yaw_deg}` - yaw 0 = east, counter-clockwise, the vehicle's +x axis rotated about +Z), `surface_map`/
 `palette` (paths).
 
 `rg::WorldConfig` + `rg::load_world_config(path, err)`
@@ -261,24 +261,31 @@ chunk has uploaded - `tools/smoke_test.ps1 -TerrainPreview` greps both.
 the real committed `data/world/world_config.json`, running
 `build_static_view` twice per distance (cold: this process's first touch
 of each tile; warm: same `WorldTerrain` instance, tiles already cached).
-Measured (Windows, `release`, three independent clean-derived-store runs,
-`RG_G2M_DERIVED` wiped between each, against the real home-r1 store):
+Measured at the spawn in `data/world/world_config.json` (Engelsruhe, session
+(2767.79, -7577.48); re-measured 2026-09-26 after the spawn moved there from
+(-1500, 500)): Windows, `release`, one run against an empty `RG_G2M_DERIVED`
+(a fresh directory, so every tile is a first touch), against the real
+home-r1 store. (The `RG_G2M_DERIVED = ...` line lod_measure prints is always
+the default path, even when the env var overrides it.)
 
 | max_distance_m | chunks | total_verts | cold_ms | warm_ms |
 |---|---|---|---|---|
-| 6000  | 386 | 1,731,210 | 69,753 | 23.48 |
-| 12000 | 433 | 1,942,005 | 115,972 | 28.65 |
-| 20000 | 488 | 2,188,680 | 98,771 | 32.65 |
+| 6000  | 377 | 1,690,845 | 85,233 | 24.07 |
+| 12000 | 416 | 1,865,760 | 61,016 | 27.64 |
+| 20000 | 474 | 2,125,890 | 80,063 | 32.44 |
+
+At the previous spawn (-1500, 500), three clean runs gave
+386/433/488 chunks, 1.73M/1.94M/2.19M vertices, warm 23.5/28.7/32.7 ms.
 
 Chosen default: **20000 m** (`data/world/world_config.json`'s own
 `lod.max_distance_m`) - the R2.1 goal is "visible terrain to 16-20 km";
 warm cost at 20000 m (~33 ms) is barely above 6000 m's (~23 ms) and both
 are comfortably under PLAN.md R2.1's 3000 ms target, so the choice is
-driven by coverage instead - 20000 m's 488 chunks/2.19M vertices stay
+driven by coverage instead - 20000 m's 474 chunks/2.13M vertices stay
 close to the "~400 chunk" naive-worst-case budget rather than blowing it
 up. The COLD numbers above are NOT representative of a baked-store first
 load - `cold` means "this process's on-demand Cache->Derive->Upstream path
-touching each tile for the first time", 70-116 s regardless of distance;
+touching each tile for the first time", 61-116 s regardless of distance;
 `g2m_tiler bake` into `cache/g2m/home-r1/derived` was denied by the
 session's own permission classifier and was not retried, so only the warm
 number is representative of a real pre-baked/pre-derived run.

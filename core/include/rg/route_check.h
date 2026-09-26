@@ -2,7 +2,11 @@
 // data/routes/*.json) and the Godot-free check that it is drivable by R2.2's
 // scripted autopilot (R2.2 plan section 3, "tools/terrain_drive": start at
 // the spawn, >= 3 km, max grade <= 12 %, >= 12 physics-tile seam crossings,
-// no NoData).
+// no NoData). Those are RouteCheckParams' defaults; a route file's optional
+// "criteria" object and then tools/route_check's flags override them field
+// by field (apply_route_criteria). Besides pass/fail the report lists every
+// steep stretch and every tight corner (radius of the circle through the
+// points +-10 m along the route, independent of waypoint density).
 //
 // Three layers, each usable on its own:
 //  - load_route(): strict, exception-free JSON loader (same TOOL-019
@@ -38,6 +42,17 @@ struct RoutePoint {
     double y = 0.0; // session-local metres north of session_origin_utm.n0
 };
 
+// Optional per-route criteria (the route file's "criteria" object); an unset
+// field keeps RouteCheckParams' default. File keys: "min_length_m",
+// "max_grade_pct" (percent, stored here as a fraction), "min_seam_crossings",
+// "min_corner_radius_m"; any other key in "criteria" is a load error.
+struct RouteCriteria {
+    std::optional<double> min_length_m;
+    std::optional<double> max_grade; // fraction (file: max_grade_pct / 100)
+    std::optional<int> min_seam_crossings;
+    std::optional<double> min_corner_radius_m;
+};
+
 // "rg.route/1". Waypoints are in the SESSION frame of the world config named
 // by session_origin_utm (which the loader reads so a caller can check it
 // matches the WorldConfig in use - see route_matches_world()).
@@ -50,6 +65,7 @@ struct Route {
     RoutePoint spawn;       // session-local; must equal the world config's spawn
     double spawn_yaw_deg = 0.0;
     std::vector<RoutePoint> waypoints; // >= 2; waypoints[0] must equal spawn
+    RouteCriteria criteria;            // optional "criteria" object
 };
 
 // Strict loader: returns nullopt and sets *err ("<path>: <problem>") on any
@@ -83,8 +99,11 @@ std::optional<double> sample_l0_height(const L0TileLookupFn& lookup, g2m::geo::U
                                        std::int64_t n0, double x, double y);
 
 struct RouteCheckParams {
-    double sample_step_m = 1.0;   // arc-length sampling step for heights
+    double sample_step_m = 1.0;   // arc-length sampling step for heights and corners
     double grade_window_m = 10.0; // grade = |dh| over this much arc length (rounded to whole steps)
+    double corner_window_m = 10.0;        // corner radius: circle through the points at s - w, s, s + w
+    double corner_report_radius_m = 30.0; // RouteCheckReport::tight_corners lists every run below this
+    double grade_report_threshold = 0.12; // RouteCheckReport::steep_stretches lists every run above this
     double phys_tile_size_m = 255.0;
     double phys_origin_m = 0.5;
     // Criteria (R2.2 plan section 3, plus the autopilot's corner limit):
@@ -93,6 +112,33 @@ struct RouteCheckParams {
     int min_seam_crossings = 12;
     double min_corner_radius_m = 30.0;
     double start_tolerance_m = 0.01; // waypoints[0] vs the expected start (the spawn)
+};
+
+// Overwrites the criteria fields of `params` that `criteria` sets. Callers
+// layer defaults < route file < command line by calling this, then applying
+// their own overrides.
+void apply_route_criteria(const RouteCriteria& criteria, RouteCheckParams& params);
+
+// One stretch of the route whose 10 m grade windows all exceed
+// RouteCheckParams::grade_report_threshold (consecutive window starts).
+struct RouteSteepStretch {
+    double max_grade = 0.0; // steepest window in the stretch (fraction)
+    double at_m = 0.0;      // arc length where that window starts
+    double x = 0.0;         // session-local position of that window's start
+    double y = 0.0;
+    double begin_m = 0.0; // first window's start
+    double end_m = 0.0;   // last window's end
+};
+
+// One stretch of the route whose corner radius stays below
+// RouteCheckParams::corner_report_radius_m.
+struct RouteCorner {
+    double radius_m = 0.0; // tightest radius in the stretch
+    double at_m = 0.0;     // arc length of the tightest point
+    double x = 0.0;        // session-local position of the tightest point
+    double y = 0.0;
+    double begin_m = 0.0; // arc length where the stretch starts/ends
+    double end_m = 0.0;
 };
 
 struct RouteCheckReport {
@@ -105,6 +151,8 @@ struct RouteCheckReport {
     double max_grade_at_m = 0.0; // arc length of the steepest window's start
     double p99_grade = 0.0;      // nearest-rank 99th percentile over all windows
     double mean_abs_grade = 0.0;
+    double grade_report_threshold = 0.0;         // the listing threshold used
+    std::vector<RouteSteepStretch> steep_stretches; // every stretch above it, in route order
     int seam_crossings = 0;
     int seam_crossings_x = 0; // north-south seam lines (ix changes)
     int seam_crossings_y = 0; // east-west seam lines (iy changes)
@@ -112,13 +160,19 @@ struct RouteCheckReport {
     double max_elevation_m = 0.0;
     int nodata_samples = 0;
     double first_nodata_at_m = -1.0; // arc length, -1 if none
-    // Tightest corner: at interior waypoint k with turn angle theta,
-    // radius = (min(l_in, l_out) / 2) / tan(theta / 2) - the arc tangent to
-    // both segments at half the shorter one (R*cos(theta/2) for a regular
-    // polyline inscribed in a circle of radius R - 0.4 % short at 10 deg
-    // steps). Infinity when the route has no turns.
+    // Corner radius, measured at every sample s with a full window: the
+    // radius of the circle through the polyline points at arc lengths
+    // s - corner_window_m, s and s + corner_window_m (exact on a circular
+    // arc; independent of how densely the polyline is sampled; a sharp
+    // polyline kink of angle theta reads as w / (2 sin(theta / 2)) at the
+    // kink, e.g. 7.07 m for 90 deg; a full reversal reads 0). Infinity when
+    // the route has no turns or is shorter than two windows.
     double min_corner_radius_m = 0.0;
-    int min_corner_waypoint = -1;
+    double min_corner_at_m = -1.0; // arc length of the tightest sample, -1 if none
+    double min_corner_x = 0.0;
+    double min_corner_y = 0.0;
+    double corner_report_radius_m = 0.0;   // the listing threshold used
+    std::vector<RouteCorner> tight_corners; // every stretch below it, in route order
     double start_offset_m = 0.0;     // |waypoints[0] - expected start|
     double start_heading_deg = 0.0;  // first segment, math convention (0 = east, 90 = north)
     std::vector<std::string> failures; // one line per failed criterion; empty = pass

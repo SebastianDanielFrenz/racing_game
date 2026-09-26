@@ -210,8 +210,11 @@ TEST_CASE("load_world_config: the real committed data/world/world_config.json pa
     CHECK(cfg->source_store.read_only == true);
     // g2m_tiler bake output (always <dir>/tiles.sqlite3).
     CHECK(cfg->derived_store.name == "tiles");
-    CHECK(cfg->spawn.e == 462500.0);
-    CHECK(cfg->spawn.n == 5559500.0);
+    // Owner-chosen spawn (Engelsruhe, Frankfurt-Unterliederbach), snapped
+    // 3.2 m onto the street's OSM centreline, facing SW along it.
+    CHECK(cfg->spawn.e == 466767.79);
+    CHECK(cfg->spawn.n == 5551422.52);
+    CHECK(cfg->spawn.yaw_deg == -146.3);
     // R2.1 LOD-distance measurement sweep's chosen default (see repo
     // CLAUDE.md's measurement table) - the goal's own "visible terrain to
     // 16-20 km" is best met by 20000, and the measured warm build time at

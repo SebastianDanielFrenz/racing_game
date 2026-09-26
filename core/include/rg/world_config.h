@@ -32,7 +32,7 @@ struct WorldConfig {
     struct Spawn {
         double e = 0.0;
         double n = 0.0;
-        double yaw_deg = 0.0;
+        double yaw_deg = 0.0; // heading of the vehicle's forward (+x) axis: 0 = east (+e), counter-clockwise, 90 = north (a rotation about +Z)
     };
 
     // Optional top-level "lod" object (PLAN.md R2.1: "make max_distance a
