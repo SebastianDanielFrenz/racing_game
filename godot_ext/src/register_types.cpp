@@ -6,6 +6,7 @@
 #include "register_types.h"
 
 #include "rg_simulation.h"
+#include "rg_terrain_view.h"
 
 #include <gdextension_interface.h>
 #include <godot_cpp/core/defs.hpp>
@@ -16,6 +17,7 @@ using namespace godot;
 void initialize_rg_godot_module(ModuleInitializationLevel p_level) {
     if (p_level != MODULE_INITIALIZATION_LEVEL_SCENE) return;
     ClassDB::register_class<rg_godot::RgSimulation>();
+    ClassDB::register_class<rg_godot::RgTerrainView>();
 }
 
 void uninitialize_rg_godot_module(ModuleInitializationLevel p_level) {

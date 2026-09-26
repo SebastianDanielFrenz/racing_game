@@ -13,6 +13,7 @@ set(RG_GODOT_BIN_DIR "${CMAKE_SOURCE_DIR}/game/bin")
 add_library(rg_godot SHARED
   src/register_types.cpp
   src/rg_simulation.cpp
+  src/rg_terrain_view.cpp
 )
 
 target_include_directories(rg_godot PRIVATE src)

@@ -28,6 +28,16 @@ var _input_map: Node
 var _chassis_mesh: MeshInstance3D
 var _origin_root: Node3D # everything positioned in the sim's floating-origin frame hangs off this
 
+# --terrain-preview only. Held as a script member (NOT a local var in
+# _build_terrain_preview_scene) so the Resource stays alive for as long as
+# Main does - a local ShaderMaterial would be freed (and its RenderingServer
+# material RID along with it, via Material's own destructor) the instant
+# _build_terrain_preview_scene() returns, leaving RgTerrainView holding a
+# dangling RID.
+var _terrain_material: ShaderMaterial
+var _terrain_view: Node
+var _terrain_preview_reported: bool = false
+
 func _data_path(relative: String) -> String:
 	# game/ is its own Godot project root (res://); external/physics_sim/data
 	# lives one level up, OUTSIDE res:// entirely (the submodule is a sibling
@@ -37,8 +47,101 @@ func _data_path(relative: String) -> String:
 	var project_root: String = ProjectSettings.globalize_path("res://")
 	return (project_root.path_join("../external/physics_sim/data").path_join(relative)).simplify_path()
 
+func _world_config_path() -> String:
+	# racing_game's OWN data/world/world_config.json (PLAN.md R2.0/R2.1) -
+	# one level up from game/, same "submodule/sibling dir is outside res://"
+	# reasoning as _data_path above, but this file lives directly in this
+	# repo (not external/physics_sim).
+	var project_root: String = ProjectSettings.globalize_path("res://")
+	return (project_root.path_join("../data/world/world_config.json")).simplify_path()
+
 func _ready() -> void:
-	_build_scene()
+	if "--terrain-preview" in OS.get_cmdline_user_args():
+		_build_terrain_preview_scene()
+	else:
+		_build_scene()
+
+func _build_terrain_preview_scene() -> void:
+	# PLAN.md R2.1: "a --terrain-preview branch in main.gd ... Camera3D (near
+	# 0.25, far 25000), DirectionalLight3D, simple sky/environment,
+	# RgTerrainView, fly cam placed above spawn at a height that shows the
+	# ridge; no Session/vehicle. Without the flag, behaviour unchanged." This
+	# function touches NOTHING _build_scene()/its helpers use (no
+	# RgSimulation, no chase_cam/input_map/hud/tach_gauge) - a clean
+	# alternate scene, not a variant of the normal one.
+	var terrain_view: Node = ClassDB.instantiate("RgTerrainView")
+	terrain_view.name = "Terrain"
+	add_child(terrain_view)
+	_terrain_view = terrain_view
+
+	var ok: bool = terrain_view.initialize(_world_config_path())
+	if not ok:
+		push_error("RgTerrainView.initialize failed: %s" % terrain_view.get_last_error())
+		return
+
+	# game/shaders/terrain.gdshader: vertex colour (the hypsometric ramp
+	# RgTerrainView uploads as ARRAY_COLOR) + Lambert - see set_material's
+	# own doc comment for why this call is required for the colours to be
+	# visible at all (Godot's default material ignores vertex COLOR).
+	_terrain_material = ShaderMaterial.new()
+	_terrain_material.shader = load("res://shaders/terrain.gdshader")
+	terrain_view.set_material(_terrain_material.get_rid())
+
+	var spawn_x: float = terrain_view.get_spawn_x()
+	var spawn_y: float = terrain_view.get_spawn_y()
+	ok = terrain_view.load_preview(spawn_x, spawn_y)
+	if not ok:
+		push_error("RgTerrainView.load_preview failed: %s" % terrain_view.get_last_error())
+		return
+
+	# tools/smoke_test.ps1's --terrain-preview mode and this task's own
+	# report both grep for this line (chunk selection/build_static_view
+	# wall time alone - _process's own "terrain preview loaded" line below
+	# reports the per-chunk RenderingServer upload time separately, once
+	# every queued chunk has actually been drained through the upload
+	# budget).
+	print("terrain preview selected: chunks=%d vertices=%d build_ms=%.2f" % [
+		terrain_view.get_chunk_count(), terrain_view.get_total_vertex_count(), terrain_view.get_last_build_time_ms()
+	])
+
+	# render_origin = spawn snapped to integer metres (PLAN.md R2.1's own
+	# floating-origin convention, see set_render_origin's doc comment) - "up"
+	# stays 0.0 (no terrain-height lookup here; the residual z spread across
+	# this one home region, roughly 90-880 m ASL, is still far below float
+	# precision concerns at these chunk sizes).
+	terrain_view.set_render_origin(Vector3(roundf(spawn_x), roundf(spawn_y), 0.0))
+
+	# --- lighting + sky (same minimal setup as _build_scene's, standalone
+	# here since this branch never calls _build_scene) ---
+	var sun := DirectionalLight3D.new()
+	sun.name = "Sun"
+	sun.rotation_degrees = Vector3(-55.0, -35.0, 0.0)
+	sun.light_energy = 1.1
+	sun.shadow_enabled = true
+	add_child(sun)
+	var env_node := WorldEnvironment.new()
+	var env := Environment.new()
+	env.background_mode = Environment.BG_SKY
+	env.sky = Sky.new()
+	env.sky.sky_material = ProceduralSkyMaterial.new()
+	env_node.environment = env
+	add_child(env_node)
+
+	# --- fly camera, placed above spawn at a height that shows the ridge
+	# (this home region's terrain spans roughly 90-880 m ASL per the repo
+	# CLAUDE.md's terrain data notes - 600 m above the spawn point's own
+	# render-origin-relative (0, 0) clears the highest ridge with room to
+	# look down at the valley too) ---
+	var camera := Camera3D.new()
+	camera.name = "FlyCam"
+	camera.current = true
+	camera.fov = 70.0
+	camera.near = 0.25
+	camera.far = 25000.0
+	camera.position = Vector3(0.0, 600.0, 0.0)
+	camera.rotation_degrees = Vector3(-25.0, 0.0, 0.0)
+	camera.set_script(load("res://scripts/fly_cam.gd"))
+	add_child(camera)
 
 func _build_scene() -> void:
 	# --- simulation node ---
@@ -161,6 +264,13 @@ func _build_scene() -> void:
 	add_child(gauge)
 
 func _process(_delta: float) -> void:
+	if _terrain_view != null and not _terrain_preview_reported and bool(_terrain_view.is_fully_uploaded()):
+		_terrain_preview_reported = true
+		print("terrain preview loaded: chunks=%d vertices=%d upload_ms=%.2f" % [
+			_terrain_view.get_chunk_count(), _terrain_view.get_total_vertex_count(),
+			_terrain_view.get_total_upload_time_ms()
+		])
+
 	if _simulation == null or not bool(_simulation.is_running()):
 		return
 

@@ -26,11 +26,25 @@
 .PARAMETER SkipBuild
     Skip the configure/build step (use an already-built out/build/debug +
     game/bin/librg_godot.dll).
+
+.PARAMETER TerrainPreview
+    Run the PLAN.md R2.1 terrain-preview headless check instead of the
+    normal RgSimulation/HUD one: launches Godot headless with
+    `-- --terrain-preview` (main.gd's own cmdline-user-arg branch, see that
+    file), asserts no ERROR/SCRIPT ERROR line (this also catches Godot's own
+    "N RID allocations ... were leaked at exit" message - always an
+    ERROR-prefixed line - so a separate RID-leak check is unnecessary: 0
+    ERROR lines already means 0 RID leaks), a clean exit code, and that
+    main.gd's own "terrain preview selected: chunks=N ..." line reports at
+    least 150 chunks (PLAN.md R2.1's own smoke-test acceptance bar - the
+    real committed data/world/world_config.json's 20000 m LOD default
+    selects 488 around its own spawn point, well above this).
 #>
 [CmdletBinding()]
 param(
     [int]$QuitAfterFrames = 300,
-    [switch]$SkipBuild
+    [switch]$SkipBuild,
+    [switch]$TerrainPreview
 )
 
 $ErrorActionPreference = 'Stop'
@@ -111,7 +125,12 @@ if ($script:Failures.Count -eq 0) {
 if ($script:Failures.Count -eq 0) {
     $godotExe = Find-GodotConsoleExe
     Ensure-GodotProjectImported -GameDir $gameDir -GodotExe $godotExe
-    Write-Host "`n-- headless run: $godotExe --quit-after $QuitAfterFrames --" -ForegroundColor Cyan
+
+    $godotArgs = @('--headless', '--path', $gameDir, '--quit-after', $QuitAfterFrames)
+    if ($TerrainPreview) {
+        $godotArgs += @('--', '--terrain-preview')
+    }
+    Write-Host "`n-- headless run: $godotExe $($godotArgs -join ' ') --" -ForegroundColor Cyan
 
     # stdout/stderr to separate files - see physics_sim's own smoke_test.ps1
     # comment: merging with '*>' intermittently dropped the stdout half
@@ -120,17 +139,21 @@ if ($script:Failures.Count -eq 0) {
     $stderrFile = Join-Path $buildDir 'smoke_test_godot_stderr.log'
     $previousEap = $ErrorActionPreference
     $ErrorActionPreference = 'Continue'
-    & $godotExe --headless --path $gameDir --quit-after $QuitAfterFrames 1>$stdoutFile 2>$stderrFile
+    & $godotExe @godotArgs 1>$stdoutFile 2>$stderrFile
     $godotExit = $LASTEXITCODE
     $ErrorActionPreference = $previousEap
     $logContent = @(Get-Content $stdoutFile) + @(Get-Content $stderrFile)
     $logContent | ForEach-Object { Write-Host $_ }
 
+    # Godot's own "N RID allocations of type '...' were leaked at exit"
+    # message (printed once per leaked RID at process shutdown) is always
+    # ERROR-prefixed, so this one check also IS the "0 RID leaks" assertion
+    # for -TerrainPreview - no separate pattern needed.
     $errorLines = $logContent | Select-String -Pattern 'ERROR|SCRIPT ERROR|Unhandled exception|Segmentation fault'
     if ($errorLines) {
         Report-Fail "Godot printed error line(s):`n$($errorLines -join "`n")"
     } else {
-        Report-Ok "no ERROR/SCRIPT ERROR lines in Godot output"
+        Report-Ok "no ERROR/SCRIPT ERROR lines in Godot output (0 RID leaks included)"
     }
     if ($godotExit -ne 0) {
         Report-Fail "Godot exited with code $godotExit"
@@ -138,11 +161,33 @@ if ($script:Failures.Count -eq 0) {
         Report-Ok "Godot exited 0"
     }
 
-    $tickLine = $logContent | Select-String -Pattern 'measured sim tick rate|sim thread running' | Select-Object -Last 1
-    if ($tickLine) {
-        Report-Ok "HUD reported the sim thread ticking: $tickLine"
+    if ($TerrainPreview) {
+        $selectedLine = $logContent | Select-String -Pattern 'terrain preview selected: chunks=(\d+) vertices=(\d+) build_ms=([\d.]+)' | Select-Object -Last 1
+        $loadedLine = $logContent | Select-String -Pattern 'terrain preview loaded: chunks=(\d+) vertices=(\d+) upload_ms=([\d.]+)' | Select-Object -Last 1
+        if (-not $selectedLine) {
+            Report-Fail "no 'terrain preview selected' line found in Godot output - main.gd's --terrain-preview branch may not have run"
+        } else {
+            $chunkCount = [int]$selectedLine.Matches[0].Groups[1].Value
+            Write-Host "terrain preview: $($selectedLine.Line)"
+            if ($chunkCount -lt 150) {
+                Report-Fail "terrain preview selected only $chunkCount chunks (< 150)"
+            } else {
+                Report-Ok "terrain preview selected $chunkCount chunks (>= 150)"
+            }
+        }
+        if (-not $loadedLine) {
+            Report-Fail "no 'terrain preview loaded' line found in Godot output - RgTerrainView upload never finished within $QuitAfterFrames frames"
+        } else {
+            Write-Host "terrain preview: $($loadedLine.Line)"
+            Report-Ok "terrain preview fully uploaded (0 RID leaks, see the ERROR-line check above)"
+        }
     } else {
-        Report-Fail "no tick-rate line found in Godot output - RgSimulation/hud.gd may not have started"
+        $tickLine = $logContent | Select-String -Pattern 'measured sim tick rate|sim thread running' | Select-Object -Last 1
+        if ($tickLine) {
+            Report-Ok "HUD reported the sim thread ticking: $tickLine"
+        } else {
+            Report-Fail "no tick-rate line found in Godot output - RgSimulation/hud.gd may not have started"
+        }
     }
 }
 

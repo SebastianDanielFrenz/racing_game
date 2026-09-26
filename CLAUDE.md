@@ -27,8 +27,9 @@ racing_game/
     CMakeLists.txt                    rg_core STATIC target
   godot_ext/
     src/
-      register_types.h/.cpp           GDExtension entry point (rg_godot_library_init), registers RgSimulation
+      register_types.h/.cpp           GDExtension entry point (rg_godot_library_init), registers RgSimulation + RgTerrainView
       rg_simulation.h/.cpp            RgSimulation : godot::Node - the one GDScript-facing class; owns one rg::Session
+      rg_terrain_view.h/.cpp          RgTerrainView : godot::Node3D (PLAN.md R2.1) - static LOD terrain preview seam; see "Terrain preview (R2.1)" below
       frame_convert.h                 rg_godot-namespaced wrapper around physics_sim's frame_convert_core.h (Vec3f/basis/pose -> godot::Vector3/Basis/Transform3D)
     CMakeLists.txt                    rg_godot SHARED target (the GDExtension DLL)
   game/                                Godot project (res:// root)
@@ -38,28 +39,36 @@ racing_game/
     scenes/
       main.tscn                       one-node stub (Node3D + main.gd) - the scene is built procedurally, see main.gd's own comment
     scripts/
-      main.gd                         builds the whole R0 scene in _ready(); per-frame input -> RgSimulation.set_control() wiring
+      main.gd                         builds the whole R0 scene in _ready(); per-frame input -> RgSimulation.set_control() wiring; a `--terrain-preview` cmdline user-arg (after `--`) branches into the R2.1 static-terrain-plus-fly-camera scene instead - see "Terrain preview (R2.1)" below
       chase_cam.gd                    reused near-verbatim from physics_sim's demo (same RgSimulation method names)
+      fly_cam.gd                      free-fly camera script for `--terrain-preview` (PLAN.md R2.1): WASD + Space/E up + Ctrl/Q down, Shift x6 speed, right-mouse-button capture + look, Esc releases capture; no RgSimulation dependency (plain Camera3D script)
       gauge_logic.gd                  copied verbatim from physics_sim's demo (engine-neutral static math, no Godot Control dependency)
       tach_gauge.gd                   reused near-verbatim from physics_sim's demo (round tach/speed/gear/lamp gauge)
       hud.gd                          trimmed port of physics_sim's demo hud.gd (debug text HUD; no terrain-tile/haptics lines - R0 has neither)
       input_map.gd                    new plain-GDScript input node (not a C++ GDExtension class like physics_sim's PsInputMap) - keyboard+gamepad polling, larger-magnitude-wins merge
+    shaders/
+      terrain.gdshader                hypsometric terrain shader (PLAN.md R2.1): `ALBEDO = COLOR.rgb` (reads RgTerrainView's per-vertex RGBA8 colours); no world-space coordinates anywhere (object-space VERTEX/NORMAL and Godot's own per-fragment builtins only), so it survives the floating-origin rebase unmodified
   data/
     world/
+      world_config.json               rg.world/1 (PLAN.md R2.0) instance - see "World config" below; also what `RgTerrainView::initialize`/`tools/lod_measure` open against
       regions.json                    g2m.regions/1 (geo2map_engine G1c I7): region "home" (Main-Taunus-Kreis,
                                        Hochtaunuskreis, Frankfurt-Höchst), halo_m 2000 - consumed by
                                        `g2m_tiler import ...regions.json#home ...` (S:\claude_code\geo2map_engine)
+  cache/                               gitignored, LOCAL ONLY - never committed, never read by CI. `cache/g2m/home-r1/` is this machine's copy of the geo2map_engine source/derived store that `data/world/world_config.json`'s `${RG_G2M_HOME}` placeholder (default `S:\claude_code\geo2map_cache\home-r1`, `world_config.cpp`'s `kDefaultRgG2mHome`) resolves against - populated by pointing at (or copying from) an existing geo2map_engine store; nothing in this repo bakes it (`g2m_tiler.exe bake` run from here was denied, see the R2.1 task report). A checkout with no such store cannot open `rg::WorldTerrain` yet. `tools/lod_measure`'s own `RG_G2M_DERIVED` (default `out/g2m_derived/home-r1`, also gitignored) is a SEPARATE on-demand derived-tile cache this repo's own tools populate themselves and is unrelated to `cache/`.
   tests/
     unit/
       catch_main.cpp                  custom Catch2 v3 entry point (installs headless CRT handlers via physics_sim's always-built ps_headless_env)
       test_session.cpp                rg::Session tests: step stability, control-channel round-trip, snapshot/wheel-state sanity
+      test_world_terrain.cpp          rg::WorldTerrain / build_static_view_from_lookup tests (PLAN.md R2.1) over a synthetic in-memory TileKey->HeightTile map - no TileStore/Server/geo2map decode machinery needed; chunk selection, session-local origin math, 1-vs-N-thread byte-identical output
       CMakeLists.txt                  rg_test_catch_main + rg_unit_tests targets, CTest registration
   tools/
     common.ps1                        shared PowerShell helpers (VS dev-shell entry, Godot exe lookup, cmake wrappers, submodule update) - dot-sourced by run.ps1/smoke_test.ps1/ci.ps1
     setup_dev_env.ps1                 -CheckOnly only (installs nothing - see its own header)
-    run.ps1, run.cmd                  incremental build + launch Godot on game/
-    smoke_test.ps1                    headless Godot smoke test (build, ctest, headless run, assert no errors + sim thread ticking)
-    ci.ps1                            Windows CI: debug + release legs (configure, build, ctest) + smoke_test
+    run.ps1, run.cmd                  incremental build + launch Godot on game/ - pass `-- --terrain-preview` (see run.ps1's own pass-through-args comment) to launch the R2.1 terrain preview instead of the R0 drivable scene
+    smoke_test.ps1                    headless Godot smoke test (build, ctest, headless run, assert no errors + sim thread ticking); `-TerrainPreview` runs the R2.1 headless check instead (asserts >= 150 chunks selected and a completed upload, see its own header comment)
+    ci.ps1                            Windows CI: debug + release legs (configure, build, ctest) + smoke_test - this repo's ci.ps1 has NO Linux leg (unlike physics_sim's tools/ci.ps1)
+    lod_measure/
+      main.cpp, CMakeLists.txt        lod_measure executable (PLAN.md R2.1): measures rg::WorldTerrain::build_static_view cold/warm wall time + chunk/vertex counts against the real data/world/world_config.json at max_distance_m in {6000, 12000, 20000} - see "Terrain preview (R2.1)" below for the measured table and chosen default
     hash_check/
       main.cpp, CMakeLists.txt        hash_check executable - the R0 acceptance check, see "Hash comparison acceptance check" below
 ```
@@ -159,6 +168,105 @@ Two distinct path-resolution rules, per field:
 `world_config.cpp`) instead of erroring; every other unset/unknown
 `${NAME}` is a validation error.
 
+## Terrain preview (R2.1)
+
+First visible, static-LOD terrain plus a fly camera - no vehicle, no
+`ps::World` (PLAN.md R2.1).
+
+`rg::WorldTerrain` (`core/include/rg/world_terrain.h` + `core/src/
+world_terrain.cpp`): the engine-neutral seam onto geo2map_engine's offline
+in-process server/mesh stack. `WorldTerrain::open(config, err)` opens
+`config.source_store`/`derived_store`, builds one local geo2map_engine
+release (`g2m::builtin_local_release_params` + `g2m::make_local_release` -
+the same wiring `g2m_tiler bake` and geo2map_engine's own golden tests use)
+and adds it to an offline `g2m::Server` (`offline = true`: its only
+`IUpstream` is a `g2m::LocalSourceUpstream`, so it never touches the
+network). `build_static_view(cam_x, cam_y, out)` (session-local metres)
+runs `g2m::mesh::select_chunks` against `lod_params()` and builds every
+selected chunk (`gather_window` + `build_chunk`) into `out` as
+`rg::RenderChunk`s, threaded (`build_static_view_from_lookup`'s
+`thread_count` param, each worker writing its own assigned index) so the
+result is byte-identical for any thread count. `height_tile()` is a
+mutex-guarded, cached blocking fetch+decode (per-tile cache, decode work
+outside the lock) - `fetch_stats()` reports `cache_hits`/`server_ok`/
+`server_miss` since `open()`. `RenderChunk` (`rg/terrain_render.h`):
+`mesh` (geo2map_engine's own built `TerrainChunkMesh` - positions/normals/
+indices, Z-up, local to `mesh.origin`), `origin_session[3]` (`mesh.origin -
+(E0, N0, 0)`, still session-local metres, double precision), `rgba` (one
+packed RGBA8 colour per vertex - a hypsometric height/slope ramp;
+`terrain.class`/a real LandClass palette isn't in the geo2map_engine pin
+yet, so every chunk currently shades by height/slope, see
+`world_terrain.cpp`'s `chunk_vertex_color()`).
+
+`RgTerrainView : godot::Node3D` (`godot_ext/src/rg_terrain_view.h/.cpp`) -
+the Godot-facing seam, mirroring `RgSimulation`'s "all engine-neutral logic
+stays in rg_core, this file only converts" shape: `initialize(world_config_
+absolute_path)` opens a `WorldTerrain` and caches its spawn point
+session-local (`get_spawn_x()`/`get_spawn_y()`, `WorldConfig::spawn.e/n`
+minus `session_origin_utm.e0/n0`, so a GDScript caller never has to
+re-parse `world_config.json` itself); `load_preview(spawn_x, spawn_y)` runs
+one `build_static_view` and queues every chunk for per-frame upload
+(`_process`, budgeted `upload_budget_per_frame_` chunks/frame so hundreds
+of meshes never stall one frame); `set_render_origin(session_origin)`
+re-transforms every already-uploaded instance for the floating-origin
+rebase without rebuilding meshes; `set_material(material_rid)` attaches a
+`ShaderMaterial`'s RID (`game/shaders/terrain.gdshader`) to every uploaded
+chunk's mesh surface - required because Godot's default material does not
+read a mesh's own vertex COLOR array as albedo, so without this call the
+per-vertex hypsometric colours are built but never actually visible.
+Uploads via the low-level `RenderingServer` API directly (`mesh_create`/
+`mesh_add_surface_from_arrays`/`instance_create2`/`instance_set_transform`),
+one mesh + one instance RID per chunk, tracked and freed in
+`free_all_uploaded()` (destructor and start of `load_preview()`, so a
+second preview load or a process exit leaks zero RIDs).
+`upload_one_chunk()` skips building/uploading the surface array entirely
+whenever a chunk's vertex or index count is zero (real data at the
+imported region's coverage edge can have vertices but empty `indices` -
+assigning an empty `PackedInt32Array` to `ARRAY_INDEX` still sets Godot's
+own `ARRAY_FORMAT_INDEX` bit, which then fails `RenderingServer`'s surface
+validation) while STILL always creating the mesh/instance RID pair, so the
+1:1 `chunks_[i]`/`instance_rids_[i]` indexing invariant `set_render_origin`
+relies on is never desynced by a coverage-edge chunk.
+
+`game/scripts/main.gd`'s `--terrain-preview` cmdline user-arg (`OS.
+get_cmdline_user_args()`, everything after Godot's own `--`) branches into
+`_build_terrain_preview_scene()` instead of the R0 drivable scene: builds
+an `RgTerrainView`, initializes it against `data/world/world_config.json`,
+builds the `terrain.gdshader` `ShaderMaterial`, loads the preview at the
+config's own spawn point, sets the render origin, adds a
+`DirectionalLight3D` + `WorldEnvironment` (procedural sky) and a `Camera3D`
+named "FlyCam" running `fly_cam.gd`. Prints `"terrain preview selected:
+chunks=N vertices=N build_ms=F"` once chunk selection finishes and
+`"terrain preview loaded: chunks=N vertices=N upload_ms=F"` once every
+chunk has uploaded - `tools/smoke_test.ps1 -TerrainPreview` greps both.
+
+`tools/lod_measure` (executable, links `rg_core` only): sweeps
+`max_distance_m` in `{6000, 12000, 20000}` (`max_level` fixed at 6) against
+the real committed `data/world/world_config.json`, running
+`build_static_view` twice per distance (cold: this process's first touch
+of each tile; warm: same `WorldTerrain` instance, tiles already cached).
+Measured (Windows, `release`, three independent clean-derived-store runs,
+`RG_G2M_DERIVED` wiped between each, against the real home-r1 store):
+
+| max_distance_m | chunks | total_verts | cold_ms | warm_ms |
+|---|---|---|---|---|
+| 6000  | 386 | 1,731,210 | 69,753 | 23.48 |
+| 12000 | 433 | 1,942,005 | 115,972 | 28.65 |
+| 20000 | 488 | 2,188,680 | 98,771 | 32.65 |
+
+Chosen default: **20000 m** (`data/world/world_config.json`'s own
+`lod.max_distance_m`) - the R2.1 goal is "visible terrain to 16-20 km";
+warm cost at 20000 m (~33 ms) is barely above 6000 m's (~23 ms) and both
+are comfortably under PLAN.md R2.1's 3000 ms target, so the choice is
+driven by coverage instead - 20000 m's 488 chunks/2.19M vertices stay
+close to the "~400 chunk" naive-worst-case budget rather than blowing it
+up. The COLD numbers above are NOT representative of a baked-store first
+load - `cold` means "this process's on-demand Cache->Derive->Upstream path
+touching each tile for the first time", 70-116 s regardless of distance;
+`g2m_tiler bake` into `cache/g2m/home-r1/derived` was denied by the
+session's own permission classifier and was not retried, so only the warm
+number is representative of a real pre-baked/pre-derived run.
+
 ## Targets
 
 - `rg_core` (STATIC, `core/`): `rg::Session` - owns one `ps::World` (one
@@ -175,14 +283,23 @@ Two distinct path-resolution rules, per field:
   inside `world_config.cpp`'s own implementation). `g2m_mesh` does not exist
   yet on geo2map_engine's current pin - not linked; add it once it lands. No
   Godot type anywhere (engine-neutral, MEMORY.md's engine-neutral-logic rule
-  - a future UE5 port reuses this target unchanged).
+  - a future UE5 port reuses this target unchanged). `g2m_mesh` (PLAN.md
+  R2.1, landed on the submodule pin with G2.3) adds `rg::WorldTerrain`
+  (`world_terrain.h`/`.cpp`) + `rg::RenderChunk`/`build_static_view_from_
+  lookup` (`terrain_render.h`) - see "Terrain preview (R2.1)" above.
 - `rg_godot` (SHARED, `godot_ext/`): the GDExtension DLL
-  (`game/bin/librg_godot.dll`). `RgSimulation : godot::Node` is the only
-  class registered; it owns one `rg::Session` and exposes it to GDScript
-  (body transforms, control channels, wheel/gauge/powertrain telemetry,
-  origin-rebase seam). Links `rg_core` + `godot-cpp`. This is the ONE place
-  `ps::`/`rg::` types cross into `godot::` types (mirrors physics_sim's own
-  adapter's "all conversion happens in exactly one place").
+  (`game/bin/librg_godot.dll`). Two classes registered: `RgSimulation :
+  godot::Node` owns one `rg::Session` and exposes it to GDScript (body
+  transforms, control channels, wheel/gauge/powertrain telemetry,
+  origin-rebase seam); `RgTerrainView : godot::Node3D` (PLAN.md R2.1) owns
+  one `rg::WorldTerrain` and uploads its `RenderChunk`s via the low-level
+  `RenderingServer` API - see "Terrain preview (R2.1)" above. Links
+  `rg_core` + `godot-cpp`. This is the ONE place `ps::`/`rg::`/`g2m::` types
+  cross into `godot::` types (mirrors physics_sim's own adapter's "all
+  conversion happens in exactly one place").
+- `lod_measure` (executable, `tools/lod_measure/`): links `rg_core` only
+  (no Godot) - the PLAN.md R2.1 LOD-distance measurement sweep, see
+  "Terrain preview (R2.1)" above for the tool and its measured table.
 - `hash_check` (executable, `tools/hash_check/`): builds an `rg::Session`
   matching `external/physics_sim/data/scenarios/vehicle_step_steer.json`
   by hand (ground/chassis/vehicle construction + the same control events),
@@ -196,13 +313,17 @@ Two distinct path-resolution rules, per field:
 - `rg_unit_tests` (executable, `tests/unit/`): `rg_core`'s own tests
   (`test_session.cpp`), `rg::load_world_config` coverage
   (`test_world_config.cpp` - happy path, `${VAR}` expansion, the
-  `RG_G2M_HOME` default, every validation error path) and a geo2map_engine
-  link-smoke test (`test_g2m_link_smoke.cpp` - constructs a `g2m::TileKey`
-  and round-trips `packed()`/`unpack()`, both defined out of line in
-  `g2m_core`, proving `rg_core` actually LINKS a geo2map_engine symbol, not
-  just compiles against its headers). Catch2 v3 via `rg_test_catch_main`,
-  plus `nlohmann_json::nlohmann_json` PRIVATE (test fixture JSON is built
-  with `nlohmann::json` directly). Registered with CTest.
+  `RG_G2M_HOME` default, every validation error path, plus PLAN.md R2.1's
+  `lod`/`max_distance_m` cases), a geo2map_engine link-smoke test
+  (`test_g2m_link_smoke.cpp` - constructs a `g2m::TileKey` and round-trips
+  `packed()`/`unpack()`, both defined out of line in `g2m_core`, proving
+  `rg_core` actually LINKS a geo2map_engine symbol, not just compiles
+  against its headers) and `rg::WorldTerrain`/`build_static_view_from_lookup`
+  coverage (`test_world_terrain.cpp` - PLAN.md R2.1, synthetic in-memory
+  `TileKey`->`HeightTile` map, see "Terrain preview (R2.1)" above). Catch2
+  v3 via `rg_test_catch_main`, plus `nlohmann_json::nlohmann_json` PRIVATE
+  (test fixture JSON is built with `nlohmann::json` directly). Registered
+  with CTest.
 
 ## CMake options
 
@@ -286,6 +407,8 @@ cmake --build --preset debug
 ctest --preset debug --output-on-failure
 
 tools\run.ps1              # incremental build + launch Godot on game/
+tools\run.cmd -- --terrain-preview   # ... or launch the R2.1 static-terrain fly-camera preview instead
 tools\smoke_test.ps1        # headless build + ctest + headless Godot run
+tools\smoke_test.ps1 -TerrainPreview # ... or the R2.1 terrain-preview headless check
 tools\ci.ps1                 # debug + release legs + smoke_test
 ```
