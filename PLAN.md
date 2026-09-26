@@ -319,7 +319,7 @@ Rules:
 - Each milestone ends with its acceptance tests green in its repo's CI, the CLAUDE.md map updated, and vault tickets written.
 - Physics prerequisites are in brackets.
 - **Model:** **Opus** = open design, numerics, determinism, concurrency. **Sonnet** = implementation from a precise brief. The main session always diagnoses, briefs and verifies.
-- **Order:** G0 ∥ R0 → G1 → G2 → R2 → G3 → R3 → G4 → R4 → R5 → R6 → G5/R7 → R8 → G6 → R9 → G7 → G8/R10 → traffic.
+- **Order:** G0 ∥ R0 → G1 → G2 → R2 → G3 → R3 → G4 → R4 → R5 → R6 → G5/R7 → R8 → G6 → R9 → G7 → G8/R10 → traffic → radio.
 - Everything up to R8 runs on the integrated in-process server. The protocol exists from G1 as in-process request/response types; G6 gives it its wire form. The hosted server (G7) comes once the game is playable offline.
 
 **G0: library skeleton, determinism, geodesy.** Model: Opus for math and geodesy; Sonnet for skeleton and CI.
@@ -451,6 +451,11 @@ Rules:
 **Later: traffic.** Model: Opus.
 - Lane-level graph (lane connectivity from `turn:lanes`), signals, AI drivers on physics vehicles.
 - Needs PLAN.md P9's 30/300-vehicle budgets.
+
+**Later: in-car radio (owner request 2026-09-26; do not start before traffic).** Model: Opus for the mood classifier and source abstraction; Sonnet for the players and UI.
+- Several radio stations. Each is either a live internet radio stream or a music-service API source. The owner's own is music.ksfhost.de; players bring their own compatible service (endpoint + credentials in settings). Nothing is bundled or hosted for players.
+- The music follows driving style and game state. Examples of distinct moods: a slow night drive; 300 km/h on the Autobahn; drifting corner after corner; city streets at normal speed; city streets at insane speed. The inputs are telemetry the game already has (speed, slip angles, yaw rate, road class from G3, urban/rural from G5, time of day), classified engine-neutrally in `rg_core`. The Godot adapter only plays audio.
+- Open for design: how a mood maps to a station, track or playlist query per source type; whether live streams can follow a mood at all (e.g. per-station mood tags) or only API sources; crossfade and hysteresis so short events don't flip the music; licensing and attribution of third-party streams.
 
 ---
 
