@@ -47,6 +47,7 @@
 #include "triple_buffer.h"
 
 #include <atomic>
+#include <chrono>
 #include <cstdint>
 #include <memory>
 #include <mutex>
@@ -260,6 +261,40 @@ public:
     [[nodiscard]] bool running() const { return loop_.running(); }
     [[nodiscard]] FixedRateLoop::LoopStats loop_stats() const { return loop_.stats(); }
 
+    // --- Tick-spike diagnostics (owner drive 2026-09-27: ~170 ms sim-thread
+    // stalls every ~255 m at 150-185 km/h that a headless replay does not
+    // reproduce). Every real-time loop attempt is timed per phase; one that
+    // takes longer than kTickSpikeAttemptMs, or starts more than
+    // kTickSpikeGapMs after the previous attempt started, is queued here
+    // (bounded - overflow is counted, never blocks the loop). gap_ms minus
+    // the previous attempt's own total is time the loop thread spent NOT in
+    // step_once (sleep overshoot, descheduling). Drained from any thread.
+    static constexpr double kTickSpikeAttemptMs = 8.0;
+    static constexpr double kTickSpikeGapMs = 20.0;
+    static constexpr std::size_t kTickSpikeCapacity = 256;
+    enum class TickSpikeKind : int { Stepped = 0, Frozen = 1, Relocation = 2 };
+    struct TickSpike {
+        std::uint64_t tick = 0;       // World tick after the attempt
+        double wall_s = 0.0;          // since start()
+        TickSpikeKind kind = TickSpikeKind::Stepped;
+        double gap_ms = 0.0;          // previous attempt start -> this attempt start
+        double prev_total_ms = 0.0;   // previous attempt's own duration
+        double total_ms = 0.0;        // this attempt
+        double take_relocate_ms = 0.0;
+        double gate_update_ms = 0.0;  // PhysicsStreamer::update
+        double gate_interest_ms = 0.0; // World::set_terrain_interest_point
+        double controls_ms = 0.0;     // drive script / live controls
+        double step_ms = 0.0;         // World::step (or the relocation's priming ticks)
+        double post_ms = 0.0;         // snapshot publish, fall detector, status
+        double x = 0.0, y = 0.0, speed_mps = 0.0;
+        std::uint64_t resident_tiles = 0;
+    };
+    // Returns (and clears) the queued spikes, oldest first; *overflow gets
+    // the number dropped since the previous drain.
+    [[nodiscard]] std::vector<TickSpike> drain_tick_spikes(std::uint64_t* overflow = nullptr);
+    // One log line (no prefix, no newline), key=value tokens.
+    [[nodiscard]] static std::string format_tick_spike(const TickSpike& spike);
+
     // Race-free once start() has produced at least one tick; before that,
     // returns a default-constructed FrameSnapshot (tick == 0).
     [[nodiscard]] const FrameSnapshot& snapshot() { return snapshot_buffer_.read(); }
@@ -460,6 +495,19 @@ private:
 
     // Its thread runs step_once over every member above; ~Session() stops it
     // before anything is destroyed.
+    // Tick-spike diagnostics (drain_tick_spikes): the timing members are
+    // stepping-thread only; spikes_/spike_overflow_ are guarded by
+    // spike_mutex_, taken only when an attempt actually is a spike.
+    std::mutex spike_mutex_;
+    std::vector<TickSpike> spikes_;
+    std::uint64_t spike_overflow_ = 0;
+    std::chrono::steady_clock::time_point loop_started_{};
+    std::chrono::steady_clock::time_point last_attempt_start_{};
+    bool have_last_attempt_ = false;
+    double last_attempt_total_ms_ = 0.0;
+    double last_gate_update_ms_ = 0.0;
+    double last_gate_interest_ms_ = 0.0;
+
     FixedRateLoop loop_;
 };
 

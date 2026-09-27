@@ -67,6 +67,7 @@ var _visuals: Node
 var _world_view: Node # RgTerrainView shared with the real-world Session
 var _load_started_ms: int = 0
 var _last_report_ms: int = 0
+const FRAME_SPIKE_S := 0.05
 var _spawn_reported: bool = false
 
 # Held as a script member (NOT a local var) so the Resource stays alive for as
@@ -581,6 +582,19 @@ func _report() -> void:
 		return
 	_last_report_ms = now
 	print(status_line("RG_DRIVE t=%.1f" % (sim_t - ready_sim_time)))
+	_report_tick_spikes()
+
+# Tick-spike diagnostics (owner drive 2026-09-27, ~170 ms sim stalls): the
+# sim thread's slow or late tick attempts, per phase (rg::Session's
+# drain_tick_spikes), at most MAX_SPIKE_LINES per report so a long stall
+# cannot flood the log; the rest is summarised as a count.
+const MAX_SPIKE_LINES := 40
+func _report_tick_spikes() -> void:
+	var lines: PackedStringArray = _simulation.drain_tick_spikes()
+	for i in range(mini(lines.size(), MAX_SPIKE_LINES)):
+		print("RG_TICK_SPIKE " + lines[i])
+	if lines.size() > MAX_SPIKE_LINES:
+		print("RG_TICK_SPIKE suppressed=%d" % (lines.size() - MAX_SPIKE_LINES))
 
 # The shared "numbers" part of the RG_DRIVE lines (drive_smoke.gd's final
 # line too): "falls=%d misses=%d" stays one contiguous token pair, the smoke
@@ -591,13 +605,15 @@ func status_line(prefix: String) -> String:
 	var surface := ""
 	if _simulation.get_vehicle_names().has(VEHICLE_NAME):
 		surface = _simulation.get_wheel_surface_name(VEHICLE_NAME, 0)
-	return "%s ticks=%d speed_kmh=%.1f gear=%d rpm=%.0f frozen=%s missing=%d inflight=%d freezes=%d frozen_ticks=%d falls=%d misses=%d starved=%d relocations=%d relocate_failures=%d mode=%s surface=%s" % [
+	var ls: Dictionary = _simulation.get_loop_stats()
+	return "%s ticks=%d speed_kmh=%.1f gear=%d rpm=%.0f frozen=%s missing=%d inflight=%d freezes=%d frozen_ticks=%d falls=%d misses=%d starved=%d relocations=%d relocate_failures=%d mode=%s surface=%s dropped_ticks=%d step_max_ms=%.1f" % [
 		prefix, int(_simulation.get_step_count()), _simulation.get_body_speed_mps("chassis") * 3.6,
 		int(pt.get("gear", 0)), float(pt.get("rpm", 0.0)), "yes" if bool(ss.get("frozen", false)) else "no",
 		int(ss.get("missing_required", 0)), int(ss.get("inflight", 0)), int(ss.get("freeze_count", 0)),
 		int(ss.get("frozen_attempts", 0)), int(ss.get("falls", 0)), int(ss.get("fill_misses", 0)),
 		int(ss.get("starved_tiles", 0)), int(ss.get("relocations", 0)), int(ss.get("relocate_failures", 0)),
-		_simulation.get_player_mode(), surface if surface != "" else "?"]
+		_simulation.get_player_mode(), surface if surface != "" else "?",
+		int(ls.get("dropped_ticks", 0)), float(ls.get("step_max_ms", 0.0))]
 
 # rg_core decides the active rig and which input groups are live.
 func _apply_mode_state() -> Dictionary:
@@ -632,7 +648,10 @@ func _forward_driving(live: bool) -> void:
 	if down > 0:
 		_simulation.set_control("shift_down_count", _simulation.get_control("shift_down_count") + down)
 
-func _process(_delta: float) -> void:
+func _process(delta: float) -> void:
+	# Main-thread frame hitches, to line up with RG_TICK_SPIKE (sim thread).
+	if world_state == "running" and delta > FRAME_SPIKE_S:
+		print("RG_FRAME_SPIKE delta_ms=%.1f ticks=%d" % [delta * 1000.0, int(_simulation.get_step_count())])
 	if _terrain_view != null and not _terrain_preview_reported and bool(_terrain_view.is_fully_uploaded()):
 		_terrain_preview_reported = true
 		print("terrain preview loaded: chunks=%d vertices=%d upload_ms=%.2f" % [

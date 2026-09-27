@@ -299,6 +299,32 @@ godot::Dictionary RgSimulation::get_streaming_status() const {
     return d;
 }
 
+godot::PackedStringArray RgSimulation::drain_tick_spikes() {
+    godot::PackedStringArray out;
+    if (!session_) return out;
+    std::uint64_t overflow = 0;
+    for (const rg::Session::TickSpike& s : session_->drain_tick_spikes(&overflow)) {
+        out.push_back(String(rg::Session::format_tick_spike(s).c_str()));
+    }
+    if (overflow > 0) out.push_back(String(("overflow=" + std::to_string(overflow)).c_str()));
+    return out;
+}
+
+godot::Dictionary RgSimulation::get_loop_stats() const {
+    godot::Dictionary d;
+    if (!session_ || !session_->running()) return d;
+    const rg::FixedRateLoop::LoopStats s = session_->loop_stats();
+    d["achieved_hz"] = s.achieved_hz;
+    d["step_p50_ms"] = s.step_p50_ms;
+    d["step_p99_ms"] = s.step_p99_ms;
+    d["step_max_ms"] = s.step_max_ms;
+    d["frozen_ms"] = s.frozen_ms;
+    d["freeze_count"] = static_cast<std::int64_t>(s.freeze_count);
+    d["stepped_count"] = static_cast<std::int64_t>(s.stepped_count);
+    d["dropped_ticks"] = static_cast<std::int64_t>(s.dropped_ticks);
+    return d;
+}
+
 String RgSimulation::get_terrain_surface_name() const {
     return session_ ? String(session_->terrain_surface_name().c_str()) : String();
 }
@@ -570,6 +596,8 @@ void RgSimulation::_bind_methods() {
     godot::ClassDB::bind_method(D_METHOD("is_running"), &RgSimulation::is_running);
     godot::ClassDB::bind_method(D_METHOD("is_terrain_mode"), &RgSimulation::is_terrain_mode);
     godot::ClassDB::bind_method(D_METHOD("get_streaming_status"), &RgSimulation::get_streaming_status);
+    godot::ClassDB::bind_method(D_METHOD("drain_tick_spikes"), &RgSimulation::drain_tick_spikes);
+    godot::ClassDB::bind_method(D_METHOD("get_loop_stats"), &RgSimulation::get_loop_stats);
     godot::ClassDB::bind_method(D_METHOD("get_terrain_surface_name"), &RgSimulation::get_terrain_surface_name);
     godot::ClassDB::bind_method(D_METHOD("get_render_origin_session"), &RgSimulation::get_render_origin_session);
     godot::ClassDB::bind_method(D_METHOD("retry_failed_tiles"), &RgSimulation::retry_failed_tiles);

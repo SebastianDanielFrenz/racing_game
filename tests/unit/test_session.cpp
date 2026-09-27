@@ -4,12 +4,16 @@
 // worth of ticks, and checks nothing crashes/NaNs and the chassis stays
 // upright and roughly where a free vehicle at rest should be.
 
+#include "rg/drive_script.h"
 #include "rg/session.h"
 
 #include <catch2/catch_test_macros.hpp>
 
+#include <chrono>
 #include <cmath>
 #include <string>
+#include <thread>
+#include <vector>
 
 namespace {
 
@@ -73,4 +77,45 @@ TEST_CASE("Session snapshot captures wheel and powertrain state", "[session]") {
         const ps::vehicle::WheelState ws = session.world().wheel_state(session.vehicle_id(), i);
         REQUIRE(std::isfinite(ws.load));
     }
+}
+
+// Tick-spike diagnostics (rg::Session::drain_tick_spikes): one real-time
+// loop attempt made slow on purpose (the drive script sleeps inside it) is
+// queued with its time attributed to the controls phase, and formats into
+// the key=value line the game prints as RG_TICK_SPIKE. Synchronous step()
+// attempts are never judged.
+TEST_CASE("Session queues a slow real-time tick as a tick spike", "[session]") {
+    rg::Session session(make_test_config());
+    for (int i = 0; i < 10; ++i) session.step();
+    REQUIRE(session.drain_tick_spikes().empty());
+
+    rg::DriveScript script;
+    script.set_controller([](const rg::DriveTickContext& ctx, ps::World&) {
+        if (ctx.drive_tick == 30) std::this_thread::sleep_for(std::chrono::milliseconds(15));
+    });
+    session.set_drive_script(std::move(script));
+    session.start();
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(5);
+    while (session.snapshot().tick < 120 && std::chrono::steady_clock::now() < deadline) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(5));
+    }
+    session.stop();
+
+    std::uint64_t overflow = 0;
+    const std::vector<rg::Session::TickSpike> spikes = session.drain_tick_spikes(&overflow);
+    CHECK(overflow == 0);
+    bool found = false;
+    for (const rg::Session::TickSpike& s : spikes) {
+        if (s.kind == rg::Session::TickSpikeKind::Stepped && s.controls_ms >= 14.0) {
+            found = true;
+            CHECK(s.total_ms >= s.controls_ms);
+            CHECK(s.step_ms < s.controls_ms);
+            const std::string line = rg::Session::format_tick_spike(s);
+            INFO(line);
+            CHECK(line.find("kind=stepped") != std::string::npos);
+            CHECK(line.find("controls_ms=") != std::string::npos);
+        }
+    }
+    CHECK(found);
+    CHECK(session.drain_tick_spikes().empty());
 }

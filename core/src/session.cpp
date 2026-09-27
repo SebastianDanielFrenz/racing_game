@@ -20,6 +20,7 @@
 #include <chrono>
 #include <cmath>
 #include <cstdio>
+#include <cstdlib>
 #include <span>
 #include <stdexcept>
 #include <string>
@@ -104,6 +105,22 @@ struct Session::Terrain {
 namespace {
 
 using Clock = std::chrono::steady_clock;
+
+// std::getenv is deprecated under the Windows UCRT (a /WX error), same as
+// world_config.cpp's safe_getenv; empty when unset.
+std::string env_or_empty(const char* name) {
+#ifdef _WIN32
+    char* buf = nullptr;
+    std::size_t len = 0;
+    if (_dupenv_s(&buf, &len, name) != 0 || buf == nullptr) return std::string();
+    std::string value(buf);
+    std::free(buf);
+    return value;
+#else
+    const char* value = std::getenv(name);
+    return value != nullptr ? std::string(value) : std::string();
+#endif
+}
 
 double ms_since(Clock::time_point t0) {
     return std::chrono::duration<double, std::milli>(Clock::now() - t0).count();
@@ -457,13 +474,17 @@ bool Session::gate_check() {
     if (retry_failed_requested_.exchange(false, std::memory_order_relaxed)) t.streamer.retry_failed();
 
     const std::span<const g2m::phys::InterestPoint> points = physics_interest_points();
+    const Clock::time_point t_update = Clock::now();
     const g2m::phys::GateStatus gs = t.streamer.update(points);
+    last_gate_update_ms_ = ms_since(t_update);
+    const Clock::time_point t_interest = Clock::now();
     // TileManager keeps one interest point per id; the ids are the streamer's
     // own (removing a point that disappears from the list is not needed while
     // the list is fixed at the chassis).
     for (const g2m::phys::InterestPoint& ip : points) {
         world_->set_terrain_interest_point(ip.id, ps::Vec3{ip.x, ip.y, 0.0}, ip.radius_m);
     }
+    last_gate_interest_ms_ = ms_since(t_interest);
 
     status_.ready.store(gs.ready, std::memory_order_relaxed);
     status_.missing_required.store(gs.missing_required, std::memory_order_relaxed);
@@ -480,9 +501,57 @@ bool Session::gate_check() {
 }
 
 bool Session::step_once(bool from_loop) {
+    // Per-phase timing for the tick-spike queue (session.h); only real-time
+    // loop attempts are judged - step()'s synchronous retries have no cadence.
+    const Clock::time_point t_start = Clock::now();
+    TickSpike spike;
+    Clock::time_point t_phase = t_start;
+    const auto lap = [&t_phase]() {
+        const Clock::time_point now = Clock::now();
+        const double ms = std::chrono::duration<double, std::milli>(now - t_phase).count();
+        t_phase = now;
+        return ms;
+    };
+    const auto finish = [&](TickSpikeKind kind, bool result) {
+        if (!from_loop) return result;
+        spike.kind = kind;
+        spike.total_ms = ms_since(t_start);
+        spike.gap_ms = have_last_attempt_
+                           ? std::chrono::duration<double, std::milli>(t_start - last_attempt_start_).count()
+                           : 0.0;
+        spike.prev_total_ms = last_attempt_total_ms_;
+        const bool is_spike = spike.total_ms > kTickSpikeAttemptMs || spike.gap_ms > kTickSpikeGapMs;
+        have_last_attempt_ = true;
+        last_attempt_start_ = t_start;
+        last_attempt_total_ms_ = spike.total_ms;
+        if (is_spike) {
+            spike.tick = world_->tick();
+            spike.wall_s = std::chrono::duration<double>(t_start - loop_started_).count();
+            if (have_vehicle_) {
+                const ps::Vec3 p = world_->get_pose(chassis_body_).position;
+                spike.x = p.x;
+                spike.y = p.y;
+                spike.speed_mps = world_->get_motion(chassis_body_).linear.length();
+            }
+            if (terrain_) spike.resident_tiles = world_->terrain_resident_tile_count();
+            std::lock_guard<std::mutex> lock(spike_mutex_);
+            if (spikes_.size() < kTickSpikeCapacity) {
+                spikes_.push_back(spike);
+            } else {
+                ++spike_overflow_;
+            }
+        }
+        return result;
+    };
+
     take_relocate_request();
+    spike.take_relocate_ms = lap();
     if (terrain_) {
-        if (!gate_check()) {
+        const bool ready = gate_check();
+        spike.gate_update_ms = last_gate_update_ms_;
+        spike.gate_interest_ms = last_gate_interest_ms_;
+        lap();
+        if (!ready) {
             status_.frozen.store(true, std::memory_order_relaxed);
             if (have_vehicle_) {
                 status_.frozen_attempts.fetch_add(1, std::memory_order_relaxed);
@@ -491,7 +560,7 @@ bool Session::step_once(bool from_loop) {
                     status_.freeze_count.fetch_add(1, std::memory_order_relaxed);
                 }
             }
-            return false; // frozen: the World is untouched
+            return finish(TickSpikeKind::Frozen, false); // frozen: the World is untouched
         }
         status_.frozen.store(false, std::memory_order_relaxed);
         in_freeze_ = false;
@@ -501,8 +570,10 @@ bool Session::step_once(bool from_loop) {
         // This attempt moves the car instead of driving it (its priming
         // ticks step the World); the next attempt drives again.
         finish_relocation();
+        spike.step_ms = lap();
         post_step(from_loop);
-        return true;
+        spike.post_ms = lap();
+        return finish(TickSpikeKind::Relocation, true);
     }
 
     if (have_vehicle_ && drive_script_) {
@@ -510,10 +581,37 @@ bool Session::step_once(bool from_loop) {
     } else if (from_loop) {
         apply_live_controls();
     }
+    spike.controls_ms = lap();
 
     world_->step();
+    spike.step_ms = lap();
     post_step(from_loop);
-    return true;
+    spike.post_ms = lap();
+    return finish(TickSpikeKind::Stepped, true);
+}
+
+std::vector<Session::TickSpike> Session::drain_tick_spikes(std::uint64_t* overflow) {
+    std::vector<TickSpike> out;
+    std::lock_guard<std::mutex> lock(spike_mutex_);
+    out.swap(spikes_);
+    spikes_.reserve(kTickSpikeCapacity);
+    if (overflow != nullptr) *overflow = spike_overflow_;
+    spike_overflow_ = 0;
+    return out;
+}
+
+std::string Session::format_tick_spike(const TickSpike& s) {
+    const char* kind = s.kind == TickSpikeKind::Frozen ? "frozen" : s.kind == TickSpikeKind::Relocation ? "relocation"
+                                                                                                         : "stepped";
+    char buf[512];
+    std::snprintf(buf, sizeof(buf),
+                  "tick=%llu wall_s=%.3f kind=%s gap_ms=%.2f prev_total_ms=%.2f total_ms=%.2f take_ms=%.2f "
+                  "gate_update_ms=%.2f gate_interest_ms=%.2f controls_ms=%.2f step_ms=%.2f post_ms=%.2f "
+                  "pos=(%.1f,%.1f) speed_kmh=%.1f resident_tiles=%llu",
+                  static_cast<unsigned long long>(s.tick), s.wall_s, kind, s.gap_ms, s.prev_total_ms, s.total_ms,
+                  s.take_relocate_ms, s.gate_update_ms, s.gate_interest_ms, s.controls_ms, s.step_ms, s.post_ms, s.x,
+                  s.y, s.speed_mps * 3.6, static_cast<unsigned long long>(s.resident_tiles));
+    return std::string(buf);
 }
 
 void Session::apply_live_controls() {
@@ -592,6 +690,15 @@ void Session::step() {
 bool Session::try_step() { return step_once(true); }
 
 void Session::start() {
+    loop_started_ = Clock::now();
+    have_last_attempt_ = false;
+    spikes_.reserve(kTickSpikeCapacity);
+    // Diagnostics: RG_WORLD_CSV=<path> records ps::World's per-tick telemetry
+    // (incl. every pipeline stage's stage.<name>.ms) for the whole session.
+    if (const std::string csv = env_or_empty("RG_WORLD_CSV"); !csv.empty()) {
+        world_->telemetry().start_csv(csv);
+        std::fprintf(stderr, "rg::Session: RG_WORLD_CSV -> %s\n", csv.c_str());
+    }
     loop_.start([this] { return step_once(true); });
 }
 

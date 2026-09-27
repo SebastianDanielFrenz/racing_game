@@ -118,6 +118,12 @@ public:
     // a successful initialize_terrain()) ---
     [[nodiscard]] bool is_terrain_mode() const;
     [[nodiscard]] godot::Dictionary get_streaming_status() const; // every rg::StreamingStatus field, snake_case
+    // Tick-spike diagnostics (rg::Session::drain_tick_spikes): the queued
+    // spikes as preformatted lines, oldest first, plus one final
+    // "overflow=N" line when spikes were dropped since the last call.
+    [[nodiscard]] godot::PackedStringArray drain_tick_spikes();
+    // rg::FixedRateLoop::LoopStats, snake_case (empty before start()).
+    [[nodiscard]] godot::Dictionary get_loop_stats() const;
     // physics.terrain_surface's configured name (G2.5a-grip R-c HUD); empty
     // in flat mode. See rg::Session::terrain_surface_name().
     [[nodiscard]] godot::String get_terrain_surface_name() const;

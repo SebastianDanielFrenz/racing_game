@@ -61,6 +61,7 @@ void FixedRateLoop::start(TryStep try_step) {
         step_ring_count_ = 0;
         step_ring_next_ = 0;
         step_ms_max_ = 0.0;
+        dropped_ticks_ = 0;
     }
     thread_ = std::thread([this] { loop(); });
 }
@@ -125,7 +126,12 @@ void FixedRateLoop::loop() {
             // was paused). Resync to "now" rather than an ever-growing
             // backlog; a fixed-rate cadence resuming late is intended, not a
             // catch-up spiral.
-            next = clock::now() + period_;
+            const auto now = clock::now();
+            {
+                std::lock_guard<std::mutex> lk(stats_mutex_);
+                dropped_ticks_ += static_cast<std::uint64_t>((now - next) / period_) + 1;
+            }
+            next = now + period_;
         }
     }
 }
@@ -137,6 +143,7 @@ FixedRateLoop::LoopStats FixedRateLoop::stats() const {
     out.stepped_count = stepped_count_;
     out.frozen_ms = frozen_ms_total_;
     out.step_max_ms = step_ms_max_;
+    out.dropped_ticks = dropped_ticks_;
 
     if (started_ && stepped_count_ > 0) {
         const double elapsed_ms =

@@ -60,6 +60,11 @@ public:
         double frozen_ms = 0.0;
         std::uint64_t freeze_count = 0;
         std::uint64_t stepped_count = 0;
+        // Ticks skipped by the post-catch-up resync (still behind after
+        // max_catch_up stepped ticks): whole periods between the missed
+        // deadline and "now", plus the one being resynced. Never includes
+        // frozen attempts. Cumulative since start().
+        std::uint64_t dropped_ticks = 0;
     };
 
     // hz must be > 0. max_catch_up bounds how many STEPPED ticks a single
@@ -119,6 +124,7 @@ private:
     std::size_t step_ring_count_ = 0; // <= kStepSampleCapacity
     std::size_t step_ring_next_ = 0;
     double step_ms_max_ = 0.0;
+    std::uint64_t dropped_ticks_ = 0;
 };
 
 } // namespace rg
