@@ -28,14 +28,32 @@ namespace rg {
 //    TileLookup returns (WorldTerrain's height cache).
 // Thread-safe iff `fn` is (HeightTileLoader calls fetch() from its workers);
 // WorldTerrain::height_tile_shared and fetch_height_tile_cached are.
+//
+// Road mode (G2.5a-grip R-c, plan section 7): the two-argument constructor
+// additionally takes a RoadSegmentsFetchFn (rg::WorldTerrain::
+// road_segments_shared's own signature, roads ride on the SAME residency
+// entry as heights) - fetch() then also resolves the owning L2
+// g2m.src.osm tile (key.parent().parent(), a height fetch's L0 key ->
+// its L2 road tile) and calls it, ONLY when the height side itself
+// succeeded (Ok with a tile) - a failed height fetch is retried on its own
+// terms and never needs roads. RoadFetchStatus::Failed becomes a null
+// FetchResult::roads (so LoaderConfig::require_roads retries/fails the
+// whole tile exactly like a height-side 500); Ok or Absent passes the
+// (possibly empty) segment list straight through - "no roads here" is a
+// valid, non-fatal answer (roads_plan.md). provides_roads() reports whether
+// this instance was built with a road fetch function at all.
 class HeightTileSharedFetch final : public g2m::phys::IHeightTileFetch {
 public:
     // Throws std::invalid_argument on an empty `fn`.
     explicit HeightTileSharedFetch(HeightTileFetchFn fn);
+    // Throws std::invalid_argument on an empty `fn` or `road_fn`.
+    HeightTileSharedFetch(HeightTileFetchFn fn, RoadSegmentsFetchFn road_fn);
     g2m::phys::FetchResult fetch(const g2m::TileKey& key) override;
+    bool provides_roads() const override { return static_cast<bool>(road_fn_); }
 
 private:
     HeightTileFetchFn fn_;
+    RoadSegmentsFetchFn road_fn_; // empty = heights-only (provides_roads() false)
 };
 
 // SessionConfig::terrain. Positions are session-local metres (x east of the
@@ -66,6 +84,18 @@ struct TerrainModeConfig {
     double spawn_yaw_rad = 0.0;
 
     WorldConfig::PhysicsTerrainConfig physics;
+
+    // Whether this release's manifest lists the g2m.src.osm layer at all
+    // (WorldTerrain::has_road_layer(), G2.5a-grip R-c) - checked by
+    // Session::setup_terrain before it builds a road-mode grip LUT, so
+    // enabling physics.road_surfaces against a release with no road layer
+    // fails fast instead of silently reading "no roads anywhere". Default
+    // true (a synthetic TerrainModeConfig built directly, e.g. by tests or
+    // tools/hash_check, has no release to ask - tests that need to exercise
+    // this hard error set it to false directly). The real
+    // make_terrain_mode(WorldConfig, shared_ptr<WorldTerrain>) overload
+    // always sets it from the real WorldTerrain.
+    bool road_layer_available = true;
 
     // Priming ticks stepped with no vehicle before the spawn ray casts.
     // 0 = auto: ceil(side^2 / max_tile_fills_per_tick) + 1, side =

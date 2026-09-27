@@ -22,8 +22,12 @@
 #include "rg/world_terrain.h"
 
 #include "g2m/core/geo/session_frame.h"
+#include "g2m/layer/osm_roads.h"
 #include "g2m/phys/height_tile_loader.h"
 #include "g2m/ps_bridge/g2m_terrain_source.h"
+
+#include "ps/io/surface_table.h"
+#include "ps/types.h"
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -33,9 +37,12 @@
 #include <cmath>
 #include <cstdint>
 #include <cstdio>
+#include <filesystem>
+#include <fstream>
 #include <map>
 #include <memory>
 #include <mutex>
+#include <random>
 #include <set>
 #include <stdexcept>
 #include <string>
@@ -134,6 +141,10 @@ rg::SessionConfig terrain_config(unsigned workers, std::shared_ptr<g2m::phys::IH
     tm.spawn_y = y;
     tm.spawn_yaw_rad = 0.0;
     tm.physics.max_tile_fills_per_tick = fills_per_tick;
+    // G2.5a-grip R-c: explicit (already the default) so this suite's own
+    // heights-only fixtures (and the R4 hash they feed) stay reproducible
+    // regardless of any future change to road_surfaces' own default.
+    tm.physics.road_surfaces.enabled = false;
     config.terrain = tm;
     return config;
 }
@@ -268,6 +279,188 @@ bool wait_for(Pred pred, double timeout_s) {
         std::this_thread::sleep_for(std::chrono::milliseconds(5));
     }
     return true;
+}
+
+// --- G2.5a-grip R-c: road-mode grip (physics.road_surfaces) ---
+
+// A straight paved capsule along y = kRoadY, x in [kE0 - 2000, kE0 +
+// kRoadEndX] (session-local metres) - every L0 tile this fetch serves gets
+// the SAME (unclipped) segment list, exactly like
+// bridges/physics_sim/tests/test_determinism.cpp's own road-mode
+// determinism case: paint_road_blocks only ever paints within a segment's
+// own geometry, so giving every tile the whole segment list is equivalent to
+// a real per-tile-clipped extraction. drive_script() drives straight along
+// y = 50 (steer 0), so a car spawned at (100, 50) starts ON the strip and,
+// after enough distance, drives off the paved end into off_road.
+constexpr double kRoadY = 50.0;
+constexpr double kRoadHalfWidthM = 3.0; // wider than the chassis/wheel track
+constexpr double kRoadEndX = 250.0;     // the paved strip ends here
+
+std::shared_ptr<const std::vector<g2m::RoadSegment>> straight_road_segments() {
+    const std::int64_t y_mm = (kN0 + static_cast<std::int64_t>(kRoadY)) * 1000;
+    const g2m::RoadSegment seg{{(kE0 - 2000) * 1000, y_mm},
+                               {(kE0 + static_cast<std::int64_t>(kRoadEndX)) * 1000, y_mm},
+                               /*half_width_mm=*/static_cast<std::int64_t>(kRoadHalfWidthM * 1000.0),
+                               g2m::LandClass::PavedRoad, g2m::SurfaceKind::Asphalt, /*rank=*/1};
+    return std::make_shared<const std::vector<g2m::RoadSegment>>(std::vector<g2m::RoadSegment>{seg});
+}
+
+// Wraps another IHeightTileFetch, adding roads: every Ok height fetch also
+// gets `roads_` unless `fail_roads` is set, in which case the height side
+// still succeeds but roads comes back null - height_tile_loader.h's own
+// require_roads rule then treats it like a height-side 500 (retried, then
+// Failed after max_attempts), simulating an OSM-only failure on an
+// otherwise-healthy tile.
+class RoadSyntheticFetch final : public g2m::phys::IHeightTileFetch {
+public:
+    RoadSyntheticFetch(std::shared_ptr<g2m::phys::IHeightTileFetch> inner,
+                       std::shared_ptr<const std::vector<g2m::RoadSegment>> roads)
+        : inner_(std::move(inner)), roads_(std::move(roads)) {}
+    g2m::phys::FetchResult fetch(const g2m::TileKey& key) override {
+        g2m::phys::FetchResult r = inner_->fetch(key);
+        if (r.status == g2m::Status::Ok) r.roads = fail_roads.load(std::memory_order_relaxed) ? nullptr : roads_;
+        return r;
+    }
+    bool provides_roads() const override { return true; }
+    std::atomic<bool> fail_roads{false};
+
+private:
+    std::shared_ptr<g2m::phys::IHeightTileFetch> inner_;
+    std::shared_ptr<const std::vector<g2m::RoadSegment>> roads_;
+};
+
+rg::SessionConfig road_terrain_config(unsigned workers, std::shared_ptr<g2m::phys::IHeightTileFetch> fetch, double x,
+                                      double y, std::uint32_t fills_per_tick = 1) {
+    rg::SessionConfig config = base_config(workers);
+    rg::TerrainModeConfig tm(g2m::geo::SessionFrame(k32N, kE0, kN0), std::move(fetch));
+    tm.spawn_x = x;
+    tm.spawn_y = y;
+    tm.spawn_yaw_rad = 0.0;
+    tm.physics.max_tile_fills_per_tick = fills_per_tick;
+    tm.physics.road_surfaces.enabled = true; // asphalt/dirt/grass defaults - see PhysicsTerrainConfig::RoadSurfaces
+    config.terrain = tm;
+    return config;
+}
+
+DriveRun run_drive_road(unsigned workers, int delay_ms) {
+    auto synthetic = std::make_shared<SyntheticFetch>();
+    std::shared_ptr<g2m::phys::IHeightTileFetch> inner = synthetic;
+    if (delay_ms > 0) {
+        inner = std::make_shared<g2m::phys::DelayedFetch>(inner, std::chrono::milliseconds(delay_ms), 7u);
+    }
+    auto fetch = std::make_shared<RoadSyntheticFetch>(inner, straight_road_segments());
+
+    rg::Session session(road_terrain_config(workers, fetch, 100.0, 50.0));
+    session.set_drive_script(drive_script());
+
+    DriveRun run;
+    const ps::Vec3 start = session.world().get_pose(session.chassis_body()).position;
+    for (int k = 1; k <= 7200; ++k) {
+        session.step();
+        if (k % 240 == 0) run.hashes.push_back(session.world().state_hash());
+    }
+    REQUIRE(session.drive_tick() == 7200);
+    const ps::Vec3 end = session.world().get_pose(session.chassis_body()).position;
+    run.distance_m = std::hypot(end.x - start.x, end.y - start.y);
+    run.status = session.streaming_status();
+    run.fetch_calls = synthetic->calls.load();
+    return run;
+}
+
+// A minimal physics_sim.surfaces/1 file with `count` alphabetically-ordered
+// entries "s000".."s(count-1)" (SurfaceTable assigns ids by sorted name, see
+// external/physics_sim/core/src/io/surface_table.cpp) - used only to exercise
+// the "surface id >= 255" hard error, which needs a table with at least 256
+// entries (the shipped surfaces.json has 6).
+class TempSurfaceTable {
+public:
+    explicit TempSurfaceTable(int count) {
+        static const unsigned tag = std::random_device{}();
+        static int counter = 0;
+        path_ = (std::filesystem::temp_directory_path() /
+                ("rg_test_surfaces_" + std::to_string(tag) + "_" + std::to_string(counter++) + ".json"))
+                   .string();
+        std::ofstream out(path_, std::ios::binary);
+        out << R"({"format":"physics_sim.surfaces/1","surfaces":{)";
+        for (int i = 0; i < count; ++i) {
+            if (i > 0) out << ",";
+            char name[8];
+            std::snprintf(name, sizeof name, "s%03d", i);
+            out << "\"" << name << "\":{}";
+        }
+        out << "}}";
+    }
+    ~TempSurfaceTable() {
+        std::error_code ec;
+        std::filesystem::remove(path_, ec);
+    }
+    const std::string& path() const { return path_; }
+
+private:
+    std::string path_;
+};
+
+// Wraps a road-providing fetch: while `fail` is set, every L0 tile at or
+// east of dx = +1100 m (HoldFarFetch's own threshold above - past the
+// start-up gate, entered once the car crosses into physics tile 1) comes
+// back Ok-with-height but roads=null - the require_roads=true failure mode
+// (height_tile_loader.h retries, then marks the key Failed after
+// max_attempts), simulating an OSM-only outage on an otherwise-healthy tile
+// rather than a height-side 503.
+class RoadFailFarFetch final : public g2m::phys::IHeightTileFetch {
+public:
+    explicit RoadFailFarFetch(std::shared_ptr<g2m::phys::IHeightTileFetch> inner) : inner_(std::move(inner)) {}
+    g2m::phys::FetchResult fetch(const g2m::TileKey& key) override {
+        g2m::phys::FetchResult r = inner_->fetch(key);
+        if (r.status == g2m::Status::Ok && fail.load(std::memory_order_relaxed) && key.min_easting() - kE0 >= 1100) {
+            r.roads = nullptr;
+        }
+        return r;
+    }
+    bool provides_roads() const override { return true; }
+    std::atomic<bool> fail{true};
+
+private:
+    std::shared_ptr<g2m::phys::IHeightTileFetch> inner_;
+};
+
+// Mirrors run_drive's own hold_far_tiles pattern (a watcher thread lifts the
+// forced failure and asks for a retry once step() freezes on it), but for a
+// roads-only failure on an otherwise road-mode-clean drive.
+DriveRun run_drive_road_with_osm_failure(unsigned workers) {
+    auto synthetic = std::make_shared<SyntheticFetch>();
+    auto roaded = std::make_shared<RoadSyntheticFetch>(synthetic, straight_road_segments());
+    auto failer = std::make_shared<RoadFailFarFetch>(roaded);
+
+    rg::Session session(road_terrain_config(workers, failer, 100.0, 50.0));
+    session.set_drive_script(drive_script());
+
+    std::atomic<bool> done{false};
+    std::thread watcher([&] {
+        while (!done.load()) {
+            const rg::StreamingStatus st = session.streaming_status();
+            if (failer->fail.load() && st.frozen && st.failed > 0) {
+                failer->fail.store(false);
+                session.retry_failed_tiles();
+            }
+            std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        }
+    });
+
+    DriveRun run;
+    const ps::Vec3 start = session.world().get_pose(session.chassis_body()).position;
+    for (int k = 1; k <= 7200; ++k) {
+        session.step();
+        if (k % 240 == 0) run.hashes.push_back(session.world().state_hash());
+    }
+    done.store(true);
+    watcher.join();
+    REQUIRE(session.drive_tick() == 7200);
+    const ps::Vec3 end = session.world().get_pose(session.chassis_body()).position;
+    run.distance_m = std::hypot(end.x - start.x, end.y - start.y);
+    run.status = session.streaming_status();
+    run.fetch_calls = synthetic->calls.load();
+    return run;
 }
 
 } // namespace
@@ -660,5 +853,130 @@ TEST_CASE("session terrain: cancelling a real-store start-up at several points",
         std::printf("[session_terrain] real cancel after %d ms: outcome %d stage %d\n", delay_ms, outcome.load(),
                     progress->stage.load());
         CHECK((outcome.load() == 1 || outcome.load() == 3));
+    }
+}
+
+// --- G2.5a-grip R-c: road-mode grip (physics.road_surfaces) ---
+
+TEST_CASE("session terrain: road mode is deterministic across workers and fetch delay", "[session_terrain][grip]") {
+    const DriveRun a = run_drive_road(1, 0);
+    const DriveRun b = run_drive_road(4, 0);
+    const DriveRun c = run_drive_road(4, 20);
+
+    for (const DriveRun* r : {&a, &b, &c}) {
+        std::printf("[session_terrain] road drive: hash@7200 0x%016llx, distance %.1f m, road_surfaces %d, "
+                    "osm_ok %llu, osm_fail %llu\n",
+                    static_cast<unsigned long long>(r->hashes.back()), r->distance_m, r->status.road_surfaces,
+                    static_cast<unsigned long long>(r->status.osm_ok),
+                    static_cast<unsigned long long>(r->status.osm_fail));
+        CHECK(r->hashes.size() == 30);
+        CHECK(r->status.road_surfaces);
+        CHECK(r->status.falls == 0);
+        CHECK(r->status.fill_misses == 0);
+    }
+    CHECK(a.hashes == b.hashes); // 1 vs 4 workers
+    CHECK(b.hashes == c.hashes); // fetch delay 0 vs 20 ms
+}
+
+TEST_CASE("session terrain: an OSM-only failure on a required tile freezes stepping; retry gives the unforced "
+          "state_hash",
+          "[session_terrain][grip]") {
+    const DriveRun baseline = run_drive_road(4, 0);
+    const DriveRun forced = run_drive_road_with_osm_failure(4);
+
+    std::printf("[session_terrain] road osm failure: baseline hash@7200 0x%016llx, forced hash@7200 0x%016llx\n",
+                static_cast<unsigned long long>(baseline.hashes.back()),
+                static_cast<unsigned long long>(forced.hashes.back()));
+    CHECK(forced.status.falls == 0);
+    CHECK(forced.status.fill_misses == 0);
+    CHECK(baseline.hashes == forced.hashes);
+}
+
+TEST_CASE("session terrain: road-mode grip differs from uniform terrain_surface grip", "[session_terrain][grip]") {
+    const DriveRun uniform = run_drive(1, 0);
+    const DriveRun roads = run_drive_road(1, 0);
+    std::printf("[session_terrain] roads on vs off: uniform hash@7200 0x%016llx, road hash@7200 0x%016llx\n",
+                static_cast<unsigned long long>(uniform.hashes.back()),
+                static_cast<unsigned long long>(roads.hashes.back()));
+    CHECK(uniform.hashes != roads.hashes);
+}
+
+TEST_CASE("session terrain: a car crossing a synthetic road edge reads paved then off_road",
+          "[session_terrain][grip]") {
+    auto synthetic = std::make_shared<SyntheticFetch>();
+    auto fetch = std::make_shared<RoadSyntheticFetch>(synthetic, straight_road_segments());
+    rg::Session session(road_terrain_config(1, fetch, 100.0, 50.0));
+    session.set_drive_script(drive_script());
+
+    std::string early_surface, late_surface;
+    for (int k = 1; k <= 7200; ++k) {
+        session.step();
+        const ps::vehicle::WheelState ws = session.world().wheel_state(session.vehicle_id(), 0);
+        const std::string name = session.surface_table().name_for(ws.surface);
+        if (k == 200) early_surface = name;
+        if (k == 7200) late_surface = name;
+    }
+    std::printf("[session_terrain] road edge: wheel0 surface at tick 200 '%s', at tick 7200 '%s'\n",
+                early_surface.c_str(), late_surface.c_str());
+    CHECK(early_surface == "asphalt");
+    CHECK(late_surface == "grass");
+}
+
+TEST_CASE("session terrain: road_surfaces.enabled hard errors", "[session_terrain][grip]") {
+    auto road_fetch =
+        std::make_shared<RoadSyntheticFetch>(std::make_shared<SyntheticFetch>(), straight_road_segments());
+
+    SECTION("release without the g2m.src.osm road layer") {
+        rg::SessionConfig config = road_terrain_config(1, road_fetch, 100.0, 50.0);
+        config.terrain->road_layer_available = false;
+        std::string what;
+        try {
+            rg::Session session(config);
+            FAIL("expected an exception");
+        } catch (const std::invalid_argument& e) {
+            what = e.what();
+        }
+        CHECK(what.find("no g2m.src.osm road layer") != std::string::npos);
+    }
+
+    SECTION("a fetch that does not provide roads") {
+        auto plain = std::make_shared<SyntheticFetch>();
+        rg::SessionConfig config = road_terrain_config(1, plain, 100.0, 50.0);
+        std::string what;
+        try {
+            rg::Session session(config);
+            FAIL("expected an exception");
+        } catch (const std::invalid_argument& e) {
+            what = e.what();
+        }
+        CHECK(what.find("does not provide roads") != std::string::npos);
+    }
+
+    SECTION("an unknown surface name") {
+        rg::SessionConfig config = road_terrain_config(1, road_fetch, 100.0, 50.0);
+        config.terrain->physics.road_surfaces.paved = "no_such_surface";
+        std::string what;
+        try {
+            rg::Session session(config);
+            FAIL("expected an exception");
+        } catch (const std::invalid_argument& e) {
+            what = e.what();
+        }
+        CHECK(what.find("is not in the surface table") != std::string::npos);
+    }
+
+    SECTION("a surface id >= 255") {
+        TempSurfaceTable surfaces(256);
+        rg::SessionConfig config = road_terrain_config(1, road_fetch, 100.0, 50.0);
+        config.surface_table_path = surfaces.path();
+        config.terrain->physics.road_surfaces.paved = "s255";
+        std::string what;
+        try {
+            rg::Session session(config);
+            FAIL("expected an exception");
+        } catch (const std::invalid_argument& e) {
+            what = e.what();
+        }
+        CHECK(what.find("must be < 255") != std::string::npos);
     }
 }

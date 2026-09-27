@@ -15,6 +15,7 @@
 //
 // Synthetic containers only (g2m::encode_height_tile/encode_body/
 // assemble_container, all in g2m_core) - never reads cache/.
+#include "rg/route_check.h"
 #include "rg/terrain_mode.h"
 #include "rg/world_terrain.h"
 
@@ -27,18 +28,23 @@
 #include "g2m/server/transport.h"
 
 #include "ps/backend/shape_desc.h"
+#include "ps/io/surface_table.h"
 
 #include <catch2/catch_test_macros.hpp>
 
+#include <algorithm>
 #include <atomic>
 #include <cmath>
 #include <cstdint>
 #include <cstdio>
+#include <cstdlib>
 #include <map>
 #include <memory>
 #include <mutex>
+#include <optional>
 #include <span>
 #include <string>
+#include <utility>
 #include <vector>
 
 namespace {
@@ -342,4 +348,144 @@ TEST_CASE("terrain mode: make_terrain_mode converts the spawn into the session f
     CHECK(tm.prime_ticks == 0);
 
     CHECK_THROWS_AS(rg::make_terrain_mode(wc, std::shared_ptr<rg::WorldTerrain>{}), std::invalid_argument);
+}
+
+// --- G2.5a-grip R-c: physics-vs-render invariant, real make_terrain_mode ---
+// (real data: the shipped data/world/world_config.json's own store; hidden
+// like every other [.][realdata] test in this suite - never run by default,
+// needs RG_G2M_HOME.)
+namespace {
+
+std::optional<std::string> safe_getenv(const char* name) {
+#ifdef _WIN32
+    char* buf = nullptr;
+    std::size_t len = 0;
+    if (_dupenv_s(&buf, &len, name) != 0 || buf == nullptr) return std::nullopt;
+    std::string value(buf);
+    std::free(buf);
+    return value;
+#else
+    const char* value = std::getenv(name);
+    return value != nullptr ? std::optional<std::string>(value) : std::nullopt;
+#endif
+}
+
+// Same arc-length walk as test_route_road_render_path.cpp's own point_at_s().
+std::optional<std::pair<double, double>> point_at_s(const rg::Route& route, double target_s) {
+    if (route.waypoints.size() < 2 || target_s < 0.0) return std::nullopt;
+    double along = 0.0;
+    for (std::size_t i = 1; i < route.waypoints.size(); ++i) {
+        const double ax = route.waypoints[i - 1].x, ay = route.waypoints[i - 1].y;
+        const double bx = route.waypoints[i].x, by = route.waypoints[i].y;
+        const double seg = std::sqrt((bx - ax) * (bx - ax) + (by - ay) * (by - ay));
+        if (along + seg >= target_s || i + 1 == route.waypoints.size()) {
+            const double t = seg <= 0.0 ? 0.0 : std::clamp((target_s - along) / seg, 0.0, 1.0);
+            return std::make_pair(route.e0 + ax + (bx - ax) * t, route.n0 + ay + (by - ay) * t);
+        }
+        along += seg;
+    }
+    return std::nullopt;
+}
+
+} // namespace
+
+TEST_CASE("terrain mode: real make_terrain_mode's road-mode grip agrees with the render path (physics paints paved "
+          "wherever the render path paints a paved land_class)",
+          "[.][realdata][terrain_mode]") {
+    if (!safe_getenv("RG_G2M_HOME").has_value()) SKIP("RG_G2M_HOME not set");
+    std::string err;
+    const auto world = rg::load_world_config(std::string(RG_SOURCE_DIR) + "/data/world/world_config.json", &err);
+    INFO(err);
+    REQUIRE(world.has_value());
+    REQUIRE(world->physics.road_surfaces.enabled); // the shipped file, G2.5a-grip R-c
+
+    std::shared_ptr<rg::WorldTerrain> terrain(rg::WorldTerrain::open(*world, &err));
+    INFO(err);
+    REQUIRE(terrain != nullptr);
+
+    // The REAL entry point: make_terrain_mode(config, WorldTerrain) auto-
+    // selects HeightTileSharedFetch's road-aware constructor because
+    // world->physics.road_surfaces.enabled is true.
+    const rg::TerrainModeConfig tm = rg::make_terrain_mode(*world, terrain);
+    CHECK(tm.road_layer_available == terrain->has_road_layer());
+    REQUIRE(tm.fetch != nullptr);
+    CHECK(tm.fetch->provides_roads());
+
+    const auto route = rg::load_route(std::string(RG_SOURCE_DIR) + "/data/routes/home_r1_drive.json", &err);
+    INFO(err);
+    REQUIRE(route.has_value());
+    // test_route_road_render_path.cpp's own "05_road_b8_junction" target -
+    // already proven within 15 m of a real B8 road segment there.
+    const auto point = point_at_s(*route, 150.0);
+    REQUIRE(point.has_value());
+    const auto [e_m, n_m] = *point;
+    const g2m::geo::UtmZone zone{route->zone};
+
+    // --- Render path: does the L0 chunk at this point carry any painted
+    // (non-Unknown) land_class vertex? (mirrors test_route_road_render_path.cpp)
+    const rg::TerrainViewSource vs = terrain->view_source();
+    std::vector<g2m::mesh::ChunkKey> keys;
+    rg::select_view_keys(e_m - vs.e0, n_m - vs.n0, vs.params, vs.e0, vs.n0, keys);
+    std::vector<rg::RenderChunk> chunks;
+    REQUIRE(rg::build_render_chunks(keys, vs.lookup, vs.ctx, vs.e0, vs.n0, 4, chunks, nullptr, vs.class_lookup));
+    const g2m::mesh::ChunkKey want{zone, /*level=*/0, static_cast<std::int32_t>(std::floor(e_m / 64.0)),
+                                  static_cast<std::int32_t>(std::floor(n_m / 64.0))};
+    int render_road_vertices = 0;
+    std::size_t render_total_vertices = 0;
+    bool found_chunk = false;
+    for (const rg::RenderChunk& c : chunks) {
+        if (c.key == want) {
+            found_chunk = true;
+            render_total_vertices = c.mesh.land_class.size();
+            for (std::uint8_t lc : c.mesh.land_class) {
+                if (lc != static_cast<std::uint8_t>(g2m::LandClass::Unknown)) ++render_road_vertices;
+            }
+            break;
+        }
+    }
+    REQUIRE(found_chunk);
+    REQUIRE(render_road_vertices > 0); // ground truth, matches test_route_road_render_path.cpp
+
+    // --- Physics path: the SAME make_terrain_mode-wired fetch, through
+    // G2mTerrainSource::fill_tile - exactly Session::setup_terrain's own
+    // RoadValueLut construction from physics.road_surfaces via a real
+    // SurfaceTable.
+    const ps::io::SurfaceTable surfaces(std::string(RG_SOURCE_DIR) +
+                                        "/external/physics_sim/data/surfaces/surfaces.json");
+    const ps::SurfaceId paved = surfaces.id_for(world->physics.road_surfaces.paved);
+    const ps::SurfaceId unpaved = surfaces.id_for(world->physics.road_surfaces.unpaved);
+    const ps::SurfaceId off_road = surfaces.id_for(world->physics.road_surfaces.off_road);
+    REQUIRE(paved != ps::kInvalidSurfaceId);
+    REQUIRE(unpaved != ps::kInvalidSurfaceId);
+    REQUIRE(off_road != ps::kInvalidSurfaceId);
+    const g2m::RoadValueLut lut = g2m::RoadValueLut::by_land_class(
+        off_road, {{g2m::LandClass::PavedRoad, paved}, {g2m::LandClass::UnpavedRoad, unpaved}});
+
+    g2m::phys::PhysicsTileGrid grid(tm.frame);
+    auto resident = std::make_shared<g2m::phys::ResidentHeightSet>();
+    const g2m::phys::PhysTileIndex idx = grid.index_for_local(e_m - tm.frame.e0_m(), n_m - tm.frame.n0_m());
+    std::vector<g2m::TileKey> l0_keys;
+    grid.l0_keys_for_square(idx, 0, l0_keys);
+    for (const g2m::TileKey& key : l0_keys) {
+        const g2m::phys::FetchResult fr = tm.fetch->fetch(key);
+        REQUIRE(fr.status == g2m::Status::Ok);
+        REQUIRE(fr.tile != nullptr);
+        resident->install(key, fr.tile, fr.roads);
+    }
+    g2m::ps_bridge::G2mTerrainSource source(grid, resident, g2m::ps_bridge::RoadSurfaceConfig{lut, off_road});
+    ps::terrain::TileSample sample;
+    sample.heights.assign(256u * 256u, 0.0);
+    sample.cell_surface_ids.assign(255u * 255u, ps::kInvalidSurfaceId);
+    source.fill_tile(ps::terrain::TileKey{g2m::phys::PhysicsTileGrid::pack(idx)}, sample);
+
+    std::size_t paved_cells = 0;
+    for (const ps::SurfaceId id : sample.cell_surface_ids) {
+        if (id == paved) ++paved_cells;
+    }
+    std::printf("[terrain_mode] physics-vs-render invariant: render road vertices %d/%zu, physics paved cells "
+                "%zu/%zu, fill misses %llu\n",
+                render_road_vertices, render_total_vertices, paved_cells, sample.cell_surface_ids.size(),
+                static_cast<unsigned long long>(source.fill_miss_count()));
+    CHECK(source.fill_miss_count() == 0);
+    CHECK(paved_cells > 0); // the invariant: wherever render paints paved, physics grip is paved too
 }

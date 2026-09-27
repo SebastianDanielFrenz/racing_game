@@ -924,15 +924,17 @@ TEST_CASE("load_world_config: the real committed data/world/world_config.json st
     // RG_SOURCE_DIR is compiled in by tests/unit/CMakeLists.txt
     // (target_compile_definitions) - same fixture the pre-existing "the real
     // committed data/world/world_config.json parses" test above already
-    // uses. Confirms that file has no "physics" key of its own (this R3
-    // change is additive/optional) and that the absent block still resolves
-    // to PhysicsTerrainConfig's defaults, not a validation failure.
+    // uses. G2.5a-grip R-c: the real file now carries a "physics" key with
+    // road_surfaces enabled (asphalt/dirt/grass) so grip on the shipped
+    // release comes from OSM road classes; every other PhysicsTerrainConfig
+    // field the file leaves unset still resolves to its default.
     const fs::path real_config = fs::path(RG_SOURCE_DIR) / "data" / "world" / "world_config.json";
     std::ifstream in(real_config, std::ios::binary);
     REQUIRE(in.is_open());
     json real_json = json::parse(in, /*cb=*/nullptr, /*allow_exceptions=*/false);
     REQUIRE_FALSE(real_json.is_discarded());
-    REQUIRE_FALSE(real_json.contains("physics"));
+    REQUIRE(real_json.contains("physics"));
+    REQUIRE(real_json["physics"].contains("road_surfaces"));
 
     ScopedEnvVar env("RG_G2M_HOME", "S:/some/test/g2m/home");
     std::string err;
@@ -945,4 +947,8 @@ TEST_CASE("load_world_config: the real committed data/world/world_config.json st
     CHECK(cfg->physics.loader_workers == 2);
     CHECK(cfg->physics.spawn_clearance_m == 0.10);
     CHECK(cfg->physics.startup_timeout_s == 30.0);
+    CHECK(cfg->physics.road_surfaces.enabled);
+    CHECK(cfg->physics.road_surfaces.paved == "asphalt");
+    CHECK(cfg->physics.road_surfaces.unpaved == "dirt");
+    CHECK(cfg->physics.road_surfaces.off_road == "grass");
 }

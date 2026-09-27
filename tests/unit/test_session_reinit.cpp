@@ -79,6 +79,10 @@ rg::SessionConfig terrain_config(unsigned workers) {
     tm.spawn_x = 100.0;
     tm.spawn_y = 50.0;
     tm.spawn_yaw_rad = 0.0;
+    // G2.5a-grip R-c: explicit (already the default) so this fixture's
+    // recorded state_hash stays reproducible regardless of any future
+    // change to road_surfaces' own default.
+    tm.physics.road_surfaces.enabled = false;
     config.terrain = tm;
     return config;
 }

@@ -194,6 +194,16 @@ struct StreamingStatus {
     std::uint32_t prime_ticks = 0;
     std::uint64_t relocations = 0;       // request_relocate placements done (R9)
     std::uint64_t relocate_failures = 0; // relocations with no ground at the target
+
+    // G2.5a-grip R-c (plan section 8): whether tyre grip comes from per-cell
+    // OSM road classes (physics.road_surfaces.enabled) rather than one
+    // uniform terrain_surface. False in flat mode and whenever road_surfaces
+    // is disabled. osm_ok/osm_fail mirror WorldTerrain::OsmFetchStats (0
+    // when this Session's TerrainModeConfig has no WorldTerrain, e.g. a
+    // synthetic test session).
+    bool road_surfaces = false;
+    std::uint64_t osm_ok = 0;
+    std::uint64_t osm_fail = 0;
 };
 
 // The full list of control channels Session pre-seeds at construction (see
@@ -330,6 +340,12 @@ public:
     // built directly (tests, tools/hash_check) rather than via the real
     // make_terrain_mode(WorldConfig, shared_ptr<WorldTerrain>) overload.
     [[nodiscard]] std::shared_ptr<WorldTerrain> world_terrain() const;
+
+    // physics.terrain_surface's configured name (G2.5a-grip R-c HUD: "grip:
+    // uniform <name>" when StreamingStatus::road_surfaces is false). Fixed at
+    // construction, never mutated afterwards, so safe from any thread like
+    // world_terrain() above. Empty in flat mode.
+    [[nodiscard]] std::string terrain_surface_name() const;
 
     // --- Direct access: synchronous-mode / test / hash-check-tool only.
     // NOT race-free against a running loop - never call these while

@@ -4,6 +4,7 @@
 #include "g2m/phys/physics_grid.h"
 #include "g2m/phys/physics_streamer.h"
 #include "g2m/phys/resident_heights.h"
+#include "g2m/layer/osm_roads.h"
 #include "g2m/ps_bridge/g2m_terrain_source.h"
 
 #include "ps/backend/shape_desc.h"
@@ -60,15 +61,33 @@ struct Session::Terrain {
         : config(cfg),
           grid(cfg.frame),
           resident(std::make_shared<g2m::phys::ResidentHeightSet>()),
-          loader(cfg.fetch, loader_config(cfg)),
+          loader(cfg.fetch, loader_config(cfg, /*require_roads=*/false)),
           streamer(grid, *resident, loader, g2m::phys::StreamerConfig{}),
           source(std::make_shared<g2m::ps_bridge::G2mTerrainSource>(grid, resident, surface)) {
         interest_points.reserve(4);
     }
 
-    static g2m::phys::LoaderConfig loader_config(const TerrainModeConfig& cfg) {
+    // Road mode (G2.5a-grip R-c): grip comes from per-cell OSM road classes
+    // (g2m::ps_bridge::G2mTerrainSource's own road-mode constructor) instead
+    // of one uniform SurfaceId - see Session::setup_terrain for how `road`
+    // is built from physics.road_surfaces via this Session's SurfaceTable.
+    // require_roads=true on the loader (roads ride on the SAME residency
+    // entry as heights): an Ok height fetch whose L2 tile's roads come back
+    // null is retried/failed exactly like a height-side 500.
+    Terrain(const TerrainModeConfig& cfg, g2m::ps_bridge::RoadSurfaceConfig road)
+        : config(cfg),
+          grid(cfg.frame),
+          resident(std::make_shared<g2m::phys::ResidentHeightSet>()),
+          loader(cfg.fetch, loader_config(cfg, /*require_roads=*/true)),
+          streamer(grid, *resident, loader, g2m::phys::StreamerConfig{}),
+          source(std::make_shared<g2m::ps_bridge::G2mTerrainSource>(grid, resident, std::move(road))) {
+        interest_points.reserve(4);
+    }
+
+    static g2m::phys::LoaderConfig loader_config(const TerrainModeConfig& cfg, bool require_roads) {
         g2m::phys::LoaderConfig lc;
         lc.workers = cfg.physics.loader_workers;
+        lc.require_roads = require_roads;
         return lc;
     }
 
@@ -95,6 +114,26 @@ double ms_since(Clock::time_point t0) {
 // height - a "fall" measured against it is the detector's artefact, not a
 // fall through the ground.
 constexpr double kHoleHeightThreshold = 1.0e6;
+
+// physics.road_surfaces.{field} -> a SurfaceId valid as a road-mode grip
+// value: present in the SurfaceTable AND < 255 (the Jolt heightfield
+// material index is 8 bits, slot 255 reserved for kInvalidSurfaceId -
+// physics_sim/core/src/backend/jolt/jolt_backend.cpp's
+// shared_surface_material_list()). The pre-existing uniform
+// physics.terrain_surface path has no such check and must keep none, so
+// this helper is used only for the three road_surfaces names.
+ps::SurfaceId resolve_grip_surface(const ps::io::SurfaceTable& table, const char* field, const std::string& name) {
+    const ps::SurfaceId id = table.id_for(name);
+    if (id == ps::kInvalidSurfaceId) {
+        throw std::invalid_argument(std::string("Session: physics.road_surfaces.") + field + " '" + name +
+                                    "' is not in the surface table");
+    }
+    if (id >= 255) {
+        throw std::invalid_argument(std::string("Session: physics.road_surfaces.") + field + " '" + name +
+                                    "' has surface id " + std::to_string(id) + " (must be < 255)");
+    }
+    return id;
+}
 
 } // namespace
 
@@ -174,17 +213,36 @@ ps::Pose Session::setup_terrain(const TerrainModeConfig& tm) {
     }
     if (!(phys.startup_timeout_s > 0.0)) throw std::invalid_argument("Session: physics.startup_timeout_s must be > 0");
 
-    const ps::SurfaceId surface = surface_table_->id_for(phys.terrain_surface);
-    if (surface == ps::kInvalidSurfaceId) {
-        throw std::invalid_argument("Session: physics.terrain_surface '" + phys.terrain_surface +
-                                    "' is not in the surface table");
-    }
-
     // R9: the cancel flag is also checked around the (in a debug build
     // slow, uncancellable) TileManager pool construction, not only in the
     // gate and priming loops below.
     throw_if_cancelled();
-    terrain_ = std::make_unique<Terrain>(tm, surface);
+    if (phys.road_surfaces.enabled) {
+        // G2.5a-grip R-c: grip comes from per-cell OSM road classes instead
+        // of one uniform terrain_surface. Both hard errors below fail fast
+        // rather than silently falling back to "everything off-road".
+        if (!tm.road_layer_available) {
+            throw std::invalid_argument(
+                "Session: physics.road_surfaces.enabled but this release has no g2m.src.osm road layer");
+        }
+        if (!tm.fetch->provides_roads()) {
+            throw std::invalid_argument(
+                "Session: physics.road_surfaces.enabled but the terrain fetch does not provide roads");
+        }
+        const ps::SurfaceId paved = resolve_grip_surface(*surface_table_, "paved", phys.road_surfaces.paved);
+        const ps::SurfaceId unpaved = resolve_grip_surface(*surface_table_, "unpaved", phys.road_surfaces.unpaved);
+        const ps::SurfaceId off_road = resolve_grip_surface(*surface_table_, "off_road", phys.road_surfaces.off_road);
+        const g2m::RoadValueLut lut = g2m::RoadValueLut::by_land_class(
+            off_road, {{g2m::LandClass::PavedRoad, paved}, {g2m::LandClass::UnpavedRoad, unpaved}});
+        terrain_ = std::make_unique<Terrain>(tm, g2m::ps_bridge::RoadSurfaceConfig{lut, off_road});
+    } else {
+        const ps::SurfaceId surface = surface_table_->id_for(phys.terrain_surface);
+        if (surface == ps::kInvalidSurfaceId) {
+            throw std::invalid_argument("Session: physics.terrain_surface '" + phys.terrain_surface +
+                                        "' is not in the surface table");
+        }
+        terrain_ = std::make_unique<Terrain>(tm, surface);
+    }
     world_->set_terrain_source(terrain_->source,
                                g2m::ps_bridge::make_terrain_config(phys.radius_m, phys.max_tile_fills_per_tick));
 
@@ -571,6 +629,14 @@ StreamingStatus Session::streaming_status() const {
     s.prime_ticks = status_.prime_ticks.load(std::memory_order_relaxed);
     s.relocations = status_.relocations.load(std::memory_order_relaxed);
     s.relocate_failures = status_.relocate_failures.load(std::memory_order_relaxed);
+    if (terrain_) {
+        s.road_surfaces = terrain_->config.physics.road_surfaces.enabled;
+        if (terrain_->config.world_terrain) {
+            const WorldTerrain::OsmFetchStats stats = terrain_->config.world_terrain->osm_fetch_stats();
+            s.osm_ok = stats.ok;
+            s.osm_fail = stats.fail;
+        }
+    }
     return s;
 }
 
@@ -580,6 +646,10 @@ const g2m::ps_bridge::G2mTerrainSource* Session::terrain_source() const {
 
 std::shared_ptr<WorldTerrain> Session::world_terrain() const {
     return terrain_ ? terrain_->config.world_terrain : nullptr;
+}
+
+std::string Session::terrain_surface_name() const {
+    return terrain_ ? terrain_->config.physics.terrain_surface : std::string();
 }
 
 void Session::set_control(const std::string& channel, double value) {

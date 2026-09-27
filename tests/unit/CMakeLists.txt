@@ -26,6 +26,7 @@ add_executable(rg_unit_tests
   test_session_reinit.cpp
   test_player_mode.cpp
   test_vehicle_data.cpp
+  test_route_grip.cpp
 )
 
 target_link_libraries(rg_unit_tests
