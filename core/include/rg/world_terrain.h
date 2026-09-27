@@ -246,6 +246,18 @@ public:
     // on the next call.
     std::shared_ptr<const std::vector<g2m::RoadSegment>> road_segments(const g2m::TileKey& key);
 
+    // Diagnostics (R-4 owner-review follow-up, 2026-09-27): counts since
+    // open(), across every calling thread (plain atomics, relaxed - counters
+    // only, no other state depends on their ordering). `ok`/`fail` are
+    // mutually exclusive per road_segments() call that actually reached the
+    // transport (a cache hit increments only `cache_hits`, not `ok`).
+    struct OsmFetchStats {
+        std::uint64_t ok = 0;          // road_segments() calls that fetched+decoded successfully
+        std::uint64_t fail = 0;        // road_segments() calls whose fetch/decode/extract failed (see stderr)
+        std::uint64_t cache_hits = 0;  // road_segments() calls served from osm_cache_
+    };
+    [[nodiscard]] OsmFetchStats osm_fetch_stats() const;
+
 private:
     WorldTerrain() = default;
 
@@ -288,6 +300,9 @@ private:
 
     std::mutex osm_cache_mutex_;
     std::map<g2m::TileKey, std::shared_ptr<const std::vector<g2m::RoadSegment>>> osm_cache_;
+    std::atomic<std::uint64_t> osm_ok_{0};
+    std::atomic<std::uint64_t> osm_fail_{0};
+    std::atomic<std::uint64_t> osm_cache_hits_{0};
 };
 
 } // namespace rg

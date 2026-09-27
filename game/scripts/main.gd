@@ -15,6 +15,9 @@ extends Node3D
 #   --screenshots <dir>     with --drive: the drive screenshot tour
 #                           (drive_tour.gd); with --terrain-preview: the R2.1
 #                           static tour (screenshot_tour.gd)
+#   --road-shots <dir>      with --drive: relocates to four points along
+#                           data/routes/home_r1_drive.json and screenshots
+#                           each (road_shots.gd, roads_plan.md R-4)
 #   --terrain-preview       the R2.1 static terrain preview: RgTerrainView
 #                           alone, no Session, no car (unchanged; also
 #                           --stream-test)
@@ -435,6 +438,14 @@ func _build_scene(user_args: PackedStringArray) -> void:
 		tour.main = self
 		tour.out_dir = user_args[shot_index + 1]
 		add_child(tour)
+	var road_shots_index := user_args.find("--road-shots")
+	if road_shots_index >= 0 and road_shots_index + 1 < user_args.size():
+		var road_shots := Node.new()
+		road_shots.name = "RoadShots"
+		road_shots.set_script(load("res://scripts/road_shots.gd"))
+		road_shots.main = self
+		road_shots.out_dir = user_args[road_shots_index + 1]
+		add_child(road_shots)
 
 # --- accessors for the scripted runs ---
 func get_simulation() -> Node:

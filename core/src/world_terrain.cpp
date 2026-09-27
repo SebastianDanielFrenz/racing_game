@@ -428,11 +428,13 @@ std::shared_ptr<const std::vector<g2m::RoadSegment>> WorldTerrain::road_segments
         std::lock_guard<std::mutex> lk(osm_cache_mutex_);
         auto it = osm_cache_.find(key);
         if (it != osm_cache_.end()) {
+            osm_cache_hits_.fetch_add(1, std::memory_order_relaxed);
             return it->second;
         }
     }
 
     auto fail = [&](const char* what) -> std::shared_ptr<const std::vector<g2m::RoadSegment>> {
+        osm_fail_.fetch_add(1, std::memory_order_relaxed);
         std::fprintf(stderr, "WorldTerrain::road_segments: %s (tile %s) - reporting no roads for this tile\n", what,
                      g2m::to_string(key).c_str());
         return std::make_shared<const std::vector<g2m::RoadSegment>>();
@@ -465,6 +467,7 @@ std::shared_ptr<const std::vector<g2m::RoadSegment>> WorldTerrain::road_segments
         g2m::extract_road_segments(osm_tile.value().data, frame_->zone(), g2m::RoadStyle::default_style());
     auto shared_segments = std::make_shared<const std::vector<g2m::RoadSegment>>(std::move(segments));
 
+    osm_ok_.fetch_add(1, std::memory_order_relaxed);
     std::lock_guard<std::mutex> lk(osm_cache_mutex_);
     auto [it, inserted] = osm_cache_.emplace(key, std::move(shared_segments));
     (void)inserted; // first inserted value wins, same policy as height_cache_
@@ -474,6 +477,11 @@ std::shared_ptr<const std::vector<g2m::RoadSegment>> WorldTerrain::road_segments
 WorldTerrain::FetchStats WorldTerrain::fetch_stats() const {
     std::lock_guard<std::mutex> lk(stats_mutex_);
     return stats_;
+}
+
+WorldTerrain::OsmFetchStats WorldTerrain::osm_fetch_stats() const {
+    return OsmFetchStats{osm_ok_.load(std::memory_order_relaxed), osm_fail_.load(std::memory_order_relaxed),
+                          osm_cache_hits_.load(std::memory_order_relaxed)};
 }
 
 } // namespace rg
