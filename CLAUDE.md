@@ -94,6 +94,7 @@ racing_game/
       test_route_check.cpp            rg::route_check tests on synthetic terrain (seam counting incl. negative indices/corners, grade window max/p99, NoData, corner radius, start/length criteria, sample_l0_height across tile borders, load_route errors, steep-stretch and tight-corner lists, corner radius on arcs/kinks and its density independence, "criteria" loading + apply_route_criteria precedence); one hidden `[.][realdata]` case runs the committed route on the real store under its own "criteria", SKIP unless RG_G2M_HOME is set
       test_world_terrain.cpp          rg::WorldTerrain / build_static_view_from_lookup tests (PLAN.md R2.1) over a synthetic in-memory TileKey->HeightTile map - no TileStore/Server needed; chunk selection, session-local origin math, 1-vs-N-thread byte-identical output; fetch_height_tile_cached concurrency; decode_height_tile_container on synthetic containers (height_offset of both signs with NoData kept, int32 overflow / NoData-collision rejection, layer/key mismatch, truncation)
       test_road_classes.cpp           rg::road_classes tests (roads_plan.md R-2) over synthetic RoadSegment lists - no TileStore/Server/OSM-decode needed: the level policy's min_rank/min_half_width_mm against RoadStyle::default_style()'s own tertiary/primary ranks, road_class_lattice()/src_osm_tiles_for_chunk() against terrain_chunk.h's vertex-placement formula, a road segment appearing at L0 and being filtered out level-by-level (residential/tertiary/primary ranks), a null ClassLookup leaving the ClassWindow all-Unknown
+      test_route_road_coverage.cpp    (roads_plan.md R-3) hidden `[.][realdata]` case, SKIP unless RG_G2M_HOME is set: point_is_road() classifies one absolute UTM point via WorldTerrain::road_segments + a 1x1 g2m::Lattice fed to rasterize_road_segments at the L0 level policy (every road, min_rank=0/min_half_width_mm=0); measured on the real home-r1 store against the committed data/routes/home_r1_drive.json (2103 waypoints): 100.00% road coverage (2103/2103, spawn included), forest-stretch control (84 points 30 m off-route at s=[5800,6200], the s~6000 m stretch roads_plan.md names) 0.00% road - see "Visible roads (R-2)" below
       test_vehicle_data.cpp           (engine30, 2026-09-27, tag [vehicle_data]) loads data/vehicles/car_sedan.json via ps::io::load_vehicle_json and asserts the ONLY number that data file is held to: the clutch's static torque capacity (capacity_nm * static_factor) >= 1.2x the engine's peak WOT torque (max of TorqueMapEngineDesc::wot_torque_nm_vs_rpm.y) - both read back from the loaded VehicleDesc's PowertrainDesc::components, nothing hand-copied from the JSON's own "source" commentary. No launch/stall/top-speed/wheelspin test (owner ruling: wheelspin is allowed and not to be gated or tested on)
       CMakeLists.txt                  rg_test_catch_main + rg_unit_tests targets, CTest registration
   tools/
@@ -320,6 +321,13 @@ the default path, even when the env var overrides it.)
 At the previous spawn (-1500, 500), three clean runs gave
 386/433/488 chunks, 1.73M/1.94M/2.19M vertices, warm 23.5/28.7/32.7 ms.
 
+Re-measured 2026-09-27 after roads_plan.md R-2's road-class rasterisation
+(`rasterize_chunk_road_classes`, wired into `build_render_chunks` - see
+"Visible roads (R-2)" below): warm_ms at the default 20000 m rose from the
+32.44 ms above to **36.89 ms** (+13.7%, one run, same empty-`RG_G2M_DERIVED`/
+real-home-r1-store method) - within R-3's own +50% budget (48.66 ms). Full
+sweep: 6000 m 29.38 ms, 12000 m 32.49 ms, 20000 m 36.89 ms.
+
 Chosen default: **20000 m** (`data/world/world_config.json`'s own
 `lod.max_distance_m`) - the R2.1 goal is "visible terrain to 16-20 km";
 warm cost at 20000 m (~33 ms) is barely above 6000 m's (~23 ms) and both
@@ -426,6 +434,16 @@ hypsometric ramp's own ridge-brown `(0.45, 0.34, 0.22)`) ahead of the existing
 height/slope ramp - the `terrain.class`/palette gap this file's comment used
 to describe (no LandClass at all before this pin) is now just "every other
 LandClass still falls through to the height/slope ramp".
+
+**R-3 acceptance measurement** (`test_route_road_coverage.cpp`, real home-r1
+store, 2026-09-27): the committed `data/routes/home_r1_drive.json` (2103
+waypoints) classifies **100.00% road at L0** (2103/2103, spawn included); an
+84-point control sampled 30 m off-route across the forest stretch at
+s=[5800, 6200] classifies **0.00% road** - both comfortably inside
+roads_plan.md's >= 99% / < 10% bounds. `tools/lod_measure`'s warm_ms at the
+default 20000 m rose from 32.44 ms to 36.89 ms (+13.7%) with this rasterisation
+now running on every chunk build - see "Terrain preview (R2.1)" above for the
+full sweep and the +50% budget check.
 
 ## Session terrain mode (R4)
 
@@ -771,7 +789,10 @@ another session; read it, never copy/edit it into this repo).
   coverage (`test_world_terrain.cpp` - PLAN.md R2.1, synthetic in-memory
   `TileKey`->`HeightTile` map, see "Terrain preview (R2.1)" above), and
   `rg::road_classes` coverage (`test_road_classes.cpp` - roads_plan.md R-2,
-  synthetic `RoadSegment` lists, see "Visible roads (R-2)" below). Catch2
+  synthetic `RoadSegment` lists, see "Visible roads (R-2)" below), and the
+  real-store route/road-coverage acceptance check (`test_route_road_coverage.cpp`
+  - roads_plan.md R-3, hidden `[.][realdata]`, see its own layout-entry line
+  above and "Visible roads (R-2)" below). Catch2
   v3 via `rg_test_catch_main`, plus `nlohmann_json::nlohmann_json` PRIVATE
   (test fixture JSON is built with `nlohmann::json` directly). Registered
   with CTest.

@@ -16,6 +16,7 @@ add_executable(rg_unit_tests
   test_g2m_ps_bridge_link_smoke.cpp
   test_world_terrain.cpp
   test_road_classes.cpp
+  test_route_road_coverage.cpp
   test_fixed_rate_loop.cpp
   test_terrain_view_streamer.cpp
   test_route_check.cpp
