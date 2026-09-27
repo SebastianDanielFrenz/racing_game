@@ -25,9 +25,34 @@
 #include <cstdint>
 #include <memory>
 #include <optional>
+#include <string>
 #include <vector>
 
 namespace rg {
+
+// LandClass -> physics.road_surfaces surface NAME (G2.5a-grip R-b,
+// roads_plan.md section 7): resolves g2m::LandClass::PavedRoad/UnpavedRoad/
+// everything-else to one of three data/surfaces/surfaces.json names, so both
+// the render path (world_terrain.cpp's chunk_vertex_colors, keyed by the
+// resolved name rather than LandClass directly) and physics (R-c, not this
+// commit - Session::setup_terrain would build a g2m::RoadValueLut from these
+// same three names via the session's own SurfaceTable) share one source of
+// truth: a name change in rg::WorldConfig::PhysicsTerrainConfig::
+// road_surfaces cannot silently desync the two. Defaults ("asphalt"/"dirt"/
+// "grass") match this repo's pre-existing hardcoded render colours exactly
+// (world_terrain.cpp's own kPavedR.../kUnpavedR... constants), so a
+// default-constructed map renders byte-identically to before it existed.
+struct RoadSurfaceMap {
+    std::string paved = "asphalt";
+    std::string unpaved = "dirt";
+    std::string off_road = "grass";
+
+    [[nodiscard]] const std::string& name_for(g2m::LandClass land_class) const {
+        if (land_class == g2m::LandClass::PavedRoad) return paved;
+        if (land_class == g2m::LandClass::UnpavedRoad) return unpaved;
+        return off_road;
+    }
+};
 
 // Looks up (fetches/decodes/caches) the OSM road segments for one
 // g2m.src.osm tile (level 2, 1024 m + 128 m halo, docs/formats/src_osm.md).
@@ -50,19 +75,12 @@ struct ClassLookup {
     void* ctx = nullptr;
 };
 
-// The level policy (roads_plan.md R-2):
-//   L0-L1: every drivable road (min_rank 0, no width floor).
-//   L2:    tertiary and above (rank >= the style's own "tertiary" rank).
-//   L3:    primary and above (rank >= the style's own "primary" rank), and
-//          every segment's half-width is floored to 0.75 * this level's
-//          lattice spacing so a thin road stays continuous on this coarser
-//          grid (roads_plan.md's own number).
-//   L>=4:  std::nullopt - no road classes rasterised at all.
-// Tertiary/primary ranks are looked up from g2m::RoadStyle::default_style()
-// rather than hard-coded, so a future re-numbering of osm_roads.cpp's own
-// rank table cannot silently desync this policy from it (falls back to the
-// table's current values, 5 and 7, only if a style is ever shipped without
-// those two highway kinds at all).
+// The level policy (roads_plan.md R-2): thin forwarder to
+// g2m::raster_params_for_render_level (G2.5a-grip G-c moved the actual
+// policy table there so any g2m_layer caller can share it - see that
+// function's own doc comment in g2m/layer/osm_roads.h for the exact L0-L3
+// rules; L>=4 is std::nullopt, no road classes rasterised at all). Kept here
+// (rather than deleted) so existing callers/tests need no signature change.
 std::optional<g2m::RasterParams> road_raster_params_for_level(int level);
 
 // The g2m::Lattice matching render chunk `key`'s own 65x65 L0 cell-centre
@@ -74,14 +92,21 @@ g2m::Lattice road_class_lattice(const g2m::mesh::ChunkKey& key);
 // project builds (level <= 3 => chunk side <= 512 m).
 std::vector<g2m::TileKey> src_osm_tiles_for_chunk(const g2m::mesh::ChunkKey& key);
 
-// Fetches every overlapping g2m.src.osm tile via `lookup`, merges their road
-// segments, re-sorts the merge by ascending rank (osm_roads.h's "later
-// overwrites earlier" rasterisation rule needs ascending rank; each tile's
-// own extract_road_segments output is already sorted that way, but the
-// concatenation of several tiles' outputs is not), and rasterises into
-// `out`. `out` is always first reset to all-Unknown, then left that way
-// (no fetch at all) if `lookup.fn` is null or this chunk's level has no
-// road policy (road_raster_params_for_level returns std::nullopt) - both
+// Rasterises this chunk's road classes using g2m::rasterize_road_blocks'
+// OWNER RULE (G2.5a-grip R-b, roads_plan.md section 2) instead of the old
+// cross-tile merge + stable_sort-by-rank: `lookup` is called once per
+// aligned g2m.src.osm (level 2, 1024 m) block this chunk's lattice
+// straddles, and each block is painted from ONLY that block's own owner
+// tile's segment list - never a concatenation of every overlapping tile's
+// list. This means the result at any sample cannot depend on any
+// neighbouring tile's own data or on `lookup`'s call order (the old merge's
+// own weakness: an equal-rank tie between two tiles' segments was decided by
+// which tile's list happened to be concatenated first, i.e. by
+// src_osm_tiles_for_chunk's own iteration order - see
+// tests/unit/test_road_classes.cpp's "equal-rank overlap" case for a pinned
+// example). `out` is always first reset to all-Unknown, then left that way
+// (no fetch at all) if `lookup.fn` is null or this chunk's level has no road
+// policy (road_raster_params_for_level returns std::nullopt) - both
 // "disabled" and "no roads found nearby" therefore look identical to
 // build_chunk (LandClass::Unknown everywhere).
 void rasterize_chunk_road_classes(const g2m::mesh::ChunkKey& key, const ClassLookup& lookup,

@@ -506,6 +506,48 @@ std::optional<WorldConfig> load_world_config(const std::string& path, std::strin
                 return std::nullopt;
             }
         }
+        if (physics.contains("road_surfaces")) {
+            const json& road_surfaces = physics.at("road_surfaces");
+            if (!require_object(road_surfaces, path, "\"physics.road_surfaces\"", err)) {
+                return std::nullopt;
+            }
+            if (road_surfaces.contains("enabled")) {
+                if (!get_bool(road_surfaces, "enabled", path, "\"physics.road_surfaces\"",
+                              &cfg.physics.road_surfaces.enabled, err)) {
+                    return std::nullopt;
+                }
+            }
+            if (road_surfaces.contains("paved")) {
+                if (!get_string(road_surfaces, "paved", path, "\"physics.road_surfaces\"",
+                                &cfg.physics.road_surfaces.paved, err)) {
+                    return std::nullopt;
+                }
+                if (cfg.physics.road_surfaces.paved.empty()) {
+                    fail(err, path, "\"physics.road_surfaces.paved\" must not be empty");
+                    return std::nullopt;
+                }
+            }
+            if (road_surfaces.contains("unpaved")) {
+                if (!get_string(road_surfaces, "unpaved", path, "\"physics.road_surfaces\"",
+                                &cfg.physics.road_surfaces.unpaved, err)) {
+                    return std::nullopt;
+                }
+                if (cfg.physics.road_surfaces.unpaved.empty()) {
+                    fail(err, path, "\"physics.road_surfaces.unpaved\" must not be empty");
+                    return std::nullopt;
+                }
+            }
+            if (road_surfaces.contains("off_road")) {
+                if (!get_string(road_surfaces, "off_road", path, "\"physics.road_surfaces\"",
+                                &cfg.physics.road_surfaces.off_road, err)) {
+                    return std::nullopt;
+                }
+                if (cfg.physics.road_surfaces.off_road.empty()) {
+                    fail(err, path, "\"physics.road_surfaces.off_road\" must not be empty");
+                    return std::nullopt;
+                }
+            }
+        }
     }
 
     // --- surface_map / palette: repo-root-relative (see world_config.h) ---

@@ -60,9 +60,14 @@ namespace rg {
 // every chunk exactly as before this parameter existed (byte-identical
 // output - see rg/road_classes.h's own ClassLookup comment); a real one
 // rasterises OSM road classes onto each chunk's vertices.
+// `surfaces` (G2.5a-grip R-b): resolves a rasterised LandClass to a surface
+// NAME for chunk_vertex_colors - a default-constructed RoadSurfaceMap
+// matches this repo's pre-existing hardcoded paved/unpaved colours exactly
+// (byte-identical output to before this parameter existed).
 void build_static_view_from_lookup(double cam_x, double cam_y, const g2m::mesh::LodParams& params, double e0,
                                    double n0, g2m::mesh::TileLookup lookup, void* ctx, unsigned thread_count,
-                                   std::vector<RenderChunk>& out, const ClassLookup& class_lookup = {});
+                                   std::vector<RenderChunk>& out, const ClassLookup& class_lookup = {},
+                                   const RoadSurfaceMap& surfaces = {});
 
 // The two halves build_static_view_from_lookup is made of (R2.2 R8 split
 // them out so rg::TerrainViewStreamer can select, diff by key, and then build
@@ -82,10 +87,12 @@ void select_view_keys(double cam_x, double cam_y, const g2m::mesh::LodParams& pa
 // built.
 // `class_lookup` (R-2, roads_plan.md): see build_static_view_from_lookup's
 // own comment above - null (default) is byte-identical to before this
-// parameter existed.
+// parameter existed. `surfaces` (G2.5a-grip R-b): ditto, see that function's
+// own comment.
 bool build_render_chunks(const std::vector<g2m::mesh::ChunkKey>& keys, g2m::mesh::TileLookup lookup, void* ctx,
                          double e0, double n0, unsigned thread_count, std::vector<RenderChunk>& out,
-                         const std::atomic<bool>* cancel = nullptr, const ClassLookup& class_lookup = {});
+                         const std::atomic<bool>* cancel = nullptr, const ClassLookup& class_lookup = {},
+                         const RoadSurfaceMap& surfaces = {});
 
 // Everything a chunk selection + build needs, bundled: the LOD params, the
 // session origin (e0, n0) and the tile lookup. `lookup(ctx, key)` must be
@@ -102,6 +109,11 @@ struct TerrainViewSource {
     // field existed (byte-identical output). WorldTerrain::view_source()
     // populates a real one over the same WorldTerrain.
     ClassLookup class_lookup{};
+    // G2.5a-grip R-b: default-constructed = byte-identical to before this
+    // field existed. WorldTerrain::view_source() populates this from the
+    // WorldConfig::PhysicsTerrainConfig::road_surfaces this WorldTerrain was
+    // opened with.
+    RoadSurfaceMap surfaces{};
 };
 
 // R2.2 plan section 3 / [AMEND] "R3 decoupling": racing_game's own small
@@ -161,6 +173,62 @@ HeightTileFetchResult fetch_height_tile_cached(std::mutex& cache_mutex,
                                                std::map<g2m::TileKey, std::shared_ptr<const g2m::HeightTile>>& cache,
                                                const g2m::TileKey& key, const HeightTileFetchFn& fetch_fn,
                                                bool* was_cache_hit = nullptr);
+
+// Tri-state result of a g2m.src.osm tile fetch (G2.5a-grip R-b, roads_plan.md
+// section 7 R-b): distinguishes a tile genuinely outside this release's
+// g2m.src.osm coverage from an actual fetch/decode failure from an ordinary
+// decode (possibly of an empty tile - a covered tile simply having no
+// drivable ways is not the same thing as "outside coverage" at all).
+enum class RoadFetchStatus : std::uint8_t {
+    Ok,     // decoded, possibly empty; cached
+    Absent, // server NotFound "outside coverage" (server.cpp's check_tile,
+            // distinct from "unknown layer"/"level not in layer" - see
+            // WorldTerrain::has_road_layer for that case); cached,
+            // `segments` is the shared empty list
+    Failed, // 5xx/transport/parse/decode/header-mismatch; NOT cached (a
+            // transient problem can be retried on the next call),
+            // `segments` is null
+};
+
+struct RoadSegmentsResult {
+    RoadFetchStatus status = RoadFetchStatus::Failed;
+    std::shared_ptr<const std::vector<g2m::RoadSegment>> segments; // non-null iff status != Failed
+};
+
+// Decodes one already-received g2m.src.osm tile Response into a
+// RoadSegmentsResult, mirroring decode_height_tile_container's own
+// "pure decode, no I/O, no cache" seam: a null/non-TileResponse variant, any
+// non-Ok/NotFound status, or a parse_container/header-mismatch/decode_body/
+// decode_src_osm failure all collapse to {Failed, nullptr} (same generic
+// granularity as decode_height_tile_container - the caller logs a message,
+// this function does not need to say which stage failed). NotFound with
+// meta.message == "outside coverage" (server.cpp's check_tile - see
+// RoadFetchStatus's own doc comment) is {Absent, an empty shared list}. Only
+// on the success path does it call g2m::extract_road_segments.
+// WorldTerrain::road_segments_shared calls this after transport_->send();
+// tests call it directly with a synthetic g2m::Response, no Server/
+// TileStore/transport involved at all.
+RoadSegmentsResult decode_road_segments_response(const g2m::Response& response, const g2m::TileKey& expect_key,
+                                                 g2m::geo::UtmZone zone);
+
+// Performs the actual (uncached) fetch + decode for one g2m.src.osm tile -
+// called by fetch_road_segments_cached OUTSIDE any lock. Mirrors
+// HeightTileFetchFn exactly.
+using RoadSegmentsFetchFn = std::function<RoadSegmentsResult(const g2m::TileKey&)>;
+
+// Double-checked-insert cache: WorldTerrain::road_segments_shared's own
+// implementation, factored out (same locking scheme, same "first emplace
+// wins" policy, same fetch_fn-runs-unlocked rationale) as
+// fetch_height_tile_cached, so it can be exercised directly with a synthetic
+// fetch_fn - a fake 503 or a fake malformed tile resolves Failed and is NOT
+// inserted (retried on the next call), a fake "outside coverage" NotFound
+// resolves Absent and IS inserted, exactly like the production path.
+// `was_cache_hit`, if non-null, is set to whether this call's initial lookup
+// already found the key.
+RoadSegmentsResult fetch_road_segments_cached(std::mutex& cache_mutex,
+                                              std::map<g2m::TileKey, RoadSegmentsResult>& cache,
+                                              const g2m::TileKey& key, const RoadSegmentsFetchFn& fetch_fn,
+                                              bool* was_cache_hit = nullptr);
 
 class WorldTerrain {
 public:
@@ -233,28 +301,47 @@ public:
     };
     [[nodiscard]] FetchStats fetch_stats() const;
 
-    // Blocking fetch + decode of one g2m.src.osm tile's road segments (R-2,
-    // roads_plan.md), cached (same double-checked-insert scheme as
-    // height_tile_shared, its own dedicated mutex/map). Fetches over the
-    // same manifest_rid_/transport_ the height-tile path uses. Never fails
-    // "loudly": on any error (server miss, decode failure, extraction
-    // throwing nothing since geo2map_engine's own Result<T> is
-    // exception-free) this reports the failure to stderr once per call and
-    // returns a non-null, empty vector - "no roads" is a valid output, never
-    // fatal (roads_plan.md R-2). A successful (even empty) extraction IS
-    // cached; a failure is not, so a transient fetch problem can be retried
-    // on the next call.
+    // Thin wrapper around road_segments_shared (G2.5a-grip R-b) for the
+    // render path, which only ever needs "does this tile have roads", never
+    // the Ok/Absent/Failed distinction: returns road_segments_shared's own
+    // `segments` (Ok or Absent) or, on Failed, a non-null, empty vector -
+    // "no roads" is a valid output, never fatal (roads_plan.md R-2). Both
+    // this and road_segments_shared share the SAME cache.
     std::shared_ptr<const std::vector<g2m::RoadSegment>> road_segments(const g2m::TileKey& key);
+
+    // Blocking fetch + decode of one g2m.src.osm tile's road segments
+    // (roads_plan.md R-2, tri-state added G2.5a-grip R-b plan section 7),
+    // cached (same double-checked-insert scheme as height_tile_shared, its
+    // own dedicated mutex/map - see RoadFetchStatus's own doc comment for
+    // exactly which statuses are cached). Fetches over the same
+    // manifest_rid_/transport_ the height-tile path uses. Only a genuine
+    // failure (RoadFetchStatus::Failed) is reported to stderr - Absent is
+    // the release's own coverage edge, not a problem, and is never logged.
+    RoadSegmentsResult road_segments_shared(const g2m::TileKey& key);
+
+    // Whether this release's manifest lists the g2m.src.osm layer at all
+    // (G2.5a-grip R-b plan section 7 R-b) - read once, at open(), from
+    // g2m::ReleaseManifest::find_layer. Distinct from a per-tile
+    // RoadFetchStatus::Absent (a covered release's own coverage edge): a
+    // release with no g2m.src.osm layer at all would report every tile
+    // NotFound "unknown layer" or "level not in layer" instead (server.cpp's
+    // check_tile), which road_segments_shared treats as Failed, not Absent -
+    // a caller that wants to tell "no road layer in this release" apart from
+    // "transient fetch failure" should check this first.
+    [[nodiscard]] bool has_road_layer() const { return has_road_layer_; }
 
     // Diagnostics (R-4 owner-review follow-up, 2026-09-27): counts since
     // open(), across every calling thread (plain atomics, relaxed - counters
     // only, no other state depends on their ordering). `ok`/`fail` are
-    // mutually exclusive per road_segments() call that actually reached the
-    // transport (a cache hit increments only `cache_hits`, not `ok`).
+    // mutually exclusive per road_segments_shared() call that actually
+    // reached the transport (a cache hit increments only `cache_hits`, not
+    // `ok`). G2.5a-grip R-b: `ok` also counts RoadFetchStatus::Absent (a
+    // release's own coverage edge - a normal, cacheable, non-failure answer,
+    // never logged to stderr), not only RoadFetchStatus::Ok.
     struct OsmFetchStats {
-        std::uint64_t ok = 0;          // road_segments() calls that fetched+decoded successfully
-        std::uint64_t fail = 0;        // road_segments() calls whose fetch/decode/extract failed (see stderr)
-        std::uint64_t cache_hits = 0;  // road_segments() calls served from osm_cache_
+        std::uint64_t ok = 0;          // road_segments_shared() calls that resolved Ok or Absent
+        std::uint64_t fail = 0;        // road_segments_shared() calls that resolved Failed (see stderr)
+        std::uint64_t cache_hits = 0;  // road_segments_shared()/road_segments() calls served from osm_cache_
     };
     [[nodiscard]] OsmFetchStats osm_fetch_stats() const;
 
@@ -299,10 +386,12 @@ private:
     FetchStats stats_;
 
     std::mutex osm_cache_mutex_;
-    std::map<g2m::TileKey, std::shared_ptr<const std::vector<g2m::RoadSegment>>> osm_cache_;
+    std::map<g2m::TileKey, RoadSegmentsResult> osm_cache_; // only Ok/Absent are ever inserted
     std::atomic<std::uint64_t> osm_ok_{0};
     std::atomic<std::uint64_t> osm_fail_{0};
     std::atomic<std::uint64_t> osm_cache_hits_{0};
+    bool has_road_layer_ = false; // set once, at open(), from the manifest
+    RoadSurfaceMap road_surfaces_; // from config.physics.road_surfaces (G2.5a-grip R-b)
 };
 
 } // namespace rg

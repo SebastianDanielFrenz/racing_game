@@ -10,38 +10,29 @@ namespace rg {
 
 namespace {
 
-// osm_roads.cpp's own kDefaultHighways rank table, current values (track=0
-// .. motorway=9): fallback only, used if a style is ever shipped without
-// "tertiary"/"primary" at all (road_raster_params_for_level's own comment).
-constexpr int kFallbackTertiaryRank = 5;
-constexpr int kFallbackPrimaryRank = 7;
+// Allocation-free RoadBlockLookupFn adapter over a ClassLookup (G2.5a-grip
+// R-b): ctx is the ClassLookup itself (its own fn/ctx call the production
+// WorldTerrain::road_segments or a test's synthetic lookup, same as the
+// pre-owner-rule code did per src_osm_tiles_for_chunk tile). An empty or
+// null result is RoadBlockStatus::None (osm_roads.h's own "that tile
+// genuinely has no drivable ways" case, not a failure) rather than Missing -
+// this repo's ClassLookup contract never distinguishes "fetched, empty" from
+// "fetch failed" (rg/road_classes.h's own ClassLookup comment: "empty on any
+// failure"), so None is the only status this adapter can ever report short
+// of Segments.
+g2m::RoadBlockLookupResult class_lookup_block_fn(void* ctx, const g2m::TileKey& l2_key) {
+    const auto* lookup = static_cast<const ClassLookup*>(ctx);
+    std::shared_ptr<const std::vector<g2m::RoadSegment>> segs = lookup->fn(lookup->ctx, l2_key);
+    if (!segs || segs->empty()) {
+        return g2m::RoadBlockLookupResult{g2m::RoadBlockStatus::None, {}};
+    }
+    return g2m::RoadBlockLookupResult{g2m::RoadBlockStatus::Segments, std::span<const g2m::RoadSegment>(*segs)};
+}
 
 } // namespace
 
 std::optional<g2m::RasterParams> road_raster_params_for_level(int level) {
-    if (level <= 1) {
-        return g2m::RasterParams{/*min_rank=*/0, /*min_half_width_mm=*/0};
-    }
-
-    const g2m::RoadStyle& style = g2m::RoadStyle::default_style();
-
-    if (level == 2) {
-        const g2m::HighwayStyleEntry* tertiary = style.find_highway("tertiary");
-        const int min_rank = tertiary != nullptr ? tertiary->rank : kFallbackTertiaryRank;
-        return g2m::RasterParams{min_rank, /*min_half_width_mm=*/0};
-    }
-
-    if (level == 3) {
-        const g2m::HighwayStyleEntry* primary = style.find_highway("primary");
-        const int min_rank = primary != nullptr ? primary->rank : kFallbackPrimaryRank;
-        // spacing_mm = (1 << level) * 1000 is exactly divisible by 4 for
-        // level >= 2, so this integer arithmetic is exact (0.75 * spacing).
-        const std::int64_t spacing_mm = (std::int64_t{1} << level) * 1000;
-        const std::int64_t min_half_width_mm = (spacing_mm * 3) / 4;
-        return g2m::RasterParams{min_rank, min_half_width_mm};
-    }
-
-    return std::nullopt; // L>=4: no road classes
+    return g2m::raster_params_for_render_level(level);
 }
 
 g2m::Lattice road_class_lattice(const g2m::mesh::ChunkKey& key) {
@@ -90,28 +81,22 @@ void rasterize_chunk_road_classes(const g2m::mesh::ChunkKey& key, const ClassLoo
         return;
     }
 
-    std::vector<g2m::RoadSegment> merged;
-    for (const g2m::TileKey& tile_key : src_osm_tiles_for_chunk(key)) {
-        std::shared_ptr<const std::vector<g2m::RoadSegment>> segs = lookup.fn(lookup.ctx, tile_key);
-        if (segs && !segs->empty()) {
-            merged.insert(merged.end(), segs->begin(), segs->end());
-        }
-    }
-    if (merged.empty()) {
-        return;
-    }
-    // Each tile's own extract_road_segments() output is sorted by
-    // (rank, way id, segment index); the concatenation across tiles is not
-    // sorted by rank overall, and rasterize_road_segments trusts array
-    // order for its own "later overwrites earlier" rule.
-    std::stable_sort(merged.begin(), merged.end(),
-                      [](const g2m::RoadSegment& a, const g2m::RoadSegment& b) { return a.rank < b.rank; });
-
     const g2m::Lattice lattice = road_class_lattice(key);
     const std::size_t sample_count = static_cast<std::size_t>(lattice.nx) * static_cast<std::size_t>(lattice.ny);
     std::vector<std::uint8_t> land_class(sample_count, static_cast<std::uint8_t>(g2m::LandClass::Unknown));
     std::vector<std::uint8_t> surface(sample_count, static_cast<std::uint8_t>(g2m::SurfaceKind::Unknown));
-    g2m::rasterize_road_segments(merged, lattice, *params, land_class, surface);
+
+    // Owner rule (roads_plan.md section 2 / G2.5a-grip R-b): partition the
+    // chunk's own lattice into aligned level-2 (1024 m) g2m.src.osm blocks
+    // and paint each one from only its own owner tile's segments - see
+    // rasterize_chunk_road_classes' own header comment. `ctx` is `&lookup`
+    // itself, consumed synchronously (class_lookup_block_fn's call to
+    // lookup.fn and rasterize_road_blocks' own paint both return before this
+    // call does), so no lifetime issue despite the const_cast to the
+    // non-const void* RoadBlockLookupFn requires.
+    constexpr int kOsmBlockLevel = 2; // g2m.src.osm tiles are level 2 (1024 m), docs/formats/src_osm.md
+    g2m::rasterize_road_blocks(lattice, kOsmBlockLevel, key.zone, *params, &class_lookup_block_fn,
+                               const_cast<void*>(static_cast<const void*>(&lookup)), land_class, surface);
 
     // land_class is row-major j*nx+i (Lattice's own doc comment), matching
     // ClassWindow's row-major layout exactly (both row 0 = south, both

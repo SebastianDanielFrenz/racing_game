@@ -39,6 +39,25 @@ std::uint8_t at(const g2m::mesh::ClassWindow& w, int i, int j) {
 
 constexpr std::uint8_t kUnknown = static_cast<std::uint8_t>(g2m::LandClass::Unknown);
 constexpr std::uint8_t kPaved = static_cast<std::uint8_t>(g2m::LandClass::PavedRoad);
+constexpr std::uint8_t kUnpaved = static_cast<std::uint8_t>(g2m::LandClass::UnpavedRoad);
+
+// Two-tile lookup for the owner-rule test below: unlike synthetic_road_lookup
+// above, this ANSWERS DIFFERENTLY depending on which g2m.src.osm tile
+// rasterize_chunk_road_classes' own RoadBlockLookupFn adapter asks for
+// (key.x == 0 vs. key.x == 1), so a segment placed in tile 0's own list and a
+// DIFFERENT (same-rank) segment placed in tile 1's own list can both
+// geometrically cover the same lattice sample - exactly the "a real way
+// crossing a tile boundary shows up in both tiles' own 128 m-halo extraction"
+// case the owner rule (roads_plan.md section 2) exists for.
+struct TwoTileLookupCtx {
+    std::shared_ptr<const std::vector<g2m::RoadSegment>> tile0;
+    std::shared_ptr<const std::vector<g2m::RoadSegment>> tile1;
+};
+
+std::shared_ptr<const std::vector<g2m::RoadSegment>> two_tile_road_lookup(void* ctx, const g2m::TileKey& key) {
+    const auto* c = static_cast<const TwoTileLookupCtx*>(ctx);
+    return key.x == 0 ? c->tile0 : c->tile1;
+}
 
 } // namespace
 
@@ -223,6 +242,54 @@ TEST_CASE("rasterize_chunk_road_classes: the level filter works", "[terrain]") {
         rg::rasterize_chunk_road_classes(g2m::mesh::ChunkKey{kZone, 4, 0, 0}, lookup, classes4);
         CHECK(at(classes4, 0, 0) == kUnknown);
     }
+}
+
+TEST_CASE("rasterize_chunk_road_classes: owner rule - an equal-rank overlap at a tile boundary is decided by "
+          "ownership, not lookup call order",
+          "[terrain]") {
+    // Level 3 chunk (cx=1, cy=0): same boundary-straddling geometry as
+    // "src_osm_tiles_for_chunk: ... several when straddling a boundary"
+    // above - footprint [512, 1024) x [0, 512) m, straddling g2m.src.osm
+    // tiles x=0 and x=1 (both y=0). spacing_mm = 8000 (8 m); origin_e_mm =
+    // 1*64*8000 + 500 = 512500 (512.5 m); origin_n_mm = 500 (0.5 m) - so
+    // vertex (i, j) sits at absolute E = 512.5 + 8*i m, N = 0.5 + 8*j m.
+    const g2m::mesh::ChunkKey key{kZone, 3, 1, 0};
+
+    // Vertex i=64 (E = 1024.5 m) is owned by tile x=1 (floor_div(1024500,
+    // 1024000) == 1); vertex i=63 (E = 1016.5 m) is owned by tile x=0
+    // (floor_div(1016500, 1024000) == 0). j=32 (N = 256.5 m) for both - well
+    // inside both tiles' shared y=0 row.
+    //
+    // Both tiles' own lists carry a segment AT THE SAME RANK covering BOTH
+    // points (a 70 m-long strip straddling the boundary, well within either
+    // tile's 128 m halo) - tile 0's is PavedRoad, tile 1's is UnpavedRoad. If
+    // ownership were not the sole decider, the old cross-tile merge +
+    // stable_sort-by-rank-alone (equal rank -> whichever list was
+    // concatenated first, i.e. src_osm_tiles_for_chunk's own x-ascending
+    // order, always tile 0) would paint tile 0's PavedRoad at BOTH points.
+    // The owner rule must instead paint each point from only its own owner
+    // tile's list.
+    constexpr int kRank = 9;
+    auto tile0_segments = std::make_shared<const std::vector<g2m::RoadSegment>>(std::vector<g2m::RoadSegment>{
+        g2m::RoadSegment{{990000, 256500}, {1060000, 256500}, /*half_width_mm=*/2000, g2m::LandClass::PavedRoad,
+                         g2m::SurfaceKind::Asphalt, kRank},
+    });
+    auto tile1_segments = std::make_shared<const std::vector<g2m::RoadSegment>>(std::vector<g2m::RoadSegment>{
+        g2m::RoadSegment{{990000, 256500}, {1060000, 256500}, /*half_width_mm=*/2000, g2m::LandClass::UnpavedRoad,
+                         g2m::SurfaceKind::Gravel, kRank},
+    });
+    TwoTileLookupCtx ctx{tile0_segments, tile1_segments};
+    const rg::ClassLookup lookup{&two_tile_road_lookup, &ctx};
+
+    g2m::mesh::ClassWindow classes;
+    rg::rasterize_chunk_road_classes(key, lookup, classes);
+
+    // Owned by tile 1: tile 1's own UnpavedRoad wins, not tile 0's
+    // equal-rank PavedRoad.
+    CHECK(at(classes, 64, 32) == kUnpaved);
+    // Owned by tile 0: tile 0's own PavedRoad wins, not tile 1's equal-rank
+    // UnpavedRoad - no cross-tile contamination either way.
+    CHECK(at(classes, 63, 32) == kPaved);
 }
 
 TEST_CASE("rasterize_chunk_road_classes: a null lookup is byte-identical to all-Unknown", "[terrain]") {

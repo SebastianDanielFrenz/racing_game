@@ -765,6 +765,160 @@ TEST_CASE("load_world_config: physics.startup_timeout_s wrong type", "[world_con
     CHECK_FALSE(err.empty());
 }
 
+// --- "physics.road_surfaces" (G2.5a-grip R-b, roads_plan.md section 7):
+// RoadSurfaceMap's own config source - see world_config.h's RoadSurfaces
+// comment for why `enabled` defaults to false and physics wiring is not this
+// commit. ---
+
+TEST_CASE("load_world_config: road_surfaces absent defaults to disabled asphalt/dirt/grass",
+          "[world_config]") {
+    ScopedEnvVar env("RG_G2M_HOME", "S:/some/test/g2m/home");
+    json j = valid_world_config_json();
+    REQUIRE_FALSE(j.contains("physics"));
+    TempFile file = TempFile::from_json(j);
+    std::string err;
+    auto cfg = rg::load_world_config(file.path(), &err);
+    REQUIRE(cfg.has_value());
+    CHECK(err.empty());
+    CHECK_FALSE(cfg->physics.road_surfaces.enabled);
+    CHECK(cfg->physics.road_surfaces.paved == "asphalt");
+    CHECK(cfg->physics.road_surfaces.unpaved == "dirt");
+    CHECK(cfg->physics.road_surfaces.off_road == "grass");
+}
+
+TEST_CASE("load_world_config: road_surfaces fields override every default", "[world_config]") {
+    ScopedEnvVar env("RG_G2M_HOME", "S:/some/test/g2m/home");
+    json j = valid_world_config_json();
+    j["physics"] = {{"road_surfaces",
+                     {{"enabled", true}, {"paved", "concrete"}, {"unpaved", "gravel"}, {"off_road", "sand"}}}};
+    TempFile file = TempFile::from_json(j);
+    std::string err;
+    auto cfg = rg::load_world_config(file.path(), &err);
+    REQUIRE(cfg.has_value());
+    CHECK(err.empty());
+    CHECK(cfg->physics.road_surfaces.enabled);
+    CHECK(cfg->physics.road_surfaces.paved == "concrete");
+    CHECK(cfg->physics.road_surfaces.unpaved == "gravel");
+    CHECK(cfg->physics.road_surfaces.off_road == "sand");
+}
+
+TEST_CASE("load_world_config: road_surfaces enabled alone leaves paved/unpaved/off_road at their defaults",
+          "[world_config]") {
+    ScopedEnvVar env("RG_G2M_HOME", "S:/some/test/g2m/home");
+    json j = valid_world_config_json();
+    j["physics"] = {{"road_surfaces", {{"enabled", true}}}};
+    TempFile file = TempFile::from_json(j);
+    std::string err;
+    auto cfg = rg::load_world_config(file.path(), &err);
+    REQUIRE(cfg.has_value());
+    CHECK(err.empty());
+    CHECK(cfg->physics.road_surfaces.enabled);
+    CHECK(cfg->physics.road_surfaces.paved == "asphalt");
+    CHECK(cfg->physics.road_surfaces.unpaved == "dirt");
+    CHECK(cfg->physics.road_surfaces.off_road == "grass");
+}
+
+TEST_CASE("load_world_config: physics.road_surfaces is not an object", "[world_config]") {
+    ScopedEnvVar env("RG_G2M_HOME", "S:/some/test/g2m/home");
+    json j = valid_world_config_json();
+    j["physics"] = {{"road_surfaces", true}};
+    TempFile file = TempFile::from_json(j);
+    std::string err;
+    auto cfg = rg::load_world_config(file.path(), &err);
+    CHECK_FALSE(cfg.has_value());
+    CHECK_FALSE(err.empty());
+}
+
+TEST_CASE("load_world_config: physics.road_surfaces.enabled wrong type", "[world_config]") {
+    ScopedEnvVar env("RG_G2M_HOME", "S:/some/test/g2m/home");
+    json j = valid_world_config_json();
+    j["physics"] = {{"road_surfaces", {{"enabled", "yes"}}}};
+    TempFile file = TempFile::from_json(j);
+    std::string err;
+    auto cfg = rg::load_world_config(file.path(), &err);
+    CHECK_FALSE(cfg.has_value());
+    CHECK_FALSE(err.empty());
+}
+
+TEST_CASE("load_world_config: physics.road_surfaces.paved must not be empty", "[world_config]") {
+    ScopedEnvVar env("RG_G2M_HOME", "S:/some/test/g2m/home");
+    json j = valid_world_config_json();
+    j["physics"] = {{"road_surfaces", {{"paved", ""}}}};
+    TempFile file = TempFile::from_json(j);
+    std::string err;
+    auto cfg = rg::load_world_config(file.path(), &err);
+    CHECK_FALSE(cfg.has_value());
+    CHECK_FALSE(err.empty());
+}
+
+TEST_CASE("load_world_config: physics.road_surfaces.paved wrong type", "[world_config]") {
+    ScopedEnvVar env("RG_G2M_HOME", "S:/some/test/g2m/home");
+    json j = valid_world_config_json();
+    j["physics"] = {{"road_surfaces", {{"paved", 7}}}};
+    TempFile file = TempFile::from_json(j);
+    std::string err;
+    auto cfg = rg::load_world_config(file.path(), &err);
+    CHECK_FALSE(cfg.has_value());
+    CHECK_FALSE(err.empty());
+}
+
+TEST_CASE("load_world_config: physics.road_surfaces.unpaved must not be empty", "[world_config]") {
+    ScopedEnvVar env("RG_G2M_HOME", "S:/some/test/g2m/home");
+    json j = valid_world_config_json();
+    j["physics"] = {{"road_surfaces", {{"unpaved", ""}}}};
+    TempFile file = TempFile::from_json(j);
+    std::string err;
+    auto cfg = rg::load_world_config(file.path(), &err);
+    CHECK_FALSE(cfg.has_value());
+    CHECK_FALSE(err.empty());
+}
+
+TEST_CASE("load_world_config: physics.road_surfaces.unpaved wrong type", "[world_config]") {
+    ScopedEnvVar env("RG_G2M_HOME", "S:/some/test/g2m/home");
+    json j = valid_world_config_json();
+    j["physics"] = {{"road_surfaces", {{"unpaved", 7}}}};
+    TempFile file = TempFile::from_json(j);
+    std::string err;
+    auto cfg = rg::load_world_config(file.path(), &err);
+    CHECK_FALSE(cfg.has_value());
+    CHECK_FALSE(err.empty());
+}
+
+TEST_CASE("load_world_config: physics.road_surfaces.off_road must not be empty", "[world_config]") {
+    ScopedEnvVar env("RG_G2M_HOME", "S:/some/test/g2m/home");
+    json j = valid_world_config_json();
+    j["physics"] = {{"road_surfaces", {{"off_road", ""}}}};
+    TempFile file = TempFile::from_json(j);
+    std::string err;
+    auto cfg = rg::load_world_config(file.path(), &err);
+    CHECK_FALSE(cfg.has_value());
+    CHECK_FALSE(err.empty());
+}
+
+TEST_CASE("load_world_config: physics.road_surfaces.off_road wrong type", "[world_config]") {
+    ScopedEnvVar env("RG_G2M_HOME", "S:/some/test/g2m/home");
+    json j = valid_world_config_json();
+    j["physics"] = {{"road_surfaces", {{"off_road", 7}}}};
+    TempFile file = TempFile::from_json(j);
+    std::string err;
+    auto cfg = rg::load_world_config(file.path(), &err);
+    CHECK_FALSE(cfg.has_value());
+    CHECK_FALSE(err.empty());
+}
+
+TEST_CASE("load_world_config: physics.road_surfaces ignores an unknown key", "[world_config]") {
+    ScopedEnvVar env("RG_G2M_HOME", "S:/some/test/g2m/home");
+    json j = valid_world_config_json();
+    j["physics"] = {{"road_surfaces", {{"enabled", true}, {"some_future_field", 123}}}};
+    TempFile file = TempFile::from_json(j);
+    std::string err;
+    auto cfg = rg::load_world_config(file.path(), &err);
+    REQUIRE(cfg.has_value());
+    CHECK(err.empty());
+    CHECK(cfg->physics.road_surfaces.enabled);
+    CHECK(cfg->physics.road_surfaces.paved == "asphalt");
+}
+
 TEST_CASE("load_world_config: the real committed data/world/world_config.json still loads with physics defaults",
           "[world_config]") {
     // RG_SOURCE_DIR is compiled in by tests/unit/CMakeLists.txt

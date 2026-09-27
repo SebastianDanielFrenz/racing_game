@@ -60,6 +60,27 @@ struct WorldConfig {
     // (startup_timeout_s). Absent entirely -> every field keeps its default
     // below; not yet consumed by anything (R4 wires FixedRateLoop and the
     // streaming gate itself into Session).
+    // Optional nested "road_surfaces" object inside "physics" (G2.5a-grip
+    // R-b, roads_plan.md section 7): maps g2m::LandClass::PavedRoad/
+    // UnpavedRoad/everything-else to a data/surfaces/surfaces.json name, so
+    // a road-mode session's tyres can see per-cell grip (rg::RoadSurfaceMap,
+    // rg/road_classes.h) instead of one uniform `terrain_surface` above -
+    // `terrain_surface` is unchanged and still applies wherever
+    // `road_surfaces.enabled` is false or a chunk has no road classes at
+    // all. Absent entirely -> `enabled` stays false and paved/unpaved/
+    // off_road keep the defaults below, which also match the render path's
+    // own pre-existing hardcoded colours (world_terrain.cpp's
+    // chunk_vertex_colors) exactly - a world_config.json with no
+    // "road_surfaces" block renders byte-identically to before this struct
+    // existed. Physics wiring (reading `enabled`, building a grip LUT from
+    // these names) is R-c, not this commit - R-b only parses and renders.
+    struct RoadSurfaces {
+        bool enabled = false;
+        std::string paved = "asphalt";
+        std::string unpaved = "dirt";
+        std::string off_road = "grass";
+    };
+
     struct PhysicsTerrainConfig {
         double radius_m = 400.0;
         std::string terrain_surface = "asphalt";
@@ -67,6 +88,7 @@ struct WorldConfig {
         int loader_workers = 2;
         double spawn_clearance_m = 0.10;
         double startup_timeout_s = 30.0;
+        RoadSurfaces road_surfaces;
     };
 
     std::string format; // always "rg.world/1" once successfully loaded

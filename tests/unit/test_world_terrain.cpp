@@ -17,6 +17,7 @@
 // plain C++ methods and geo2map_engine's own mesh-building free functions.
 #include "rg/world_terrain.h"
 
+#include "g2m/layer/src_osm.h"
 #include "g2m/layer/terrain_layers.h"
 #include "g2m/layer/tile_container.h"
 
@@ -604,5 +605,188 @@ TEST_CASE("decode_height_tile_container: a header layer or key other than the re
         const rg::HeightTileFetchResult result = decode_for_test_key(container);
         CHECK(result.status == g2m::Status::Internal);
         CHECK(result.tile == nullptr);
+    }
+}
+
+// --- decode_road_segments_response / fetch_road_segments_cached (G2.5a-grip
+// R-b: WorldTerrain::road_segments_shared's own pure-decode and cache seams,
+// factored out exactly like decode_height_tile_container/
+// fetch_height_tile_cached above so the fake-transport cases below need no
+// g2m::Server/TileStore/transport at all - just a synthetic g2m::Response or
+// a synthetic RoadSegmentsFetchFn lambda) ---
+
+namespace {
+
+const g2m::TileKey kOsmTestKey{g2m::geo::UtmZone{32, g2m::geo::Hemisphere::North}, /*level=*/2, /*x=*/7, /*y=*/3};
+
+// HEADER || BODY for an OsmTile (default: empty OsmData - a validly decoded
+// tile with zero ways), the exact bytes a g2m::TileResponse would carry for
+// g2m.src.osm.
+std::vector<std::uint8_t> make_osm_container(const g2m::OsmTile& tile = g2m::OsmTile{},
+                                             std::string layer = std::string(g2m::kSrcOsmLayer),
+                                             const g2m::TileKey& header_key = kOsmTestKey) {
+    g2m::Result<g2m::TileBody> body = g2m::encode_src_osm(tile);
+    REQUIRE(body.ok());
+    g2m::Result<std::vector<std::uint8_t>> body_bytes = g2m::encode_body(body.value());
+    REQUIRE(body_bytes.ok());
+    g2m::TileHeader header;
+    header.layer = std::move(layer);
+    header.key = header_key;
+    g2m::Result<std::vector<std::uint8_t>> container =
+        g2m::assemble_container(header, std::span<const std::uint8_t>(body_bytes.value()));
+    REQUIRE(container.ok());
+    return std::move(container).value();
+}
+
+g2m::Response make_tile_response(g2m::Status status, std::vector<std::uint8_t> container = {},
+                                 std::string message = {}) {
+    g2m::TileResponse response;
+    response.meta.status = status;
+    response.meta.message = std::move(message);
+    response.container = std::move(container);
+    return g2m::Response{std::move(response)};
+}
+
+} // namespace
+
+TEST_CASE("decode_road_segments_response: classifies a fake transport response into Ok/Absent/Failed",
+         "[world_terrain]") {
+    const g2m::geo::UtmZone zone{32, g2m::geo::Hemisphere::North};
+
+    SECTION("a non-TileResponse variant (e.g. the wrong endpoint) is Failed") {
+        g2m::ManifestResponse manifest_response;
+        const rg::RoadSegmentsResult result =
+            rg::decode_road_segments_response(g2m::Response{manifest_response}, kOsmTestKey, zone);
+        CHECK(result.status == rg::RoadFetchStatus::Failed);
+        CHECK(result.segments == nullptr);
+    }
+    SECTION("a fake 503 (Unavailable) is Failed") {
+        const rg::RoadSegmentsResult result =
+            rg::decode_road_segments_response(make_tile_response(g2m::Status::Unavailable), kOsmTestKey, zone);
+        CHECK(result.status == rg::RoadFetchStatus::Failed);
+        CHECK(result.segments == nullptr);
+    }
+    SECTION("a fake 404 with message 'outside coverage' is Absent, with a non-null empty segment list") {
+        const rg::RoadSegmentsResult result = rg::decode_road_segments_response(
+            make_tile_response(g2m::Status::NotFound, {}, "outside coverage"), kOsmTestKey, zone);
+        CHECK(result.status == rg::RoadFetchStatus::Absent);
+        REQUIRE(result.segments != nullptr);
+        CHECK(result.segments->empty());
+    }
+    SECTION("a fake 404 with a DIFFERENT message (e.g. 'unknown layer') is Failed, not Absent") {
+        // has_road_layer() is the caller's own guard for "this release has no
+        // g2m.src.osm layer at all" - server.cpp's check_tile() only ever
+        // uses the literal "outside coverage" message for a genuine
+        // coverage-boundary NotFound.
+        const rg::RoadSegmentsResult result = rg::decode_road_segments_response(
+            make_tile_response(g2m::Status::NotFound, {}, "unknown layer"), kOsmTestKey, zone);
+        CHECK(result.status == rg::RoadFetchStatus::Failed);
+        CHECK(result.segments == nullptr);
+    }
+    SECTION("Ok with a malformed container is Failed (a decode error)") {
+        std::vector<std::uint8_t> container = make_osm_container();
+        container.resize(container.size() - 1); // truncated: parse_container must reject it
+        const rg::RoadSegmentsResult result =
+            rg::decode_road_segments_response(make_tile_response(g2m::Status::Ok, container), kOsmTestKey, zone);
+        CHECK(result.status == rg::RoadFetchStatus::Failed);
+        CHECK(result.segments == nullptr);
+    }
+    SECTION("Ok with a header layer or key other than the requested one is Failed") {
+        std::vector<std::uint8_t> wrong_layer = make_osm_container(g2m::OsmTile{}, "g2m.elev.base");
+        CHECK(rg::decode_road_segments_response(make_tile_response(g2m::Status::Ok, wrong_layer), kOsmTestKey, zone)
+                  .status == rg::RoadFetchStatus::Failed);
+
+        g2m::TileKey other_key = kOsmTestKey;
+        other_key.x += 1;
+        std::vector<std::uint8_t> wrong_key =
+            make_osm_container(g2m::OsmTile{}, std::string(g2m::kSrcOsmLayer), other_key);
+        CHECK(rg::decode_road_segments_response(make_tile_response(g2m::Status::Ok, wrong_key), kOsmTestKey, zone)
+                  .status == rg::RoadFetchStatus::Failed);
+    }
+    SECTION("Ok with a valid, empty-data container decodes to Ok with an empty (non-null) segment list") {
+        const rg::RoadSegmentsResult result =
+            rg::decode_road_segments_response(make_tile_response(g2m::Status::Ok, make_osm_container()), kOsmTestKey,
+                                              zone);
+        CHECK(result.status == rg::RoadFetchStatus::Ok);
+        REQUIRE(result.segments != nullptr);
+        CHECK(result.segments->empty());
+    }
+}
+
+TEST_CASE("fetch_road_segments_cached: a Failed fetch (e.g. a fake 503) is not cached - a second call refetches",
+         "[world_terrain]") {
+    std::mutex cache_mutex;
+    std::map<g2m::TileKey, rg::RoadSegmentsResult> cache;
+    int fetch_calls = 0;
+    rg::RoadSegmentsFetchFn fetch_fn = [&](const g2m::TileKey&) -> rg::RoadSegmentsResult {
+        ++fetch_calls;
+        return rg::RoadSegmentsResult{rg::RoadFetchStatus::Failed, nullptr};
+    };
+
+    bool was_cache_hit = true;
+    rg::RoadSegmentsResult first = rg::fetch_road_segments_cached(cache_mutex, cache, kOsmTestKey, fetch_fn, &was_cache_hit);
+    CHECK(first.status == rg::RoadFetchStatus::Failed);
+    CHECK_FALSE(was_cache_hit);
+    CHECK(cache.empty());
+
+    rg::RoadSegmentsResult second =
+        rg::fetch_road_segments_cached(cache_mutex, cache, kOsmTestKey, fetch_fn, &was_cache_hit);
+    CHECK(second.status == rg::RoadFetchStatus::Failed);
+    CHECK_FALSE(was_cache_hit);
+    CHECK(cache.empty());
+    CHECK(fetch_calls == 2); // never cached, so both calls actually refetched
+}
+
+TEST_CASE("fetch_road_segments_cached: an Ok or Absent result (e.g. a fake 404 'outside coverage') is cached - "
+          "a second call does not refetch",
+          "[world_terrain]") {
+    SECTION("Absent") {
+        std::mutex cache_mutex;
+        std::map<g2m::TileKey, rg::RoadSegmentsResult> cache;
+        int fetch_calls = 0;
+        rg::RoadSegmentsFetchFn fetch_fn = [&](const g2m::TileKey&) -> rg::RoadSegmentsResult {
+            ++fetch_calls;
+            return rg::RoadSegmentsResult{rg::RoadFetchStatus::Absent,
+                                          std::make_shared<const std::vector<g2m::RoadSegment>>()};
+        };
+
+        bool was_cache_hit = true;
+        rg::RoadSegmentsResult first =
+            rg::fetch_road_segments_cached(cache_mutex, cache, kOsmTestKey, fetch_fn, &was_cache_hit);
+        CHECK(first.status == rg::RoadFetchStatus::Absent);
+        CHECK_FALSE(was_cache_hit);
+        REQUIRE(cache.count(kOsmTestKey) == 1);
+
+        rg::RoadSegmentsResult second =
+            rg::fetch_road_segments_cached(cache_mutex, cache, kOsmTestKey, fetch_fn, &was_cache_hit);
+        CHECK(second.status == rg::RoadFetchStatus::Absent);
+        CHECK(second.segments == first.segments); // same shared_ptr, served from the cache
+        CHECK(was_cache_hit);
+        CHECK(fetch_calls == 1); // the second call never invoked fetch_fn again
+    }
+    SECTION("Ok") {
+        std::mutex cache_mutex;
+        std::map<g2m::TileKey, rg::RoadSegmentsResult> cache;
+        int fetch_calls = 0;
+        auto segments = std::make_shared<const std::vector<g2m::RoadSegment>>(std::vector<g2m::RoadSegment>{
+            g2m::RoadSegment{{0, 0}, {1000, 0}, 2000, g2m::LandClass::PavedRoad, g2m::SurfaceKind::Asphalt, 9},
+        });
+        rg::RoadSegmentsFetchFn fetch_fn = [&](const g2m::TileKey&) -> rg::RoadSegmentsResult {
+            ++fetch_calls;
+            return rg::RoadSegmentsResult{rg::RoadFetchStatus::Ok, segments};
+        };
+
+        bool was_cache_hit = true;
+        rg::RoadSegmentsResult first =
+            rg::fetch_road_segments_cached(cache_mutex, cache, kOsmTestKey, fetch_fn, &was_cache_hit);
+        CHECK(first.status == rg::RoadFetchStatus::Ok);
+        CHECK_FALSE(was_cache_hit);
+
+        rg::RoadSegmentsResult second =
+            rg::fetch_road_segments_cached(cache_mutex, cache, kOsmTestKey, fetch_fn, &was_cache_hit);
+        CHECK(second.status == rg::RoadFetchStatus::Ok);
+        CHECK(second.segments == first.segments);
+        CHECK(was_cache_hit);
+        CHECK(fetch_calls == 1);
     }
 }
