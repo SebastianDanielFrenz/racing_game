@@ -142,6 +142,16 @@ public:
     [[nodiscard]] std::int64_t get_body_count() const; // always 2 in R0 (ground, chassis)
     [[nodiscard]] godot::String get_last_error() const { return last_error_; }
 
+    // Reports whether THIS DLL was built optimised, e.g. "optimized=yes
+    // build_type=RelWithDebInfo" - a debug build makes the physics ~10x
+    // slower (tick stalls while driving), and game/bin/librg_godot.dll can
+    // be silently left over from a different preset's build (see
+    // tools/run.ps1's stale-DLL guard) - main.gd prints this once so the
+    // build type is always visible in the log, not just inferable from
+    // which build dir was last touched. No Session needed - reports the
+    // DLL's own compile-time config, not anything session state.
+    [[nodiscard]] godot::String get_build_info() const;
+
     // --- Floating origin (PLAN.md 11.3: "only the active camera rebases") ---
     [[nodiscard]] godot::Vector3 get_world_origin_godot_position() const;
     godot::Vector3 rebase_focus(const godot::Vector3& focus_godot_position);

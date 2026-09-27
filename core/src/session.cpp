@@ -697,7 +697,14 @@ void Session::start() {
     // (incl. every pipeline stage's stage.<name>.ms) for the whole session.
     if (const std::string csv = env_or_empty("RG_WORLD_CSV"); !csv.empty()) {
         world_->telemetry().start_csv(csv);
-        std::fprintf(stderr, "rg::Session: RG_WORLD_CSV -> %s\n", csv.c_str());
+        // stdout, not stderr: tools/smoke_test.ps1 redirects a headless
+        // Godot run's stderr with a plain `2>`, and Windows PowerShell 5.1
+        // wraps every line a native process writes to stderr in a
+        // NativeCommandError record when captured that way - this line
+        // would otherwise show up as a spurious "Godot printed error
+        // line(s)" smoke failure whenever RG_WORLD_CSV is set.
+        std::printf("rg::Session: RG_WORLD_CSV -> %s\n", csv.c_str());
+        std::fflush(stdout);
     }
     loop_.start([this] { return step_once(true); });
 }

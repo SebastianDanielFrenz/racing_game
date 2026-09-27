@@ -111,6 +111,65 @@ function Test-DllLocked {
     }
 }
 
+# ---------------------------------------------------------------------------
+# Stale-DLL-across-presets guard. godot_ext/CMakeLists.txt's rg_godot target
+# writes game/bin/librg_godot.dll from RUNTIME_OUTPUT_DIRECTORY_<CONFIG> -
+# the SAME path for every preset (debug/release/relwithdebinfo all point at
+# game/bin) - so whichever build dir last linked it wins, and a later
+# incremental build in a DIFFERENT build dir sees its own already-up-to-date
+# object files and simply does not relink, leaving the OTHER preset's DLL in
+# place with no error. A stamp file next to the DLL records which preset
+# last wrote it; the caller deletes a stale DLL before building so ninja is
+# forced to relink for the requested preset. Both run.ps1 and smoke_test.ps1
+# call Remove-RgGodotStaleDll before building and Set-RgGodotPresetStamp
+# after a successful one.
+# ---------------------------------------------------------------------------
+function Get-RgGodotPresetStampPath {
+    param([Parameter(Mandatory)][string]$DllPath)
+    return [System.IO.Path]::ChangeExtension($DllPath, 'preset')
+}
+
+# Returns the preset name recorded in the stamp file, or $null if there is
+# no stamp (a fresh checkout, or a DLL built before this guard existed).
+function Get-RgGodotBuiltPreset {
+    param([Parameter(Mandatory)][string]$DllPath)
+    $stampPath = Get-RgGodotPresetStampPath -DllPath $DllPath
+    if (-not (Test-Path $stampPath)) { return $null }
+    return (Get-Content -Path $stampPath -Raw).Trim()
+}
+
+# Pre-build guard: if the stamp is missing or names a different preset than
+# the one about to be built, delete the (stale) DLL + PDB + stamp so ninja
+# is forced to relink rather than silently leaving the wrong preset's DLL
+# in place.
+function Remove-RgGodotStaleDll {
+    param(
+        [Parameter(Mandatory)][string]$DllPath,
+        [Parameter(Mandatory)][string]$Preset
+    )
+    $builtPreset = Get-RgGodotBuiltPreset -DllPath $DllPath
+    if ($builtPreset -eq $Preset) { return }
+    if (Test-Path $DllPath) {
+        $from = if ($builtPreset) { "'$builtPreset'" } else { "an unstamped build" }
+        Write-Host "note: game/bin/librg_godot.dll was last built by $from, not '$Preset' - deleting it so ninja relinks" -ForegroundColor Yellow
+        Remove-Item -Force -Path $DllPath
+        $pdbPath = [System.IO.Path]::ChangeExtension($DllPath, 'pdb')
+        if (Test-Path $pdbPath) { Remove-Item -Force -Path $pdbPath }
+    }
+    $stampPath = Get-RgGodotPresetStampPath -DllPath $DllPath
+    if (Test-Path $stampPath) { Remove-Item -Force -Path $stampPath }
+}
+
+# Post-build: record which preset just (re)built the DLL.
+function Set-RgGodotPresetStamp {
+    param(
+        [Parameter(Mandatory)][string]$DllPath,
+        [Parameter(Mandatory)][string]$Preset
+    )
+    $stampPath = Get-RgGodotPresetStampPath -DllPath $DllPath
+    Set-Content -Path $stampPath -Value $Preset -NoNewline
+}
+
 # A fresh checkout's game/ has no .godot/ cache. Godot's GDExtension loader
 # reads the list of .gdextension files to load from game/.godot/extension_list.cfg,
 # which only the EDITOR writes (during its own project-import scan) - a

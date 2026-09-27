@@ -9,13 +9,18 @@
 
 .DESCRIPTION
     Default build is INCREMENTAL: cmake configure only runs the first time
-    (no out/build/debug/build.ninja yet); afterwards a plain
+    (no out/build/<Preset>/build.ninja yet); afterwards a plain
     `cmake --build` is enough even after a CMakeLists.txt edit, because
     Ninja's own generated build re-runs cmake itself when needed.
 
     Before building, checks whether game/bin/librg_godot.dll is currently
     locked (a running Godot instance likely still has the project open)
-    and stops with a clear message instead of a cryptic link.exe error.
+    and stops with a clear message instead of a cryptic link.exe error;
+    it also checks (tools/common.ps1) whether the DLL currently there was
+    last built by a DIFFERENT preset (all presets' rg_godot target writes
+    to the same game/bin/, see godot_ext/CMakeLists.txt) and deletes it so
+    ninja relinks for the requested preset instead of silently leaving the
+    wrong one in place.
 
     PASS-THROUGH CONVENTION for extra Godot arguments: same hand-rolled
     $args parsing as physics_sim's drive.ps1 (a literal "--" cannot be
@@ -53,7 +58,12 @@
     Print what would happen and do nothing - no build, no launch.
 
 .PARAMETER -Preset
-    CMake preset to build (default 'debug').
+    CMake preset to build (default 'relwithdebinfo' - a debug build makes
+    ps_core/rg_core/geo2map physics roughly 10x slower, which turns the
+    terrain tile-streaming stage's per-tick cost into multi-tick stalls
+    while driving; relwithdebinfo is optimised but keeps a PDB for crash
+    stacks). Its own build dir (out/build/relwithdebinfo) never touches the
+    CI `release` build dir's cache.
 #>
 
 $ErrorActionPreference = 'Stop'
@@ -69,7 +79,7 @@ $NoConsole = $false
 $Editor    = $false
 $Flat      = $false
 $DryRun    = $false
-$Preset    = 'debug'
+$Preset    = 'relwithdebinfo'
 $GodotArgs = New-Object System.Collections.Generic.List[string]
 $sawSeparator = $false
 $expectPresetValue = $false
@@ -126,6 +136,20 @@ if (-not $SkipBuild) {
             throw "librg_godot.dll appears to be locked - a Godot process likely already has the project open:`n  $dllPath`nClose Godot and re-run run.ps1 / run.cmd."
         }
     }
+
+    $builtPreset = Get-RgGodotBuiltPreset -DllPath $dllPath
+    if ($DryRun) {
+        if ($builtPreset -and $builtPreset -ne $Preset) {
+            Write-Host "note: $dllPath was last built by preset '$builtPreset', not '$Preset' - a real run would delete it here so ninja relinks." -ForegroundColor Yellow
+        }
+    } else {
+        Remove-RgGodotStaleDll -DllPath $dllPath -Preset $Preset
+    }
+} elseif (-not $DryRun) {
+    $builtPreset = Get-RgGodotBuiltPreset -DllPath $dllPath
+    if ($builtPreset -and $builtPreset -ne $Preset) {
+        Write-Host "warning: -SkipBuild given but $dllPath was last built by preset '$builtPreset', not '$Preset' - launching it anyway (it will not match the requested preset)." -ForegroundColor Yellow
+    }
 }
 
 $buildElapsed = $null
@@ -157,6 +181,7 @@ if (-not $SkipBuild) {
         if (-not (Test-Path $dllPath)) {
             throw "build reported success but $dllPath is still missing - not launching Godot"
         }
+        Set-RgGodotPresetStamp -DllPath $dllPath -Preset $Preset
         Write-Host "build ok in $($buildElapsed.ToString('mm\:ss\.ff'))" -ForegroundColor Green
     }
 } else {

@@ -18,6 +18,14 @@ add_library(rg_godot SHARED
 
 target_include_directories(rg_godot PRIVATE src)
 
+# RG_BUILD_CONFIG carries the CMake config name into RgSimulation::get_build_info()
+# (rg_simulation.cpp) - so a debug-vs-optimised DLL mismatch (the whole point
+# of tools/run.ps1's stale-DLL guard above it) shows up in the game's own log
+# line instead of only being discoverable by inspecting the build dir.
+# $<CONFIG> works for single-config generators too (Ninja here): it resolves
+# to CMAKE_BUILD_TYPE at generate time.
+target_compile_definitions(rg_godot PRIVATE RG_BUILD_CONFIG="$<CONFIG>")
+
 # NOT linked against rg_warnings - same reasoning as physics_sim's own
 # adapters/godot/CMakeLists.txt (read and confirmed by building): godot-cpp
 # branch 4.5's headers are unused-parameter-laden, and /W4 /WX from an

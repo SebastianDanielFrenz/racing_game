@@ -552,10 +552,10 @@ func _attach_world_view() -> void:
 	_overlay.hide_overlay()
 	_visuals.on_session_ready()
 	var ss: Dictionary = _simulation.get_streaming_status()
-	print("RG_DRIVE ready world=real_world load_s=%.2f startup_ms=%.0f resident_l0=%d prime_ticks=%d chassis_session=(%.2f, %.2f, %.2f) chunks=%d fetch_delay_ms=%d mode=%s" % [
+	print("RG_DRIVE ready world=real_world load_s=%.2f startup_ms=%.0f resident_l0=%d prime_ticks=%d chassis_session=(%.2f, %.2f, %.2f) chunks=%d fetch_delay_ms=%d mode=%s build=%s" % [
 		(Time.get_ticks_msec() - _load_started_ms) / 1000.0, float(ss.get("startup_ms", 0.0)),
 		int(ss.get("resident_l0", 0)), int(ss.get("prime_ticks", 0)), chassis.x, chassis.y, chassis.z,
-		int(_world_view.get_chunk_count()), fetch_delay_ms, _simulation.get_player_mode()])
+		int(_world_view.get_chunk_count()), fetch_delay_ms, _simulation.get_player_mode(), _simulation.get_build_info()])
 
 # Once per second of wall time in the real world, plus one spawn check 2 s
 # (sim time) after the world became drivable - its numbers are how a wrong

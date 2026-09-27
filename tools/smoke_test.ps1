@@ -24,8 +24,18 @@
     (Godot's own --quit-after). Default 300 (~5 s at 60 fps).
 
 .PARAMETER SkipBuild
-    Skip the configure/build step (use an already-built out/build/debug +
+    Skip the configure/build step (use an already-built out/build/<Preset> +
     game/bin/librg_godot.dll).
+
+.PARAMETER Preset
+    CMake preset to build/run (default 'debug' - this script's own
+    long-standing default; pass 'relwithdebinfo' to smoke-test the
+    optimised DLL tools/run.ps1 now builds by default). Uses the same
+    stamp-file guard as run.ps1 (tools/common.ps1's Remove-RgGodotStaleDll/
+    Set-RgGodotPresetStamp) so a DLL left over from a different preset's
+    build is deleted and relinked instead of silently reused; with
+    -SkipBuild a stamp naming a different preset only warns, it does not
+    fail.
 
 .PARAMETER TerrainPreview
     Run the PLAN.md R2.1 terrain-preview headless check instead of the
@@ -90,6 +100,7 @@
 param(
     [int]$QuitAfterFrames = 300,
     [switch]$SkipBuild,
+    [string]$Preset = 'debug',
     [switch]$TerrainPreview,
     [switch]$TerrainStream,
     [switch]$BindingsTest,
@@ -109,7 +120,8 @@ if ((@($BindingsTest, $TerrainPreview, $Drive) | Where-Object { $_ }).Count -gt 
 }
 $repoRoot = Split-Path -Parent $PSScriptRoot
 $gameDir  = Join-Path $repoRoot 'game'
-$buildDir = Join-Path $repoRoot 'out\build\debug'
+$buildDir = Join-Path $repoRoot "out\build\$Preset"
+$dllPath  = Join-Path $gameDir 'bin\librg_godot.dll'
 
 $script:Failures = New-Object System.Collections.Generic.List[string]
 
@@ -133,16 +145,30 @@ Write-Host "build dir: $buildDir"
 Update-Submodules -RepoRoot $repoRoot
 
 if (-not $SkipBuild) {
+    # Stale-DLL guard (tools/common.ps1): game/bin/librg_godot.dll is
+    # written by whichever build dir last linked it, whatever preset that
+    # was - delete it first if it was not this preset's own, so ninja is
+    # forced to relink instead of silently leaving the wrong DLL in place.
+    Remove-RgGodotStaleDll -DllPath $dllPath -Preset $Preset
+
     Enter-VsDevShell
 
-    Write-Host "`n-- configure (debug, RG_BUILD_GODOT_EXTENSION=ON) --" -ForegroundColor Cyan
-    $configureExitCode = Invoke-RgCMakeConfigure -RepoRoot $repoRoot -BuildDir $buildDir -Preset 'debug' -WithGodotExtension
+    Write-Host "`n-- configure ($Preset, RG_BUILD_GODOT_EXTENSION=ON) --" -ForegroundColor Cyan
+    $configureExitCode = Invoke-RgCMakeConfigure -RepoRoot $repoRoot -BuildDir $buildDir -Preset $Preset -WithGodotExtension
     if ($configureExitCode -ne 0) { Report-Fail "cmake configure failed (exit $configureExitCode)" }
 
     if ($script:Failures.Count -eq 0) {
         Write-Host "`n-- build (rg_godot, rg_unit_tests) --" -ForegroundColor Cyan
         $buildExitCode = Invoke-RgCMakeBuild -BuildDir $buildDir -Targets @('rg_godot', 'rg_unit_tests')
         if ($buildExitCode -ne 0) { Report-Fail "cmake build failed (exit $buildExitCode)" }
+        if ($script:Failures.Count -eq 0 -and (Test-Path $dllPath)) {
+            Set-RgGodotPresetStamp -DllPath $dllPath -Preset $Preset
+        }
+    }
+} else {
+    $builtPreset = Get-RgGodotBuiltPreset -DllPath $dllPath
+    if ($builtPreset -and $builtPreset -ne $Preset) {
+        Write-Host "warning: -SkipBuild given but $dllPath was last built by preset '$builtPreset', not '$Preset' - using it anyway." -ForegroundColor Yellow
     }
 }
 
@@ -173,11 +199,10 @@ if ($script:Failures.Count -eq 0) {
 # Headless Godot run.
 # ---------------------------------------------------------------------------
 if ($script:Failures.Count -eq 0) {
-    $dll = Join-Path $gameDir 'bin\librg_godot.dll'
-    if (-not (Test-Path $dll)) {
-        Report-Fail "librg_godot.dll not found at $dll after build"
+    if (-not (Test-Path $dllPath)) {
+        Report-Fail "librg_godot.dll not found at $dllPath after build"
     } else {
-        Report-Ok "librg_godot.dll present at $dll"
+        Report-Ok "librg_godot.dll present at $dllPath"
     }
 }
 

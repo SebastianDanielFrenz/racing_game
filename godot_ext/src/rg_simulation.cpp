@@ -17,6 +17,13 @@
 using godot::D_METHOD;
 using godot::String;
 
+// godot_ext/CMakeLists.txt sets this via a $<CONFIG> generator expression
+// (RgSimulation::get_build_info() below); fall back rather than fail to
+// compile if this file is ever built outside that target.
+#ifndef RG_BUILD_CONFIG
+#define RG_BUILD_CONFIG "unknown"
+#endif
+
 namespace rg_godot {
 
 namespace {
@@ -357,6 +364,22 @@ double RgSimulation::get_tick_rate_hz() const { return session_ ? session_->worl
 
 std::int64_t RgSimulation::get_body_count() const { return session_ ? 2 : 0; }
 
+godot::String RgSimulation::get_build_info() const {
+    // NDEBUG matches CMake's own Release/RelWithDebInfo default flags (both
+    // define it, Debug does not) - the same signal an optimised-vs-debug
+    // build reports itself with everywhere else in this codebase.
+#ifdef NDEBUG
+    const bool optimized = true;
+#else
+    const bool optimized = false;
+#endif
+    std::string info = "optimized=";
+    info += optimized ? "yes" : "no";
+    info += " build_type=";
+    info += RG_BUILD_CONFIG;
+    return String(info.c_str());
+}
+
 godot::Vector3 RgSimulation::get_world_origin_godot_position() const {
     if (!origin_rebase_) return godot::Vector3();
     return iso_to_godot(ps::Vec3{0.0, 0.0, 0.0}, origin_rebase_->origin());
@@ -609,6 +632,7 @@ void RgSimulation::_bind_methods() {
     godot::ClassDB::bind_method(D_METHOD("get_tick_rate_hz"), &RgSimulation::get_tick_rate_hz);
     godot::ClassDB::bind_method(D_METHOD("get_body_count"), &RgSimulation::get_body_count);
     godot::ClassDB::bind_method(D_METHOD("get_last_error"), &RgSimulation::get_last_error);
+    godot::ClassDB::bind_method(D_METHOD("get_build_info"), &RgSimulation::get_build_info);
 
     godot::ClassDB::bind_method(D_METHOD("get_world_origin_godot_position"), &RgSimulation::get_world_origin_godot_position);
     godot::ClassDB::bind_method(D_METHOD("rebase_focus", "focus_godot_position"), &RgSimulation::rebase_focus);
