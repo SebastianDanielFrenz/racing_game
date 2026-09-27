@@ -10,11 +10,13 @@
 // data crosses into godot:: RenderingServer calls.
 #pragma once
 
+#include "rg/road_classes.h"
 #include "rg/terrain_render.h"
 #include "rg/world_config.h"
 
 #include "g2m/core/geo/session_frame.h"
 #include "g2m/layer/height_tile.h"
+#include "g2m/layer/osm_roads.h"
 #include "g2m/mesh/lod_select.h"
 #include "g2m/mesh/terrain_chunk.h"
 #include "g2m/server/builtin_release.h"
@@ -54,9 +56,13 @@ namespace rg {
 // assigned index, so the result is byte-identical for any thread_count >= 1
 // (PLAN.md R2.1 acceptance: "same output for 1 vs N threads") - select_chunks'
 // own sort order is therefore also `out`'s final order.
+// `class_lookup` (R-2, roads_plan.md): a null (default) ClassLookup builds
+// every chunk exactly as before this parameter existed (byte-identical
+// output - see rg/road_classes.h's own ClassLookup comment); a real one
+// rasterises OSM road classes onto each chunk's vertices.
 void build_static_view_from_lookup(double cam_x, double cam_y, const g2m::mesh::LodParams& params, double e0,
                                    double n0, g2m::mesh::TileLookup lookup, void* ctx, unsigned thread_count,
-                                   std::vector<RenderChunk>& out);
+                                   std::vector<RenderChunk>& out, const ClassLookup& class_lookup = {});
 
 // The two halves build_static_view_from_lookup is made of (R2.2 R8 split
 // them out so rg::TerrainViewStreamer can select, diff by key, and then build
@@ -74,9 +80,12 @@ void select_view_keys(double cam_x, double cam_y, const g2m::mesh::LodParams& pa
 // remaining chunks are skipped and the function returns false (`out` is then
 // partially built and must be discarded). Returns true when every chunk was
 // built.
+// `class_lookup` (R-2, roads_plan.md): see build_static_view_from_lookup's
+// own comment above - null (default) is byte-identical to before this
+// parameter existed.
 bool build_render_chunks(const std::vector<g2m::mesh::ChunkKey>& keys, g2m::mesh::TileLookup lookup, void* ctx,
                          double e0, double n0, unsigned thread_count, std::vector<RenderChunk>& out,
-                         const std::atomic<bool>* cancel = nullptr);
+                         const std::atomic<bool>* cancel = nullptr, const ClassLookup& class_lookup = {});
 
 // Everything a chunk selection + build needs, bundled: the LOD params, the
 // session origin (e0, n0) and the tile lookup. `lookup(ctx, key)` must be
@@ -89,6 +98,10 @@ struct TerrainViewSource {
     double n0 = 0.0;
     g2m::mesh::TileLookup lookup = nullptr;
     void* ctx = nullptr;
+    // R-2 (roads_plan.md): null = every chunk built exactly as before this
+    // field existed (byte-identical output). WorldTerrain::view_source()
+    // populates a real one over the same WorldTerrain.
+    ClassLookup class_lookup{};
 };
 
 // R2.2 plan section 3 / [AMEND] "R3 decoupling": racing_game's own small
@@ -220,6 +233,19 @@ public:
     };
     [[nodiscard]] FetchStats fetch_stats() const;
 
+    // Blocking fetch + decode of one g2m.src.osm tile's road segments (R-2,
+    // roads_plan.md), cached (same double-checked-insert scheme as
+    // height_tile_shared, its own dedicated mutex/map). Fetches over the
+    // same manifest_rid_/transport_ the height-tile path uses. Never fails
+    // "loudly": on any error (server miss, decode failure, extraction
+    // throwing nothing since geo2map_engine's own Result<T> is
+    // exception-free) this reports the failure to stderr once per call and
+    // returns a non-null, empty vector - "no roads" is a valid output, never
+    // fatal (roads_plan.md R-2). A successful (even empty) extraction IS
+    // cached; a failure is not, so a transient fetch problem can be retried
+    // on the next call.
+    std::shared_ptr<const std::vector<g2m::RoadSegment>> road_segments(const g2m::TileKey& key);
+
 private:
     WorldTerrain() = default;
 
@@ -259,6 +285,9 @@ private:
     std::map<g2m::TileKey, std::shared_ptr<const g2m::HeightTile>> height_cache_;
     mutable std::mutex stats_mutex_;
     FetchStats stats_;
+
+    std::mutex osm_cache_mutex_;
+    std::map<g2m::TileKey, std::shared_ptr<const std::vector<g2m::RoadSegment>>> osm_cache_;
 };
 
 } // namespace rg

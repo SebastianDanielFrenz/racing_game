@@ -57,6 +57,7 @@ add_library(rg_core STATIC
     src/terrain_mode.cpp
     src/world_config.cpp
     src/world_terrain.cpp
+    src/road_classes.cpp
     src/fixed_rate_loop.cpp
     src/terrain_view_streamer.cpp
     src/route_check.cpp

@@ -26,6 +26,7 @@ racing_game/
       fixed_rate_loop.h               rg::FixedRateLoop: fixed-rate wall-clock loop around a bool try_step() (frozen tick resyncs the deadline - no catch-up burst), LoopStats; runs Session::start()'s ticks
       world_config.h                  rg::WorldConfig, rg::load_world_config() - see "World config" below
       terrain_view_streamer.h         rg::TerrainViewStreamer (R2.2 R8): render LOD follows a focus point - background reselect + build, key diff {added, removed}, adapter ordering contract in the header; see "Render LOD streaming (R8)" below
+      road_classes.h                  rg::ClassLookup/RoadSegmentsFn, road_raster_params_for_level() (roads_plan.md R-2 level policy), road_class_lattice(), src_osm_tiles_for_chunk(), rasterize_chunk_road_classes() - OSM road classes (paved/unpaved) rasterised onto a render chunk's L0 cell-centre vertex lattice; render path only, no cell_surface_ids/grip - see "Visible roads (R-2)" below
       route_check.h                   rg::Route + load_route() ("rg.route/1", exception-free, optional "criteria" object -> RouteCriteria), apply_route_criteria() (RouteCheckParams defaults < route file < CLI, field by field), phys_tile_index()/count_seam_crossings() (255 m physics grid, origin 0.5), sample_l0_height() (bilinear on the L0 cell-centre lattice through any tile lookup), check_route() (length, 10 m-window max/p99 grade plus a steep_stretches list above grade_report_threshold, seam crossings, elevation range, NoData, corner radius = circle through the points +-corner_window_m (10 m) along the route at every 1 m sample (waypoint-density independent) plus a tight_corners list below corner_report_radius_m, start offset vs RouteCheckParams' R5 criteria), route_matches_world(), check_route_on_world() (the same over WorldTerrain::height_tile_shared) - used by tools/route_check and the [realdata] test
     src/
       session.cpp                     Session implementation - builds a ps::World by hand (flat: ground box + chassis + one vehicle; terrain: streamed G2mTerrainSource + chassis + one vehicle), never parses a scenario JSON; the terrain gate, start-up, priming, spawn rays, StreamingStatus atomics, relocation, make_session
@@ -34,6 +35,7 @@ racing_game/
       fixed_rate_loop.cpp             FixedRateLoop implementation
       world_config.cpp                load_world_config() implementation - strict, exception-free JSON validation (see "World config" below)
       terrain_view_streamer.cpp       TerrainViewStreamer implementation (one worker thread, one diff in flight, coalescing)
+      road_classes.cpp                road_classes.h implementation
       route_check.cpp                 route_check.h implementation
     CMakeLists.txt                    rg_core STATIC target
   godot_ext/
@@ -91,6 +93,7 @@ racing_game/
       test_terrain_view_streamer.cpp  rg::TerrainViewStreamer tests (R8) over a synthetic, optionally gated tile store: exact key diff, hole-free adds-then-removals at every step (plus a wrong-order negative control), no work while stationary, 1-vs-8 build-thread identical diffs, coalescing while busy, cancel+join on destruction
       test_route_check.cpp            rg::route_check tests on synthetic terrain (seam counting incl. negative indices/corners, grade window max/p99, NoData, corner radius, start/length criteria, sample_l0_height across tile borders, load_route errors, steep-stretch and tight-corner lists, corner radius on arcs/kinks and its density independence, "criteria" loading + apply_route_criteria precedence); one hidden `[.][realdata]` case runs the committed route on the real store under its own "criteria", SKIP unless RG_G2M_HOME is set
       test_world_terrain.cpp          rg::WorldTerrain / build_static_view_from_lookup tests (PLAN.md R2.1) over a synthetic in-memory TileKey->HeightTile map - no TileStore/Server needed; chunk selection, session-local origin math, 1-vs-N-thread byte-identical output; fetch_height_tile_cached concurrency; decode_height_tile_container on synthetic containers (height_offset of both signs with NoData kept, int32 overflow / NoData-collision rejection, layer/key mismatch, truncation)
+      test_road_classes.cpp           rg::road_classes tests (roads_plan.md R-2) over synthetic RoadSegment lists - no TileStore/Server/OSM-decode needed: the level policy's min_rank/min_half_width_mm against RoadStyle::default_style()'s own tertiary/primary ranks, road_class_lattice()/src_osm_tiles_for_chunk() against terrain_chunk.h's vertex-placement formula, a road segment appearing at L0 and being filtered out level-by-level (residential/tertiary/primary ranks), a null ClassLookup leaving the ClassWindow all-Unknown
       test_vehicle_data.cpp           (engine30, 2026-09-27, tag [vehicle_data]) loads data/vehicles/car_sedan.json via ps::io::load_vehicle_json and asserts the ONLY number that data file is held to: the clutch's static torque capacity (capacity_nm * static_factor) >= 1.2x the engine's peak WOT torque (max of TorqueMapEngineDesc::wot_torque_nm_vs_rpm.y) - both read back from the loaded VehicleDesc's PowertrainDesc::components, nothing hand-copied from the JSON's own "source" commentary. No launch/stall/top-speed/wheelspin test (owner ruling: wheelspin is allowed and not to be gated or tested on)
       CMakeLists.txt                  rg_test_catch_main + rg_unit_tests targets, CTest registration
   tools/
@@ -248,10 +251,11 @@ or overflow int32). `RenderChunk` (`rg/terrain_render.h`):
 `mesh` (geo2map_engine's own built `TerrainChunkMesh` - positions/normals/
 indices, Z-up, local to `mesh.origin`), `origin_session[3]` (`mesh.origin -
 (E0, N0, 0)`, still session-local metres, double precision), `rgba` (one
-packed RGBA8 colour per vertex - a hypsometric height/slope ramp;
-`terrain.class`/a real LandClass palette isn't in the geo2map_engine pin
-yet, so every chunk currently shades by height/slope, see
-`world_terrain.cpp`'s `chunk_vertex_color()`).
+packed RGBA8 colour per vertex - a hypsometric height/slope ramp, with
+`LandClass::PavedRoad`/`UnpavedRoad` painted over it where `mesh.land_class`
+says so - see "Visible roads (R-2)" below - every other class still falls
+through to the height/slope ramp, see `world_terrain.cpp`'s
+`chunk_vertex_colors()`).
 
 `RgTerrainView : godot::Node3D` (`godot_ext/src/rg_terrain_view.h/.cpp`) -
 the Godot-facing seam, mirroring `RgSimulation`'s "all engine-neutral logic
@@ -372,6 +376,56 @@ mode (R9). `tools/smoke_test.ps1 -TerrainStream` (debug DLL, real home-r1
 store): 5 steps, 708 added / 708 removed, 76-226 adds per diff, background
 build 108-293 ms, streaming frames 1.6-2.0 ms max (one op may overshoot the
 0.8 ms budget), removals 4-9 ms per diff spread over frames.
+
+## Visible roads (R-2)
+
+`rg/road_classes.h/.cpp` (roads_plan.md R-2, owner request 2026-09-27):
+OSM road classes (paved/unpaved) painted onto each render chunk's own L0
+cell-centre vertex lattice, using geo2map_engine's `g2m::extract_road_segments`/
+`g2m::rasterize_road_segments` (submodule pin `b401a6e`, R-1). Render path
+only - `data/tracks/...`/physics `cell_surface_ids` are untouched; grip from
+the road mask is a separate later step (roads_plan.md "Open for the owner").
+
+`ClassLookup{fn, ctx}` (mirrors `g2m::mesh::TileLookup`'s bare
+function-pointer-plus-ctx shape) is a field of `TerrainViewSource` and a
+trailing parameter of `build_render_chunks`/`build_static_view_from_lookup`;
+a default-constructed (null `fn`) one leaves every call byte-identical to
+before this field existed - `WorldTerrain::view_source()`/`build_static_view()`
+populate a real one (`&world_terrain_road_class_lookup`, an anonymous-
+namespace free function in `world_terrain.cpp` mirroring `world_terrain_lookup`)
+so both the streaming (drive) and static (preview) render paths pick up roads;
+`terrain_view_streamer.cpp`'s two `build_render_chunks` call sites forward
+`source_.class_lookup`.
+
+`WorldTerrain::road_segments(TileKey)` (level-2 `g2m.src.osm` tiles, 1024 m +
+128 m halo): blocking fetch (same `manifest_rid_`/`transport_` the height-tile
+path uses) + `g2m::parse_container`/`decode_body`/`decode_src_osm` +
+`g2m::extract_road_segments` against `g2m::RoadStyle::default_style()`,
+cached (`osm_cache_mutex_`/`osm_cache_`, same double-checked-insert scheme as
+`height_cache_` - a failure is reported to stderr and NOT cached, so it can be
+retried; "no roads" is a valid, non-fatal result).
+
+`rasterize_chunk_road_classes(key, lookup, out)`: `src_osm_tiles_for_chunk(key)`
+(the <= 4 osm tiles overlapping this chunk's footprint) -> fetch each via
+`lookup` -> merge -> re-sort by ascending rank (each tile's own extraction is
+sorted that way, the merge across tiles is not) -> `road_class_lattice(key)`
+(the chunk's own 65x65 lattice, derived from `g2m/mesh/terrain_chunk.h`'s
+vertex-placement formula) -> `g2m::rasterize_road_segments` with
+`road_raster_params_for_level(key.level)`'s `RasterParams`. Level policy
+(ranks looked up from `RoadStyle::default_style()` itself, never hard-coded):
+L0-L1 every road (`min_rank=0`), L2 tertiary and above, L3 primary and above
+plus a `0.75 * spacing` half-width floor, L>=4 `std::nullopt` (no road
+classes at all - both "disabled" and "no roads found" leave the chunk's
+`ClassWindow` all-`Unknown`, which `build_chunk` already treats as "no class
+data").
+
+`world_terrain.cpp`'s `chunk_vertex_colors` now paints `LandClass::PavedRoad`
+grey `(0.30, 0.30, 0.32)` and `LandClass::UnpavedRoad` a dirt-track brown
+`(0.36, 0.28, 0.16)` (chosen: distinct from both the paved grey above and the
+hypsometric ramp's own ridge-brown `(0.45, 0.34, 0.22)`) ahead of the existing
+height/slope ramp - the `terrain.class`/palette gap this file's comment used
+to describe (no LandClass at all before this pin) is now just "every other
+LandClass still falls through to the height/slope ramp".
 
 ## Session terrain mode (R4)
 
@@ -715,7 +769,9 @@ another session; read it, never copy/edit it into this repo).
   `g2m_phys`/`g2m_ps_bridge`, not just compiles against their headers) and
   `rg::WorldTerrain`/`build_static_view_from_lookup`
   coverage (`test_world_terrain.cpp` - PLAN.md R2.1, synthetic in-memory
-  `TileKey`->`HeightTile` map, see "Terrain preview (R2.1)" above). Catch2
+  `TileKey`->`HeightTile` map, see "Terrain preview (R2.1)" above), and
+  `rg::road_classes` coverage (`test_road_classes.cpp` - roads_plan.md R-2,
+  synthetic `RoadSegment` lists, see "Visible roads (R-2)" below). Catch2
   v3 via `rg_test_catch_main`, plus `nlohmann_json::nlohmann_json` PRIVATE
   (test fixture JSON is built with `nlohmann::json` directly). Registered
   with CTest.

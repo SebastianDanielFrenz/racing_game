@@ -77,7 +77,8 @@ bool TerrainViewStreamer::build_initial(double x, double y, std::vector<RenderCh
     select_view_keys(x, y, source_.params, source_.e0, source_.n0, keys);
     const unsigned threads =
         options_.initial_build_threads == 0 ? auto_initial_threads() : options_.initial_build_threads;
-    build_render_chunks(keys, source_.lookup, source_.ctx, source_.e0, source_.n0, threads, out);
+    build_render_chunks(keys, source_.lookup, source_.ctx, source_.e0, source_.n0, threads, out, /*cancel=*/nullptr,
+                        source_.class_lookup);
 
     std::sort(keys.begin(), keys.end());
     std::lock_guard<std::mutex> lk(mutex_);
@@ -202,7 +203,8 @@ void TerrainViewStreamer::worker_main() {
                             std::back_inserter(diff.removed));
 
         if (!build_render_chunks(to_build, source_.lookup, source_.ctx, source_.e0, source_.n0,
-                                 std::max(1u, options_.build_threads), diff.added, &cancel_)) {
+                                 std::max(1u, options_.build_threads), diff.added, &cancel_,
+                                 source_.class_lookup)) {
             return; // cancelled: only the destructor raises cancel_
         }
         const double ms =
