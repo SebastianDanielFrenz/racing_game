@@ -51,7 +51,7 @@ constexpr std::int64_t kN0 = 5560000;
 class FlatSyntheticFetch final : public g2m::phys::IHeightTileFetch {
 public:
     g2m::phys::FetchResult fetch(const g2m::TileKey& key) override {
-        if (key.level != 0) return g2m::phys::FetchResult{g2m::Status::NotFound, nullptr};
+        if (key.level != 0) return g2m::phys::FetchResult{g2m::Status::NotFound, nullptr, nullptr};
         auto t = std::make_shared<g2m::HeightTile>(); // heap (TOOL-039: 256 KiB, never on the stack)
         t->key = key;
         t->has_nodata = false;
@@ -61,7 +61,7 @@ public:
                 t->h[static_cast<std::size_t>(j) * g2m::kTerrainTileSamples + static_cast<std::size_t>(i)] = h;
             }
         }
-        return g2m::phys::FetchResult{g2m::Status::Ok, std::move(t)};
+        return g2m::phys::FetchResult{g2m::Status::Ok, std::move(t), nullptr};
     }
 };
 

@@ -76,16 +76,16 @@ public:
         calls.fetch_add(1, std::memory_order_relaxed);
         if (storm.load(std::memory_order_relaxed)) {
             unavailable.fetch_add(1, std::memory_order_relaxed);
-            return g2m::phys::FetchResult{g2m::Status::Unavailable, nullptr};
+            return g2m::phys::FetchResult{g2m::Status::Unavailable, nullptr, nullptr};
         }
         const std::int64_t dx0 = key.min_easting() - kE0;
         const std::int64_t dy0 = key.min_northing() - kN0;
         if (key.level != 0 || dx0 + 256 <= -kCoverageM || dx0 >= kCoverageM || dy0 + 256 <= -kCoverageM ||
             dy0 >= kCoverageM) {
             not_found.fetch_add(1, std::memory_order_relaxed);
-            return g2m::phys::FetchResult{g2m::Status::NotFound, nullptr};
+            return g2m::phys::FetchResult{g2m::Status::NotFound, nullptr, nullptr};
         }
-        return g2m::phys::FetchResult{g2m::Status::Ok, tile(key)};
+        return g2m::phys::FetchResult{g2m::Status::Ok, tile(key), nullptr};
     }
 
     std::atomic<bool> storm{false};
@@ -188,7 +188,7 @@ public:
     g2m::phys::FetchResult fetch(const g2m::TileKey& key) override {
         if (hold.load(std::memory_order_relaxed) && key.min_easting() - kE0 >= 1100) {
             held_503.fetch_add(1, std::memory_order_relaxed);
-            return g2m::phys::FetchResult{g2m::Status::Unavailable, nullptr};
+            return g2m::phys::FetchResult{g2m::Status::Unavailable, nullptr, nullptr};
         }
         return inner_->fetch(key);
     }

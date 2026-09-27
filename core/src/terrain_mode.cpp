@@ -12,9 +12,9 @@ HeightTileSharedFetch::HeightTileSharedFetch(HeightTileFetchFn fn) : fn_(std::mo
 g2m::phys::FetchResult HeightTileSharedFetch::fetch(const g2m::TileKey& key) {
     HeightTileFetchResult r = fn_(key);
     // Keep the contract "tile non-null iff Ok" on the physics side too.
-    if (r.status != g2m::Status::Ok) return g2m::phys::FetchResult{r.status, nullptr};
-    if (r.tile == nullptr) return g2m::phys::FetchResult{g2m::Status::Internal, nullptr};
-    return g2m::phys::FetchResult{r.status, std::move(r.tile)};
+    if (r.status != g2m::Status::Ok) return g2m::phys::FetchResult{r.status, nullptr, nullptr};
+    if (r.tile == nullptr) return g2m::phys::FetchResult{g2m::Status::Internal, nullptr, nullptr};
+    return g2m::phys::FetchResult{r.status, std::move(r.tile), nullptr};
 }
 
 TerrainModeConfig make_terrain_mode(const WorldConfig& config, const g2m::geo::SessionFrame& frame,

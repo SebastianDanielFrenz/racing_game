@@ -180,10 +180,17 @@ release/`linux-release` preset's populated FetchContent sources. Override
 with `-DRG_G2M_DEPS_DIR=...` if that path differs on another machine; a
 `message(WARNING ...)` fires if the directory does not exist.
 
-Bumped to `b401a6e` (R-1 of the roads-visibility work, 2026-09-27) to bring
-in `g2m::layer::osm_roads` (`RoadStyle`/`extract_road_segments`/
-`rasterize_road_segments`), consumed by `rg/road_classes.h` - see "Terrain
-preview" below.
+Bumped to `1e18588` (G2.5a-grip G-a/G-b/G-c, 2026-09-27) to bring in road
+paint + the owner-rule raster (`g2m::layer::osm_roads`'s `RoadValueLut`,
+`paint_road_segments`/`paint_road_blocks`/`rasterize_road_blocks`,
+`raster_params_for_render_level`), roads riding on height residency plus
+`fill_physics_surfaces` (`g2m::phys`), and the bridge's road-mode
+`G2mTerrainSource` ctor - consumed starting with R-b below. `g2m::phys::
+FetchResult` gained a third `roads` member; every 2-arg brace-init in this
+repo (`core/src/terrain_mode.cpp`, `tests/unit/test_session_reinit.cpp`,
+`tests/unit/test_session_terrain.cpp`) now passes an explicit `nullptr` for
+it - no behaviour change, `HeightTileSharedFetch::fetch` still never
+produces roads (R-c wires that up).
 
 ## World config
 
