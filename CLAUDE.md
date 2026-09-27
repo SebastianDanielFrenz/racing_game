@@ -454,92 +454,15 @@ default 20000 m rose from 32.44 ms to 36.89 ms (+13.7%) with this rasterisation
 now running on every chunk build - see "Terrain preview (R2.1)" above for the
 full sweep and the +50% budget check.
 
-**R-4 finding, coordinator review round (2026-09-27, reported as measured, not
-fudged):** the first four `--drive --road-shots` screenshots showed the R-2
-road paint only at the closest-to-spawn shot (`05_road_b8_junction.png`); the
-other three (each reached by a single large `relocate_vehicle` jump replacing
-the whole ~460-480-chunk visible set at once) rendered as plain green with no
-road, despite (a) every shot's wheel telemetry reading `surface=asphalt` at
-every corner and (b) `test_route_road_coverage.cpp` (R-3) classifying 100% of
-the same route - including these three s-values - as road. Root-caused and
-fixed as follows.
-
-*Root cause: `road_shots.gd`'s own settle gate, not `road_classes.cpp`/
-`world_terrain.cpp`.* Two lines of evidence rule out the render path's own
-rasterisation/fetch code: (1) `test_route_road_render_path.cpp` (new,
-`[.][realdata][terrain]`) drives the REAL render path - `rg::select_view_keys`
-+ `rg::build_render_chunks` at the real 8-thread cap, on one persistent
-`rg::WorldTerrain`, through the same four targets in the same order
-`road_shots.gd` relocates through, 3 repeats - and finds every target's L0
-chunk correctly painted every time (`road_vertices` 1455/1107/667/1017 out of
-4485, identical across repeats) with `OsmFetchStats.fail == 0` throughout (the
-new `osm_fetch_stats()` diagnostic, see above); (2) the same test's ground-truth
-pass confirms all four targets sit within 0.0001-0.002 m of a real road
-segment (i.e. `relocate_vehicle` lands squarely on the route, not off it). So:
-not a cache/key/origin bug, not an off-route relocation, not a fetch failure
-under real 8-thread contention - the three leading hypotheses from the first
-pass were each tested directly and NOT confirmed.
-
-The actual bug: `road_shots.gd`'s "settle" phase gated the screenshot on
-`RgTerrainView.is_fully_uploaded()` alone (`chunks_.size() ==
-next_upload_index_` - its own upload QUEUE is drained). That reads true the
-ENTIRE time `TerrainViewStreamer`'s background worker is still BUILDING the
-new focus's chunk set, because `chunks_` still holds whatever the OLD,
-pre-relocate set was until the new diff actually arrives; `SHOT_FRAMES=12`
-frames (a few hundred ms) is nowhere near enough to cover a real chunk build
-(measured `last_build_ms` 855-903 ms per relocate in the retaken run below -
-a real, if modest, cost of the ~470-chunk height+OSM fetch/rasterise burst,
-not something that finishes within 12 frames at 27-30 fps). The screenshot
-was therefore taken mid-build, showing stale content. Fixed by gating on
-`RgTerrainView.is_stream_idle()` instead (`is_fully_uploaded() &&
-streamer_->phase() == Idle` - i.e. the new diff has actually been applied),
-in both the `wait_ready` and `settle` phases, plus logging
-`get_stream_stats()` (`stream_idle`/`streamer_phase`/`diffs_applied`/
-`selections_started`/`last_build_ms`) into `poses.txt` for verification.
-
-**Retaken shots** (same 4 targets, same tour, `roads_shots/poses.txt`):
-`06_road_bridge.png` `diffs_applied=1 last_build_ms=855.5`,
-`07_road_forest.png` `diffs_applied=2 last_build_ms=882.5`,
-`08_road_konigstein.png` `diffs_applied=3 last_build_ms=902.8`, all four
-`stream_idle=1`; visually every shot now shows the road (grey paved ribbon)
-under and ahead of the car, and shot 06's earlier physics anomaly (tilted
-chassis, near-airborne wheel, `measured 102.71 Hz` sim tick vs. target 240) is
-gone - all four shots read `measured 239-241 Hz` and balanced per-wheel loads,
-confirming the earlier anomaly was itself downstream of the same premature-
-screenshot timing (the shot landed mid-settle, not just mid-terrain-build).
-
-**FPS (coordinator task 2):** road classing runs ONLY inside
-`build_render_chunks`, called ONLY from `TerrainViewStreamer`'s dedicated
-background worker thread (`terrain_view_streamer.cpp`), once per focus
-change - never from `RgTerrainView::_process`/the main thread, and never
-per-frame; `get_stream_stats().last_build_ms` (855-903 ms above) is the whole
-cost, paid once per relocate on a background thread. It also cannot add
-GPU/rasterisation cost: `ClassLookup` only changes each vertex's `land_class`
-byte -> colour, never vertex/triangle count. Measured in the SAME retaken run
-(`road_shots_v2_run.log`): `godot fps` sits at 27-30 throughout - identical
-whether the streamer is actively building (`inflight=30-85`, e.g. t=3.0
-fps=27, t=11.9 fps=29) or fully idle for 8+ seconds after
-(`inflight=0`, e.g. t=13.5-19.6 fps=28-29) - and was ALREADY in the same
-range (`fps=7.0` then `32.0` then `16.0` then `25.0`) at the very first frames
-after initial load, before any `road_shots.gd` relocate or road-classing
-build had run for this tour at all. fps does not correlate with streaming
-activity in this data; no regression attributable to road classing/OSM fetch
-was found. The engine's own startup line
-(`OpenGL API 3.3.0 Core Profile Context ... - Compatibility`) shows this
-session rendering through Godot 4's Compatibility renderer rather than the
-default Forward+/Vulkan one, which is a far more likely explanation for a
-flat ~30 fps ceiling on a ~470-chunk (~2.1M vertex) terrain view - a
-pre-existing environment/renderer characteristic, not something R-4
-introduced, and out of R-4's own scope to change. The "220-240 fps in earlier
-real-world runs" the coordinator recalled was not reproduced as a baseline in
-this session/environment even before road_shots.gd's first relocate, so it
-was not directly re-measured here; nothing above rules out a genuine
-difference between environments, only that streaming/road-classing activity
-itself is not the variable driving the fps seen in this run.
-
-See the R-4 commit, `tests/unit/test_route_road_render_path.cpp` and
-`roads_shots/poses.txt`/`roads_shots_v2/poses.txt` for the raw per-shot
-numbers.
+`game/scripts/road_shots.gd` (`--drive --road-shots <dir>`) gates every
+shot on `RgTerrainView.is_stream_idle()` (upload queue drained AND the
+streamer idle, i.e. the post-relocate diff applied), not
+`is_fully_uploaded()` alone, and logs `get_stream_stats()` into
+`poses.txt`. `tests/unit/test_route_road_render_path.cpp`
+(`[.][realdata][terrain]`) drives the real `select_view_keys` +
+`build_render_chunks` path through road_shots.gd's four relocate targets.
+`WorldTerrain::osm_fetch_stats()` (`OsmFetchStats{ok, fail, cache_hits}`)
+counts `g2m.src.osm` fetches. Findings and rationale: vault G2M-009.
 
 ## Session terrain mode (R4)
 
