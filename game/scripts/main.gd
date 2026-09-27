@@ -588,13 +588,16 @@ func _report() -> void:
 func status_line(prefix: String) -> String:
 	var ss: Dictionary = _simulation.get_streaming_status()
 	var pt: Dictionary = _simulation.get_vehicle_powertrain(VEHICLE_NAME)
-	return "%s ticks=%d speed_kmh=%.1f gear=%d rpm=%.0f frozen=%s missing=%d inflight=%d freezes=%d frozen_ticks=%d falls=%d misses=%d starved=%d relocations=%d relocate_failures=%d mode=%s" % [
+	var surface := ""
+	if _simulation.get_vehicle_names().has(VEHICLE_NAME):
+		surface = _simulation.get_wheel_surface_name(VEHICLE_NAME, 0)
+	return "%s ticks=%d speed_kmh=%.1f gear=%d rpm=%.0f frozen=%s missing=%d inflight=%d freezes=%d frozen_ticks=%d falls=%d misses=%d starved=%d relocations=%d relocate_failures=%d mode=%s surface=%s" % [
 		prefix, int(_simulation.get_step_count()), _simulation.get_body_speed_mps("chassis") * 3.6,
 		int(pt.get("gear", 0)), float(pt.get("rpm", 0.0)), "yes" if bool(ss.get("frozen", false)) else "no",
 		int(ss.get("missing_required", 0)), int(ss.get("inflight", 0)), int(ss.get("freeze_count", 0)),
 		int(ss.get("frozen_attempts", 0)), int(ss.get("falls", 0)), int(ss.get("fill_misses", 0)),
 		int(ss.get("starved_tiles", 0)), int(ss.get("relocations", 0)), int(ss.get("relocate_failures", 0)),
-		_simulation.get_player_mode()]
+		_simulation.get_player_mode(), surface if surface != "" else "?"]
 
 # rg_core decides the active rig and which input groups are live.
 func _apply_mode_state() -> Dictionary:

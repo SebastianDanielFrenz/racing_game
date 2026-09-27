@@ -123,6 +123,11 @@ func _process(_delta: float) -> void:
 			int(ss.get("failed", 0)), int(ss.get("resident_tiles", 0)), int(ss.get("starved_tiles", 0)),
 			int(ss.get("freeze_count", 0)), int(ss.get("frozen_attempts", 0)), int(ss.get("falls", 0)),
 			int(ss.get("fill_misses", 0)), int(ss.get("relocations", 0)), chunks, rebases])
+		# G2.5a-grip R-c: per-cell OSM road grip vs. one uniform terrain_surface.
+		if bool(ss.get("road_surfaces", false)):
+			lines.append("grip: roads (osm_ok=%d osm_fail=%d)" % [int(ss.get("osm_ok", 0)), int(ss.get("osm_fail", 0))])
+		else:
+			lines.append("grip: uniform %s" % _simulation.get_terrain_surface_name())
 	lines.append("")
 
 	if vehicle_name != "" and _simulation.get_vehicle_names().has(vehicle_name):

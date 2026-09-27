@@ -297,6 +297,21 @@ if ($script:Failures.Count -eq 0 -and -not $script:DriveSkipped) {
         } else {
             Report-Ok "falls=0 misses=0 on all $($numberLines.Count) RG_DRIVE numbers lines"
         }
+        # G2.5a-grip R-c: the spawn point on data/routes/home_r1_drive.json is
+        # a paved road (test_route_grip.cpp's realdata proof) - wheel 0's
+        # surface at the spawn check must read asphalt, never a fallback
+        # uniform/off-road value.
+        $spawnCheckLine = $logContent | Select-String -Pattern 'RG_DRIVE spawn_check .*surface0=(\S+)' | Select-Object -Last 1
+        if (-not $spawnCheckLine) {
+            Report-Fail "no 'RG_DRIVE spawn_check' line carries surface0= - main.gd's _report() spawn check may not have run"
+        } else {
+            $spawnSurface = $spawnCheckLine.Matches[0].Groups[1].Value
+            if ($spawnSurface -eq 'asphalt') {
+                Report-Ok "spawn surface is asphalt (surface0=$spawnSurface)"
+            } else {
+                Report-Fail "spawn surface0=$spawnSurface (expected asphalt)"
+            }
+        }
         $doneLine = $logContent | Select-String -Pattern 'RG_DRIVE done .*' | Select-Object -Last 1
         if (-not $doneLine) {
             Report-Fail "no 'RG_DRIVE done' line - drive_smoke.gd did not finish"

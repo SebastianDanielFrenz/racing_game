@@ -293,7 +293,14 @@ godot::Dictionary RgSimulation::get_streaming_status() const {
     d["prime_ticks"] = static_cast<std::int64_t>(s.prime_ticks);
     d["relocations"] = static_cast<std::int64_t>(s.relocations);
     d["relocate_failures"] = static_cast<std::int64_t>(s.relocate_failures);
+    d["road_surfaces"] = s.road_surfaces;
+    d["osm_ok"] = static_cast<std::int64_t>(s.osm_ok);
+    d["osm_fail"] = static_cast<std::int64_t>(s.osm_fail);
     return d;
+}
+
+String RgSimulation::get_terrain_surface_name() const {
+    return session_ ? String(session_->terrain_surface_name().c_str()) : String();
 }
 
 godot::Vector3 RgSimulation::get_render_origin_session() const {
@@ -563,6 +570,7 @@ void RgSimulation::_bind_methods() {
     godot::ClassDB::bind_method(D_METHOD("is_running"), &RgSimulation::is_running);
     godot::ClassDB::bind_method(D_METHOD("is_terrain_mode"), &RgSimulation::is_terrain_mode);
     godot::ClassDB::bind_method(D_METHOD("get_streaming_status"), &RgSimulation::get_streaming_status);
+    godot::ClassDB::bind_method(D_METHOD("get_terrain_surface_name"), &RgSimulation::get_terrain_surface_name);
     godot::ClassDB::bind_method(D_METHOD("get_render_origin_session"), &RgSimulation::get_render_origin_session);
     godot::ClassDB::bind_method(D_METHOD("retry_failed_tiles"), &RgSimulation::retry_failed_tiles);
     godot::ClassDB::bind_method(D_METHOD("relocate_vehicle", "session_x", "session_y", "yaw_deg"),

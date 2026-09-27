@@ -118,6 +118,9 @@ public:
     // a successful initialize_terrain()) ---
     [[nodiscard]] bool is_terrain_mode() const;
     [[nodiscard]] godot::Dictionary get_streaming_status() const; // every rg::StreamingStatus field, snake_case
+    // physics.terrain_surface's configured name (G2.5a-grip R-c HUD); empty
+    // in flat mode. See rg::Session::terrain_surface_name().
+    [[nodiscard]] godot::String get_terrain_surface_name() const;
     [[nodiscard]] godot::Vector3 get_render_origin_session() const; // RAW session-frame (east, north, up)
     void retry_failed_tiles();
     // rg::Session::request_relocate / request_reset_to_spawn (R2.2 R9):
