@@ -672,6 +672,8 @@ func _process(delta: float) -> void:
 		switch_world()
 	if _input_map.consume_reset_car() > 0 and world_state == "running":
 		_simulation.reset_vehicle_to_spawn()
+	if _input_map.consume_flip_upright() > 0 and world_state == "running" and _simulation.get_player_mode() == "drive":
+		_simulation.flip_vehicle_upright()
 
 	match world_state:
 		"loading":

@@ -135,6 +135,10 @@ public:
     // modes; no-op without a Session.
     void relocate_vehicle(double session_x, double session_y, double yaw_deg);
     void reset_vehicle_to_spawn();
+    // rg::Session::request_flip_upright: put the car back on its wheels
+    // WHERE IT IS, keeping its heading - unlike reset_vehicle_to_spawn, never
+    // moves it back to spawn. No-op without a Session.
+    void flip_vehicle_upright();
 
     [[nodiscard]] std::int64_t get_step_count() const;
     [[nodiscard]] double get_sim_time() const;

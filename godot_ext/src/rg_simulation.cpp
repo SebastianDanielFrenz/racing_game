@@ -354,6 +354,10 @@ void RgSimulation::reset_vehicle_to_spawn() {
     if (session_) session_->request_reset_to_spawn();
 }
 
+void RgSimulation::flip_vehicle_upright() {
+    if (session_) session_->request_flip_upright();
+}
+
 std::int64_t RgSimulation::get_step_count() const {
     return session_ ? static_cast<std::int64_t>(session_->snapshot().tick) : 0;
 }
@@ -627,6 +631,7 @@ void RgSimulation::_bind_methods() {
     godot::ClassDB::bind_method(D_METHOD("relocate_vehicle", "session_x", "session_y", "yaw_deg"),
                                 &RgSimulation::relocate_vehicle);
     godot::ClassDB::bind_method(D_METHOD("reset_vehicle_to_spawn"), &RgSimulation::reset_vehicle_to_spawn);
+    godot::ClassDB::bind_method(D_METHOD("flip_vehicle_upright"), &RgSimulation::flip_vehicle_upright);
     godot::ClassDB::bind_method(D_METHOD("get_step_count"), &RgSimulation::get_step_count);
     godot::ClassDB::bind_method(D_METHOD("get_sim_time"), &RgSimulation::get_sim_time);
     godot::ClassDB::bind_method(D_METHOD("get_tick_rate_hz"), &RgSimulation::get_tick_rate_hz);

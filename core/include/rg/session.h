@@ -344,6 +344,30 @@ public:
     void request_reset_to_spawn(); // the config's spawn (flat mode: the origin, yaw 0)
     static constexpr double kRelocateParkZ = 4000.0;
 
+    // Flip the car upright IN PLACE, keeping its current position and
+    // heading (owner request: a car that rolled onto its roof/side/nose
+    // should be put back on its wheels where it is, not sent back to spawn -
+    // that is what request_reset_to_spawn is for). Any thread; consumed by
+    // the next tick attempt on the stepping thread, which reads the
+    // chassis's CURRENT pose there (never off this thread) and builds a
+    // RelocateTarget from it: yaw comes from the chassis's local +X
+    // (forward) axis rotated to world and projected onto the horizontal
+    // plane, or - when the car is standing on its nose or tail and that
+    // projection is too short (< 0.2) to trust - from the local +Y (left)
+    // axis projected instead (yaw = atan2(left.y, left.x) - pi/2; both
+    // degenerate cannot happen for a unit rotation, kept as a defensive
+    // fallback to yaw 0). The target then goes through EXACTLY the same path
+    // as request_relocate (relocation_ -> the terrain gate ->
+    // finish_relocation): five-ray placement at the target x/y/yaw, zeroed
+    // motion, World::reset_vehicle (gear to neutral, engine kept running
+    // unless it was off) and status_.relocations counted. If a real
+    // request_relocate is ALSO pending for the same tick, the explicit
+    // relocate wins outright - it already lands upright, so the flip request
+    // is simply dropped rather than carried into a later tick against a pose
+    // the relocate has already moved past. Nothing calls this on its own, so
+    // hashes are unaffected.
+    void request_flip_upright();
+
     // Replaces the drive script (rewound: every event already due at the
     // current drive tick is applied on the next stepped tick). While a
     // script is set it is the only control source of try_step()/step() and
@@ -491,6 +515,7 @@ private:
     std::mutex relocate_mutex_;         // guards relocate_request_
     RelocateTarget relocate_request_;   // latest request (any thread)
     std::atomic<bool> relocate_pending_{false};
+    std::atomic<bool> flip_upright_pending_{false}; // request_flip_upright (any thread)
     std::optional<RelocateTarget> relocation_; // stepping thread: accepted, waiting for its gate
 
     // Its thread runs step_once over every member above; ~Session() stops it

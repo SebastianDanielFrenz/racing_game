@@ -5,18 +5,25 @@ extends Node
 #  2. drives straight at throttle 0.5 for DRIVE_S seconds of sim time
 #     (main.scripted_controls replaces the player's driving inputs; auto-shift
 #     picks 1st from neutral);
-#  3. only with --g2m-fetch-delay-ms: relocates the car (RgSimulation.
+#  3. flips the car upright IN PLACE (RgSimulation.flip_vehicle_upright) and
+#     waits: checks the streaming status's relocations counter advances and
+#     the car stayed close to where it was (unlike a reset-to-spawn) - the
+#     car is already upright here (this script has no way to roll it over),
+#     so this is an end-to-end wiring check of the binding, not a coverage
+#     test of the yaw recovery itself (that is tests/unit/test_session.cpp's
+#     job);
+#  4. only with --g2m-fetch-delay-ms: relocates the car (RgSimulation.
 #     relocate_vehicle) to the waypoint RELOCATE_ALONG_M along
 #     data/routes/home_r1_drive.json, facing the next waypoint. Those tiles are
 #     not resident and every fetch is delayed, so the terrain gate must freeze
 #     the clock; waits for the relocation to land, then checks that the tick
 #     count advances again over AFTER_S seconds of wall time;
-#  4. runtime switching, no restart: cycles the player mode to free_cam
+#  5. runtime switching, no restart: cycles the player mode to free_cam
 #     (checks the free rig is active and the car unattended) and back to
 #     drive; switches the world to flat, back to the real world, cancels that
 #     load CANCEL_AFTER_FRAMES frames in with another switch (prints how long the
 #     cancel-then-join took), and switches to the real world once more;
-#  5. prints one "RG_DRIVE done ..." line (main.gd's status_line numbers of
+#  6. prints one "RG_DRIVE done ..." line (main.gd's status_line numbers of
 #     the final real-world Session - a NEW Session after the round trip, so
 #     its own freezes start at 0 - plus drove_m / freezes_before /
 #     relocate_freezes (the first Session's freeze_count once the relocation
@@ -28,6 +35,7 @@ extends Node
 # proceed (load failure, a mode/world check failing, timeout).
 
 const DRIVE_S := 6.0
+const FLIP_WAIT_S := 1.0
 const RELOCATE_ALONG_M := 3000.0
 const AFTER_S := 3.0
 const CANCEL_AFTER_FRAMES := 3 # a warm-cache load takes ~0.4 s: cancel well inside it
@@ -42,6 +50,8 @@ var _mark_ms: int = 0
 var _mark_ticks: int = 0
 var _drive_start := Vector3.ZERO
 var _drove_m: float = 0.0
+var _flip_before_pos := Vector3.ZERO
+var _flip_relocations_before: int = 0
 var _freezes_before: int = 0
 var _relocate_freezes: int = -1 # freeze_count once the relocation landed (the final Session is a new one)
 var _advanced: int = -1
@@ -97,6 +107,27 @@ func _process(_delta: float) -> void:
 				var p: Vector3 = main.chassis_session_position()
 				_drove_m = Vector2(p.x, p.y).distance_to(Vector2(_drive_start.x, _drive_start.y))
 				print(main.status_line("RG_DRIVE smoke drove %.1f m in %.1f s:" % [_drove_m, DRIVE_S]))
+				# Flip upright IN PLACE, already upright (this script has no
+				# way to roll the car over) - an end-to-end wiring check that
+				# the binding relocates without sending the car back to spawn.
+				main.scripted_controls = {}
+				_flip_before_pos = p
+				_flip_relocations_before = int(sim.get_streaming_status().get("relocations", 0))
+				sim.flip_vehicle_upright()
+				_mark_ms = Time.get_ticks_msec()
+				_phase = "flip_upright"
+		"flip_upright":
+			if (Time.get_ticks_msec() - _mark_ms) / 1000.0 >= FLIP_WAIT_S:
+				var ss0: Dictionary = sim.get_streaming_status()
+				if int(ss0.get("relocations", 0)) < _flip_relocations_before + 1:
+					_finish(1, "flip upright did not relocate (relocations=%d)" % int(ss0.get("relocations", 0)))
+					return
+				var p2: Vector3 = main.chassis_session_position()
+				var moved := Vector2(p2.x, p2.y).distance_to(Vector2(_flip_before_pos.x, _flip_before_pos.y))
+				if moved > 5.0:
+					_finish(1, "flip upright moved the car %.1f m (expected in place)" % moved)
+					return
+				print("RG_DRIVE smoke flip upright ok: stayed within %.2f m" % moved)
 				if main.fetch_delay_ms <= 0:
 					_begin_mode_check(sim)
 					return
@@ -104,7 +135,7 @@ func _process(_delta: float) -> void:
 				if target.is_empty():
 					_finish(1, "no relocation target in %s" % ROUTE)
 					return
-				_freezes_before = int(sim.get_streaming_status().get("freeze_count", 0))
+				_freezes_before = int(ss0.get("freeze_count", 0))
 				print("RG_DRIVE smoke relocating to (%.1f, %.1f) yaw_deg=%.1f, %.0f m along the route, freezes so far %d" % [
 					target[0], target[1], target[2], target[3], _freezes_before])
 				sim.relocate_vehicle(target[0], target[1], target[2])

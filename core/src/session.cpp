@@ -152,6 +152,26 @@ ps::SurfaceId resolve_grip_surface(const ps::io::SurfaceTable& table, const char
     return id;
 }
 
+constexpr double kPi = 3.14159265358979323846;
+
+// The heading Session::request_flip_upright relocates to: the chassis local
+// +X (forward) axis rotated to world and projected onto the horizontal
+// plane, or - when the car is standing on its nose or tail and that
+// projection is too short (< 0.2) to trust - the local +Y (left) axis
+// projected instead, offset by -pi/2 so it reads as the same heading a level
+// car with that left axis would have (see request_flip_upright's doc
+// comment). Both degenerate cannot happen for a unit rotation; falls back to
+// yaw 0 defensively.
+double flip_upright_yaw(const ps::Quat& orientation) {
+    const ps::Vec3 fwd = orientation.rotate(ps::Vec3::unit_x());
+    const double fwd_h = std::sqrt(fwd.x * fwd.x + fwd.y * fwd.y);
+    if (fwd_h >= 0.2) return ps::math::atan2(fwd.y, fwd.x);
+    const ps::Vec3 left = orientation.rotate(ps::Vec3::unit_y());
+    const double left_h = std::sqrt(left.x * left.x + left.y * left.y);
+    if (left_h >= 0.2) return ps::math::atan2(left.y, left.x) - kPi * 0.5;
+    return 0.0;
+}
+
 } // namespace
 
 std::unique_ptr<ps::World> Session::make_world(const SessionConfig& config) {
@@ -373,11 +393,25 @@ void Session::request_relocate(double x, double y, double yaw_rad) {
 
 void Session::request_reset_to_spawn() { request_relocate(spawn_x_, spawn_y_, spawn_yaw_rad_); }
 
+void Session::request_flip_upright() { flip_upright_pending_.store(true, std::memory_order_release); }
+
 void Session::take_relocate_request() {
-    if (!have_vehicle_ || !relocate_pending_.load(std::memory_order_acquire)) return;
-    std::lock_guard<std::mutex> lock(relocate_mutex_);
-    relocate_pending_.store(false, std::memory_order_relaxed);
-    relocation_ = relocate_request_; // a newer request replaces one still waiting for its gate
+    if (!have_vehicle_) return;
+    if (relocate_pending_.load(std::memory_order_acquire)) {
+        std::lock_guard<std::mutex> lock(relocate_mutex_);
+        relocate_pending_.store(false, std::memory_order_relaxed);
+        relocation_ = relocate_request_; // a newer request replaces one still waiting for its gate
+        // An explicit relocate already lands upright (ray_spawn_pose's
+        // pure-yaw orientation) - drop a same-tick flip request rather than
+        // carry it into a later tick against a pose the relocate has already
+        // moved past (request_flip_upright's doc comment).
+        flip_upright_pending_.store(false, std::memory_order_relaxed);
+        return;
+    }
+    if (flip_upright_pending_.exchange(false, std::memory_order_acq_rel)) {
+        const ps::Pose pose = world_->get_pose(chassis_body_);
+        relocation_ = RelocateTarget{pose.position.x, pose.position.y, flip_upright_yaw(pose.orientation)};
+    }
 }
 
 void Session::finish_relocation() {

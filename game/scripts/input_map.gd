@@ -38,6 +38,7 @@ var _shift_down_count: int = 0
 var _cycle_mode_count: int = 0
 var _switch_world_count: int = 0
 var _reset_car_count: int = 0
+var _flip_upright_count: int = 0
 
 var _steer: float = 0.0
 var _throttle: float = 0.0
@@ -59,6 +60,7 @@ func _ready() -> void:
 	_ensure_action("rg_cycle_mode", [KEY_V], [JOY_BUTTON_BACK])
 	_ensure_action("rg_switch_world", [KEY_F8], [])
 	_ensure_action("rg_reset_car", [KEY_R], [JOY_BUTTON_Y])
+	_ensure_action("rg_flip_upright", [KEY_F], [JOY_BUTTON_DPAD_DOWN])
 	_ensure_action("rg_cam_forward", [KEY_W], [])
 	_ensure_action("rg_cam_back", [KEY_S], [])
 	_ensure_action("rg_cam_left", [KEY_A], [])
@@ -184,6 +186,8 @@ func poll() -> void:
 		_switch_world_count += 1
 	if _edge("reset_car", input.is_action_pressed("rg_reset_car")):
 		_reset_car_count += 1
+	if _edge("flip_upright", input.is_action_pressed("rg_flip_upright")):
+		_flip_upright_count += 1
 
 # --- driving group getters ---
 func get_steer() -> float:
@@ -253,6 +257,11 @@ func consume_switch_world() -> int:
 func consume_reset_car() -> int:
 	var n := _reset_car_count
 	_reset_car_count = 0
+	return n
+
+func consume_flip_upright() -> int:
+	var n := _flip_upright_count
+	_flip_upright_count = 0
 	return n
 
 # R0 has no haptics (tach_gauge.gd's RUMBLE lamp reads this).
