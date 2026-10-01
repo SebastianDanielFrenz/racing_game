@@ -397,10 +397,9 @@ build 108-293 ms, streaming frames 1.6-2.0 ms max (one op may overshoot the
 
 `rg/road_classes.h/.cpp` (roads_plan.md R-2, owner request 2026-09-27):
 OSM road classes (paved/unpaved) painted onto each render chunk's own L0
-cell-centre vertex lattice, using geo2map_engine's `g2m::extract_road_segments`/
-`g2m::rasterize_road_segments` (submodule pin `b401a6e`, R-1). Render path
-only - `data/tracks/...`/physics `cell_surface_ids` are untouched; grip from
-the road mask is a separate later step (roads_plan.md "Open for the owner").
+cell-centre vertex lattice, using geo2map_engine's `g2m::extract_road_segments`
+and shared owner-block rasterisation. Road grip is now wired in Session; see the
+G2.5a-grip update below.
 
 `ClassLookup{fn, ctx}` (mirrors `g2m::mesh::TileLookup`'s bare
 function-pointer-plus-ctx shape) is a field of `TerrainViewSource` and a
@@ -429,13 +428,9 @@ guessing at it; see the R-4 finding below for the numbers this produced (a
 clean `fail=0` in every run - the concurrency/fetch-failure hypothesis first
 suspected for the missing-road bug was tested directly and NOT confirmed).
 
-`rasterize_chunk_road_classes(key, lookup, out)`: `src_osm_tiles_for_chunk(key)`
-(the <= 4 osm tiles overlapping this chunk's footprint) -> fetch each via
-`lookup` -> merge -> re-sort by ascending rank (each tile's own extraction is
-sorted that way, the merge across tiles is not) -> `road_class_lattice(key)`
-(the chunk's own 65x65 lattice, derived from `g2m/mesh/terrain_chunk.h`'s
-vertex-placement formula) -> `g2m::rasterize_road_segments` with
-`road_raster_params_for_level(key.level)`'s `RasterParams`. Level policy
+rasterize_chunk_road_classes uses g2m::rasterize_road_blocks on the chunk
+lattice, painting each aligned L2 block from only its owner tile.
+road_raster_params_for_level forwards to the shared geo2map policy. Level policy
 (ranks looked up from `RoadStyle::default_style()` itself, never hard-coded):
 L0-L1 every road (`min_rank=0`), L2 tertiary and above, L3 primary and above
 plus a `0.75 * spacing` half-width floor, L>=4 `std::nullopt` (no road
@@ -443,13 +438,9 @@ classes at all - both "disabled" and "no roads found" leave the chunk's
 `ClassWindow` all-`Unknown`, which `build_chunk` already treats as "no class
 data").
 
-`world_terrain.cpp`'s `chunk_vertex_colors` now paints `LandClass::PavedRoad`
-grey `(0.30, 0.30, 0.32)` and `LandClass::UnpavedRoad` a dirt-track brown
-`(0.36, 0.28, 0.16)` (chosen: distinct from both the paved grey above and the
-hypsometric ramp's own ridge-brown `(0.45, 0.34, 0.22)`) ahead of the existing
-height/slope ramp - the `terrain.class`/palette gap this file's comment used
-to describe (no LandClass at all before this pin) is now just "every other
-LandClass still falls through to the height/slope ramp".
+Render colours resolve road classes through the configured RoadSurfaceMap names:
+asphalt is grey (0.30, 0.30, 0.32), dirt is brown (0.36, 0.28, 0.16). Other
+names and off-road classes use the height/slope ramp.
 
 **R-3 acceptance measurement** (`test_route_road_coverage.cpp`, real home-r1
 store, 2026-09-27): the committed `data/routes/home_r1_drive.json` (2103
@@ -521,6 +512,40 @@ a terrain-mode Session was built from (null in flat mode, or when the
 `make_terrain_mode(world_config, world_terrain)`) - `RgTerrainView::
 initialize_shared` (below) reuses it instead of opening/decoding a second
 copy.
+
+## Road grip update (G2.5a-grip R-b/R-c, 2026-10-01)
+
+The shipped physics.road_surfaces block enables asphalt for paved roads, dirt
+for unpaved roads and grass elsewhere. RoadSurfaceMap shares the configured
+names between render and physics. Render colours recognise asphalt (grey) and
+dirt (brown); other names and off-road classes use the height/slope ramp.
+
+rasterize_chunk_road_classes now calls g2m::rasterize_road_blocks: each aligned
+L2 OSM block uses only its owner tile's segments, avoiding neighbour-order
+dependence at equal-rank overlaps. road_raster_params_for_level forwards to the
+shared g2m::raster_params_for_render_level policy.
+
+In R4 terrain mode, make_terrain_mode supplies both height_tile_shared and
+road_segments_shared through HeightTileSharedFetch. Each L0 height key fetches
+roads from its L2 ancestor. The loader requires roads in this mode: a failed
+road input is retried/failed with the residency entry and freezes the gate. A
+successful empty road list is valid. Session::setup_terrain resolves the
+configured names through its SurfaceTable into a RoadValueLut and uses the
+road-mode G2mTerrainSource constructor. Missing road-layer/provider support,
+unknown names and ids >= 255 are startup errors. Disabling road_surfaces retains
+the uniform terrain_surface path and its existing synthetic R4 hash.
+
+StreamingStatus and RgSimulation.get_streaming_status expose road_surfaces,
+osm_ok and osm_fail. HUD shows grip: roads (with the OSM counters) or grip:
+uniform <name>. RG_DRIVE status includes wheel-zero surface=; spawn_check uses
+surface0=. The -Drive smoke requires asphalt at the road spawn.
+
+The real-data test_route_grip.cpp ([.][realdata][grip], requires RG_G2M_HOME)
+recorded 2103/2103 route samples asphalt and 84/84 forest-control samples grass.
+Session checks recorded all four wheels asphalt at 7/7 route positions and at
+least three wheels grass at 5/5 off-road positions. Rough terrain can leave one
+wheel without contact. These results do not establish bridge or 20-junction
+wheel-force acceptance.
 
 ## Godot bindings for Session terrain (R7)
 
@@ -893,6 +918,41 @@ contents` in `core/src/session.cpp`) against physics_sim's own scenario
 loader - not a tautological reload of the same JSON. A mismatch means
 `Session`'s construction diverges from the scenario's own semantics
 somewhere (wrong default, wrong body order, missed control event, etc.).
+
+## Recovery and stall diagnostics
+
+F / gamepad D-pad down requests flip upright while running in Drive mode.
+RgSimulation.flip_vehicle_upright forwards to Session::request_flip_upright. The
+stepping thread reads the current pose and reuses relocation at the current XY
+with a pure-yaw orientation. Heading uses the projected forward axis, falling
+back to the left axis when the forward projection is shorter than 0.2. Five-ray
+placement clears the terrain, motion is zeroed and the gear becomes neutral; a
+running engine stays running. An explicit same-tick relocation takes precedence.
+R still resets to spawn. Unit tests cover roof/side recovery, the nose-down
+heading fallback and relocation precedence.
+
+The real-time Session loop queues attempts over 8 ms or with a start-to-start
+gap over 20 ms (capacity 256). drain_tick_spikes returns and clears records and
+the overflow count; synchronous stepping does not collect them. main.gd prints
+RG_TICK_SPIKE during its one-second running-world reports, up to 40 lines plus a
+suppressed count. Records include tick/wall time, stepped/frozen/relocation
+kind, gap and previous duration, total duration,
+request/gate/control/World-step/post-step timings, position, speed and resident
+tile count. RG_FRAME_SPIKE reports main-thread frames over 50 ms with the step
+count. These thresholds exceed the 4.17 ms budget at 240 Hz.
+
+Set RG_WORLD_CSV to an output path before launching to record ps::World per-tick
+telemetry, including stage.<name>.ms, for attribution inside step_ms (for
+example terrain_tiles). The path announcement goes to stdout to avoid the
+PowerShell 5.1 smoke-test stderr failure rule.
+
+tools/run.ps1 defaults to relwithdebinfo; select -Preset debug explicitly when
+needed. All presets write game/bin/librg_godot.dll. Run/smoke helpers compare
+game/bin/librg_godot.preset with the requested preset and remove a stale DLL
+before building to force relinking. After a successful build they record the
+preset. -SkipBuild warns on a mismatch and launches the existing DLL.
+RgSimulation.get_build_info includes build_type=, and RG_DRIVE ready includes
+build= so logs identify the binary actually loaded.
 
 ## Building, testing, running
 

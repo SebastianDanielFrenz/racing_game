@@ -386,6 +386,15 @@ Rules:
   - the surface id under each wheel matches `SurfaceKind`;
   - bridges driveable both ways.
 
+R3 status (2026-10-01): terrain road colours and per-cell surface grip are
+implemented (G2.5a-grip R-b/R-c). The shipped world maps paved/unpaved/off-road
+to asphalt/dirt/grass. Real home-r1 proof recorded 2103/2103 route samples
+asphalt, 84/84 forest-control samples grass, plus Session wheel checks at 7
+route and 5 off-road positions. Drive smoke checks asphalt at spawn. See
+CLAUDE.md and tests/unit/test_route_grip.cpp. Road ribbons/markings, bridge
+bodies and bidirectional bridge driving, and the 20-junction wheel-force
+acceptance remain outstanding; R3 is not complete.
+
 **G4: routing and map geometry.** Model: Opus for graph/routing design; Sonnet for map geometry.
 - Scope: A* + hierarchy, restrictions, guidance data, client map geometry.
 - Acceptance:
