@@ -385,8 +385,10 @@ degree-two bridge/tag boundaries use bounded approach-based deck estimates.
 The marked A66 bridge is accepted by the profile builder; this is estimated
 geometry, and real bridge collision acceptance remains pending. The previous
 grade-policy question came from treating an underpass DEM drop as a deck slope
-and is withdrawn. G3-C remains in progress: roads.geom serving and profile acceptance. Numeric incline now supplies a
-bounded soft slope target while shared boundaries stay fixed. G3-D/E carving, junction surfaces,
+and is withdrawn. G3-C remains in progress: complete profile acceptance.
+roads.geom codec, staged dependencies and opt-in server/bake serving are
+implemented. Numeric incline supplies a bounded soft slope target while shared
+boundaries stay fixed. G3-D/E carving, junction surfaces,
 ribbons, markings and bridge bodies, and G3-F/R3 route acceptance remain open.
 Physics fixture fix bd41ac4 is integrated.
 

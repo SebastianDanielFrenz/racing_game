@@ -997,9 +997,10 @@ tools\ci.ps1                 # debug + release legs + smoke_test
 physics_sim pin bd41ac4 adds cross-body edge welding for flush heightfield /
 static-mesh transitions. The owner fixture reproduces the old 162 m/s² kick;
 fixed bidirectional crossings match continuous surfaces at 1/4/24 workers.
-Real bridge approaches remain an acceptance task. geo2map_engine pin 2ce0d7b
+Real bridge approaches remain an acceptance task. geo2map_engine pin 54d7083
 adds opt-in roads.graph, complete reference fitting with explicit curvature
-exceptions, DEM dependency discovery and ground/bridge profile construction.
+exceptions, DEM dependency discovery, sloping junction/bridge approach profiles,
+numeric incline targets and opt-in roads.geom codec/server/bake serving.
 Existing terrain layers remain the default. See PLAN.md G3 for current gaps.
 
 
