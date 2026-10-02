@@ -7,6 +7,7 @@
 #include "ps/world/world.h"
 #include <algorithm>
 #include <chrono>
+#include <charconv>
 #include <cmath>
 #include <cstdio>
 #include <fstream>
@@ -142,7 +143,14 @@ Run replay(const rg::WorldConfig& cfg, const rg::Route& route, bool enabled,
 
 int main(int argc, char** argv) {
     try {
-        const unsigned workers = argc > 1 ? static_cast<unsigned>(std::stoul(argv[1])) : 4;
+        unsigned workers = 4;
+        if (argc > 2) throw std::runtime_error("usage: prefetch_probe [workers]");
+        if (argc == 2) {
+            const std::string_view value(argv[1]);
+            const auto parsed = std::from_chars(value.data(), value.data() + value.size(), workers);
+            if (parsed.ec != std::errc{} || parsed.ptr != value.data() + value.size())
+                throw std::runtime_error("workers must be an integer in 1..24");
+        }
         if (workers < 1 || workers > 24) throw std::runtime_error("workers must be 1..24");
         const std::string root = RG_SOURCE_DIR;
         std::string err;
