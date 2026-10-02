@@ -991,3 +991,13 @@ tools\smoke_test.ps1 -Drive          # ... or the R9 real-world drive + mode/wor
 tools\smoke_test.ps1 -DriveDelayMs 200  # ... the same with delayed fetches, a relocation and a forced gate freeze
 tools\ci.ps1                 # debug + release legs + smoke_test
 ```
+
+## G3 dependency checkpoint (2026-10-02)
+
+physics_sim pin bd41ac4 adds cross-body edge welding for flush heightfield /
+static-mesh transitions. The owner fixture reproduces the old 162 m/s² kick;
+fixed bidirectional crossings match continuous surfaces at 1/4/24 workers.
+Real bridge approaches remain an acceptance task. geo2map_engine pin 2ce0d7b
+adds opt-in roads.graph, complete reference fitting with explicit curvature
+exceptions, DEM dependency discovery and ground/bridge profile construction.
+Existing terrain layers remain the default. See PLAN.md G3 for current gaps.
