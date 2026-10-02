@@ -128,7 +128,7 @@ func _run_bindings_test() -> void:
 	sim.name = "BindingsTestSim"
 	add_child(sim)
 
-	var vehicle_json: String = _rg_data_path("vehicles/%s.json" % VEHICLE_NAME)
+	var vehicle_json: String = _data_path("vehicles/%s.json" % VEHICLE_NAME)
 	var surface_table_json: String = _data_path("surfaces/surfaces.json")
 
 	var ok: bool = sim.initialize(vehicle_json, surface_table_json)
@@ -490,7 +490,7 @@ func _load_world(kind: String) -> void:
 	_load_started_ms = Time.get_ticks_msec()
 	_hud.reset_tick_window()
 	_visuals.show_ground = kind == "flat"
-	var vehicle_json: String = _rg_data_path("vehicles/%s.json" % VEHICLE_NAME)
+	var vehicle_json: String = _data_path("vehicles/%s.json" % VEHICLE_NAME)
 	var surface_table_json: String = _data_path("surfaces/surfaces.json")
 	if kind == "flat":
 		if not _simulation.initialize(vehicle_json, surface_table_json):

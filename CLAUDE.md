@@ -1013,5 +1013,6 @@ kph, conditional, osm_way_id and road_found. Forward/backward tags follow OSM
 way direction; missing/symbolic values stay unknown. Conditional/lane/variable
 tags are flagged but not evaluated. Bridge decks are excluded from this ground
 matcher until 3D road geometry matching exists. tach_gauge.gd draws the readout.
-Main scene currently selects game-owned data/vehicles/car_hyper.json, using
-car_hyper art and provisional sedan-derived driving parameters.
+Main scene selects the supplied physics_sim data/vehicles/car_hyper.json and art, with its authored 1 MW V8, seven-speed gearbox, tyres and suspension. Both flat and terrain initialization use the prescribed 0.50 m chassis height and {2.0, 0.4, 0.12} m collision half extents.
+
+Physics update (2026-10-02): pin ed15a6f0c5b63a031d40cf419279fce3567378d3 combines committed master bf2c7cdc with the existing bd41ac4 terrain boundary fix. Default car uses the supplied submodule hypercar definition; the provisional game-owned hypercar copy is removed.

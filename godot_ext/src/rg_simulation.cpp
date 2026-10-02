@@ -29,6 +29,15 @@ namespace rg_godot {
 namespace {
 
 std::string to_std_string(const String& s) { return std::string(s.utf8().get_data()); }
+// Match the supplied hypercar's chassis proxy and authored ride height.
+void configure_vehicle_chassis(rg::SessionConfig& config) {
+    const auto slash = config.vehicle_json_path.find_last_of("/\\");
+    const auto filename = config.vehicle_json_path.substr(slash == std::string::npos ? 0 : slash + 1);
+    if (filename == "car_hyper.json") {
+        config.chassis_z_m = 0.50;
+        config.chassis_half_extents = ps::Vec3{2.0, 0.4, 0.12};
+    }
+}
 
 // Mirrors physics_sim's own ps_simulation.cpp::wheel_desc() - the static
 // (never changes per tick) wheel geometry a vehicle_visual.gd-style script
@@ -153,6 +162,7 @@ void RgSimulation::run_terrain_init_worker(std::string world_config_path, std::s
 
     rg::SessionConfig config;
     config.vehicle_json_path = std::move(vehicle_json_path);
+    configure_vehicle_chassis(config);
     config.surface_table_path = std::move(surface_table_path);
     config.terrain = rg::make_terrain_mode(*world_config, terrain); // start-up blocks inside make_session below
     config.startup = progress;
@@ -177,6 +187,7 @@ bool RgSimulation::initialize(const String& vehicle_json_absolute_path, const St
     world_load_serial_ = modes_.begin_world_load(rg::WorldKind::Flat);
     rg::SessionConfig config;
     config.vehicle_json_path = to_std_string(vehicle_json_absolute_path);
+    configure_vehicle_chassis(config);
     config.surface_table_path = to_std_string(surface_table_absolute_path);
     std::string err;
     session_ = rg::make_session(config, &err); // never throws (see run_terrain_init_worker)

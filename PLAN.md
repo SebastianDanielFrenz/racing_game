@@ -396,7 +396,7 @@ OSM dashboard extension: directional explicit speed limits are carried on
 resident road metadata and exposed in car snapshots and Godot. Numeric,
 unrestricted and unknown values remain distinct; conditional values are marked.
 Ground matching excludes bridge decks until 3D road matching exists. Main car
-is temporarily car_hyper with provisional sedan-derived driving parameters.
+is the supplied physics_sim car_hyper, including its authored hypercar powertrain, tyres and suspension.
 
 **R3: roads in game.** Model: Sonnet. Prerequisite: [R2 for bridges].
 - Scope: road ribbons + markings, surfaces into physics by name, bridge bodies.
