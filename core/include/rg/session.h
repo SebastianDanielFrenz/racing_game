@@ -31,6 +31,8 @@
 //    and every tick attempt passes the clock-freeze gate first (try_step()).
 #pragma once
 
+#include "g2m/layer/osm_roads.h"
+
 #include "rg/drive_script.h"
 #include "rg/fixed_rate_loop.h"
 #include "rg/player_mode.h"
@@ -156,6 +158,7 @@ struct FrameSnapshot {
     ps::Motion chassis_motion{};
     std::vector<WheelSnapshot> wheels;
     ps::drivetrain::PowertrainSnapshot powertrain{};
+    g2m::RoadSpeedMatch road_speed_limit{};
 };
 
 // Terrain streaming state (R2.2 R4), plain values. Each field is its own

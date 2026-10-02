@@ -857,6 +857,31 @@ FrameSnapshot Session::capture_frame_snapshot() const {
     snap.chassis_pose = world_->get_pose(chassis_body_);
     snap.chassis_motion = world_->get_motion(chassis_body_);
     snap.powertrain = world_->powertrain_state(vehicle_id_);
+    if (terrain_) {
+        const auto& frame = terrain_->config.frame;
+        const auto& position = snap.chassis_pose.position;
+        const auto key = frame.tile_at({position.x, position.y}, 0);
+        const auto forward = snap.chassis_pose.orientation.rotate(ps::Vec3::unit_x());
+        const g2m::geom::PointMm point{std::llround(frame.grid_easting(position.x) * 1000.0),
+                                      std::llround(frame.grid_northing(position.y) * 1000.0)};
+        if (key) {
+            // Read already-resident metadata only; no fetches or terrain locks.
+            for (int y = -1; y <= 1; ++y) for (int x = -1; x <= 1; ++x) {
+                auto neighbor = *key;
+                neighbor.x += x;
+                neighbor.y += y;
+                const g2m::HeightTile* height = nullptr;
+                std::shared_ptr<const std::vector<g2m::RoadSegment>> roads;
+                terrain_->resident->find(neighbor, &height, &roads);
+                if (!roads) continue;
+                const auto candidate = g2m::match_road_speed_limit(*roads, point, forward.x, forward.y);
+                if (candidate.distance_mm < snap.road_speed_limit.distance_mm ||
+                    (candidate.distance_mm == snap.road_speed_limit.distance_mm && candidate.way_id < snap.road_speed_limit.way_id)) {
+                    snap.road_speed_limit = candidate;
+                }
+            }
+        }
+    }
 
     const std::size_t wheel_count = world_->vehicle_wheel_count(vehicle_id_);
     snap.wheels.reserve(wheel_count);

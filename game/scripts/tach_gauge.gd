@@ -38,6 +38,7 @@ var _input_map: Node
 
 var _gauge_info: Dictionary = {}
 var _last_pt: Dictionary = {}
+var _speed_limit: Dictionary = {}
 
 var _display_rpm: float = 0.0
 const NEEDLE_SMOOTH_RATE_PER_S := 10.0
@@ -71,11 +72,13 @@ func _process(delta: float) -> void:
 		if _gauge_info.is_empty():
 			_gauge_info = _simulation.get_vehicle_gauge_info(vehicle_name)
 		_last_pt = _simulation.get_vehicle_powertrain(vehicle_name)
+		_speed_limit = _simulation.get_vehicle_speed_limit(vehicle_name)
 		_gps_kmh = _simulation.get_vehicle_ground_speed_mps(vehicle_name) * 3.6
 		var target_rpm: float = _last_pt.get("rpm", 0.0)
 		_display_rpm = GaugeLogic.smooth_towards(_display_rpm, target_rpm, NEEDLE_SMOOTH_RATE_PER_S, delta)
 	else:
 		_last_pt = {}
+		_speed_limit = {}
 	queue_redraw()
 
 func _clock_rad(clock_deg: float) -> float:
@@ -200,6 +203,19 @@ func _draw() -> void:
 	_draw_centered_text(font, speed_pos + Vector2(0, -font_size_speed * 0.35), "%d" % int(round(speed_kmh)), font_size_speed, COLOR_SPEED_TEXT)
 	_draw_centered_text(font, speed_pos + Vector2(0, -font_size_speed * 1.15), "GPS %d" % int(round(_gps_kmh)), font_size_speed_unit, COLOR_TICK_MINOR)
 	_draw_centered_text(font, speed_pos + Vector2(0, font_size_speed * 0.55), "km/h", font_size_speed_unit, COLOR_TICK_MINOR)
+
+	var limit_pos := speed_pos + Vector2(0, font_size_speed * 1.7)
+	var limit_radius: float = 24.0 * scale
+	draw_circle(limit_pos, limit_radius, Color(0.95, 0.95, 0.95))
+	draw_arc(limit_pos, limit_radius, 0, TAU, 48, COLOR_REDLINE, 4.0 * scale, true)
+	var limit_text: String = "--"
+	if _speed_limit.get("kind", "unknown") == "numeric":
+		limit_text = "%d" % int(round(float(_speed_limit.get("kph", 0.0))))
+	elif _speed_limit.get("kind", "unknown") == "unrestricted":
+		limit_text = "///"
+	_draw_centered_text(font, limit_pos, limit_text, int(round(19.0 * scale)), Color(0.1, 0.1, 0.1))
+	if _speed_limit.get("conditional", false):
+		_draw_centered_text(font, limit_pos + Vector2(limit_radius * 1.5, 0), "?", font_size_speed_unit, COLOR_SPEED_TEXT)
 
 	var warning: String = ""
 	if engine_state == "stalled":

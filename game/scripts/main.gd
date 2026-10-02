@@ -46,7 +46,7 @@ extends Node3D
 # point (also while loading - R9's cancel-then-join returns promptly) releases
 # the terrain view and loads the other world; the player mode is kept.
 
-const VEHICLE_NAME := "car_sedan"
+const VEHICLE_NAME := "car_hyper"
 const WORLD_LABEL := {"flat": "flat test scene", "real_world": "real world"}
 
 # --- unified scene state (read by drive_smoke.gd / drive_tour.gd) ---
@@ -128,7 +128,7 @@ func _run_bindings_test() -> void:
 	sim.name = "BindingsTestSim"
 	add_child(sim)
 
-	var vehicle_json: String = _rg_data_path("vehicles/car_sedan.json")
+	var vehicle_json: String = _rg_data_path("vehicles/%s.json" % VEHICLE_NAME)
 	var surface_table_json: String = _data_path("surfaces/surfaces.json")
 
 	var ok: bool = sim.initialize(vehicle_json, surface_table_json)
@@ -137,6 +137,12 @@ func _run_bindings_test() -> void:
 		get_tree().quit(1)
 		return
 	sim.start()
+
+	var limit: Dictionary = sim.get_vehicle_speed_limit(VEHICLE_NAME)
+	if limit.get("kind", "") != "unknown" or bool(limit.get("road_found", true)):
+		push_error("bindings test: flat-world speed limit should be unknown")
+		get_tree().quit(1)
+		return
 
 	# New methods exist and read sanely in flat mode.
 	if bool(sim.is_terrain_mode()):
@@ -484,7 +490,7 @@ func _load_world(kind: String) -> void:
 	_load_started_ms = Time.get_ticks_msec()
 	_hud.reset_tick_window()
 	_visuals.show_ground = kind == "flat"
-	var vehicle_json: String = _rg_data_path("vehicles/car_sedan.json")
+	var vehicle_json: String = _rg_data_path("vehicles/%s.json" % VEHICLE_NAME)
 	var surface_table_json: String = _data_path("surfaces/surfaces.json")
 	if kind == "flat":
 		if not _simulation.initialize(vehicle_json, surface_table_json):

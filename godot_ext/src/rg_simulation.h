@@ -211,6 +211,7 @@ public:
     [[nodiscard]] float get_wheel_steer_angle(const godot::String& vehicle_name, std::int64_t wheel_index) const; // rad, this wheel's own post-Ackermann angle
 
     [[nodiscard]] godot::Dictionary get_vehicle_gauge_info(const godot::String& vehicle_name) const;
+    [[nodiscard]] godot::Dictionary get_vehicle_speed_limit(const godot::String& vehicle_name) const;
     [[nodiscard]] godot::Dictionary get_vehicle_powertrain(const godot::String& vehicle_name) const;
     [[nodiscard]] float get_vehicle_ground_speed_mps(const godot::String& vehicle_name) const;
 

@@ -1012,3 +1012,26 @@ TEST_CASE("Session rejects prefetch beyond the streamer gate", "[session_terrain
     cfg.terrain->physics.prefetch_max_tiles = 24;
     CHECK_THROWS_AS(rg::Session(cfg), std::invalid_argument);
 }
+
+TEST_CASE("Session exposes resident directional OSM speed limits and clears offroad", "[session][terrain][speed_limit]") {
+    auto roads = std::make_shared<std::vector<g2m::RoadSegment>>(*straight_road_segments());
+    (*roads)[0].way_id = 42;
+    (*roads)[0].forward_limit = g2m::parse_road_speed_limit("50");
+    (*roads)[0].backward_limit = g2m::parse_road_speed_limit("80");
+    auto fetch = std::make_shared<RoadSyntheticFetch>(std::make_shared<SyntheticFetch>(), roads);
+    rg::Session session(road_terrain_config(1, fetch, 100.0, 50.0));
+    session.start();
+    for (int i = 0; i < 200 && session.snapshot().tick == 0; ++i)
+        std::this_thread::sleep_for(std::chrono::milliseconds(5));
+    REQUIRE(session.snapshot().road_speed_limit.way_id == 42);
+    REQUIRE(session.snapshot().road_speed_limit.limit.kph == 50.0);
+    session.request_relocate(100.0, 50.0, 3.14159265358979323846);
+    for (int i = 0; i < 200 && session.snapshot().road_speed_limit.limit.kph != 80.0; ++i)
+        std::this_thread::sleep_for(std::chrono::milliseconds(5));
+    REQUIRE(session.snapshot().road_speed_limit.limit.kph == 80.0);
+    session.request_relocate(100.0, 60.0, 0.0);
+    for (int i = 0; i < 200 && session.snapshot().road_speed_limit.way_id != 0; ++i)
+        std::this_thread::sleep_for(std::chrono::milliseconds(5));
+    REQUIRE(session.snapshot().road_speed_limit.way_id == 0);
+    REQUIRE(session.snapshot().road_speed_limit.limit.kind == g2m::SpeedLimitKind::Unknown);
+}

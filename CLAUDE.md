@@ -1001,3 +1001,16 @@ Real bridge approaches remain an acceptance task. geo2map_engine pin 2ce0d7b
 adds opt-in roads.graph, complete reference fitting with explicit curvature
 exceptions, DEM dependency discovery and ground/bridge profile construction.
 Existing terrain layers remain the default. See PLAN.md G3 for current gaps.
+
+
+## OSM speed-limit dashboard (2026-10-02)
+
+FrameSnapshot::road_speed_limit carries already-resident ground-road metadata;
+no tile fetch is performed while publishing the car snapshot. The Godot method
+get_vehicle_speed_limit(vehicle_name) returns kind (numeric/unrestricted/unknown),
+kph, conditional, osm_way_id and road_found. Forward/backward tags follow OSM
+way direction; missing/symbolic values stay unknown. Conditional/lane/variable
+tags are flagged but not evaluated. Bridge decks are excluded from this ground
+matcher until 3D road geometry matching exists. tach_gauge.gd draws the readout.
+Main scene currently selects game-owned data/vehicles/car_hyper.json, using
+car_hyper art and provisional sedan-derived driving parameters.

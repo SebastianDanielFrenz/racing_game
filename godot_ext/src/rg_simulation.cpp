@@ -575,6 +575,20 @@ godot::Dictionary RgSimulation::get_vehicle_powertrain(const String& vehicle_nam
     return d;
 }
 
+godot::Dictionary RgSimulation::get_vehicle_speed_limit(const String& vehicle_name) const {
+    godot::Dictionary d;
+    if (!has_vehicle(vehicle_name)) return d;
+    const auto& match = session_->snapshot().road_speed_limit;
+    const auto& limit = match.limit;
+    d["kind"] = String(limit.kind == g2m::SpeedLimitKind::Numeric ? "numeric" :
+                       limit.kind == g2m::SpeedLimitKind::Unrestricted ? "unrestricted" : "unknown");
+    d["kph"] = limit.kph;
+    d["conditional"] = limit.conditional;
+    d["osm_way_id"] = match.way_id;
+    d["road_found"] = match.way_id != 0;
+    return d;
+}
+
 float RgSimulation::get_vehicle_ground_speed_mps(const String& vehicle_name) const {
     if (!has_vehicle(vehicle_name)) return 0.0f;
     return static_cast<float>(session_->snapshot().chassis_motion.linear.length());
@@ -675,6 +689,7 @@ void RgSimulation::_bind_methods() {
     godot::ClassDB::bind_method(D_METHOD("get_wheel_steer_angle", "vehicle_name", "wheel_index"), &RgSimulation::get_wheel_steer_angle);
 
     godot::ClassDB::bind_method(D_METHOD("get_vehicle_gauge_info", "vehicle_name"), &RgSimulation::get_vehicle_gauge_info);
+    godot::ClassDB::bind_method(D_METHOD("get_vehicle_speed_limit", "vehicle_name"), &RgSimulation::get_vehicle_speed_limit);
     godot::ClassDB::bind_method(D_METHOD("get_vehicle_powertrain", "vehicle_name"), &RgSimulation::get_vehicle_powertrain);
     godot::ClassDB::bind_method(D_METHOD("get_vehicle_ground_speed_mps", "vehicle_name"), &RgSimulation::get_vehicle_ground_speed_mps);
 }

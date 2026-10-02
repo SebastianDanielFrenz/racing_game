@@ -101,6 +101,7 @@ func _process(_delta: float) -> void:
 				_finish(1, "world did not load")
 			elif main.world_state == "running" and main.world_kind == "real_world":
 				main.scripted_controls = {"throttle": 0.5, "steer": 0.0, "brake": 0.0, "handbrake": 0.0, "clutch": 0.0}
+				print("RG_SPEED_LIMIT spawn car=%s data=%s" % [main.VEHICLE_NAME, JSON.stringify(sim.get_vehicle_speed_limit(main.VEHICLE_NAME))])
 				_drive_start = main.chassis_session_position()
 				_phase = "drive"
 		"drive":

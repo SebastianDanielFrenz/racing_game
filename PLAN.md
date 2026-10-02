@@ -379,18 +379,23 @@ Rules:
   - golden hashes Windows = Linux;
   - bytes/km² and CPU-s/km² measured (replacing 3.8's estimates).
 
-G3 status (2026-10-02): identity-preserving roads.graph, its bounded codec and
-opt-in server/bake derivation are implemented. Deterministic clothoid references,
-complete DEM dependencies, shared-node height medians and constrained ground /
-bridge-abutment profile construction are tested on Windows and Linux. The home
-probe fits all 478 horizontal stretches with 47 flagged curvature exceptions;
-strict vertical profiles fit 339, with 19 unsupported tunnels, 76 curvature
-failures, one grade conflict and 43 bounded solver convergence failures. G3-C
-is still in progress: incline fitting, roads.geom serving and profile acceptance
-are outstanding. Carving/junction surfaces and ribbons/markings/bridge bodies
-are not enabled. The physics fixture contact fix bd41ac4 is integrated; real
-bridge approaches and the R3 route acceptance remain unverified. The road-class
-grade versus measured shared-junction-height priority needs an owner decision.
+G3 status (2026-10-02): roads.graph and deterministic horizontal/vertical
+construction are implemented. Junctions use shared sloping DEM planes;
+degree-two bridge/tag boundaries use bounded approach-based deck estimates.
+The marked A66 bridge is accepted by the profile builder; this is estimated
+geometry, and real bridge collision acceptance remains pending. The previous
+grade-policy question came from treating an underpass DEM drop as a deck slope
+and is withdrawn. G3-C remains in progress: roads.geom serving and profile acceptance. Numeric incline now supplies a
+bounded soft slope target while shared boundaries stay fixed. G3-D/E carving, junction surfaces,
+ribbons, markings and bridge bodies, and G3-F/R3 route acceptance remain open.
+Physics fixture fix bd41ac4 is integrated.
+
+OSM dashboard extension: directional explicit speed limits are carried on
+resident road metadata and exposed in car snapshots and Godot. Numeric,
+unrestricted and unknown values remain distinct; conditional values are marked.
+Ground matching excludes bridge decks until 3D road matching exists. Main car
+is temporarily car_hyper with provisional sedan-derived driving parameters.
+
 **R3: roads in game.** Model: Sonnet. Prerequisite: [R2 for bridges].
 - Scope: road ribbons + markings, surfaces into physics by name, bridge bodies.
 - Acceptance:
