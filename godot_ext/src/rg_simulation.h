@@ -21,6 +21,9 @@
 
 #include <godot_cpp/classes/node.hpp>
 #include <godot_cpp/variant/dictionary.hpp>
+#include <godot_cpp/variant/packed_float32_array.hpp>
+#include <godot_cpp/variant/packed_vector3_array.hpp>
+#include "vehicle_voice.h"
 #include <godot_cpp/variant/packed_string_array.hpp>
 #include <godot_cpp/variant/string.hpp>
 #include <godot_cpp/variant/transform3d.hpp>
@@ -40,6 +43,12 @@ class RgSimulation : public godot::Node {
 
 public:
     RgSimulation() = default;
+    // Audio uses published snapshots only; no audio worker reads the world.
+    godot::Dictionary start_engine_audio();
+    void stop_engine_audio();
+    void update_engine_audio();
+    godot::PackedFloat32Array read_engine_audio(int frames);
+    godot::PackedVector3Array get_engine_audio_positions() const;
     ~RgSimulation() override;
 
     // Builds a FLAT-mode rg::Session (ground + car_sedan-shaped chassis +
@@ -191,6 +200,14 @@ public:
     [[nodiscard]] float get_wheel_slip_angle(const godot::String& vehicle_name, std::int64_t wheel_index) const;
     [[nodiscard]] godot::String get_wheel_surface_name(const godot::String& vehicle_name, std::int64_t wheel_index) const;
 
+    [[nodiscard]] float get_wheel_omega(const godot::String& vehicle_name, std::int64_t wheel_index) const;
+
+    [[nodiscard]] float get_wheel_fx(const godot::String& vehicle_name, std::int64_t wheel_index) const;
+
+    [[nodiscard]] float get_wheel_fy(const godot::String& vehicle_name, std::int64_t wheel_index) const;
+
+    [[nodiscard]] float get_wheel_radius(const godot::String& vehicle_name, std::int64_t wheel_index) const;
+
     // --- Vehicle visual (carvis brief, 2026-09-26): everything
     // game/scripts/vehicle_visual.gd (ported from physics_sim's own
     // adapters/godot/demo/scripts/vehicle_visual.gd) needs to place and
@@ -278,6 +295,8 @@ private:
                                  std::int64_t fetch_delay_ms);
 
     std::unique_ptr<rg::Session> session_;
+    std::unique_ptr<ps_godot::VehicleVoice> engine_voice_;
+    std::uint64_t audio_tick_ = ~std::uint64_t{0};
     godot::String last_error_;
     ps_godot::OriginRebase* origin_rebase_ = nullptr; // points at session_->origin_rebase(), valid once session_ exists
     std::atomic<std::int64_t> adapter_time_us_accum_{0}; // main-thread-only in practice (Godot single main thread)

@@ -678,3 +678,13 @@ Nothing below has been downloaded or installed. The setup scripts will install o
 - https://dev.epicgames.com/documentation/en-us/unreal-engine/API/Runtime/HTTP/FHttpModule
 - https://docs.ambientcg.com/license/
 - https://polyhaven.com/license
+
+VR/audio integration (2026-10-03): physics_sim master pin ba47951 (fetched
+from S:/claude_code/physics_sim) retains the terrain boundary fix and adds
+the reusable Windows spatial backend. The supplied car_hyper remains the
+default. tools/run.ps1 -VR launches OpenXR Vulkan Mobile; tracked cockpit
+and FreeCam rigs share camera-director rebasing. Tyre and eligible live-engine
+sources use listener-relative Windows objects with Godot 3D fallback.
+Setup, hardware limits and verification: docs/vr_audio.md. The committed
+hypercar torque-map engine has no live cycle voice; owner turbo/audio-bank
+work remains pending. This presentation work does not change G3-C progress.

@@ -1,5 +1,5 @@
 extends Node3D
-# game/scripts/vehicle_visual.gd — near-copy port of physics_sim's
+# game/scripts/vehicle_visual.gd â€” near-copy port of physics_sim's
 # external/physics_sim/adapters/godot/demo/scripts/vehicle_visual.gd (read-
 # only reference): shows the real car_sedan.glb art instead of the red
 # placeholder box, wheels following suspension travel/spin/steer from the
@@ -232,3 +232,12 @@ func _process(delta: float) -> void:
 
 	if simulation.has_method("add_adapter_time_us"):
 		simulation.add_adapter_time_us(Time.get_ticks_usec() - t0)
+
+func has_driver_eye() -> bool:
+	return _model_root != null and _model_root.find_child("socket_driver_eye", true, false) != null
+
+func driver_eye_local() -> Vector3:
+	if not has_driver_eye():
+		return Vector3(-0.35, 0.38, 0.6)
+	var eye := _model_root.find_child("socket_driver_eye", true, false) as Node3D
+	return global_transform.affine_inverse() * eye.global_position

@@ -143,6 +143,7 @@ struct SessionConfig {
 struct WheelSnapshot {
     std::string name;
     ps::vehicle::WheelState state{};
+    ps::vehicle::WheelTelemetry telemetry{};
 };
 
 // One tick's worth of everything godot_ext/the HUD/the chase cam need,

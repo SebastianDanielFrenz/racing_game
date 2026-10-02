@@ -375,6 +375,8 @@ func _build_scene(user_args: PackedStringArray) -> void:
 	add_child(free)
 	_director.add_rig("free", free)
 
+	_try_start_vr()
+
 	# --- real-world terrain view (initialize_shared once a Session runs) ---
 	_world_view = ClassDB.instantiate("RgTerrainView")
 	_world_view.name = "Terrain"
@@ -479,7 +481,13 @@ func switch_world() -> void:
 	print("RG_WORLD switch %s -> %s (was %s)" % [world_kind, other, world_state])
 	_load_world(other)
 
+var _vehicle_audio: Node3D
+
 func _load_world(kind: String) -> void:
+	if _vehicle_audio != null:
+		_vehicle_audio.shutdown()
+		_vehicle_audio.queue_free()
+		_vehicle_audio = null
 	# The view shares the old Session's WorldTerrain: release it first.
 	_world_view.release()
 	_director.set_terrain_view(null)
@@ -627,7 +635,10 @@ func status_line(prefix: String) -> String:
 # rg_core decides the active rig and which input groups are live.
 func _apply_mode_state() -> Dictionary:
 	var ms: Dictionary = _simulation.get_mode_state()
-	_director.set_active(str(ms.get("camera_rig", "chase")))
+	var rig_name := str(ms.get("camera_rig", "chase"))
+	if _vr_active:
+		rig_name = "xr_free" if rig_name == "free" else "xr_cockpit"
+	_director.set_active(rig_name)
 	_director.camera_input_live = bool(ms.get("camera_inputs_live", true))
 	return ms
 
@@ -692,5 +703,33 @@ func _process(delta: float) -> void:
 		"running":
 			_report()
 
+	if world_state == "running" and _vehicle_audio == null:
+		_vehicle_audio = Node3D.new()
+		_vehicle_audio.name = "VehicleAudio"
+		_vehicle_audio.set_script(load("res://scripts/vehicle_audio.gd"))
+		_vehicle_audio.simulation = _simulation
+		_vehicle_audio.director = _director
+		_vehicle_audio.vehicle_name = VEHICLE_NAME
+		add_child(_vehicle_audio)
 	var ms := _apply_mode_state()
 	_forward_driving(bool(ms.get("driving_inputs_live", false)))
+
+var _vr_active := false
+
+func _try_start_vr() -> void:
+	var xr := XRServer.find_interface("OpenXR")
+	if xr == null or not xr.is_initialized():
+		print("RG_VR inactive: OpenXR not initialized; using desktop cameras")
+		return
+	DisplayServer.window_set_vsync_mode(DisplayServer.VSYNC_DISABLED)
+	get_viewport().use_xr = true
+	for rig_name in ["xr_cockpit", "xr_free"]:
+		var rig := XROrigin3D.new()
+		rig.name = rig_name
+		rig.set_script(load("res://scripts/xr_rig.gd"))
+		rig.body_visuals = _visuals
+		rig.free_flight = rig_name == "xr_free"
+		add_child(rig)
+		_director.add_rig(rig_name, rig)
+	_vr_active = true
+	print("RG_VR active: tracked cockpit, F9 recenter; FreeCam uses tracked free flight")

@@ -14,9 +14,17 @@ add_library(rg_godot SHARED
   src/register_types.cpp
   src/rg_simulation.cpp
   src/rg_terrain_view.cpp
+  src/rg_engine_audio.cpp
+  ${CMAKE_SOURCE_DIR}/external/physics_sim/adapters/godot/src/vehicle_voice.cpp
+  ${CMAKE_SOURCE_DIR}/external/physics_sim/adapters/godot/src/spatial_audio.cpp
 )
 
-target_include_directories(rg_godot PRIVATE src)
+target_include_directories(rg_godot PRIVATE src
+  ${CMAKE_SOURCE_DIR}/external/physics_sim/adapters/godot/src
+  ${CMAKE_SOURCE_DIR}/external/physics_sim/tools/common)
+if(WIN32)
+  target_link_libraries(rg_godot PRIVATE ole32)
+endif()
 
 # RG_BUILD_CONFIG carries the CMake config name into RgSimulation::get_build_info()
 # (rg_simulation.cpp) - so a debug-vs-optimised DLL mismatch (the whole point
@@ -36,6 +44,7 @@ target_compile_definitions(rg_godot PRIVATE RG_BUILD_CONFIG="$<CONFIG>")
 target_link_libraries(rg_godot
   PRIVATE
     rg_core
+    ps_audio
     godot-cpp
     rg_options
 )

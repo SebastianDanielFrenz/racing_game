@@ -327,3 +327,34 @@ TEST_CASE("Session flip upright is superseded by a pending relocate in the same 
     const double yaw = ps::math::atan2(fwd.y, fwd.x);
     CHECK(std::abs(wrap_pi(yaw - kTargetYaw)) < 1e-6);
 }
+
+TEST_CASE("Session publishes wheel telemetry for audio at the captured tick", "[session][audio]") {
+    auto config = make_test_config();
+    config.chassis_initial_velocity = {12.0, 0.0, 0.0};
+    rg::Session session(config);
+    session.set_control("brake", 0.5);
+    session.start();
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(2);
+    while (session.snapshot().tick < 120 && std::chrono::steady_clock::now() < deadline)
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    session.stop(); // world comparisons are safe only after its worker joins
+    bool saw_force = false;
+    {
+        const auto& frame = session.snapshot();
+        REQUIRE(frame.tick >= 120);
+        REQUIRE(frame.tick == session.world().tick());
+        for (std::size_t wheel = 0; wheel < frame.wheels.size(); ++wheel) {
+            const auto expected = session.world().wheel_telemetry(session.vehicle_id(), wheel);
+            const auto& actual = frame.wheels[wheel].telemetry;
+            REQUIRE(actual.omega == expected.omega);
+            REQUIRE(actual.fx == expected.fx);
+            REQUIRE(actual.fy == expected.fy);
+            REQUIRE(actual.fz == frame.wheels[wheel].state.load);
+            REQUIRE(std::isfinite(actual.omega));
+            REQUIRE(std::isfinite(actual.fx));
+            REQUIRE(std::isfinite(actual.fy));
+            saw_force = saw_force || std::abs(actual.fx) > 1.0;
+        }
+    }
+    REQUIRE(saw_force);
+}

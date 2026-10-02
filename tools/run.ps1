@@ -78,6 +78,7 @@ $SkipBuild = $false
 $NoConsole = $false
 $Editor    = $false
 $Flat      = $false
+$VR        = $false
 $DryRun    = $false
 $Preset    = 'relwithdebinfo'
 $GodotArgs = New-Object System.Collections.Generic.List[string]
@@ -92,6 +93,7 @@ foreach ($a in $args) {
         '^--?NoConsole$' { $NoConsole = $true; continue }
         '^--?Editor$'    { $Editor    = $true; continue }
         '^--?Flat$'      { $Flat      = $true; continue }
+        '^--?VR$'        { $VR        = $true; continue }
         '^--?DryRun$'    { $DryRun    = $true; continue }
         '^--?Preset$'    { $expectPresetValue = $true; continue }
         '^--$'           { $sawSeparator = $true; continue }
@@ -205,6 +207,10 @@ if (-not $Editor -and -not $DryRun) {
 $launchArgs = New-Object System.Collections.Generic.List[string]
 $launchArgs.Add('--path')
 $launchArgs.Add($gameDir)
+
+if ($VR -and -not $Editor) {
+    foreach ($xrArg in @('--xr-mode', 'on', '--rendering-method', 'mobile', '--rendering-driver', 'vulkan')) { $launchArgs.Add($xrArg) }
+}
 
 if ($Editor) {
     $launchArgs.Add('--editor')

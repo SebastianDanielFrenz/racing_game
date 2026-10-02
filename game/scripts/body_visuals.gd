@@ -1,5 +1,5 @@
 extends Node3D
-# game/scripts/body_visuals.gd — places the placeholder/real meshes of the
+# game/scripts/body_visuals.gd â€” places the placeholder/real meshes of the
 # sim's bodies (the chassis; the flat world's static ground box) from
 # RgSimulation.get_body_transform() every frame. Default process priority, so
 # it runs AFTER camera_director.gd (-1000): the transforms it reads are
@@ -128,3 +128,6 @@ func _process(_delta: float) -> void:
 	_chassis_box.visible = not vehicle_model_ok() # fallback: only shown while the real model isn't up
 	if show_ground:
 		_ground_anchor.transform = simulation.get_body_transform("ground")
+
+func driver_eye_local() -> Vector3:
+	return _vehicle_visual.driver_eye_local() if _vehicle_visual != null else Vector3(-0.35, 0.38, 0.6)

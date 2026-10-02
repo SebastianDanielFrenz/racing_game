@@ -889,6 +889,7 @@ FrameSnapshot Session::capture_frame_snapshot() const {
         WheelSnapshot ws;
         ws.name = world_->wheel_name(vehicle_id_, i);
         ws.state = world_->wheel_state(vehicle_id_, i);
+        ws.telemetry = world_->wheel_telemetry(vehicle_id_, i);
         snap.wheels.push_back(std::move(ws));
     }
     return snap;

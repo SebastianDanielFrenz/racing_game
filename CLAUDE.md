@@ -1016,3 +1016,13 @@ matcher until 3D road geometry matching exists. tach_gauge.gd draws the readout.
 Main scene selects the supplied physics_sim data/vehicles/car_hyper.json and art, with its authored 1 MW V8, seven-speed gearbox, tyres and suspension. Both flat and terrain initialization use the prescribed 0.50 m chassis height and {2.0, 0.4, 0.12} m collision half extents.
 
 Physics update (2026-10-02): pin ed15a6f0c5b63a031d40cf419279fce3567378d3 combines committed master bf2c7cdc with the existing bd41ac4 terrain boundary fix. Default car uses the supplied submodule hypercar definition; the provisional game-owned hypercar copy is removed.
+
+VR/audio integration (2026-10-03): physics_sim master pin ba47951 (fetched
+from S:/claude_code/physics_sim) retains the terrain boundary fix and adds
+the reusable Windows spatial backend. The supplied car_hyper remains the
+default. tools/run.ps1 -VR launches OpenXR Vulkan Mobile; tracked cockpit
+and FreeCam rigs share camera-director rebasing. Tyre and eligible live-engine
+sources use listener-relative Windows objects with Godot 3D fallback.
+Setup, hardware limits and verification: docs/vr_audio.md. The committed
+hypercar torque-map engine has no live cycle voice; owner turbo/audio-bank
+work remains pending. This presentation work does not change G3-C progress.

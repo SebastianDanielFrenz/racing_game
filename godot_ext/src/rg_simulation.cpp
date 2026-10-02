@@ -76,6 +76,7 @@ const char* engine_state_name(ps::drivetrain::EngineState s) {
 } // namespace
 
 RgSimulation::~RgSimulation() {
+    stop_engine_audio();
     cancel_init();
     reap_init_thread(/*wait=*/true);
     session_.reset(); // Session's own destructor stops its loop
@@ -87,6 +88,7 @@ void RgSimulation::cancel_init() {
 }
 
 void RgSimulation::teardown_current() {
+    stop_engine_audio();
     cancel_init();                   // R2.2 R9: cancel-then-join
     reap_init_thread(/*wait=*/true); // joins any in-flight worker first (see its own doc comment)
     if (session_) session_->stop();
@@ -280,6 +282,7 @@ void RgSimulation::start() {
 }
 
 void RgSimulation::stop() {
+    stop_engine_audio();
     reap_init_thread(/*wait=*/true); // per brief: join the init thread on stop
     if (session_) session_->stop();
 }
@@ -643,7 +646,43 @@ godot::Dictionary RgSimulation::get_mode_state() {
     return d;
 }
 
+float RgSimulation::get_wheel_omega(const String& vehicle_name, std::int64_t wheel_index) const {
+    if (!has_vehicle(vehicle_name)) return 0.0f;
+    const auto& wheels = session_->snapshot().wheels;
+    if (wheel_index < 0 || static_cast<std::size_t>(wheel_index) >= wheels.size()) return 0.0f;
+    return static_cast<float>(wheels[static_cast<std::size_t>(wheel_index)].telemetry.omega);
+}
+
+float RgSimulation::get_wheel_fx(const String& vehicle_name, std::int64_t wheel_index) const {
+    if (!has_vehicle(vehicle_name)) return 0.0f;
+    const auto& wheels = session_->snapshot().wheels;
+    if (wheel_index < 0 || static_cast<std::size_t>(wheel_index) >= wheels.size()) return 0.0f;
+    return static_cast<float>(wheels[static_cast<std::size_t>(wheel_index)].telemetry.fx);
+}
+
+float RgSimulation::get_wheel_fy(const String& vehicle_name, std::int64_t wheel_index) const {
+    if (!has_vehicle(vehicle_name)) return 0.0f;
+    const auto& wheels = session_->snapshot().wheels;
+    if (wheel_index < 0 || static_cast<std::size_t>(wheel_index) >= wheels.size()) return 0.0f;
+    return static_cast<float>(wheels[static_cast<std::size_t>(wheel_index)].telemetry.fy);
+}
+
+float RgSimulation::get_wheel_radius(const String& vehicle_name, std::int64_t wheel_index) const {
+    if (!has_vehicle(vehicle_name)) return 0.0f;
+    const auto* w = wheel_desc(*session_, wheel_index);
+    return w ? static_cast<float>(w->wheel_radius) : 0.0f;
+}
+
 void RgSimulation::_bind_methods() {
+    godot::ClassDB::bind_method(D_METHOD("get_wheel_radius", "vehicle_name", "wheel_index"), &RgSimulation::get_wheel_radius);
+    godot::ClassDB::bind_method(D_METHOD("get_wheel_fy", "vehicle_name", "wheel_index"), &RgSimulation::get_wheel_fy);
+    godot::ClassDB::bind_method(D_METHOD("get_wheel_fx", "vehicle_name", "wheel_index"), &RgSimulation::get_wheel_fx);
+    godot::ClassDB::bind_method(D_METHOD("get_wheel_omega", "vehicle_name", "wheel_index"), &RgSimulation::get_wheel_omega);
+    godot::ClassDB::bind_method(D_METHOD("start_engine_audio"), &RgSimulation::start_engine_audio);
+    godot::ClassDB::bind_method(D_METHOD("stop_engine_audio"), &RgSimulation::stop_engine_audio);
+    godot::ClassDB::bind_method(D_METHOD("update_engine_audio"), &RgSimulation::update_engine_audio);
+    godot::ClassDB::bind_method(D_METHOD("read_engine_audio", "frames"), &RgSimulation::read_engine_audio);
+    godot::ClassDB::bind_method(D_METHOD("get_engine_audio_positions"), &RgSimulation::get_engine_audio_positions);
     godot::ClassDB::bind_method(D_METHOD("initialize", "vehicle_json_absolute_path", "surface_table_absolute_path"), &RgSimulation::initialize);
     godot::ClassDB::bind_method(D_METHOD("initialize_terrain", "world_config_absolute_path", "vehicle_json_absolute_path", "surface_table_absolute_path"), &RgSimulation::initialize_terrain);
     godot::ClassDB::bind_method(D_METHOD("get_init_status"), &RgSimulation::get_init_status);
