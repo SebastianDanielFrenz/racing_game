@@ -954,6 +954,21 @@ preset. -SkipBuild warns on a mismatch and launches the existing DLL.
 RgSimulation.get_build_info includes build_type=, and RG_DRIVE ready includes
 build= so logs identify the binary actually loaded.
 
+## Terrain prefetch snapshots
+
+The geo2map bridge publishes immutable resident height/road snapshots between
+World steps. Background terrain jobs retain those snapshots; replacement and
+eviction use copy-on-write, and retired snapshots are reclaimed on the owner
+thread. A ticket becomes stale when its footprint's tile state or height/road
+identity changes. Unrelated resident changes do not invalidate it.
+
+World physics config accepts prefetch_margin_tiles and prefetch_max_tiles,
+defaulting to 0/0 (off). The shipped world enables margin 1 and cap 24. Margin
+must fit the streamer's one-tile gate; enabled caps range from 1 to 1024.
+Session status, Godot streaming status and tick-spike records expose all nine
+physics prefetch counters. The HUD reports installs, synchronous misses,
+late waits, maximum wait duration and stale inputs. Prefetch changes preparation
+timing; per-tick hashes remain equal to synchronous terrain across worker counts.
 ## Building, testing, running
 
 ```powershell

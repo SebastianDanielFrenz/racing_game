@@ -952,3 +952,25 @@ TEST_CASE("load_world_config: the real committed data/world/world_config.json st
     CHECK(cfg->physics.road_surfaces.unpaved == "dirt");
     CHECK(cfg->physics.road_surfaces.off_road == "grass");
 }
+
+
+TEST_CASE("World config validates terrain prefetch margin and ticket cap", "[world_config][prefetch]") {
+    auto j = valid_world_config_json();
+    j["physics"]["prefetch_margin_tiles"] = 1;
+    j["physics"]["prefetch_max_tiles"] = 24;
+    std::string err;
+    auto file = TempFile::from_json(j);
+    const auto cfg = rg::load_world_config(file.path(), &err);
+    REQUIRE(cfg);
+    CHECK(cfg->physics.prefetch_margin_tiles == 1);
+    CHECK(cfg->physics.prefetch_max_tiles == 24);
+    for (const auto& bad : {json(-1), json(2), json(1.5), json("1")}) {
+        j["physics"]["prefetch_margin_tiles"] = bad;
+        auto invalid = TempFile::from_json(j);
+        CHECK_FALSE(rg::load_world_config(invalid.path(), &err));
+    }
+    j["physics"]["prefetch_margin_tiles"] = 1;
+    j["physics"]["prefetch_max_tiles"] = 0;
+    auto missing_cap = TempFile::from_json(j);
+    CHECK_FALSE(rg::load_world_config(missing_cap.path(), &err));
+}

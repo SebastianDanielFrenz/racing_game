@@ -53,6 +53,7 @@ var _drove_m: float = 0.0
 var _flip_before_pos := Vector3.ZERO
 var _flip_relocations_before: int = 0
 var _freezes_before: int = 0
+var _relocate_before: int = 0
 var _relocate_freezes: int = -1 # freeze_count once the relocation landed (the final Session is a new one)
 var _advanced: int = -1
 var _switches: int = 0
@@ -136,6 +137,7 @@ func _process(_delta: float) -> void:
 					_finish(1, "no relocation target in %s" % ROUTE)
 					return
 				_freezes_before = int(ss0.get("freeze_count", 0))
+				_relocate_before = int(ss0.get("relocations", 0))
 				print("RG_DRIVE smoke relocating to (%.1f, %.1f) yaw_deg=%.1f, %.0f m along the route, freezes so far %d" % [
 					target[0], target[1], target[2], target[3], _freezes_before])
 				sim.relocate_vehicle(target[0], target[1], target[2])
@@ -144,7 +146,7 @@ func _process(_delta: float) -> void:
 			var ss: Dictionary = sim.get_streaming_status()
 			if int(ss.get("relocate_failures", 0)) > 0:
 				_finish(1, "relocation found no ground")
-			elif int(ss.get("relocations", 0)) >= 1:
+			elif int(ss.get("relocations", 0)) > _relocate_before:
 				print(main.status_line("RG_DRIVE smoke relocation landed:"))
 				_relocate_freezes = int(ss.get("freeze_count", 0))
 				_mark_ticks = int(sim.get_step_count())

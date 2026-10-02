@@ -86,6 +86,9 @@ struct WorldConfig {
         std::string terrain_surface = "asphalt";
         std::uint32_t max_tile_fills_per_tick = 1;
         int loader_workers = 2;
+        // Background shape prefetch; both zero preserves the synchronous path.
+        std::uint32_t prefetch_margin_tiles = 0;
+        std::uint32_t prefetch_max_tiles = 0;
         double spawn_clearance_m = 0.10;
         double startup_timeout_s = 30.0;
         RoadSurfaces road_surfaces;

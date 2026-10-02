@@ -188,6 +188,7 @@ struct StreamingStatus {
     std::uint64_t resident_tiles = 0;
     std::uint64_t starved_tiles = 0;
     std::uint64_t relief_overflow = 0;
+    ps::terrain::PrefetchStats prefetch; // lifetime counters after last stepped tick
 
     // Start-up: wall time the constructor waited for the first ready gate,
     // and how many priming ticks it stepped before spawning.
@@ -288,6 +289,7 @@ public:
         double post_ms = 0.0;         // snapshot publish, fall detector, status
         double x = 0.0, y = 0.0, speed_mps = 0.0;
         std::uint64_t resident_tiles = 0;
+        ps::terrain::PrefetchStats prefetch;
     };
     // Returns (and clears) the queued spikes, oldest first; *overflow gets
     // the number dropped since the previous drain.
@@ -492,6 +494,15 @@ private:
         std::atomic<std::uint64_t> resident_tiles{0};
         std::atomic<std::uint64_t> starved_tiles{0};
         std::atomic<std::uint64_t> relief_overflow{0};
+        std::atomic<std::uint64_t> prefetch_enqueued{0};
+        std::atomic<std::uint64_t> prefetch_installed{0};
+        std::atomic<std::uint64_t> prefetch_late_sync{0};
+        std::atomic<std::uint64_t> prefetch_late_wait{0};
+        std::atomic<std::uint64_t> prefetch_late_wait_ns_total{0};
+        std::atomic<std::uint64_t> prefetch_late_wait_ns_max{0};
+        std::atomic<std::uint64_t> prefetch_stale_inputs{0};
+        std::atomic<std::uint64_t> prefetch_cancelled{0};
+        std::atomic<std::uint64_t> prefetch_skipped_suppression{0};
         std::atomic<double> startup_ms{0.0};
         std::atomic<std::uint32_t> prime_ticks{0};
         std::atomic<std::uint64_t> relocations{0};

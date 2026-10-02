@@ -280,8 +280,15 @@ ps::Pose Session::setup_terrain(const TerrainModeConfig& tm) {
         }
         terrain_ = std::make_unique<Terrain>(tm, surface);
     }
+    // The loader gate must cover every footprint a background shape may read.
+    if (phys.prefetch_margin_tiles > static_cast<std::uint32_t>(g2m::phys::StreamerConfig{}.gate_margin_tiles) ||
+        phys.prefetch_max_tiles > 1024 ||
+        ((phys.prefetch_margin_tiles == 0) != (phys.prefetch_max_tiles == 0))) {
+        throw std::invalid_argument("Session: invalid terrain prefetch margin/cap (margin exceeds streamer gate)");
+    }
     world_->set_terrain_source(terrain_->source,
-                               g2m::ps_bridge::make_terrain_config(phys.radius_m, phys.max_tile_fills_per_tick));
+                               g2m::ps_bridge::make_terrain_config(phys.radius_m, phys.max_tile_fills_per_tick,
+                                   phys.prefetch_margin_tiles, phys.prefetch_max_tiles));
 
     throw_if_cancelled();
     StartupProgress* progress = config_.startup.get();
@@ -567,7 +574,10 @@ bool Session::step_once(bool from_loop) {
                 spike.y = p.y;
                 spike.speed_mps = world_->get_motion(chassis_body_).linear.length();
             }
-            if (terrain_) spike.resident_tiles = world_->terrain_resident_tile_count();
+            if (terrain_) {
+                spike.resident_tiles = world_->terrain_resident_tile_count();
+                spike.prefetch = world_->terrain_prefetch_stats();
+            }
             std::lock_guard<std::mutex> lock(spike_mutex_);
             if (spikes_.size() < kTickSpikeCapacity) {
                 spikes_.push_back(spike);
@@ -637,14 +647,24 @@ std::vector<Session::TickSpike> Session::drain_tick_spikes(std::uint64_t* overfl
 std::string Session::format_tick_spike(const TickSpike& s) {
     const char* kind = s.kind == TickSpikeKind::Frozen ? "frozen" : s.kind == TickSpikeKind::Relocation ? "relocation"
                                                                                                          : "stepped";
-    char buf[512];
+    char buf[1024];
     std::snprintf(buf, sizeof(buf),
                   "tick=%llu wall_s=%.3f kind=%s gap_ms=%.2f prev_total_ms=%.2f total_ms=%.2f take_ms=%.2f "
                   "gate_update_ms=%.2f gate_interest_ms=%.2f controls_ms=%.2f step_ms=%.2f post_ms=%.2f "
-                  "pos=(%.1f,%.1f) speed_kmh=%.1f resident_tiles=%llu",
+                  "pos=(%.1f,%.1f) speed_kmh=%.1f resident_tiles=%llu "
+                  "prefetch_enqueued=%llu prefetch_installed=%llu prefetch_late_sync=%llu prefetch_late_wait=%llu prefetch_late_wait_ns_total=%llu prefetch_late_wait_ns_max=%llu prefetch_stale_inputs=%llu prefetch_cancelled=%llu prefetch_skipped_suppression=%llu",
                   static_cast<unsigned long long>(s.tick), s.wall_s, kind, s.gap_ms, s.prev_total_ms, s.total_ms,
                   s.take_relocate_ms, s.gate_update_ms, s.gate_interest_ms, s.controls_ms, s.step_ms, s.post_ms, s.x,
-                  s.y, s.speed_mps * 3.6, static_cast<unsigned long long>(s.resident_tiles));
+                  s.y, s.speed_mps * 3.6, static_cast<unsigned long long>(s.resident_tiles),
+                  static_cast<unsigned long long>(s.prefetch.enqueued),
+                  static_cast<unsigned long long>(s.prefetch.installed),
+                  static_cast<unsigned long long>(s.prefetch.late_sync),
+                  static_cast<unsigned long long>(s.prefetch.late_wait),
+                  static_cast<unsigned long long>(s.prefetch.late_wait_ns_total),
+                  static_cast<unsigned long long>(s.prefetch.late_wait_ns_max),
+                  static_cast<unsigned long long>(s.prefetch.stale_inputs),
+                  static_cast<unsigned long long>(s.prefetch.cancelled),
+                  static_cast<unsigned long long>(s.prefetch.skipped_suppression));
     return std::string(buf);
 }
 
@@ -696,6 +716,16 @@ void Session::post_step(bool from_loop) {
     status_.resident_tiles.store(world_->terrain_resident_tile_count(), std::memory_order_relaxed);
     status_.starved_tiles.store(world_->terrain_starved_tile_count(), std::memory_order_relaxed);
     status_.relief_overflow.store(world_->terrain_relief_overflow_count(), std::memory_order_relaxed);
+    const auto prefetch = world_->terrain_prefetch_stats();
+    status_.prefetch_enqueued.store(prefetch.enqueued, std::memory_order_relaxed);
+    status_.prefetch_installed.store(prefetch.installed, std::memory_order_relaxed);
+    status_.prefetch_late_sync.store(prefetch.late_sync, std::memory_order_relaxed);
+    status_.prefetch_late_wait.store(prefetch.late_wait, std::memory_order_relaxed);
+    status_.prefetch_late_wait_ns_total.store(prefetch.late_wait_ns_total, std::memory_order_relaxed);
+    status_.prefetch_late_wait_ns_max.store(prefetch.late_wait_ns_max, std::memory_order_relaxed);
+    status_.prefetch_stale_inputs.store(prefetch.stale_inputs, std::memory_order_relaxed);
+    status_.prefetch_cancelled.store(prefetch.cancelled, std::memory_order_relaxed);
+    status_.prefetch_skipped_suppression.store(prefetch.skipped_suppression, std::memory_order_relaxed);
 }
 
 void Session::step_blocking(const char* what) {
@@ -773,6 +803,15 @@ StreamingStatus Session::streaming_status() const {
     s.resident_tiles = status_.resident_tiles.load(std::memory_order_relaxed);
     s.starved_tiles = status_.starved_tiles.load(std::memory_order_relaxed);
     s.relief_overflow = status_.relief_overflow.load(std::memory_order_relaxed);
+    s.prefetch.enqueued = status_.prefetch_enqueued.load(std::memory_order_relaxed);
+    s.prefetch.installed = status_.prefetch_installed.load(std::memory_order_relaxed);
+    s.prefetch.late_sync = status_.prefetch_late_sync.load(std::memory_order_relaxed);
+    s.prefetch.late_wait = status_.prefetch_late_wait.load(std::memory_order_relaxed);
+    s.prefetch.late_wait_ns_total = status_.prefetch_late_wait_ns_total.load(std::memory_order_relaxed);
+    s.prefetch.late_wait_ns_max = status_.prefetch_late_wait_ns_max.load(std::memory_order_relaxed);
+    s.prefetch.stale_inputs = status_.prefetch_stale_inputs.load(std::memory_order_relaxed);
+    s.prefetch.cancelled = status_.prefetch_cancelled.load(std::memory_order_relaxed);
+    s.prefetch.skipped_suppression = status_.prefetch_skipped_suppression.load(std::memory_order_relaxed);
     s.startup_ms = status_.startup_ms.load(std::memory_order_relaxed);
     s.prime_ticks = status_.prime_ticks.load(std::memory_order_relaxed);
     s.relocations = status_.relocations.load(std::memory_order_relaxed);

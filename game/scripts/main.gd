@@ -606,14 +606,17 @@ func status_line(prefix: String) -> String:
 	if _simulation.get_vehicle_names().has(VEHICLE_NAME):
 		surface = _simulation.get_wheel_surface_name(VEHICLE_NAME, 0)
 	var ls: Dictionary = _simulation.get_loop_stats()
-	return "%s ticks=%d speed_kmh=%.1f gear=%d rpm=%.0f frozen=%s missing=%d inflight=%d freezes=%d frozen_ticks=%d falls=%d misses=%d starved=%d relocations=%d relocate_failures=%d mode=%s surface=%s dropped_ticks=%d step_max_ms=%.1f" % [
+	return "%s ticks=%d speed_kmh=%.1f gear=%d rpm=%.0f frozen=%s missing=%d inflight=%d freezes=%d frozen_ticks=%d falls=%d misses=%d starved=%d relocations=%d relocate_failures=%d mode=%s surface=%s dropped_ticks=%d step_max_ms=%.1f prefetch_installed=%d prefetch_late_sync=%d prefetch_late_wait=%d prefetch_wait_max_ms=%.3f prefetch_stale=%d" % [
 		prefix, int(_simulation.get_step_count()), _simulation.get_body_speed_mps("chassis") * 3.6,
 		int(pt.get("gear", 0)), float(pt.get("rpm", 0.0)), "yes" if bool(ss.get("frozen", false)) else "no",
 		int(ss.get("missing_required", 0)), int(ss.get("inflight", 0)), int(ss.get("freeze_count", 0)),
 		int(ss.get("frozen_attempts", 0)), int(ss.get("falls", 0)), int(ss.get("fill_misses", 0)),
 		int(ss.get("starved_tiles", 0)), int(ss.get("relocations", 0)), int(ss.get("relocate_failures", 0)),
 		_simulation.get_player_mode(), surface if surface != "" else "?",
-		int(ls.get("dropped_ticks", 0)), float(ls.get("step_max_ms", 0.0))]
+		int(ls.get("dropped_ticks", 0)), float(ls.get("step_max_ms", 0.0)),
+		int(ss.get("prefetch_installed", 0)), int(ss.get("prefetch_late_sync", 0)),
+		int(ss.get("prefetch_late_wait", 0)), float(ss.get("prefetch_late_wait_ns_max", 0)) / 1000000.0,
+		int(ss.get("prefetch_stale_inputs", 0))]
 
 # rg_core decides the active rig and which input groups are live.
 func _apply_mode_state() -> Dictionary:

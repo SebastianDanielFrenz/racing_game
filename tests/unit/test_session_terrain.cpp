@@ -980,3 +980,35 @@ TEST_CASE("session terrain: road_surfaces.enabled hard errors", "[session_terrai
         CHECK(what.find("must be < 255") != std::string::npos);
     }
 }
+
+
+TEST_CASE("Session snapshot prefetch matches synchronous hashes and publishes counters", "[session_terrain][prefetch]") {
+    const auto run = [](unsigned workers, bool enabled) {
+        auto cfg = terrain_config(workers, std::make_shared<SyntheticFetch>(), 100, 50);
+        cfg.terrain->physics.prefetch_margin_tiles = enabled ? 1 : 0;
+        cfg.terrain->physics.prefetch_max_tiles = enabled ? 24 : 0;
+        rg::Session session(cfg);
+        session.set_drive_script(hold_still_script());
+        std::vector<std::uint64_t> hashes;
+        for (int i = 0; i < 120; ++i) {
+            session.step();
+            hashes.push_back(session.world().state_hash());
+        }
+        CHECK(session.streaming_status().fill_misses == 0);
+        const auto stats = session.streaming_status().prefetch;
+        if (enabled) CHECK(stats.enqueued > 0);
+        else CHECK(stats.enqueued == 0);
+        CHECK(stats.installed == session.world().terrain_prefetch_stats().installed);
+        return hashes;
+    };
+    const auto reference = run(1, false);
+    CHECK(run(1, true) == reference);
+    CHECK(run(4, true) == reference);
+}
+
+TEST_CASE("Session rejects prefetch beyond the streamer gate", "[session_terrain][prefetch]") {
+    auto cfg = terrain_config(1, std::make_shared<SyntheticFetch>(), 100, 50);
+    cfg.terrain->physics.prefetch_margin_tiles = 2;
+    cfg.terrain->physics.prefetch_max_tiles = 24;
+    CHECK_THROWS_AS(rg::Session(cfg), std::invalid_argument);
+}

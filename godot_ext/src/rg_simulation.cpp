@@ -300,6 +300,15 @@ godot::Dictionary RgSimulation::get_streaming_status() const {
     d["prime_ticks"] = static_cast<std::int64_t>(s.prime_ticks);
     d["relocations"] = static_cast<std::int64_t>(s.relocations);
     d["relocate_failures"] = static_cast<std::int64_t>(s.relocate_failures);
+    d["prefetch_enqueued"] = static_cast<std::int64_t>(s.prefetch.enqueued);
+    d["prefetch_installed"] = static_cast<std::int64_t>(s.prefetch.installed);
+    d["prefetch_late_sync"] = static_cast<std::int64_t>(s.prefetch.late_sync);
+    d["prefetch_late_wait"] = static_cast<std::int64_t>(s.prefetch.late_wait);
+    d["prefetch_late_wait_ns_total"] = static_cast<std::int64_t>(s.prefetch.late_wait_ns_total);
+    d["prefetch_late_wait_ns_max"] = static_cast<std::int64_t>(s.prefetch.late_wait_ns_max);
+    d["prefetch_stale_inputs"] = static_cast<std::int64_t>(s.prefetch.stale_inputs);
+    d["prefetch_cancelled"] = static_cast<std::int64_t>(s.prefetch.cancelled);
+    d["prefetch_skipped_suppression"] = static_cast<std::int64_t>(s.prefetch.skipped_suppression);
     d["road_surfaces"] = s.road_surfaces;
     d["osm_ok"] = static_cast<std::int64_t>(s.osm_ok);
     d["osm_fail"] = static_cast<std::int64_t>(s.osm_fail);

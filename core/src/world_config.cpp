@@ -474,6 +474,17 @@ std::optional<WorldConfig> load_world_config(const std::string& path, std::strin
                 return std::nullopt;
             }
         }
+        for (const char* field : {"prefetch_margin_tiles", "prefetch_max_tiles"}) {
+            auto* value = std::string(field) == "prefetch_margin_tiles"
+                ? &cfg.physics.prefetch_margin_tiles : &cfg.physics.prefetch_max_tiles;
+            if (physics.contains(field) && !get_uint32(physics, field, path, "physics", value, err))
+                return std::nullopt;
+        }
+        if (cfg.physics.prefetch_margin_tiles > 1 || cfg.physics.prefetch_max_tiles > 1024 ||
+            ((cfg.physics.prefetch_margin_tiles == 0) != (cfg.physics.prefetch_max_tiles == 0))) {
+            fail(err, path, "physics prefetch requires margin 0/cap 0 (off), or margin 1/cap 1..1024");
+            return std::nullopt;
+        }
         if (physics.contains("loader_workers")) {
             if (!get_int(physics, "loader_workers", path, "\"physics\"", &cfg.physics.loader_workers, err)) {
                 return std::nullopt;
