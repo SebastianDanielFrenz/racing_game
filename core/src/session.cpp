@@ -180,6 +180,7 @@ std::unique_ptr<ps::World> Session::make_world(const SessionConfig& config) {
     world_config.tick_rate_hz = config.tick_rate_hz;
     world_config.substep_rate_hz = config.substep_rate_hz;
     world_config.gravity = config.gravity;
+    world_config.air_density = sample_environment(config.environment,config.chassis_z_m,0).air_density;
     world_config.job_workers = static_cast<int>(config.job_workers);
     return std::make_unique<ps::World>(world_config);
 }
@@ -256,6 +257,8 @@ void Session::build_world_contents(const SessionConfig& config) {
     }
     vehicle_id_ = world_->create_vehicle(vehicle_desc_, chassis_body_);
     have_vehicle_ = true;
+    if(!vehicle_desc_.aero.fans.empty()&&config_.environment.fan_battery_energy_j>0)
+        world_->credit_aero_fan_energy(vehicle_id_,config_.environment.fan_battery_energy_j);
     spawn_tick_ = world_->tick();
 }
 
@@ -647,6 +650,28 @@ bool Session::step_once(bool from_loop) {
     }
     spike.controls_ms = lap();
 
+    environment_sample_=sample_environment(config_.environment,world_->get_pose(chassis_body_).position.z,world_->sim_time());
+    if(config_.environment.enabled)world_->set_ambient({environment_sample_.pressure_pa,environment_sample_.temperature_k});
+    world_->set_aero_environment({environment_sample_.air_density,environment_sample_.wind_world_m_s});
+    const auto motion=world_->get_motion(chassis_body_);
+    const auto rotation=world_->get_pose(chassis_body_).orientation;
+    const double forward_speed=rotation.inverse().rotate(motion.linear-environment_sample_.wind_world_m_s).x;
+    const double brake=std::clamp(static_cast<double>(world_->get_control("brake")),0.0,1.0);
+    for(std::size_t i=0;i<vehicle_desc_.aero.surfaces.size();++i) {
+        const auto& surface=vehicle_desc_.aero.surfaces[i];
+        if(surface.name!="rear_wing"||!config_.environment.automatic_rear_wing)continue;
+        const auto& c=config_.environment;
+        double target=c.cruise_wing_offset_deg*std::clamp((forward_speed-10)/20,0.0,1.0);
+        if(forward_speed>=c.airbrake_min_speed_m_s) {
+            const double demand=std::clamp((brake-c.airbrake_threshold)/(1-c.airbrake_threshold),0.0,1.0);
+            target+=(c.airbrake_wing_offset_deg-target)*demand;
+        }
+        const double radians=target*3.141592653589793/180;
+        const double limit=radians>=0?surface.max_offset_rad:-surface.min_offset_rad;
+        world_->set_aero_surface_command(vehicle_id_,i,limit>0?std::clamp(radians/limit,-1.0,1.0):0.0);
+    }
+    for(std::size_t i=0;i<vehicle_desc_.aero.fans.size();++i)
+        world_->set_aero_fan_command(vehicle_id_,i,config_.environment.fan_command);
     world_->step();
     spike.step_ms = lap();
     post_step(from_loop);
@@ -907,6 +932,31 @@ FrameSnapshot Session::capture_frame_snapshot() const {
     snap.chassis_pose = world_->get_pose(chassis_body_);
     snap.chassis_motion = world_->get_motion(chassis_body_);
     snap.powertrain = world_->powertrain_state(vehicle_id_);
+    snap.aero.environment = environment_sample_;
+    const auto& aero=world_->vehicle_aero_telemetry(vehicle_id_);
+    snap.aero.enabled=!vehicle_desc_.aero.surfaces.empty()||!vehicle_desc_.aero.fans.empty()||vehicle_desc_.aero.body.reference_area_m2>0;
+    snap.aero.airspeed_m_s=aero.body_airspeed_m_s;
+    snap.aero.downforce_n=aero.downforce_n;snap.aero.front_balance=aero.front_balance;
+    snap.aero.fan_power_w=aero.fan_power_w;
+    snap.aero.fan_energy_remaining_j=aero.fan_energy_remaining_j;
+    snap.aero.force_world=aero.wrench_world.force;snap.aero.moment_world=aero.wrench_world.torque;
+    const auto force_local=snap.chassis_pose.orientation.inverse().rotate(aero.wrench_world.force);
+    snap.aero.side_force_n=force_local.y;
+    if(vehicle_desc_.wheels.size()>1&&std::abs(aero.downforce_n)>1e-6) {
+        double front=-1e30,rear=1e30;
+        for(const auto& wheel:vehicle_desc_.wheels){front=std::max(front,static_cast<double>(wheel.attachment_local.x));rear=std::min(rear,static_cast<double>(wheel.attachment_local.x));}
+        const double pitch=snap.chassis_pose.orientation.inverse().rotate(aero.wrench_world.torque).y;
+        if(front-rear>1e-6)snap.aero.front_balance=(pitch-rear*aero.downforce_n)/((front-rear)*aero.downforce_n);
+    }
+    if(aero.body_airspeed_m_s>1e-9)snap.aero.drag_n=-ps::dot(force_local,aero.body_relative_airflow_local/aero.body_airspeed_m_s);
+    const auto arm=snap.chassis_pose.orientation.rotate(vehicle_desc_.aero.body.position_local);
+    const double undisturbed=(snap.chassis_motion.velocity_at(arm)-environment_sample_.wind_world_m_s).length_squared();
+    snap.aero.wake_factor=undisturbed>1e-9?aero.body_airspeed_m_s*aero.body_airspeed_m_s/undisturbed:1;
+    for(std::size_t i=0;i<vehicle_desc_.aero.surfaces.size();++i) {
+        const auto& st=aero.surfaces[i];
+        snap.aero.surfaces.push_back({vehicle_desc_.aero.surfaces[i].name,st.alpha_rad,st.beta_rad,st.cl,st.cd,st.clearance_m,st.ground_multiplier,st.dynamic_pressure_pa,st.wrench_world.force});
+        if(vehicle_desc_.aero.surfaces[i].name=="rear_wing") { snap.aero.wing_pitch_offset_deg=st.offset_rad*180/3.141592653589793; snap.aero.wing_lift_m=st.lift_m; }
+    }
     if (terrain_) {
         const auto& frame = terrain_->config.frame;
         const auto& position = snap.chassis_pose.position;

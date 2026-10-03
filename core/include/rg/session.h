@@ -36,6 +36,7 @@
 #include "g2m/layer/osm_roads.h"
 
 #include "rg/drive_script.h"
+#include "rg/environment.h"
 #include "rg/fixed_rate_loop.h"
 #include "rg/player_mode.h"
 #include "rg/terrain_mode.h"
@@ -103,6 +104,7 @@ struct SessionConfig {
     double tick_rate_hz = 240.0;
     double substep_rate_hz = 960.0;
     ps::Vec3 gravity{0.0, 0.0, -9.81};
+    EnvironmentConfig environment;
     unsigned job_workers = 0; // 0 = ps::World's own auto (WorldConfig::job_workers)
 
     // Ground (flat mode only): one large flat static box, mirrors
@@ -158,6 +160,21 @@ struct WheelSnapshot {
 // via a lock-free triple buffer") - published into snapshot_buffer_ after
 // every stepped tick of the real-time loop, read via Session::snapshot()
 // from any thread.
+struct AeroSurfaceSnapshot {
+    std::string name;
+    double alpha_rad=0,beta_rad=0,cl=0,cd=0,clearance_m=-1,ground_multiplier=1,dynamic_pressure_pa=0;
+    ps::Vec3 force_world{};
+};
+struct AeroSnapshot {
+    bool enabled=false;
+    double airspeed_m_s=0,drag_n=0,downforce_n=0,side_force_n=0;
+    double front_balance=0,wing_pitch_offset_deg=0,wing_lift_m=0,fan_power_w=0,wake_factor=1;
+    ps::Vec3 force_world{},moment_world{};
+    double fan_energy_remaining_j=0;
+    std::vector<AeroSurfaceSnapshot> surfaces;
+    EnvironmentSample environment;
+};
+
 struct FrameSnapshot {
     std::uint64_t tick = 0;
     double sim_time = 0.0;
@@ -165,6 +182,7 @@ struct FrameSnapshot {
     ps::Motion chassis_motion{};
     std::vector<WheelSnapshot> wheels;
     ps::drivetrain::PowertrainSnapshot powertrain{};
+    AeroSnapshot aero;
     g2m::RoadSpeedMatch road_speed_limit{};
 };
 
@@ -475,6 +493,7 @@ private:
     [[nodiscard]] FrameSnapshot capture_frame_snapshot() const;
 
     SessionConfig config_;
+    EnvironmentSample environment_sample_;
     std::shared_ptr<ps::io::SurfaceTable> surface_table_;
     std::unique_ptr<ps::World> world_;
     ps::BodyId ground_body_{};

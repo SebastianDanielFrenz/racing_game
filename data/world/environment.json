@@ -1,0 +1,26 @@
+{
+  "format": "rg.environment/1",
+  "enabled": true,
+  "altitude_density": true,
+  "sea_level_pressure_pa": 101325.0,
+  "sea_level_temperature_k": 288.15,
+  "lapse_k_per_m": 0.0065,
+  "wind_world_m_s": [
+    0.0,
+    0.0,
+    0.0
+  ],
+  "gust_amplitude_m_s": [
+    0.0,
+    0.0,
+    0.0
+  ],
+  "gust_period_s": 12.0,
+  "automatic_rear_wing": true,
+  "cruise_wing_offset_deg": 4,
+  "airbrake_wing_offset_deg": 45,
+  "airbrake_min_speed_m_s": 20,
+  "airbrake_threshold": 0.45,
+  "fan_command": 0,
+  "fan_battery_energy_j": 0
+}

@@ -9,6 +9,7 @@
 
 #include <godot_cpp/core/class_db.hpp>
 #include <godot_cpp/classes/engine.hpp>
+#include <godot_cpp/variant/array.hpp>
 
 #include <chrono>
 #include <optional>
@@ -166,6 +167,10 @@ void RgSimulation::run_terrain_init_worker(std::string world_config_path, std::s
     }
 
     rg::SessionConfig config;
+    const auto path_end=world_config_path.find_last_of("/\\");
+    auto environment=rg::load_environment_config(world_config_path.substr(0,path_end+1)+"environment.json",&err);
+    if(!environment){fail("load_environment: "+err);return;}
+    config.environment=*environment;
     config.engine_map_cache_enabled = world_config->physics.engine_map_cache_enabled;
     config.vehicle_json_path = std::move(vehicle_json_path);
     configure_vehicle_chassis(config);
@@ -484,6 +489,18 @@ godot::Variant RgSimulation::get_camera_ground_height(godot::Vector3 position) c
     return height?godot::Variant(*height-origin.z):godot::Variant{};
 }
 
+godot::Dictionary RgSimulation::get_aero_state() const {
+    godot::Dictionary d;if(!session_)return d;const auto& a=frame_snapshot().aero;
+    d["enabled"]=a.enabled;d["airspeed_m_s"]=a.airspeed_m_s;d["drag_n"]=a.drag_n;d["downforce_n"]=a.downforce_n;d["side_force_n"]=a.side_force_n;
+    d["front_balance"]=a.front_balance;d["wing_pitch_offset_deg"]=a.wing_pitch_offset_deg;d["wing_lift_m"]=a.wing_lift_m;
+    d["fan_power_w"]=a.fan_power_w;d["wake_factor"]=a.wake_factor;d["air_density"]=a.environment.air_density;
+    d["wind_world_m_s"]=godot::Vector3(a.environment.wind_world_m_s.x,a.environment.wind_world_m_s.y,a.environment.wind_world_m_s.z);
+    d["force_world_n"]=godot::Vector3(a.force_world.x,a.force_world.y,a.force_world.z);d["moment_world_nm"]=godot::Vector3(a.moment_world.x,a.moment_world.y,a.moment_world.z);
+    d["fan_energy_remaining_j"]=a.fan_energy_remaining_j;
+    godot::Array surfaces;for(const auto& st:a.surfaces){godot::Dictionary surface;surface["name"]=String(st.name.c_str());surface["alpha_deg"]=st.alpha_rad*180/3.141592653589793;surface["beta_deg"]=st.beta_rad*180/3.141592653589793;surface["cl"]=st.cl;surface["cd"]=st.cd;surface["clearance_m"]=st.clearance_m;surface["ground_multiplier"]=st.ground_multiplier;surface["dynamic_pressure_pa"]=st.dynamic_pressure_pa;surface["force_world_n"]=godot::Vector3(st.force_world.x,st.force_world.y,st.force_world.z);surfaces.append(surface);}d["surfaces"]=surfaces;
+    return d;
+}
+
 godot::Dictionary RgSimulation::get_steering_kinematics() const {
     godot::Dictionary result;
     if (!session_) return result;
@@ -790,6 +807,7 @@ void RgSimulation::_bind_methods() {
 
     godot::ClassDB::bind_method(D_METHOD("get_body_transform", "body_name"), &RgSimulation::get_body_transform);
     godot::ClassDB::bind_method(D_METHOD("get_camera_ground_height", "position"), &RgSimulation::get_camera_ground_height);
+    godot::ClassDB::bind_method(D_METHOD("get_aero_state"), &RgSimulation::get_aero_state);
     godot::ClassDB::bind_method(D_METHOD("get_steering_kinematics"), &RgSimulation::get_steering_kinematics);
     godot::ClassDB::bind_method(D_METHOD("get_body_speed_mps", "body_name"), &RgSimulation::get_body_speed_mps);
 

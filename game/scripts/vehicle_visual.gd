@@ -45,6 +45,10 @@ var model_absolute_path: String = "" # set by body_visuals.gd before add_child
 var _wheel_nodes: Array = []
 var _model_root: Node3D
 var _load_ok: bool = false
+var _wing_flap: Node3D
+var _wing_lift: Node3D
+var _wing_rest_rotation := Vector3.ZERO
+var _wing_rest_position := Vector3.ZERO
 
 func _ready() -> void:
 	_load_model()
@@ -104,6 +108,12 @@ func _load_model() -> void:
 		cluster.set("simulation", simulation)
 		cluster.set("vehicle_name", vehicle_name)
 		_model_root.add_child(cluster)
+	_wing_flap = _model_root.find_child("wing_flap",true,false)
+	_wing_lift = _model_root.find_child("wing_lift",true,false)
+	if _wing_flap != null:
+		_wing_rest_rotation = _wing_flap.rotation
+	if _wing_lift != null:
+		_wing_rest_position = _wing_lift.position
 	_load_ok = true
 	print("rg_godot vehicle_visual.gd: loaded model ", model_absolute_path)
 
@@ -197,6 +207,13 @@ func _process(delta: float) -> void:
 		_bind_wheel_nodes()
 		if _wheel_nodes.is_empty():
 			return
+	if simulation.has_method("get_aero_state"):
+		var aero: Dictionary = simulation.get_aero_state()
+		if bool(aero.get("enabled",false)):
+			if _wing_flap != null:
+				_wing_flap.rotation = _wing_rest_rotation+Vector3(deg_to_rad(float(aero.get("wing_pitch_offset_deg",0.0))),0,0)
+			if _wing_lift != null:
+				_wing_lift.position = _wing_rest_position+Vector3(0,float(aero.get("wing_lift_m",0.0)),0)
 	var t0 := Time.get_ticks_usec()
 
 	for i in range(_wheel_nodes.size()):

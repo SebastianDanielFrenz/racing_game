@@ -819,6 +819,7 @@ func _log_owner_mark() -> void:
 	if world_kind == "real_world":
 		mark["utm_zone"] = origin.get("zone")
 		mark["utm_m"] = [float(origin.get("e0",0))+point.x,float(origin.get("n0",0))+point.y,point.z]
+	mark["aero"] = _simulation.get_aero_state()
 	var encoded := JSON.stringify(mark)
 	print("RG_OWNER_MARK " + encoded)
 	var mark_path := "user://drive_marks.jsonl"
