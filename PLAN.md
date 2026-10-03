@@ -728,3 +728,5 @@ explicit tagged turn arrows and a configurable gentle shared-heightfield verge
 are integrated. Background geometry generation and bounded tile uploads preserve
 startup streaming. This is a presentation increment; surveyed junction marking
 layouts and the remaining G3 source/road acceptance steps are still outstanding.
+
+2026-10-03 owner B8 rollover: identified bare-earth terrain protruding through an inferred tunnel roof near 50.1361,8.4860. Upper-deck terrain clearance, C1 approach grades and shared roof/marking heights are fixed; focused synthetic and exact-location geometry regressions pass. Driving acceptance remains with the owner.

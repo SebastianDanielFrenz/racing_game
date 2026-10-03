@@ -11,6 +11,20 @@ double smooth(double t) { t=std::clamp(t,0.0,1.0); return t*t*(3-2*t); }
 }
 RoadSurfacePatch::RoadSurfacePatch(const g2m::RoadGeomTile& geometry,double verge_drop) : verge_drop_m_(verge_drop) {
     decks=build_road_decks(geometry);
+    for(const auto& deck:decks) {
+        if(deck->tunnel_floor)continue;
+        const auto& m=deck->mesh;const auto rows=m.positions.size()/30;
+        for(std::size_t i=1;i<rows;++i) {
+            const auto a=(i-1)*15+6,b=i*15+6;
+            const double total=deck->end_station-deck->start_station;
+            DeckCut cut{m.origin[0]+m.positions[a],m.origin[1]+m.positions[a+1],m.positions[a+2],
+                m.origin[0]+m.positions[b],m.origin[1]+m.positions[b+1],m.positions[b+2],
+                deck->half_width,deck->crown,total*(i-1)/(rows-1),total};
+            const auto index=deck_cuts_.size();deck_cuts_.push_back(cut);const double radius=cut.half_width+1;
+            for(int y=bin(std::min(cut.y0,cut.y1)-radius);y<=bin(std::max(cut.y0,cut.y1)+radius);++y)
+                for(int x=bin(std::min(cut.x0,cut.x1)-radius);x<=bin(std::max(cut.x0,cut.x1)+radius);++x)cut_bins_[{x,y}].push_back(index);
+        }
+    }
     for (const auto& entry : geometry.entries) {
         if (!entry.profile) { ++declined; continue; }
         const auto& p = *entry.profile;
@@ -105,6 +119,25 @@ std::size_t RoadSurfacePatch::apply(g2m::HeightTile& tile) const {
         if(weights>0) height=sum/weights;
         const auto quantized=static_cast<std::int32_t>(std::llround(height*256));
         if(quantized!=raw) { raw=quantized; ++changed; }
+    }
+    // Bare-earth terrain must not protrude through a separately collidable slab.
+    // Keep the approach surface flush, then leave clearance below its underside.
+    for(int y=0;y<256;++y)for(int x=0;x<256;++x) {
+        auto& raw=tile.h[static_cast<std::size_t>(y)*256+x];if(raw==g2m::kHeightNoData)continue;
+        const double e=tile.key.min_easting()+(x+.5)*spacing,n=tile.key.min_northing()+(y+.5)*spacing;
+        const auto candidates=cut_bins_.find({bin(e),bin(n)});if(candidates==cut_bins_.end())continue;
+        double ceiling=raw/256.0;
+        for(auto index:candidates->second) {
+            const auto& c=deck_cuts_[index];const double dx=c.x1-c.x0,dy=c.y1-c.y0,l2=dx*dx+dy*dy;if(l2<1e-12)continue;
+            const double t=((e-c.x0)*dx+(n-c.y0)*dy)/l2;if(t<0||t>1)continue;
+            const double lateral=std::abs((e-c.x0)*dy-(n-c.y0)*dx)/std::sqrt(l2);
+            if(lateral>c.half_width+1)continue;
+            const double station=c.from+t*std::sqrt(l2),edge=std::min(station,c.total-station);
+            const double top=c.z0+(c.z1-c.z0)*t-c.crown*(std::sqrt(lateral*lateral+.25)-.5);
+            ceiling=std::min(ceiling,top-.55*smooth(edge/4.0));
+        }
+        const auto quantized=static_cast<std::int32_t>(std::floor(ceiling*256));
+        if(quantized<raw){raw=quantized;++changed;}
     }
     return changed;
 }

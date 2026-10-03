@@ -11,6 +11,9 @@ int integer(const std::string& s) {int n=0;auto r=std::from_chars(s.data(),s.dat
 }
 RoadVisualMesh build_road_visual(const g2m::RoadGeomTile& geometry,const g2m::TileKey& key,const RoadVisualGround& ground,double lift) {
  RoadVisualMesh mesh;const auto decks=build_road_decks(geometry);
+ const auto deck_height=[&](std::int64_t way,double station,double lateral)->std::optional<double>{
+  for(const auto& d:decks)if(d->way_id==way)if(auto z=road_deck_height(*d,station,lateral))return z;return {};
+ };
  std::map<std::int64_t,int> degree;for(const auto& edge:geometry.source.graph.edges){++degree[edge.from_node];++degree[edge.to_node];}
  const double ox=key.min_easting(),oy=key.min_northing();
  for(const auto& entry:geometry.entries) {
@@ -46,7 +49,7 @@ RoadVisualMesh build_road_visual(const g2m::RoadGeomTile& geometry,const g2m::Ti
     double fade=1;if(start_junction)fade=std::min(fade,std::clamp((station-3)/8.0,0.0,1.0));if(end_junction)fade=std::min(fade,std::clamp((length-station-3)/8.0,0.0,1.0));
     for(int j=0;j<=across;++j) {
      const double lateral=-extent+2*extent*j/across,e=xy->x+nx*lateral,n=xy->y+ny*lateral;
-     const auto height=separated?std::optional<double>{z->height_m-p.attributes.crown_per_mille/1000.0*(std::sqrt(lateral*lateral+.25)-.5)}:ground(e,n);
+     const auto height=separated?deck_height(entry.way_id,station,lateral):ground(e,n);
      if(!height){valid=false;break;}
      mesh.vertices.push_back({static_cast<float>(e-ox),static_cast<float>(n-oy),static_cast<float>(*height+lift),static_cast<float>(lateral),static_cast<float>(station),static_cast<float>(width),static_cast<float>(fade),static_cast<float>(lanes),static_cast<float>(forward),static_cast<float>(flags)});
     }
@@ -70,7 +73,7 @@ RoadVisualMesh build_road_visual(const g2m::RoadGeomTile& geometry,const g2m::Ti
      const double st=station+direction*along;auto xy=p.reference.at(st);auto z=p.at(st);if(!xy||!z)return {};
      const double lateral=offset+direction*side,e=xy->x-std::sin(xy->heading)*lateral,n=xy->y+std::cos(xy->heading)*lateral;
      const bool separated=p.attributes.bridge||std::any_of(decks.begin(),decks.end(),[&](const auto& d){return d->way_id==entry.way_id&&st>=d->start_station&&st<=d->end_station;});
-     auto height=separated?std::optional<double>{z->height_m-p.attributes.crown_per_mille/1000.0*(std::sqrt(lateral*lateral+.25)-.5)}:ground(e,n);if(!height)return {};
+     auto height=separated?deck_height(entry.way_id,st,lateral):ground(e,n);if(!height)return {};
      return RoadVisualVertex{static_cast<float>(e-ox),static_cast<float>(n-oy),static_cast<float>(*height+lift+.003),0,0,static_cast<float>(width),1,0,0,16};
     };
     const auto triangle=[&](double ax,double ay,double bx,double by,double cx,double cy){

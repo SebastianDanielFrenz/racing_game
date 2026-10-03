@@ -62,6 +62,7 @@ std::shared_ptr<const RoadDeck> deck(const g2m::RoadProfile& profile,std::int64_
     double from,double to,bool inferred) {
     if(to-from<.5||to-from>1000) return {};
     auto output=std::make_shared<RoadDeck>();output->way_id=id;output->start_station=from;output->end_station=to;
+    output->vertical=profile.vertical.segments;output->half_width=profile.attributes.width_mm/2000.0;output->crown=profile.attributes.crown_per_mille/1000.0;
     output->tunnel_floor=profile.attributes.tunnel;
     output->inferred=inferred;output->land_class=profile.attributes.land_class;
     auto first=profile.reference.at(from);if(!first) return {};
@@ -118,6 +119,13 @@ std::shared_ptr<const RoadDeck> deck(const g2m::RoadProfile& profile,std::int64_
     return output;
 }
 }
+std::optional<double> road_deck_height(const RoadDeck& deck,double station,double lateral) {
+    if(station<deck.start_station-1e-6||station>deck.end_station+1e-6)return {};
+    auto it=std::upper_bound(deck.vertical.begin(),deck.vertical.end(),station,[](double s,const auto& c){return s<c.station_m;});
+    if(it==deck.vertical.begin())return {};--it;auto pose=it->at(std::clamp(station,it->station_m,it->station_m+it->length_m));
+    if(!pose)return {};return pose->height_m-deck.crown*(std::sqrt(lateral*lateral+.25)-.5);
+}
+
 void complete_road_profiles(g2m::RoadGeomTile& geometry,const g2m::RoadDemSampler& dem) {
     const auto& graph=geometry.source.graph;auto builder=g2m::RoadReferenceBuilder::make(graph);if(!builder) return;
     const auto zone=geometry.source.key.zone;
@@ -251,10 +259,10 @@ std::vector<std::shared_ptr<const RoadDeck>> build_road_decks(const g2m::RoadGeo
                     // Infer the roof from the upper road's supported ends,
                     // never from the lower tunnel's bare-earth floor.
                     auto z0=p.at(from),z1=p.at(to);if(!z0||!z1) continue;
-                    auto upper_profile=p;upper_profile.vertical.segments={{0,p.reference.length_m,
-                        z0->height_m-(from)*(z1->height_m-z0->height_m)/(to-from),
-                        z1->height_m+(p.reference.length_m-to)*(z1->height_m-z0->height_m)/(to-from),
-                        (z1->height_m-z0->height_m)/(to-from),(z1->height_m-z0->height_m)/(to-from)}};
+                    auto upper_profile=p;
+                    // Preserve approach grade as well as height: a straight roof
+                    // inserted into a sloping profile creates a wheel-impact kink.
+                    upper_profile.vertical.segments={{from,to-from,z0->height_m,z1->height_m,z0->grade,z1->grade}};
                     if(auto d=deck(upper_profile,entry.way_id,from,to,true)) {
                         result.push_back(std::move(d));std::fprintf(stderr,"RG_STRUCTURE tunnel_roof upper=%lld lower=%lld\n",static_cast<long long>(entry.way_id),static_cast<long long>(lower.osm_id));
                     }

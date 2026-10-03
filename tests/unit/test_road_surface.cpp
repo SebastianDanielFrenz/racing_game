@@ -48,6 +48,12 @@ TEST_CASE("Raised carriageway verge leaves the driving surface unchanged", "[roa
     CHECK(a->h[150*256+100]==b->h[150*256+100]);
     const rg::RoadSurfacePatch bridge(geometry(true),.06);auto t=terrain(0);CHECK(bridge.apply(*t)==0);
 }
+TEST_CASE("Terrain cannot protrude through a bridge collision slab", "[road_surface]") {
+    auto t=terrain(0);t->h.fill(130*256);t->h[128*256+90]=g2m::kHeightNoData;
+    const rg::RoadSurfacePatch bridge(geometry(true));REQUIRE(bridge.apply(*t)>0);
+    CHECK(t->h[128*256+100]/256.0==Catch::Approx(104.475).margin(.004));
+    CHECK(t->h[128*256+90]==g2m::kHeightNoData);CHECK(t->h[0]==130*256);
+}
 TEST_CASE("Grade-separated road profiles never fill the ground underneath", "[road_surface]") {
     const rg::RoadSurfacePatch bridge(geometry(true));auto t=terrain(0);
     CHECK(bridge.separated==1); CHECK(bridge.apply(*t)==0);
@@ -165,4 +171,30 @@ TEST_CASE("Inspect reported B8 structures", "[.][realdata][structures]") {
             for(const auto& entry:geometry->entries) if(entry.way_id==way.osm_id) std::printf("STRUCTURE_PROFILE refs=%u:%u accepted=%d reason=%s\n",entry.stretch.start_ref,entry.stretch.end_ref,entry.profile.has_value(),entry.decline?entry.decline->message.c_str():"ok");
         }
     }
+}
+
+
+TEST_CASE("Owner B8 crossing has no terrain protruding through its roof", "[.][realdata][owner_impact]") {
+ if(!std::getenv("RG_G2M_HOME"))SKIP("Local source store required");std::string error;
+ auto config=rg::load_world_config(std::string(RG_SOURCE_DIR)+"/data/world/world_config.json",&error);REQUIRE(config);
+ auto terrain=rg::WorldTerrain::open(*config,&error);REQUIRE(terrain);
+ auto geometry=terrain->road_geometry_at(463270.877,5553889.740);REQUIRE(geometry);
+ const auto decks=terrain->road_decks();auto found=std::find_if(decks.begin(),decks.end(),[](const auto& d){return d->way_id==5217272&&d->inferred;});REQUIRE(found!=decks.end());
+ const auto& deck=**found;const auto& mesh=deck.mesh;const auto rows=mesh.positions.size()/30;
+ const auto sample=[&](double e,double n){return rg::sample_l0_height([&](const auto& k){return terrain->height_tile_shared(k).tile.get();},{32},0,0,e,n);};
+ for(std::size_t i=6;i+6<rows;++i) {
+  const auto a=i*15+6,b=(i+1)*15+6;const double dx=mesh.positions[b]-mesh.positions[a],dy=mesh.positions[b+1]-mesh.positions[a+1],length=std::hypot(dx,dy);
+  const double station=deck.start_station+(deck.end_station-deck.start_station)*i/(rows-1);
+  for(double lateral:{-1.,0.,1.}) {
+   const double e=mesh.origin[0]+mesh.positions[a]-dy/length*lateral,n=mesh.origin[1]+mesh.positions[a+1]+dx/length*lateral;
+   const auto ground=sample(e,n),top=rg::road_deck_height(deck,station,lateral);REQUIRE(ground);REQUIRE(top);
+   INFO("roof station="<<station<<" lateral="<<lateral<<" ground="<<*ground<<" top="<<*top);
+   CHECK(*ground<=*top-.45);
+  }
+ }
+ for(const auto& entry:geometry->entries)if(entry.way_id==deck.way_id&&entry.profile) {
+  auto start=entry.profile->at(deck.start_station),end=entry.profile->at(deck.end_station);REQUIRE(start);REQUIRE(end);
+  auto roof_start=deck.vertical.front().at(deck.start_station),roof_end=deck.vertical.back().at(deck.end_station);REQUIRE(roof_start);REQUIRE(roof_end);
+  CHECK(roof_start->grade==Catch::Approx(start->grade).margin(1e-8));CHECK(roof_end->grade==Catch::Approx(end->grade).margin(1e-8));
+ }
 }
