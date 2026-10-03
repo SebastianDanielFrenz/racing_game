@@ -716,7 +716,7 @@ func _apply_mode_state() -> Dictionary:
 	if _vr_active:
 		rig_name = "xr_free" if rig_name == "free" else "xr_cockpit"
 	_director.set_active(rig_name)
-	_director.camera_input_live = bool(ms.get("camera_inputs_live", true)) and not (get_tree().get_nodes_in_group("seat_adjustment_open").size() > 0)
+	_director.camera_input_live = bool(ms.get("camera_inputs_live", true)) and not (get_tree().get_nodes_in_group("seat_adjustment_open").size() > 0 or get_tree().get_nodes_in_group("traffic_settings_open").size() > 0)
 	return ms
 
 func _forward_driving(live: bool, delta: float) -> void:

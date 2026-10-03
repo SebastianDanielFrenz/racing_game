@@ -45,7 +45,7 @@ func _ready() -> void:
  _status = Label.new()
  box.add_child(_status)
  var note := Label.new()
- note.text = "Cars and trucks use OSM destinations. Zero density removes\ntraffic after it leaves view. Changes are saved. Brake held while open."
+ note.text = "Cars and trucks use OSM destinations. Zero density removes\ntraffic after it leaves view. Changes are saved. Driving stays active."
  box.add_child(note)
  var close := Button.new()
  close.text = "Close"
@@ -141,11 +141,11 @@ func _process(_delta: float) -> void:
 func _toggle(open: bool) -> void:
  _panel.visible = open
  if open:
-  add_to_group("seat_adjustment_open") # Shared modal brake / mouse guard.
+  add_to_group("traffic_settings_open") # Mouse/UI capture only; driving remains live.
   Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
   _controls[0].grab_focus()
  else:
-  remove_from_group("seat_adjustment_open")
+  remove_from_group("traffic_settings_open")
   get_viewport().gui_release_focus()
 
 func _input(event: InputEvent) -> void:

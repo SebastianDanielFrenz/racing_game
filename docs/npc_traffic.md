@@ -76,7 +76,9 @@ with a 600 m population radius, a 100 m horizontal player exclusion distance,
 and a hard cap of 24 active vehicles. Flat mode has no OSM destinations and
 therefore does not invent traffic trips. F7 opens live density, radius, minimum
 spawn-distance and grip controls, saved in user://traffic.cfg. Zero density
-retires vehicles once they leave view; the panel holds the player's brake.
+retires vehicles once they leave view. Driving stays active while the traffic
+panel is open; it captures the mouse and disables camera look, without applying
+the seat panel's brake/input suppression.
 
 Destination selection is random among locally reachable buildings whose
 representative point lies inside tagged residential landuse, or public

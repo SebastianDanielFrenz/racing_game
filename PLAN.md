@@ -796,3 +796,9 @@ Runtime planning now uses nonblocking published geometry only, indexed destinati
 lookup and cancellation throughout CPU work, preventing the old distant-derivation
 wait from NPC shutdown/reset. Scan timing/population telemetry added. Focused
 flip/cancel/traffic/drafting checks: 40 assertions, 5 cases; owner road retest pending.
+
+2026-10-04 traffic settings apparent freeze: owner log continued at ~240 Hz with
+frozen=no and player stationary. F7 inadvertently reused the seat panel's modal
+full-brake/input-suppression group. Traffic settings now have a separate mouse/UI
+guard: driving remains active, camera look is suppressed while using the panel.
+Godot script checks pass. Owner log preserved in out/traffic_settings_owner.log.
