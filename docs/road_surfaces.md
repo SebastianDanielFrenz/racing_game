@@ -94,3 +94,16 @@ terrain/timing status. This makes a future report from inside a hole locatable.
 Plan position: game-side G3-D/E surfacing and structural collision are now
 integrated. Full source-profile acceptance (G3-C), general junction surfaces,
 road markings and the complete G3-F/R3 route acceptance remain open.
+
+## Engine map disk cache
+
+`physics.engine_map_cache_enabled` defaults to `true`, including when omitted.
+It enables the physics library's persistent `.psmaps` cache in
+`external/physics_sim/out/godot_engine_cache` for the supplied vehicles. Set it
+to `false` to regenerate maps on each fresh vehicle-definition load. The
+in-memory vehicle definition is still reused on world reloads; restart the
+game to measure a changed disk-cache setting. Library cache keys invalidate
+entries when generation inputs or generator versions change.
+`RG_ENGINE_MAP_CACHE` reports the directory and number of generated engines
+on each fresh definition load (`generated=0` for cache hits or engines that
+do not require generated maps). Runtime verification is left to the owner.

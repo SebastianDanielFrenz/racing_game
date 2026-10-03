@@ -21,6 +21,7 @@
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
+#include <filesystem>
 #include <span>
 #include <stdexcept>
 #include <string>
@@ -236,8 +237,23 @@ void Session::build_world_contents(const SessionConfig& config) {
         chassis_body_ = world_->create_body(desc);
     }
 
-    vehicle_desc_ = config.vehicle_definition ? *config.vehicle_definition
-                                              : ps::io::load_vehicle_json(config.vehicle_json_path);
+    if (config.vehicle_definition) {
+        vehicle_desc_ = *config.vehicle_definition;
+    } else {
+        ps::io::EngineMapOptions options;
+        std::size_t generated = 0;
+        options.generation_count_out = &generated;
+        if (config.engine_map_cache_enabled) {
+            // Vehicle files live in <physics_sim>/data/vehicles; use the
+            // same persistent cache location as physics_sim's Godot demo.
+            const auto vehicle_path = std::filesystem::absolute(config.vehicle_json_path);
+            const auto library_root = vehicle_path.parent_path().parent_path().parent_path();
+            options.cache_dir = (library_root / "out" / "godot_engine_cache").string();
+        }
+        vehicle_desc_ = ps::io::load_vehicle_json(config.vehicle_json_path, options);
+        std::fprintf(stderr, "RG_ENGINE_MAP_CACHE enabled=%s generated=%zu dir=%s\n",
+                     config.engine_map_cache_enabled ? "yes" : "no", generated, options.cache_dir.c_str());
+    }
     vehicle_id_ = world_->create_vehicle(vehicle_desc_, chassis_body_);
     have_vehicle_ = true;
     spawn_tick_ = world_->tick();

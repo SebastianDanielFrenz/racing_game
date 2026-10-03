@@ -134,6 +134,7 @@ struct SessionConfig {
     // Optional immutable, already-loaded definition for rebuilding a world.
     // Engine maps remain shared/const; each world creates fresh runtime state.
     std::shared_ptr<const ps::vehicle::VehicleDesc> vehicle_definition;
+    bool engine_map_cache_enabled = true; // Persistent simulated-engine maps, matching the physics demo.
     std::string vehicle_json_path;  // e.g. .../data/vehicles/car_sedan.json
     std::string surface_table_path; // e.g. .../data/surfaces/surfaces.json
 

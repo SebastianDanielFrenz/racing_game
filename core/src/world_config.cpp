@@ -459,6 +459,10 @@ std::optional<WorldConfig> load_world_config(const std::string& path, std::strin
         if (!require_object(physics, path, "\"physics\"", err)) {
             return std::nullopt;
         }
+        if (physics.contains("engine_map_cache_enabled") &&
+            !get_bool(physics, "engine_map_cache_enabled", path, "\"physics\"", &cfg.physics.engine_map_cache_enabled, err)) {
+            return std::nullopt;
+        }
         if (physics.contains("radius_m")) {
             if (!get_number(physics, "radius_m", path, "\"physics\"", &cfg.physics.radius_m, err)) {
                 return std::nullopt;

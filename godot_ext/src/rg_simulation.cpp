@@ -163,6 +163,7 @@ void RgSimulation::run_terrain_init_worker(std::string world_config_path, std::s
     }
 
     rg::SessionConfig config;
+    config.engine_map_cache_enabled = world_config->physics.engine_map_cache_enabled;
     config.vehicle_json_path = std::move(vehicle_json_path);
     configure_vehicle_chassis(config);
     reuse_vehicle_definition(config);

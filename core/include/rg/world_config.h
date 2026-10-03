@@ -83,6 +83,7 @@ struct WorldConfig {
     };
 
     struct PhysicsTerrainConfig {
+        bool engine_map_cache_enabled = true;
         double radius_m = 400.0;
         std::string terrain_surface = "asphalt";
         std::uint32_t max_tile_fills_per_tick = 1;
