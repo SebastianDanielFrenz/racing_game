@@ -8,6 +8,7 @@
 #include "ps/drivetrain/powertrain_desc.h"
 
 #include <godot_cpp/core/class_db.hpp>
+#include <godot_cpp/classes/engine.hpp>
 
 #include <chrono>
 #include <optional>
@@ -89,6 +90,7 @@ void RgSimulation::cancel_init() {
 }
 
 void RgSimulation::teardown_current() {
+    render_snapshot_.reset();
     stop_engine_audio();
     cancel_init();                   // R2.2 R9: cancel-then-join
     reap_init_thread(/*wait=*/true); // joins any in-flight worker first (see its own doc comment)
@@ -400,10 +402,10 @@ void RgSimulation::flip_vehicle_upright() {
 }
 
 std::int64_t RgSimulation::get_step_count() const {
-    return session_ ? static_cast<std::int64_t>(session_->snapshot().tick) : 0;
+    return session_ ? static_cast<std::int64_t>(frame_snapshot().tick) : 0;
 }
 
-double RgSimulation::get_sim_time() const { return session_ ? session_->snapshot().sim_time : 0.0; }
+double RgSimulation::get_sim_time() const { return session_ ? frame_snapshot().sim_time : 0.0; }
 
 double RgSimulation::get_tick_rate_hz() const { return session_ ? session_->world().dt() > 0.0 ? 1.0 / session_->world().dt() : 0.0 : 0.0; }
 
@@ -447,12 +449,23 @@ std::int64_t RgSimulation::consume_adapter_frame_time_us() {
     return adapter_time_us_accum_.exchange(0, std::memory_order_relaxed);
 }
 
+const rg::FrameSnapshot& RgSimulation::frame_snapshot() const {
+    const auto frame=static_cast<std::uint64_t>(godot::Engine::get_singleton()->get_process_frames());
+    if (!render_snapshot_ || render_snapshot_frame_!=frame) {
+        // One immutable tick for every camera, model, wheel, HUD and audio
+        // presentation reader in this rendered frame. Never change physics.
+        render_snapshot_=session_->snapshot();
+        render_snapshot_frame_=frame;
+    }
+    return *render_snapshot_;
+}
+
 godot::Transform3D RgSimulation::get_body_transform(const String& body_name) const {
     if (!session_) return godot::Transform3D();
     const std::string name = to_std_string(body_name);
     ps::Pose pose;
     if (name == "chassis") {
-        pose = session_->snapshot().chassis_pose;
+        pose = frame_snapshot().chassis_pose;
     } else if (name == "ground") {
         pose = ps::Pose::identity(); // static, built at the origin (session.cpp)
     } else {
@@ -474,7 +487,7 @@ godot::Variant RgSimulation::get_camera_ground_height(godot::Vector3 position) c
 godot::Dictionary RgSimulation::get_steering_kinematics() const {
     godot::Dictionary result;
     if (!session_) return result;
-    const auto& snapshot=session_->snapshot();
+    const auto& snapshot=frame_snapshot();
     const auto transform=iso_to_godot_transform(snapshot.chassis_pose,ps::Vec3{});
     const auto& v=snapshot.chassis_motion.linear;
     const godot::Vector3 velocity(-v.y,v.z,-v.x);
@@ -488,7 +501,7 @@ godot::Dictionary RgSimulation::get_steering_kinematics() const {
 
 float RgSimulation::get_body_speed_mps(const String& body_name) const {
     if (!session_ || to_std_string(body_name) != "chassis") return 0.0f;
-    return static_cast<float>(session_->snapshot().chassis_motion.linear.length());
+    return static_cast<float>(frame_snapshot().chassis_motion.linear.length());
 }
 
 void RgSimulation::set_control(const String& channel, double value) {
@@ -511,40 +524,40 @@ godot::PackedStringArray RgSimulation::get_vehicle_names() const {
 
 std::int64_t RgSimulation::get_vehicle_wheel_count(const String& vehicle_name) const {
     if (!has_vehicle(vehicle_name)) return 0;
-    return static_cast<std::int64_t>(session_->snapshot().wheels.size());
+    return static_cast<std::int64_t>(frame_snapshot().wheels.size());
 }
 
 String RgSimulation::get_wheel_name(const String& vehicle_name, std::int64_t wheel_index) const {
     if (!has_vehicle(vehicle_name)) return String();
-    const auto& wheels = session_->snapshot().wheels;
+    const auto& wheels = frame_snapshot().wheels;
     if (wheel_index < 0 || static_cast<std::size_t>(wheel_index) >= wheels.size()) return String();
     return String(wheels[static_cast<std::size_t>(wheel_index)].name.c_str());
 }
 
 float RgSimulation::get_wheel_load_n(const String& vehicle_name, std::int64_t wheel_index) const {
     if (!has_vehicle(vehicle_name)) return 0.0f;
-    const auto& wheels = session_->snapshot().wheels;
+    const auto& wheels = frame_snapshot().wheels;
     if (wheel_index < 0 || static_cast<std::size_t>(wheel_index) >= wheels.size()) return 0.0f;
     return static_cast<float>(wheels[static_cast<std::size_t>(wheel_index)].state.load);
 }
 
 float RgSimulation::get_wheel_slip_ratio(const String& vehicle_name, std::int64_t wheel_index) const {
     if (!has_vehicle(vehicle_name)) return 0.0f;
-    const auto& wheels = session_->snapshot().wheels;
+    const auto& wheels = frame_snapshot().wheels;
     if (wheel_index < 0 || static_cast<std::size_t>(wheel_index) >= wheels.size()) return 0.0f;
     return static_cast<float>(wheels[static_cast<std::size_t>(wheel_index)].state.slip_ratio);
 }
 
 float RgSimulation::get_wheel_slip_angle(const String& vehicle_name, std::int64_t wheel_index) const {
     if (!has_vehicle(vehicle_name)) return 0.0f;
-    const auto& wheels = session_->snapshot().wheels;
+    const auto& wheels = frame_snapshot().wheels;
     if (wheel_index < 0 || static_cast<std::size_t>(wheel_index) >= wheels.size()) return 0.0f;
     return static_cast<float>(wheels[static_cast<std::size_t>(wheel_index)].state.slip_angle);
 }
 
 String RgSimulation::get_wheel_surface_name(const String& vehicle_name, std::int64_t wheel_index) const {
     if (!has_vehicle(vehicle_name)) return String();
-    const auto& wheels = session_->snapshot().wheels;
+    const auto& wheels = frame_snapshot().wheels;
     if (wheel_index < 0 || static_cast<std::size_t>(wheel_index) >= wheels.size()) return String();
     const ps::SurfaceId surface = wheels[static_cast<std::size_t>(wheel_index)].state.surface;
     return String(session_->surface_table().name_for(surface).c_str());
@@ -572,21 +585,21 @@ bool RgSimulation::get_wheel_is_front(const String& vehicle_name, std::int64_t w
 
 float RgSimulation::get_wheel_compression(const String& vehicle_name, std::int64_t wheel_index) const {
     if (!has_vehicle(vehicle_name)) return 0.0f;
-    const auto& wheels = session_->snapshot().wheels;
+    const auto& wheels = frame_snapshot().wheels;
     if (wheel_index < 0 || static_cast<std::size_t>(wheel_index) >= wheels.size()) return 0.0f;
     return static_cast<float>(wheels[static_cast<std::size_t>(wheel_index)].state.suspension_travel);
 }
 
 float RgSimulation::get_wheel_spin_angle(const String& vehicle_name, std::int64_t wheel_index) const {
     if (!has_vehicle(vehicle_name)) return 0.0f;
-    const auto& wheels = session_->snapshot().wheels;
+    const auto& wheels = frame_snapshot().wheels;
     if (wheel_index < 0 || static_cast<std::size_t>(wheel_index) >= wheels.size()) return 0.0f;
     return static_cast<float>(wheels[static_cast<std::size_t>(wheel_index)].state.spin_angle);
 }
 
 float RgSimulation::get_wheel_steer_angle(const String& vehicle_name, std::int64_t wheel_index) const {
     if (!has_vehicle(vehicle_name)) return 0.0f;
-    const auto& wheels = session_->snapshot().wheels;
+    const auto& wheels = frame_snapshot().wheels;
     if (wheel_index < 0 || static_cast<std::size_t>(wheel_index) >= wheels.size()) return 0.0f;
     return static_cast<float>(wheels[static_cast<std::size_t>(wheel_index)].state.steer_angle);
 }
@@ -596,6 +609,7 @@ godot::Dictionary RgSimulation::get_vehicle_gauge_info(const String& vehicle_nam
     if (!has_vehicle(vehicle_name)) return d;
 
     ps::real idle_rpm = 0.0, limiter_rpm = 0.0;
+    double fuel_capacity_kg=0, fuel_density_kg_m3=0;
     std::int64_t gear_count = 0;
     for (const auto& c : session_->vehicle_desc().powertrain.components) {
         if (const auto* engine = std::get_if<ps::drivetrain::TorqueMapEngineDesc>(&c.params)) {
@@ -604,6 +618,9 @@ godot::Dictionary RgSimulation::get_vehicle_gauge_info(const String& vehicle_nam
         } else if (const auto* simulated = std::get_if<ps::drivetrain::SimulatedEngineDesc>(&c.params)) {
             idle_rpm = simulated->idle_rpm;
             limiter_rpm = simulated->limiter.rpm;
+        } else if (const auto* tank = std::get_if<ps::drivetrain::FuelTankDesc>(&c.params)) {
+            fuel_capacity_kg += tank->capacity_kg;
+            fuel_density_kg_m3 = tank->fuel.density_kg_m3;
         } else if (const auto* gearbox = std::get_if<ps::drivetrain::GearboxDesc>(&c.params)) {
             gear_count = static_cast<std::int64_t>(gearbox->forward_ratios.size());
         }
@@ -611,6 +628,8 @@ godot::Dictionary RgSimulation::get_vehicle_gauge_info(const String& vehicle_nam
     d["idle_rpm"] = static_cast<float>(idle_rpm);
     d["limiter_rpm"] = static_cast<float>(limiter_rpm);
     d["gear_count"] = gear_count;
+    d["fuel_capacity_kg"] = fuel_capacity_kg;
+    d["fuel_density_kg_m3"] = fuel_density_kg_m3;
     d["fitted_assists"] = godot::PackedStringArray();
     return d;
 }
@@ -618,8 +637,12 @@ godot::Dictionary RgSimulation::get_vehicle_gauge_info(const String& vehicle_nam
 godot::Dictionary RgSimulation::get_vehicle_powertrain(const String& vehicle_name) const {
     godot::Dictionary d;
     if (!has_vehicle(vehicle_name)) return d;
-    const ps::drivetrain::PowertrainSnapshot& p = session_->snapshot().powertrain;
+    const ps::drivetrain::PowertrainSnapshot& p = frame_snapshot().powertrain;
 
+    d["fuel_flow_g_s"] = static_cast<double>(p.fuel_flow_g_s);
+    d["fuel_mass_kg"] = static_cast<double>(p.fuel_mass_kg);
+    d["boost_bar"] = p.engines.empty()?0.0:static_cast<double>(p.engines[0].boost_bar);
+    d["drive_power_kw"] = p.engines.empty()?0.0:static_cast<double>(-p.driveline.clutch_torque*p.engines[0].omega/1000.0);
     d["gear"] = static_cast<int>(p.gear);
     d["gear_target"] = static_cast<int>(p.gear_target);
     d["shift_phase"] = String(shift_phase_name(p.shift_phase));
@@ -640,7 +663,7 @@ godot::Dictionary RgSimulation::get_vehicle_powertrain(const String& vehicle_nam
 godot::Dictionary RgSimulation::get_vehicle_speed_limit(const String& vehicle_name) const {
     godot::Dictionary d;
     if (!has_vehicle(vehicle_name)) return d;
-    const auto& match = session_->snapshot().road_speed_limit;
+    const auto& match = frame_snapshot().road_speed_limit;
     const auto& limit = match.limit;
     d["kind"] = String(limit.kind == g2m::SpeedLimitKind::Numeric ? "numeric" :
                        limit.kind == g2m::SpeedLimitKind::Unrestricted ? "unrestricted" : "unknown");
@@ -653,7 +676,7 @@ godot::Dictionary RgSimulation::get_vehicle_speed_limit(const String& vehicle_na
 
 float RgSimulation::get_vehicle_ground_speed_mps(const String& vehicle_name) const {
     if (!has_vehicle(vehicle_name)) return 0.0f;
-    return static_cast<float>(session_->snapshot().chassis_motion.linear.length());
+    return static_cast<float>(frame_snapshot().chassis_motion.linear.length());
 }
 
 godot::String RgSimulation::set_player_mode(const String& mode_name) {
@@ -696,21 +719,21 @@ godot::Dictionary RgSimulation::get_mode_state() {
 
 float RgSimulation::get_wheel_omega(const String& vehicle_name, std::int64_t wheel_index) const {
     if (!has_vehicle(vehicle_name)) return 0.0f;
-    const auto& wheels = session_->snapshot().wheels;
+    const auto& wheels = frame_snapshot().wheels;
     if (wheel_index < 0 || static_cast<std::size_t>(wheel_index) >= wheels.size()) return 0.0f;
     return static_cast<float>(wheels[static_cast<std::size_t>(wheel_index)].telemetry.omega);
 }
 
 float RgSimulation::get_wheel_fx(const String& vehicle_name, std::int64_t wheel_index) const {
     if (!has_vehicle(vehicle_name)) return 0.0f;
-    const auto& wheels = session_->snapshot().wheels;
+    const auto& wheels = frame_snapshot().wheels;
     if (wheel_index < 0 || static_cast<std::size_t>(wheel_index) >= wheels.size()) return 0.0f;
     return static_cast<float>(wheels[static_cast<std::size_t>(wheel_index)].telemetry.fx);
 }
 
 float RgSimulation::get_wheel_fy(const String& vehicle_name, std::int64_t wheel_index) const {
     if (!has_vehicle(vehicle_name)) return 0.0f;
-    const auto& wheels = session_->snapshot().wheels;
+    const auto& wheels = frame_snapshot().wheels;
     if (wheel_index < 0 || static_cast<std::size_t>(wheel_index) >= wheels.size()) return 0.0f;
     return static_cast<float>(wheels[static_cast<std::size_t>(wheel_index)].telemetry.fy);
 }

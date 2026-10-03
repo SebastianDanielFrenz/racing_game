@@ -768,3 +768,28 @@ func _try_start_vr() -> void:
 		_director.add_rig(rig_name, rig)
 	_vr_active = true
 	print("RG_VR active: tracked cockpit, F9 recenter; FreeCam uses tracked free flight")
+
+# Owner bookmarks survive normal log rotation in user://drive_marks.jsonl.
+func _input(event: InputEvent) -> void:
+	if event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_MIDDLE and world_state == "running":
+		_log_owner_mark()
+
+func _log_owner_mark() -> void:
+	var point := chassis_session_position()
+	var config = JSON.parse_string(FileAccess.get_file_as_string(_world_config_path()))
+	var origin: Dictionary = config.get("session_origin_utm", {}) if config is Dictionary else {}
+	var wheels: Array = []
+	for wheel in range(_simulation.get_vehicle_wheel_count(VEHICLE_NAME)):
+		wheels.append({"load_n": _simulation.get_wheel_load_n(VEHICLE_NAME,wheel), "slip_deg": rad_to_deg(_simulation.get_wheel_slip_angle(VEHICLE_NAME,wheel)), "surface": _simulation.get_wheel_surface_name(VEHICLE_NAME,wheel)})
+	var mark: Dictionary = {"saved_at": Time.get_datetime_string_from_system(), "source":"middle_mouse", "world":world_kind, "sim_time_s":_simulation.get_sim_time(), "tick":_simulation.get_step_count(), "session_m":[point.x,point.y,point.z], "speed_kmh":_simulation.get_body_speed_mps("chassis")*3.6, "camera":_director.active_name, "wheels":wheels, "build":_simulation.get_build_info()}
+	if world_kind == "real_world":
+		mark["utm_zone"] = origin.get("zone")
+		mark["utm_m"] = [float(origin.get("e0",0))+point.x,float(origin.get("n0",0))+point.y,point.z]
+	var encoded := JSON.stringify(mark)
+	print("RG_OWNER_MARK " + encoded)
+	var mark_path := "user://drive_marks.jsonl"
+	var file := FileAccess.open(mark_path,FileAccess.READ_WRITE if FileAccess.file_exists(mark_path) else FileAccess.WRITE)
+	if file:
+		file.seek_end()
+		file.store_line(encoded)
+		file.flush()

@@ -238,6 +238,10 @@ protected:
     static void _bind_methods();
 
 private:
+    mutable std::optional<rg::FrameSnapshot> render_snapshot_;
+    mutable std::uint64_t render_snapshot_frame_ = static_cast<std::uint64_t>(-1);
+    const rg::FrameSnapshot& frame_snapshot() const;
+
     friend class RgTerrainView; // shared_world_terrain() below
 
     [[nodiscard]] bool has_vehicle(const godot::String& vehicle_name) const;

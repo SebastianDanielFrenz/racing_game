@@ -21,3 +21,24 @@ apply to PCM before either Dolby/Windows object audio or Godot output, with
 a smooth fade on view changes. Tyre audio retains its existing level.
 Native build and script compilation are checked; subjective camera/audio
 verification is left to the owner.
+
+## Shared frame poses, live dashboard and bookmarks
+
+The adapter latches one immutable physics snapshot per Godot process frame.
+Camera, car/wheel rendering, gauges and other snapshot getters use that same
+tick even when the 240 Hz physics thread advances between render callbacks.
+A new world invalidates the latch. This prevents the camera/body relative
+pose mismatch that is especially visible from a rigid cockpit camera.
+
+The supplied hypercar now mounts the reference demo's `hyper_live_cluster`
+and `digital_cluster` display on the same model-local panel. Live telemetry
+populates speed, RPM, gear, boost, drive power, fuel and consumption/trip/range
+fields. Fuel capacity/density and fuel/boost/power snapshot values are exposed
+through the existing vehicle gauge APIs. Derived trip/range values become
+available after sufficient driving.
+
+Middle mouse click bookmarks the car's current location (not a cursor-picked
+point) as `RG_OWNER_MARK` in the drive log and appends it to
+`user://drive_marks.jsonl`. Marks include session/UTM coordinates, wall and
+simulation time, tick, speed, view, build and wheel load/slip/surface data.
+This archive persists across normal Godot log rotation.

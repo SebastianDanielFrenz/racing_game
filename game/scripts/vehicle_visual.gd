@@ -97,6 +97,13 @@ func _load_model() -> void:
 	# A pure axis permutation (determinant +1: an even permutation of the
 	# three axes), so this never mirrors the mesh.
 	_model_root.transform.basis = Basis(Vector3(0, 1, 0), Vector3(0, 0, 1), Vector3(1, 0, 0))
+	if model_absolute_path.get_file() == "car_hyper.glb":
+		var cluster := Node3D.new()
+		cluster.name = "LiveInstruments"
+		cluster.set_script(load("res://scripts/hyper_live_cluster.gd"))
+		cluster.set("simulation", simulation)
+		cluster.set("vehicle_name", vehicle_name)
+		_model_root.add_child(cluster)
 	_load_ok = true
 	print("rg_godot vehicle_visual.gd: loaded model ", model_absolute_path)
 

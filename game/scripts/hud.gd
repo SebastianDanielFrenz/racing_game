@@ -15,7 +15,7 @@ extends CanvasLayer
 # running, first observed tick count" and "measured sim tick rate over last
 # window") - keep their wording.
 
-const KEY_HELP := "Tab/right-stick click chase/cockpit  V mode (drive/free cam)  F8 world (flat/real)  R reset car  F flip upright  WASD drive | fly  E/Q shift | up/down  Space handbrake  C clutch  I ignition  K starter  F5 auto-shift  arrows/right stick/RMB+mouse look"
+const KEY_HELP := "Middle-click log location  Tab/right-stick click chase/cockpit  V mode (drive/free cam)  F8 world (flat/real)  R reset car  F flip upright  WASD drive | fly  E/Q shift | up/down  Space handbrake  C clutch  I ignition  K starter  F5 auto-shift  arrows/right stick/RMB+mouse look"
 
 @export var simulation_path: NodePath
 @export var input_map_path: NodePath
