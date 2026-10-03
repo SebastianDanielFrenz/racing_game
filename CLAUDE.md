@@ -1056,3 +1056,5 @@ cover smoothing halos/NoData/config bounds and local real-data road/collision
 acceptance. `last_drive.json` in the existing Godot user-data directory records
 session/UTM positions, build and status; the HUD/native build info reports the
 source revision. Source libraries remain unchanged.
+
+Current physics pin: e3e1e886b23b7db1c06a9cee4eb469c68452483b (S: library; supersedes upgrade notes above). OSM building presentation and future mixed asset/imagery approach: docs/buildings.md.

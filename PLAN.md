@@ -709,3 +709,16 @@ smoothing is configurable (enabled/radius_m/strength/passes), halo-correct,
 and preserves NoData. The complete B8 height comparison and three-depression
 hypercar contact drive pass. See docs/road_surfaces.md for settings, policies
 and remaining G3-D/E and G3-F/R3 work.
+
+
+2026-10-03 building presentation: native OSM footprints, multipolygon courtyards,
+recorded heights/level estimates and replaceable batched extrusion presentation
+are integrated. Ordinary buildings stream nearby; >=50 m skyline buildings remain
+visible up to a configurable 40 km, subject to imported coverage and occlusion.
+Worker decoding/tessellation and bounded uploads avoid blocking world startup.
+Building collision, architectural roof reconstruction, premade asset matching and
+imagery-derived appearance remain later work. Both appearance strategies may be
+combined (docs/buildings.md). This feature does not complete the outstanding
+G3-C source acceptance or G3-D/E and G3-F/R3 road work.
+Physics is pinned to requested e3e1e886b23b7db1c06a9cee4eb469c68452483b from S:.
+Reset/start coordinates are configurable and currently target the old spawn point.

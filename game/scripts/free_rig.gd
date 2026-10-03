@@ -28,7 +28,7 @@ func _ready() -> void:
 	camera.name = "Camera"
 	camera.fov = 70.0
 	camera.near = 0.25
-	camera.far = 25000.0
+	camera.far = 43000.0
 	add_child(camera)
 
 # Starts where the previous camera was, looking the same way (no jump on a

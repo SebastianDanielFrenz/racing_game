@@ -42,7 +42,7 @@ func _ready() -> void:
 	camera.name = "Camera"
 	camera.fov = 70.0
 	camera.near = 0.1
-	camera.far = 25000.0
+	camera.far = 43000.0
 	add_child(camera)
 
 func activate(_from: Transform3D) -> void:

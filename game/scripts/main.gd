@@ -66,6 +66,7 @@ var _director: Node
 var _hud: Node
 var _overlay: Node
 var _visuals: Node
+var _buildings: Node3D
 var _world_view: Node # RgTerrainView shared with the real-world Session
 var _load_started_ms: int = 0
 var _last_report_ms: int = 0
@@ -269,7 +270,7 @@ func _build_terrain_preview_scene() -> void:
 	camera.current = true
 	camera.fov = 70.0
 	camera.near = 0.25
-	camera.far = 25000.0
+	camera.far = 43000.0
 	camera.position = Vector3(0.0, 600.0, 0.0)
 	camera.rotation_degrees = Vector3(-25.0, 0.0, 0.0)
 	camera.set_script(load("res://scripts/fly_cam.gd"))
@@ -492,6 +493,10 @@ func switch_world() -> void:
 var _vehicle_audio: Node3D
 
 func _load_world(kind: String) -> void:
+	if _buildings != null:
+		_buildings.shutdown()
+		_buildings.queue_free()
+		_buildings = null
 	_steering.reset()
 	if _vehicle_audio != null:
 		_vehicle_audio.shutdown()
@@ -571,6 +576,18 @@ func _attach_world_view() -> void:
 		_load_failed("RgTerrainView.load_preview: %s" % _world_view.get_last_error())
 		return
 	_director.set_terrain_view(_world_view)
+	var world_data: Dictionary = JSON.parse_string(FileAccess.get_file_as_string(_world_config_path()))
+	var building_settings: Dictionary = world_data.get("buildings", {})
+	if bool(building_settings.get("enabled", true)):
+		_buildings = preload("res://scripts/building_stream.gd").new()
+		_buildings.view = _world_view
+		_buildings.simulation = _simulation
+		_buildings.director = _director
+		_buildings.settings = building_settings
+		_buildings.utm_origin = Vector2(world_data.session_origin_utm.e0, world_data.session_origin_utm.n0)
+		add_child(_buildings)
+		_world_view.tree_exiting.connect(_buildings.shutdown, CONNECT_ONE_SHOT)
+		_simulation.tree_exiting.connect(_buildings.shutdown, CONNECT_ONE_SHOT)
 	world_state = "running"
 	ready_sim_time = float(_simulation.get_sim_time())
 	_overlay.hide_overlay()

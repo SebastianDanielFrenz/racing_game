@@ -150,6 +150,21 @@ bool RgTerrainView::load_preview(float spawn_x, float spawn_y) {
     return true;
 }
 
+godot::Dictionary RgTerrainView::get_building_tile(int x,int y,double min_height,double fallback,double storey) {
+    godot::Dictionary output;godot::Array buildings;if(!terrain_)return output;
+    const g2m::TileKey key{terrain_->frame().zone(),2,x,y};
+    for(const auto& b:terrain_->buildings_tile(key,min_height,fallback,storey)) {
+        godot::Dictionary item;item["id"]=b.id;item["relation"]=b.relation;item["height"]=b.height;item["base"]=b.base;item["bottom"]=b.bottom;
+        item["type"]=godot::String(b.type.c_str());item["min_height"]=b.min_height;
+        item["height_source"]=godot::String(b.height_source.c_str());item["colour"]=godot::String(b.colour.c_str());
+        godot::Array outer,inner;
+        const auto rings=[&](const auto& source,godot::Array& target){for(const auto& ring:source){godot::PackedVector2Array points;for(auto p:ring)points.append({static_cast<float>(p.e-x*1024),static_cast<float>(p.n-y*1024)});target.append(points);}};
+        rings(b.outers,outer);rings(b.inners,inner);item["outers"]=outer;item["inners"]=inner;buildings.append(item);
+    }
+    output["buildings"]=buildings;output["origin_session"]=godot::Vector3(static_cast<double>(x)*1024-terrain_->frame().e0_m(),static_cast<double>(y)*1024-terrain_->frame().n0_m(),0);
+    return output;
+}
+
 void RgTerrainView::set_render_origin(godot::Vector3 session_origin) {
     render_origin_session_ = session_origin;
     for(const auto& [id,deck]:deck_instances_) {
@@ -481,6 +496,7 @@ void RgTerrainView::_process(double /*delta*/) {
 
 void RgTerrainView::_bind_methods() {
     godot::ClassDB::bind_method(D_METHOD("initialize", "world_config_absolute_path"), &RgTerrainView::initialize);
+    godot::ClassDB::bind_method(D_METHOD("get_building_tile", "x", "y", "min_height", "fallback_height", "storey_height"), &RgTerrainView::get_building_tile);
     godot::ClassDB::bind_method(D_METHOD("initialize_shared", "sim"), &RgTerrainView::initialize_shared);
     godot::ClassDB::bind_method(D_METHOD("release"), &RgTerrainView::release);
     godot::ClassDB::bind_method(D_METHOD("get_spawn_x"), &RgTerrainView::get_spawn_x);

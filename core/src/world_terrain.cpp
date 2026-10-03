@@ -8,6 +8,7 @@
 // invalid zone - is guarded by an explicit check in WorldTerrain::open()
 // before it is ever called, so this file never needs a try/catch.
 #include "rg/world_terrain.h"
+#include "rg/route_check.h"
 
 #include "g2m/layer/layer_id.h"
 #include "g2m/layer/src_osm.h"
@@ -522,6 +523,16 @@ HeightTileFetchResult fetch_height_tile_cached(std::mutex& cache_mutex,
     auto [it, inserted] = cache.emplace(key, std::move(fetched.tile));
     (void)inserted; // first inserted value wins; a later racer's own fetch is discarded here
     return HeightTileFetchResult{g2m::Status::Ok, it->second};
+}
+
+std::vector<Building> WorldTerrain::buildings_tile(const g2m::TileKey& key,double min_height,double fallback,double storey) {
+    auto response=transport_->send(g2m::Request{g2m::TileRequest{manifest_rid_,std::string(g2m::kSrcOsmLayer),key,std::nullopt}});
+    const auto* tile=std::get_if<g2m::TileResponse>(&response);if(!tile||tile->meta.status!=g2m::Status::Ok)return {};
+    auto container=g2m::parse_container(tile->container);if(!container||container->header.key!=key||container->header.layer!=g2m::kSrcOsmLayer)return {};
+    auto body=g2m::decode_body(container->body);if(!body)return {};auto osm=g2m::decode_src_osm(*body);if(!osm)return {};
+    return extract_buildings(*osm,key,min_height,fallback,storey,[this,key](double e,double n){
+        return sample_l0_height([this](const auto& k){return raw_height_tile_shared(k).tile.get();},key.zone,0,0,e,n);
+    });
 }
 
 const g2m::HeightTile* WorldTerrain::cached_height_tile(const g2m::TileKey& key) {

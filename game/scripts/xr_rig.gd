@@ -9,7 +9,7 @@ func _ready() -> void:
 	camera = XRCamera3D.new()
 	camera.name = "XRCamera"
 	camera.near = 0.03
-	camera.far = 25000.0
+	camera.far = 43000.0
 	add_child(camera)
 	var xr := XRServer.find_interface("OpenXR")
 	if xr != null:
