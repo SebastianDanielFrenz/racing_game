@@ -524,6 +524,12 @@ HeightTileFetchResult fetch_height_tile_cached(std::mutex& cache_mutex,
     return HeightTileFetchResult{g2m::Status::Ok, it->second};
 }
 
+const g2m::HeightTile* WorldTerrain::cached_height_tile(const g2m::TileKey& key) {
+    std::lock_guard<std::mutex> lock(cache_mutex_);
+    const auto it=height_cache_.find(key);
+    return it==height_cache_.end()?nullptr:it->second.get();
+}
+
 HeightTileFetchResult WorldTerrain::height_tile_shared(const g2m::TileKey& key) {
     HeightTileFetchFn fetch_fn = [this](const g2m::TileKey& k) -> HeightTileFetchResult {
         FetchDecodeResult result;

@@ -20,6 +20,13 @@ var _capacity := 0
 var _engine_capacity := 0
 var _initialized := false
 var _shutdown := false
+var _engine_gain: float = db_to_linear(-12.0)
+var _view_levels: Dictionary = {}
+
+func _ready() -> void:
+	var parsed = JSON.parse_string(FileAccess.get_file_as_string(ProjectSettings.globalize_path("res://../data/controls/presentation.json")))
+	if parsed is Dictionary:
+		_view_levels = parsed
 
 func _open_spatial(rate: int, channels: int) -> RefCounted:
 	if "--audio=godot" in OS.get_cmdline_user_args() or "--m1-audio=godot" in OS.get_cmdline_user_args():
@@ -109,7 +116,7 @@ func _output(samples: PackedFloat32Array, channels: int, backend: RefCounted, pl
 			buffer[frame] = Vector2(sample, sample)
 		playback.push_buffer(buffer)
 
-func _process(_delta: float) -> void:
+func _process(delta: float) -> void:
 	if not simulation.is_running() or simulation.get_step_count() == 0:
 		return
 	if not _initialized:
@@ -159,7 +166,17 @@ func _process(_delta: float) -> void:
 			needed = engine_spatial.get_frames_needed()
 		else:
 			needed = _fallback_needed(engine_players, engine_rate, true)
-		_output(simulation.read_engine_audio(needed), engine_points.size(), engine_spatial, engine_players)
+		var view: String = str(director.active_name)
+		var level: float = float(_view_levels.get("engine_chase_db", -12.0))
+		if view in ["cockpit", "xr_cockpit"]:
+			level = float(_view_levels.get("engine_cockpit_db", -8.0))
+		elif view in ["free", "xr_free"]:
+			level = float(_view_levels.get("engine_free_db", -6.0))
+		_engine_gain = lerpf(_engine_gain,db_to_linear(clampf(level,-60.0,0.0)),1.0-exp(-8.0*delta))
+		var engine_pcm: PackedFloat32Array = simulation.read_engine_audio(needed)
+		for i in range(engine_pcm.size()):
+			engine_pcm[i] *= _engine_gain
+		_output(engine_pcm, engine_points.size(), engine_spatial, engine_players)
 
 func shutdown() -> void:
 	if _shutdown:

@@ -27,6 +27,7 @@ const SNAP_M := 60.0
 # a front wheel at all (the body occludes it face-on), so a 3/4 view needs
 # some sideways offset to reveal the near-side wheels' profile/steer angle.
 @export var side_offset_m: float = 0.0
+@export var terrain_clearance_m: float = 0.6
 @export var position_lag: float = 6.0 # higher = snappier
 @export var orbit_deadzone: float = 0.2
 @export var orbit_lag: float = 14.0 # higher = snappier; <= 0 = no smoothing
@@ -92,5 +93,11 @@ func update_rig(delta: float, simulation: Node, input_map: Node, camera_input_li
 		_orbit_yaw = lerp_angle(_orbit_yaw, target_yaw, 1.0 - exp(-orbit_lag * delta))
 	var offset := _smoothed_pos - chassis_pos
 	position = chassis_pos + offset.rotated(Vector3.UP, -_orbit_yaw)
+	# Resolve clearance after following lag AND orbit, which can otherwise
+	# put the camera below rising terrain. Probe its near-plane footprint.
+	for probe in [Vector3.ZERO, Vector3(0.3,0,0), Vector3(-0.3,0,0), Vector3(0,0,0.3), Vector3(0,0,-0.3)]:
+		var ground = simulation.get_camera_ground_height(position+probe)
+		if ground != null:
+			position.y = maxf(position.y,float(ground)+terrain_clearance_m)
 	if position.distance_to(look_at_pos) > 0.01:
 		look_at(look_at_pos, Vector3.UP)

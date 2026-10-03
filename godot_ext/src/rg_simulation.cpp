@@ -1,6 +1,7 @@
 #include "rg_simulation.h"
 
 #include "frame_convert.h"
+#include "rg/route_check.h"
 
 #include "g2m/phys/height_tile_loader.h"
 
@@ -460,6 +461,16 @@ godot::Transform3D RgSimulation::get_body_transform(const String& body_name) con
     return iso_to_godot_transform(pose, origin_rebase_ ? origin_rebase_->origin() : ps::Vec3{});
 }
 
+godot::Variant RgSimulation::get_camera_ground_height(godot::Vector3 position) const {
+    if (!session_) return {};
+    const auto origin=origin_rebase_?origin_rebase_->origin():ps::Vec3{};
+    const auto terrain=session_->world_terrain();
+    if (!terrain) return -origin.z;
+    const auto p=godot_to_iso(position,origin);
+    const auto height=rg::sample_l0_height([&terrain](const auto& key){return terrain->cached_height_tile(key);},terrain->frame().zone(),terrain->frame().e0_m(),terrain->frame().n0_m(),p.x,p.y);
+    return height?godot::Variant(*height-origin.z):godot::Variant{};
+}
+
 godot::Dictionary RgSimulation::get_steering_kinematics() const {
     godot::Dictionary result;
     if (!session_) return result;
@@ -755,6 +766,7 @@ void RgSimulation::_bind_methods() {
     godot::ClassDB::bind_method(D_METHOD("consume_adapter_frame_time_us"), &RgSimulation::consume_adapter_frame_time_us);
 
     godot::ClassDB::bind_method(D_METHOD("get_body_transform", "body_name"), &RgSimulation::get_body_transform);
+    godot::ClassDB::bind_method(D_METHOD("get_camera_ground_height", "position"), &RgSimulation::get_camera_ground_height);
     godot::ClassDB::bind_method(D_METHOD("get_steering_kinematics"), &RgSimulation::get_steering_kinematics);
     godot::ClassDB::bind_method(D_METHOD("get_body_speed_mps", "body_name"), &RgSimulation::get_body_speed_mps);
 

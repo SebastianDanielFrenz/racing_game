@@ -61,6 +61,7 @@ var ready_sim_time: float = -1.0 # sim time when the current world became "runni
 var _steering = preload("res://scripts/adaptive_steering.gd").new()
 var _simulation: Node
 var _input_map: Node
+var _cockpit_view: bool = false
 var _director: Node
 var _hud: Node
 var _overlay: Node
@@ -370,6 +371,12 @@ func _build_scene(user_args: PackedStringArray) -> void:
 	chase.set_script(load("res://scripts/chase_rig.gd"))
 	add_child(chase)
 	_director.add_rig("chase", chase)
+	var cockpit := Node3D.new()
+	cockpit.name = "CockpitRig"
+	cockpit.set_script(load("res://scripts/cockpit_rig.gd"))
+	cockpit.body_visuals = _visuals
+	add_child(cockpit)
+	_director.add_rig("cockpit", cockpit)
 	var free := Node3D.new()
 	free.name = "FreeRig"
 	free.set_script(load("res://scripts/free_rig.gd"))
@@ -658,6 +665,8 @@ func status_line(prefix: String) -> String:
 func _apply_mode_state() -> Dictionary:
 	var ms: Dictionary = _simulation.get_mode_state()
 	var rig_name := str(ms.get("camera_rig", "chase"))
+	if rig_name == "chase" and _cockpit_view:
+		rig_name = "cockpit"
 	if _vr_active:
 		rig_name = "xr_free" if rig_name == "free" else "xr_cockpit"
 	_director.set_active(rig_name)
@@ -709,6 +718,9 @@ func _process(delta: float) -> void:
 		return
 
 	_input_map.poll()
+	var camera_presses: int = _input_map.consume_cycle_camera()
+	if camera_presses % 2 == 1 and not _vr_active and _simulation.get_player_mode() == "drive":
+		_cockpit_view = not _cockpit_view
 	for _i in range(_input_map.consume_cycle_mode()):
 		print("RG_WORLD mode -> %s" % _simulation.cycle_player_mode())
 	if _input_map.consume_switch_world() > 0:

@@ -274,6 +274,8 @@ public:
     // existing g2m types - R4 adapts it to g2m::phys::IHeightTileFetch once
     // that interface exists in the pinned geo2map_engine submodule.
     HeightTileFetchResult height_tile_shared(const g2m::TileKey& key);
+    // Presentation-only lookup: never fetches or waits for derivation.
+    const g2m::HeightTile* cached_height_tile(const g2m::TileKey& key);
     std::vector<std::shared_ptr<const RoadDeck>> road_decks();
     std::shared_ptr<const g2m::RoadGeomTile> road_geometry_at(double easting, double northing);
 

@@ -35,6 +35,7 @@ const STICK_DEADZONE := 0.15
 var _prev := {}
 var _shift_up_count: int = 0
 var _shift_down_count: int = 0
+var _cycle_camera_count: int = 0
 var _cycle_mode_count: int = 0
 var _switch_world_count: int = 0
 var _reset_car_count: int = 0
@@ -60,6 +61,7 @@ var _mouse_delta: Vector2 = Vector2.ZERO
 var _mouse_captured: bool = false
 
 func _ready() -> void:
+	_ensure_action("rg_cycle_camera", [KEY_TAB], [JOY_BUTTON_RIGHT_STICK])
 	_ensure_action("rg_cycle_mode", [KEY_V], [JOY_BUTTON_BACK])
 	_ensure_action("rg_switch_world", [KEY_F8], [])
 	_ensure_action("rg_reset_car", [KEY_R], [JOY_BUTTON_Y])
@@ -191,6 +193,8 @@ func poll() -> void:
 	_cam_fast = input.is_action_pressed("rg_cam_fast")
 
 	# --- global actions ---
+	if _edge("cycle_camera", input.is_action_pressed("rg_cycle_camera")):
+		_cycle_camera_count += 1
 	if _edge("cycle_mode", input.is_action_pressed("rg_cycle_mode")):
 		_cycle_mode_count += 1
 	if _edge("switch_world", input.is_action_pressed("rg_switch_world")):
@@ -287,3 +291,8 @@ func steering_uses_keyboard() -> bool:
 
 func steering_uses_wheel() -> bool:
 	return _steer_wheel and not _steer_keyboard
+
+func consume_cycle_camera() -> int:
+	var count := _cycle_camera_count
+	_cycle_camera_count = 0
+	return count
