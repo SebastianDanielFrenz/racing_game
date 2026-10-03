@@ -519,6 +519,7 @@ func _load_world(kind: String) -> void:
 	_visuals.show_ground = kind == "flat"
 	var vehicle_json: String = _data_path("vehicles/%s.json" % VEHICLE_NAME)
 	_steering.configure_vehicle(vehicle_json)
+	_input_map.configure_vehicle(vehicle_json)
 	var surface_table_json: String = _data_path("surfaces/surfaces.json")
 	if kind == "flat":
 		if not _simulation.initialize(vehicle_json, surface_table_json):
@@ -545,7 +546,7 @@ func _load_failed(message: String) -> void:
 # at 0 in rg::Session, so ignition must be on BEFORE start() or the car
 # spawns with the engine off. auto_clutch/auto_blip are always on (no pedal
 # work needed to pull away); ignition/auto_shift follow input_map.gd's
-# toggles (both start on).
+# toggles (ignition starts on; manual cars start with auto-shift off).
 func _apply_start_controls() -> void:
 	_simulation.set_control("ignition", 1.0 if _input_map.get_ignition() else 0.0)
 	_simulation.set_control("assist.auto_clutch", 1.0)

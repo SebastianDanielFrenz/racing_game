@@ -12,7 +12,7 @@ extends Node
 # Driving group (gamepad + keyboard, larger magnitude wins - physics_sim's
 # input_map.cpp merge convention): steer/throttle/brake/handbrake/clutch,
 # shift up/down edge counts, ignition (TOGGLE, starts on), starter (held),
-# assist.auto_shift (TOGGLE, starts on).
+# assist.auto_shift (TOGGLE, starts off for manual cars).
 # Camera group: move (x right, y up, z forward, each -1..1), look rate
 # (yaw/pitch, -1..1: right stick or arrow keys), mouse look (captured mouse
 # delta in pixels; the right mouse button captures, Esc releases), fast.
@@ -50,7 +50,8 @@ var _handbrake: float = 0.0
 var _clutch: float = 0.0
 var _ignition_on: bool = true # physics_sim's input_map_core default: spawn with the engine running
 var _starter_held: bool = false
-var _auto_shift_on: bool = true
+var _auto_shift_on: bool = false
+var _configured_vehicle_path: String = ""
 
 var _cam_move: Vector3 = Vector3.ZERO
 var _cam_look_rate: Vector2 = Vector2.ZERO
@@ -59,6 +60,21 @@ var _cam_stick: Vector2 = Vector2.ZERO # raw right-stick position (chase orbit),
 var _cam_fast: bool = false
 var _mouse_delta: Vector2 = Vector2.ZERO
 var _mouse_captured: bool = false
+
+func configure_vehicle(path: String) -> void:
+	# Keep the driver toggle across world/reset reloads of the same car.
+	if path == _configured_vehicle_path:
+		return
+	var vehicle = JSON.parse_string(FileAccess.get_file_as_string(path))
+	if not vehicle is Dictionary:
+		return
+	var manual := false
+	for controller in vehicle.get("controllers", []):
+		if controller is Dictionary and str(controller.get("type", "")) == "manual_tcu":
+			manual = true
+			break
+	_auto_shift_on = not manual
+	_configured_vehicle_path = path
 
 func _ready() -> void:
 	_ensure_action("rg_cycle_camera", [KEY_TAB], [JOY_BUTTON_RIGHT_STICK])

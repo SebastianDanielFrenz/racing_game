@@ -51,3 +51,7 @@ Startup and R reset both use this point; restart or reload the real world
 after editing. Legacy UTM `spawn.e`/`spawn.n` remain supported, but do not
 mix coordinate formats. The configured road-centre point beside the old spawn point is 50.12359409, 8.51546541, with heading 4.05 degrees. It is projected
 from the OSM address onto the street to avoid the building.
+
+Manual cars (`manual_tcu`) start with auto-shift disabled. The existing F5 key /
+D-pad-left toggle still enables it on demand and survives world reloads for the
+same car. Automatic/non-manual cars retain the previous enabled default.
