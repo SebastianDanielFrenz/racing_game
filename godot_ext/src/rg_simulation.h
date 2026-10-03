@@ -294,6 +294,12 @@ private:
                                  std::string surface_table_path, std::shared_ptr<rg::StartupProgress> progress,
                                  std::int64_t fetch_delay_ms);
 
+    // Access is serialized by init-worker join or Ready acquire. A running
+    // world never writes this cache. Different paths invalidate its identity.
+    void reuse_vehicle_definition(rg::SessionConfig& config) const;
+    void remember_vehicle_definition(const rg::SessionConfig& config, const rg::Session& session);
+    std::string cached_vehicle_path_;
+    std::shared_ptr<const ps::vehicle::VehicleDesc> cached_vehicle_definition_;
     std::unique_ptr<rg::Session> session_;
     std::unique_ptr<ps_godot::VehicleVoice> engine_voice_;
     std::uint64_t audio_tick_ = ~std::uint64_t{0};

@@ -1026,3 +1026,13 @@ sources use listener-relative Windows objects with Godot 3D fallback.
 Setup, hardware limits and verification: docs/vr_audio.md. The committed
 hypercar torque-map engine has no live cycle voice; owner turbo/audio-bank
 work remains pending. This presentation work does not change G3-C progress.
+
+Latest physics upgrade (2026-10-03): master pin 2f4599c from
+S:/claude_code/physics_sim includes 40923cf's supplied simulated twin-turbo
+car_hyper and live engine voice, plus the embedded CMake-path correction.
+The default car is unchanged by name and now loads these new library data.
+Gauge metadata accepts SimulatedEngineDesc as well as torque-map engines.
+Earlier notes about the committed hypercar lacking a live voice are superseded.
+G3-C road work is unchanged.
+
+Vehicle definitions are retained per path in RgSimulation after successful load, passed to SessionConfig::vehicle_definition for world rebuilds. Init-worker cache access is serialized by join/Ready acquire; world runtime state remains independent. Restart after editing definition dependencies. Verified warm reload 0.56 s, cancelled load 255 ms; initial V8 map generation ~34 s.

@@ -1,10 +1,9 @@
 # VR and spatial audio
 
 The game consumes physics_sim from S:/claude_code/physics_sim, pinned to
-ba47951a0834cb62a38700c61de87a155c13c747. This committed master revision
-includes the supplied hypercar, terrain boundary fix, Windows spatial backend,
-and immutable live-voice source metadata. Pending turbo/audio-bank changes
-in the physics owner's working tree are not part of this version.
+2f4599c388016372e3430785521fd9fe4abbcd9f. This committed master revision
+includes the supplied simulated twin-turbo hypercar, cockpit assets,
+terrain boundary fix, Windows spatial backend, and live-voice source metadata.
 
 ## Launch
 
@@ -62,11 +61,12 @@ If device opening fails or the stream is lost, each source uses Godot 3D audio.
 demo parity. `--no-tyre-audio` disables tyre generation. Restart after changing
 the Windows default endpoint to retry native output.
 
-The committed car_hyper uses its authored 1 MW torque-map engine and has no
-live cycle voice. Its tyre audio is active. Vehicles with a supplied simulated
-engine/cycle/fuel definition can use the live voice interface; the presentation
-test exercises car_sedan_pipes. Pending hypercar turbo/live-voice data remains
-owned by the physics library and is not substituted with invented engine audio.
+The default car_hyper now uses the library's simulated 5.1 L twin-turbo V8
+and supplies live combustion/pipe audio alongside tyre audio. Its idle and
+limiter settings also drive the tachometer. The game consumes published engine
+sound states through the library's live VehicleVoice renderer. The demo's
+background audio-bank generation/replacement controls are not connected in
+this game integration.
 
 ## Verification
 
@@ -76,7 +76,7 @@ owned by the physics library and is not substituted with invented engine audio.
 
 This checks rig placement/orientation/rebasing/free flight, invalid spatial
 format/channel rejection, live engine source positions, finite nonzero PCM,
-and repeated shutdown. The real-world hypercar smoke also exercises relocation
+and repeated shutdown. Add `-- --hyper-voice` to the Godot test script invocation to check the default hypercar voice and its gauge limits. The real-world hypercar smoke also exercises relocation
 and world/mode switches. On this machine the endpoint returned 0x80004001 and
 the game successfully used Godot fallback. Audible Atmos direction, speaker
 mapping, and real headset operation still require compatible hardware checks.
@@ -84,3 +84,10 @@ mapping, and real headset operation still require compatible hardware checks.
 A Vulkan Mobile real-terrain screenshot rendered the car and dashboard.
 The hidden-window probe emitted Vulkan surface-capability errors during
 startup, so this capture does not establish clean headset rendering.
+
+The game retains the successfully loaded immutable VehicleDesc for the same
+vehicle path across world switches. Each Session still creates fresh physics
+state. Restart the game after editing a vehicle's engine/fuel/installation/turbo
+files to reload those definitions. On this machine the initial V8 load takes
+about 34 seconds; warm world reload takes 0.56 seconds and cancellation 255 ms,
+instead of regenerating maps for each switch.

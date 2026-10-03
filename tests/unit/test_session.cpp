@@ -358,3 +358,18 @@ TEST_CASE("Session publishes wheel telemetry for audio at the captured tick", "[
     }
     REQUIRE(saw_force);
 }
+
+TEST_CASE("Session rebuilds from a retained immutable vehicle definition", "[session][audio]") {
+    auto config = make_test_config();
+    rg::Session original(config);
+    config.vehicle_definition = std::make_shared<const ps::vehicle::VehicleDesc>(original.vehicle_desc());
+    config.vehicle_json_path = "missing/vehicle.json"; // no second file read
+    rg::Session rebuilt(config);
+    REQUIRE(rebuilt.vehicle_desc().name == original.vehicle_desc().name);
+    REQUIRE(rebuilt.vehicle_desc().wheels.size() == original.vehicle_desc().wheels.size());
+    rebuilt.set_control("throttle", 1.0);
+    for (int i = 0; i < 60; ++i) rebuilt.step();
+    REQUIRE(original.world().tick() == 0);
+    REQUIRE(rebuilt.world().tick() == 60);
+    REQUIRE(config.vehicle_definition->wheels.size() == original.vehicle_desc().wheels.size());
+}

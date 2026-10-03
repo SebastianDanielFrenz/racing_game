@@ -235,7 +235,8 @@ void Session::build_world_contents(const SessionConfig& config) {
         chassis_body_ = world_->create_body(desc);
     }
 
-    vehicle_desc_ = ps::io::load_vehicle_json(config.vehicle_json_path);
+    vehicle_desc_ = config.vehicle_definition ? *config.vehicle_definition
+                                              : ps::io::load_vehicle_json(config.vehicle_json_path);
     vehicle_id_ = world_->create_vehicle(vehicle_desc_, chassis_body_);
     have_vehicle_ = true;
     spawn_tick_ = world_->tick();

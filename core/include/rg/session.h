@@ -129,6 +129,9 @@ struct SessionConfig {
     // caller resolves these (godot_ext relative to res://, tools/hash_check
     // relative to the submodule's own data/ directory per its own CLI arg)
     // so this header stays free of any Godot resource-path convention.
+    // Optional immutable, already-loaded definition for rebuilding a world.
+    // Engine maps remain shared/const; each world creates fresh runtime state.
+    std::shared_ptr<const ps::vehicle::VehicleDesc> vehicle_definition;
     std::string vehicle_json_path;  // e.g. .../data/vehicles/car_sedan.json
     std::string surface_table_path; // e.g. .../data/surfaces/surfaces.json
 

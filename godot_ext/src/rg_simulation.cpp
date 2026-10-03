@@ -165,6 +165,7 @@ void RgSimulation::run_terrain_init_worker(std::string world_config_path, std::s
     rg::SessionConfig config;
     config.vehicle_json_path = std::move(vehicle_json_path);
     configure_vehicle_chassis(config);
+    reuse_vehicle_definition(config);
     config.surface_table_path = std::move(surface_table_path);
     config.terrain = rg::make_terrain_mode(*world_config, terrain); // start-up blocks inside make_session below
     config.startup = progress;
@@ -179,9 +180,22 @@ void RgSimulation::run_terrain_init_worker(std::string world_config_path, std::s
         fail(std::move(session_err)); // includes "Session: terrain start-up cancelled"
         return;
     }
+    remember_vehicle_definition(config, *session);
     pending_session_ = std::move(session);
     init_message_ = "ready";
     init_phase_.store(InitPhase::Ready, std::memory_order_release);
+}
+
+void RgSimulation::reuse_vehicle_definition(rg::SessionConfig& config) const {
+    if (config.vehicle_json_path == cached_vehicle_path_)
+        config.vehicle_definition = cached_vehicle_definition_;
+}
+
+void RgSimulation::remember_vehicle_definition(const rg::SessionConfig& config, const rg::Session& session) {
+    if (!cached_vehicle_definition_ || config.vehicle_json_path != cached_vehicle_path_) {
+        cached_vehicle_definition_ = std::make_shared<const ps::vehicle::VehicleDesc>(session.vehicle_desc());
+        cached_vehicle_path_ = config.vehicle_json_path;
+    }
 }
 
 bool RgSimulation::initialize(const String& vehicle_json_absolute_path, const String& surface_table_absolute_path) {
@@ -190,6 +204,7 @@ bool RgSimulation::initialize(const String& vehicle_json_absolute_path, const St
     rg::SessionConfig config;
     config.vehicle_json_path = to_std_string(vehicle_json_absolute_path);
     configure_vehicle_chassis(config);
+    reuse_vehicle_definition(config);
     config.surface_table_path = to_std_string(surface_table_absolute_path);
     std::string err;
     session_ = rg::make_session(config, &err); // never throws (see run_terrain_init_worker)
@@ -198,6 +213,7 @@ bool RgSimulation::initialize(const String& vehicle_json_absolute_path, const St
         modes_.finish_world_load(world_load_serial_, false);
         return false;
     }
+    remember_vehicle_definition(config, *session_);
     origin_rebase_ = &session_->origin_rebase();
     last_error_ = String();
     modes_.finish_world_load(world_load_serial_, true);
@@ -556,6 +572,9 @@ godot::Dictionary RgSimulation::get_vehicle_gauge_info(const String& vehicle_nam
         if (const auto* engine = std::get_if<ps::drivetrain::TorqueMapEngineDesc>(&c.params)) {
             idle_rpm = engine->idle_rpm;
             limiter_rpm = engine->limiter.rpm;
+        } else if (const auto* simulated = std::get_if<ps::drivetrain::SimulatedEngineDesc>(&c.params)) {
+            idle_rpm = simulated->idle_rpm;
+            limiter_rpm = simulated->limiter.rpm;
         } else if (const auto* gearbox = std::get_if<ps::drivetrain::GearboxDesc>(&c.params)) {
             gear_count = static_cast<std::int64_t>(gearbox->forward_ratios.size());
         }

@@ -44,9 +44,14 @@ func _test() -> void:
 	var native: Node = ClassDB.instantiate("RgSimulation")
 	root.add_child(native)
 	var data := ProjectSettings.globalize_path("res://../external/physics_sim/data/")
-	assert(native.initialize(data + "vehicles/car_sedan_pipes.json", data + "surfaces/surfaces.json"))
+	var vehicle := "car_hyper" if "--hyper-voice" in OS.get_cmdline_user_args() else "car_sedan_pipes"
+	assert(native.initialize(data + "vehicles/" + vehicle + ".json", data + "surfaces/surfaces.json"))
+	native.set_control("ignition", 1.0)
 	native.start()
 	await create_timer(0.1).timeout
+	var info: Dictionary = native.get_vehicle_gauge_info(vehicle)
+	assert(float(info.idle_rpm) > 0.0)
+	assert(float(info.limiter_rpm) > float(info.idle_rpm))
 	var voice: Dictionary = native.start_engine_audio()
 	assert(voice.get("active", false), str(voice))
 	assert(native.get_engine_audio_positions().size() == int(voice.channels))
@@ -69,5 +74,5 @@ func _test() -> void:
 	assert(native.read_engine_audio(100).is_empty())
 	native.queue_free()
 	await process_frame
-	print("RG_PRESENTATION_TEST ok: XR seat/orientation/rebase/free flight, spatial validation, live voice PCM samples=", samples, " peak=", peak)
+	print("RG_PRESENTATION_TEST ok: XR seat/orientation/rebase/free flight, spatial validation, live voice car=", vehicle, " PCM samples=", samples, " peak=", peak)
 	quit(0)
