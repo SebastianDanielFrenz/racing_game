@@ -219,3 +219,34 @@ TEST_CASE("tick spikes: kinematic fast drive along home_r1_drive through the rea
                 static_cast<unsigned long long>(st.falls));
     SUCCEED();
 }
+
+// Local real-terrain timing regression: preserves atmosphere while catching the whole-grid rebuild.
+#include "ps/io/vehicle_io.h"
+TEST_CASE("aero timing: real spawn probes and full ticks", "[.][aero_perf]") {
+ if (!safe_getenv("RG_G2M_HOME")) SKIP("requires local terrain cache");
+ std::string err;
+ auto cfg=rg::load_world_config(std::string(RG_SOURCE_DIR)+"/data/world/world_config.json",&err);
+ REQUIRE(cfg); std::shared_ptr<rg::WorldTerrain> terrain(rg::WorldTerrain::open(*cfg,&err)); REQUIRE(terrain);
+ auto desc=ps::io::load_vehicle_json(std::string(RG_SOURCE_DIR)+"/external/physics_sim/data/vehicles/car_hyper.json");
+ for(int variant=0;variant<3;++variant) {
+  auto vehicle=desc;
+  if(variant==1)for(auto& surface:vehicle.aero.surfaces)surface.ground.range_m=0;
+  rg::SessionConfig config;
+  config.environment.enabled=(variant==2); config.chassis_half_extents={2.0,0.4,0.12}; config.chassis_z_m=0.50;
+  config.vehicle_definition=std::make_shared<const ps::vehicle::VehicleDesc>(vehicle);
+  config.surface_table_path=std::string(RG_SOURCE_DIR)+"/external/physics_sim/data/surfaces/surfaces.json";
+  config.terrain=rg::make_terrain_mode(*cfg,terrain);
+  rg::Session session(config);
+  using clock=std::chrono::steady_clock;
+  auto t=clock::now();
+  for(int tick=0;tick<20;++tick)session.step();
+  const double ms=std::chrono::duration<double,std::milli>(clock::now()-t).count()/20;
+  INFO("aero variant=" << variant << " mean tick ms=" << ms);
+  CHECK(ms < 20.0);
+  const auto pose=session.world().get_pose(session.chassis_body());
+  t=clock::now();
+  for(int q=0;q<20;++q)(void)session.world().backend().ray_cast_excluding(pose.position,{0,0,-1},1,session.chassis_body());
+  const double probe=std::chrono::duration<double,std::milli>(clock::now()-t).count()/20;
+  std::printf("AERO_PERF variant=%d tick_ms=%.3f probe_ms=%.3f\n",variant,ms,probe);
+ }
+}

@@ -742,3 +742,9 @@ See docs/aerodynamics.md and data/world/environment.json. Stock hypercar has no 
 Aircraft controls and traffic actors remain future gameplay work; this is a
 coefficient model, not CFD. Native owner reports 58 focused tests / 1372 assertions.
 
+
+2026-10-03 aero performance regression: reproduced 105.6 ms ticks from tiny
+altitude changes rebuilding native engine steady tables; ground probes cost
+0.001 ms. Physics upgraded from S: to 5ec8b7d0a39953b0bfe8f57e1abc3808b5b37ede to remove the
+hot-path rebuild while preserving continuous atmosphere. Local real-terrain
+hypercar regression is `[aero_perf]`; see docs/aerodynamics.md.

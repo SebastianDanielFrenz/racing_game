@@ -103,3 +103,14 @@ and default automatic wing policy.
 Target offsets are limited by each surface's configured mechanical range. Wind
 and actuator inputs are applied only on the simulation thread; presentation reads
 snapshots rather than live mutable physics objects.
+
+## Continuous atmosphere performance
+
+The initial integration exposed a native simulated-engine hot path: tiny chassis
+altitude changes rebuilt the entire steady throttle/inverse table every tick,
+raising the real-world hypercar tick from about 0.3 ms to 105 ms. Physics pin
+5ec8b7d0a39953b0bfe8f57e1abc3808b5b37ede removes that per-tick full-table rebuild while retaining continuous
+pressure/temperature inputs. The local hidden `[aero_perf]` regression compares
+the same spawn with ground effect on/off and continuous atmosphere on. It requires
+`RG_G2M_HOME` pointing at the owner terrain cache.
+Game real-spawn regression after the fix: mean tick 0.389 ms with atmosphere enabled (previously 105.586 ms), 20 ticks; ground probe mean 0.001 ms. Driving acceptance remains with the owner.
