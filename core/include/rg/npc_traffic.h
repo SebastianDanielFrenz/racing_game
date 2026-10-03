@@ -15,7 +15,7 @@ TrafficConfig sanitize_traffic_config(TrafficConfig);
 std::vector<TrafficDestination> extract_traffic_destinations(const g2m::OsmTile&,const g2m::geo::SessionFrame&);
 struct TrafficTrip {TruckRoute route;TrafficDestination destination;bool truck=false;double desired_speed=0;};
 struct TrafficPlan {std::vector<TrafficTrip> trips;double road_length_m=0;std::size_t destinations=0;std::string message;};
-TrafficPlan plan_traffic(std::shared_ptr<WorldTerrain>,ps::Vec3 player,TrafficConfig,std::uint64_t seed,const std::atomic<bool>& cancel);
+TrafficPlan plan_traffic(std::shared_ptr<WorldTerrain>,ps::Vec3 player,TrafficConfig,std::uint64_t seed,const std::atomic<bool>& cancel,bool cached_geometry_only=false);
 struct TrafficActorSnapshot {std::uint64_t id=0;bool truck=false;ps::Pose pose{};double speed_m_s=0;TrafficDestination destination;};
 struct TrafficSnapshot {std::vector<TrafficActorSnapshot> actors;TrafficConfig config;bool loading=false;std::string message;};
 }

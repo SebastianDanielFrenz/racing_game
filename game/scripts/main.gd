@@ -705,7 +705,7 @@ func status_line(prefix: String) -> String:
 		int(ls.get("dropped_ticks", 0)), float(ls.get("step_max_ms", 0.0)),
 		int(ss.get("prefetch_installed", 0)), int(ss.get("prefetch_late_sync", 0)),
 		int(ss.get("prefetch_late_wait", 0)), float(ss.get("prefetch_late_wait_ns_max", 0)) / 1000000.0,
-		int(ss.get("prefetch_stale_inputs", 0))]
+		int(ss.get("prefetch_stale_inputs", 0))] + " npc=%d traffic_loading=%s" % [_simulation.get_traffic_state().get("actors", []).size(), str(_simulation.get_traffic_state().get("loading", false))]
 
 # rg_core decides the active rig and which input groups are live.
 func _apply_mode_state() -> Dictionary:

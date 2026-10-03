@@ -44,6 +44,12 @@ TEST_CASE("NPC truck publishes moving collision body and reduces trailing airspe
  CHECK(air<speed*.98);
  auto hit=session.world().backend().ray_cast(frame.truck.pose.position+ps::Vec3{-15,0,0},ps::Vec3::unit_x(),30);
  REQUIRE(hit.hit);
+ // F preserves nearby traffic and its controller resumes instead of restarting a route worker.
+ const auto before_flip=session.snapshot().truck.pose.position.x;
+ session.request_flip_upright();session.start();
+ std::this_thread::sleep_for(std::chrono::milliseconds(120));session.stop();
+ REQUIRE(session.snapshot().truck.active);
+ CHECK(session.snapshot().truck.pose.position.x>before_flip);
  session.request_npc_truck(false,70);session.start();
  std::this_thread::sleep_for(std::chrono::milliseconds(40));session.stop();
  CHECK_FALSE(session.snapshot().truck.active);

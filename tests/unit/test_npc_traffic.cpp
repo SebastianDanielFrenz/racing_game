@@ -45,3 +45,9 @@ TEST_CASE("Real traffic plans reach OSM destinations", "[.][npc_traffic_real]") 
  for(const auto& trip:plan.trips){REQUIRE(trip.route.points.size()>2);CHECK(trip.route.points.back().speed_m_s==0);CHECK((trip.route.points.front().ground-ps::Vec3{player.x,player.y,250}).length()>config.min_spawn_m-1);
   const auto last=trip.route.points.back().ground;CHECK(std::hypot(last.x-trip.destination.point.x,last.y-trip.destination.point.y)<45);}
 }
+
+TEST_CASE("Cancelled traffic planning exits before map access", "[npc_traffic]") {
+ std::atomic<bool> cancel{true};
+ auto plan=rg::plan_traffic(nullptr,{},rg::TrafficConfig{},1,cancel,true);
+ CHECK(plan.trips.empty());CHECK(plan.message.empty());
+}

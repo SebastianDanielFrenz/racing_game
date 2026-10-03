@@ -440,11 +440,15 @@ void Session::take_relocate_request() {
     }
     if (flip_upright_pending_.exchange(false, std::memory_order_acq_rel)) {
         const ps::Pose pose = world_->get_pose(chassis_body_);
-        relocation_ = RelocateTarget{pose.position.x, pose.position.y, flip_upright_yaw(pose.orientation)};
+        relocation_ = RelocateTarget{pose.position.x, pose.position.y, flip_upright_yaw(pose.orientation),false};
     }
 }
 
 void Session::finish_relocation() {
+    // Priming advances World without traffic controllers: freeze actor motion so
+    // preserved NPC route stations and poses remain in agreement after F.
+    for(const auto& actor:traffic_actors_)world_->backend().set_motion(actor.body,ps::Motion{});
+    if(truck_state_.active)world_->backend().set_motion(truck_body_,ps::Motion{});
     const RelocateTarget target = *relocation_;
     relocation_.reset();
 
@@ -612,8 +616,8 @@ bool Session::step_once(bool from_loop) {
     };
 
     take_relocate_request();
-    if(relocation_)update_traffic(true);
-    if(relocation_&&(truck_state_.active||truck_state_.loading)){truck_request_.store(-1);update_npc_truck();}
+    if(relocation_&&relocation_->clear_traffic)update_traffic(true);
+    if(relocation_&&relocation_->clear_traffic&&(truck_state_.active||truck_state_.loading)){truck_request_.store(-1);update_npc_truck();}
     spike.take_relocate_ms = lap();
     if (terrain_) {
         const bool ready = gate_check() && sync_road_decks(1);
@@ -1120,7 +1124,8 @@ void Session::update_traffic(bool clear){
   traffic_loading_=false;
   if(!traffic_cancel_.load()){
    traffic_message_=plan.message;
-   traffic_population_target_=std::min(traffic_config_.max_vehicles,static_cast<int>(std::ceil(plan.road_length_m*traffic_config_.density_per_km/1000)));
+   // A busy/unloaded geometry cache is not an instruction to erase the population.
+   if(plan.road_length_m>0)traffic_population_target_=std::min(traffic_config_.max_vehicles,static_cast<int>(std::ceil(plan.road_length_m*traffic_config_.density_per_km/1000)));
    for(auto& trip:plan.trips){if(static_cast<int>(traffic_actors_.size())>=traffic_population_target_)break;
     auto ground=trip.route.points.front().ground;const double distance=std::hypot(ground.x-car.position.x,ground.y-car.position.y);if(distance<traffic_config_.min_spawn_m||distance>traffic_config_.radius_m)continue;
     const double half=trip.truck?6.5:2.3,height=trip.truck?2.2:.8;const auto yaw=trip.route.points.front().yaw;
@@ -1141,7 +1146,11 @@ void Session::update_traffic(bool clear){
  if(!traffic_worker_.joinable()&&now>=traffic_scan_time_&&traffic_config_.density_per_km>0){
   traffic_cancel_.store(false);traffic_done_.store(false);traffic_loading_=true;traffic_scan_time_=now+8;
   auto terrain=config_.terrain?config_.terrain->world_terrain:nullptr;auto config=traffic_config_;config.grip_multiplier=1;const auto seed=traffic_seed_++;
-  traffic_worker_=std::thread([this,terrain,player=car.position,config,seed]{TrafficPlan plan;try{plan=plan_traffic(terrain,player,config,seed,traffic_cancel_);}catch(const std::exception& e){plan.message=e.what();}
+  traffic_worker_=std::thread([this,terrain,player=car.position,config,seed]{
+   const auto started=std::chrono::steady_clock::now();
+   std::fprintf(stderr,"RG_TRAFFIC_SCAN begin seed=%llu cached_only=yes\n",static_cast<unsigned long long>(seed));
+   TrafficPlan plan;try{plan=plan_traffic(terrain,player,config,seed,traffic_cancel_,true);}catch(const std::exception& e){plan.message=e.what();}
+   std::fprintf(stderr,"RG_TRAFFIC_SCAN end seed=%llu ms=%.1f trips=%zu destinations=%zu cancelled=%s\n",static_cast<unsigned long long>(seed),std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-started).count(),plan.trips.size(),plan.destinations,traffic_cancel_.load()?"yes":"no");
    {std::lock_guard<std::mutex> lock(traffic_mutex_);traffic_pending_=std::move(plan);}traffic_done_.store(true);
   });
  }

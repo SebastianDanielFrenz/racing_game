@@ -789,3 +789,10 @@ retirement discards identity permanently. Defaults: 4/lane-km, 600m radius, 100m
 exclusion, 24 vehicles. See docs/npc_traffic.md for current limits and next stages:
 shared weather/physical surface grip, junction conflict handling, precise lane
 turn rules, parking maneuvers and car-type target distributions.
+
+2026-10-04 NPC lifecycle correction: F no longer clears traffic; actor motion is
+frozen during relocation priming and resumes on the same trip. R still clears.
+Runtime planning now uses nonblocking published geometry only, indexed destination
+lookup and cancellation throughout CPU work, preventing the old distant-derivation
+wait from NPC shutdown/reset. Scan timing/population telemetry added. Focused
+flip/cancel/traffic/drafting checks: 40 assertions, 5 cases; owner road retest pending.

@@ -584,6 +584,7 @@ private:
         double x = 0.0;
         double y = 0.0;
         double yaw_rad = 0.0;
+        bool clear_traffic = true;
     };
     double spawn_x_ = 0.0, spawn_y_ = 0.0, spawn_yaw_rad_ = 0.0;
     std::mutex relocate_mutex_;         // guards relocate_request_

@@ -131,3 +131,17 @@ Focused policy/destination tests and the existing drafting-truck integration
 checks pass. A hidden real-cache route check validates reachable destinations,
 arrival stopping points and spawn exclusion. Driving acceptance remains with
 the owner.
+
+## Flip/reset and shutdown correction (2026-10-04)
+
+F preserves nearby actors and freezes their motion during relocation priming,
+then resumes their existing trips. R/explicit relocation still clears traffic.
+The runtime planner now consumes only already-published road geometry, using
+a nonblocking cache lookup; busy/missing profiles defer population work. It
+does not derive distant geometry during NPC planning. A spatial road-sample
+index replaces repeated all-roads searches for each destination. Cancellation
+is checked during indexing, destination search, graph traversal and route sampling.
+Busy caches do not reset the existing population target to zero. Scan duration,
+trip/destination counts and cancellation are logged as RG_TRAFFIC_SCAN; RG_DRIVE
+now includes population count and loading state. The owner hang log was preserved
+at out/traffic_hang_owner.log. Focused flip-preservation and cancellation checks pass.

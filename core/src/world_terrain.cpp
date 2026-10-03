@@ -447,6 +447,15 @@ std::vector<std::shared_ptr<const RoadDeck>> WorldTerrain::road_decks() {
     return result;
 }
 
+std::shared_ptr<const g2m::RoadGeomTile> WorldTerrain::cached_road_geometry_at(double easting,double northing) {
+    auto key=g2m::tile_key_at(frame_->zone(),2,easting,northing);if(!key)return nullptr;
+    // Derivation holds this mutex across expensive complete-way DEM work.
+    // Opportunistic traffic must skip busy caches instead of joining that wait.
+    std::unique_lock<std::mutex> lock(geometry_mutex_,std::try_to_lock);
+    if(!lock.owns_lock())return nullptr;
+    auto it=road_geometry_cache_.find(*key);return it==road_geometry_cache_.end()?nullptr:it->second;
+}
+
 std::shared_ptr<const g2m::RoadGeomTile> WorldTerrain::road_geometry_at(double easting,double northing) {
     auto key=g2m::tile_key_at(frame_->zone(),2,easting,northing);if(!key) return nullptr;
     road_surface_patch(*key);

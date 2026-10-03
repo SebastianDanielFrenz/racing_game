@@ -282,6 +282,7 @@ public:
     // Presentation-only lookup: never fetches or waits for derivation.
     const g2m::HeightTile* cached_height_tile(const g2m::TileKey& key);
     std::vector<std::shared_ptr<const RoadDeck>> road_decks();
+    std::shared_ptr<const g2m::RoadGeomTile> cached_road_geometry_at(double easting,double northing);
     std::shared_ptr<const g2m::RoadGeomTile> road_geometry_at(double easting, double northing);
 
     // Builds every LOD-selected chunk around (cam_x, cam_y) (session-local

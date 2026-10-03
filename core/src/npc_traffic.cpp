@@ -73,8 +73,8 @@ std::vector<TrafficDestination> extract_traffic_destinations(const g2m::OsmTile&
  for(const auto& rel:d.relations)if(!value(rel,"building").empty()||value(rel,"amenity")=="parking")for(auto m:d.members_of(rel))if(m.type==g2m::osm::MemberType::Way&&d.str(m.role)=="outer")if(auto w=d.find_way(m.ref)){auto r=ring(*w);if(!r.empty()){add(rel,center(r),true,2);break;}}
  return result;
 }
-TrafficPlan plan_traffic(std::shared_ptr<WorldTerrain> terrain,ps::Vec3 player,TrafficConfig config,std::uint64_t seed,const std::atomic<bool>& cancel){
- TrafficPlan plan;config=sanitize_traffic_config(config);if(!terrain){plan.message="Traffic needs OSM roads and destinations (real world)";return plan;}
+TrafficPlan plan_traffic(std::shared_ptr<WorldTerrain> terrain,ps::Vec3 player,TrafficConfig config,std::uint64_t seed,const std::atomic<bool>& cancel,bool cached_geometry_only){
+ TrafficPlan plan;if(cancel.load())return plan;config=sanitize_traffic_config(config);if(!terrain){plan.message="Traffic needs OSM roads and destinations (real world)";return plan;}
  const auto& frame=terrain->frame();
  struct Edge{std::int64_t first,last;const g2m::RoadProfile* profile;const g2m::RoadGraphWay* way;int direction;};
  struct TurnRule {std::int64_t from=0,to=0,via=0;bool only=false,unsupported=false;};
@@ -86,6 +86,8 @@ TrafficPlan plan_traffic(std::shared_ptr<WorldTerrain> terrain,ps::Vec3 player,T
  const int y0=static_cast<int>(std::floor((n-config.radius_m)/1024)),y1=static_cast<int>(std::floor((n+config.radius_m)/1024));
  for(int y=y0;y<=y1&&!cancel.load();++y)for(int x=x0;x<=x1&&!cancel.load();++x){
   g2m::TileKey key{frame.zone(),2,x,y};
+  if(cancel.load())return plan;
+  auto tile=cached_geometry_only?terrain->cached_road_geometry_at(x*1024.+512,y*1024.+512):terrain->road_geometry_at(x*1024.+512,y*1024.+512);if(!tile)continue;tiles.push_back(tile);
   if(auto osm=terrain->source_osm_tile(key)){
    for(auto d:extract_traffic_destinations(*osm,frame))if(seen_dest.emplace(d.id,d.osm_type).second)destinations.push_back(d);
    const auto& data=osm->data;
@@ -97,7 +99,6 @@ TrafficPlan plan_traffic(std::shared_ptr<WorldTerrain> terrain,ps::Vec3 player,T
     if(rule.from&&rule.to)turn_rules.push_back(rule);
    }
   }
-  auto tile=terrain->road_geometry_at(x*1024.+512,y*1024.+512);if(!tile)continue;tiles.push_back(tile);
   for(const auto& entry:tile->entries){if(!entry.profile||!seen.emplace(entry.way_id,entry.stretch.start_ref,entry.stretch.end_ref).second)continue;
    const auto& ways=tile->source.graph.ways;auto w=std::lower_bound(ways.begin(),ways.end(),entry.way_id,[](const auto& a,auto id){return a.osm_id<id;});
    if(w==ways.end()||w->osm_id!=entry.way_id||entry.stretch.end_ref>=w->node_ids.size())continue;
@@ -112,10 +113,26 @@ TrafficPlan plan_traffic(std::shared_ptr<WorldTerrain> terrain,ps::Vec3 player,T
  std::map<std::int64_t,std::vector<std::size_t>> outgoing;for(std::size_t i=0;i<edges.size();++i)outgoing[edges[i].first].push_back(i);
  // Destination entrances attach only to nearby ordinary roads, never motorway/grade crossings.
  struct Goal{TrafficDestination destination;std::size_t edge;double station;};std::vector<Goal> goals;
- for(auto d:destinations){double best=40;std::size_t selected=edges.size();double station=0;
-  for(std::size_t i=0;i<edges.size();++i){const auto& edge=edges[i];auto highway=tag(*edge.way,"highway");if(highway=="motorway"||highway=="trunk"||highway.ends_with("_link")||tag(*edge.way,"bridge")=="yes"||tag(*edge.way,"tunnel")=="yes")continue;
-   for(double s=0;s<=edge.profile->reference.length_m;s+=5){auto xy=edge.profile->reference.at(s);if(!xy)continue;double distance=std::hypot(xy->x-frame.e0_m()-d.point.x,xy->y-frame.n0_m()-d.point.y);if(distance<best){best=distance;selected=i;station=s;}}
-  }if(selected<edges.size())goals.push_back({d,selected,station});
+ struct RoadSample{std::size_t edge;double station,x,y;};
+ std::map<std::pair<int,int>,std::vector<RoadSample>> sample_grid;
+ for(std::size_t i=0;i<edges.size();++i){
+  if(cancel.load())return plan;
+  const auto& edge=edges[i];const auto highway=tag(*edge.way,"highway");
+  if(highway=="motorway"||highway=="trunk"||highway.ends_with("_link")||tag(*edge.way,"bridge")=="yes"||tag(*edge.way,"tunnel")=="yes")continue;
+  for(double station=0;station<=edge.profile->reference.length_m;station+=5){
+   if(cancel.load())return plan;auto xy=edge.profile->reference.at(station);if(!xy)continue;
+   const double x=xy->x-frame.e0_m(),y=xy->y-frame.n0_m();
+   sample_grid[{static_cast<int>(std::floor(x/40)),static_cast<int>(std::floor(y/40))}].push_back({i,station,x,y});
+  }
+ }
+ for(auto destination:destinations){
+  if(cancel.load())return plan;double best=40;std::size_t selected=edges.size();double station=0;
+  const int cx=static_cast<int>(std::floor(destination.point.x/40)),cy=static_cast<int>(std::floor(destination.point.y/40));
+  for(int y=cy-1;y<=cy+1;++y)for(int x=cx-1;x<=cx+1;++x){
+   auto bin=sample_grid.find({x,y});if(bin==sample_grid.end())continue;
+   for(const auto& sample:bin->second){double distance=std::hypot(sample.x-destination.point.x,sample.y-destination.point.y);if(distance<best){best=distance;selected=sample.edge;station=sample.station;}}
+  }
+  if(selected<edges.size())goals.push_back({destination,selected,station});
  }
  if(edges.empty()||goals.empty()){plan.message="No reachable residential/parking destinations in local OSM network";return plan;}
  for(int attempt=0;attempt<count*30&&static_cast<int>(plan.trips.size())<count&&!cancel.load();++attempt){
@@ -125,7 +142,7 @@ TrafficPlan plan_traffic(std::shared_ptr<WorldTerrain> terrain,ps::Vec3 player,T
   std::vector<double> dist(edges.size(),1e30);std::vector<std::size_t> parent(edges.size(),edges.size());
   using QueueItem=std::pair<double,std::size_t>;std::priority_queue<QueueItem,std::vector<QueueItem>,std::greater<QueueItem>> queue;
   dist[initial]=0;queue.push({0,initial});
-  while(!queue.empty()){auto [cost,index]=queue.top();queue.pop();if(cost!=dist[index])continue;const auto& edge=edges[index];
+  while(!queue.empty()){if(cancel.load())return plan;auto [cost,index]=queue.top();queue.pop();if(cost!=dist[index])continue;const auto& edge=edges[index];
    for(auto next:outgoing[edge.last]){const auto& candidate=edges[next];if(!traffic_road_allowed(*candidate.way,truck,candidate.direction)||candidate.last==edge.first)continue;
     bool forbidden=false;
     for(const auto& rule:turn_rules)if(rule.from==edge.way->osm_id){
@@ -142,10 +159,10 @@ TrafficPlan plan_traffic(std::shared_ptr<WorldTerrain> terrain,ps::Vec3 player,T
   std::vector<std::size_t> path;for(auto i=goal.edge;i<edges.size();i=parent[i]){path.push_back(i);if(i==initial)break;}if(path.back()!=initial)continue;std::reverse(path.begin(),path.end());
   TrafficTrip trip;trip.truck=truck;trip.destination=goal.destination;trip.desired_speed=truck?80./3.6:(80.+170.*std::generate_canonical<double,53>(random))/3.6;
   bool valid=true;double total=0;
-  for(auto index:path){const auto& edge=edges[index];const auto& p=*edge.profile;const auto lane=truck_lane(*edge.way,p.attributes.width_mm*.001,p.attributes.lanes,edge.direction);
+  for(auto index:path){if(cancel.load())return plan;const auto& edge=edges[index];const auto& p=*edge.profile;const auto lane=truck_lane(*edge.way,p.attributes.width_mm*.001,p.attributes.lanes,edge.direction);
    const double begin=index==initial?start:(edge.direction>0?0:p.reference.length_m),end=index==goal.edge?goal.station:(edge.direction>0?p.reference.length_m:0);
    double mu=tag(*edge.way,"surface")=="gravel"||tag(*edge.way,"surface")=="unpaved"?.45:1.;
-   for(double s=begin;;s+=edge.direction*2){if((edge.direction>0&&s>end)||(edge.direction<0&&s<end))s=end;auto xy=p.reference.at(s);auto z=p.at(s);if(!xy||!z){valid=false;break;}
+   for(double s=begin;;s+=edge.direction*2){if(cancel.load())return plan;if((edge.direction>0&&s>end)||(edge.direction<0&&s<end))s=end;auto xy=p.reference.at(s);auto z=p.at(s);if(!xy||!z){valid=false;break;}
     double height=z->height_m-p.attributes.crown_per_mille*.001*std::abs(lane.offset_m);
     for(const auto& deck:decks)if(deck->way_id==edge.way->osm_id&&xy->x>=deck->min_easting-2&&xy->x<=deck->max_easting+2&&xy->y>=deck->min_northing-2&&xy->y<=deck->max_northing+2)if(auto h=road_deck_height(*deck,s,lane.offset_m))height=*h;
     TruckRoutePoint point{{xy->x-std::sin(xy->heading)*lane.offset_m-frame.e0_m(),xy->y+std::cos(xy->heading)*lane.offset_m-frame.n0_m(),height},xy->heading+(edge.direction<0?3.141592653589793:0),z->grade*edge.direction,traffic_speed_cap(*edge.way,truck,edge.direction,trip.desired_speed),0,edge.way->osm_id};
