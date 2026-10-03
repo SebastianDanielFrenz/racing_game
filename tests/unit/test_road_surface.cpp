@@ -40,6 +40,14 @@ TEST_CASE("Accepted road profiles remove depressions while preserving grade and 
     CHECK((right->h[128*256]-left->h[128*256+255])/256.0==Catch::Approx(.05).margin(.004));
     CHECK(left->h[128*256+20]/256.0==Catch::Approx(101.025).margin(.004));
 }
+TEST_CASE("Raised carriageway verge leaves the driving surface unchanged", "[road_surface]") {
+    const rg::RoadSurfacePatch flat(geometry(),0),raised(geometry(),.06);
+    auto a=terrain(0),b=terrain(0);flat.apply(*a);raised.apply(*b);
+    for(int y=124;y<=133;++y)for(int x=1;x<255;++x)CHECK(a->h[y*256+x]==b->h[y*256+x]);
+    CHECK((a->h[134*256+100]-b->h[134*256+100])/256.0==Catch::Approx(.06).margin(.004));
+    CHECK(a->h[150*256+100]==b->h[150*256+100]);
+    const rg::RoadSurfacePatch bridge(geometry(true),.06);auto t=terrain(0);CHECK(bridge.apply(*t)==0);
+}
 TEST_CASE("Grade-separated road profiles never fill the ground underneath", "[road_surface]") {
     const rg::RoadSurfacePatch bridge(geometry(true));auto t=terrain(0);
     CHECK(bridge.separated==1); CHECK(bridge.apply(*t)==0);

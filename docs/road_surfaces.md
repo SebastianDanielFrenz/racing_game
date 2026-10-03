@@ -132,3 +132,39 @@ sampled change in the onset area fell to approximately 2.3 cm. Single-profile
 surfaces retain their original grades; bridge decks remain separate.
 The one-second drive log lacks wheel/attitude history, so causation of every
 reported rollover and the final driving behaviour require owner confirmation.
+
+## Road presentation and verges (2026-10-03)
+
+The real-world road overlay now uses accepted, completed road profiles rather
+than blurred land-class colours. Matte asphalt, subtle surface grain, gravel edge
+bands and antialiased white paint follow the shared level-0 height surface.
+Bridge/inferred-deck overlays follow the structural profile and retain the same
+width and camber. Roads without a usable profile retain the old terrain fallback.
+
+OSM `lanes`, `lanes:forward`, `lanes:backward`, `oneway` and `lane_markings` guide
+lane separators. Where counts are absent, narrow streets use one lane, wider
+two-way roads two; one-way roads use conservative width-based estimates. Estimates
+are visual assumptions, not new OSM facts. `lane_markings=no` and living streets
+suppress paint. Main roads get solid outer edge lines; internal separators use
+3 m / 6 m gap dashes, or 6 m / 12 m gap on trunk/motorway classes. Recorded
+`overtaking=no` selects a solid opposing-direction divider. Markings fade back
+from actual graph junctions rather than drawing lines across an intersection.
+Explicit `turn:lanes` / directional variants add through/left/right arrow symbols
+near the corresponding approach end; unsupported tokens are left unpainted.
+OSM schema reference: https://wiki.openstreetmap.org/wiki/Lanes
+
+`road_visuals` in world_config.json configures enabled, distance_m (default2500,
+clamped512–6000), surface_lift_m (default0.018, clamped0.005–0.04), line_width_m
+(default0.15, clamped0.08–0.3), and verge_drop_m (default0.06, validated0–0.15).
+Reload/restart after editing. Surface lift is a tiny render offset to prevent
+z-fighting; it does not move collision. The physical verge option depresses the
+existing shoulder gently over its full width. Inside the carriageway, height and
+grade stay unchanged; bridge decks are unchanged. Physics and terrain rendering
+share that modified heightfield, with the existing merge blending retained.
+
+Road meshes are generated on a background worker, batched by 1 km tiles, with two
+ready batches maximum and one upload per frame. Near tiles load first. Floating
+origin changes reposition meshes without regenerating markings. Distant terrain
+still uses its regular LOD; exact paint is intended for nearby driving views.
+Precise junction lane connectivity, surveyed marking layouts, traffic signals,
+stop/yield lines and complex gore hatching are not reconstructed by these defaults.

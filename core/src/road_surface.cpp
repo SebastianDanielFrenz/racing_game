@@ -9,7 +9,7 @@ constexpr double bin_size = 16;
 int bin(double value) { return static_cast<int>(std::floor(value / bin_size)); }
 double smooth(double t) { t=std::clamp(t,0.0,1.0); return t*t*(3-2*t); }
 }
-RoadSurfacePatch::RoadSurfacePatch(const g2m::RoadGeomTile& geometry) {
+RoadSurfacePatch::RoadSurfacePatch(const g2m::RoadGeomTile& geometry,double verge_drop) : verge_drop_m_(verge_drop) {
     decks=build_road_decks(geometry);
     for (const auto& entry : geometry.entries) {
         if (!entry.profile) { ++declined; continue; }
@@ -80,7 +80,7 @@ std::size_t RoadSurfacePatch::apply(g2m::HeightTile& tile) const {
         const auto& s=*best; const double d=distance*(s.half_width+s.shoulder);
         // Rounded crown removes the centreline crease, while retaining camber.
         const double camber=s.crown*(std::sqrt(std::min(d,s.half_width)*std::min(d,s.half_width)+.25)-.5);
-        const double road=s.z0+(s.z1-s.z0)*fraction-camber;
+        const double road=s.z0+(s.z1-s.z0)*fraction-camber-verge_drop_m_*smooth((d-s.half_width)/std::max(.001,s.shoulder));
         const double core=s.half_width+s.shoulder;
         const double weight=d<=core ? 1 : 1-smooth((d-core)/std::max(.001,s.blend));
         double height=raw/256.0+(road-raw/256.0)*weight;
@@ -97,7 +97,7 @@ std::size_t RoadSurfacePatch::apply(g2m::HeightTile& tile) const {
             if(proximity<=0) continue;
             const double od=candidate.score*(other.half_width+other.shoulder);
             const double lateral=std::min(od,other.half_width);
-            const double oz=other.z0+(other.z1-other.z0)*candidate.fraction-other.crown*(std::sqrt(lateral*lateral+.25)-.5);
+            const double oz=other.z0+(other.z1-other.z0)*candidate.fraction-other.crown*(std::sqrt(lateral*lateral+.25)-.5)-verge_drop_m_*smooth((od-other.half_width)/std::max(.001,other.shoulder));
             const double oc=other.half_width+other.shoulder;
             const double influence=od<=oc?1:1-smooth((od-oc)/std::max(.001,other.blend));
             sum+=proximity*(raw/256.0+(oz-raw/256.0)*influence);weights+=proximity;

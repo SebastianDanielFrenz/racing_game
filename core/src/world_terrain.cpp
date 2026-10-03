@@ -236,6 +236,7 @@ std::unique_ptr<WorldTerrain> WorldTerrain::open(const WorldConfig& config, std:
     std::unique_ptr<WorldTerrain> wt(new WorldTerrain());
     wt->road_profiles_enabled_ = config.physics.road_surfaces.enabled;
     wt->smoothing_ = config.terrain_smoothing;
+    wt->verge_drop_m_ = config.road_verge_drop_m;
 
     // --- source store (read-only: this project never writes into it) ---
     g2m::TileStoreConfig source_cfg;
@@ -428,7 +429,7 @@ std::shared_ptr<const RoadSurfacePatch> WorldTerrain::road_surface_patch(const g
         }
     }
     road_geometry_cache_.emplace(key,std::make_shared<g2m::RoadGeomTile>(*geometry));
-    auto patch=std::make_shared<RoadSurfacePatch>(geometry.value());
+    auto patch=std::make_shared<RoadSurfacePatch>(geometry.value(),verge_drop_m_);
     std::fprintf(stderr,"RG_ROAD_SURFACE key=%s accepted=%zu declined=%zu separated=%zu\n",g2m::to_string(key).c_str(),patch->accepted,patch->declined,patch->separated);
     {
         std::lock_guard<std::mutex> lock(decks_mutex_);
@@ -523,6 +524,12 @@ HeightTileFetchResult fetch_height_tile_cached(std::mutex& cache_mutex,
     auto [it, inserted] = cache.emplace(key, std::move(fetched.tile));
     (void)inserted; // first inserted value wins; a later racer's own fetch is discarded here
     return HeightTileFetchResult{g2m::Status::Ok, it->second};
+}
+
+RoadVisualMesh WorldTerrain::road_visual_tile(const g2m::TileKey& key,double lift) {
+    const auto geometry=road_geometry_at(key.min_easting()+512,key.min_northing()+512);
+    if(!geometry)return {};
+    return build_road_visual(*geometry,key,[this,key](double e,double n){return sample_l0_height([this](const auto& k){return height_tile_shared(k).tile.get();},key.zone,0,0,e,n);},lift);
 }
 
 std::vector<Building> WorldTerrain::buildings_tile(const g2m::TileKey& key,double min_height,double fallback,double storey) {

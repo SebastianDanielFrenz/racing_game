@@ -447,6 +447,13 @@ std::optional<WorldConfig> load_world_config(const std::string& path, std::strin
         }
     }
 
+    if(root.contains("road_visuals")) {
+        const auto& visual=root.at("road_visuals");
+        if(!require_object(visual,path,"road_visuals",err))return std::nullopt;
+        if(visual.contains("verge_drop_m")&&!get_number(visual,"verge_drop_m",path,"road_visuals",&cfg.road_verge_drop_m,err))return std::nullopt;
+        if(cfg.road_verge_drop_m<0||cfg.road_verge_drop_m>.15){fail(err,path,"road_visuals.verge_drop_m must be in [0,0.15]");return std::nullopt;}
+    }
+
     // Optional terrain smoothing is validated before any tile work begins.
     if(root.contains("terrain_smoothing")) {
         const auto& smoothing=root.at("terrain_smoothing");

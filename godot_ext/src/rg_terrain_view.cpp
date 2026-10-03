@@ -150,6 +150,16 @@ bool RgTerrainView::load_preview(float spawn_x, float spawn_y) {
     return true;
 }
 
+godot::Dictionary RgTerrainView::get_road_visual_tile(int x,int y,double lift) {
+    godot::Dictionary out;if(!terrain_)return out;
+    const g2m::TileKey key{terrain_->frame().zone(),2,x,y};const auto mesh=terrain_->road_visual_tile(key,lift);
+    godot::PackedVector3Array points,normals;godot::PackedVector2Array uv,uv2;godot::PackedColorArray colours;godot::PackedInt32Array indices;
+    for(const auto& v:mesh.vertices){points.append({-v.y,v.z,-v.x});normals.append({0,1,0});uv.append({v.u,v.v});uv2.append({v.width,v.fade});colours.append({v.lanes/32,v.forward/32,v.flags/16,1});}
+    for(auto i:mesh.indices)indices.append(i);
+    out["vertices"]=points;out["normals"]=normals;out["uv"]=uv;out["uv2"]=uv2;out["colours"]=colours;out["indices"]=indices;
+    out["origin_session"]=godot::Vector3(static_cast<double>(x)*1024-terrain_->frame().e0_m(),static_cast<double>(y)*1024-terrain_->frame().n0_m(),0);return out;
+}
+
 godot::Dictionary RgTerrainView::get_building_tile(int x,int y,double min_height,double fallback,double storey) {
     godot::Dictionary output;godot::Array buildings;if(!terrain_)return output;
     const g2m::TileKey key{terrain_->frame().zone(),2,x,y};
@@ -496,6 +506,7 @@ void RgTerrainView::_process(double /*delta*/) {
 
 void RgTerrainView::_bind_methods() {
     godot::ClassDB::bind_method(D_METHOD("initialize", "world_config_absolute_path"), &RgTerrainView::initialize);
+    godot::ClassDB::bind_method(D_METHOD("get_road_visual_tile", "x", "y", "lift_m"), &RgTerrainView::get_road_visual_tile);
     godot::ClassDB::bind_method(D_METHOD("get_building_tile", "x", "y", "min_height", "fallback_height", "storey_height"), &RgTerrainView::get_building_tile);
     godot::ClassDB::bind_method(D_METHOD("initialize_shared", "sim"), &RgTerrainView::initialize_shared);
     godot::ClassDB::bind_method(D_METHOD("release"), &RgTerrainView::release);

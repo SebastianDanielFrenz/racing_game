@@ -83,6 +83,7 @@ public:
     // RgSimulation is running in terrain mode, so the decoded tiles are not
     // fetched/decoded twice.
     bool initialize(const godot::String& world_config_absolute_path);
+    godot::Dictionary get_road_visual_tile(int x,int y,double lift_m);
     godot::Dictionary get_building_tile(int x,int y,double min_height,double fallback_height,double storey_height);
 
     // R2.2 R7: reuses `sim`'s Session-owned WorldTerrain (render and physics

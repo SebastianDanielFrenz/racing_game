@@ -104,6 +104,7 @@ struct WorldConfig {
     Spawn spawn;
     Lod lod;
     TerrainSmoothing terrain_smoothing;
+    double road_verge_drop_m=0.06;
     PhysicsTerrainConfig physics;
     std::string surface_map; // resolved to an absolute path (see below)
     std::string palette;     // resolved to an absolute path (see below)

@@ -12,6 +12,7 @@
 
 #include "rg/road_classes.h"
 #include "rg/buildings.h"
+#include "rg/road_visual.h"
 #include "rg/road_surface.h"
 #include "rg/terrain_render.h"
 #include "rg/world_config.h"
@@ -274,6 +275,7 @@ public:
     // decoupling": this is racing_game's own result type, built from
     // existing g2m types - R4 adapts it to g2m::phys::IHeightTileFetch once
     // that interface exists in the pinned geo2map_engine submodule.
+    RoadVisualMesh road_visual_tile(const g2m::TileKey& key,double lift_m);
     std::vector<Building> buildings_tile(const g2m::TileKey& key,double min_height,double fallback_height,double storey_height);
     HeightTileFetchResult height_tile_shared(const g2m::TileKey& key);
     // Presentation-only lookup: never fetches or waits for derivation.
@@ -372,6 +374,7 @@ private:
     FetchDecodeResult fetch_raw_decode(const g2m::TileKey& key);
     HeightTileFetchResult raw_height_tile_shared(const g2m::TileKey& key);
     TerrainSmoothing smoothing_;
+    double verge_drop_m_=0.06;
     std::mutex raw_cache_mutex_;
     std::map<g2m::TileKey,std::shared_ptr<const g2m::HeightTile>> raw_height_cache_;
     std::shared_ptr<const RoadSurfacePatch> road_surface_patch(const g2m::TileKey& key);

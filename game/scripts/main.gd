@@ -66,6 +66,7 @@ var _director: Node
 var _hud: Node
 var _overlay: Node
 var _visuals: Node
+var _roads: Node3D
 var _buildings: Node3D
 var _world_view: Node # RgTerrainView shared with the real-world Session
 var _load_started_ms: int = 0
@@ -493,6 +494,10 @@ func switch_world() -> void:
 var _vehicle_audio: Node3D
 
 func _load_world(kind: String) -> void:
+	if _roads != null:
+		_roads.shutdown()
+		_roads.queue_free()
+		_roads = null
 	if _buildings != null:
 		_buildings.shutdown()
 		_buildings.queue_free()
@@ -577,6 +582,17 @@ func _attach_world_view() -> void:
 		return
 	_director.set_terrain_view(_world_view)
 	var world_data: Dictionary = JSON.parse_string(FileAccess.get_file_as_string(_world_config_path()))
+	var road_settings: Dictionary = world_data.get("road_visuals", {})
+	if bool(road_settings.get("enabled", true)):
+		_roads = preload("res://scripts/road_stream.gd").new()
+		_roads.view = _world_view
+		_roads.simulation = _simulation
+		_roads.director = _director
+		_roads.settings = road_settings
+		_roads.utm_origin = Vector2(world_data.session_origin_utm.e0, world_data.session_origin_utm.n0)
+		add_child(_roads)
+		_world_view.tree_exiting.connect(_roads.shutdown, CONNECT_ONE_SHOT)
+		_simulation.tree_exiting.connect(_roads.shutdown, CONNECT_ONE_SHOT)
 	var building_settings: Dictionary = world_data.get("buildings", {})
 	if bool(building_settings.get("enabled", true)):
 		_buildings = preload("res://scripts/building_stream.gd").new()

@@ -49,5 +49,12 @@
     "skyline_distance_m": 40000.0,
     "fallback_height_m": 8.0,
     "storey_height_m": 3.0
+  },
+  "road_visuals": {
+    "enabled": true,
+    "distance_m": 2500.0,
+    "surface_lift_m": 0.018,
+    "line_width_m": 0.15,
+    "verge_drop_m": 0.06
   }
 }
