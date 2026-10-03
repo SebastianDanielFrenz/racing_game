@@ -16,7 +16,7 @@ public:
     std::size_t accepted = 0, declined = 0, separated = 0;
 private:
     struct Segment { double x0,y0,z0,x1,y1,z1,half_width,shoulder,blend,crown;
-        std::int64_t way; std::uint32_t start_ref; };
+        std::int64_t way; std::uint32_t start_ref; int layer; bool tunnel; };
     std::vector<Segment> segments_;
     std::map<std::pair<int,int>,std::vector<std::size_t>> bins_;
 };

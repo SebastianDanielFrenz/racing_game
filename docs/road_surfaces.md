@@ -117,3 +117,18 @@ its valid smoothed terrain and OSM grip instead of failing that terrain tile
 and freezing permanently. No deck or fitted road is fabricated for that
 geometry tile. `RG_ROAD_SURFACE unavailable` records this fallback once per
 geometry tile and world load; other fetch/decode errors remain failures.
+
+## High-speed merge surface correction
+
+The owner's 2026-10-03 drive reached 321.5 km/h before losing wheel contact
+around simulation time 95 s, near UTM 32N E468766 N5552822. It recorded no
+dropped ticks or terrain misses. Fine surface samples along the logged
+trajectory revealed alternating changes up to 9 cm per half-metre sample
+where ground profiles 3995697 and 4823280 overlapped. Nearest-profile ownership
+was switching abruptly across their boundary. Ground surfacing now blends
+the nearest sample from each profile across an overlap band (normalised
+width 0.35), restricted to equal OSM layers and tunnel status. The largest
+sampled change in the onset area fell to approximately 2.3 cm. Single-profile
+surfaces retain their original grades; bridge decks remain separate.
+The one-second drive log lacks wheel/attitude history, so causation of every
+reported rollover and the final driving behaviour require owner confirmation.
