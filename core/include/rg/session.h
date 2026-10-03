@@ -501,18 +501,20 @@ private:
     [[nodiscard]] FrameSnapshot capture_frame_snapshot() const;
 
     void update_traffic(bool clear=false);
-    struct TrafficActor {std::uint64_t id;ps::BodyId body;TrafficTrip trip;double station=0,speed=0,unseen=0;};
+    struct TrafficActor {std::uint64_t id;ps::BodyId body;TrafficTrip trip;double station=0,speed=0,unseen=0,obstacle_cap=1e30,follow_cap=1e30;};
     std::vector<TrafficActor> traffic_actors_;
     std::thread traffic_worker_;
     std::atomic<bool> traffic_cancel_{false},traffic_done_{false};
     std::mutex traffic_mutex_;
     TrafficConfig traffic_requested_,traffic_config_;
-    bool traffic_config_changed_=false,traffic_loading_=false;
+    bool traffic_config_changed_=false,traffic_loading_=false,traffic_scan_needed_=true;
     std::vector<std::uint64_t> traffic_visible_;
-    TrafficPlan traffic_pending_;
+    TrafficPlan traffic_pending_,traffic_ready_;
     double traffic_scan_time_=0;
     std::uint64_t traffic_next_id_=1,traffic_seed_=91731;
     int traffic_population_target_=0;
+    struct TrafficNeighbor {std::uint64_t id;ps::Vec3 position;double speed,half_length;};
+    std::map<std::pair<int,int>,std::vector<TrafficNeighbor>> traffic_neighbor_grid_;
     std::string traffic_message_;
     void update_npc_truck();
     std::thread truck_worker_;

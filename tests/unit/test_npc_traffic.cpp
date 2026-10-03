@@ -39,7 +39,7 @@ TEST_CASE("Real traffic plans reach OSM destinations", "[.][npc_traffic_real]") 
  std::string error;auto cfg=rg::load_world_config(std::string(RG_SOURCE_DIR)+"/data/world/world_config.json",&error);REQUIRE(cfg);
  std::shared_ptr<rg::WorldTerrain> terrain(rg::WorldTerrain::open(*cfg,&error));REQUIRE(terrain);
  auto player=terrain->frame().from_geodetic(50.1367,8.4505); // Local residential network, not a motorway destination.
- std::atomic<bool> cancel{false};rg::TrafficConfig config;config.radius_m=600;
+ std::atomic<bool> cancel{false};rg::TrafficConfig config;config.radius_m=600;config.density_per_km=4;config.max_vehicles=24;
  auto plan=rg::plan_traffic(terrain,{player.x,player.y,250},config,51,cancel);
  INFO(plan.message);INFO(plan.destinations);REQUIRE(plan.destinations>0);REQUIRE_FALSE(plan.trips.empty());
  for(const auto& trip:plan.trips){REQUIRE(trip.route.points.size()>2);CHECK(trip.route.points.back().speed_m_s==0);CHECK((trip.route.points.front().ground-ps::Vec3{player.x,player.y,250}).length()>config.min_spawn_m-1);
@@ -50,4 +50,14 @@ TEST_CASE("Cancelled traffic planning exits before map access", "[npc_traffic]")
  std::atomic<bool> cancel{true};
  auto plan=rg::plan_traffic(nullptr,{},rg::TrafficConfig{},1,cancel,true);
  CHECK(plan.trips.empty());CHECK(plan.message.empty());
+}
+
+TEST_CASE("Traffic capacity supports thousands without legacy clamps", "[npc_traffic]") {
+ rg::TrafficConfig config;
+ CHECK(config.max_vehicles==2048);CHECK(config.density_per_km==120);
+ config.max_vehicles=4096;config.density_per_km=1000;config.radius_m=3000;
+ auto c=rg::sanitize_traffic_config(config);
+ CHECK(c.max_vehicles==4096);CHECK(c.density_per_km==1000);CHECK(c.radius_m==3000);
+ config.max_vehicles=999999;CHECK(rg::sanitize_traffic_config(config).max_vehicles==4096);
+ config.max_vehicles=0;CHECK(rg::sanitize_traffic_config(config).max_vehicles==0);
 }

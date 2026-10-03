@@ -71,11 +71,11 @@ policy remain implementation choices. Record their selected values alongside
 configuration when implemented. General traffic does not yet exist in the game.
 ## First traffic implementation (2026-10-04)
 
-In the real world, traffic is enabled by default at 4 vehicles per lane-km,
-with a 600 m population radius, a 100 m horizontal player exclusion distance,
-and a hard cap of 24 active vehicles. Flat mode has no OSM destinations and
+In the real world, traffic is enabled by default at 120 vehicles per lane-km,
+with a 1200 m population radius, a 100 m horizontal player exclusion distance,
+and a default limit of 2048 active vehicles (adjustable to 4096). Flat mode has no OSM destinations and
 therefore does not invent traffic trips. F7 opens live density, radius, minimum
-spawn-distance and grip controls, saved in user://traffic.cfg. Zero density
+spawn-distance, grip and maximum-population controls, saved in user://traffic.cfg. Zero density
 retires vehicles once they leave view. Driving stays active while the traffic
 panel is open; it captures the mouse and disables camera look, without applying
 the seat panel's brake/input suppression.
@@ -147,3 +147,37 @@ Busy caches do not reset the existing population target to zero. Scan duration,
 trip/destination counts and cancellation are logged as RG_TRAFFIC_SCAN; RG_DRIVE
 now includes population count and loading state. The owner hang log was preserved
 at out/traffic_hang_owner.log. Focused flip-preservation and cancellation checks pass.
+
+
+## High population support (2026-10-04)
+
+The former 24-vehicle adapter cap is removed. Native and F7 configuration support
+0-4096 actors, density up to 1000/lane-km and radius up to 3000 m. Default maximum
+is 2048, density 120/lane-km and radius 1200 m. Existing saved settings receive a
+one-time migration to at least those density/radius defaults and the 2048 limit;
+subsequent user changes persist normally. F7 shows active, target, cap and queued
+counts. A numeric target is not a promise that occupied or missing roads can fit
+that population: road occupancy, public access and reachable destinations still
+apply. No actor is forced into obstructed space to meet the count.
+
+Planning returns at most 512 candidate trips per batch, with bounded attempts
+and spatial buckets for candidate occupancy. The physics thread checks at most
+eight candidates and creates at most four native bodies per tick. A staged queue
+feeds later ticks rather than creating thousands at once; settings/reset cancel
+obsolete candidates. Full populations do not regenerate unused trip batches.
+Controller neighbor samples and staggered obstacle probes operate at 20 Hz using
+32 m spatial buckets, with cached following/obstacle caps. Pose integration and
+legal/corner caps remain on physics ticks. Retirement uses constant-time actor
+removal. Only nearby wake sources within 200 m of the player are submitted;
+more distant finite wakes cannot reach the player with the authored coefficients.
+
+Cars and trucks render as shared MultiMesh body/window/wheel/lamp batches rather
+than thousands of individual scene nodes. Buffers grow by powers of two and
+visibility feedback is sent at 10 Hz. Native collision bodies remain present for
+all active NPCs; this is not yet a distant traffic physics LOD system.
+
+Focused checks: 47 assertions in 6 cases, including high-capacity sanitization,
+existing flip/cancellation and real drafting. A headless render construction
+check instantiates 2048 cars and 256 trucks in 22 mesh batches. This validates
+render construction, not full-game FPS or 240 Hz physics at those populations;
+the owner's driving/performance acceptance remains outstanding.

@@ -802,3 +802,11 @@ frozen=no and player stationary. F7 inadvertently reused the seat panel's modal
 full-brake/input-suppression group. Traffic settings now have a separate mouse/UI
 guard: driving remains active, camera look is suppressed while using the panel.
 Godot script checks pass. Owner log preserved in out/traffic_settings_owner.log.
+
+2026-10-04 NPC population scale: removed adapter cap 24. Defaults are now 2048
+maximum, 120/lane-km and 1200m radius, with F7 cap adjustable to 4096 and density
+up to 1000/lane-km. Saved settings migrate once. Staged 512-trip batches, four
+spawns/tick, spatial neighbor checks/staggered 20 Hz probes, nearby-only wakes and
+instanced 22-part rendering replace the main quadratic/spawn/render bottlenecks.
+47 focused assertions pass; headless renderer instantiated 2048 cars + 256 trucks.
+Full-game performance at high populations remains owner acceptance.

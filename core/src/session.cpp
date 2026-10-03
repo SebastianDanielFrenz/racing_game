@@ -940,7 +940,7 @@ FrameSnapshot Session::capture_frame_snapshot() const {
     snap.chassis_pose = world_->get_pose(chassis_body_);
     snap.chassis_motion = world_->get_motion(chassis_body_);
     snap.powertrain = world_->powertrain_state(vehicle_id_);
-    snap.traffic.config=traffic_config_;snap.traffic.loading=traffic_loading_;snap.traffic.message=traffic_message_;
+    snap.traffic.config=traffic_config_;snap.traffic.target=traffic_population_target_;snap.traffic.queued=static_cast<int>(traffic_ready_.trips.size());snap.traffic.loading=traffic_loading_;snap.traffic.message=traffic_message_;
     for(const auto& actor:traffic_actors_)snap.traffic.actors.push_back({actor.id,actor.trip.truck,world_->get_pose(actor.body),actor.speed,actor.trip.destination});
     snap.truck=truck_state_;
     if(truck_state_.active)snap.truck.pose=world_->get_pose(truck_body_);
@@ -1109,14 +1109,14 @@ void Session::update_npc_truck() {
 
 namespace rg {
 void Session::configure_traffic(TrafficConfig c){std::lock_guard<std::mutex> lock(traffic_mutex_);traffic_requested_=sanitize_traffic_config(c);traffic_config_changed_=true;}
-void Session::set_visible_traffic(std::vector<std::uint64_t> ids){std::lock_guard<std::mutex> lock(traffic_mutex_);traffic_visible_=std::move(ids);}
+void Session::set_visible_traffic(std::vector<std::uint64_t> ids){std::sort(ids.begin(),ids.end());std::lock_guard<std::mutex> lock(traffic_mutex_);traffic_visible_=std::move(ids);}
 void Session::update_traffic(bool clear){
- if(clear){traffic_cancel_.store(true);for(auto& a:traffic_actors_)world_->destroy_body(a.body);traffic_actors_.clear();traffic_loading_=false;traffic_scan_time_=world_->sim_time()+2;return;}
+ if(clear){traffic_cancel_.store(true);for(auto& a:traffic_actors_)world_->destroy_body(a.body);traffic_actors_.clear();traffic_ready_.trips.clear();traffic_neighbor_grid_.clear();traffic_loading_=false;traffic_scan_needed_=true;traffic_scan_time_=world_->sim_time()+2;return;}
  const auto car=world_->get_pose(chassis_body_);const double now=world_->sim_time(),dt=1/config_.tick_rate_hz;
  std::vector<std::uint64_t> visible;bool changed=false;
  {std::lock_guard<std::mutex> lock(traffic_mutex_);visible=traffic_visible_;changed=traffic_config_changed_;if(changed){traffic_config_=traffic_requested_;traffic_config_changed_=false;}}
  if(changed){
-  traffic_cancel_.store(true);traffic_loading_=false;traffic_scan_time_=now;
+  traffic_cancel_.store(true);traffic_ready_.trips.clear();traffic_loading_=false;traffic_population_target_=std::min(traffic_population_target_,traffic_config_.max_vehicles);traffic_scan_needed_=true;traffic_scan_time_=now;
 
  }
  if(traffic_worker_.joinable()&&traffic_done_.load()){
@@ -1126,10 +1126,15 @@ void Session::update_traffic(bool clear){
    traffic_message_=plan.message;
    // A busy/unloaded geometry cache is not an instruction to erase the population.
    if(plan.road_length_m>0)traffic_population_target_=std::min(traffic_config_.max_vehicles,static_cast<int>(std::ceil(plan.road_length_m*traffic_config_.density_per_km/1000)));
-   for(auto& trip:plan.trips){if(static_cast<int>(traffic_actors_.size())>=traffic_population_target_)break;
+   if(plan.road_length_m==0)traffic_scan_needed_=true;
+   traffic_ready_=std::move(plan);
+  }
+ }
+ for(int attempts=0,born=0;attempts<8&&born<4&&!traffic_ready_.trips.empty()&&static_cast<int>(traffic_actors_.size())<traffic_population_target_;++attempts){
+    auto trip=std::move(traffic_ready_.trips.back());traffic_ready_.trips.pop_back();
     auto ground=trip.route.points.front().ground;const double distance=std::hypot(ground.x-car.position.x,ground.y-car.position.y);if(distance<traffic_config_.min_spawn_m||distance>traffic_config_.radius_m)continue;
     const double half=trip.truck?6.5:2.3,height=trip.truck?2.2:.8;const auto yaw=trip.route.points.front().yaw;
-    bool free=true;for(const auto& a:traffic_actors_)if((world_->get_pose(a.body).position-ground).length()<half+(a.trip.truck?6.5:2.3)+8){free=false;break;}
+    bool free=true; // Native footprint sweeps below use the backend spatial broadphase.
     if(truck_state_.active&&(world_->get_pose(truck_body_).position-ground).length()<half+15)free=false;
     // Several footprint-height sweeps reject current physical obstructions, not just cached routes.
     const ps::Vec3 forward{std::cos(yaw),std::sin(yaw),0},left{-forward.y,forward.x,0};
@@ -1138,13 +1143,11 @@ void Session::update_traffic(bool clear){
     ps::BodyDesc body;body.motion=ps::BodyMotionType::Kinematic;body.gravity_enabled=false;body.shape=ps::BoxShape{{half,trip.truck?1.25:1.,trip.truck?1.8:.65}};
     body.pose.position=ground+ps::Vec3{0,0,height};body.pose.orientation=ps::Quat::from_axis_angle(ps::Vec3::unit_z(),yaw)*ps::Quat::from_axis_angle(ps::Vec3::unit_y(),-std::atan(trip.route.points.front().grade));
     auto id=world_->create_body(body);const double speed=trip.route.points.front().speed_m_s;
-    traffic_actors_.push_back({traffic_next_id_++,id,std::move(trip),0,speed,0});
+    traffic_actors_.push_back({traffic_next_id_++,id,std::move(trip),0,speed,0});++born;
    }
-  }
- }
- if(traffic_config_.density_per_km==0)traffic_population_target_=0;
- if(!traffic_worker_.joinable()&&now>=traffic_scan_time_&&traffic_config_.density_per_km>0){
-  traffic_cancel_.store(false);traffic_done_.store(false);traffic_loading_=true;traffic_scan_time_=now+8;
+ if(traffic_config_.density_per_km==0){traffic_population_target_=0;traffic_ready_.trips.clear();}
+ if((traffic_scan_needed_||static_cast<int>(traffic_actors_.size())<traffic_population_target_)&&traffic_ready_.trips.empty()&&!traffic_worker_.joinable()&&now>=traffic_scan_time_&&traffic_config_.density_per_km>0){
+  traffic_cancel_.store(false);traffic_done_.store(false);traffic_loading_=true;traffic_scan_needed_=false;traffic_scan_time_=now+8;
   auto terrain=config_.terrain?config_.terrain->world_terrain:nullptr;auto config=traffic_config_;config.grip_multiplier=1;const auto seed=traffic_seed_++;
   traffic_worker_=std::thread([this,terrain,player=car.position,config,seed]{
    const auto started=std::chrono::steady_clock::now();
@@ -1154,29 +1157,48 @@ void Session::update_traffic(bool clear){
    {std::lock_guard<std::mutex> lock(traffic_mutex_);traffic_pending_=std::move(plan);}traffic_done_.store(true);
   });
  }
+ // Immutable neighbor samples refreshed at 20 Hz; queries never visit the entire population.
+ const auto traffic_tick=static_cast<std::uint64_t>(std::llround(now*config_.tick_rate_hz));
+ const auto decision_period=std::max<std::uint64_t>(1,static_cast<std::uint64_t>(config_.tick_rate_hz/20));
+ if(traffic_tick%decision_period==0||traffic_neighbor_grid_.empty()){
+  traffic_neighbor_grid_.clear();
+  for(const auto& actor:traffic_actors_){const auto p=world_->get_pose(actor.body).position;
+   traffic_neighbor_grid_[{static_cast<int>(std::floor(p.x/32)),static_cast<int>(std::floor(p.y/32))}].push_back({actor.id,p,actor.speed,actor.trip.truck?6.5:2.3});}
+ }
+ if(!std::is_sorted(visible.begin(),visible.end()))std::sort(visible.begin(),visible.end());
  std::vector<ps::aero::WakeSource> wakes;
  if(truck_state_.active){auto pose=world_->get_pose(truck_body_);wakes.push_back({truck_body_,pose.position,world_->get_motion(truck_body_).linear,{60,2,.15,.45,.2}});}
  for(auto it=traffic_actors_.begin();it!=traffic_actors_.end();){
-  auto& a=*it;auto pose=world_->get_pose(a.body);a.unseen=std::find(visible.begin(),visible.end(),a.id)!=visible.end()?0:a.unseen+dt;
+  auto& a=*it;auto pose=world_->get_pose(a.body);a.unseen=std::binary_search(visible.begin(),visible.end(),a.id)?0:a.unseen+dt;
   const double end=a.trip.route.points.back().station;
   const bool surplus=static_cast<int>(traffic_actors_.size())>traffic_population_target_;
   if((a.station>=end-.5&&a.speed<.5)||((surplus||(pose.position-car.position).length()>traffic_config_.radius_m+50)&&a.unseen>3)){
-   world_->destroy_body(a.body);it=traffic_actors_.erase(it);continue;
+   world_->destroy_body(a.body);const auto index=static_cast<std::size_t>(it-traffic_actors_.begin());
+   if(index+1<traffic_actors_.size())*it=std::move(traffic_actors_.back());
+   traffic_actors_.pop_back();it=index<traffic_actors_.size()?traffic_actors_.begin()+index:traffic_actors_.end();continue;
   }
   auto upper=std::upper_bound(a.trip.route.points.begin(),a.trip.route.points.end(),a.station,[](double s,const auto& p){return s<p.station;});
   const auto& current=*(upper==a.trip.route.points.end()?upper-1:upper);
   double target=std::min(current.speed_m_s*std::sqrt(traffic_config_.grip_multiplier),std::sqrt(std::max(0.,5*traffic_config_.grip_multiplier*(end-a.station))));
   const auto forward=pose.orientation.rotate(ps::Vec3::unit_x());
+  if((traffic_tick+a.id)%decision_period==0){
+  double follow=1e30;
   const auto avoid=[&](ps::Vec3 other,double speed,double length){const auto relative=other-pose.position;const double gap=ps::dot(relative,forward),side=std::abs(relative.x*forward.y-relative.y*forward.x);
-   if(gap>0&&side<2.7&&std::abs(relative.z)<3){const double clearance=gap-(a.trip.truck?6.5:2.3)-length;target=std::min(target,std::max(0.,std::min(speed+(clearance-5)*.5,(clearance-3)/1.5)));}
+   if(gap>0&&side<2.7&&std::abs(relative.z)<3){const double clearance=gap-(a.trip.truck?6.5:2.3)-length;follow=std::min(follow,std::max(0.,std::min(speed+(clearance-5)*.5,(clearance-3)/1.5)));}
   };
   avoid(car.position,world_->get_motion(chassis_body_).linear.length(),2.5);
-  for(const auto& other:traffic_actors_)if(other.id!=a.id)avoid(world_->get_pose(other.body).position,other.speed,other.trip.truck?6.5:2.3);
+  const int cx=static_cast<int>(std::floor(pose.position.x/32)),cy=static_cast<int>(std::floor(pose.position.y/32));
+  for(int y=cy-3;y<=cy+3;++y)for(int x=cx-3;x<=cx+3;++x){auto cell=traffic_neighbor_grid_.find({x,y});if(cell==traffic_neighbor_grid_.end())continue;
+   for(const auto& other:cell->second)if(other.id!=a.id)avoid(other.position,other.speed,other.half_length);}
+
   if(truck_state_.active)avoid(world_->get_pose(truck_body_).position,truck_speed_,6.5);
+  a.follow_cap=follow;
   // Static obstacle probe excludes the moving NPC's own collider.
   const double nose=a.trip.truck?6.5:2.3,look=std::max(12.,a.speed*a.speed/8+8);
   auto obstruction=world_->backend().ray_cast_excluding(pose.position+forward*(nose+.2),forward,look,a.body);
-  if(obstruction.hit){const double clearance=obstruction.fraction*look;target=std::min(target,std::sqrt(std::max(0.,8*(clearance-3))));}
+  a.obstacle_cap=obstruction.hit?std::sqrt(std::max(0.,8*(obstruction.fraction*look-3))):1e30;
+  }
+  target=std::min({target,a.obstacle_cap,a.follow_cap});
   a.speed+=std::clamp(target-a.speed,-4*dt,(a.trip.truck?1.2:2.5)*dt);
   a.station=std::min(end,a.station+a.speed*dt);
   auto next=std::lower_bound(a.trip.route.points.begin(),a.trip.route.points.end(),a.station,[](const auto& p,double s){return p.station<s;});if(next==a.trip.route.points.end())--next;
@@ -1186,7 +1208,7 @@ void Session::update_traffic(bool clear){
   ps::Motion motion;motion.linear=(ground+ps::Vec3{0,0,height}-pose.position)/dt;
   auto rotation=ps::Quat::from_axis_angle(ps::Vec3::unit_z(),yaw)*ps::Quat::from_axis_angle(ps::Vec3::unit_y(),-std::atan(grade));
   auto delta=(rotation*pose.orientation.inverse()).normalized();ps::Vec3 axis{delta.x,delta.y,delta.z};if(delta.w<0){axis=-axis;delta.w=-delta.w;}double sine=axis.length();if(sine>1e-12)motion.angular=axis*(2*std::atan2(sine,delta.w)/(sine*dt));
-  world_->backend().set_motion(a.body,motion);wakes.push_back({a.body,pose.position,motion.linear,a.trip.truck?ps::aero::WakeDesc{60,2,.15,.45,.2}:ps::aero::WakeDesc{25,1.2,.12,.3,.12}});
+  world_->backend().set_motion(a.body,motion);if((pose.position-car.position).length()<200)wakes.push_back({a.body,pose.position,motion.linear,a.trip.truck?ps::aero::WakeDesc{60,2,.15,.45,.2}:ps::aero::WakeDesc{25,1.2,.12,.3,.12}});
   ++it;
  }
  world_->set_aero_wakes(std::move(wakes));

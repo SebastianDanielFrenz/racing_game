@@ -14,9 +14,9 @@ bool public_access(const std::string& s){return s.empty()||s=="yes"||s=="permiss
 }
 TrafficConfig sanitize_traffic_config(TrafficConfig c){
  auto bounded=[](double v,double fallback,double lo,double hi){return std::clamp(std::isfinite(v)?v:fallback,lo,hi);};
- c.density_per_km=bounded(c.density_per_km,4,0,30);c.radius_m=bounded(c.radius_m,600,200,1200);
+ c.density_per_km=bounded(c.density_per_km,120,0,1000);c.radius_m=bounded(c.radius_m,1200,200,3000);
  c.min_spawn_m=bounded(c.min_spawn_m,100,30,c.radius_m-30);c.grip_multiplier=bounded(c.grip_multiplier,1,.05,1);
- c.max_vehicles=std::clamp(c.max_vehicles,0,48);return c;
+ c.max_vehicles=std::clamp(c.max_vehicles,0,4096);return c;
 }
 bool traffic_road_allowed(const g2m::RoadGraphWay& w,bool truck,int dir){
  static const std::set<std::string> allowed={"motorway","trunk","primary","secondary","tertiary","unclassified","residential","motorway_link","trunk_link","primary_link","secondary_link","tertiary_link","living_street","road"};
@@ -108,7 +108,7 @@ TrafficPlan plan_traffic(std::shared_ptr<WorldTerrain> terrain,ps::Vec3 player,T
  }
  plan.destinations=destinations.size();
  for(const auto& edge:edges){auto xy=edge.profile->reference.at(edge.profile->reference.length_m*.5);if(xy&&std::hypot(xy->x-e,xy->y-n)<config.radius_m)plan.road_length_m+=edge.profile->reference.length_m;}
- const int count=std::min(config.max_vehicles,static_cast<int>(std::ceil(plan.road_length_m*config.density_per_km/1000)));
+ const int count=std::min(std::min(512,config.max_vehicles),static_cast<int>(std::ceil(plan.road_length_m*config.density_per_km/1000)));
  std::mt19937_64 random(seed);const auto decks=terrain->road_decks();
  std::map<std::int64_t,std::vector<std::size_t>> outgoing;for(std::size_t i=0;i<edges.size();++i)outgoing[edges[i].first].push_back(i);
  // Destination entrances attach only to nearby ordinary roads, never motorway/grade crossings.
@@ -135,7 +135,8 @@ TrafficPlan plan_traffic(std::shared_ptr<WorldTerrain> terrain,ps::Vec3 player,T
   if(selected<edges.size())goals.push_back({destination,selected,station});
  }
  if(edges.empty()||goals.empty()){plan.message="No reachable residential/parking destinations in local OSM network";return plan;}
- for(int attempt=0;attempt<count*30&&static_cast<int>(plan.trips.size())<count&&!cancel.load();++attempt){
+ std::map<std::pair<int,int>,std::vector<std::size_t>> starts;
+ for(int attempt=0;attempt<std::min(12000,count*12)&&static_cast<int>(plan.trips.size())<count&&!cancel.load();++attempt){
   const std::size_t initial=random()%edges.size();const auto& first=edges[initial];const double start=first.profile->reference.length_m*(.15+.7*std::generate_canonical<double,53>(random));
   auto spawn=first.profile->reference.at(start);if(!spawn)continue;double distance=std::hypot(spawn->x-e,spawn->y-n);if(distance<config.min_spawn_m||distance>config.radius_m)continue;
   const bool truck=random()%5==0;if(truck&&!traffic_road_allowed(*first.way,true,first.direction))continue;
@@ -173,10 +174,22 @@ TrafficPlan plan_traffic(std::shared_ptr<WorldTerrain> terrain,ps::Vec3 player,T
   }
   if(!valid||total<40||trip.route.points.size()<3)continue;
   // Reject overlapping initial footprints; physics performs another live check before spawn.
-  for(const auto& existing:plan.trips)if((existing.route.points.front().ground-trip.route.points.front().ground).length()<25){valid=false;break;}if(!valid)continue;
+  const auto& proposed=trip.route.points.front();
+  const int sx=static_cast<int>(std::floor(proposed.ground.x/32)),sy=static_cast<int>(std::floor(proposed.ground.y/32));
+  for(int y=sy-1;y<=sy+1;++y)for(int x=sx-1;x<=sx+1;++x){auto bin=starts.find({x,y});if(bin==starts.end())continue;
+   for(auto existing_index:bin->second){const auto& other=plan.trips[existing_index];const auto& previous=other.route.points.front();
+    const auto delta=proposed.ground-previous.ground;if(std::abs(delta.z)>4)continue;
+    const double along=std::abs(delta.x*std::cos(proposed.yaw)+delta.y*std::sin(proposed.yaw));
+    const double side=std::abs(-delta.x*std::sin(proposed.yaw)+delta.y*std::cos(proposed.yaw));
+    if(side<2.5&&along<(trip.truck?6.5:2.3)+(other.truck?6.5:2.3)+5)valid=false;
+    // Crossing orientations need conservative spacing at the intersection.
+    if(std::abs(std::sin(proposed.yaw-previous.yaw))>.4&&delta.length()<12)valid=false;
+   }
+  }if(!valid)continue;
   for(std::size_t i=1;i+1<trip.route.points.size();++i){auto& p=trip.route.points[i];double curvature=std::abs(std::remainder(trip.route.points[i+1].yaw-trip.route.points[i-1].yaw,6.283185307179586))/std::max(.1,trip.route.points[i+1].station-trip.route.points[i-1].station);p.speed_m_s=std::min(p.speed_m_s,std::sqrt(2.5*config.grip_multiplier/std::max(.001,curvature)));}
   trip.route.points.back().speed_m_s=0;
   for(std::size_t i=trip.route.points.size()-1;i>0;--i){double ds=trip.route.points[i].station-trip.route.points[i-1].station;trip.route.points[i-1].speed_m_s=std::min(trip.route.points[i-1].speed_m_s,std::sqrt(trip.route.points[i].speed_m_s*trip.route.points[i].speed_m_s+5*config.grip_multiplier*ds));}
+  starts[{sx,sy}].push_back(plan.trips.size());
   plan.trips.push_back(std::move(trip));
  }
  plan.message="Destination traffic: "+std::to_string(plan.trips.size())+" planned trips";return plan;

@@ -182,7 +182,7 @@ public:
     // deviations list). ---
     [[nodiscard]] godot::Transform3D get_body_transform(const godot::String& body_name) const;
     godot::Dictionary get_aero_state() const;
-    void configure_traffic(double density,double radius,double minimum,double grip);
+    void configure_traffic(double density,double radius,double minimum,double grip,int maximum);
     void set_visible_traffic(const godot::Array& ids);
     godot::Dictionary get_traffic_state() const;
     void request_npc_truck(bool enabled,double speed_kph);
