@@ -42,3 +42,12 @@ point) as `RG_OWNER_MARK` in the drive log and appends it to
 `user://drive_marks.jsonl`. Marks include session/UTM coordinates, wall and
 simulation time, tick, speed, view, build and wheel load/slip/surface data.
 This archive persists across normal Godot log rotation.
+
+## Configurable spawn and R reset
+
+`data/world/world_config.json` exposes `spawn.latitude`, `spawn.longitude`,
+and `spawn.yaw_deg` (degrees counter-clockwise from east in the UTM frame).
+Startup and R reset both use this point; restart or reload the real world
+after editing. Legacy UTM `spawn.e`/`spawn.n` remain supported, but do not
+mix coordinate formats. The configured road-centre point beside the old spawn point is 50.12359409, 8.51546541, with heading 4.05 degrees. It is projected
+from the OSM address onto the street to avoid the building.

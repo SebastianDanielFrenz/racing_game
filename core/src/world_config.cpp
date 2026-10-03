@@ -409,11 +409,21 @@ std::optional<WorldConfig> load_world_config(const std::string& path, std::strin
     if (!require_object(spawn, path, "\"spawn\"", err)) {
         return std::nullopt;
     }
-    if (!get_number(spawn, "e", path, "\"spawn\"", &cfg.spawn.e, err)) {
-        return std::nullopt;
-    }
-    if (!get_number(spawn, "n", path, "\"spawn\"", &cfg.spawn.n, err)) {
-        return std::nullopt;
+    if (spawn.contains("latitude") || spawn.contains("longitude")) {
+        double latitude=0,longitude=0;
+        if (spawn.contains("e") || spawn.contains("n")) {
+            fail(err,path,"spawn must use latitude/longitude or e/n, not both");return std::nullopt;
+        }
+        if (!get_number(spawn,"latitude",path,"\"spawn\"",&latitude,err) ||
+            !get_number(spawn,"longitude",path,"\"spawn\"",&longitude,err)) return std::nullopt;
+        if(latitude<0 || latitude>=84 || longitude< -180 || longitude>180) {
+            fail(err,path,"spawn latitude must be in [0,84), longitude in [-180,180] for this northern UTM world");return std::nullopt;
+        }
+        const auto position=g2m::geo::Utm{}.forward({cfg.session_origin_utm.zone},latitude,longitude);
+        cfg.spawn.e=position.easting;cfg.spawn.n=position.northing;
+    } else {
+        if (!get_number(spawn,"e",path,"\"spawn\"",&cfg.spawn.e,err) ||
+            !get_number(spawn,"n",path,"\"spawn\"",&cfg.spawn.n,err)) return std::nullopt;
     }
     if (!get_number(spawn, "yaw_deg", path, "\"spawn\"", &cfg.spawn.yaw_deg, err)) {
         return std::nullopt;
