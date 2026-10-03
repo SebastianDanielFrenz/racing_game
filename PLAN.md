@@ -748,3 +748,16 @@ altitude changes rebuilding native engine steady tables; ground probes cost
 0.001 ms. Physics upgraded from S: to 5ec8b7d0a39953b0bfe8f57e1abc3808b5b37ede to remove the
 hot-path rebuild while preserving continuous atmosphere. Local real-terrain
 hypercar regression is `[aero_perf]`; see docs/aerodynamics.md.
+
+2026-10-03 hypercar engine calibration: physics pin bc6fdc41db4675e3bb56c9f1cb8b418cbc9724fd from S:.
+Authored breathing/turbo/cooling/ECU calibration now produces net 1000.2 kW
+at 7500 RPM and 1371.0 Nm at 6000 RPM; fixed bore/stroke/compression/boost/E5/limiter
+and 1500 kg game mass preserved. See docs/hypercar_engine.md for same-rig before/after
+figures and limitations. Native focused dyno validation; road acceptance with owner.
+
+2026-10-03 NPC drafting truck prototype: T places/replaces one moving truck
+45 m ahead, Shift+T removes. Background OSM profile routing, conservative
+rightmost-through-lane policy, one-way direction and speed/curvature/end braking;
+kinematic collision body and native truck WakeSource drive actual hypercar aero.
+Frame-latched visual/status/bookmark data. See docs/npc_truck.md. General traffic
+AI, full truck drivetrain/articulation and imagery-derived lane refinement remain future work.

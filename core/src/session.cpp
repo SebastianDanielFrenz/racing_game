@@ -195,7 +195,7 @@ Session::Session(const SessionConfig& config)
     }
 }
 
-Session::~Session() { stop(); }
+Session::~Session() { stop(); truck_cancel_.store(true); if(truck_worker_.joinable())truck_worker_.join(); }
 
 void Session::build_world_contents(const SessionConfig& config) {
     installed_decks_.clear();
@@ -612,6 +612,7 @@ bool Session::step_once(bool from_loop) {
     };
 
     take_relocate_request();
+    if(relocation_&&(truck_state_.active||truck_state_.loading)){truck_request_.store(-1);update_npc_truck();}
     spike.take_relocate_ms = lap();
     if (terrain_) {
         const bool ready = gate_check() && sync_road_decks(1);
@@ -650,6 +651,7 @@ bool Session::step_once(bool from_loop) {
     }
     spike.controls_ms = lap();
 
+    update_npc_truck();
     environment_sample_=sample_environment(config_.environment,world_->get_pose(chassis_body_).position.z,world_->sim_time());
     if(config_.environment.enabled)world_->set_ambient({environment_sample_.pressure_pa,environment_sample_.temperature_k});
     world_->set_aero_environment({environment_sample_.air_density,environment_sample_.wind_world_m_s});
@@ -932,6 +934,8 @@ FrameSnapshot Session::capture_frame_snapshot() const {
     snap.chassis_pose = world_->get_pose(chassis_body_);
     snap.chassis_motion = world_->get_motion(chassis_body_);
     snap.powertrain = world_->powertrain_state(vehicle_id_);
+    snap.truck=truck_state_;
+    if(truck_state_.active)snap.truck.pose=world_->get_pose(truck_body_);
     snap.aero.environment = environment_sample_;
     const auto& aero=world_->vehicle_aero_telemetry(vehicle_id_);
     snap.aero.enabled=!vehicle_desc_.aero.surfaces.empty()||!vehicle_desc_.aero.fans.empty()||vehicle_desc_.aero.body.reference_area_m2>0;
@@ -1017,3 +1021,80 @@ std::unique_ptr<Session> make_session(const SessionConfig& config, std::string* 
 }
 
 } // namespace rg
+
+namespace rg {
+void Session::request_npc_truck(bool enabled,double speed_kph) {
+ if(std::isfinite(speed_kph))truck_target_.store(std::clamp(speed_kph,10.,90.)/3.6);
+ truck_request_.store(enabled?1:-1);
+}
+void Session::update_npc_truck() {
+ const int request=truck_request_.exchange(0);
+ if(request) {
+  if(truck_state_.active){world_->destroy_body(truck_body_);truck_state_.active=false;}
+  world_->set_aero_wakes({});truck_cancel_.store(true);truck_state_.message="Truck removed";
+  if(request>0) {
+   if(truck_worker_.joinable()&&!truck_done_.load()){truck_request_.store(request);return;}
+   if(truck_worker_.joinable())truck_worker_.join();
+   truck_cancel_.store(false);truck_done_.store(false);truck_state_.loading=true;truck_state_.message="Truck: preparing lane route";
+   const auto car=world_->get_pose(chassis_body_);auto terrain=config_.terrain?config_.terrain->world_terrain:nullptr;const double speed=truck_target_.load();
+   truck_worker_=std::thread([this,terrain,car,speed]{
+    TruckRoute route;
+    try{route=build_truck_route(terrain,car,speed,truck_cancel_);}catch(const std::exception& e){route.message=std::string("Truck route error: ")+e.what();}
+    {std::lock_guard<std::mutex> lock(truck_mutex_);truck_pending_=std::move(route);}truck_done_.store(true);
+   });
+  } else truck_state_.loading=false;
+ }
+ if(truck_state_.loading&&truck_done_.load()) {
+  if(truck_worker_.joinable())truck_worker_.join();
+  {std::lock_guard<std::mutex> lock(truck_mutex_);truck_route_=std::move(truck_pending_);}
+  truck_state_.loading=false;truck_state_.message=truck_route_.message;
+  if(!truck_route_.points.empty()&&!truck_cancel_.load()) {
+   const auto car=world_->get_pose(chassis_body_);const auto heading=car.orientation.rotate(ps::Vec3::unit_x());
+   auto closest=truck_route_.points.begin();double distance=1e30;
+   for(auto it=truck_route_.points.begin();it!=truck_route_.points.end();++it) {
+    if(std::cos(it->yaw)*heading.x+std::sin(it->yaw)*heading.y<.5)continue;
+    const auto delta=it->ground-car.position;const double score=delta.x*delta.x+delta.y*delta.y;
+    if(score<distance){distance=score;closest=it;}
+   }
+   auto first=std::lower_bound(closest,truck_route_.points.end(),closest->station+45,[](const auto& p,double s){return p.station<s;});
+   if(distance>900||first==truck_route_.points.end()||truck_route_.points.back().station-first->station<20) {
+    truck_state_.message="Truck: route no longer ahead; press T again";return;
+   }
+   truck_route_.points.erase(truck_route_.points.begin(),first);
+   const double start=truck_route_.points.front().station;for(auto& point:truck_route_.points)point.station-=start;
+   const auto& p=truck_route_.points.front();ps::BodyDesc body;body.motion=ps::BodyMotionType::Kinematic;body.shape=ps::BoxShape{{6.5,1.25,1.8}};
+   body.gravity_enabled=false;body.pose.position=p.ground+ps::Vec3{0,0,2.2};body.pose.orientation=ps::Quat::from_axis_angle(ps::Vec3::unit_z(),p.yaw)*ps::Quat::from_axis_angle(ps::Vec3::unit_y(),-std::atan(p.grade));
+   truck_body_=world_->create_body(body);truck_state_.active=true;truck_station_=0;truck_speed_=std::min(truck_target_.load(),p.speed_m_s);
+  }
+ }
+ if(!truck_state_.active)return;
+ const auto car=world_->get_pose(chassis_body_);auto pose=world_->get_pose(truck_body_);
+ const auto forward=pose.orientation.rotate(ps::Vec3::unit_x());const auto relative=car.position-pose.position;
+ const double dt=1/config_.tick_rate_hz,end=truck_route_.points.back().station;
+ auto upper=std::upper_bound(truck_route_.points.begin(),truck_route_.points.end(),truck_station_,[](double s,const auto& p){return s<p.station;});
+ const auto& current=*(upper==truck_route_.points.end()?upper-1:upper);
+ double target=std::min(truck_target_.load(),current.speed_m_s);
+ target=std::min(target,std::sqrt(std::max(0.,2*2.5*(end-truck_station_-5))));
+ if(relative.length()>200)target=0; // Remain within the player's existing terrain/collision residency.
+ const double gap=ps::dot(relative,forward),lateral=std::abs(relative.x*forward.y-relative.y*forward.x);
+ if(gap>0&&gap<35&&lateral<2.8)target=std::min(target,std::max(0.,(gap-12)*.7));
+ truck_speed_+=std::clamp(target-truck_speed_,-4*dt,1.5*dt);
+ const double next_station=std::min(end,truck_station_+truck_speed_*dt);
+ auto next=std::lower_bound(truck_route_.points.begin(),truck_route_.points.end(),next_station,[](const auto& p,double s){return p.station<s;});
+ if(next==truck_route_.points.end())next=truck_route_.points.end()-1;
+ auto prev=next==truck_route_.points.begin()?next:next-1;
+ const double span=next->station-prev->station,t=span>1e-9?(next_station-prev->station)/span:0;
+ const auto ground=prev->ground+(next->ground-prev->ground)*t;
+ const double yaw=prev->yaw+std::remainder(next->yaw-prev->yaw,2*3.141592653589793)*t,grade=prev->grade+(next->grade-prev->grade)*t;
+ ps::Motion motion;motion.linear=(ground+ps::Vec3{0,0,2.2}-pose.position)/dt;
+ const auto target_rotation=ps::Quat::from_axis_angle(ps::Vec3::unit_z(),yaw)*ps::Quat::from_axis_angle(ps::Vec3::unit_y(),-std::atan(grade));
+ auto delta_rotation=(target_rotation*pose.orientation.inverse()).normalized();
+ ps::Vec3 axis{delta_rotation.x,delta_rotation.y,delta_rotation.z};
+ if(delta_rotation.w<0){axis=-axis;delta_rotation.w=-delta_rotation.w;}
+ const double sine=axis.length();
+ if(sine>1e-12)motion.angular=axis*(2*std::atan2(sine,delta_rotation.w)/(sine*dt));
+ world_->backend().set_motion(truck_body_,motion);
+ world_->set_aero_wakes({ps::aero::WakeSource{truck_body_,pose.position,motion.linear,{60,2,.15,.45,.2}}});
+ truck_station_=next_station;truck_state_.speed_m_s=truck_speed_;
+}
+}

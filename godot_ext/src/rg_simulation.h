@@ -182,6 +182,8 @@ public:
     // deviations list). ---
     [[nodiscard]] godot::Transform3D get_body_transform(const godot::String& body_name) const;
     godot::Dictionary get_aero_state() const;
+    void request_npc_truck(bool enabled,double speed_kph);
+    godot::Dictionary get_npc_truck_state() const;
     [[nodiscard]] godot::Dictionary get_steering_kinematics() const;
     [[nodiscard]] godot::Variant get_camera_ground_height(godot::Vector3 position) const;
     [[nodiscard]] float get_body_speed_mps(const godot::String& body_name) const;

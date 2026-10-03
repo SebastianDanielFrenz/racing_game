@@ -348,6 +348,9 @@ func _build_scene(user_args: PackedStringArray) -> void:
 	# --- input (devices -> values only) ---
 	_input_map = load("res://scripts/input_map.gd").new()
 	_input_map.name = "InputMap"
+	var truck_visual := preload("res://scripts/npc_truck.gd").new()
+	truck_visual.simulation = _simulation
+	add_child(truck_visual)
 	add_child(_input_map)
 
 	# --- placeholder/real body meshes (VEHICLE_NAME doubles as the
@@ -752,6 +755,8 @@ func _process(delta: float) -> void:
 		return
 
 	_input_map.poll()
+	if world_state == "running" and Input.is_action_just_pressed("rg_npc_truck"):
+		_simulation.request_npc_truck(not Input.is_key_pressed(KEY_SHIFT), 70.0)
 	var camera_presses: int = _input_map.consume_cycle_camera()
 	if camera_presses % 2 == 1 and not _vr_active and _simulation.get_player_mode() == "drive":
 		_cockpit_view = not _cockpit_view
@@ -820,6 +825,7 @@ func _log_owner_mark() -> void:
 		mark["utm_zone"] = origin.get("zone")
 		mark["utm_m"] = [float(origin.get("e0",0))+point.x,float(origin.get("n0",0))+point.y,point.z]
 	mark["aero"] = _simulation.get_aero_state()
+	mark["npc_truck"] = _simulation.get_npc_truck_state()
 	var encoded := JSON.stringify(mark)
 	print("RG_OWNER_MARK " + encoded)
 	var mark_path := "user://drive_marks.jsonl"

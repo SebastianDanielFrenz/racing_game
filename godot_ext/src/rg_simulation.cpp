@@ -471,6 +471,8 @@ godot::Transform3D RgSimulation::get_body_transform(const String& body_name) con
     ps::Pose pose;
     if (name == "chassis") {
         pose = frame_snapshot().chassis_pose;
+    } else if (name == "npc_truck") {
+        pose=frame_snapshot().truck.pose;
     } else if (name == "ground") {
         pose = ps::Pose::identity(); // static, built at the origin (session.cpp)
     } else {
@@ -761,6 +763,11 @@ float RgSimulation::get_wheel_radius(const String& vehicle_name, std::int64_t wh
     return w ? static_cast<float>(w->wheel_radius) : 0.0f;
 }
 
+void RgSimulation::request_npc_truck(bool enabled,double speed_kph) { if(session_)session_->request_npc_truck(enabled,speed_kph); }
+godot::Dictionary RgSimulation::get_npc_truck_state() const {
+ godot::Dictionary d;if(!session_)return d;const auto& t=frame_snapshot().truck;
+ d["active"]=t.active;d["loading"]=t.loading;d["speed_kph"]=t.speed_m_s*3.6;d["message"]=godot::String(t.message.c_str());return d;
+}
 void RgSimulation::_bind_methods() {
     godot::ClassDB::bind_method(D_METHOD("get_wheel_radius", "vehicle_name", "wheel_index"), &RgSimulation::get_wheel_radius);
     godot::ClassDB::bind_method(D_METHOD("get_wheel_fy", "vehicle_name", "wheel_index"), &RgSimulation::get_wheel_fy);
@@ -808,6 +815,8 @@ void RgSimulation::_bind_methods() {
     godot::ClassDB::bind_method(D_METHOD("get_body_transform", "body_name"), &RgSimulation::get_body_transform);
     godot::ClassDB::bind_method(D_METHOD("get_camera_ground_height", "position"), &RgSimulation::get_camera_ground_height);
     godot::ClassDB::bind_method(D_METHOD("get_aero_state"), &RgSimulation::get_aero_state);
+    godot::ClassDB::bind_method(D_METHOD("request_npc_truck","enabled","speed_kph"), &RgSimulation::request_npc_truck);
+    godot::ClassDB::bind_method(D_METHOD("get_npc_truck_state"), &RgSimulation::get_npc_truck_state);
     godot::ClassDB::bind_method(D_METHOD("get_steering_kinematics"), &RgSimulation::get_steering_kinematics);
     godot::ClassDB::bind_method(D_METHOD("get_body_speed_mps", "body_name"), &RgSimulation::get_body_speed_mps);
 

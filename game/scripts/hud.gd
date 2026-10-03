@@ -159,6 +159,10 @@ func _process(_delta: float) -> void:
 		var aero: Dictionary = _simulation.get_aero_state()
 		if bool(aero.get("enabled",false)):
 			lines.append("aero: air %.0f km/h | drag %.0f N | downforce %.0f N | front %.0f%% | wing %+.1f deg | fan %.1f kW" % [float(aero.airspeed_m_s)*3.6,float(aero.drag_n),float(aero.downforce_n),float(aero.front_balance)*100.0,float(aero.wing_pitch_offset_deg),float(aero.fan_power_w)/1000.0])
+		var truck: Dictionary = _simulation.get_npc_truck_state()
+		lines.append("T: truck ahead | Shift+T: remove | %s | %.0f km/h" % [str(truck.get("message", "")), float(truck.get("speed_kph", 0))])
+		if bool(truck.get("active", false)):
+			lines.append("Draft: body dynamic pressure %.0f%% of undisturbed airflow" % (float(aero.get("wake_factor", 1.0)) * 100.0))
 		var wheel_count: int = _simulation.get_vehicle_wheel_count(vehicle_name)
 		lines.append("wheel  load(N)  slip_ratio  slip_angle(deg)  surface")
 		for i in range(wheel_count):

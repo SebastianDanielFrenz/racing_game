@@ -37,6 +37,8 @@
 
 #include "rg/drive_script.h"
 #include "rg/environment.h"
+#include "rg/npc_truck.h"
+#include <thread>
 #include "rg/fixed_rate_loop.h"
 #include "rg/player_mode.h"
 #include "rg/terrain_mode.h"
@@ -183,6 +185,7 @@ struct FrameSnapshot {
     std::vector<WheelSnapshot> wheels;
     ps::drivetrain::PowertrainSnapshot powertrain{};
     AeroSnapshot aero;
+    TruckSnapshot truck;
     g2m::RoadSpeedMatch road_speed_limit{};
 };
 
@@ -371,7 +374,8 @@ public:
     // car" key (request_reset_to_spawn) and the smoke test's forced freeze
     // use it; nothing calls it on its own, so hashes are unaffected.
     void request_relocate(double x, double y, double yaw_rad);
-    void request_reset_to_spawn(); // the config's spawn (flat mode: the origin, yaw 0)
+    void request_reset_to_spawn();
+    void request_npc_truck(bool enabled,double speed_kph); // the config's spawn (flat mode: the origin, yaw 0)
     static constexpr double kRelocateParkZ = 4000.0;
 
     // Flip the car upright IN PLACE, keeping its current position and
@@ -492,6 +496,16 @@ private:
     void post_step(bool from_loop);
     [[nodiscard]] FrameSnapshot capture_frame_snapshot() const;
 
+    void update_npc_truck();
+    std::thread truck_worker_;
+    std::atomic<bool> truck_cancel_{false},truck_done_{false};
+    std::atomic<int> truck_request_{0};
+    std::atomic<double> truck_target_{70.0/3.6};
+    std::mutex truck_mutex_;
+    TruckRoute truck_pending_,truck_route_;
+    TruckSnapshot truck_state_;
+    ps::BodyId truck_body_{};
+    double truck_station_=0,truck_speed_=0;
     SessionConfig config_;
     EnvironmentSample environment_sample_;
     std::shared_ptr<ps::io::SurfaceTable> surface_table_;

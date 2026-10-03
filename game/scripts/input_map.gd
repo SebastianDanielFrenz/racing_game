@@ -81,6 +81,7 @@ func _ready() -> void:
 	_ensure_action("rg_cycle_mode", [KEY_V], [JOY_BUTTON_BACK])
 	_ensure_action("rg_switch_world", [KEY_F8], [])
 	_ensure_action("rg_reset_car", [KEY_R], [JOY_BUTTON_Y])
+	_ensure_action("rg_npc_truck", [KEY_T], [])
 	_ensure_action("rg_flip_upright", [KEY_F], [JOY_BUTTON_DPAD_DOWN])
 	_ensure_action("rg_cam_forward", [KEY_W], [])
 	_ensure_action("rg_cam_back", [KEY_S], [])
