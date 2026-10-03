@@ -59,3 +59,9 @@ Mapillary supplies detected map features including lane markings and signs:
 Imagery has [CC-BY-SA conditions](https://help.mapillary.com/hc/en-us/articles/115001770409-CC-BY-SA-license-for-open-data).
 No imagery is imported by this feature. Proposed corrections should carry source,
 date and confidence, and retain OSM/width fallback where observations are weak.
+
+## Planned general traffic
+
+Owner population, spawning, lane, speed, grip and road-access requirements are
+recorded in [npc_traffic.md](npc_traffic.md). They supersede prototype defaults
+for the future general NPC system; they are not all implemented here.

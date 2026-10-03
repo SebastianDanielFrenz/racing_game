@@ -761,3 +761,10 @@ rightmost-through-lane policy, one-way direction and speed/curvature/end braking
 kinematic collision body and native truck WakeSource drive actual hypercar aero.
 Frame-latched visual/status/bookmark data. See docs/npc_truck.md. General traffic
 AI, full truck drivetrain/articulation and imagery-derived lane refinement remain future work.
+
+2026-10-03 future NPC traffic requirements: player-centered population radius,
+minimum spawn distance, unobstructed rightmost-lane placement, live density,
+strict applicable speed limits, 80 km/h truck and randomized 80-250 km/h car
+fallbacks on roads without limits, physics/weather/surface-aware corner speed,
+and public-road highway whitelist plus access restrictions. Planned, not yet
+implemented. Specification and sequence: docs/npc_traffic.md.
