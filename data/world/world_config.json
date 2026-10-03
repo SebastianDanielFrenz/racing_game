@@ -12,5 +12,11 @@
     "prefetch_margin_tiles": 1,
     "prefetch_max_tiles": 24,
     "road_surfaces": { "enabled": true, "paved": "asphalt", "unpaved": "dirt", "off_road": "grass" }
+  },
+  "terrain_smoothing": {
+    "enabled": true,
+    "radius_m": 2.0,
+    "strength": 0.35,
+    "passes": 1
   }
 }

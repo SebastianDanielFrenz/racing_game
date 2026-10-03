@@ -1036,3 +1036,23 @@ Earlier notes about the committed hypercar lacking a live voice are superseded.
 G3-C road work is unchanged.
 
 Vehicle definitions are retained per path in RgSimulation after successful load, passed to SessionConfig::vehicle_definition for world rebuilds. Init-worker cache access is serialized by join/Ready acquire; world runtime state remains independent. Restart after editing definition dependencies. Verified warm reload 0.56 s, cancelled load 255 ms; initial V8 map generation ~34 s.
+
+
+## Road reconstruction and terrain smoothing (2026-10-03)
+
+`core/include/rg/road_surface.h`, `road_structures.h`, `terrain_smoothing.h`
+and matching .cpp files implement game-side profile surfacing, separate bridge
+slabs/tunnel floors/OSM-derived highway roofs, and configurable Gaussian terrain
+smoothing. `WorldTerrain` retains an immutable raw-height cache and publishes
+the processed level-0 heights to both physics and rendering. Geometry derives
+from immutable elev.base; structural publication has a separate short lock.
+`Session::sync_road_decks` installs nearby mesh colliders behind the gate;
+`RgTerrainView::sync_road_decks` owns independently rebased structural RIDs.
+Settings and reconstruction bounds are in `docs/road_surfaces.md`.
+`game/scripts/b8_contact_smoke.gd` is a SceneTree test launched with
+`--script res://scripts/b8_contact_smoke.gd -- --drive --audio=godot`;
+`b8_structure_shots.gd` captures seven owner-reported crossings. Unit regressions
+cover smoothing halos/NoData/config bounds and local real-data road/collision
+acceptance. `last_drive.json` in the existing Godot user-data directory records
+session/UTM positions, build and status; the HUD/native build info reports the
+source revision. Source libraries remain unchanged.

@@ -437,6 +437,21 @@ std::optional<WorldConfig> load_world_config(const std::string& path, std::strin
         }
     }
 
+    // Optional terrain smoothing is validated before any tile work begins.
+    if(root.contains("terrain_smoothing")) {
+        const auto& smoothing=root.at("terrain_smoothing");
+        if(!require_object(smoothing,path,"\"terrain_smoothing\"",err)) return std::nullopt;
+        if(smoothing.contains("enabled")&&!get_bool(smoothing,"enabled",path,"\"terrain_smoothing\"",&cfg.terrain_smoothing.enabled,err)) return std::nullopt;
+        if(smoothing.contains("radius_m")&&!get_number(smoothing,"radius_m",path,"\"terrain_smoothing\"",&cfg.terrain_smoothing.radius_m,err)) return std::nullopt;
+        if(smoothing.contains("strength")&&!get_number(smoothing,"strength",path,"\"terrain_smoothing\"",&cfg.terrain_smoothing.strength,err)) return std::nullopt;
+        double passes=cfg.terrain_smoothing.passes;
+        if(smoothing.contains("passes")&&!get_number(smoothing,"passes",path,"\"terrain_smoothing\"",&passes,err)) return std::nullopt;
+        if(cfg.terrain_smoothing.radius_m<0||cfg.terrain_smoothing.radius_m>8||cfg.terrain_smoothing.strength<0||cfg.terrain_smoothing.strength>1||passes<1||passes>4||passes!=std::floor(passes)) {
+            fail(err,path,"terrain_smoothing requires radius_m in [0,8], strength in [0,1], integer passes in [1,4]");return std::nullopt;
+        }
+        cfg.terrain_smoothing.passes=static_cast<int>(passes);
+    }
+
     // --- physics (optional; absent -> WorldConfig::PhysicsTerrainConfig's
     // own defaults) ---
     if (root.contains("physics")) {

@@ -152,6 +152,9 @@ bool RgTerrainView::load_preview(float spawn_x, float spawn_y) {
 
 void RgTerrainView::set_render_origin(godot::Vector3 session_origin) {
     render_origin_session_ = session_origin;
+    for(const auto& [id,deck]:deck_instances_) {
+        (void)id;godot::RenderingServer::get_singleton()->instance_set_transform(deck.instance,chunk_instance_transform(deck.chunk));
+    }
     // Re-transform every ALREADY UPLOADED instance in place (a chunk not yet
     // uploaded picks up the new render_origin_session_ naturally when
     // upload_one_chunk eventually builds its transform - no separate
@@ -333,6 +336,24 @@ void RgTerrainView::upload_one_chunk(const rg::RenderChunk& chunk) {
     total_upload_time_ms_ += std::chrono::duration<double, std::milli>(end - start).count();
 }
 
+void RgTerrainView::sync_road_decks() {
+    if(!terrain_) return;
+    int uploaded=0;
+    for(const auto& deck:terrain_->road_decks()) {
+        const auto id=std::tuple{deck->way_id,static_cast<int>(std::round(deck->start_station)),static_cast<int>(std::round(deck->end_station))};
+        if(deck_instances_.contains(id)) continue;
+        DeckInstance instance;instance.chunk.mesh=deck->mesh;
+        instance.chunk.origin_session[0]=deck->mesh.origin[0]-terrain_->frame().e0_m();
+        instance.chunk.origin_session[1]=deck->mesh.origin[1]-terrain_->frame().n0_m();
+        instance.chunk.rgba.assign(deck->mesh.positions.size()/3,deck->land_class==g2m::LandClass::PavedRoad?0x4c4c52ffu:0x5c4729ffu);
+        upload_one_chunk(instance.chunk);
+        instance.mesh=mesh_rids_.back();instance.instance=instance_rids_.back();
+        mesh_rids_.pop_back();instance_rids_.pop_back();
+        deck_instances_.emplace(id,std::move(instance));
+        if(++uploaded>=2) break;
+    }
+}
+
 void RgTerrainView::free_all_uploaded() {
     godot::RenderingServer* rs = godot::RenderingServer::get_singleton();
     if (rs != nullptr) {
@@ -343,6 +364,10 @@ void RgTerrainView::free_all_uploaded() {
             if (rid.is_valid()) rs->free_rid(rid);
         }
     }
+    if(rs) for(const auto& [id,deck]:deck_instances_) {
+        (void)id;rs->free_rid(deck.instance);rs->free_rid(deck.mesh);
+    }
+    deck_instances_.clear();
     instance_rids_.clear();
     mesh_rids_.clear();
 }
@@ -447,6 +472,7 @@ void RgTerrainView::apply_diff(std::chrono::steady_clock::time_point frame_start
 }
 
 void RgTerrainView::_process(double /*delta*/) {
+    sync_road_decks();
     const auto frame_start = std::chrono::steady_clock::now();
     apply_diff(frame_start);
     upload_ms_this_frame_ =

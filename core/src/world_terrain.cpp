@@ -11,6 +11,7 @@
 
 #include "g2m/layer/layer_id.h"
 #include "g2m/layer/src_osm.h"
+#include "g2m/layer/road_dem_dependencies.h"
 
 #include <algorithm>
 #include <cmath>
@@ -232,6 +233,8 @@ std::unique_ptr<WorldTerrain> WorldTerrain::open(const WorldConfig& config, std:
     }
 
     std::unique_ptr<WorldTerrain> wt(new WorldTerrain());
+    wt->road_profiles_enabled_ = config.physics.road_surfaces.enabled;
+    wt->smoothing_ = config.terrain_smoothing;
 
     // --- source store (read-only: this project never writes into it) ---
     g2m::TileStoreConfig source_cfg;
@@ -266,7 +269,7 @@ std::unique_ptr<WorldTerrain> WorldTerrain::open(const WorldConfig& config, std:
                            "Hessisches Landesamt fuer Bodenmanagement und Geoinformation (HVBG), dl-de/zero-2-0",
                            false}};
     g2m::LocalReleaseParams params =
-        g2m::builtin_local_release_params(config.source_store.scope, wt->derivers_, std::move(sources_attr));
+        g2m::builtin_local_release_params(config.source_store.scope, wt->derivers_, std::move(sources_attr), wt->road_profiles_enabled_, wt->road_profiles_enabled_);
     g2m::Result<g2m::ReleaseManifest> manifest_result = g2m::make_local_release(*wt->source_store_, params);
     if (!manifest_result.ok()) {
         return fail("WorldTerrain::open: make_local_release: " + manifest_result.error().message);
@@ -281,7 +284,7 @@ std::unique_ptr<WorldTerrain> WorldTerrain::open(const WorldConfig& config, std:
     server_cfg.server_id = "racing_game.terrain";
     server_cfg.offline = true; // the only IUpstream is a LocalSourceUpstream (needs_network() == false)
     server_cfg.derived_store = wt->derived_store_.get();
-    server_cfg.derivers = wt->derivers_.ordered();
+    server_cfg.derivers = wt->derivers_.ordered(wt->road_profiles_enabled_, wt->road_profiles_enabled_);
     server_cfg.upstreams = {&*wt->local_upstream_};
     wt->server_ = std::make_unique<g2m::Server>(server_cfg);
 
@@ -316,7 +319,7 @@ std::unique_ptr<WorldTerrain> WorldTerrain::open(const WorldConfig& config, std:
     return wt;
 }
 
-WorldTerrain::FetchDecodeResult WorldTerrain::fetch_and_decode(const g2m::TileKey& key) {
+WorldTerrain::FetchDecodeResult WorldTerrain::fetch_raw_decode(const g2m::TileKey& key) {
     g2m::TileRequest request{manifest_rid_, terrain_height_layer_, key, std::nullopt};
     g2m::Response response = transport_->send(g2m::Request{request});
 
@@ -335,7 +338,108 @@ WorldTerrain::FetchDecodeResult WorldTerrain::fetch_and_decode(const g2m::TileKe
     }
 
     HeightTileFetchResult decoded = decode_height_tile_container(tile_response->container, terrain_height_layer_, key);
+    return FetchDecodeResult{decoded.status,std::move(decoded.tile)};
+}
+
+HeightTileFetchResult WorldTerrain::raw_height_tile_shared(const g2m::TileKey& key) {
+    return fetch_height_tile_cached(raw_cache_mutex_,raw_height_cache_,key,[this](const auto& k){
+        auto result=fetch_raw_decode(k);return HeightTileFetchResult{result.status,std::move(result.tile)};
+    });
+}
+
+WorldTerrain::FetchDecodeResult WorldTerrain::fetch_and_decode(const g2m::TileKey& key) {
+    auto decoded=raw_height_tile_shared(key);
+    if(decoded.tile&&smoothing_.enabled) decoded.tile=smooth_terrain(*decoded.tile,smoothing_,[this](const auto& k){return raw_height_tile_shared(k).tile;});
+    if (decoded.tile && road_profiles_enabled_ && has_road_layer_ && key.level == 0) {
+        auto geometry_key=key;
+        while(geometry_key.level<2) geometry_key=geometry_key.parent();
+        const auto patch=road_surface_patch(geometry_key);
+        if (!patch) return FetchDecodeResult{g2m::Status::Internal,nullptr};
+        auto carved=std::make_shared<g2m::HeightTile>(*decoded.tile);
+        patch->apply(*carved);
+        decoded.tile=std::move(carved);
+    }
     return FetchDecodeResult{decoded.status, std::move(decoded.tile)};
+}
+
+std::shared_ptr<const RoadSurfacePatch> WorldTerrain::road_surface_patch(const g2m::TileKey& key) {
+    // Serialise geometry derivation: expensive complete-way DEM dependencies
+    // should be staged once, never once per racing height/render worker.
+    std::lock_guard<std::mutex> lock(geometry_mutex_);
+    if (auto it=geometry_cache_.find(key);it!=geometry_cache_.end()) return it->second;
+    auto response=transport_->send(g2m::Request{g2m::TileRequest{manifest_rid_,std::string(g2m::kRoadGeomLayer),key,std::nullopt}});
+    auto* tile=std::get_if<g2m::TileResponse>(&response);
+    if(!tile) return nullptr;
+    if(tile->meta.status==g2m::Status::NotFound && tile->meta.message=="outside coverage") {
+        auto empty=std::make_shared<RoadSurfacePatch>(g2m::RoadGeomTile{});
+        geometry_cache_.emplace(key,empty); return empty;
+    }
+    if(tile->meta.status!=g2m::Status::Ok) {
+        std::fprintf(stderr,"RG_ROAD_SURFACE fetch_failed key=%s message=%s\n",g2m::to_string(key).c_str(),tile->meta.message.c_str());
+        return nullptr;
+    }
+    auto container=g2m::parse_container(tile->container);
+    if(!container.ok() || container.value().header.key!=key || container.value().header.layer!=g2m::kRoadGeomLayer) return nullptr;
+    auto body=g2m::decode_body(container.value().body); if(!body.ok()) return nullptr;
+    auto geometry=g2m::decode_road_geom(body.value()); if(!geometry.ok()) return nullptr;
+    // The library's five-metre fit can exhaust its bounded projection solver
+    // on kilometre-long noisy DEM stretches. Retry explicit numerical declines
+    // at twenty metres with the SAME certified grade/curvature constraints.
+    auto builder=g2m::RoadReferenceBuilder::make(geometry->source.graph);
+    auto dependencies=g2m::road_dem_dependencies(geometry->source.graph,key.zone);
+    std::vector<std::shared_ptr<const g2m::HeightTile>> dem_storage;
+    std::vector<const g2m::HeightTile*> dem_tiles;
+    if(builder.ok() && dependencies.ok()) {
+        bool complete=true;
+        for(const auto& dependency:*dependencies) {
+            auto res=transport_->send(g2m::Request{g2m::TileRequest{manifest_rid_,dependency.layer,dependency.key,std::nullopt}});
+            const auto* tr=std::get_if<g2m::TileResponse>(&res);
+            if(!tr || tr->meta.status!=g2m::Status::Ok) {complete=false;break;}
+            auto decoded=decode_height_tile_container(tr->container,dependency.layer,dependency.key);
+            if(!decoded.tile) {complete=false;break;}
+            dem_tiles.push_back(decoded.tile.get()); dem_storage.push_back(std::move(decoded.tile));
+        }
+        if(complete) {
+            auto dem=g2m::RoadDemSampler::make(dem_tiles);
+            if(dem.ok()) complete_road_profiles(*geometry,*dem);
+            if(dem.ok()) for(auto& entry:geometry->entries) {
+                if(entry.profile || !entry.decline) continue;
+                if(entry.decline->message.find("bounded solver")==std::string::npos &&
+                   entry.decline->message.find("endpoint curvature")==std::string::npos) continue;
+                g2m::RoadProfileLimits limits; limits.sample_spacing_m=20;limits.max_iterations=16384;
+                limits.reference.allow_curvature_exceptions=true;
+                auto profile=g2m::build_road_profile(*builder,*dem,key.zone,entry.way_id,entry.stretch,limits);
+                if(profile.ok()) {
+                    std::fprintf(stderr,"RG_ROAD_SURFACE retry_accepted way=%lld refs=%u:%u\n",static_cast<long long>(entry.way_id),entry.stretch.start_ref,entry.stretch.end_ref);
+                    entry.profile=std::move(*profile);entry.decline.reset();
+                }
+            }
+        }
+    }
+    road_geometry_cache_.emplace(key,std::make_shared<g2m::RoadGeomTile>(*geometry));
+    auto patch=std::make_shared<RoadSurfacePatch>(geometry.value());
+    std::fprintf(stderr,"RG_ROAD_SURFACE key=%s accepted=%zu declined=%zu separated=%zu\n",g2m::to_string(key).c_str(),patch->accepted,patch->declined,patch->separated);
+    {
+        std::lock_guard<std::mutex> lock(decks_mutex_);
+        for(const auto& d:patch->decks) published_decks_.try_emplace(std::tuple{d->way_id,static_cast<int>(std::round(d->start_station)),static_cast<int>(std::round(d->end_station))},d);
+    }
+    geometry_cache_.emplace(key,patch); return patch;
+}
+
+std::vector<std::shared_ptr<const RoadDeck>> WorldTerrain::road_decks() {
+    // Publication has its own brief lock: a physics tick must never wait for
+    // seconds of background DEM/profile derivation under geometry_mutex_.
+    std::lock_guard<std::mutex> lock(decks_mutex_);
+    std::vector<std::shared_ptr<const RoadDeck>> result;
+    for(const auto& [id,d]:published_decks_) {(void)id;result.push_back(d);}
+    return result;
+}
+
+std::shared_ptr<const g2m::RoadGeomTile> WorldTerrain::road_geometry_at(double easting,double northing) {
+    auto key=g2m::tile_key_at(frame_->zone(),2,easting,northing);if(!key) return nullptr;
+    road_surface_patch(*key);
+    std::lock_guard<std::mutex> lock(geometry_mutex_);
+    auto it=road_geometry_cache_.find(*key);return it==road_geometry_cache_.end()?nullptr:it->second;
 }
 
 HeightTileFetchResult decode_height_tile_container(std::span<const std::uint8_t> container,

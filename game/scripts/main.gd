@@ -566,6 +566,7 @@ func _attach_world_view() -> void:
 	_overlay.hide_overlay()
 	_visuals.on_session_ready()
 	var ss: Dictionary = _simulation.get_streaming_status()
+	DisplayServer.window_set_title("racing_game | " + _simulation.get_build_info())
 	print("RG_DRIVE ready world=real_world load_s=%.2f startup_ms=%.0f resident_l0=%d prime_ticks=%d chassis_session=(%.2f, %.2f, %.2f) chunks=%d fetch_delay_ms=%d mode=%s build=%s" % [
 		(Time.get_ticks_msec() - _load_started_ms) / 1000.0, float(ss.get("startup_ms", 0.0)),
 		int(ss.get("resident_l0", 0)), int(ss.get("prime_ticks", 0)), chassis.x, chassis.y, chassis.z,
@@ -596,6 +597,7 @@ func _report() -> void:
 		return
 	_last_report_ms = now
 	print(status_line("RG_DRIVE t=%.1f" % (sim_t - ready_sim_time)))
+	_save_drive_location()
 	_report_tick_spikes()
 
 # Tick-spike diagnostics (owner drive 2026-09-27, ~170 ms sim stalls): the
@@ -613,6 +615,21 @@ func _report_tick_spikes() -> void:
 # The shared "numbers" part of the RG_DRIVE lines (drive_smoke.gd's final
 # line too): "falls=%d misses=%d" stays one contiguous token pair, the smoke
 # greps it.
+func _notification(what: int) -> void:
+	if what == NOTIFICATION_WM_CLOSE_REQUEST and world_kind == "real_world" and world_state == "running":
+		_save_drive_location()
+
+func _save_drive_location() -> void:
+	var p := chassis_session_position()
+	var config = JSON.parse_string(FileAccess.get_file_as_string(_world_config_path()))
+	var origin: Dictionary = config.get("session_origin_utm", {}) if config is Dictionary else {}
+	var file := FileAccess.open("user://last_drive.json", FileAccess.WRITE)
+	if file:
+		file.store_string(JSON.stringify({"saved_at": Time.get_datetime_string_from_system(),
+			"session_m": [p.x, p.y, p.z], "world": world_kind,
+			"utm_zone": origin.get("zone"), "utm_m": [float(origin.get("e0", 0))+p.x, float(origin.get("n0", 0))+p.y, p.z],
+			"build": _simulation.get_build_info(), "status": status_line("last_drive")}, "	"))
+
 func status_line(prefix: String) -> String:
 	var ss: Dictionary = _simulation.get_streaming_status()
 	var pt: Dictionary = _simulation.get_vehicle_powertrain(VEHICLE_NAME)
@@ -620,6 +637,8 @@ func status_line(prefix: String) -> String:
 	if _simulation.get_vehicle_names().has(VEHICLE_NAME):
 		surface = _simulation.get_wheel_surface_name(VEHICLE_NAME, 0)
 	var ls: Dictionary = _simulation.get_loop_stats()
+	var p := chassis_session_position()
+	prefix += " session=(%.3f,%.3f,%.3f)" % [p.x, p.y, p.z]
 	return "%s ticks=%d speed_kmh=%.1f gear=%d rpm=%.0f frozen=%s missing=%d inflight=%d freezes=%d frozen_ticks=%d falls=%d misses=%d starved=%d relocations=%d relocate_failures=%d mode=%s surface=%s dropped_ticks=%d step_max_ms=%.1f prefetch_installed=%d prefetch_late_sync=%d prefetch_late_wait=%d prefetch_wait_max_ms=%.3f prefetch_stale=%d" % [
 		prefix, int(_simulation.get_step_count()), _simulation.get_body_speed_mps("chassis") * 3.6,
 		int(pt.get("gear", 0)), float(pt.get("rpm", 0.0)), "yes" if bool(ss.get("frozen", false)) else "no",

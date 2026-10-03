@@ -4,6 +4,7 @@
 // stores and the spawn point a real-terrain session (R2+) is built from.
 // Engine-neutral (no Godot type), same rule as session.h.
 #pragma once
+#include "rg/terrain_smoothing.h"
 
 #include <cstdint>
 #include <optional>
@@ -101,6 +102,7 @@ struct WorldConfig {
     DerivedStore derived_store;
     Spawn spawn;
     Lod lod;
+    TerrainSmoothing terrain_smoothing;
     PhysicsTerrainConfig physics;
     std::string surface_map; // resolved to an absolute path (see below)
     std::string palette;     // resolved to an absolute path (see below)

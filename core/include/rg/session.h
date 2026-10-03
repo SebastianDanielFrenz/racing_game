@@ -30,6 +30,8 @@
 //    g2m::phys::PhysicsTerrainStreamer fills from TerrainModeConfig::fetch,
 //    and every tick attempt passes the clock-freeze gate first (try_step()).
 #pragma once
+#include <set>
+#include <tuple>
 
 #include "g2m/layer/osm_roads.h"
 
@@ -516,6 +518,8 @@ private:
         std::atomic<std::uint64_t> relocate_failures{0};
     };
     StatusAtomics status_;
+    bool sync_road_decks(int budget=0);
+    std::set<std::tuple<std::int64_t,int,int>> installed_decks_;
     bool in_freeze_ = false; // stepping thread only
 
     ps_godot::TripleBuffer<FrameSnapshot> snapshot_buffer_;

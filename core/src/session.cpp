@@ -196,6 +196,7 @@ Session::Session(const SessionConfig& config)
 Session::~Session() { stop(); }
 
 void Session::build_world_contents(const SessionConfig& config) {
+    installed_decks_.clear();
     surface_table_ = std::make_shared<ps::io::SurfaceTable>(config.surface_table_path);
     world_->set_surface_table(surface_table_);
 
@@ -312,6 +313,8 @@ ps::Pose Session::setup_terrain(const TerrainModeConfig& tm) {
         std::this_thread::sleep_for(std::chrono::milliseconds(1));
     }
     status_.startup_ms.store(ms_since(t0), std::memory_order_relaxed);
+
+    sync_road_decks();
 
     // 2. Prime: step K ticks with no vehicle so TileManager fills its whole
     // square (at most max_tile_fills_per_tick per tick) before anything can
@@ -592,7 +595,7 @@ bool Session::step_once(bool from_loop) {
     take_relocate_request();
     spike.take_relocate_ms = lap();
     if (terrain_) {
-        const bool ready = gate_check();
+        const bool ready = gate_check() && sync_road_decks(1);
         spike.gate_update_ms = last_gate_update_ms_;
         spike.gate_interest_ms = last_gate_interest_ms_;
         lap();
@@ -605,7 +608,7 @@ bool Session::step_once(bool from_loop) {
                     status_.freeze_count.fetch_add(1, std::memory_order_relaxed);
                 }
             }
-            return finish(TickSpikeKind::Frozen, false); // frozen: the World is untouched
+            return finish(TickSpikeKind::Frozen, false); // frozen: vehicle states and simulation time do not advance
         }
         status_.frozen.store(false, std::memory_order_relaxed);
         in_freeze_ = false;
@@ -633,6 +636,36 @@ bool Session::step_once(bool from_loop) {
     post_step(from_loop);
     spike.post_ms = lap();
     return finish(TickSpikeKind::Stepped, true);
+}
+
+bool Session::sync_road_decks(int budget) {
+    if(!config_.terrain||!config_.terrain->world_terrain) return true;
+    auto& terrain=*config_.terrain->world_terrain;
+    const auto focus=relocation_?ps::Vec3{relocation_->x,relocation_->y,0}:have_vehicle_?world_->get_pose(chassis_body_).position:ps::Vec3{config_.terrain->spawn_x,config_.terrain->spawn_y,0};
+    const double e=focus.x+terrain.frame().e0_m(),n=focus.y+terrain.frame().n0_m();
+    const double radius=config_.terrain->physics.radius_m+255;
+    int installed=0;
+    for(const auto& deck:terrain.road_decks()) {
+        const auto id=std::tuple{deck->way_id,static_cast<int>(std::round(deck->start_station)),static_cast<int>(std::round(deck->end_station))};
+        if(installed_decks_.contains(id)) continue;
+        const double dx=std::max({deck->min_easting-e,e-deck->max_easting,0.0});
+        const double dy=std::max({deck->min_northing-n,n-deck->max_northing,0.0});
+        if(dx*dx+dy*dy>radius*radius) continue;
+        // Shape construction happens while the simulation gate is frozen,
+        // one nearby structure per attempt. It cannot become a dropped-tick
+        // burst when a new region or a relocation publishes many decks.
+        if(budget>0&&installed>=budget) return false;
+        installed_decks_.insert(id);++installed;
+        const auto& mesh=deck->mesh;ps::MeshShape shape;
+        for(std::size_t i=0;i<mesh.positions.size();i+=3) shape.vertices.push_back({mesh.positions[i],mesh.positions[i+1],mesh.positions[i+2]});
+        shape.indices.assign(mesh.indices.begin(),mesh.indices.end());
+        const auto surface=surface_table_->id_for(deck->land_class==g2m::LandClass::PavedRoad?config_.terrain->physics.road_surfaces.paved:config_.terrain->physics.road_surfaces.unpaved);
+        shape.triangle_surface_ids.assign(shape.indices.size()/3,surface);
+        ps::BodyDesc body;body.motion=ps::BodyMotionType::Static;body.shape=std::move(shape);
+        body.pose.position={mesh.origin[0]-terrain.frame().e0_m(),mesh.origin[1]-terrain.frame().n0_m(),0};
+        world_->create_body(body);
+    }
+    return budget==0 || installed==0;
 }
 
 std::vector<Session::TickSpike> Session::drain_tick_spikes(std::uint64_t* overflow) {

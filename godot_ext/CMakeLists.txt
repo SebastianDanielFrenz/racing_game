@@ -32,7 +32,15 @@ endif()
 # line instead of only being discoverable by inspecting the build dir.
 # $<CONFIG> works for single-config generators too (Ninja here): it resolves
 # to CMAKE_BUILD_TYPE at generate time.
-target_compile_definitions(rg_godot PRIVATE RG_BUILD_CONFIG="$<CONFIG>")
+execute_process(COMMAND git -C "${CMAKE_SOURCE_DIR}" rev-parse --short=10 HEAD OUTPUT_VARIABLE RG_SOURCE_REV OUTPUT_STRIP_TRAILING_WHITESPACE)
+execute_process(COMMAND git -C "${CMAKE_SOURCE_DIR}" rev-parse --git-path HEAD OUTPUT_VARIABLE RG_GIT_HEAD OUTPUT_STRIP_TRAILING_WHITESPACE)
+execute_process(COMMAND git -C "${CMAKE_SOURCE_DIR}" symbolic-ref -q HEAD OUTPUT_VARIABLE RG_GIT_REF OUTPUT_STRIP_TRAILING_WHITESPACE)
+if(RG_GIT_REF)
+  execute_process(COMMAND git -C "${CMAKE_SOURCE_DIR}" rev-parse --git-path "${RG_GIT_REF}" OUTPUT_VARIABLE RG_GIT_REF_PATH OUTPUT_STRIP_TRAILING_WHITESPACE)
+  set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${CMAKE_SOURCE_DIR}/${RG_GIT_REF_PATH}")
+endif()
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${CMAKE_SOURCE_DIR}/${RG_GIT_HEAD}")
+target_compile_definitions(rg_godot PRIVATE RG_BUILD_CONFIG="$<CONFIG>" RG_SOURCE_REV="${RG_SOURCE_REV}")
 
 # NOT linked against rg_warnings - same reasoning as physics_sim's own
 # adapters/godot/CMakeLists.txt (read and confirmed by building): godot-cpp

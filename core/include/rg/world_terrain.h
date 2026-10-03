@@ -11,6 +11,7 @@
 #pragma once
 
 #include "rg/road_classes.h"
+#include "rg/road_surface.h"
 #include "rg/terrain_render.h"
 #include "rg/world_config.h"
 
@@ -273,6 +274,8 @@ public:
     // existing g2m types - R4 adapts it to g2m::phys::IHeightTileFetch once
     // that interface exists in the pinned geo2map_engine submodule.
     HeightTileFetchResult height_tile_shared(const g2m::TileKey& key);
+    std::vector<std::shared_ptr<const RoadDeck>> road_decks();
+    std::shared_ptr<const g2m::RoadGeomTile> road_geometry_at(double easting, double northing);
 
     // Builds every LOD-selected chunk around (cam_x, cam_y) (session-local
     // metres) using this WorldTerrain's own store/server and
@@ -362,6 +365,17 @@ private:
         std::shared_ptr<const g2m::HeightTile> tile;
     };
     FetchDecodeResult fetch_and_decode(const g2m::TileKey& key);
+    FetchDecodeResult fetch_raw_decode(const g2m::TileKey& key);
+    HeightTileFetchResult raw_height_tile_shared(const g2m::TileKey& key);
+    TerrainSmoothing smoothing_;
+    std::mutex raw_cache_mutex_;
+    std::map<g2m::TileKey,std::shared_ptr<const g2m::HeightTile>> raw_height_cache_;
+    std::shared_ptr<const RoadSurfacePatch> road_surface_patch(const g2m::TileKey& key);
+    std::mutex decks_mutex_;
+    std::map<std::tuple<std::int64_t,int,int>,std::shared_ptr<const RoadDeck>> published_decks_;
+    std::mutex geometry_mutex_;
+    std::map<g2m::TileKey,std::shared_ptr<const g2m::RoadGeomTile>> road_geometry_cache_;
+    std::map<g2m::TileKey, std::shared_ptr<const RoadSurfacePatch>> geometry_cache_;
 
     // Declaration order is the destruction-order contract this class relies
     // on (members destruct in REVERSE declaration order): local_upstream_
@@ -390,6 +404,7 @@ private:
     std::atomic<std::uint64_t> osm_ok_{0};
     std::atomic<std::uint64_t> osm_fail_{0};
     std::atomic<std::uint64_t> osm_cache_hits_{0};
+    bool road_profiles_enabled_ = true;
     bool has_road_layer_ = false; // set once, at open(), from the manifest
     RoadSurfaceMap road_surfaces_; // from config.physics.road_surfaces (G2.5a-grip R-b)
 };

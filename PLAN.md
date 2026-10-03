@@ -696,3 +696,16 @@ The default car is unchanged by name and now loads these new library data.
 Gauge metadata accepts SimulatedEngineDesc as well as torque-map engines.
 Earlier notes about the committed hypercar lacking a live voice are superseded.
 G3-C road work is unchanged.
+
+
+2026-10-03 B8 integration: level-0 terrain now shares road-profile surfacing
+between physics and rendering. Separate bridge slabs and lower tunnel floors
+have native mesh collision; lower-layer OSM tunnel crossings also supply
+highway roofs when the upper ways lack bridge tags. All seven owner-reported
+crossings have explicit structure-ID and collision checks. Game-side bounded
+reconstruction handles selected source declines and split bridge ways; it
+does not complete G3-C's original source-class acceptance. General terrain
+smoothing is configurable (enabled/radius_m/strength/passes), halo-correct,
+and preserves NoData. The complete B8 height comparison and three-depression
+hypercar contact drive pass. See docs/road_surfaces.md for settings, policies
+and remaining G3-D/E and G3-F/R3 work.

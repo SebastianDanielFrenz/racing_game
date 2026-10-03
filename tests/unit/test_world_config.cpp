@@ -974,3 +974,15 @@ TEST_CASE("World config validates terrain prefetch margin and ticket cap", "[wor
     auto missing_cap = TempFile::from_json(j);
     CHECK_FALSE(rg::load_world_config(missing_cap.path(), &err));
 }
+
+TEST_CASE("load_world_config: configurable terrain smoothing and bounds", "[world_config][terrain_smoothing]") {
+    auto config=valid_world_config_json();
+    config["terrain_smoothing"]={{"enabled",true},{"radius_m",3.5},{"strength",.6},{"passes",2}};
+    auto file=TempFile::from_json(config);std::string error;auto loaded=rg::load_world_config(file.path(),&error);
+    REQUIRE(loaded);CHECK(loaded->terrain_smoothing.enabled);CHECK(loaded->terrain_smoothing.radius_m==3.5);
+    CHECK(loaded->terrain_smoothing.strength==.6);CHECK(loaded->terrain_smoothing.passes==2);
+    for(auto invalid:{json{{"radius_m",-1}},json{{"radius_m",9}},json{{"strength",1.1}},json{{"passes",0}},json{{"passes",2.5}},json{{"passes",5}},json{{"enabled","yes"}}}) {
+        config["terrain_smoothing"]=invalid;auto bad=TempFile::from_json(config);
+        CHECK_FALSE(rg::load_world_config(bad.path(),&error));CHECK_FALSE(error.empty());
+    }
+}

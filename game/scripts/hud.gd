@@ -104,6 +104,7 @@ func _process(_delta: float) -> void:
 	var lines := PackedStringArray()
 	lines.append("racing_game R9 - mode: %s   world: %s (%s)   car: %s" % [
 		mode.get("mode", "?"), mode.get("world_kind", "?"), mode.get("world_phase", "?"), mode.get("vehicle_control", "?")])
+	lines.append(_simulation.get_build_info())
 	lines.append("sim tick rate: target %.1f Hz  measured %.2f Hz" % [_simulation.get_tick_rate_hz(), _last_measured_hz])
 	lines.append("godot fps: %.1f    adapter main-thread: avg %.3f ms  max %.3f ms" % [
 		Engine.get_frames_per_second(), _last_avg_frame_time_us / 1000.0, _last_max_frame_time_us / 1000.0])

@@ -420,6 +420,8 @@ godot::String RgSimulation::get_build_info() const {
     info += optimized ? "yes" : "no";
     info += " build_type=";
     info += RG_BUILD_CONFIG;
+    info += " source_revision=";
+    info += RG_SOURCE_REV;
     return String(info.c_str());
 }
 

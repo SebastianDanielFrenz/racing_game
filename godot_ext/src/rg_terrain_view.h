@@ -40,6 +40,7 @@
 // (only ever with the whole queue uploaded and no new diff taken until the
 // last removal), index_of_ maps key -> index.
 #pragma once
+#include <tuple>
 
 #include "rg/terrain_render.h"
 #include "rg/terrain_view_streamer.h"
@@ -202,6 +203,9 @@ protected:
 
 private:
     void free_all_uploaded();
+    void sync_road_decks();
+    struct DeckInstance { rg::RenderChunk chunk; godot::RID mesh, instance; };
+    std::map<std::tuple<std::int64_t,int,int>,DeckInstance> deck_instances_;
     void reset_chunks();
     // Common prologue for initialize()/initialize_shared()/release(): cancels
     // + joins the streamer (its TerrainViewSource points into terrain_),
