@@ -763,6 +763,19 @@ float RgSimulation::get_wheel_radius(const String& vehicle_name, std::int64_t wh
     return w ? static_cast<float>(w->wheel_radius) : 0.0f;
 }
 
+void RgSimulation::configure_traffic(double density,double radius,double minimum,double grip) {
+ if(session_)session_->configure_traffic({density,radius,minimum,grip,24});
+}
+void RgSimulation::set_visible_traffic(const godot::Array& ids) {
+ if(!session_)return;std::vector<std::uint64_t> visible;for(std::int64_t i=0;i<ids.size();++i)visible.push_back(static_cast<std::int64_t>(ids[i]));session_->set_visible_traffic(std::move(visible));
+}
+godot::Dictionary RgSimulation::get_traffic_state() const {
+ godot::Dictionary d;if(!session_)return d;const auto& traffic=frame_snapshot().traffic;godot::Array actors;
+ for(const auto& a:traffic.actors){godot::Dictionary item;item["id"]=static_cast<std::int64_t>(a.id);item["truck"]=a.truck;item["speed_kph"]=a.speed_m_s*3.6;
+ item["transform"]=iso_to_godot_transform(a.pose,origin_rebase_?origin_rebase_->origin():ps::Vec3{});
+ item["destination_id"]=a.destination.id;item["parking"]=a.destination.parking;actors.push_back(item);}
+ d["actors"]=actors;d["loading"]=traffic.loading;d["message"]=String(traffic.message.c_str());return d;
+}
 void RgSimulation::request_npc_truck(bool enabled,double speed_kph) { if(session_)session_->request_npc_truck(enabled,speed_kph); }
 godot::Dictionary RgSimulation::get_npc_truck_state() const {
  godot::Dictionary d;if(!session_)return d;const auto& t=frame_snapshot().truck;
@@ -815,6 +828,9 @@ void RgSimulation::_bind_methods() {
     godot::ClassDB::bind_method(D_METHOD("get_body_transform", "body_name"), &RgSimulation::get_body_transform);
     godot::ClassDB::bind_method(D_METHOD("get_camera_ground_height", "position"), &RgSimulation::get_camera_ground_height);
     godot::ClassDB::bind_method(D_METHOD("get_aero_state"), &RgSimulation::get_aero_state);
+    godot::ClassDB::bind_method(D_METHOD("configure_traffic","density","radius","minimum","grip"), &RgSimulation::configure_traffic);
+    godot::ClassDB::bind_method(D_METHOD("set_visible_traffic","ids"), &RgSimulation::set_visible_traffic);
+    godot::ClassDB::bind_method(D_METHOD("get_traffic_state"), &RgSimulation::get_traffic_state);
     godot::ClassDB::bind_method(D_METHOD("request_npc_truck","enabled","speed_kph"), &RgSimulation::request_npc_truck);
     godot::ClassDB::bind_method(D_METHOD("get_npc_truck_state"), &RgSimulation::get_npc_truck_state);
     godot::ClassDB::bind_method(D_METHOD("get_steering_kinematics"), &RgSimulation::get_steering_kinematics);

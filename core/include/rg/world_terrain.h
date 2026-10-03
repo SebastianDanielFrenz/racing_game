@@ -275,6 +275,7 @@ public:
     // decoupling": this is racing_game's own result type, built from
     // existing g2m types - R4 adapts it to g2m::phys::IHeightTileFetch once
     // that interface exists in the pinned geo2map_engine submodule.
+    std::shared_ptr<const g2m::OsmTile> source_osm_tile(const g2m::TileKey& key); // background consumers only
     RoadVisualMesh road_visual_tile(const g2m::TileKey& key,double lift_m);
     std::vector<Building> buildings_tile(const g2m::TileKey& key,double min_height,double fallback_height,double storey_height);
     HeightTileFetchResult height_tile_shared(const g2m::TileKey& key);

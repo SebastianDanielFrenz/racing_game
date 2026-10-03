@@ -18,9 +18,9 @@ TruckLane truck_lane(const g2m::RoadGraphWay& w,double width,int lanes,int dir) 
  const bool single=forward||reverse;
  int n=lanes;
  if(n<=0||n>8||width/n<2.7)n=single?std::max(1,static_cast<int>(width/3.25)):(width>=5.8?2:1);
- if(n==1)return {true,0};
  const auto direction_tag=tag(w,dir>0?"lanes:forward":"lanes:backward");
  if(direction_tag=="0")return {};
+ if(n==1)return {true,0};
  const int tagged=count(direction_tag);
  const int directional=single?n:(tagged>0&&tagged<n?tagged:std::max(1,n/2));
  double offset=-width*.5+width/(2*n);

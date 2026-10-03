@@ -1065,3 +1065,10 @@ Hypercar engine physical calibration: docs/hypercar_engine.md and external/physi
 
 NPC truck: core/npc_truck plus Session stepping-thread collider/wake; background profile-route worker; game/scripts/npc_truck.gd procedural visuals. Controls and limits: docs/npc_truck.md.
 
+
+NPC traffic: core/include/rg/npc_traffic.h and core/src/npc_traffic.cpp own public
+road/speed/destination policies and background graph planning. Session owns the
+physics-thread actor lifecycle, collision bodies and combined wakes. Adapter
+get_traffic_state publishes frame-latched actors; game/scripts/npc_traffic.gd owns
+presentation and F7 configuration. WorldTerrain::source_osm_tile is blocking,
+background-only source access. Specification/current scope: docs/npc_traffic.md.

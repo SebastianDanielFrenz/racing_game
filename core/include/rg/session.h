@@ -38,6 +38,7 @@
 #include "rg/drive_script.h"
 #include "rg/environment.h"
 #include "rg/npc_truck.h"
+#include "rg/npc_traffic.h"
 #include <thread>
 #include "rg/fixed_rate_loop.h"
 #include "rg/player_mode.h"
@@ -186,6 +187,7 @@ struct FrameSnapshot {
     ps::drivetrain::PowertrainSnapshot powertrain{};
     AeroSnapshot aero;
     TruckSnapshot truck;
+    TrafficSnapshot traffic;
     g2m::RoadSpeedMatch road_speed_limit{};
 };
 
@@ -375,6 +377,8 @@ public:
     // use it; nothing calls it on its own, so hashes are unaffected.
     void request_relocate(double x, double y, double yaw_rad);
     void request_reset_to_spawn();
+    void configure_traffic(TrafficConfig);
+    void set_visible_traffic(std::vector<std::uint64_t> ids);
     void request_npc_truck(bool enabled,double speed_kph); // the config's spawn (flat mode: the origin, yaw 0)
     static constexpr double kRelocateParkZ = 4000.0;
 
@@ -496,6 +500,20 @@ private:
     void post_step(bool from_loop);
     [[nodiscard]] FrameSnapshot capture_frame_snapshot() const;
 
+    void update_traffic(bool clear=false);
+    struct TrafficActor {std::uint64_t id;ps::BodyId body;TrafficTrip trip;double station=0,speed=0,unseen=0;};
+    std::vector<TrafficActor> traffic_actors_;
+    std::thread traffic_worker_;
+    std::atomic<bool> traffic_cancel_{false},traffic_done_{false};
+    std::mutex traffic_mutex_;
+    TrafficConfig traffic_requested_,traffic_config_;
+    bool traffic_config_changed_=false,traffic_loading_=false;
+    std::vector<std::uint64_t> traffic_visible_;
+    TrafficPlan traffic_pending_;
+    double traffic_scan_time_=0;
+    std::uint64_t traffic_next_id_=1,traffic_seed_=91731;
+    int traffic_population_target_=0;
+    std::string traffic_message_;
     void update_npc_truck();
     std::thread truck_worker_;
     std::atomic<bool> truck_cancel_{false},truck_done_{false};

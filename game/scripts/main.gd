@@ -353,6 +353,9 @@ func _build_scene(user_args: PackedStringArray) -> void:
 	truck_visual.simulation = _simulation
 	add_child(truck_visual)
 	add_child(_input_map)
+	var traffic := preload("res://scripts/npc_traffic.gd").new()
+	traffic.simulation = _simulation
+	add_child(traffic)
 
 	# --- placeholder/real body meshes (VEHICLE_NAME doubles as the
 	# physics_sim data/models/<id>/<id>.glb id - see body_visuals.gd/
@@ -713,7 +716,7 @@ func _apply_mode_state() -> Dictionary:
 	if _vr_active:
 		rig_name = "xr_free" if rig_name == "free" else "xr_cockpit"
 	_director.set_active(rig_name)
-	_director.camera_input_live = bool(ms.get("camera_inputs_live", true)) and not (_seat_ui != null and _seat_ui.is_open())
+	_director.camera_input_live = bool(ms.get("camera_inputs_live", true)) and not (get_tree().get_nodes_in_group("seat_adjustment_open").size() > 0)
 	return ms
 
 func _forward_driving(live: bool, delta: float) -> void:
@@ -724,7 +727,7 @@ func _forward_driving(live: bool, delta: float) -> void:
 	if not live or not bool(_simulation.is_running()):
 		_steering.reset()
 		return
-	if _seat_ui != null and _seat_ui.is_open():
+	if get_tree().get_nodes_in_group("seat_adjustment_open").size() > 0:
 		_simulation.set_control("steer", 0.0)
 		_simulation.set_control("throttle", 0.0)
 		_simulation.set_control("brake", 1.0)
@@ -838,6 +841,7 @@ func _log_owner_mark() -> void:
 		mark["utm_m"] = [float(origin.get("e0",0))+point.x,float(origin.get("n0",0))+point.y,point.z]
 	mark["aero"] = _simulation.get_aero_state()
 	mark["npc_truck"] = _simulation.get_npc_truck_state()
+	mark["traffic"] = _simulation.get_traffic_state()
 	var encoded := JSON.stringify(mark)
 	print("RG_OWNER_MARK " + encoded)
 	var mark_path := "user://drive_marks.jsonl"

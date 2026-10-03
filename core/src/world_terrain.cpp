@@ -532,6 +532,14 @@ RoadVisualMesh WorldTerrain::road_visual_tile(const g2m::TileKey& key,double lif
     return build_road_visual(*geometry,key,[this,key](double e,double n){return sample_l0_height([this](const auto& k){return height_tile_shared(k).tile.get();},key.zone,0,0,e,n);},lift);
 }
 
+std::shared_ptr<const g2m::OsmTile> WorldTerrain::source_osm_tile(const g2m::TileKey& key) {
+    auto response=transport_->send(g2m::Request{g2m::TileRequest{manifest_rid_,std::string(g2m::kSrcOsmLayer),key,std::nullopt}});
+    const auto* tile=std::get_if<g2m::TileResponse>(&response);if(!tile||tile->meta.status!=g2m::Status::Ok)return {};
+    auto container=g2m::parse_container(tile->container);if(!container||container->header.key!=key||container->header.layer!=g2m::kSrcOsmLayer)return {};
+    auto body=g2m::decode_body(container->body);if(!body)return {};auto osm=g2m::decode_src_osm(*body);if(!osm)return {};
+    return std::make_shared<const g2m::OsmTile>(std::move(*osm));
+}
+
 std::vector<Building> WorldTerrain::buildings_tile(const g2m::TileKey& key,double min_height,double fallback,double storey) {
     auto response=transport_->send(g2m::Request{g2m::TileRequest{manifest_rid_,std::string(g2m::kSrcOsmLayer),key,std::nullopt}});
     const auto* tile=std::get_if<g2m::TileResponse>(&response);if(!tile||tile->meta.status!=g2m::Status::Ok)return {};

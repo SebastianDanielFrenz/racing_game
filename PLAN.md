@@ -778,3 +778,14 @@ from S: carries live boosted engine torque into auto-clutch rolling reengagement
 Native matching reproduction re-locks within 2 seconds; 14,544 focused assertions
 passed upstream. Game DLL rebuilt; exact owner road replay remains owner acceptance.
 Evidence: external/physics_sim/HYPER_CLUTCH_FLARE.md.
+
+2026-10-04 NPC traffic first implementation: automatic real-world population of
+lightweight cars/trucks, background connected-profile routing to random reachable
+residential-building/public-parking destinations, native collision and drafting
+wakes, rightmost usable lanes, public-access/one-way/speed rules, obstruction
+checks and spacing. F7 exposes live saved density/radius/exclusion/grip settings.
+Arrival currently stops at the nearest ordinary road point then despawns. Out-of-view
+retirement discards identity permanently. Defaults: 4/lane-km, 600m radius, 100m
+exclusion, 24 vehicles. See docs/npc_traffic.md for current limits and next stages:
+shared weather/physical surface grip, junction conflict handling, precise lane
+turn rules, parking maneuvers and car-type target distributions.

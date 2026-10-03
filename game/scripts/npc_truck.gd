@@ -1,5 +1,6 @@
 extends Node3D
 var simulation: Node
+var managed_externally := false
 var wheels: Array[Node3D] = []
 var spin := 0.0
 var model := Node3D.new()
@@ -47,7 +48,7 @@ func _ready() -> void:
   box(Vector3(x, -0.8, 6.52), Vector3(0.35, 0.2, 0.035), Color(1, 0.95, 0.75))
 
 func _process(delta: float) -> void:
- if simulation == null:
+ if managed_externally or simulation == null:
   return
  var state: Dictionary = simulation.get_npc_truck_state()
  visible = bool(state.get("active", false))

@@ -69,3 +69,65 @@ this list. Missing access tags on an otherwise eligible class are not by
 Numeric population defaults, speed distribution and public-access resolution
 policy remain implementation choices. Record their selected values alongside
 configuration when implemented. General traffic does not yet exist in the game.
+## First traffic implementation (2026-10-04)
+
+In the real world, traffic is enabled by default at 4 vehicles per lane-km,
+with a 600 m population radius, a 100 m horizontal player exclusion distance,
+and a hard cap of 24 active vehicles. Flat mode has no OSM destinations and
+therefore does not invent traffic trips. F7 opens live density, radius, minimum
+spawn-distance and grip controls, saved in user://traffic.cfg. Zero density
+retires vehicles once they leave view; the panel holds the player's brake.
+
+Destination selection is random among locally reachable buildings whose
+representative point lies inside tagged residential landuse, or public
+amenity=parking nodes/areas. Source OSM tags are read directly, independent of
+building rendering. Complete closed multipolygon outer members are supported;
+fragmented members are deferred. Residential inner rings are excluded.
+No arbitrary road endpoint is substituted when destination data is absent.
+
+A background planner scans the nearby source/derived tiles, builds directed
+accepted-profile edges, and finds connected-node paths. It honors the highway
+whitelist, public motor-vehicle access, one-way direction and node-via turn
+restrictions. Unresolved conditional access is excluded; unsupported via-way
+restrictions conservatively prevent changing from the affected way. There is
+no connection merely because coordinates cross. Rightmost usable lanes share
+the drafting truck's width/one-way/through-lane fallback. Planned starts and
+live native footprint-height sweeps reject occupied spawns.
+
+The destination attaches within 40 m to an ordinary public road, excluding
+motorway/trunk/link and tagged bridge/tunnel stretches. On arrival the NPC
+brakes to a stop at that road point and despawns. It does not drive through a
+building or turn into a parking bay yet. Cars receive a persistent random
+80-250 km/h fallback target; trucks use 80 km/h where no numeric limit exists.
+Numeric speed limits are targets subject to authored capability caps (250 km/h
+car, 120 km/h truck), cornering and traffic. Lane limits use their conservative
+minimum until per-lane resolution is complete. Unresolved limits use a cautious
+fallback rather than unlimited speed.
+
+Moving cars/trucks have native kinematic collision bodies and real aerodynamic
+wake sources, combined with the manually placed T truck. Their engines,
+suspension and tyres are not individually simulated. Generic car/truck meshes
+follow the same frame snapshot and floating-origin conversion as the player.
+They slow for the player, other NPCs and ray-detected obstructions. This remains
+a first traffic controller, not finished junction right-of-way/signal AI.
+
+Vehicles outside radius + 50 m retire after three seconds outside the camera
+frustum; density reduction uses the same visibility guard. Arrival despawns
+immediately. IDs are monotonically assigned during a session; retired vehicles
+are deleted and never restored. Replacement traffic consists of new random
+trips. World changes/reset clear the population. This is a single-player
+population manager; camera-frustum checks conservatively retain occluded actors
+rather than treating renderer occlusion as authoritative.
+
+Corner targets use a conservative authored lateral-acceleration budget,
+curvature and an initial gravel/unpaved penalty, with upstream braking. The live
+grip factor further scales speed targets; it is an explicit provisional weather
+control, not automatic rain/snow/ice coupling or a full physical tyre-grip model.
+That shared weather/surface integration, stronger intersection conflict handling,
+lane-specific turn selection, parking maneuvers and car-type speed distributions
+remain the next stages of the owner specification.
+
+Focused policy/destination tests and the existing drafting-truck integration
+checks pass. A hidden real-cache route check validates reachable destinations,
+arrival stopping points and spawn exclusion. Driving acceptance remains with
+the owner.
