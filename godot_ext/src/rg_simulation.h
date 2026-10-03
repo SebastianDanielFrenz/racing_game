@@ -181,6 +181,7 @@ public:
     // 240 Hz-vs-render-rate judder fix is deferred (see repo CLAUDE.md's
     // deviations list). ---
     [[nodiscard]] godot::Transform3D get_body_transform(const godot::String& body_name) const;
+    [[nodiscard]] godot::Dictionary get_steering_kinematics() const;
     [[nodiscard]] float get_body_speed_mps(const godot::String& body_name) const;
 
     // --- Named control channels (PLAN.md P2) ---

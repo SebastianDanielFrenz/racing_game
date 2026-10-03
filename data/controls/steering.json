@@ -1,0 +1,15 @@
+{
+  "enabled": true,
+  "input_profile": "auto",
+  "normal_min_fraction": 0.14,
+  "normal_lateral_accel_mps2": 18.0,
+  "input_exponent": 1.8,
+  "keyboard_rise_per_s": 4.0,
+  "keyboard_return_per_s": 8.0,
+  "recovery_keyboard_per_s": 18.0,
+  "slip_start_deg": 3.0,
+  "slip_full_deg": 20.0,
+  "yaw_anticipation_s": 0.15,
+  "recovery_rise_per_s": 12.0,
+  "recovery_fall_per_s": 4.0
+}

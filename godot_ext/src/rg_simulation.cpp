@@ -460,6 +460,21 @@ godot::Transform3D RgSimulation::get_body_transform(const String& body_name) con
     return iso_to_godot_transform(pose, origin_rebase_ ? origin_rebase_->origin() : ps::Vec3{});
 }
 
+godot::Dictionary RgSimulation::get_steering_kinematics() const {
+    godot::Dictionary result;
+    if (!session_) return result;
+    const auto& snapshot=session_->snapshot();
+    const auto transform=iso_to_godot_transform(snapshot.chassis_pose,ps::Vec3{});
+    const auto& v=snapshot.chassis_motion.linear;
+    const godot::Vector3 velocity(-v.y,v.z,-v.x);
+    result["forward_mps"]=velocity.dot(transform.basis.get_column(0));
+    result["left_mps"]=velocity.dot(transform.basis.get_column(1));
+    result["yaw_rad_s"]=snapshot.chassis_motion.angular.z;
+    result["upright"]=transform.basis.get_column(2).dot(godot::Vector3(0,1,0));
+    result["relocations"]=static_cast<std::int64_t>(session_->streaming_status().relocations);
+    return result;
+}
+
 float RgSimulation::get_body_speed_mps(const String& body_name) const {
     if (!session_ || to_std_string(body_name) != "chassis") return 0.0f;
     return static_cast<float>(session_->snapshot().chassis_motion.linear.length());
@@ -740,6 +755,7 @@ void RgSimulation::_bind_methods() {
     godot::ClassDB::bind_method(D_METHOD("consume_adapter_frame_time_us"), &RgSimulation::consume_adapter_frame_time_us);
 
     godot::ClassDB::bind_method(D_METHOD("get_body_transform", "body_name"), &RgSimulation::get_body_transform);
+    godot::ClassDB::bind_method(D_METHOD("get_steering_kinematics"), &RgSimulation::get_steering_kinematics);
     godot::ClassDB::bind_method(D_METHOD("get_body_speed_mps", "body_name"), &RgSimulation::get_body_speed_mps);
 
     godot::ClassDB::bind_method(D_METHOD("set_control", "channel", "value"), &RgSimulation::set_control);

@@ -58,6 +58,7 @@ var fetch_delay_ms: int = 0
 var scripted_controls: Dictionary = {}
 var ready_sim_time: float = -1.0 # sim time when the current world became "running"
 
+var _steering = preload("res://scripts/adaptive_steering.gd").new()
 var _simulation: Node
 var _input_map: Node
 var _director: Node
@@ -484,6 +485,7 @@ func switch_world() -> void:
 var _vehicle_audio: Node3D
 
 func _load_world(kind: String) -> void:
+	_steering.reset()
 	if _vehicle_audio != null:
 		_vehicle_audio.shutdown()
 		_vehicle_audio.queue_free()
@@ -499,6 +501,7 @@ func _load_world(kind: String) -> void:
 	_hud.reset_tick_window()
 	_visuals.show_ground = kind == "flat"
 	var vehicle_json: String = _data_path("vehicles/%s.json" % VEHICLE_NAME)
+	_steering.configure_vehicle(vehicle_json)
 	var surface_table_json: String = _data_path("surfaces/surfaces.json")
 	if kind == "flat":
 		if not _simulation.initialize(vehicle_json, surface_table_json):
@@ -661,18 +664,19 @@ func _apply_mode_state() -> Dictionary:
 	_director.camera_input_live = bool(ms.get("camera_inputs_live", true))
 	return ms
 
-func _forward_driving(live: bool) -> void:
+func _forward_driving(live: bool, delta: float) -> void:
 	# Edge counts are consumed every frame, so presses made while the car is
 	# unattended never arrive later as a burst of shifts.
 	var up: int = _input_map.consume_shift_up_count()
 	var down: int = _input_map.consume_shift_down_count()
 	if not live or not bool(_simulation.is_running()):
+		_steering.reset()
 		return
 	if not scripted_controls.is_empty():
 		for channel in scripted_controls:
 			_simulation.set_control(channel, float(scripted_controls[channel]))
 		return
-	_simulation.set_control("steer", _input_map.get_steer())
+	_simulation.set_control("steer", _steering.translate(_input_map.get_steer(), _input_map.steering_uses_keyboard(), _input_map.steering_uses_wheel(), _simulation.get_steering_kinematics(), delta))
 	_simulation.set_control("throttle", _input_map.get_throttle())
 	_simulation.set_control("brake", _input_map.get_brake())
 	_simulation.set_control("handbrake", _input_map.get_handbrake())
@@ -731,7 +735,7 @@ func _process(delta: float) -> void:
 		_vehicle_audio.vehicle_name = VEHICLE_NAME
 		add_child(_vehicle_audio)
 	var ms := _apply_mode_state()
-	_forward_driving(bool(ms.get("driving_inputs_live", false)))
+	_forward_driving(bool(ms.get("driving_inputs_live", false)), delta)
 
 var _vr_active := false
 

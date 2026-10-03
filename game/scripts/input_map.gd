@@ -40,6 +40,8 @@ var _switch_world_count: int = 0
 var _reset_car_count: int = 0
 var _flip_upright_count: int = 0
 
+var _steer_keyboard: bool = false
+var _steer_wheel: bool = false
 var _steer: float = 0.0
 var _throttle: float = 0.0
 var _brake: float = 0.0
@@ -132,7 +134,14 @@ func poll() -> void:
 	var key_steer: float = input.get_axis("rg_steer_left", "rg_steer_right")
 	var key_throttle: float = input.get_action_strength("rg_throttle")
 	var key_brake: float = input.get_action_strength("rg_brake")
-	var raw_steer: float = key_steer if absf(key_steer) > absf(joy_steer) else joy_steer
+	_steer_keyboard = absf(key_steer) > absf(joy_steer)
+	_steer_wheel = false
+	if has_pad:
+		var device_name: String = input.get_joy_name(device).to_lower()
+		for wheel_name in ["wheel", "g29", "g920", "g923", "t300", "t150", "t248", "fanatec", "moza", "simucube"]:
+			if device_name.contains(wheel_name):
+				_steer_wheel = true
+	var raw_steer: float = key_steer if _steer_keyboard else joy_steer
 	var raw_throttle: float = maxf(key_throttle, joy_throttle)
 	var raw_brake: float = maxf(key_brake, joy_brake)
 	# ISO 8855 sign flip (the "steer" channel: positive = LEFT).
@@ -272,3 +281,9 @@ func consume_flip_upright() -> int:
 # R0 has no haptics (tach_gauge.gd's RUMBLE lamp reads this).
 func get_rumble_enabled() -> bool:
 	return false
+
+func steering_uses_keyboard() -> bool:
+	return _steer_keyboard
+
+func steering_uses_wheel() -> bool:
+	return _steer_wheel and not _steer_keyboard
