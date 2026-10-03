@@ -334,10 +334,12 @@ WorldTerrain::FetchDecodeResult WorldTerrain::fetch_raw_decode(const g2m::TileKe
         }
     }
     if (tile_response == nullptr || tile_response->meta.status != g2m::Status::Ok) {
+        if(response_status != g2m::Status::NotFound) std::fprintf(stderr,"RG_TERRAIN_FETCH response key=%s message=%s\n",g2m::to_string(key).c_str(),tile_response?tile_response->meta.message.c_str():"not a tile response");
         return FetchDecodeResult{response_status, nullptr};
     }
 
     HeightTileFetchResult decoded = decode_height_tile_container(tile_response->container, terrain_height_layer_, key);
+    if(decoded.status != g2m::Status::Ok) std::fprintf(stderr,"RG_TERRAIN_FETCH decode key=%s\n",g2m::to_string(key).c_str());
     return FetchDecodeResult{decoded.status,std::move(decoded.tile)};
 }
 
@@ -374,14 +376,22 @@ std::shared_ptr<const RoadSurfacePatch> WorldTerrain::road_surface_patch(const g
         auto empty=std::make_shared<RoadSurfacePatch>(g2m::RoadGeomTile{});
         geometry_cache_.emplace(key,empty); return empty;
     }
+    if(tile->meta.status==g2m::Status::NotFound &&
+       tile->meta.message=="deriver g2m.roads.geom: roads.geom: required dependency absent") {
+        // Complete-way profile fitting can reach outside the local DEM.
+        // Missing optional road geometry must not discard valid terrain.
+        std::fprintf(stderr,"RG_ROAD_SURFACE unavailable key=%s reason=required_dependency_absent fallback=smoothed_terrain\n",g2m::to_string(key).c_str());
+        auto empty=std::make_shared<RoadSurfacePatch>(g2m::RoadGeomTile{});
+        geometry_cache_.emplace(key,empty);return empty;
+    }
     if(tile->meta.status!=g2m::Status::Ok) {
         std::fprintf(stderr,"RG_ROAD_SURFACE fetch_failed key=%s message=%s\n",g2m::to_string(key).c_str(),tile->meta.message.c_str());
         return nullptr;
     }
     auto container=g2m::parse_container(tile->container);
-    if(!container.ok() || container.value().header.key!=key || container.value().header.layer!=g2m::kRoadGeomLayer) return nullptr;
+    if(!container.ok() || container.value().header.key!=key || container.value().header.layer!=g2m::kRoadGeomLayer) {std::fprintf(stderr,"RG_ROAD_SURFACE invalid_container key=%s\n",g2m::to_string(key).c_str());return nullptr;}
     auto body=g2m::decode_body(container.value().body); if(!body.ok()) return nullptr;
-    auto geometry=g2m::decode_road_geom(body.value()); if(!geometry.ok()) return nullptr;
+    auto geometry=g2m::decode_road_geom(body.value()); if(!geometry.ok()) {std::fprintf(stderr,"RG_ROAD_SURFACE invalid_geometry key=%s message=%s\n",g2m::to_string(key).c_str(),geometry.error().message.c_str());return nullptr;}
     // The library's five-metre fit can exhaust its bounded projection solver
     // on kilometre-long noisy DEM stretches. Retry explicit numerical declines
     // at twenty metres with the SAME certified grade/curvature constraints.
@@ -516,7 +526,16 @@ HeightTileFetchResult fetch_height_tile_cached(std::mutex& cache_mutex,
 
 HeightTileFetchResult WorldTerrain::height_tile_shared(const g2m::TileKey& key) {
     HeightTileFetchFn fetch_fn = [this](const g2m::TileKey& k) -> HeightTileFetchResult {
-        FetchDecodeResult result = fetch_and_decode(k);
+        FetchDecodeResult result;
+        try {
+            result = fetch_and_decode(k);
+        } catch (const std::exception& error) {
+            std::fprintf(stderr,"RG_TERRAIN_FETCH exception key=%s message=%s\n",g2m::to_string(k).c_str(),error.what());
+            throw;
+        }
+        if (result.status != g2m::Status::Ok && result.status != g2m::Status::NotFound) {
+            std::fprintf(stderr,"RG_TERRAIN_FETCH failed key=%s status=%d\n",g2m::to_string(k).c_str(),static_cast<int>(result.status));
+        }
         if (!result.tile) {
             return HeightTileFetchResult{result.status, nullptr};
         }

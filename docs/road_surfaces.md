@@ -107,3 +107,13 @@ entries when generation inputs or generator versions change.
 `RG_ENGINE_MAP_CACHE` reports the directory and number of generated engines
 on each fresh definition load (`generated=0` for cache hits or engines that
 do not require generated maps). Runtime verification is left to the owner.
+
+## Incomplete road-profile coverage
+
+A complete-way `roads.geom` fit can require DEM tiles outside the imported
+region even when the requested one-metre terrain is available. When the
+deriver explicitly reports `required dependency absent`, the game retains
+its valid smoothed terrain and OSM grip instead of failing that terrain tile
+and freezing permanently. No deck or fitted road is fabricated for that
+geometry tile. `RG_ROAD_SURFACE unavailable` records this fallback once per
+geometry tile and world load; other fetch/decode errors remain failures.

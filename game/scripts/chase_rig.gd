@@ -52,7 +52,7 @@ func shift_origin(delta: Vector3) -> void:
 	_smoothed_pos += delta
 
 func _target_orbit_yaw(input_map: Node) -> float:
-	var look: Vector2 = input_map.get_camera_look_rate()
+	var look: Vector2 = input_map.get_camera_key_look()
 	if absf(look.x) > 0.5:
 		return signf(look.x) * PI * 0.5
 	if look.y < -0.5:
@@ -61,8 +61,9 @@ func _target_orbit_yaw(input_map: Node) -> float:
 	var mag: float = min(stick.length(), 1.0)
 	if mag <= orbit_deadzone:
 		return 0.0
-	var weight: float = smoothstep(orbit_deadzone, 1.0, mag)
-	return atan2(stick.x, stick.y) * weight
+	# Direction selects a full-circle orbit. lerp_angle below wraps the
+	# front-view +/-PI seam; scaling the angle by magnitude would split it.
+	return atan2(stick.x, stick.y)
 
 func update_rig(delta: float, simulation: Node, input_map: Node, camera_input_live: bool) -> void:
 	if simulation == null or int(simulation.get_step_count()) <= 0:

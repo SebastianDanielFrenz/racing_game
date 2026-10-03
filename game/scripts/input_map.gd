@@ -51,6 +51,7 @@ var _auto_shift_on: bool = true
 
 var _cam_move: Vector3 = Vector3.ZERO
 var _cam_look_rate: Vector2 = Vector2.ZERO
+var _cam_key_look: Vector2 = Vector2.ZERO
 var _cam_stick: Vector2 = Vector2.ZERO # raw right-stick position (chase orbit), x right, y up
 var _cam_fast: bool = false
 var _mouse_delta: Vector2 = Vector2.ZERO
@@ -170,6 +171,7 @@ func poll() -> void:
 	var look := Vector2(
 		input.get_action_strength("rg_look_right") - input.get_action_strength("rg_look_left"),
 		input.get_action_strength("rg_look_up") - input.get_action_strength("rg_look_down"))
+	_cam_key_look = look
 	var rx: float = _shape_bidirectional(_cam_stick.x, STICK_DEADZONE)
 	var ry: float = _shape_bidirectional(_cam_stick.y, STICK_DEADZONE)
 	if absf(rx) > absf(look.x):
@@ -230,6 +232,9 @@ func get_camera_move() -> Vector3:
 
 func get_camera_look_rate() -> Vector2:
 	return _cam_look_rate
+
+func get_camera_key_look() -> Vector2:
+	return _cam_key_look
 
 func get_camera_stick() -> Vector2:
 	return _cam_stick
