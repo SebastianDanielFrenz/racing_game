@@ -129,5 +129,9 @@ func _process(_delta: float) -> void:
 	if show_ground:
 		_ground_anchor.transform = simulation.get_body_transform("ground")
 
+# ISO chassis axes: X forward, Y left, Z up. Shared by desktop and XR rigs.
+var seat_offset := Vector3(0.20, 0.0, 0.0)
+
 func driver_eye_local() -> Vector3:
-	return _vehicle_visual.driver_eye_local() if _vehicle_visual != null else Vector3(-0.35, 0.38, 0.6)
+	var base: Vector3 = _vehicle_visual.driver_eye_local() if _vehicle_visual != null else Vector3(-0.35, 0.38, 0.6)
+	return base + seat_offset

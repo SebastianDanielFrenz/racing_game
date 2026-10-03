@@ -62,6 +62,7 @@ var _steering = preload("res://scripts/adaptive_steering.gd").new()
 var _simulation: Node
 var _input_map: Node
 var _cockpit_view: bool = false
+var _seat_ui: CanvasLayer
 var _director: Node
 var _hud: Node
 var _overlay: Node
@@ -363,6 +364,11 @@ func _build_scene(user_args: PackedStringArray) -> void:
 	_visuals.vehicle_name = VEHICLE_NAME
 	_visuals.model_absolute_path = _data_path("models/%s/%s.glb" % [VEHICLE_NAME, VEHICLE_NAME])
 	add_child(_visuals)
+
+	_seat_ui = preload("res://scripts/seat_adjustment.gd").new()
+	_seat_ui.body_visuals = _visuals
+	_seat_ui.vehicle_name = VEHICLE_NAME
+	add_child(_seat_ui)
 
 	# --- camera rigs + director (floating origin, render focus) ---
 	_director = Node.new()
@@ -707,7 +713,7 @@ func _apply_mode_state() -> Dictionary:
 	if _vr_active:
 		rig_name = "xr_free" if rig_name == "free" else "xr_cockpit"
 	_director.set_active(rig_name)
-	_director.camera_input_live = bool(ms.get("camera_inputs_live", true))
+	_director.camera_input_live = bool(ms.get("camera_inputs_live", true)) and not (_seat_ui != null and _seat_ui.is_open())
 	return ms
 
 func _forward_driving(live: bool, delta: float) -> void:
@@ -717,6 +723,12 @@ func _forward_driving(live: bool, delta: float) -> void:
 	var down: int = _input_map.consume_shift_down_count()
 	if not live or not bool(_simulation.is_running()):
 		_steering.reset()
+		return
+	if _seat_ui != null and _seat_ui.is_open():
+		_simulation.set_control("steer", 0.0)
+		_simulation.set_control("throttle", 0.0)
+		_simulation.set_control("brake", 1.0)
+		_simulation.set_control("starter", 0.0)
 		return
 	if not scripted_controls.is_empty():
 		for channel in scripted_controls:

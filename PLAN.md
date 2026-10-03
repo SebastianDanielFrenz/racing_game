@@ -768,3 +768,7 @@ strict applicable speed limits, 80 km/h truck and randomized 80-250 km/h car
 fallbacks on roads without limits, physics/weather/surface-aware corner speed,
 and public-road highway whitelist plus access restrictions. Planned, not yet
 implemented. Specification and sequence: docs/npc_traffic.md.
+
+2026-10-04 adjustable cockpit seat: default eye 20 cm forward, F6 live fore/aft,
+height and lateral UI, saved per vehicle. Shared eye anchor updates desktop/XR
+cockpit rigs; brake held and look disabled during adjustment. See docs/seat_adjustment.md.

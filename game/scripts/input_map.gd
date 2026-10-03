@@ -109,6 +109,10 @@ static func _ensure_action(action: String, keys: Array, joy_buttons: Array) -> v
 		InputMap.action_add_event(action, jev)
 
 func _input(event: InputEvent) -> void:
+	if get_tree().get_nodes_in_group("seat_adjustment_open").size() > 0:
+		_mouse_captured = false
+		_mouse_delta = Vector2.ZERO
+		return
 	if event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_RIGHT:
 		Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 		_mouse_captured = true
