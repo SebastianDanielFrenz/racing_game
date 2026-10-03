@@ -742,13 +742,3 @@ See docs/aerodynamics.md and data/world/environment.json. Stock hypercar has no 
 Aircraft controls and traffic actors remain future gameplay work; this is a
 coefficient model, not CFD. Native owner reports 58 focused tests / 1372 assertions.
 
-
-Aerodynamics integration (2026-10-03): physics_sim upgraded from S: to
-8b04f0e5a8aa288c0297ed144906cf2918cece27. Reusable signed lift/drag, body moments,
-wind, finite drafting wakes, local ground effect (including inverted operation),
-rate-limited active wings and energy-budgeted suction fans are implemented.
-Game integration supplies configurable atmosphere/wind and hypercar cruise/airbrake
-policy; actual wing pitch/lift and aero telemetry use frame snapshots and bookmarks.
-See docs/aerodynamics.md and data/world/environment.json. Stock hypercar has no fans.
-Aircraft controls and traffic actors remain future gameplay work; this is a
-coefficient model, not CFD. Native owner reports 58 focused tests / 1372 assertions.
