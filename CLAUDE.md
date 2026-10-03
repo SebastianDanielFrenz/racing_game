@@ -1057,10 +1057,11 @@ acceptance. `last_drive.json` in the existing Godot user-data directory records
 session/UTM positions, build and status; the HUD/native build info reports the
 source revision. Source libraries remain unchanged.
 
-Current physics pin: bc6fdc41db4675e3bb56c9f1cb8b418cbc9724fd (S: library; supersedes upgrade notes above). OSM building presentation and future mixed asset/imagery approach: docs/buildings.md.
+Current physics pin: 60d60fa09f48e38c5fc382b0a082a1407d94ff6c (S: library; supersedes upgrade notes above). OSM building presentation and future mixed asset/imagery approach: docs/buildings.md.
 
 Aerodynamics: docs/aerodynamics.md; configuration data/world/environment.json. Native surfaces, drafting wakes, ground effect and fan energy are owned by physics_sim; game Session supplies weather and active-wing policy, with latched HUD/art/bookmark telemetry.
 
 Hypercar engine physical calibration: docs/hypercar_engine.md and external/physics_sim/data/engines/HYPER_ONE1.md. Fixed geometry/boost/E5; generated net 1 MW at 7500 RPM, game mass remains 1500 kg.
 
 NPC truck: core/npc_truck plus Session stepping-thread collider/wake; background profile-route worker; game/scripts/npc_truck.gd procedural visuals. Controls and limits: docs/npc_truck.md.
+

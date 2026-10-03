@@ -772,3 +772,9 @@ implemented. Specification and sequence: docs/npc_traffic.md.
 2026-10-04 adjustable cockpit seat: default eye 20 cm forward, F6 live fore/aft,
 height and lateral UI, saved per vehicle. Shared eye anchor updates desktop/XR
 cockpit rigs; brake held and look disabled during adjustment. See docs/seat_adjustment.md.
+
+2026-10-04 low-RPM WOT clutch flare: physics pin 60d60fa09f48e38c5fc382b0a082a1407d94ff6c
+from S: carries live boosted engine torque into auto-clutch rolling reengagement.
+Native matching reproduction re-locks within 2 seconds; 14,544 focused assertions
+passed upstream. Game DLL rebuilt; exact owner road replay remains owner acceptance.
+Evidence: external/physics_sim/HYPER_CLUTCH_FLARE.md.
