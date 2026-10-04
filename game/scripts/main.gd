@@ -841,7 +841,12 @@ func _log_owner_mark() -> void:
 		mark["utm_m"] = [float(origin.get("e0",0))+point.x,float(origin.get("n0",0))+point.y,point.z]
 	mark["aero"] = _simulation.get_aero_state()
 	mark["npc_truck"] = _simulation.get_npc_truck_state()
-	mark["traffic"] = _simulation.get_traffic_state()
+	var traffic: Dictionary = _simulation.get_traffic_state()
+	var actors: Array = traffic.get("actors", [])
+	# Keep owner pings bounded even with thousands of traffic actors.
+	traffic.erase("actors")
+	traffic["active"] = actors.size()
+	mark["traffic"] = traffic
 	var encoded := JSON.stringify(mark)
 	print("RG_OWNER_MARK " + encoded)
 	var mark_path := "user://drive_marks.jsonl"
