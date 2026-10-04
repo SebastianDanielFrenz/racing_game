@@ -373,3 +373,28 @@ TEST_CASE("Session rebuilds from a retained immutable vehicle definition", "[ses
     REQUIRE(rebuilt.world().tick() == 60);
     REQUIRE(config.vehicle_definition->wheels.size() == original.vehicle_desc().wheels.size());
 }
+
+TEST_CASE("Engine audio publishes without render reads and detaches safely", "[session][audio_publisher]") {
+    rg::Session session(make_test_config());
+    std::atomic<int> calls{0};
+    session.set_engine_audio_publisher([&](const ps::drivetrain::EngineSoundState&,double){
+        calls.fetch_add(1);
+    });
+    session.start();
+    const auto deadline=std::chrono::steady_clock::now()+std::chrono::seconds(2);
+    // No snapshot/render reader is involved in engine-input delivery.
+    while(calls.load()<12 && std::chrono::steady_clock::now()<deadline)
+        std::this_thread::sleep_for(std::chrono::milliseconds(5));
+    session.set_engine_audio_publisher({});
+    const int detached=calls.load();
+    std::this_thread::sleep_for(std::chrono::milliseconds(30));
+    session.stop();
+    REQUIRE(detached>=12);
+    REQUIRE(calls.load()==detached);
+    // A fresh publisher after restarting is not tied to the prior voice.
+    session.set_engine_audio_publisher([&](const ps::drivetrain::EngineSoundState&,double){calls.fetch_add(1);});
+    session.start();
+    std::this_thread::sleep_for(std::chrono::milliseconds(30));
+    session.set_engine_audio_publisher({});session.stop();
+    REQUIRE(calls.load()>detached);
+}

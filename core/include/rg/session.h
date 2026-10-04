@@ -59,6 +59,7 @@
 #include <cstdint>
 #include <memory>
 #include <mutex>
+#include <functional>
 #include <optional>
 #include <span>
 #include <stdexcept>
@@ -333,6 +334,11 @@ public:
     // Race-free once start() has produced at least one tick; before that,
     // returns a default-constructed FrameSnapshot (tick == 0).
     [[nodiscard]] const FrameSnapshot& snapshot() { return snapshot_buffer_.read(); }
+    // Single engine-input publisher on the physics thread. Clearing waits for
+    // an in-flight callback, so its owner can safely destroy the audio voice.
+    using EngineAudioPublisher = std::function<void(const ps::drivetrain::EngineSoundState&, double)>;
+    void set_engine_audio_publisher(EngineAudioPublisher publisher);
+
 
     // --- Named control channels (PLAN.md P2: "input reaches the sim only
     // as named channels, in ISO/SI terms"). Safe to call from any thread
@@ -577,6 +583,8 @@ private:
     bool in_freeze_ = false; // stepping thread only
 
     ps_godot::TripleBuffer<FrameSnapshot> snapshot_buffer_;
+    std::mutex engine_audio_mutex_;
+    EngineAudioPublisher engine_audio_publisher_;
     ps_godot::OriginRebase origin_rebase_;
 
     std::unordered_map<std::string, std::atomic<double>> control_channels_;

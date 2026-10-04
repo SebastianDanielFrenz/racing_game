@@ -839,6 +839,8 @@ func _log_owner_mark() -> void:
 	if world_kind == "real_world":
 		mark["utm_zone"] = origin.get("zone")
 		mark["utm_m"] = [float(origin.get("e0",0))+point.x,float(origin.get("n0",0))+point.y,point.z]
+	if _vehicle_audio != null:
+		mark["audio"] = _vehicle_audio.get_audio_diagnostics()
 	mark["aero"] = _simulation.get_aero_state()
 	mark["npc_truck"] = _simulation.get_npc_truck_state()
 	var traffic: Dictionary = _simulation.get_traffic_state()

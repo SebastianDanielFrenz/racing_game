@@ -91,3 +91,24 @@ state. Restart the game after editing a vehicle's engine/fuel/installation/turbo
 files to reload those definitions. On this machine the initial V8 load takes
 about 34 seconds; warm world reload takes 0.56 seconds and cancellation 255 ms,
 instead of regenerating maps for each switch.
+
+## Native engine delivery (2026-10-04)
+
+physics_sim pin 976e8d78c6834305afa4b9ff8c01af701e8228de adds an exclusive
+engine Runner-to-Windows-spatial pump. The game attaches it once, stops legacy
+engine PCM reads/pushes while attached, and publishes engine inputs directly
+on physics ticks. Detaching the Session publisher waits for any in-flight
+callback before destroying its voice; output leases invalidate safely on teardown.
+Camera-relative source positions and view gain remain render-frame updates.
+
+`data/controls/presentation.json` configures `audio_native_latency_ms` (12 by
+default, 5–50) and `audio_fallback_buffer_ms` (100 by default, 20–200). Godot
+generator fallback and tyre generation still depend on rendered frames. Their
+remaining scheduling limitation is explicit; this integration does not claim
+to eliminate tyre crackle or CPU starvation of the synthesis worker.
+
+`RG_AUDIO_STATS` logs counters every five seconds, and middle-mouse owner
+marks include the same engine/tyre diagnostics. Output/endpoint missing frames
+identify actual output starvation; source polling shortages alone are not
+audible-dropout evidence. Runner timing distinguishes synthesis overruns.
+The update also includes upstream signed-RPM auto-clutch safety ca118ec.

@@ -776,9 +776,19 @@ void Session::throw_if_cancelled() const {
     if (config_.startup && config_.startup->cancel.load(std::memory_order_relaxed)) throw SessionCancelled();
 }
 
+void Session::set_engine_audio_publisher(EngineAudioPublisher publisher) {
+    std::lock_guard<std::mutex> lock(engine_audio_mutex_);
+    engine_audio_publisher_ = std::move(publisher);
+}
 void Session::post_step(bool from_loop) {
     if (from_loop) {
-        snapshot_buffer_.write_slot() = capture_frame_snapshot();
+        auto& frame = snapshot_buffer_.write_slot();
+        frame = capture_frame_snapshot();
+        {
+            std::lock_guard<std::mutex> lock(engine_audio_mutex_);
+            if(engine_audio_publisher_ && !frame.powertrain.engines.empty())
+                engine_audio_publisher_(frame.powertrain.engines.front(), frame.sim_time);
+        }
         snapshot_buffer_.publish();
     }
     if (!terrain_) return;

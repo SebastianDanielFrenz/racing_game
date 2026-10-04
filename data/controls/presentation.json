@@ -1,5 +1,7 @@
 {
   "engine_chase_db": -12.0,
   "engine_cockpit_db": -8.0,
-  "engine_free_db": -6.0
+  "engine_free_db": -6.0,
+  "audio_native_latency_ms": 12,
+  "audio_fallback_buffer_ms": 100
 }

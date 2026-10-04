@@ -838,6 +838,7 @@ void RgSimulation::_bind_methods() {
     godot::ClassDB::bind_method(D_METHOD("get_wheel_omega", "vehicle_name", "wheel_index"), &RgSimulation::get_wheel_omega);
     godot::ClassDB::bind_method(D_METHOD("start_engine_audio"), &RgSimulation::start_engine_audio);
     godot::ClassDB::bind_method(D_METHOD("stop_engine_audio"), &RgSimulation::stop_engine_audio);
+    godot::ClassDB::bind_method(D_METHOD("connect_engine_audio_spatial", "spatial", "latency_ms"), &RgSimulation::connect_engine_audio_spatial);
     godot::ClassDB::bind_method(D_METHOD("update_engine_audio"), &RgSimulation::update_engine_audio);
     godot::ClassDB::bind_method(D_METHOD("read_engine_audio", "frames"), &RgSimulation::read_engine_audio);
     godot::ClassDB::bind_method(D_METHOD("get_engine_audio_positions"), &RgSimulation::get_engine_audio_positions);

@@ -22,6 +22,8 @@ var _initialized := false
 var _shutdown := false
 var _engine_gain: float = db_to_linear(-12.0)
 var _view_levels: Dictionary = {}
+var _engine_native := false
+var _diagnostic_elapsed := 0.0
 
 func _ready() -> void:
 	var parsed = JSON.parse_string(FileAccess.get_file_as_string(ProjectSettings.globalize_path("res://../data/controls/presentation.json")))
@@ -44,7 +46,7 @@ func _open_spatial(rate: int, channels: int) -> RefCounted:
 func _player(rate: int, point: Vector3) -> AudioStreamPlayer3D:
 	var stream := AudioStreamGenerator.new()
 	stream.mix_rate = rate
-	stream.buffer_length = 0.15
+	stream.buffer_length = 0.25
 	var player := AudioStreamPlayer3D.new()
 	player.stream = stream
 	player.position = point
@@ -74,6 +76,12 @@ func _initialize_audio() -> void:
 		engine_rate = int(voice.rate)
 		engine_points = simulation.get_engine_audio_positions()
 		engine_spatial = _open_spatial(engine_rate, int(voice.channels))
+		if engine_spatial != null:
+			_engine_native = simulation.connect_engine_audio_spatial(engine_spatial, int(clampf(float(_view_levels.get("audio_native_latency_ms", 12.0)), 5.0, 50.0)))
+			if _engine_native:
+				engine_spatial.set_native_gain(_engine_gain / 15.0)
+			print("RG_AUDIO engine native pump: ", _engine_native)
+
 		if engine_spatial == null:
 			for point in engine_points:
 				engine_players.append(_player(engine_rate, point))
@@ -97,9 +105,9 @@ func _fallback_needed(players: Array[AudioStreamPlayer3D], rate: int, engine: bo
 	var available := playback.get_frames_available()
 	if engine:
 		_engine_capacity = maxi(_engine_capacity, available)
-		return mini(available, maxi(0, rate / 20 - (_engine_capacity - available)))
+		return mini(available, maxi(0, int(rate * clampf(float(_view_levels.get("audio_fallback_buffer_ms", 100.0)), 20.0, 200.0) / 1000.0) - (_engine_capacity - available)))
 	_capacity = maxi(_capacity, available)
-	return mini(available, maxi(0, rate / 20 - (_capacity - available)))
+	return mini(available, maxi(0, int(rate * clampf(float(_view_levels.get("audio_fallback_buffer_ms", 100.0)), 20.0, 200.0) / 1000.0) - (_capacity - available)))
 
 func _output(samples: PackedFloat32Array, channels: int, backend: RefCounted, players: Array[AudioStreamPlayer3D]) -> void:
 	if backend != null:
@@ -133,6 +141,7 @@ func _process(delta: float) -> void:
 		print("RG_AUDIO engine fallback: ", engine_spatial.get_status())
 		engine_spatial.close()
 		engine_spatial = null
+		_engine_native = false
 		for point in engine_points:
 			engine_players.append(_player(engine_rate, point))
 	var frozen: bool = simulation.get_streaming_status().get("frozen", false)
@@ -173,10 +182,25 @@ func _process(delta: float) -> void:
 		elif view in ["free", "xr_free"]:
 			level = float(_view_levels.get("engine_free_db", -6.0))
 		_engine_gain = lerpf(_engine_gain,db_to_linear(clampf(level,-60.0,0.0)),1.0-exp(-8.0*delta))
-		var engine_pcm: PackedFloat32Array = simulation.read_engine_audio(needed)
-		for i in range(engine_pcm.size()):
-			engine_pcm[i] *= _engine_gain
-		_output(engine_pcm, engine_points.size(), engine_spatial, engine_players)
+		if _engine_native:
+			engine_spatial.set_native_gain(_engine_gain / 15.0)
+		else:
+			var engine_pcm: PackedFloat32Array = simulation.read_engine_audio(needed)
+			for i in range(engine_pcm.size()):
+				engine_pcm[i] *= _engine_gain
+			_output(engine_pcm, engine_points.size(), engine_spatial, engine_players)
+	_diagnostic_elapsed += delta
+	if _diagnostic_elapsed >= 5.0:
+		print("RG_AUDIO_STATS ", JSON.stringify(get_audio_diagnostics()))
+		_diagnostic_elapsed = 0.0
+
+func get_audio_diagnostics() -> Dictionary:
+	var result := {"engine_native": _engine_native}
+	if engine_spatial != null:
+		result["engine"] = engine_spatial.get_output_diagnostics()
+	if tyre_spatial != null:
+		result["tyres"] = tyre_spatial.get_output_diagnostics()
+	return result
 
 func shutdown() -> void:
 	if _shutdown:

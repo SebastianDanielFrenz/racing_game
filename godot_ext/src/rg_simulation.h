@@ -43,10 +43,11 @@ class RgSimulation : public godot::Node {
 
 public:
     RgSimulation() = default;
-    // Audio uses published snapshots only; no audio worker reads the world.
+    // Engine inputs publish on physics ticks; native output never reads the world.
     godot::Dictionary start_engine_audio();
     void stop_engine_audio();
     void update_engine_audio();
+    bool connect_engine_audio_spatial(godot::Object* spatial, int latency_ms);
     godot::PackedFloat32Array read_engine_audio(int frames);
     godot::PackedVector3Array get_engine_audio_positions() const;
     ~RgSimulation() override;

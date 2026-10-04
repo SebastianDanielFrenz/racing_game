@@ -1,5 +1,6 @@
 #include "rg_simulation.h"
 #include "ps/drivetrain/powertrain_desc.h"
+#include "spatial_audio.h"
 #include <algorithm>
 #include <vector>
 
@@ -15,24 +16,31 @@ godot::Dictionary RgSimulation::start_engine_audio() {
     if (engine_voice_) {
         result["rate"] = engine_voice_->sample_rate_hz();
         result["channels"] = engine_voice_->channel_count();
-        update_engine_audio();
+        const auto& frame = session_->snapshot();
+        if(!frame.powertrain.engines.empty())engine_voice_->push_tick(frame.powertrain.engines.front(),frame.sim_time);
         engine_voice_->start();
+        auto* voice=engine_voice_.get();
+        session_->set_engine_audio_publisher([voice](const ps::drivetrain::EngineSoundState& state,double time){
+            voice->push_tick(state,time);
+        });
     }
     return result;
 }
 void RgSimulation::stop_engine_audio() {
-    engine_voice_.reset(); // joins the render thread before releasing its model
+    if(session_)session_->set_engine_audio_publisher({}); // waits for physics publisher
+    engine_voice_.reset(); // invalidates native output and joins synthesis
     audio_tick_ = ~std::uint64_t{0};
 }
 void RgSimulation::update_engine_audio() {
     if (!engine_voice_ || !session_) return;
     engine_voice_->set_paused(!session_->running() || session_->streaming_status().frozen);
-    const auto& frame = session_->snapshot();
-    if (frame.tick != audio_tick_ && !frame.powertrain.engines.empty()) {
-        engine_voice_->push_tick(frame.powertrain.engines.front(), frame.sim_time);
-        audio_tick_ = frame.tick;
-    }
+
 }
+bool RgSimulation::connect_engine_audio_spatial(godot::Object* object,int latency_ms) {
+    auto* spatial=godot::Object::cast_to<ps_godot::PsSpatialAudio>(object);
+    return spatial && engine_voice_ && spatial->attach_native_source(engine_voice_->native_output()->acquire(),latency_ms,1.0f/15.0f);
+}
+
 godot::PackedFloat32Array RgSimulation::read_engine_audio(int frames) {
     godot::PackedFloat32Array result;
     if (!engine_voice_ || frames <= 0) return result;
