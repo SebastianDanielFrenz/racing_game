@@ -134,7 +134,7 @@ func _run_bindings_test() -> void:
 	add_child(sim)
 
 	var vehicle_json: String = _data_path("vehicles/%s.json" % VEHICLE_NAME)
-	var surface_table_json: String = _data_path("surfaces/surfaces.json")
+	var surface_table_json: String = ProjectSettings.globalize_path("res://../data/surfaces/surfaces.json")
 
 	var ok: bool = sim.initialize(vehicle_json, surface_table_json)
 	if not ok:
@@ -532,7 +532,7 @@ func _load_world(kind: String) -> void:
 	var vehicle_json: String = _data_path("vehicles/%s.json" % VEHICLE_NAME)
 	_steering.configure_vehicle(vehicle_json)
 	_input_map.configure_vehicle(vehicle_json)
-	var surface_table_json: String = _data_path("surfaces/surfaces.json")
+	var surface_table_json: String = ProjectSettings.globalize_path("res://../data/surfaces/surfaces.json")
 	if kind == "flat":
 		if not _simulation.initialize(vehicle_json, surface_table_json):
 			_load_failed(str(_simulation.get_last_error()))
@@ -839,6 +839,10 @@ func _log_owner_mark() -> void:
 	if world_kind == "real_world":
 		mark["utm_zone"] = origin.get("zone")
 		mark["utm_m"] = [float(origin.get("e0",0))+point.x,float(origin.get("n0",0))+point.y,point.z]
+	mark["camera_input"] = _input_map.get_camera_diagnostics()
+	mark["camera_input"]["enabled"] = _director.camera_input_live
+	mark["camera_input"]["seat_settings_open"] = get_tree().get_nodes_in_group("seat_adjustment_open").size() > 0
+	mark["camera_input"]["traffic_settings_open"] = get_tree().get_nodes_in_group("traffic_settings_open").size() > 0
 	if _vehicle_audio != null:
 		mark["audio"] = _vehicle_audio.get_audio_diagnostics()
 	mark["aero"] = _simulation.get_aero_state()

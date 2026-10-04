@@ -31,6 +31,9 @@ const TRIGGER_DEADZONE := 0.02
 const STICK_DEADZONE := 0.15
 
 @export var joy_device: int = 0
+@export var camera_joy_device: int = -1 # -1: right-stick activity selects device
+var _camera_device := -1
+var _camera_devices_signature := ""
 
 var _prev := {}
 var _shift_up_count: int = 0
@@ -199,7 +202,24 @@ func poll() -> void:
 	if absf(trig_up - trig_down) > absf(move.y):
 		move.y = trig_up - trig_down
 	_cam_move = move
-	_cam_stick = Vector2(ja.call(JOY_AXIS_RIGHT_X), -ja.call(JOY_AXIS_RIGHT_Y))
+	# Camera input can come from a separate pad while a wheel drives the car.
+	# Keep the selected pad at rest; change only on actual right-stick activity.
+	if not pads.has(_camera_device):
+		_camera_device = device if has_pad else -1
+	if camera_joy_device >= 0 and pads.has(camera_joy_device):
+		_camera_device = camera_joy_device
+	else:
+		var strongest := 0.2
+		for candidate in pads:
+			var candidate_stick := Vector2(input.get_joy_axis(candidate, JOY_AXIS_RIGHT_X), -input.get_joy_axis(candidate, JOY_AXIS_RIGHT_Y))
+			if candidate_stick.length() > strongest:
+				strongest = candidate_stick.length()
+				_camera_device = candidate
+	_cam_stick = Vector2(input.get_joy_axis(_camera_device, JOY_AXIS_RIGHT_X), -input.get_joy_axis(_camera_device, JOY_AXIS_RIGHT_Y)) if _camera_device >= 0 else Vector2.ZERO
+	var devices_signature := str(pads) + ":" + str(_camera_device)
+	if devices_signature != _camera_devices_signature:
+		_camera_devices_signature = devices_signature
+		print("RG_INPUT_CAMERA devices=", pads, " selected=", _camera_device, " name=", input.get_joy_name(_camera_device) if _camera_device >= 0 else "none")
 	var look := Vector2(
 		input.get_action_strength("rg_look_right") - input.get_action_strength("rg_look_left"),
 		input.get_action_strength("rg_look_up") - input.get_action_strength("rg_look_down"))
@@ -269,6 +289,9 @@ func get_camera_look_rate() -> Vector2:
 
 func get_camera_key_look() -> Vector2:
 	return _cam_key_look
+
+func get_camera_diagnostics() -> Dictionary:
+	return {"device": _camera_device, "name": Input.get_joy_name(_camera_device) if _camera_device >= 0 else "none", "stick_x": _cam_stick.x, "stick_y": _cam_stick.y, "connected": Array(Input.get_connected_joypads())}
 
 func get_camera_stick() -> Vector2:
 	return _cam_stick
