@@ -24,11 +24,13 @@
 #include "g2m/core/geo/session_frame.h"
 #include "g2m/layer/osm_roads.h"
 #include "g2m/phys/height_tile_loader.h"
+#include "g2m/phys/physics_streamer.h"
 #include "g2m/ps_bridge/g2m_terrain_source.h"
 
 #include "ps/io/surface_table.h"
 #include "ps/types.h"
 
+#include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 
 #include <algorithm>
@@ -1034,4 +1036,92 @@ TEST_CASE("Session exposes resident directional OSM speed limits and clears offr
         std::this_thread::sleep_for(std::chrono::milliseconds(5));
     REQUIRE(session.snapshot().road_speed_limit.way_id == 0);
     REQUIRE(session.snapshot().road_speed_limit.limit.kind == g2m::SpeedLimitKind::Unknown);
+}
+
+// --- R9b: drone follow - a second physics interest point at a followed actor ---
+
+namespace {
+
+// The player's car holds still at (100, 50); a test actor starts 600 m east
+// (outside the car's own square at the 400 m radius) and drives east at 10 m/s.
+ps::Pose follow_actor_pose() {
+    ps::Pose pose;
+    pose.position = ps::Vec3{700.0, 50.0, 400.0}; // z is set by the actor's own route (kinematic, placed on the ground)
+    pose.position.z = synthetic_height_m(700.0, 50.0) + 0.8;
+    return pose;
+}
+
+} // namespace
+
+TEST_CASE("session terrain: a followed actor adds a second interest point that tracks it", "[session_terrain][follow]") {
+    auto fetch = std::make_shared<SyntheticFetch>();
+    rg::Session session(terrain_config(1, fetch, 100.0, 50.0, /*fills_per_tick=*/4));
+    session.set_drive_script(hold_still_script());
+    const std::uint64_t actor = session.add_test_traffic_actor(follow_actor_pose(), 10.0);
+
+    for (int k = 0; k < 20; ++k) session.step();
+    CHECK(session.last_interest_points().size() == 1);
+    CHECK(session.streaming_status().interest_points == 1);
+    const std::uint64_t resident_one = session.world().terrain_resident_tile_count();
+    CHECK(resident_one == 25); // one square at 4 fills/tick, nothing near the actor yet
+
+    session.set_followed_vehicle(actor);
+    session.step();
+    auto points = session.last_interest_points();
+    REQUIRE(points.size() == 2);
+    CHECK(points[0].id == rg::Session::kPlayerInterestId);
+    CHECK(points[1].id == rg::Session::kFollowedInterestId);
+    CHECK(points[1].radius_m == points[0].radius_m);
+    CHECK(session.streaming_status().interest_points == 2);
+    const double x0 = points[1].x;
+    CHECK(std::abs(points[0].x - 100.0) < 5.0); // point 0 stays the player's car
+    CHECK(std::abs(x0 - 700.0) < 5.0);
+    CHECK(points[1].vx == Catch::Approx(10.0).margin(1.0));
+
+    for (int k = 0; k < 480; ++k) session.step(); // 2 s: the actor moves ~20 m
+    points = session.last_interest_points();
+    REQUIRE(points.size() == 2);
+    CHECK(points[1].x - x0 == Catch::Approx(20.0).margin(2.0));
+    CHECK(std::abs(points[1].y - 50.0) < 1.0);
+    CHECK(std::abs(points[0].x - 100.0) < 5.0);
+    // The pool holds both squares: more tiles resident than one, none starved, no fill misses.
+    CHECK(session.world().terrain_resident_tile_count() > resident_one);
+    CHECK(session.world().terrain_starved_tile_count() == 0);
+    CHECK(session.streaming_status().fill_misses == 0);
+    CHECK(session.streaming_status().followed_lost == 0);
+
+    // Clearing the follow returns to one point.
+    session.set_followed_vehicle(std::nullopt);
+    session.step();
+    CHECK(session.last_interest_points().size() == 1);
+    CHECK(session.streaming_status().interest_points == 1);
+    CHECK(session.streaming_status().followed_lost == 0);
+
+    // Re-following works (the TileManager point was released and is added again); a lost follow drops back to one point.
+    session.set_followed_vehicle(actor);
+    session.step();
+    CHECK(session.last_interest_points().size() == 2);
+    session.set_followed_vehicle(std::uint64_t{424242}); // never existed
+    session.step();
+    CHECK(session.last_interest_points().size() == 1);
+    CHECK(session.streaming_status().followed_lost == 1);
+    CHECK(session.streaming_status().followed_lost_id == 424242);
+    CHECK(session.world().terrain_starved_tile_count() == 0);
+}
+
+TEST_CASE("session terrain: a follow is worker-count deterministic", "[session_terrain][follow]") {
+    const auto run = [](unsigned workers) {
+        auto fetch = std::make_shared<SyntheticFetch>();
+        rg::Session session(terrain_config(workers, fetch, 100.0, 50.0, 4));
+        session.set_drive_script(drive_script());
+        const std::uint64_t actor = session.add_test_traffic_actor(follow_actor_pose(), 10.0);
+        session.set_followed_vehicle(actor);
+        for (int k = 0; k < 960; ++k) session.step();
+        CHECK(session.last_interest_points().size() == 2);
+        CHECK(session.streaming_status().falls == 0);
+        CHECK(session.streaming_status().fill_misses == 0);
+        return session.world().state_hash();
+    };
+    const std::uint64_t reference = run(1);
+    CHECK(run(4) == reference);
 }

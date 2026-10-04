@@ -34,6 +34,11 @@ namespace rg_godot {
 
 namespace {
 
+// Drone-follow candidates within this distance of the player's car (the NPC
+// truck stays within ~200 m of it unless followed; traffic spawns within the
+// configured traffic radius, 1200 m by default).
+constexpr double kDroneCandidateRangeM = 1500.0;
+
 std::string to_std_string(const String& s) { return std::string(s.utf8().get_data()); }
 // Match the supplied hypercar's chassis proxy and authored ride height.
 void configure_vehicle_chassis(rg::SessionConfig& config) {
@@ -96,6 +101,10 @@ void RgSimulation::cancel_init() {
 void RgSimulation::teardown_current() {
     render_snapshot_.reset();
     stop_engine_audio();
+    // A new Session is a new world: its vehicle ids mean nothing to the old
+    // follow target, and its loss counter restarts at 0.
+    drone_lost_seen_ = 0;
+    modes_.set_drone_target(std::nullopt);
     cancel_init();                   // R2.2 R9: cancel-then-join
     reap_init_thread(/*wait=*/true); // joins any in-flight worker first (see its own doc comment)
     if (session_) session_->stop();
@@ -127,9 +136,26 @@ void RgSimulation::reap_init_thread(bool wait) {
 }
 
 void RgSimulation::apply_mode_to_session() {
-    if (session_) session_->set_vehicle_control(modes_.effective_rules().vehicle_control);
+    if (!session_) return;
+    session_->set_vehicle_control(modes_.effective_rules().vehicle_control);
+    // The Session keeps a followed vehicle alive and its terrain resident only
+    // while the drone camera trails it.
+    session_->set_followed_vehicle(modes_.mode() == rg::PlayerMode::DroneFollow ? modes_.drone_target()
+                                                                                 : std::nullopt);
 }
 
+void RgSimulation::poll_drone_follow() {
+    if (!session_) return;
+    const rg::Session::FollowLoss loss = session_->followed_loss();
+    if (loss.count == drone_lost_seen_) return;
+    drone_lost_seen_ = loss.count;
+    // The Session already cleared its own follow; only a loss of the CURRENT
+    // target matters (an older one may arrive late after a re-target).
+    if (modes_.drone_target() == std::optional<std::uint64_t>{loss.id}) {
+        modes_.set_drone_target(std::nullopt);
+        apply_mode_to_session(); // the own car drives again
+    }
+}
 void RgSimulation::run_terrain_init_worker(std::string world_config_path, std::string vehicle_json_path,
                                            std::string surface_table_path,
                                            std::shared_ptr<rg::StartupProgress> progress,
@@ -354,6 +380,10 @@ godot::Dictionary RgSimulation::get_streaming_status() const {
     d["road_surfaces"] = s.road_surfaces;
     d["osm_ok"] = static_cast<std::int64_t>(s.osm_ok);
     d["osm_fail"] = static_cast<std::int64_t>(s.osm_fail);
+    d["followed_id"] = static_cast<std::int64_t>(s.followed_id);
+    d["followed_lost"] = static_cast<std::int64_t>(s.followed_lost);
+    d["followed_lost_id"] = static_cast<std::int64_t>(s.followed_lost_id);
+    d["interest_points"] = static_cast<std::int64_t>(s.interest_points);
     return d;
 }
 
@@ -724,6 +754,7 @@ godot::String RgSimulation::get_player_mode() const { return String(rg::to_strin
 
 godot::Dictionary RgSimulation::get_mode_state() {
     reap_init_thread(/*wait=*/false); // a just-finished load updates the world phase
+    poll_drone_follow();
     const rg::ModeRules r = modes_.effective_rules();
     godot::Dictionary d;
     d["mode"] = String(rg::to_string(modes_.mode()));
@@ -736,7 +767,70 @@ godot::Dictionary RgSimulation::get_mode_state() {
     d["world_phase"] = String(rg::to_string(modes_.world_phase()));
     d["other_world"] = String(rg::to_string(modes_.other_world()));
     d["revision"] = static_cast<std::int64_t>(modes_.revision());
+    // Drone follow target: id -1 / own = the player's own car.
+    const std::optional<std::uint64_t> target = modes_.drone_target();
+    d["drone_target_id"] = target ? static_cast<std::int64_t>(*target) : std::int64_t{-1};
+    d["drone_target_own"] = !target.has_value();
+    String label("own car");
+    if (target && session_) {
+        if (*target == rg::Session::kNpcTruckVehicleId) {
+            label = String("NPC truck");
+        } else {
+            label = String("NPC car #") + String::num_int64(static_cast<std::int64_t>(*target));
+            for (const auto& actor : frame_snapshot().traffic.actors) {
+                if (actor.id == *target) {
+                    if (actor.truck) label = String("NPC lorry #") + String::num_int64(static_cast<std::int64_t>(*target));
+                    break;
+                }
+            }
+        }
+    }
+    d["drone_target_label"] = label;
     return d;
+}
+
+bool RgSimulation::set_drone_target(std::int64_t id) {
+    const bool ok = modes_.set_drone_target(id < 0 ? std::nullopt : std::optional<std::uint64_t>{static_cast<std::uint64_t>(id)});
+    if (ok) apply_mode_to_session();
+    return ok;
+}
+
+std::int64_t RgSimulation::cycle_drone_target() {
+    if (!session_ || modes_.mode() != rg::PlayerMode::DroneFollow) return -1;
+    poll_drone_follow();
+    const rg::FrameSnapshot& frame = frame_snapshot();
+    std::vector<rg::DroneCandidate> candidates;
+    candidates.reserve(frame.traffic.actors.size() + 1);
+    for (const auto& actor : frame.traffic.actors) {
+        candidates.push_back({actor.id, actor.pose.position.x, actor.pose.position.y});
+    }
+    if (frame.truck.active) {
+        candidates.push_back({rg::Session::kNpcTruckVehicleId, frame.truck.pose.position.x, frame.truck.pose.position.y});
+    }
+    // Ordered by distance to the player's car (not the camera: the camera sits
+    // next to the current target, which would make the order ping-pong).
+    const std::optional<std::uint64_t> next =
+        rg::next_drone_target(modes_.drone_target(), candidates, frame.chassis_pose.position.x,
+                              frame.chassis_pose.position.y, kDroneCandidateRangeM);
+    modes_.set_drone_target(next);
+    apply_mode_to_session();
+    return next ? static_cast<std::int64_t>(*next) : std::int64_t{-1};
+}
+
+godot::Variant RgSimulation::get_drone_target_transform() const {
+    if (!session_) return godot::Variant();
+    const ps::Vec3 origin = origin_rebase_ ? origin_rebase_->origin() : ps::Vec3{};
+    const rg::FrameSnapshot& frame = frame_snapshot();
+    const std::optional<std::uint64_t> target = modes_.drone_target();
+    if (!target) return iso_to_godot_transform(frame.chassis_pose, origin);
+    if (*target == rg::Session::kNpcTruckVehicleId) {
+        if (!frame.truck.active) return godot::Variant();
+        return iso_to_godot_transform(frame.truck.pose, origin);
+    }
+    for (const auto& actor : frame.traffic.actors) {
+        if (actor.id == *target) return iso_to_godot_transform(actor.pose, origin);
+    }
+    return godot::Variant();
 }
 
 float RgSimulation::get_wheel_omega(const String& vehicle_name, std::int64_t wheel_index) const {
@@ -850,6 +944,9 @@ void RgSimulation::_bind_methods() {
     godot::ClassDB::bind_method(D_METHOD("cycle_player_mode"), &RgSimulation::cycle_player_mode);
     godot::ClassDB::bind_method(D_METHOD("get_player_mode"), &RgSimulation::get_player_mode);
     godot::ClassDB::bind_method(D_METHOD("get_mode_state"), &RgSimulation::get_mode_state);
+    godot::ClassDB::bind_method(D_METHOD("set_drone_target", "id"), &RgSimulation::set_drone_target);
+    godot::ClassDB::bind_method(D_METHOD("cycle_drone_target"), &RgSimulation::cycle_drone_target);
+    godot::ClassDB::bind_method(D_METHOD("get_drone_target_transform"), &RgSimulation::get_drone_target_transform);
     godot::ClassDB::bind_method(D_METHOD("start"), &RgSimulation::start);
     godot::ClassDB::bind_method(D_METHOD("stop"), &RgSimulation::stop);
     godot::ClassDB::bind_method(D_METHOD("is_running"), &RgSimulation::is_running);

@@ -120,6 +120,23 @@ public:
     //  is not ready).
     [[nodiscard]] godot::Dictionary get_mode_state();
 
+    // --- Drone follow (R9b, rg/player_mode.h). The target lives in the mode
+    // machine; every change is pushed into the Session
+    // (Session::set_followed_vehicle: a second physics interest point, the
+    // actor kept alive). ids are int64: -1 = the player's own car, otherwise
+    // a traffic actor id or the NPC truck's (rg::Session::kNpcTruckVehicleId).
+    // set_drone_target returns false outside drone_follow. cycle_drone_target
+    // gathers the candidates (traffic actors + the truck, within range of the
+    // PLAYER's car) and applies rg::next_drone_target; returns the new target
+    // id (-1 own car, also when there is no candidate or the mode is wrong).
+    // get_drone_target_transform is the cheap per-frame read the rig uses:
+    // the target's Godot transform (origin-relative like get_body_transform),
+    // or null when the target is not in the latest snapshot (the Session lost
+    // it: the next get_mode_state() falls back to the own car).
+    bool set_drone_target(std::int64_t id);
+    std::int64_t cycle_drone_target();
+    [[nodiscard]] godot::Variant get_drone_target_transform() const;
+
     void start();
     void stop();
     [[nodiscard]] bool is_running() const;
@@ -267,8 +284,11 @@ private:
 
     enum class InitPhase : int { Idle, Loading, Ready, Error };
 
-    // Pushes modes_.effective_rules().vehicle_control into session_.
+    // Pushes modes_.effective_rules().vehicle_control and the drone-follow
+    // target (only while in drone_follow) into session_.
     void apply_mode_to_session();
+    // Returns to the own car when the Session reports its followed vehicle lost.
+    void poll_drone_follow();
 
     // Tears down whatever this object currently holds - an in-flight init
     // worker (cancelled, then joined - R2.2 R9) and/or a
@@ -336,7 +356,8 @@ private:
     std::int64_t fetch_delay_ms_ = 0;
 
     rg::PlayerModeMachine modes_{rg::PlayerMode::Drive};
-    std::uint64_t world_load_serial_ = 0; // modes_' serial of the load this object is running
+    std::uint64_t world_load_serial_ = 0; // the mode machine's serial of the load this object is running
+    std::uint64_t drone_lost_seen_ = 0;   // Session::followed_loss().count already handled (per Session)
 };
 
 } // namespace rg_godot

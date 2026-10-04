@@ -307,9 +307,14 @@ ps::Pose Session::setup_terrain(const TerrainModeConfig& tm) {
         ((phys.prefetch_margin_tiles == 0) != (phys.prefetch_max_tiles == 0))) {
         throw std::invalid_argument("Session: invalid terrain prefetch margin/cap (margin exceeds streamer gate)");
     }
-    world_->set_terrain_source(terrain_->source,
-                               g2m::ps_bridge::make_terrain_config(phys.radius_m, phys.max_tile_fills_per_tick,
-                                   phys.prefetch_margin_tiles, phys.prefetch_max_tiles));
+    // The TileManager pool is sized for TWO interest points (R9b: the player's
+    // car plus a followed NPC/truck, physics_interest_points): twice the
+    // single-square pool make_terrain_config computes. The priming check below
+    // still compares against ONE square - priming runs with one point.
+    ps::terrain::TerrainConfig terrain_config = g2m::ps_bridge::make_terrain_config(
+        phys.radius_m, phys.max_tile_fills_per_tick, phys.prefetch_margin_tiles, phys.prefetch_max_tiles);
+    terrain_config.max_resident_tiles *= 2;
+    world_->set_terrain_source(terrain_->source, terrain_config);
 
     throw_if_cancelled();
     StartupProgress* progress = config_.startup.get();
@@ -511,11 +516,12 @@ void Session::finish_relocation() {
 }
 
 std::span<const g2m::phys::InterestPoint> Session::physics_interest_points() {
-    // Every physics actor that needs resident terrain gets one entry. R4 has
-    // exactly one: the chassis (or, before the vehicle exists, the spawn
-    // point). Later actors (a walker, a parked car, a followed vehicle) are
-    // appended here; the TileManager pool (make_terrain_config, 49 tiles at
-    // r = 400 m) is sized for ONE point and must be re-sized with them.
+    // Every physics actor that needs resident terrain gets one entry: the
+    // chassis (or, before the vehicle exists, the spawn point or a relocation
+    // target) as entry 0, and the followed vehicle (R9b) as entry 1 while one
+    // is followed. Later actors (a walker, a parked car) are appended here; the
+    // TileManager pool (setup_terrain: twice make_terrain_config's 49 tiles at
+    // r = 400 m) is sized for TWO points and must be re-sized for more.
     Terrain& t = *terrain_;
     std::vector<g2m::phys::InterestPoint>& out = t.interest_points;
     out.clear(); // capacity reserved in Terrain's constructor: no allocation per tick
@@ -533,8 +539,65 @@ std::span<const g2m::phys::InterestPoint> Session::physics_interest_points() {
         vx = v.x;
         vy = v.y;
     }
-    out.push_back(g2m::phys::InterestPoint{0, x, y, vx, vy, t.config.physics.radius_m});
+    out.push_back(g2m::phys::InterestPoint{kPlayerInterestId, x, y, vx, vy, t.config.physics.radius_m});
+    if (const std::uint64_t followed = followed_id_.load(std::memory_order_relaxed); followed != 0) {
+        ps::Vec3 p, v;
+        if (locate_followed(followed, p, v)) {
+            out.push_back(g2m::phys::InterestPoint{kFollowedInterestId, p.x, p.y, v.x, v.y, t.config.physics.radius_m});
+        }
+    }
     return out;
+}
+
+bool Session::locate_followed(std::uint64_t id, ps::Vec3& position, ps::Vec3& velocity) const {
+    if (id == 0) return false;
+    if (id == kNpcTruckVehicleId) {
+        if (!truck_state_.active) return false;
+        position = world_->get_pose(truck_body_).position;
+        velocity = world_->get_motion(truck_body_).linear;
+        return true;
+    }
+    for (const TrafficActor& actor : traffic_actors_) {
+        if (actor.id != id) continue;
+        position = world_->get_pose(actor.body).position;
+        velocity = world_->get_motion(actor.body).linear;
+        return true;
+    }
+    return false;
+}
+
+void Session::check_followed_alive() {
+    std::uint64_t id = followed_id_.load(std::memory_order_relaxed);
+    if (id == 0) return;
+    ps::Vec3 p, v;
+    if (locate_followed(id, p, v)) return;
+    // Lost: clear it (unless another thread already replaced it) and make it observable.
+    if (followed_id_.compare_exchange_strong(id, 0, std::memory_order_relaxed)) {
+        status_.followed_lost_id.store(id, std::memory_order_relaxed);
+        status_.followed_lost.fetch_add(1, std::memory_order_release);
+    }
+}
+
+void Session::set_followed_vehicle(std::optional<std::uint64_t> id) {
+    followed_id_.store(id.value_or(0), std::memory_order_relaxed);
+}
+
+Session::FollowLoss Session::followed_loss() const {
+    FollowLoss loss;
+    loss.count = status_.followed_lost.load(std::memory_order_acquire);
+    loss.id = status_.followed_lost_id.load(std::memory_order_relaxed);
+    return loss;
+}
+
+std::optional<std::uint64_t> Session::followed_vehicle() const {
+    const std::uint64_t id = followed_id_.load(std::memory_order_relaxed);
+    if (id == 0) return std::nullopt;
+    return id;
+}
+
+std::span<const g2m::phys::InterestPoint> Session::last_interest_points() const {
+    if (!terrain_) return {};
+    return terrain_->interest_points;
 }
 
 bool Session::gate_check() {
@@ -552,6 +615,12 @@ bool Session::gate_check() {
     for (const g2m::phys::InterestPoint& ip : points) {
         world_->set_terrain_interest_point(ip.id, ps::Vec3{ip.x, ip.y, 0.0}, ip.radius_m);
     }
+    // The followed point comes and goes (set_followed_vehicle, a lost actor):
+    // release its TileManager point when it is no longer in the list.
+    const bool has_follow_point = points.size() > 1;
+    if (follow_point_active_ && !has_follow_point) world_->remove_terrain_interest_point(kFollowedInterestId);
+    follow_point_active_ = has_follow_point;
+    status_.interest_points.store(static_cast<std::uint32_t>(points.size()), std::memory_order_relaxed);
     last_gate_interest_ms_ = ms_since(t_interest);
 
     status_.ready.store(gs.ready, std::memory_order_relaxed);
@@ -618,6 +687,7 @@ bool Session::step_once(bool from_loop) {
     take_relocate_request();
     if(relocation_&&relocation_->clear_traffic)update_traffic(true);
     if(relocation_&&relocation_->clear_traffic&&(truck_state_.active||truck_state_.loading)){truck_request_.store(-1);update_npc_truck();}
+    check_followed_alive(); // a relocation just cleared the traffic and the truck
     spike.take_relocate_ms = lap();
     if (terrain_) {
         const bool ready = gate_check() && sync_road_decks(1);
@@ -658,6 +728,7 @@ bool Session::step_once(bool from_loop) {
 
     update_npc_truck();
     update_traffic();
+    check_followed_alive(); // despawned at its route end / truck removed this tick
     environment_sample_=sample_environment(config_.environment,world_->get_pose(chassis_body_).position.z,world_->sim_time());
     if(config_.environment.enabled)world_->set_ambient({environment_sample_.pressure_pa,environment_sample_.temperature_k});
     world_->set_aero_environment({environment_sample_.air_density,environment_sample_.wind_world_m_s});
@@ -909,6 +980,11 @@ StreamingStatus Session::streaming_status() const {
     s.prime_ticks = status_.prime_ticks.load(std::memory_order_relaxed);
     s.relocations = status_.relocations.load(std::memory_order_relaxed);
     s.relocate_failures = status_.relocate_failures.load(std::memory_order_relaxed);
+    // Lost count first (acquire), then its id: a reader that sees a count has the id that goes with it.
+    s.followed_lost = status_.followed_lost.load(std::memory_order_acquire);
+    s.followed_lost_id = status_.followed_lost_id.load(std::memory_order_relaxed);
+    s.followed_id = followed_id_.load(std::memory_order_relaxed);
+    s.interest_points = status_.interest_points.load(std::memory_order_relaxed);
     if (terrain_) {
         s.road_surfaces = terrain_->config.physics.road_surfaces.enabled;
         if (terrain_->config.world_terrain) {
@@ -1093,7 +1169,8 @@ void Session::update_npc_truck() {
  const auto& current=*(upper==truck_route_.points.end()?upper-1:upper);
  double target=std::min(truck_target_.load(),current.speed_m_s);
  target=std::min(target,std::sqrt(std::max(0.,2*2.5*(end-truck_station_-5))));
- if(relative.length()>200)target=0; // Remain within the player's existing terrain/collision residency.
+ // Remain within the player's terrain residency - unless the camera follows the truck (then its own interest point keeps its terrain resident).
+ if(relative.length()>200&&followed_id_.load(std::memory_order_relaxed)!=kNpcTruckVehicleId)target=0;
  const double gap=ps::dot(relative,forward),lateral=std::abs(relative.x*forward.y-relative.y*forward.x);
  if(gap>0&&gap<35&&lateral<2.8)target=std::min(target,std::max(0.,(gap-12)*.7));
  truck_speed_+=std::clamp(target-truck_speed_,-4*dt,1.5*dt);
@@ -1118,6 +1195,21 @@ void Session::update_npc_truck() {
 }
 
 namespace rg {
+std::uint64_t Session::add_test_traffic_actor(const ps::Pose& pose,double speed_mps){
+ if(loop_.running())throw std::logic_error("Session::add_test_traffic_actor: not while running");
+ const ps::Vec3 forward=pose.orientation.rotate(ps::Vec3::unit_x());
+ const double yaw=ps::math::atan2(forward.y,forward.x);
+ TrafficTrip trip;
+ for(const double station:{0.0,2000.0}){
+  TruckRoutePoint point;point.ground=pose.position+forward*station;point.yaw=yaw;point.speed_m_s=speed_mps;point.station=station;
+  trip.route.points.push_back(point);
+ }
+ ps::BodyDesc body;body.motion=ps::BodyMotionType::Kinematic;body.gravity_enabled=false;body.shape=ps::BoxShape{{2.3,1.,.65}};
+ body.pose=pose;
+ const auto id=world_->create_body(body);
+ traffic_actors_.push_back({traffic_next_id_++,id,std::move(trip),0,speed_mps,0});
+ return traffic_actors_.back().id;
+}
 void Session::configure_traffic(TrafficConfig c){std::lock_guard<std::mutex> lock(traffic_mutex_);traffic_requested_=sanitize_traffic_config(c);traffic_config_changed_=true;}
 void Session::set_visible_traffic(std::vector<std::uint64_t> ids){std::sort(ids.begin(),ids.end());std::lock_guard<std::mutex> lock(traffic_mutex_);traffic_visible_=std::move(ids);}
 void Session::update_traffic(bool clear){
@@ -1182,7 +1274,8 @@ void Session::update_traffic(bool clear){
   auto& a=*it;auto pose=world_->get_pose(a.body);a.unseen=std::binary_search(visible.begin(),visible.end(),a.id)?0:a.unseen+dt;
   const double end=a.trip.route.points.back().station;
   const bool surplus=static_cast<int>(traffic_actors_.size())>traffic_population_target_;
-  if((a.station>=end-.5&&a.speed<.5)||((surplus||(pose.position-car.position).length()>traffic_config_.radius_m+50)&&a.unseen>3)){
+  const bool followed=followed_id_.load(std::memory_order_relaxed)==a.id; // R9b: kept alive (and resident) while the drone camera trails it
+  if((a.station>=end-.5&&a.speed<.5)||(!followed&&(surplus||(pose.position-car.position).length()>traffic_config_.radius_m+50)&&a.unseen>3)){
    world_->destroy_body(a.body);const auto index=static_cast<std::size_t>(it-traffic_actors_.begin());
    if(index+1<traffic_actors_.size())*it=std::move(traffic_actors_.back());
    traffic_actors_.pop_back();it=index<traffic_actors_.size()?traffic_actors_.begin()+index:traffic_actors_.end();continue;

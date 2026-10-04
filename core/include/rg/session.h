@@ -231,6 +231,19 @@ struct StreamingStatus {
     std::uint64_t relocations = 0;       // request_relocate placements done (R9)
     std::uint64_t relocate_failures = 0; // relocations with no ground at the target
 
+    // Drone follow (R9b, Session::set_followed_vehicle): the vehicle currently
+    // followed (0 = none), how many times the Session LOST a followed vehicle
+    // (despawned, truck removed, traffic cleared - lifetime counter, check
+    // `after > before`) and the id of the latest one lost. The Session clears
+    // the follow itself when it loses the vehicle; the binding reacts by
+    // returning to the player's own car. Valid in flat mode too.
+    std::uint64_t followed_id = 0;
+    std::uint64_t followed_lost = 0;
+    std::uint64_t followed_lost_id = 0;
+    // Physics interest points of the last gate check (terrain mode; 1 = the
+    // player's car, 2 = plus the followed vehicle).
+    std::uint32_t interest_points = 0;
+
     // G2.5a-grip R-c (plan section 8): whether tyre grip comes from per-cell
     // OSM road classes (physics.road_surfaces.enabled) rather than one
     // uniform terrain_surface. False in flat mode and whenever road_surfaces
@@ -385,6 +398,38 @@ public:
     void request_reset_to_spawn();
     void configure_traffic(TrafficConfig);
     void set_visible_traffic(std::vector<std::uint64_t> ids);
+
+    // Drone follow (R9b): keep a vehicle other than the player's car alive and
+    // its terrain resident while the camera trails it. `id` is a
+    // FrameSnapshot::traffic.actors[].id or kNpcTruckVehicleId; nullopt (or 0)
+    // ends the follow. Any thread, consumed on the stepping thread.
+    //  - Terrain mode: physics_interest_points() appends a SECOND point (id
+    //    kFollowedInterestId) at that actor's position/velocity with the same
+    //    radius; the player's car stays point 0. The TileManager pool is sized
+    //    for two points (setup_terrain doubles make_terrain_config's value).
+    //  - The actor is not despawned for distance/surplus while followed (it
+    //    still ends with its route), and the truck no longer stops at 200 m
+    //    from the player's car.
+    //  - If the actor disappears anyway (route end, truck removed, traffic
+    //    cleared by a relocation, an id that never existed), the Session
+    //    clears the follow and bumps StreamingStatus::followed_lost.
+    // Never called by the Session itself, so a session without a follow behaves
+    // (and hashes) exactly as before.
+    void set_followed_vehicle(std::optional<std::uint64_t> id);
+    [[nodiscard]] std::optional<std::uint64_t> followed_vehicle() const;
+    // The same two counters as StreamingStatus::followed_lost/_lost_id, cheap
+    // enough to poll every frame (two atomic loads, count first).
+    struct FollowLoss {
+        std::uint64_t count = 0;
+        std::uint64_t id = 0;
+    };
+    [[nodiscard]] FollowLoss followed_loss() const;
+    // The NPC truck's followable id (traffic actor ids count up from 1 and can
+    // never reach 2^62; 2^62 also stays a positive int64 for Godot).
+    static constexpr std::uint64_t kNpcTruckVehicleId = std::uint64_t{1} << 62;
+    // TileManager/streamer interest-point ids: the player's car, the followed vehicle.
+    static constexpr std::uint32_t kPlayerInterestId = 0;
+    static constexpr std::uint32_t kFollowedInterestId = 1;
     void request_npc_truck(bool enabled,double speed_kph); // the config's spawn (flat mode: the origin, yaw 0)
     static constexpr double kRelocateParkZ = 4000.0;
 
@@ -450,6 +495,16 @@ public:
     // world_terrain() above. Empty in flat mode.
     [[nodiscard]] std::string terrain_surface_name() const;
 
+    // --- Test seams (not running()): a kinematic traffic actor on a straight
+    // 2 km route from `pose` along its own heading at `speed_mps` (no geo2map
+    // data needed, flat or terrain mode), returned id is followable like any
+    // traffic actor. Without a follow it despawns after a few unseen seconds
+    // (the flat-mode population target is 0), like any surplus actor.
+    std::uint64_t add_test_traffic_actor(const ps::Pose& pose, double speed_mps);
+    // The interest points the latest gate check built (terrain mode; empty in
+    // flat mode or before the first one). Stepping thread / tests only.
+    [[nodiscard]] std::span<const g2m::phys::InterestPoint> last_interest_points() const;
+
     // --- Direct access: synchronous-mode / test / hash-check-tool only.
     // NOT race-free against a running loop - never call these while
     // running() from a thread other than the one driving step().
@@ -487,10 +542,17 @@ private:
     // interest point + status atomics; true = ready.
     bool gate_check();
     // The physics interest points the streamer and TileManager keep terrain
-    // resident around - a LIST so later actors (walker, parked cars) slot in;
-    // for R4 exactly one entry, the chassis. Sim thread only; the span points
-    // into Terrain's reused buffer (valid until the next call).
+    // resident around - a LIST so later actors (walker, parked cars) slot in:
+    // entry 0 is the chassis (or the spawn / a relocation target), entry 1 the
+    // followed vehicle while one is followed (set_followed_vehicle). The
+    // TileManager pool is sized for TWO points (setup_terrain); a third needs
+    // another re-size. Sim thread only; the span points into Terrain's reused
+    // buffer (valid until the next call).
     std::span<const g2m::phys::InterestPoint> physics_interest_points();
+    // Where the followed actor is (traffic actor or the NPC truck); false when it does not exist.
+    bool locate_followed(std::uint64_t id, ps::Vec3& position, ps::Vec3& velocity) const;
+    // Stepping thread: clear a follow whose vehicle no longer exists and count it.
+    void check_followed_alive();
     // Retries step_once(false) until it steps; throws after the stall
     // timeout, or SessionCancelled once config_.startup->cancel is set.
     void step_blocking(const char* what);
@@ -576,7 +638,12 @@ private:
         std::atomic<std::uint32_t> prime_ticks{0};
         std::atomic<std::uint64_t> relocations{0};
         std::atomic<std::uint64_t> relocate_failures{0};
+        std::atomic<std::uint64_t> followed_lost{0};
+        std::atomic<std::uint64_t> followed_lost_id{0};
+        std::atomic<std::uint32_t> interest_points{0};
     };
+    std::atomic<std::uint64_t> followed_id_{0}; // 0 = none (traffic ids start at 1)
+    bool follow_point_active_ = false;          // stepping thread: the TileManager holds kFollowedInterestId
     StatusAtomics status_;
     bool sync_road_decks(int budget=0);
     std::set<std::tuple<std::int64_t,int,int>> installed_decks_;

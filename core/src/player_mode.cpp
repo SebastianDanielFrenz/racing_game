@@ -6,7 +6,7 @@
 
 namespace rg {
 
-ModeRules rules_for(PlayerMode mode) {
+ModeRules rules_for(PlayerMode mode, std::optional<std::uint64_t> drone_target) {
     ModeRules r;
     switch (mode) {
         case PlayerMode::Drive:
@@ -23,8 +23,16 @@ ModeRules rules_for(PlayerMode mode) {
             r.camera_inputs_live = true;
             r.camera_rig = CameraRig::Free;
             break;
-        case PlayerMode::DroneFollow: r.camera_rig = CameraRig::Drone; break; // R9b
-        case PlayerMode::Cockpit: r.camera_rig = CameraRig::Seat; break;      // R9b
+        case PlayerMode::DroneFollow:
+            r.implemented = true;
+            r.camera_rig = CameraRig::Drone;
+            r.camera_inputs_live = true; // orbit / zoom
+            // Own car: the player keeps driving. Another vehicle: the car is
+            // Unattended like in free cam.
+            r.vehicle_control = drone_target ? VehicleControl::Unattended : VehicleControl::Player;
+            r.driving_inputs_live = !drone_target.has_value();
+            break;
+        case PlayerMode::Cockpit: r.camera_rig = CameraRig::Seat; break;      // reserved, unused
         case PlayerMode::OnFoot: r.camera_rig = CameraRig::Walker; break;     // R9c
     }
     return r;
@@ -104,6 +112,52 @@ UnattendedControls unattended_controls(double speed_mps) {
     return c;
 }
 
+std::optional<std::uint64_t> next_drone_target(std::optional<std::uint64_t> current,
+                                               std::span<const DroneCandidate> candidates, double ref_x,
+                                               double ref_y, double max_range_m) {
+    struct Key {
+        double d2;
+        std::uint64_t id;
+    };
+    const auto less = [](const Key& a, const Key& b) { return a.d2 < b.d2 || (a.d2 == b.d2 && a.id < b.id); };
+    const double range2 = max_range_m * max_range_m;
+    const auto key_of = [&](const DroneCandidate& c, Key& out) {
+        const double dx = c.x - ref_x, dy = c.y - ref_y;
+        const double d2 = dx * dx + dy * dy;
+        if (!std::isfinite(d2) || !(d2 <= range2)) return false;
+        out = Key{d2, c.id};
+        return true;
+    };
+
+    Key after{0.0, 0};
+    bool have_after = false; // false = "from the own car": every in-range candidate qualifies
+    if (current) {
+        for (const DroneCandidate& c : candidates) {
+            Key k{};
+            if (c.id == *current && key_of(c, k)) {
+                after = k;
+                have_after = true;
+                break;
+            }
+        }
+        if (!have_after) return std::nullopt; // gone or out of range: back to the own car
+    }
+
+    bool found = false;
+    Key best{0.0, 0};
+    for (const DroneCandidate& c : candidates) {
+        Key k{};
+        if (!key_of(c, k)) continue;
+        if (have_after && !less(after, k)) continue;
+        if (!found || less(k, best)) {
+            best = k;
+            found = true;
+        }
+    }
+    if (!found) return std::nullopt;
+    return best.id;
+}
+
 PlayerModeMachine::PlayerModeMachine(PlayerMode start) : mode_(start) {
     if (!rules_for(start).implemented) {
         throw std::invalid_argument(std::string("PlayerModeMachine: start mode '") + to_string(start) +
@@ -115,6 +169,7 @@ PlayerModeMachine::Result PlayerModeMachine::request_mode(PlayerMode mode) {
     if (!rules_for(mode).implemented) return Result::NotImplemented;
     if (mode == mode_) return Result::NoChange;
     mode_ = mode;
+    drone_target_.reset(); // entering or leaving DroneFollow starts on the own car
     ++revision_;
     return Result::Changed;
 }
@@ -129,6 +184,14 @@ PlayerMode PlayerModeMachine::cycle_mode() {
         }
     }
     return mode_;
+}
+
+bool PlayerModeMachine::set_drone_target(std::optional<std::uint64_t> target) {
+    if (mode_ != PlayerMode::DroneFollow) return false;
+    if (drone_target_ == target) return true;
+    drone_target_ = target;
+    ++revision_;
+    return true;
 }
 
 std::uint64_t PlayerModeMachine::begin_world_load(WorldKind kind) {
@@ -147,7 +210,7 @@ bool PlayerModeMachine::finish_world_load(std::uint64_t serial, bool ok) {
 }
 
 ModeRules PlayerModeMachine::effective_rules() const {
-    ModeRules r = rules_for(mode_);
+    ModeRules r = rules_for(mode_, drone_target_);
     if (world_phase_ != WorldPhase::Ready) {
         r.driving_inputs_live = false;
         r.vehicle_control = VehicleControl::Unattended;

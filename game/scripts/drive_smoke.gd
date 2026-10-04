@@ -19,7 +19,13 @@ extends Node
 #     the clock; waits for the relocation to land, then checks that the tick
 #     count advances again over AFTER_S seconds of wall time;
 #  5. runtime switching, no restart: cycles the player mode to free_cam
-#     (checks the free rig is active and the car unattended) and back to
+#     (checks the free rig is active and the car unattended), on to
+#     drone_follow (R9b: the drone rig is active, the target is the own car,
+#     the car stays Player-driven and a scripted throttle still reaches the
+#     sim; then, when a traffic car or the NPC truck exists - the truck is
+#     requested - cycles to it: car unattended, driving inputs dropped, two
+#     physics interest points; returns to the own car; when the target is the
+#     truck, removing it must fall back to the own car by itself) and back to
 #     drive; switches the world to flat, back to the real world, cancels that
 #     load CANCEL_AFTER_FRAMES frames in with another switch (prints how long the
 #     cancel-then-join took), and switches to the real world once more;
@@ -40,6 +46,8 @@ const RELOCATE_ALONG_M := 3000.0
 const AFTER_S := 3.0
 const CANCEL_AFTER_FRAMES := 3 # a warm-cache load takes ~0.4 s: cancel well inside it
 const TIMEOUT_S := 300.0
+const NPC_WAIT_S := 20.0 # wall time to wait for a traffic car / the truck in drone_follow
+const TRUCK_ID := 4611686018427387904 # rg::Session::kNpcTruckVehicleId, 2^62
 const ROUTE := "../data/routes/home_r1_drive.json"
 
 var main: Node
@@ -59,6 +67,8 @@ var _advanced: int = -1
 var _switches: int = 0
 var _cancel_ms: int = -1
 var _frames: int = 0
+var _drone_lost_before: int = 0
+var _drone_target: int = -1
 
 func _ready() -> void:
 	_started_ms = Time.get_ticks_msec()
@@ -165,6 +175,101 @@ func _process(_delta: float) -> void:
 					_finish(1, "free_cam mode state wrong: %s rig=%s" % [ms, main.get_director().active_name])
 					return
 				print("RG_DRIVE smoke mode free_cam ok: rig=free car=unattended")
+				print("RG_DRIVE smoke mode -> %s" % sim.cycle_player_mode())
+				_frames = 0
+				_phase = "mode_drone_own"
+		"mode_drone_own":
+			_frames += 1
+			if _frames == 5:
+				var ms: Dictionary = sim.get_mode_state()
+				if str(ms.get("mode")) != "drone_follow" or main.get_director().active_name != "drone" \
+						or str(ms.get("vehicle_control")) != "player" or not bool(ms.get("driving_inputs_live")) \
+						or not bool(ms.get("drone_target_own")):
+					_finish(1, "drone_follow (own car) mode state wrong: %s rig=%s" % [ms, main.get_director().active_name])
+					return
+				# The player keeps driving: a scripted throttle reaches the sim
+				# (in free_cam the driving inputs were not forwarded at all).
+				main.scripted_controls = {"throttle": 0.3, "steer": 0.0, "brake": 0.0, "handbrake": 0.0, "clutch": 0.0}
+			elif _frames == 15:
+				var thr := float(sim.get_control("throttle"))
+				if absf(thr - 0.3) > 1e-6:
+					_finish(1, "drone_follow own car: driving input did not reach the sim (throttle=%f)" % thr)
+					return
+				if sim.get_drone_target_transform() == null:
+					_finish(1, "drone_follow own car: no target transform")
+					return
+				print("RG_DRIVE smoke mode drone_follow ok: rig=drone target=own car player-driven throttle=%.2f interest_points=%d" % [
+					thr, int(sim.get_streaming_status().get("interest_points", 0))])
+				main.scripted_controls = {}
+				sim.request_npc_truck(true, 70.0)
+				_mark_ms = Time.get_ticks_msec()
+				_phase = "drone_wait_npc"
+		"drone_wait_npc":
+			var have_truck := bool(sim.get_npc_truck_state().get("active", false))
+			var have_traffic: bool = sim.get_traffic_state().get("actors", []).size() > 0
+			if have_truck or have_traffic:
+				_drone_lost_before = int(sim.get_streaming_status().get("followed_lost", 0))
+				_drone_target = int(sim.cycle_drone_target())
+				if _drone_target < 0:
+					_finish(1, "drone_follow: cycle_drone_target found no target although an NPC exists")
+					return
+				print("RG_DRIVE smoke drone target -> %d (truck=%s traffic=%s)" % [_drone_target, str(have_truck), str(have_traffic)])
+				_frames = 0
+				_phase = "mode_drone_other"
+			elif (Time.get_ticks_msec() - _mark_ms) / 1000.0 >= NPC_WAIT_S:
+				print("RG_DRIVE smoke drone: no NPC car or truck appeared within %.0f s - own-car path only" % NPC_WAIT_S)
+				sim.request_npc_truck(false, 70.0)
+				print("RG_DRIVE smoke mode -> %s" % sim.cycle_player_mode())
+				_frames = 0
+				_phase = "mode_drive"
+		"mode_drone_other":
+			_frames += 1
+			if _frames >= 30:
+				var ms: Dictionary = sim.get_mode_state()
+				var ss: Dictionary = sim.get_streaming_status()
+				if bool(ms.get("drone_target_own")) or str(ms.get("vehicle_control")) != "unattended" \
+						or bool(ms.get("driving_inputs_live")) or main.get_director().active_name != "drone":
+					_finish(1, "drone_follow (NPC target %d) mode state wrong: %s rig=%s" % [_drone_target, ms, main.get_director().active_name])
+					return
+				if int(ss.get("followed_id", 0)) != _drone_target or int(ss.get("interest_points", 0)) != 2:
+					_finish(1, "drone_follow (NPC target %d): expected 2 interest points, got %s" % [_drone_target, ss])
+					return
+				if sim.get_drone_target_transform() == null:
+					_finish(1, "drone_follow (NPC target %d): no target transform" % _drone_target)
+					return
+				print("RG_DRIVE smoke mode drone_follow NPC ok: target=%s car=unattended interest_points=2" % ms.get("drone_target_label"))
+				if _drone_target == TRUCK_ID:
+					# The truck going away must return the camera to the own car by itself.
+					sim.request_npc_truck(false, 70.0)
+					_frames = 0
+					_phase = "drone_truck_lost"
+				else:
+					sim.set_drone_target(-1)
+					_frames = 0
+					_phase = "drone_back_own"
+		"drone_truck_lost":
+			_frames += 1
+			if _frames >= 60:
+				var ms: Dictionary = sim.get_mode_state()
+				var ss: Dictionary = sim.get_streaming_status()
+				if not bool(ms.get("drone_target_own")) or str(ms.get("vehicle_control")) != "player" \
+						or int(ss.get("followed_lost", 0)) != _drone_lost_before + 1:
+					_finish(1, "drone_follow: the truck was removed but the mode did not fall back to the own car: %s lost=%s (before %d)" % [ms, ss.get("followed_lost"), _drone_lost_before])
+					return
+				print("RG_DRIVE smoke drone: followed truck removed -> back on the own car (followed_lost=%d)" % int(ss.get("followed_lost", 0)))
+				_frames = 0
+				_phase = "drone_back_own"
+		"drone_back_own":
+			_frames += 1
+			if _frames >= 30:
+				var ms: Dictionary = sim.get_mode_state()
+				var ss: Dictionary = sim.get_streaming_status()
+				if not bool(ms.get("drone_target_own")) or str(ms.get("vehicle_control")) != "player" \
+						or not bool(ms.get("driving_inputs_live")) or int(ss.get("interest_points", 0)) != 1:
+					_finish(1, "drone_follow: back on the own car, state wrong: %s interest_points=%s" % [ms, ss.get("interest_points")])
+					return
+				print("RG_DRIVE smoke drone_follow back on own car ok: car=player interest_points=1")
+				sim.request_npc_truck(false, 70.0)
 				print("RG_DRIVE smoke mode -> %s" % sim.cycle_player_mode())
 				_frames = 0
 				_phase = "mode_drive"

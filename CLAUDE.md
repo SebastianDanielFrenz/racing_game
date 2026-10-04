@@ -19,8 +19,8 @@ racing_game/
     geo2map_engine/                    git submodule, READ-ONLY from this repo (another session owns it), pinned by commit - see "geo2map_engine submodule" below
   core/
     include/rg/
-      session.h                       rg::Session, SessionConfig (optional `terrain`, optional `startup`), FrameSnapshot, WheelSnapshot, StreamingStatus, kControlChannelNames[]/kControlChannelCount; R9: StartupProgress/SessionCancelled, set_vehicle_control, request_relocate/request_reset_to_spawn, make_session() - see "Session terrain mode (R4)" and "Player modes and world switch (R9)" below
-      player_mode.h                   rg::PlayerMode/ModeRules/rules_for/PlayerModeMachine/unattended_controls (R9, engine-neutral mode state machine) - see "Player modes and world switch (R9)" below
+      session.h                       rg::Session, SessionConfig (optional `terrain`, optional `startup`), FrameSnapshot, WheelSnapshot, StreamingStatus, kControlChannelNames[]/kControlChannelCount; R9: StartupProgress/SessionCancelled, set_vehicle_control, request_relocate/request_reset_to_spawn, make_session(); R9b: set_followed_vehicle/followed_vehicle/followed_loss (drone-follow second physics interest point), kNpcTruckVehicleId, StreamingStatus followed_id/followed_lost/followed_lost_id/interest_points - see "Session terrain mode (R4)" and "Player modes and world switch (R9)" below
+      player_mode.h                   rg::PlayerMode/ModeRules/rules_for(mode, drone_target)/PlayerModeMachine (incl. set_drone_target)/DroneCandidate/next_drone_target/unattended_controls (R9/R9b, engine-neutral mode state machine) - see "Player modes and world switch (R9)" below
       terrain_mode.h                  rg::TerrainModeConfig (SessionConfig::terrain), rg::HeightTileSharedFetch (g2m::phys::IHeightTileFetch over a HeightTileFetchFn - WorldTerrain::height_tile_shared), make_terrain_mode(WorldConfig, WorldTerrain) + a pure (WorldConfig, SessionFrame, fetch) overload
       drive_script.h                  rg::DriveScript (header-only, Godot-free): tick-indexed sample-and-hold control events in DRIVE ticks (since spawn) plus an optional per-tick controller hook (the R5 autopilot's extension point); Session::set_drive_script
       fixed_rate_loop.h               rg::FixedRateLoop: fixed-rate wall-clock loop around a bool try_step() (frozen tick resyncs the deadline - no catch-up burst), LoopStats; runs Session::start()'s ticks
@@ -480,8 +480,10 @@ physics.max_tile_fills_per_tick))` (pool 49 at r = 400 m, one interest
 point).
 
 Tick attempt (`step_once`, used by `try_step()`, `step()` and the loop):
-`physics_interest_points()` (a list; R4: exactly the chassis
-pose/velocity, id 0) -> `streamer.update(points)` +
+`physics_interest_points()` (a list; the chassis pose/velocity as id 0 and,
+R9b, only while a drone-follow target is set and found, that vehicle's
+pose/velocity as id 1 - the TileManager pool is doubled in `setup_terrain`
+for it, 98 tiles at r = 400 m) -> `streamer.update(points)` +
 `World::set_terrain_interest_point` per point -> gate not ready: return
 false with the World untouched (StreamingStatus frozen/frozen_attempts/
 freeze_count) -> else drive script (or, from the loop, the set_control
@@ -648,11 +650,34 @@ rigs, the input mapping and the HUD.
 |---|---|---|---|---|---|
 | `drive` | yes | player | live | live (look-around) | `chase` |
 | `free_cam` | yes | unattended | - | live | `free` |
-| `drone_follow` | no (R9b) | - | - | - | `drone` |
-| `cockpit` | no (R9b) | - | - | - | `seat` |
+| `drone_follow`, own car (default) | yes | player | live | live | `drone` |
+| `drone_follow`, NPC target | yes | unattended | - | live | `drone` |
+| `cockpit` | reserved | - | - | - | `seat` |
 | `on_foot` | no (R9c) | - | - | - | `walker` |
 
 - `request_mode` refuses an unimplemented mode; `cycle_mode` skips them.
+  Cycle order: drive -> free_cam -> drone_follow -> drive.
+- Drone follow (R9b): the camera trails a TARGET vehicle from above/behind
+  (`drone_rig.gd`, pure display). `PlayerModeMachine::set_drone_target(id)`
+  holds the target (empty = the player's own car, the default on entering the
+  mode; reset on any mode change); `rules_for(DroneFollow, target)` gives
+  Player + live driving inputs for the own car, Unattended + no driving
+  inputs for an NPC target. `next_drone_target(...)` cycles own car -> NPC
+  vehicles nearest first (ties by id, relative to the PLAYER's car, not the
+  camera - a camera-relative order would ping-pong between the two nearest
+  vehicles) -> own car, range 1500 m. Bound as `set_drone_target(id)`,
+  `cycle_drone_target()` (returns the new id, -1 = own car),
+  `get_drone_target_transform()` (Variant, null when the target is gone) and
+  `get_mode_state()` `drone_target_id`/`drone_target_own`/`drone_target_label`.
+  `Session::set_followed_vehicle(id)` makes the followed actor a SECOND
+  physics interest point (id 1; the player's stays id 0), exempts it from the
+  traffic despawn rules and the truck's 200 m stop rule, and when it
+  disappears anyway (route end, no such id) clears the follow and counts it
+  in `StreamingStatus::followed_lost`/`followed_lost_id`; the binding then
+  returns the mode to the own car. The NPC truck's vehicle id is
+  `Session::kNpcTruckVehicleId` = 1<<62: traffic ids count up from 1 so they
+  can never reach it, and it stays a positive int64 for Godot. VR keeps its
+  `xr_free` rig for the drone view (no XR drone rig yet).
 - World switch: `begin_world_load(kind)` -> Loading (supersedes a load in
   flight) -> `finish_world_load(serial, ok)` -> Ready/Failed. The mode is
   kept across a switch; while the world is not Ready, `effective_rules()`
@@ -683,7 +708,9 @@ Keys (`input_map.gd`; the HUD shows a one-line summary):
 
 | action | keyboard | gamepad |
 |---|---|---|
-| cycle mode (drive / free cam) | V | Back |
+| cycle mode (drive / free cam / drone follow) | V | Back |
+| drone follow: next target (own car -> NPC vehicles) | N | D-pad right |
+| drone follow: zoom | mouse wheel, PageUp / PageDown | - |
 | switch world (flat / real; also cancels a load) | F8 | - |
 | reset car to spawn | R | Y |
 | drive: steer / throttle / brake | A, D / W / S | left stick / RT / LT |

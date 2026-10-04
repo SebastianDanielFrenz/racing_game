@@ -15,7 +15,7 @@ extends CanvasLayer
 # running, first observed tick count" and "measured sim tick rate over last
 # window") - keep their wording.
 
-const KEY_HELP := "F7 traffic  F6 seat adjustment  Middle-click log location  Tab/right-stick click chase/cockpit  V mode (drive/free cam)  F8 world (flat/real)  R reset car  F flip upright  WASD drive | fly  E/Q shift | up/down  Space handbrake  C clutch  I ignition  K starter  F5 auto-shift  arrows/right stick/RMB+mouse look"
+const KEY_HELP := "F7 traffic  F6 seat adjustment  Middle-click log location  Tab/right-stick click chase/cockpit  V mode (drive/free cam/drone follow)  N or D-pad right next drone target  wheel/PgUp/PgDn drone zoom  F8 world (flat/real)  R reset car  F flip upright  WASD drive | fly  E/Q shift | up/down  Space handbrake  C clutch  I ignition  K starter  F5 auto-shift  arrows/right stick/RMB+mouse look"
 
 @export var simulation_path: NodePath
 @export var input_map_path: NodePath
@@ -104,6 +104,8 @@ func _process(_delta: float) -> void:
 	var lines := PackedStringArray()
 	lines.append("racing_game R9 - mode: %s   world: %s (%s)   car: %s" % [
 		mode.get("mode", "?"), mode.get("world_kind", "?"), mode.get("world_phase", "?"), mode.get("vehicle_control", "?")])
+	if str(mode.get("mode", "")) == "drone_follow":
+		lines.append("drone target: %s   (N / D-pad right: next target, wheel / PgUp / PgDn: zoom)" % mode.get("drone_target_label", "own car"))
 	lines.append(_simulation.get_build_info())
 	lines.append("sim tick rate: target %.1f Hz  measured %.2f Hz" % [_simulation.get_tick_rate_hz(), _last_measured_hz])
 	lines.append("godot fps: %.1f    adapter main-thread: avg %.3f ms  max %.3f ms" % [

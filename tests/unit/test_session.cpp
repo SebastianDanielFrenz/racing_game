@@ -15,6 +15,7 @@
 #include <chrono>
 #include <cmath>
 #include <cstdint>
+#include <optional>
 #include <string>
 #include <thread>
 #include <vector>
@@ -397,4 +398,59 @@ TEST_CASE("Engine audio publishes without render reads and detaches safely", "[s
     std::this_thread::sleep_for(std::chrono::milliseconds(30));
     session.set_engine_audio_publisher({});session.stop();
     REQUIRE(calls.load()>detached);
+}
+
+// R9b: following a vehicle (rg::Session::set_followed_vehicle) in flat mode -
+// the actor is kept alive while followed, and a follow whose vehicle does not
+// exist (despawned, never existed, no truck) is cleared and counted.
+TEST_CASE("session follow: a followed actor survives, a lost follow is cleared and counted", "[session][follow]") {
+    rg::SessionConfig config = make_test_config();
+    config.job_workers = 1;
+    rg::Session session(config);
+    ps::Pose pose;
+    pose.position = ps::Vec3{40.0, 0.0, 0.8};
+    const std::uint64_t followed = session.add_test_traffic_actor(pose, 5.0);
+    pose.position = ps::Vec3{40.0, 10.0, 0.8};
+    const std::uint64_t other = session.add_test_traffic_actor(pose, 5.0);
+    CHECK(followed != other);
+    CHECK(followed < rg::Session::kNpcTruckVehicleId);
+    CHECK(rg::Session::kNpcTruckVehicleId <= static_cast<std::uint64_t>(INT64_MAX)); // a positive Godot int
+
+    session.set_followed_vehicle(followed);
+    CHECK(session.followed_vehicle() == std::optional<std::uint64_t>{followed});
+    const std::uint64_t lost0 = session.streaming_status().followed_lost;
+    // 5 s of sim time: an unfollowed, unseen surplus actor (flat-mode target 0) goes after > 3 s.
+    for (int k = 0; k < 1200; ++k) session.step();
+    CHECK(session.followed_vehicle() == std::optional<std::uint64_t>{followed}); // survived
+    CHECK(session.streaming_status().followed_lost == lost0);
+    CHECK(session.streaming_status().followed_id == followed);
+
+    // The unfollowed one is gone by now: following it is a lost follow.
+    session.set_followed_vehicle(other);
+    session.step();
+    CHECK_FALSE(session.followed_vehicle().has_value());
+    rg::StreamingStatus st = session.streaming_status();
+    CHECK(st.followed_lost == lost0 + 1);
+    CHECK(st.followed_lost_id == other);
+    CHECK(st.followed_id == 0);
+
+    // An id that never existed, and the truck id while no truck exists.
+    session.set_followed_vehicle(std::uint64_t{987654});
+    session.step();
+    CHECK(session.streaming_status().followed_lost == lost0 + 2);
+    CHECK(session.streaming_status().followed_lost_id == 987654);
+    session.set_followed_vehicle(rg::Session::kNpcTruckVehicleId);
+    session.step();
+    CHECK(session.streaming_status().followed_lost == lost0 + 3);
+    CHECK(session.streaming_status().followed_lost_id == rg::Session::kNpcTruckVehicleId);
+
+    // Clearing the follow is not a loss; the id 0 means none.
+    session.set_followed_vehicle(followed);
+    session.set_followed_vehicle(std::nullopt);
+    session.step();
+    CHECK_FALSE(session.followed_vehicle().has_value());
+    session.set_followed_vehicle(std::uint64_t{0});
+    CHECK_FALSE(session.followed_vehicle().has_value());
+    CHECK(session.streaming_status().followed_lost == lost0 + 3);
+    CHECK(session.last_interest_points().empty()); // flat mode has no interest points
 }

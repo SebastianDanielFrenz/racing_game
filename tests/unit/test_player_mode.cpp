@@ -12,9 +12,12 @@
 #include <chrono>
 #include <cmath>
 #include <cstdint>
+#include <optional>
+#include <span>
 #include <stdexcept>
 #include <string>
 #include <thread>
+#include <vector>
 
 namespace {
 
@@ -49,8 +52,25 @@ TEST_CASE("player mode: rules per mode", "[player_mode]") {
     CHECK(free_cam.camera_inputs_live);
     CHECK(free_cam.camera_rig == rg::CameraRig::Free);
 
-    // Reserved for R9b/R9c: no behaviour.
-    for (rg::PlayerMode m : {rg::PlayerMode::DroneFollow, rg::PlayerMode::Cockpit, rg::PlayerMode::OnFoot}) {
+    // Drone follow (R9b): the own car is the default target and keeps driving.
+    const rg::ModeRules drone = rg::rules_for(rg::PlayerMode::DroneFollow);
+    CHECK(drone.implemented);
+    CHECK(drone.camera_rig == rg::CameraRig::Drone);
+    CHECK(drone.vehicle_control == rg::VehicleControl::Player);
+    CHECK(drone.driving_inputs_live);
+    CHECK(drone.camera_inputs_live);
+    // Another vehicle: the car is Unattended like in free cam.
+    const rg::ModeRules drone_other = rg::rules_for(rg::PlayerMode::DroneFollow, std::uint64_t{7});
+    CHECK(drone_other.implemented);
+    CHECK(drone_other.camera_rig == rg::CameraRig::Drone);
+    CHECK(drone_other.vehicle_control == rg::VehicleControl::Unattended);
+    CHECK_FALSE(drone_other.driving_inputs_live);
+    CHECK(drone_other.camera_inputs_live);
+    // The target means nothing outside DroneFollow.
+    CHECK(rg::rules_for(rg::PlayerMode::Drive, std::uint64_t{7}).driving_inputs_live);
+
+    // Reserved: no behaviour (Cockpit is unused, OnFoot is the next milestone).
+    for (rg::PlayerMode m : {rg::PlayerMode::Cockpit, rg::PlayerMode::OnFoot}) {
         CHECK_FALSE(rg::rules_for(m).implemented);
         CHECK_FALSE(rg::rules_for(m).driving_inputs_live);
     }
@@ -78,10 +98,12 @@ TEST_CASE("player mode: transitions", "[player_mode]") {
     CHECK(m.request_mode(rg::PlayerMode::FreeCam) == rg::PlayerModeMachine::Result::Changed);
     CHECK(m.mode() == rg::PlayerMode::FreeCam);
     CHECK(m.revision() > r0);
-    // cycle skips the reserved modes
+    // cycle: drive -> free_cam -> drone_follow -> drive, skipping the reserved modes
+    CHECK(m.cycle_mode() == rg::PlayerMode::DroneFollow);
     CHECK(m.cycle_mode() == rg::PlayerMode::Drive);
     CHECK(m.cycle_mode() == rg::PlayerMode::FreeCam);
-    CHECK(m.cycle_mode() == rg::PlayerMode::Drive);
+    CHECK(m.cycle_mode() == rg::PlayerMode::DroneFollow);
+    CHECK(m.request_mode(rg::PlayerMode::DroneFollow) == rg::PlayerModeMachine::Result::NoChange);
 
     CHECK_THROWS_AS(rg::PlayerModeMachine(rg::PlayerMode::OnFoot), std::invalid_argument);
 }
@@ -120,6 +142,142 @@ TEST_CASE("player mode: world switch flow", "[player_mode]") {
     CHECK(m.world_kind() == rg::WorldKind::RealWorld);
     CHECK(m.mode() == rg::PlayerMode::FreeCam);
     CHECK_FALSE(m.effective_rules().driving_inputs_live);
+}
+
+TEST_CASE("player mode: drone follow rules depend on the target", "[player_mode]") {
+    rg::PlayerModeMachine m(rg::PlayerMode::Drive);
+    m.finish_world_load(m.begin_world_load(rg::WorldKind::Flat), true);
+
+    // Outside DroneFollow the target cannot be set.
+    const std::uint64_t r_drive = m.revision();
+    CHECK_FALSE(m.set_drone_target(std::uint64_t{5}));
+    CHECK_FALSE(m.drone_target().has_value());
+    CHECK(m.revision() == r_drive);
+
+    REQUIRE(m.request_mode(rg::PlayerMode::DroneFollow) == rg::PlayerModeMachine::Result::Changed);
+    CHECK_FALSE(m.drone_target().has_value()); // own car by default
+    rg::ModeRules r = m.effective_rules();
+    CHECK(r.camera_rig == rg::CameraRig::Drone);
+    CHECK(r.vehicle_control == rg::VehicleControl::Player);
+    CHECK(r.driving_inputs_live);
+    CHECK(r.camera_inputs_live);
+
+    // Another vehicle: unattended, driving inputs off, camera inputs on; one revision bump.
+    std::uint64_t rev = m.revision();
+    CHECK(m.set_drone_target(std::uint64_t{42}));
+    CHECK(m.drone_target() == std::optional<std::uint64_t>{42});
+    CHECK(m.revision() == rev + 1);
+    r = m.effective_rules();
+    CHECK(r.vehicle_control == rg::VehicleControl::Unattended);
+    CHECK_FALSE(r.driving_inputs_live);
+    CHECK(r.camera_inputs_live);
+    CHECK(r.camera_rig == rg::CameraRig::Drone);
+
+    // Same target again: no bump. Another id: bump.
+    rev = m.revision();
+    CHECK(m.set_drone_target(std::uint64_t{42}));
+    CHECK(m.revision() == rev);
+    CHECK(m.set_drone_target(std::uint64_t{43}));
+    CHECK(m.revision() == rev + 1);
+
+    // Back to the own car (what the binding does when the followed vehicle disappears).
+    rev = m.revision();
+    CHECK(m.set_drone_target(std::nullopt));
+    CHECK(m.revision() == rev + 1);
+    r = m.effective_rules();
+    CHECK(r.vehicle_control == rg::VehicleControl::Player);
+    CHECK(r.driving_inputs_live);
+
+    // Leaving and re-entering resets the target to the own car.
+    CHECK(m.set_drone_target(std::uint64_t{9}));
+    m.request_mode(rg::PlayerMode::FreeCam);
+    CHECK_FALSE(m.drone_target().has_value());
+    CHECK(m.request_mode(rg::PlayerMode::DroneFollow) == rg::PlayerModeMachine::Result::Changed);
+    CHECK_FALSE(m.drone_target().has_value());
+    CHECK(m.effective_rules().driving_inputs_live);
+    CHECK(m.set_drone_target(std::uint64_t{9}));
+    CHECK(m.cycle_mode() == rg::PlayerMode::Drive); // drone_follow -> drive
+    CHECK_FALSE(m.drone_target().has_value());
+}
+
+TEST_CASE("player mode: drone follow masks driving inputs while the world is not ready", "[player_mode]") {
+    rg::PlayerModeMachine m(rg::PlayerMode::Drive);
+    REQUIRE(m.request_mode(rg::PlayerMode::DroneFollow) == rg::PlayerModeMachine::Result::Changed);
+    // No world yet: even the own-car target cannot drive; the camera stays live.
+    CHECK_FALSE(m.effective_rules().driving_inputs_live);
+    CHECK(m.effective_rules().vehicle_control == rg::VehicleControl::Unattended);
+    CHECK(m.effective_rules().camera_inputs_live);
+
+    const std::uint64_t serial = m.begin_world_load(rg::WorldKind::RealWorld);
+    CHECK_FALSE(m.effective_rules().driving_inputs_live);
+    CHECK(m.set_drone_target(std::uint64_t{3}));
+    CHECK_FALSE(m.effective_rules().driving_inputs_live);
+    CHECK(m.set_drone_target(std::nullopt));
+    CHECK_FALSE(m.effective_rules().driving_inputs_live); // still loading
+
+    REQUIRE(m.finish_world_load(serial, true));
+    CHECK(m.effective_rules().driving_inputs_live);
+    CHECK(m.effective_rules().vehicle_control == rg::VehicleControl::Player);
+    CHECK(m.set_drone_target(std::uint64_t{3}));
+    CHECK_FALSE(m.effective_rules().driving_inputs_live);
+
+    // The mode and the target survive a world switch; the loading mask applies again.
+    const std::uint64_t s2 = m.begin_world_load(rg::WorldKind::Flat);
+    CHECK(m.mode() == rg::PlayerMode::DroneFollow);
+    CHECK(m.drone_target() == std::optional<std::uint64_t>{3});
+    CHECK_FALSE(m.effective_rules().driving_inputs_live);
+    CHECK(m.effective_rules().camera_inputs_live);
+    m.finish_world_load(s2, false);
+    CHECK_FALSE(m.effective_rules().driving_inputs_live);
+}
+
+TEST_CASE("player mode: next_drone_target cycles own car, then nearest first, ties by id", "[player_mode]") {
+    using rg::DroneCandidate;
+    using Target = std::optional<std::uint64_t>;
+    const std::vector<DroneCandidate> c = {
+        {10, 30.0, 0.0},   // distance 30
+        {4, 0.0, 10.0},    // distance 10
+        {7, -10.0, 0.0},   // distance 10 (tie with 4: id 4 first)
+        {99, 900.0, 0.0},  // out of range
+        {55, 100.0, 0.0},  // distance 100
+    };
+    const double range = 200.0;
+
+    // own car -> nearest (tie: lower id) -> ... -> farthest in range -> own car
+    Target t = std::nullopt;
+    const Target expected[] = {Target{4}, Target{7}, Target{10}, Target{55}, std::nullopt};
+    for (const Target& e : expected) {
+        t = rg::next_drone_target(t, c, 0.0, 0.0, range);
+        CHECK(t == e);
+    }
+    // The out-of-range vehicle is never selected.
+    CHECK(rg::next_drone_target(Target{55}, c, 0.0, 0.0, range) == std::nullopt);
+    // A larger range lets it in, at the end.
+    CHECK(rg::next_drone_target(Target{55}, c, 0.0, 0.0, 1000.0) == Target{99});
+    CHECK(rg::next_drone_target(Target{99}, c, 0.0, 0.0, 1000.0) == std::nullopt);
+
+    // The order follows the reference point, not the list order.
+    CHECK(rg::next_drone_target(std::nullopt, c, 100.0, 0.0, range) == Target{55});
+    CHECK(rg::next_drone_target(Target{55}, c, 100.0, 0.0, range) == Target{10});
+
+    // A current target that is gone (not in the list) or out of range goes to the own car.
+    CHECK(rg::next_drone_target(Target{12345}, c, 0.0, 0.0, range) == std::nullopt);
+    CHECK(rg::next_drone_target(Target{99}, c, 0.0, 0.0, range) == std::nullopt);
+
+    // No candidates: the own car stays the own car.
+    CHECK(rg::next_drone_target(std::nullopt, std::span<const DroneCandidate>{}, 0.0, 0.0, range) == std::nullopt);
+    // Non-finite positions are ignored.
+    const std::vector<DroneCandidate> bad = {{1, std::nan(""), 0.0}, {2, 5.0, 0.0}};
+    CHECK(rg::next_drone_target(std::nullopt, bad, 0.0, 0.0, range) == Target{2});
+    CHECK(rg::next_drone_target(Target{2}, bad, 0.0, 0.0, range) == std::nullopt);
+
+    // Equal distance: the lower id first, whatever the list order.
+    const std::vector<DroneCandidate> tie_a = {{8, 5.0, 0.0}, {3, 0.0, 5.0}};
+    const std::vector<DroneCandidate> tie_b = {{3, 0.0, 5.0}, {8, 5.0, 0.0}};
+    CHECK(rg::next_drone_target(std::nullopt, tie_a, 0.0, 0.0, range) == Target{3});
+    CHECK(rg::next_drone_target(std::nullopt, tie_b, 0.0, 0.0, range) == Target{3});
+    CHECK(rg::next_drone_target(Target{3}, tie_a, 0.0, 0.0, range) == Target{8});
+    CHECK(rg::next_drone_target(Target{3}, tie_b, 0.0, 0.0, range) == Target{8});
 }
 
 TEST_CASE("player mode: the unattended policy", "[player_mode]") {

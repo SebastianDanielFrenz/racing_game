@@ -16,8 +16,11 @@ extends Node
 # Camera group: move (x right, y up, z forward, each -1..1), look rate
 # (yaw/pitch, -1..1: right stick or arrow keys), mouse look (captured mouse
 # delta in pixels; the right mouse button captures, Esc releases), fast.
+# Drone-follow zoom (camera group): mouse wheel ticks (consume_zoom_steps) and
+# PageUp/PageDown held (get_camera_zoom_key); next drone target is a global
+# action (N / D-pad right).
 # Global actions (edges, consumed once per frame by main.gd): cycle mode,
-# switch world, reset car. Those plus the camera keys are added to InputMap
+# switch world, reset car, next drone target. Those plus the camera keys are added to InputMap
 # at runtime (_ensure_action), so project.godot's [input] section only holds
 # the R0 driving actions.
 #
@@ -43,6 +46,9 @@ var _cycle_mode_count: int = 0
 var _switch_world_count: int = 0
 var _reset_car_count: int = 0
 var _flip_upright_count: int = 0
+var _cycle_drone_count: int = 0
+var _zoom_steps: float = 0.0 # mouse-wheel ticks since last consumed, + = zoom in
+var _cam_zoom_key: float = 0.0 # PageUp (+1, zoom in) / PageDown (-1, zoom out)
 
 var _steer_keyboard: bool = false
 var _steer_wheel: bool = false
@@ -86,6 +92,10 @@ func _ready() -> void:
 	_ensure_action("rg_reset_car", [KEY_R], [JOY_BUTTON_Y])
 	_ensure_action("rg_npc_truck", [KEY_T], [])
 	_ensure_action("rg_flip_upright", [KEY_F], [JOY_BUTTON_DPAD_DOWN])
+	# Drone follow: N (next target) / D-pad right - both unused by anything else.
+	_ensure_action("rg_cycle_drone_target", [KEY_N], [JOY_BUTTON_DPAD_RIGHT])
+	_ensure_action("rg_zoom_in", [KEY_PAGEUP], [])
+	_ensure_action("rg_zoom_out", [KEY_PAGEDOWN], [])
 	_ensure_action("rg_cam_forward", [KEY_W], [])
 	_ensure_action("rg_cam_back", [KEY_S], [])
 	_ensure_action("rg_cam_left", [KEY_A], [])
@@ -124,6 +134,11 @@ func _input(event: InputEvent) -> void:
 		_mouse_captured = false
 	elif event is InputEventMouseMotion and _mouse_captured:
 		_mouse_delta += event.relative
+	elif event is InputEventMouseButton and event.pressed:
+		if event.button_index == MOUSE_BUTTON_WHEEL_UP:
+			_zoom_steps += event.factor if event.factor > 0.0 else 1.0
+		elif event.button_index == MOUSE_BUTTON_WHEEL_DOWN:
+			_zoom_steps -= event.factor if event.factor > 0.0 else 1.0
 
 static func _shape_bidirectional(raw: float, deadzone: float) -> float:
 	raw = clampf(raw, -1.0, 1.0)
@@ -236,6 +251,7 @@ func poll() -> void:
 		look.y = ry
 	_cam_look_rate = look
 	_cam_fast = input.is_action_pressed("rg_cam_fast")
+	_cam_zoom_key = input.get_action_strength("rg_zoom_in") - input.get_action_strength("rg_zoom_out")
 
 	# --- global actions ---
 	if _edge("cycle_camera", input.is_action_pressed("rg_cycle_camera")):
@@ -248,6 +264,8 @@ func poll() -> void:
 		_reset_car_count += 1
 	if _edge("flip_upright", input.is_action_pressed("rg_flip_upright")):
 		_flip_upright_count += 1
+	if _edge("cycle_drone_target", input.is_action_pressed("rg_cycle_drone_target")):
+		_cycle_drone_count += 1
 
 # --- driving group getters ---
 func get_steer() -> float:
@@ -303,6 +321,16 @@ func get_camera_stick() -> Vector2:
 func get_camera_fast() -> bool:
 	return _cam_fast
 
+# PageUp (+1) / PageDown (-1) held: drone-follow zoom in / out.
+func get_camera_zoom_key() -> float:
+	return _cam_zoom_key
+
+# Mouse-wheel ticks since the last call (+ = wheel up = zoom in).
+func consume_zoom_steps() -> float:
+	var n := _zoom_steps
+	_zoom_steps = 0.0
+	return n
+
 # Captured-mouse motion since the last call, in pixels.
 func consume_mouse_delta() -> Vector2:
 	var d := _mouse_delta
@@ -313,6 +341,11 @@ func consume_mouse_delta() -> Vector2:
 func consume_cycle_mode() -> int:
 	var n := _cycle_mode_count
 	_cycle_mode_count = 0
+	return n
+
+func consume_cycle_drone_target() -> int:
+	var n := _cycle_drone_count
+	_cycle_drone_count = 0
 	return n
 
 func consume_switch_world() -> int:

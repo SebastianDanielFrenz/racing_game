@@ -26,17 +26,27 @@
 // automatic fallback to the flat world on failure - that would hide the
 // failure; the HUD shows it and the world-switch key still works.
 //
-// Extension point for R9b/R9c: DroneFollow, Cockpit and OnFoot are reserved
-// enum values whose rules_for() entry has implemented == false;
-// request_mode() refuses them (NotImplemented) and cycle_mode() skips them.
-// Implementing one = fill its ModeRules, flip `implemented`, add its camera
-// rig in GDScript. OnFoot additionally needs a walker physics interest point
-// (Session::physics_interest_points is already a list for this) and a
-// re-sized TileManager pool.
+// Drone follow (R9b): a camera that trails a TARGET vehicle from above and
+// behind. The target is the player's own car (default; the player keeps
+// driving, driving inputs live) or another vehicle named by its uint64 id (an
+// NPC traffic car or the NPC truck; the player's car is then Unattended like
+// in free cam, camera inputs stay live). The target lives in the machine
+// (set_drone_target) and resets to the own car whenever the mode is left or
+// entered; effective_rules() derives vehicle_control/driving_inputs_live from
+// it. next_drone_target() is the pure cycling order (own car first, then the
+// candidates in range by distance, ties by id, wrapping to the own car).
+//
+// Extension point for R9c: Cockpit and OnFoot are reserved enum values whose
+// rules_for() entry has implemented == false; request_mode() refuses them
+// (NotImplemented) and cycle_mode() skips them. Cockpit is not used at all
+// (the cockpit is a Drive view toggle). OnFoot additionally needs a walker
+// physics interest point (Session::physics_interest_points is already a list
+// for this) and a re-sized TileManager pool.
 #pragma once
 
 #include <cstdint>
 #include <optional>
+#include <span>
 #include <string_view>
 
 namespace rg {
@@ -44,8 +54,8 @@ namespace rg {
 enum class PlayerMode : std::uint8_t {
     Drive = 0,       // chase camera behind the player's car, driving inputs live
     FreeCam = 1,     // free-flying camera, the car is Unattended
-    DroneFollow = 2, // R9b (reserved, no behaviour): drone camera following a vehicle
-    Cockpit = 3,     // R9b (reserved, no behaviour): driver's-seat view (needs a per-vehicle seat anchor)
+    DroneFollow = 2, // R9b: drone camera trailing a target vehicle (own car: the player keeps driving)
+    Cockpit = 3,     // reserved, unused (the cockpit is a Drive view toggle, not a mode)
     OnFoot = 4,      // R9c (reserved, no behaviour): walker, gets into a vehicle within ~1 m
 };
 inline constexpr int kPlayerModeCount = 5;
@@ -63,7 +73,9 @@ struct ModeRules {
     CameraRig camera_rig = CameraRig::Free;
 };
 
-[[nodiscard]] ModeRules rules_for(PlayerMode mode);
+// `drone_target` only matters for DroneFollow: nullopt = the player's own car
+// (driving), an id = another vehicle (the player's car is Unattended).
+[[nodiscard]] ModeRules rules_for(PlayerMode mode, std::optional<std::uint64_t> drone_target = std::nullopt);
 
 [[nodiscard]] const char* to_string(PlayerMode mode);
 [[nodiscard]] const char* to_string(WorldKind kind);
@@ -94,6 +106,27 @@ inline constexpr double kUnattendedHoldSpeedMps = 2.0;
 inline constexpr double kUnattendedRollingBrake = 0.6;
 [[nodiscard]] UnattendedControls unattended_controls(double speed_mps);
 
+// One followable vehicle other than the player's own car, session XY in metres.
+struct DroneCandidate {
+    std::uint64_t id = 0;
+    double x = 0.0;
+    double y = 0.0;
+};
+
+// The target after `current` in the drone-follow cycle: the own car (nullopt)
+// first, then every candidate within max_range_m of (ref_x, ref_y) ordered by
+// distance, ties by id, then back to the own car. From the own car it returns
+// the nearest candidate (nullopt when none is in range); from the last one it
+// wraps to nullopt; a `current` that is not an in-range candidate (gone, out
+// of range) goes to the own car. Non-finite candidates are ignored. Pure,
+// allocation-free, O(n). The binding passes the PLAYER'S CAR as the reference
+// point, not the camera: the camera sits next to the current target, so a
+// camera-relative order re-sorts on every step and ping-pongs between the two
+// nearest vehicles.
+[[nodiscard]] std::optional<std::uint64_t> next_drone_target(std::optional<std::uint64_t> current,
+                                                             std::span<const DroneCandidate> candidates,
+                                                             double ref_x, double ref_y, double max_range_m);
+
 class PlayerModeMachine {
 public:
     enum class Result : std::uint8_t { Changed, NoChange, NotImplemented };
@@ -105,6 +138,15 @@ public:
     Result request_mode(PlayerMode mode);
     // Next implemented mode after the current one (wrapping); returns it.
     PlayerMode cycle_mode();
+
+    // Drone-follow target: nullopt = the player's own car, an id = another
+    // vehicle. Only meaningful in DroneFollow: outside it the call changes
+    // nothing and returns false. Returns true when the machine is in the
+    // requested state afterwards (also when it already was); only an actual
+    // change bumps revision(). Entering or leaving DroneFollow resets it to
+    // the own car.
+    bool set_drone_target(std::optional<std::uint64_t> target);
+    [[nodiscard]] std::optional<std::uint64_t> drone_target() const { return drone_target_; }
 
     // World switch. Returns the load's serial (never 0).
     std::uint64_t begin_world_load(WorldKind kind);
@@ -118,8 +160,8 @@ public:
         return world_kind_ == WorldKind::Flat ? WorldKind::RealWorld : WorldKind::Flat;
     }
 
-    // rules_for(mode()) with the world phase applied: driving inputs are
-    // masked while the world is not Ready.
+    // rules_for(mode(), drone_target()) with the world phase applied: driving
+    // inputs are masked while the world is not Ready.
     [[nodiscard]] ModeRules effective_rules() const;
 
     // Bumped by every state change (mode or world) - cheap change detection
@@ -128,6 +170,7 @@ public:
 
 private:
     PlayerMode mode_;
+    std::optional<std::uint64_t> drone_target_;
     WorldKind world_kind_ = WorldKind::Flat;
     WorldPhase world_phase_ = WorldPhase::None;
     std::uint64_t world_serial_ = 0;

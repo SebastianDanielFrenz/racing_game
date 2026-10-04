@@ -62,6 +62,7 @@ var _steering = preload("res://scripts/adaptive_steering.gd").new()
 var _simulation: Node
 var _input_map: Node
 var _cockpit_view: bool = false
+var _drone_target_seen: int = -1 # last drone_target_id printed (-1 = own car)
 var _seat_ui: CanvasLayer
 var _director: Node
 var _hud: Node
@@ -400,6 +401,11 @@ func _build_scene(user_args: PackedStringArray) -> void:
 	free.set_script(load("res://scripts/free_rig.gd"))
 	add_child(free)
 	_director.add_rig("free", free)
+	var drone := Node3D.new()
+	drone.name = "DroneRig"
+	drone.set_script(load("res://scripts/drone_rig.gd"))
+	add_child(drone)
+	_director.add_rig("drone", drone)
 
 	_try_start_vr()
 
@@ -718,7 +724,12 @@ func _apply_mode_state() -> Dictionary:
 	if rig_name == "chase" and _cockpit_view:
 		rig_name = "cockpit"
 	if _vr_active:
-		rig_name = "xr_free" if rig_name == "free" else "xr_cockpit"
+		# VR keeps its own free rig for the drone view too (no XR drone rig yet).
+		rig_name = "xr_free" if rig_name == "free" or rig_name == "drone" else "xr_cockpit"
+	var drone_id := int(ms.get("drone_target_id", -1))
+	if drone_id != _drone_target_seen:
+		_drone_target_seen = drone_id
+		print("RG_WORLD drone target -> %s (id %d)" % [ms.get("drone_target_label", "?"), drone_id])
 	_director.set_active(rig_name)
 	_director.camera_input_live = bool(ms.get("camera_inputs_live", true)) and not (get_tree().get_nodes_in_group("seat_adjustment_open").size() > 0 or get_tree().get_nodes_in_group("traffic_settings_open").size() > 0 or get_tree().get_nodes_in_group("address_teleport_open").size() > 0)
 	return ms
@@ -781,6 +792,11 @@ func _process(delta: float) -> void:
 		_cockpit_view = not _cockpit_view
 	for _i in range(_input_map.consume_cycle_mode()):
 		print("RG_WORLD mode -> %s" % _simulation.cycle_player_mode())
+	# Next drone-follow target (own car -> nearest NPC vehicles -> own car);
+	# presses outside drone_follow are consumed and ignored.
+	for _i in range(_input_map.consume_cycle_drone_target()):
+		if world_state == "running" and _simulation.get_player_mode() == "drone_follow":
+			_simulation.cycle_drone_target()
 	if _input_map.consume_switch_world() > 0:
 		switch_world()
 	if _input_map.consume_reset_car() > 0 and world_state == "running":
