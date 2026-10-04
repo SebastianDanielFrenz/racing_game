@@ -17,6 +17,7 @@
 
 #include <nlohmann/json.hpp>
 
+#include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 
 #include <atomic>
@@ -210,11 +211,12 @@ TEST_CASE("load_world_config: the real committed data/world/world_config.json pa
     CHECK(cfg->source_store.read_only == true);
     // g2m_tiler bake output (always <dir>/tiles.sqlite3).
     CHECK(cfg->derived_store.name == "tiles");
-    // Owner-chosen spawn (Engelsruhe, Frankfurt-Unterliederbach), snapped
-    // 3.2 m onto the street's OSM centreline, facing SW along it.
-    CHECK(cfg->spawn.e == 466767.79);
-    CHECK(cfg->spawn.n == 5551422.52);
-    CHECK(cfg->spawn.yaw_deg == -146.3);
+    // Owner-chosen spawn (the old spawn, commit 987d3c9), given as
+    // latitude/longitude 50.12359409 / 8.51546541 and converted to UTM 32N by
+    // the loader; facing yaw 4.05 deg.
+    CHECK(cfg->spawn.e == Catch::Approx(465363.99968).margin(1e-3));
+    CHECK(cfg->spawn.n == Catch::Approx(5552485.00039).margin(1e-3));
+    CHECK(cfg->spawn.yaw_deg == 4.05);
     // R2.1 LOD-distance measurement sweep's chosen default (see repo
     // CLAUDE.md's measurement table) - the goal's own "visible terrain to
     // 16-20 km" is best met by 20000, and the measured warm build time at

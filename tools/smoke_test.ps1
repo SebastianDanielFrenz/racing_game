@@ -253,7 +253,10 @@ if ($script:Failures.Count -eq 0 -and -not $script:DriveSkipped) {
     # message (printed once per leaked RID at process shutdown) is always
     # ERROR-prefixed, so this one check also IS the "0 RID leaks" assertion
     # for -TerrainPreview - no separate pattern needed.
-    $errorLines = $logContent | Select-String -Pattern 'ERROR|SCRIPT ERROR|Unhandled exception|Segmentation fault'
+    # -CaseSensitive: Windows PowerShell 5.1 wraps the first stderr line in an
+    # ErrorRecord whose text contains "FullyQualifiedErrorId" (matched 'ERROR'
+    # case-insensitively although Godot printed no error).
+    $errorLines = $logContent | Select-String -CaseSensitive -Pattern 'ERROR|SCRIPT ERROR|Unhandled exception|Segmentation fault'
     if ($errorLines) {
         Report-Fail "Godot printed error line(s):`n$($errorLines -join "`n")"
     } else {
