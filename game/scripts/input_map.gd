@@ -146,6 +146,10 @@ func _edge(key: String, held: bool) -> bool:
 	return held and not was
 
 func poll() -> void:
+	if not get_tree().get_nodes_in_group("address_teleport_open").is_empty():
+		_cam_stick = Vector2.ZERO
+		_cam_look_rate = Vector2.ZERO
+		return # Text entry must not trigger R/F/V or driving/ignition actions.
 	var input := Input
 	var pads := input.get_connected_joypads()
 	var has_pad: bool = not pads.is_empty()

@@ -1,0 +1,4 @@
+{
+  "endpoint": "https://photon.komoot.io/api/",
+  "maximum_distance_from_origin_m": 30000
+}

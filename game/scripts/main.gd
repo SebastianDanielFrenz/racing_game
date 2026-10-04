@@ -324,6 +324,10 @@ func _add_sun_and_sky() -> void:
 	add_child(env_node)
 
 func _build_scene(user_args: PackedStringArray) -> void:
+	var teleport_dialog := CanvasLayer.new()
+	teleport_dialog.set_script(load("res://scripts/address_teleport.gd"))
+	teleport_dialog.main = self
+	add_child(teleport_dialog)
 	set_process_priority(-2000)
 	var start_world := "real_world" if "--drive" in user_args else "flat"
 	var start_mode := "free_cam" if "--free-cam" in user_args else "drive"
@@ -716,7 +720,7 @@ func _apply_mode_state() -> Dictionary:
 	if _vr_active:
 		rig_name = "xr_free" if rig_name == "free" else "xr_cockpit"
 	_director.set_active(rig_name)
-	_director.camera_input_live = bool(ms.get("camera_inputs_live", true)) and not (get_tree().get_nodes_in_group("seat_adjustment_open").size() > 0 or get_tree().get_nodes_in_group("traffic_settings_open").size() > 0)
+	_director.camera_input_live = bool(ms.get("camera_inputs_live", true)) and not (get_tree().get_nodes_in_group("seat_adjustment_open").size() > 0 or get_tree().get_nodes_in_group("traffic_settings_open").size() > 0 or get_tree().get_nodes_in_group("address_teleport_open").size() > 0)
 	return ms
 
 func _forward_driving(live: bool, delta: float) -> void:
@@ -727,7 +731,7 @@ func _forward_driving(live: bool, delta: float) -> void:
 	if not live or not bool(_simulation.is_running()):
 		_steering.reset()
 		return
-	if get_tree().get_nodes_in_group("seat_adjustment_open").size() > 0:
+	if get_tree().get_nodes_in_group("seat_adjustment_open").size() > 0 or get_tree().get_nodes_in_group("address_teleport_open").size() > 0:
 		_simulation.set_control("steer", 0.0)
 		_simulation.set_control("throttle", 0.0)
 		_simulation.set_control("brake", 1.0)
@@ -770,7 +774,7 @@ func _process(delta: float) -> void:
 		return
 
 	_input_map.poll()
-	if world_state == "running" and Input.is_action_just_pressed("rg_npc_truck"):
+	if world_state == "running" and get_tree().get_nodes_in_group("address_teleport_open").is_empty() and Input.is_action_just_pressed("rg_npc_truck"):
 		_simulation.request_npc_truck(not Input.is_key_pressed(KEY_SHIFT), 70.0)
 	var camera_presses: int = _input_map.consume_cycle_camera()
 	if camera_presses % 2 == 1 and not _vr_active and _simulation.get_player_mode() == "drive":
