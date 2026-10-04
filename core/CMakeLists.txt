@@ -54,6 +54,7 @@ set(PS_ADAPTER_SRC_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../external/physics_sim/adap
 add_library(rg_core STATIC
     src/environment.cpp
     src/npc_truck.cpp
+    src/walker.cpp
     src/npc_traffic.cpp
     src/session.cpp
     src/player_mode.cpp
