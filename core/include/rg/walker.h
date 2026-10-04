@@ -183,6 +183,13 @@ public:
     // Zero the body's velocity (the World is about to step without step()).
     void halt();
 
+    // Spawn probe: the ground height under (x, y) when a standing capsule fits
+    // there - a ray from z_ref + above_m down to z_ref - below_m finds ground
+    // within the slope limit and no non-ignored body or obstacle rect overlaps
+    // the capsule standing on it. nullopt otherwise. Works before spawn().
+    [[nodiscard]] std::optional<double> probe_standing(double x, double y, double z_ref, double above_m,
+                                                       double below_m) const;
+
     // Capsule centre for a feet position / the pose the body has there.
     [[nodiscard]] ps::Vec3 centre_of(const ps::Vec3& feet) const;
 

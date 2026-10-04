@@ -257,6 +257,11 @@ void Session::build_world_contents(const SessionConfig& config) {
     }
     vehicle_id_ = world_->create_vehicle(vehicle_desc_, chassis_body_);
     have_vehicle_ = true;
+    walker_wheels_.clear();
+    for (const auto& wheel : vehicle_desc_.wheels) {
+        walker_wheels_.push_back(WheelFootprint{wheel.attachment_local.x, wheel.attachment_local.y, wheel.wheel_radius,
+                                                0.5 * wheel.wheel_width});
+    }
     if(!vehicle_desc_.aero.fans.empty()&&config_.environment.fan_battery_energy_j>0)
         world_->credit_aero_fan_energy(vehicle_id_,config_.environment.fan_battery_energy_j);
     spawn_tick_ = world_->tick();
@@ -512,6 +517,7 @@ void Session::finish_relocation() {
                             ? ps::drivetrain::EngineState::Off
                             : ps::drivetrain::EngineState::Running;
     world_->reset_vehicle(vehicle_id_, opts);
+    if (walker_ && walker_->active()) walker_->halt(); // the priming ticks above stepped the World
     status_.relocations.fetch_add(1, std::memory_order_relaxed);
 }
 
@@ -538,6 +544,17 @@ std::span<const g2m::phys::InterestPoint> Session::physics_interest_points() {
         y = p.y;
         vx = v.x;
         vy = v.y;
+    }
+    if (walker_ && walker_->active()) {
+        // On foot (R9c): the walker is point 0 and the parked car (or the relocation
+        // target it is being moved to) keeps its terrain resident as the second
+        // point. A followed vehicle cannot coexist with a walker (the mode machine
+        // resets the drone target on entering OnFoot); it is ignored meanwhile.
+        const ps::Vec3 feet = walker_->state().feet;
+        const ps::Vec3 wv = walker_->state().velocity;
+        out.push_back(g2m::phys::InterestPoint{kPlayerInterestId, feet.x, feet.y, wv.x, wv.y, t.config.physics.radius_m});
+        out.push_back(g2m::phys::InterestPoint{kParkedCarInterestId, x, y, vx, vy, t.config.physics.radius_m});
+        return out;
     }
     out.push_back(g2m::phys::InterestPoint{kPlayerInterestId, x, y, vx, vy, t.config.physics.radius_m});
     if (const std::uint64_t followed = followed_id_.load(std::memory_order_relaxed); followed != 0) {
@@ -719,6 +736,10 @@ bool Session::step_once(bool from_loop) {
         return finish(TickSpikeKind::Relocation, true);
     }
 
+    // On foot (R9c): a pending get-out/get-in is handled here, past the gate and
+    // any relocation, so a spawn only ever happens with the car's terrain resident.
+    process_walker_request();
+
     if (have_vehicle_ && drive_script_) {
         drive_script_->apply(DriveTickContext{drive_tick(), chassis_body_, vehicle_id_}, *world_);
     } else if (from_loop) {
@@ -736,6 +757,7 @@ bool Session::step_once(bool from_loop) {
         update_npc_truck();
         update_traffic();
         check_followed_alive(); // despawned at its route end / truck removed this tick
+        update_walker();
         environment_sample_=sample_environment(config_.environment,world_->get_pose(chassis_body_).position.z,world_->sim_time());
         if(config_.environment.enabled)world_->set_ambient({environment_sample_.pressure_pa,environment_sample_.temperature_k});
         world_->set_aero_environment({environment_sample_.air_density,environment_sample_.wind_world_m_s});
@@ -1038,6 +1060,14 @@ FrameSnapshot Session::capture_frame_snapshot() const {
     for(const auto& actor:traffic_actors_)snap.traffic.actors.push_back({actor.id,actor.trip.truck,world_->get_pose(actor.body),actor.speed,actor.trip.destination});
     snap.truck=truck_state_;
     if(truck_state_.active)snap.truck.pose=world_->get_pose(truck_body_);
+    if(walker_&&walker_->active()) {
+        const WalkerState& w=walker_->state();
+        WalkerSnapshot& out=snap.walker;
+        out.active=true;out.feet=w.feet;out.velocity=w.velocity;out.yaw_rad=w.yaw_rad;out.grounded=w.grounded;out.blocked=w.blocked;out.hold=w.hold;
+        out.can_enter=walker_can_enter_;out.enter_distance_m=walker_enter_distance_m_;
+        out.car_x=walker_footprint_.cx;out.car_y=walker_footprint_.cy;out.car_half_x=walker_footprint_.half_x;out.car_half_y=walker_footprint_.half_y;
+        out.car_yaw_rad=ps::math::atan2(walker_footprint_.sin_yaw,walker_footprint_.cos_yaw);
+    }
     snap.aero.environment = environment_sample_;
     const auto& aero=world_->vehicle_aero_telemetry(vehicle_id_);
     snap.aero.enabled=!vehicle_desc_.aero.surfaces.empty()||!vehicle_desc_.aero.fans.empty()||vehicle_desc_.aero.body.reference_area_m2>0;
@@ -1178,7 +1208,9 @@ void Session::update_npc_truck() {
  double target=std::min(truck_target_.load(),current.speed_m_s);
  target=std::min(target,std::sqrt(std::max(0.,2*2.5*(end-truck_station_-5))));
  // Remain within the player's terrain residency - unless the camera follows the truck (then its own interest point keeps its terrain resident).
- if(relative.length()>200&&followed_id_.load(std::memory_order_relaxed)!=kNpcTruckVehicleId)target=0;
+ // On foot (R9c) the walker's own terrain counts as the player's residency too.
+ const double nearest=walker_&&walker_->active()?std::min(relative.length(),(walker_->state().feet-pose.position).length()):relative.length();
+ if(nearest>200&&followed_id_.load(std::memory_order_relaxed)!=kNpcTruckVehicleId)target=0;
  const double gap=ps::dot(relative,forward),lateral=std::abs(relative.x*forward.y-relative.y*forward.x);
  if(gap>0&&gap<35&&lateral<2.8)target=std::min(target,std::max(0.,(gap-12)*.7));
  truck_speed_+=std::clamp(target-truck_speed_,-4*dt,1.5*dt);
@@ -1203,6 +1235,139 @@ void Session::update_npc_truck() {
 }
 
 namespace rg {
+
+// ---------------------------------------------------------------------------
+// On foot (R9c)
+// ---------------------------------------------------------------------------
+
+namespace {
+// Chassis-local driver's door position along the car (the spawn spot's x).
+constexpr double kDriverDoorX = 0.3;
+// Clearance between the car footprint and a spawned walker's capsule.
+constexpr double kSpawnClearanceM = 0.25;
+// How far above the chassis origin the car's roof is taken to be, and how far
+// below its origin the footprint prism starts (the walker is blocked while its
+// capsule overlaps the prism vertically).
+constexpr double kRoofAboveChassisM = 0.85;
+constexpr double kPrismBelowChassisM = 1.0;
+constexpr double kFootprintMarginM = 0.05;
+} // namespace
+
+OrientedRect Session::own_car_footprint() const {
+    const ps::Pose pose = world_->get_pose(chassis_body_);
+    const ps::Vec3 forward = pose.orientation.rotate(ps::Vec3::unit_x());
+    return vehicle_footprint(pose.position, forward, config_.chassis_half_extents.x, config_.chassis_half_extents.y,
+                             walker_wheels_, kFootprintMarginM, pose.position.z - kPrismBelowChassisM,
+                             pose.position.z + kRoofAboveChassisM);
+}
+
+ps::Vec3 Session::traffic_anchor() const {
+    if (walker_ && walker_->active()) return walker_->state().feet;
+    return world_->get_pose(chassis_body_).position;
+}
+
+void Session::request_walker_spawn() { walker_request_.store(1, std::memory_order_release); }
+void Session::request_walker_enter() { walker_request_.store(2, std::memory_order_release); }
+void Session::request_walker_despawn() { walker_request_.store(3, std::memory_order_release); }
+
+void Session::set_walker_input(const WalkerInput& input) {
+    std::lock_guard<std::mutex> lock(walker_input_mutex_);
+    walker_input_ = input;
+    walker_input_.jump = false; // jumps travel through request_walker_jump
+}
+
+Session::WalkerCounters Session::walker_counters() const {
+    WalkerCounters c;
+    c.spawned = walker_spawned_.load(std::memory_order_acquire);
+    c.entered = walker_entered_.load(std::memory_order_acquire);
+    c.enter_refused = walker_enter_refused_.load(std::memory_order_acquire);
+    c.despawned = walker_despawned_.load(std::memory_order_acquire);
+    c.spawn_failed = walker_spawn_failed_.load(std::memory_order_acquire);
+    return c;
+}
+
+void Session::spawn_walker() {
+    if (!have_vehicle_) {
+        walker_spawn_failed_.fetch_add(1, std::memory_order_release);
+        return;
+    }
+    if (!walker_) walker_ = std::make_unique<WalkerController>(*world_, config_.walker);
+    const ps::Pose chassis = world_->get_pose(chassis_body_);
+    walker_->set_ignored_bodies({chassis_body_});
+    walker_footprint_ = own_car_footprint();
+    walker_->set_obstacles(std::span<const OrientedRect>(&walker_footprint_, 1));
+
+    const ps::Vec3 forward = chassis.orientation.rotate(ps::Vec3::unit_x());
+    const double yaw = ps::math::atan2(forward.y, forward.x);
+    const WalkerController& probe_walker = *walker_;
+    const SpawnProbe probe = [&](double x, double y) {
+        return probe_walker.probe_standing(x, y, chassis.position.z, 2.0, 4.0);
+    };
+    const SpawnSpot spot = select_spawn_spot(walker_footprint_, chassis.position, yaw, config_.walker.radius_m,
+                                             kDriverDoorX, kSpawnClearanceM, walker_footprint_.z_max + 0.1, probe);
+    walker_->spawn(spot.feet, spot.yaw_rad);
+    walker_enter_distance_m_ = distance_to_rect(walker_footprint_, spot.feet.x, spot.feet.y);
+    walker_can_enter_ = within_enter_range(walker_footprint_, spot.feet, config_.walker.enter_range_m,
+                                           config_.walker.enter_max_dz_m);
+    walker_active_.store(true, std::memory_order_release);
+    walker_spawned_.fetch_add(1, std::memory_order_release);
+}
+
+void Session::remove_walker() {
+    if (!walker_ || !walker_->active()) return;
+    walker_->despawn();
+    walker_active_.store(false, std::memory_order_release);
+    walker_can_enter_ = false;
+}
+
+void Session::process_walker_request() {
+    const int request = walker_request_.exchange(0, std::memory_order_acq_rel);
+    if (request == 0) return;
+    const bool active = walker_ && walker_->active();
+    switch (request) {
+        case 1:
+            if (!active) spawn_walker();
+            break;
+        case 2:
+            if (!active) break;
+            if (within_enter_range(walker_footprint_, walker_->state().feet, config_.walker.enter_range_m,
+                                   config_.walker.enter_max_dz_m)) {
+                remove_walker();
+                walker_entered_.fetch_add(1, std::memory_order_release);
+            } else {
+                walker_enter_refused_.fetch_add(1, std::memory_order_release);
+            }
+            break;
+        case 3:
+            if (active) {
+                remove_walker();
+                walker_despawned_.fetch_add(1, std::memory_order_release);
+            }
+            break;
+        default: break;
+    }
+}
+
+void Session::update_walker() {
+    if (!walker_ || !walker_->active()) return;
+    WalkerInput input;
+    {
+        std::lock_guard<std::mutex> lock(walker_input_mutex_);
+        input = walker_input_;
+    }
+    input.jump = walker_jump_.exchange(0, std::memory_order_relaxed) > 0;
+    // The car may still be rolling to a stop (or be relocated): refresh its footprint.
+    walker_footprint_ = own_car_footprint();
+    walker_->set_obstacles(std::span<const OrientedRect>(&walker_footprint_, 1));
+    const WalkerState& st = walker_->step(input, 1.0 / config_.tick_rate_hz);
+    walker_enter_distance_m_ = distance_to_rect(walker_footprint_, st.feet.x, st.feet.y);
+    walker_can_enter_ = within_enter_range(walker_footprint_, st.feet, config_.walker.enter_range_m,
+                                           config_.walker.enter_max_dz_m);
+}
+
+}
+
+namespace rg {
 std::uint64_t Session::add_test_traffic_actor(const ps::Pose& pose,double speed_mps){
  if(loop_.running())throw std::logic_error("Session::add_test_traffic_actor: not while running");
  const ps::Vec3 forward=pose.orientation.rotate(ps::Vec3::unit_x());
@@ -1223,6 +1388,7 @@ void Session::set_visible_traffic(std::vector<std::uint64_t> ids){std::sort(ids.
 void Session::update_traffic(bool clear){
  if(clear){traffic_cancel_.store(true);for(auto& a:traffic_actors_)world_->destroy_body(a.body);traffic_actors_.clear();traffic_ready_.trips.clear();traffic_neighbor_grid_.clear();traffic_loading_=false;traffic_scan_needed_=true;traffic_scan_time_=world_->sim_time()+2;return;}
  const auto car=world_->get_pose(chassis_body_);const double now=world_->sim_time(),dt=1/config_.tick_rate_hz;
+ const ps::Vec3 anchor=traffic_anchor(); // the walker while on foot (R9c), else the car
  std::vector<std::uint64_t> visible;bool changed=false;
  {std::lock_guard<std::mutex> lock(traffic_mutex_);visible=traffic_visible_;changed=traffic_config_changed_;if(changed){traffic_config_=traffic_requested_;traffic_config_changed_=false;}}
  if(changed){
@@ -1242,7 +1408,7 @@ void Session::update_traffic(bool clear){
  }
  for(int attempts=0,born=0;attempts<8&&born<4&&!traffic_ready_.trips.empty()&&static_cast<int>(traffic_actors_.size())<traffic_population_target_;++attempts){
     auto trip=std::move(traffic_ready_.trips.back());traffic_ready_.trips.pop_back();
-    auto ground=trip.route.points.front().ground;const double distance=std::hypot(ground.x-car.position.x,ground.y-car.position.y);if(distance<traffic_config_.min_spawn_m||distance>traffic_config_.radius_m)continue;
+    auto ground=trip.route.points.front().ground;const double distance=std::hypot(ground.x-anchor.x,ground.y-anchor.y);if(distance<traffic_config_.min_spawn_m||distance>traffic_config_.radius_m)continue;
     const double half=trip.truck?6.5:2.3,height=trip.truck?2.2:.8;const auto yaw=trip.route.points.front().yaw;
     bool free=true; // Native footprint sweeps below use the backend spatial broadphase.
     if(truck_state_.active&&(world_->get_pose(truck_body_).position-ground).length()<half+15)free=false;
@@ -1257,9 +1423,9 @@ void Session::update_traffic(bool clear){
    }
  if(traffic_config_.density_per_km==0){traffic_population_target_=0;traffic_ready_.trips.clear();}
  if((traffic_scan_needed_||static_cast<int>(traffic_actors_.size())<traffic_population_target_)&&traffic_ready_.trips.empty()&&!traffic_worker_.joinable()&&now>=traffic_scan_time_&&traffic_config_.density_per_km>0){
-  traffic_cancel_.store(false);traffic_done_.store(false);traffic_loading_=true;traffic_scan_needed_=false;traffic_scan_time_=now+8;traffic_scan_origin_=car.position;
+  traffic_cancel_.store(false);traffic_done_.store(false);traffic_loading_=true;traffic_scan_needed_=false;traffic_scan_time_=now+8;traffic_scan_origin_=anchor;
   auto terrain=config_.terrain?config_.terrain->world_terrain:nullptr;auto config=traffic_config_;config.grip_multiplier=1;const auto seed=traffic_seed_++;
-  traffic_worker_=std::thread([this,terrain,player=car.position,config,seed]{
+  traffic_worker_=std::thread([this,terrain,player=anchor,config,seed]{
    const auto started=std::chrono::steady_clock::now();
    std::fprintf(stderr,"RG_TRAFFIC_SCAN begin seed=%llu cached_only=yes\n",static_cast<unsigned long long>(seed));
    TrafficPlan plan;try{plan=plan_traffic(terrain,player,config,seed,traffic_cancel_,true);}catch(const std::exception& e){plan.message=e.what();}
@@ -1283,7 +1449,7 @@ void Session::update_traffic(bool clear){
   const double end=a.trip.route.points.back().station;
   const bool surplus=static_cast<int>(traffic_actors_.size())>traffic_population_target_;
   const bool followed=followed_id_.load(std::memory_order_relaxed)==a.id; // R9b: kept alive (and resident) while the drone camera trails it
-  if((a.station>=end-.5&&a.speed<.5)||(!followed&&(surplus||(pose.position-car.position).length()>traffic_config_.radius_m+50)&&a.unseen>3)){
+  if((a.station>=end-.5&&a.speed<.5)||(!followed&&(surplus||(pose.position-anchor).length()>traffic_config_.radius_m+50)&&a.unseen>3)){
    world_->destroy_body(a.body);const auto index=static_cast<std::size_t>(it-traffic_actors_.begin());
    if(index+1<traffic_actors_.size())*it=std::move(traffic_actors_.back());
    traffic_actors_.pop_back();it=index<traffic_actors_.size()?traffic_actors_.begin()+index:traffic_actors_.end();continue;
@@ -1319,7 +1485,7 @@ void Session::update_traffic(bool clear){
   ps::Motion motion;motion.linear=(ground+ps::Vec3{0,0,height}-pose.position)/dt;
   auto rotation=ps::Quat::from_axis_angle(ps::Vec3::unit_z(),yaw)*ps::Quat::from_axis_angle(ps::Vec3::unit_y(),-std::atan(grade));
   auto delta=(rotation*pose.orientation.inverse()).normalized();ps::Vec3 axis{delta.x,delta.y,delta.z};if(delta.w<0){axis=-axis;delta.w=-delta.w;}double sine=axis.length();if(sine>1e-12)motion.angular=axis*(2*std::atan2(sine,delta.w)/(sine*dt));
-  world_->backend().set_motion(a.body,motion);if((pose.position-car.position).length()<200)wakes.push_back({a.body,pose.position,motion.linear,a.trip.truck?ps::aero::WakeDesc{60,2,.15,.45,.2}:ps::aero::WakeDesc{25,1.2,.12,.3,.12}});
+  world_->backend().set_motion(a.body,motion);if((pose.position-anchor).length()<200)wakes.push_back({a.body,pose.position,motion.linear,a.trip.truck?ps::aero::WakeDesc{60,2,.15,.45,.2}:ps::aero::WakeDesc{25,1.2,.12,.3,.12}});
   ++it;
  }
  world_->set_aero_wakes(std::move(wakes));

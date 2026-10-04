@@ -43,6 +43,7 @@
 #include "rg/fixed_rate_loop.h"
 #include "rg/player_mode.h"
 #include "rg/terrain_mode.h"
+#include "rg/walker.h"
 
 #include "ps/drivetrain/powertrain_state.h"
 #include "ps/io/surface_table.h"
@@ -144,6 +145,10 @@ struct SessionConfig {
     std::string vehicle_json_path;  // e.g. .../data/vehicles/car_sedan.json
     std::string surface_table_path; // e.g. .../data/surfaces/surfaces.json
 
+    // On foot (R9c): the walker's size/speeds (rg/walker.h). Only used once a
+    // walker is spawned (request_walker_spawn).
+    WalkerConfig walker;
+
     // Terrain mode (R2.2 R4) when set; flat mode otherwise.
     std::optional<TerrainModeConfig> terrain;
 
@@ -179,6 +184,23 @@ struct AeroSnapshot {
     EnvironmentSample environment;
 };
 
+// The on-foot player (R9c), captured with the rest of the tick. `active` false
+// = no walker (every other field is then zero/false). Positions are session
+// metres (ISO, z up); feet = the capsule bottom.
+struct WalkerSnapshot {
+    bool active = false;
+    ps::Vec3 feet{};
+    ps::Vec3 velocity{};
+    double yaw_rad = 0.0;      // facing
+    bool grounded = false;
+    bool blocked = false;      // pressing against an obstacle
+    bool hold = false;         // no ground loaded below: holding the height
+    bool can_enter = false;    // within get-in range of the own car (the HUD prompt)
+    double enter_distance_m = 0.0; // to the car's footprint outline
+    // The own car's footprint rectangle the walker is blocked by (display/debug).
+    double car_x = 0.0, car_y = 0.0, car_half_x = 0.0, car_half_y = 0.0, car_yaw_rad = 0.0;
+};
+
 struct FrameSnapshot {
     std::uint64_t tick = 0;
     double sim_time = 0.0;
@@ -190,6 +212,7 @@ struct FrameSnapshot {
     TruckSnapshot truck;
     TrafficSnapshot traffic;
     g2m::RoadSpeedMatch road_speed_limit{};
+    WalkerSnapshot walker;
 };
 
 // Terrain streaming state (R2.2 R4), plain values. Each field is its own
@@ -430,7 +453,52 @@ public:
     // TileManager/streamer interest-point ids: the player's car, the followed vehicle.
     static constexpr std::uint32_t kPlayerInterestId = 0;
     static constexpr std::uint32_t kFollowedInterestId = 1;
+    // On foot: the second point is the parked car (never together with a followed vehicle).
+    static constexpr std::uint32_t kParkedCarInterestId = 1;
     void request_npc_truck(bool enabled,double speed_kph); // the config's spawn (flat mode: the origin, yaw 0)
+
+    // --- On foot (R9c, rg/walker.h). The walker is one kinematic capsule body
+    // in the World, driven by a WalkerController on the stepping thread; all
+    // requests below are any-thread and consumed by the next tick attempt that
+    // passes the terrain gate (so a spawn waits for residency like the car).
+    //  - request_walker_spawn(): get out - the walker appears beside the
+    //    driver's door (select_spawn_spot; other sides, then above the roof, when
+    //    blocked), facing away from the car. Terrain mode: the walker becomes
+    //    physics interest point kPlayerInterestId and the PARKED CAR keeps its
+    //    terrain resident as the second point (kParkedCarInterestId). Does
+    //    nothing when a walker exists or there is no vehicle yet.
+    //  - request_walker_enter(): get in (interact) - succeeds only within
+    //    WalkerConfig::enter_range_m of the own car's footprint; the walker is
+    //    removed (walker_counters().entered +1) or the attempt is counted
+    //    (enter_refused +1, the walker stays).
+    //  - request_walker_despawn(): remove the walker without any range check (the
+    //    player left the mode some other way; counted as despawned).
+    //  Newest request wins when several are pending. The car's driving stays
+    //  Unattended (set_vehicle_control) for as long as the caller wants; the
+    //  Session itself never changes it.
+    void request_walker_spawn();
+    void request_walker_enter();
+    void request_walker_despawn();
+    // Input for the NEXT ticks: move axes in [-1, 1] relative to the look
+    // heading (WalkerInput), plus a one-shot jump (consumed by the next walker
+    // step; honoured only while grounded). The synchronous step() applies it
+    // too (unlike the driving channels).
+    void set_walker_input(const WalkerInput& input);
+    void request_walker_jump() { walker_jump_.fetch_add(1, std::memory_order_relaxed); }
+    // Lifetime counters (any thread, a poller compares with its last values).
+    struct WalkerCounters {
+        std::uint64_t spawned = 0;       // walkers created
+        std::uint64_t entered = 0;       // successful get-ins
+        std::uint64_t enter_refused = 0; // interact pressed out of range
+        std::uint64_t despawned = 0;     // forced removals
+        std::uint64_t spawn_failed = 0;  // spawn requests that could not place a walker
+    };
+    [[nodiscard]] WalkerCounters walker_counters() const;
+    [[nodiscard]] bool walker_active() const { return walker_active_.load(std::memory_order_acquire); }
+    // Stepping thread / tests only (not while running()): the controller, null before the first spawn.
+    [[nodiscard]] const WalkerController* walker_controller() const { return walker_.get(); }
+    // The own car's footprint as of the latest walker update (stepping thread / tests only).
+    [[nodiscard]] OrientedRect own_car_footprint() const;
     static constexpr double kRelocateParkZ = 4000.0;
 
     // Flip the car upright IN PLACE, keeping its current position and
@@ -568,6 +636,14 @@ private:
     // XY) when one misses.
     bool ray_spawn_pose(double x, double y, double yaw_rad, double clearance_m, ps::Pose& out, double& miss_x,
                         double& miss_y) const;
+    // R9c, stepping thread. process: consume the pending spawn/enter/despawn
+    // request (after the gate and any relocation); update: one controller tick
+    // before World::step; spawn_walker places the body.
+    void process_walker_request();
+    void update_walker();
+    void spawn_walker();
+    void remove_walker();
+    [[nodiscard]] ps::Vec3 traffic_anchor() const; // the walker while one exists, else the chassis
     void take_relocate_request(); // stepping thread
     void finish_relocation();     // stepping thread, gate ready at the target
     void post_step(bool from_loop);
@@ -610,6 +686,21 @@ private:
     bool have_vehicle_ = false;
     std::uint64_t spawn_tick_ = 0;
     ps::vehicle::VehicleDesc vehicle_desc_;
+
+    // On foot (R9c). walker_ is created at the first spawn and kept (its body
+    // exists only while active()).
+    std::unique_ptr<WalkerController> walker_;
+    std::vector<WheelFootprint> walker_wheels_; // the own car's wheels, chassis-local, filled at construction
+    std::mutex walker_input_mutex_;
+    WalkerInput walker_input_;
+    std::atomic<int> walker_jump_{0};
+    std::atomic<int> walker_request_{0}; // 0 none, 1 spawn, 2 enter, 3 despawn
+    std::atomic<bool> walker_active_{false};
+    std::atomic<std::uint64_t> walker_spawned_{0}, walker_entered_{0}, walker_enter_refused_{0}, walker_despawned_{0},
+        walker_spawn_failed_{0};
+    OrientedRect walker_footprint_{};      // latest own-car footprint (stepping thread)
+    bool walker_can_enter_ = false;
+    double walker_enter_distance_m_ = 0.0;
 
     std::unique_ptr<Terrain> terrain_; // null in flat mode
     std::optional<DriveScript> drive_script_;

@@ -240,8 +240,9 @@ std::optional<WalkerController::Ground> WalkerController::ray_down(double x, dou
     double z = z_from;
     double remaining = dist;
     for (int attempt = 0; attempt < 3 && remaining > 0.0; ++attempt) {
-        const ps::RayCastHit hit =
-            world_.backend().ray_cast_excluding(ps::Vec3{x, y, z}, ps::Vec3{0.0, 0.0, -1.0}, remaining, body_);
+        const ps::Vec3 origin{x, y, z}, down{0.0, 0.0, -1.0};
+        const ps::RayCastHit hit = body_.valid() ? world_.backend().ray_cast_excluding(origin, down, remaining, body_)
+                                                 : world_.backend().ray_cast(origin, down, remaining);
         if (!hit.hit) return std::nullopt;
         if (std::find(ignored_.begin(), ignored_.end(), hit.body) != ignored_.end()) {
             const double used = (z - hit.point.z) + kIgnoredBodySkip;
@@ -381,6 +382,26 @@ WalkerController::GroundMove WalkerController::try_ground_move(const ps::Vec3& f
     out.ground = Ground{g->z, g->normal};
     out.feet = f;
     return out;
+}
+
+std::optional<double> WalkerController::probe_standing(double x, double y, double z_ref, double above_m,
+                                                        double below_m) const {
+    const std::optional<Ground> g = ray_down(x, y, z_ref + above_m, above_m + below_m);
+    if (!g || g->normal.z < cos_slope_) return std::nullopt;
+    for (const OrientedRect& r : obstacles_) {
+        if (distance_to_rect(r, x, y) < config_.radius_m) return std::nullopt;
+    }
+    // Stand a hair above the ground so the ground itself is not an overlap.
+    const ps::Vec3 feet{x, y, g->z + 0.02};
+    const ps::CapsuleShape shape{0.5 * config_.height_m - config_.radius_m, config_.radius_m};
+    world_.backend().collide_shape_into(shape, ps::Pose{centre_of(feet), kUpright}, hits_);
+    for (const ps::ShapeContactHit& h : hits_) {
+        if (ignored(h.body)) continue;
+        // Ground-ish contacts (a slope under the round bottom, a kerb edge) are fine; anything else is in the way.
+        const bool low = h.point.z <= g->z + config_.step_height_m + kStepTol;
+        if (h.penetration > 0.01 && !low) return std::nullopt;
+    }
+    return g->z;
 }
 
 void WalkerController::write_target(const ps::Vec3& target_feet, double dt) {

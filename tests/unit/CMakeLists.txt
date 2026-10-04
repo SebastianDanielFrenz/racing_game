@@ -31,6 +31,7 @@ add_executable(rg_unit_tests
   test_session_reinit.cpp
   test_player_mode.cpp
   test_walker.cpp
+  test_session_walker.cpp
   test_vehicle_data.cpp
   test_route_grip.cpp
   test_tick_spikes.cpp

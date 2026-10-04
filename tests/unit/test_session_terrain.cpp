@@ -1147,3 +1147,105 @@ TEST_CASE("session terrain: a follow is worker-count deterministic", "[session_t
     const std::uint64_t reference = run(1);
     CHECK(run(4) == reference);
 }
+
+// --- R9c: on foot - the walker is physics interest point 0, the parked car the second ---
+
+TEST_CASE("session terrain: on foot, the walker is point 0, the parked car stays resident as point 1",
+          "[session_terrain][on_foot]") {
+    auto fetch = std::make_shared<SyntheticFetch>();
+    rg::SessionConfig config = terrain_config(1, fetch, 100.0, 50.0, 4);
+    config.terrain->physics.radius_m = 120.0; // a short walk is enough to leave the car's square
+    rg::Session session(config);
+    session.set_drive_script(hold_still_script());
+    for (int k = 0; k < 480; ++k) session.step();
+    CHECK(session.last_interest_points().size() == 1);
+    const ps::Vec3 car = session.world().get_pose(session.chassis_body()).position;
+
+    session.request_walker_spawn();
+    session.step(); // the gate ran before the spawn in this attempt: the points follow on the next one
+    REQUIRE(session.walker_active());
+    CHECK(session.last_interest_points().size() == 1);
+    session.step();
+    {
+        const auto points = session.last_interest_points();
+        REQUIRE(points.size() == 2);
+        CHECK(points[0].id == rg::Session::kPlayerInterestId);
+        CHECK(points[1].id == rg::Session::kParkedCarInterestId);
+        CHECK(points[0].radius_m == points[1].radius_m);
+        CHECK(session.streaming_status().interest_points == 2);
+        // Point 0 is the walker (beside the car, not at its centre), point 1 the car.
+        const rg::WalkerState& w = session.walker_controller()->state();
+        CHECK(points[0].x == Catch::Approx(w.feet.x).margin(0.1));
+        CHECK(points[0].y == Catch::Approx(w.feet.y).margin(0.1));
+        CHECK(points[1].x == Catch::Approx(car.x).margin(0.1));
+        CHECK(points[1].y == Catch::Approx(car.y).margin(0.1));
+    }
+
+    // Run east: the walker stays on the streamed ground the whole way, the car's tiles stay resident.
+    rg::WalkerInput run;
+    run.move_forward = 1.0;
+    run.look_yaw_rad = 0.0;
+    run.run = true;
+    session.set_walker_input(run);
+    const rg::WalkerState& w = session.walker_controller()->state();
+    double worst_below = 0.0;
+    int holds = 0;
+    for (int k = 0; k < 14000; ++k) {
+        session.step();
+        worst_below = std::min(worst_below, w.feet.z - synthetic_height_m(w.feet.x, w.feet.y));
+        if (w.hold) ++holds;
+    }
+    CHECK(w.feet.x > 376.0); // outside the car's own 120 m square (its tile ends at x = 255.5)
+    CHECK(worst_below > -0.15);       // never sank into the terrain
+    CHECK(holds == 0);                // never found "no ground"
+    CHECK(std::abs(w.feet.z - synthetic_height_m(w.feet.x, w.feet.y)) < 0.25);
+    const auto points = session.last_interest_points();
+    REQUIRE(points.size() == 2);
+    CHECK(points[0].x == Catch::Approx(w.feet.x).margin(0.1));
+    CHECK(points[1].x == Catch::Approx(car.x).margin(0.1));
+    CHECK(session.world().terrain_starved_tile_count() == 0);
+    CHECK(session.streaming_status().fill_misses == 0);
+    CHECK(session.streaming_status().falls == 0);
+    // The parked car's ground is still there (only point 1 keeps it): a ray below the car hits terrain.
+    const ps::RayCastHit under = session.world().backend().ray_cast(ps::Vec3{car.x, car.y, car.z - 0.3},
+                                                                    ps::Vec3{0.0, 0.0, -1.0}, 50.0);
+    CHECK(under.hit);
+    const ps::Vec3 car_now = session.world().get_pose(session.chassis_body()).position;
+    CHECK((car_now - car).length() < 0.05); // it did not drift or fall
+
+    // Back to one point once the walker is gone (forced removal: it is far from the car).
+    session.request_walker_despawn();
+    session.step();
+    CHECK_FALSE(session.walker_active());
+    session.step();
+    CHECK(session.last_interest_points().size() == 1);
+    CHECK(session.streaming_status().interest_points == 1);
+    CHECK(session.last_interest_points()[0].id == rg::Session::kPlayerInterestId);
+    CHECK(session.last_interest_points()[0].x == Catch::Approx(car.x).margin(0.1));
+}
+
+TEST_CASE("session terrain: an on-foot session is worker-count deterministic", "[session_terrain][on_foot]") {
+    const auto run = [](unsigned workers) {
+        auto fetch = std::make_shared<SyntheticFetch>();
+        rg::Session session(terrain_config(workers, fetch, 100.0, 50.0, 4));
+        session.set_drive_script(hold_still_script());
+        for (int k = 0; k < 240; ++k) session.step();
+        session.request_walker_spawn();
+        rg::WalkerInput in;
+        in.move_forward = 1.0;
+        in.run = true;
+        for (int k = 0; k < 960; ++k) {
+            in.look_yaw_rad = 0.002 * k;
+            session.set_walker_input(in);
+            session.step();
+        }
+        CHECK(session.last_interest_points().size() == 2);
+        CHECK(session.streaming_status().falls == 0);
+        CHECK(session.streaming_status().fill_misses == 0);
+        return std::pair{session.world().state_hash(), session.walker_controller()->state().feet};
+    };
+    const auto reference = run(1);
+    const auto other = run(4);
+    CHECK(other.first == reference.first);
+    CHECK(other.second == reference.second);
+}
