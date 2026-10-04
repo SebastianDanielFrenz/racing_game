@@ -511,6 +511,28 @@ TEST_CASE("session terrain: the spawn lands on the ground", "[session_terrain]")
     CHECK(st.frozen_attempts == 0);
 }
 
+TEST_CASE("session terrain: start-up priming plans no traffic before the chassis exists", "[session_terrain]") {
+    // Regression: the priming ticks in setup_terrain ran step_once's actor
+    // and environment updates while chassis_body_ was still BodyId{}. A debug
+    // build asserted "stale or invalid BodyId" in JoltRigidBackend::lookup; a
+    // release build silently read backend slot 0 (the first heightfield pool
+    // body) and started the first NPC traffic scan around that body.
+    auto fetch = std::make_shared<SyntheticFetch>();
+    rg::Session session(terrain_config(1, fetch, 100.0, 50.0));
+    REQUIRE(session.terrain_mode());
+    REQUIRE(session.spawn_tick() > 0); // priming did step the World
+    CHECK_FALSE(session.last_traffic_scan_origin().has_value());
+
+    // The first vehicle tick starts the scan (default density), around the car.
+    const ps::Vec3 spawn = session.world().get_pose(session.chassis_body()).position;
+    session.set_drive_script(hold_still_script());
+    session.step();
+    const std::optional<ps::Vec3> origin = session.last_traffic_scan_origin();
+    REQUIRE(origin.has_value());
+    CHECK(std::hypot(origin->x - spawn.x, origin->y - spawn.y) < 1e-9);
+    CHECK(std::hypot(origin->x - 100.0, origin->y - 50.0) < 1e-6);
+}
+
 TEST_CASE("session terrain: a 30 s drive is deterministic across workers and fetch delay, no falls, no misses",
           "[session_terrain]") {
     const DriveRun a = run_drive(1, 0);

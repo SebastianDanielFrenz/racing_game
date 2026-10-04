@@ -726,31 +726,39 @@ bool Session::step_once(bool from_loop) {
     }
     spike.controls_ms = lap();
 
-    update_npc_truck();
-    update_traffic();
-    check_followed_alive(); // despawned at its route end / truck removed this tick
-    environment_sample_=sample_environment(config_.environment,world_->get_pose(chassis_body_).position.z,world_->sim_time());
-    if(config_.environment.enabled)world_->set_ambient({environment_sample_.pressure_pa,environment_sample_.temperature_k});
-    world_->set_aero_environment({environment_sample_.air_density,environment_sample_.wind_world_m_s});
-    const auto motion=world_->get_motion(chassis_body_);
-    const auto rotation=world_->get_pose(chassis_body_).orientation;
-    const double forward_speed=rotation.inverse().rotate(motion.linear-environment_sample_.wind_world_m_s).x;
-    const double brake=std::clamp(static_cast<double>(world_->get_control("brake")),0.0,1.0);
-    for(std::size_t i=0;i<vehicle_desc_.aero.surfaces.size();++i) {
-        const auto& surface=vehicle_desc_.aero.surfaces[i];
-        if(surface.name!="rear_wing"||!config_.environment.automatic_rear_wing)continue;
-        const auto& c=config_.environment;
-        double target=c.cruise_wing_offset_deg*std::clamp((forward_speed-10)/20,0.0,1.0);
-        if(forward_speed>=c.airbrake_min_speed_m_s) {
-            const double demand=std::clamp((brake-c.airbrake_threshold)/(1-c.airbrake_threshold),0.0,1.0);
-            target+=(c.airbrake_wing_offset_deg-target)*demand;
+    // Everything below reads the chassis (or actors placed around it). Terrain
+    // start-up primes the TileManager with World ticks BEFORE the chassis
+    // exists (setup_terrain -> step_blocking): chassis_body_ is still the
+    // default BodyId{} there, which in a release build silently resolved to
+    // backend slot 0 (the first heightfield pool body) and planned the first
+    // traffic scan around that body's position. Priming ticks only step.
+    if (have_vehicle_) {
+        update_npc_truck();
+        update_traffic();
+        check_followed_alive(); // despawned at its route end / truck removed this tick
+        environment_sample_=sample_environment(config_.environment,world_->get_pose(chassis_body_).position.z,world_->sim_time());
+        if(config_.environment.enabled)world_->set_ambient({environment_sample_.pressure_pa,environment_sample_.temperature_k});
+        world_->set_aero_environment({environment_sample_.air_density,environment_sample_.wind_world_m_s});
+        const auto motion=world_->get_motion(chassis_body_);
+        const auto rotation=world_->get_pose(chassis_body_).orientation;
+        const double forward_speed=rotation.inverse().rotate(motion.linear-environment_sample_.wind_world_m_s).x;
+        const double brake=std::clamp(static_cast<double>(world_->get_control("brake")),0.0,1.0);
+        for(std::size_t i=0;i<vehicle_desc_.aero.surfaces.size();++i) {
+            const auto& surface=vehicle_desc_.aero.surfaces[i];
+            if(surface.name!="rear_wing"||!config_.environment.automatic_rear_wing)continue;
+            const auto& c=config_.environment;
+            double target=c.cruise_wing_offset_deg*std::clamp((forward_speed-10)/20,0.0,1.0);
+            if(forward_speed>=c.airbrake_min_speed_m_s) {
+                const double demand=std::clamp((brake-c.airbrake_threshold)/(1-c.airbrake_threshold),0.0,1.0);
+                target+=(c.airbrake_wing_offset_deg-target)*demand;
+            }
+            const double radians=target*3.141592653589793/180;
+            const double limit=radians>=0?surface.max_offset_rad:-surface.min_offset_rad;
+            world_->set_aero_surface_command(vehicle_id_,i,limit>0?std::clamp(radians/limit,-1.0,1.0):0.0);
         }
-        const double radians=target*3.141592653589793/180;
-        const double limit=radians>=0?surface.max_offset_rad:-surface.min_offset_rad;
-        world_->set_aero_surface_command(vehicle_id_,i,limit>0?std::clamp(radians/limit,-1.0,1.0):0.0);
+        for(std::size_t i=0;i<vehicle_desc_.aero.fans.size();++i)
+            world_->set_aero_fan_command(vehicle_id_,i,config_.environment.fan_command);
     }
-    for(std::size_t i=0;i<vehicle_desc_.aero.fans.size();++i)
-        world_->set_aero_fan_command(vehicle_id_,i,config_.environment.fan_command);
     world_->step();
     spike.step_ms = lap();
     post_step(from_loop);
@@ -1249,7 +1257,7 @@ void Session::update_traffic(bool clear){
    }
  if(traffic_config_.density_per_km==0){traffic_population_target_=0;traffic_ready_.trips.clear();}
  if((traffic_scan_needed_||static_cast<int>(traffic_actors_.size())<traffic_population_target_)&&traffic_ready_.trips.empty()&&!traffic_worker_.joinable()&&now>=traffic_scan_time_&&traffic_config_.density_per_km>0){
-  traffic_cancel_.store(false);traffic_done_.store(false);traffic_loading_=true;traffic_scan_needed_=false;traffic_scan_time_=now+8;
+  traffic_cancel_.store(false);traffic_done_.store(false);traffic_loading_=true;traffic_scan_needed_=false;traffic_scan_time_=now+8;traffic_scan_origin_=car.position;
   auto terrain=config_.terrain?config_.terrain->world_terrain:nullptr;auto config=traffic_config_;config.grip_multiplier=1;const auto seed=traffic_seed_++;
   traffic_worker_=std::thread([this,terrain,player=car.position,config,seed]{
    const auto started=std::chrono::steady_clock::now();

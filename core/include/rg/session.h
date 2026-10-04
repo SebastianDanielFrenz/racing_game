@@ -504,6 +504,11 @@ public:
     // The interest points the latest gate check built (terrain mode; empty in
     // flat mode or before the first one). Stepping thread / tests only.
     [[nodiscard]] std::span<const g2m::phys::InterestPoint> last_interest_points() const;
+    // Where the latest NPC traffic scan was planned around (the chassis
+    // position on the tick it started); nullopt before the first scan. A scan
+    // needs the chassis, so none starts during terrain start-up priming.
+    // Stepping thread / tests only.
+    [[nodiscard]] std::optional<ps::Vec3> last_traffic_scan_origin() const { return traffic_scan_origin_; }
 
     // --- Direct access: synchronous-mode / test / hash-check-tool only.
     // NOT race-free against a running loop - never call these while
@@ -584,6 +589,7 @@ private:
     struct TrafficNeighbor {std::uint64_t id;ps::Vec3 position;double speed,half_length;};
     std::map<std::pair<int,int>,std::vector<TrafficNeighbor>> traffic_neighbor_grid_;
     std::string traffic_message_;
+    std::optional<ps::Vec3> traffic_scan_origin_;
     void update_npc_truck();
     std::thread truck_worker_;
     std::atomic<bool> truck_cancel_{false},truck_done_{false};
