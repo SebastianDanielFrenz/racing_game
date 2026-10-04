@@ -9,6 +9,9 @@
 
 #include <godot_cpp/core/class_db.hpp>
 #include <godot_cpp/classes/engine.hpp>
+#include <godot_cpp/classes/multi_mesh.hpp>
+#include <godot_cpp/variant/plane.hpp>
+#include <cmath>
 #include <godot_cpp/variant/array.hpp>
 
 #include <chrono>
@@ -769,6 +772,53 @@ void RgSimulation::configure_traffic(double density,double radius,double minimum
 void RgSimulation::set_visible_traffic(const godot::Array& ids) {
  if(!session_)return;std::vector<std::uint64_t> visible;for(std::int64_t i=0;i<ids.size();++i)visible.push_back(static_cast<std::int64_t>(ids[i]));session_->set_visible_traffic(std::move(visible));
 }
+// Keep population-sized work native; upload each mesh part in a single call.
+godot::Dictionary RgSimulation::update_traffic_render(const godot::Array& cars, const godot::Array& trucks, const godot::Array& planes, bool report_visibility) {
+ const auto begin=std::chrono::steady_clock::now();
+ struct Instance { godot::Transform3D pose; godot::Color color; };
+ std::vector<Instance> groups[2]; std::vector<std::uint64_t> visible;
+ std::vector<godot::Plane> frustum;
+ for(std::int64_t i=0;i<planes.size();++i)frustum.push_back(planes[i]);
+ const rg::FrameSnapshot empty;
+ const auto& traffic=session_?frame_snapshot().traffic:empty.traffic;
+ const auto origin=origin_rebase_?origin_rebase_->origin():ps::Vec3{};
+ for(const auto& actor:traffic.actors){
+  auto pose=iso_to_godot_transform(actor.pose,origin);
+  // Sphere encloses the complete authored body, cabin, wheels and lamps.
+  const double radius=actor.truck?7.5:3.5; bool in_view=true;
+  for(const auto& plane:frustum)if(plane.distance_to(pose.origin)>radius){in_view=false;break;}
+  if(!in_view)continue;
+  auto color=actor.truck?godot::Color(1,1,1):godot::Color::from_hsv(std::fmod(static_cast<double>(actor.id)*.173,1.),.55,.75);
+  groups[actor.truck?1:0].push_back({pose,color});
+  if(report_visibility)visible.push_back(actor.id);
+ }
+ for(int kind=0;kind<2;++kind){
+  const auto& instances=groups[kind];const auto& parts=kind?trucks:cars;
+  for(std::int64_t part_index=0;part_index<parts.size();++part_index){
+   godot::Dictionary part=parts[part_index];godot::Ref<godot::MultiMesh> multi=part["multi"];
+   if(multi.is_null())continue;
+   if(static_cast<int>(instances.size())>multi->get_instance_count()){
+    int capacity=1;while(capacity<static_cast<int>(instances.size()))capacity*=2;
+    multi->set_instance_count(capacity);
+   }
+   multi->set_visible_instance_count(static_cast<int>(instances.size()));
+   if(instances.empty())continue;
+   godot::Transform3D local=part["local"];
+   godot::PackedFloat32Array buffer=part["buffer"];
+   buffer.resize(multi->get_instance_count()*16);auto* out=buffer.ptrw();
+   for(std::size_t i=0;i<instances.size();++i){
+    const auto pose=instances[i].pose*local;const auto& c=instances[i].color;auto* b=out+i*16;
+    for(int row=0;row<3;++row){for(int col=0;col<3;++col)b[row*4+col]=static_cast<float>(pose.basis.get_column(col)[row]);b[row*4+3]=static_cast<float>(pose.origin[row]);}
+    b[12]=c.r;b[13]=c.g;b[14]=c.b;b[15]=c.a;
+   }
+   multi->set_buffer(buffer);part["buffer"]=buffer;
+  }
+ }
+ if(report_visibility&&session_)session_->set_visible_traffic(std::move(visible));
+ godot::Dictionary result;result["active"]=static_cast<int>(traffic.actors.size());result["rendered"]=static_cast<int>(groups[0].size()+groups[1].size());
+ result["target"]=traffic.target;result["maximum"]=traffic.config.max_vehicles;result["queued"]=traffic.queued;
+ result["render_ms"]=std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-begin).count();return result;
+}
 godot::Dictionary RgSimulation::get_traffic_state() const {
  godot::Dictionary d;if(!session_)return d;const auto& traffic=frame_snapshot().traffic;godot::Array actors;
  for(const auto& a:traffic.actors){godot::Dictionary item;item["id"]=static_cast<std::int64_t>(a.id);item["truck"]=a.truck;item["speed_kph"]=a.speed_m_s*3.6;
@@ -830,6 +880,7 @@ void RgSimulation::_bind_methods() {
     godot::ClassDB::bind_method(D_METHOD("get_aero_state"), &RgSimulation::get_aero_state);
     godot::ClassDB::bind_method(D_METHOD("configure_traffic","density","radius","minimum","grip","maximum"), &RgSimulation::configure_traffic);
     godot::ClassDB::bind_method(D_METHOD("set_visible_traffic","ids"), &RgSimulation::set_visible_traffic);
+    godot::ClassDB::bind_method(D_METHOD("update_traffic_render", "cars", "trucks", "planes", "report_visibility"), &RgSimulation::update_traffic_render);
     godot::ClassDB::bind_method(D_METHOD("get_traffic_state"), &RgSimulation::get_traffic_state);
     godot::ClassDB::bind_method(D_METHOD("request_npc_truck","enabled","speed_kph"), &RgSimulation::request_npc_truck);
     godot::ClassDB::bind_method(D_METHOD("get_npc_truck_state"), &RgSimulation::get_npc_truck_state);

@@ -185,6 +185,7 @@ public:
     void configure_traffic(double density,double radius,double minimum,double grip,int maximum);
     void set_visible_traffic(const godot::Array& ids);
     godot::Dictionary get_traffic_state() const;
+    godot::Dictionary update_traffic_render(const godot::Array& cars, const godot::Array& trucks, const godot::Array& planes, bool report_visibility);
     void request_npc_truck(bool enabled,double speed_kph);
     godot::Dictionary get_npc_truck_state() const;
     [[nodiscard]] godot::Dictionary get_steering_kinematics() const;

@@ -181,3 +181,17 @@ existing flip/cancellation and real drafting. A headless render construction
 check instantiates 2048 cars and 256 trucks in 22 mesh batches. This validates
 render construction, not full-game FPS or 240 Hz physics at those populations;
 the owner's driving/performance acceptance remains outstanding.
+
+### Native render uploads (2026-10-04)
+
+The renderer retains the existing six car parts and sixteen truck parts.
+Population-sized pose/color conversion and buffer packing now run in C++,
+with one complete MultiMesh upload per nonempty part instead of per-instance
+GDScript setters. Camera-frustum sphere checks exclude off-screen geometry
+before packing, including conservative whole-vehicle margins. Visibility
+feedback remains at 10 Hz; collision, routing, population and nearby wakes
+are unchanged. The main thread still submits these buffers; this change removes
+script/binding overhead rather than relocating the renderer to another thread.
+Every five seconds RG_TRAFFIC_RENDER records active/rendered counts and the
+maximum native packing/upload submission time. This excludes GPU execution and
+other main-thread work; full-drive FPS remains an owner acceptance check.

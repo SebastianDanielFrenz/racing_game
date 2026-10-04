@@ -2,6 +2,8 @@ extends Node3D
 var simulation: Node
 var _batches := {false: [], true: []}
 var _visibility_elapsed := 0.0
+var _diagnostic_elapsed := 0.0
+var _render_max_ms := 0.0
 var _panel: PanelContainer
 var _status: Label
 var _controls: Array[HSlider] = []
@@ -95,7 +97,7 @@ func _part(truck: bool, size: Vector3, at: Vector3, color: Color, rubber := fals
  multi.mesh = mesh
  node.multimesh = multi
  add_child(node)
- _batches[truck].append({"multi": multi, "local": Transform3D(Basis.IDENTITY, at)})
+ _batches[truck].append({"multi": multi, "local": Transform3D(Basis.IDENTITY, at), "buffer": PackedFloat32Array()})
 
 func _build_batches() -> void:
  _part(false, Vector3(4.6,2,0.8), Vector3.ZERO, Color.WHITE)
@@ -115,24 +117,6 @@ func _build_batches() -> void:
   _part(true, Vector3(0.04,0.35,0.2), Vector3(6.52,y,-0.8), Color(1,0.95,0.75))
   _part(true, Vector3(0.04,0.3,0.2), Vector3(-6.52,y,-0.8), Color(0.9,0.035,0.025))
 
-func _draw_batch(truck: bool, actors: Array) -> void:
- for part: Dictionary in _batches[truck]:
-  var multi: MultiMesh = part["multi"]
-  if actors.size() > multi.instance_count:
-   var capacity := 1
-   while capacity < actors.size():
-    capacity *= 2
-   multi.instance_count = capacity
-  multi.visible_instance_count = actors.size()
- for i in range(actors.size()):
-  var actor: Dictionary = actors[i]
-  var pose: Transform3D = actor["transform"]
-  var color := Color.WHITE if truck else Color.from_hsv(fmod(float(actor["id"])*0.173,1.0),0.55,0.75)
-  for part: Dictionary in _batches[truck]:
-   var multi: MultiMesh = part["multi"]
-   multi.set_instance_transform(i, pose * part["local"])
-   multi.set_instance_color(i, color)
-
 func _process(delta: float) -> void:
  if simulation == null:
   return
@@ -143,33 +127,21 @@ func _process(delta: float) -> void:
   _configured_session = ticks
  else:
   _configured_session = -1
- var state: Dictionary = simulation.get_traffic_state()
- var cars: Array = []
- var trucks: Array = []
- var visible_ids: Array = []
  _visibility_elapsed += delta
  var report_visibility := _visibility_elapsed >= 0.1
  var camera := get_viewport().get_camera_3d()
- for actor: Dictionary in state.get("actors", []):
-  if actor["truck"]:
-   trucks.append(actor)
-  else:
-   cars.append(actor)
-  if report_visibility and camera != null:
-   var pose: Transform3D = actor["transform"]
-   var in_view := camera.is_position_in_frustum(pose.origin)
-   if not in_view:
-    var half := 6.6 if actor["truck"] else 2.4
-    for x in [-half,half]:
-     in_view = in_view or camera.is_position_in_frustum(pose * Vector3(x,0,0))
-   if in_view:
-    visible_ids.append(actor["id"])
- _draw_batch(false,cars)
- _draw_batch(true,trucks)
+ var planes: Array = camera.get_frustum() if camera != null else []
+ var state: Dictionary = simulation.update_traffic_render(_batches[false], _batches[true], planes, report_visibility)
  if report_visibility:
-  simulation.set_visible_traffic(visible_ids)
   _visibility_elapsed = 0.0
- _status.text = "%d active / %d target (cap %d) | %d queued" % [cars.size()+trucks.size(), int(state.get("target",0)), int(state.get("maximum",2048)), int(state.get("queued",0))]
+ _diagnostic_elapsed += delta
+ _render_max_ms = maxf(_render_max_ms, float(state.get("render_ms", 0.0)))
+ if _diagnostic_elapsed >= 5.0:
+  print("RG_TRAFFIC_RENDER active=%d rendered=%d max_ms=%.3f" % [state.get("active",0),state.get("rendered",0),_render_max_ms])
+  _diagnostic_elapsed = 0.0
+  _render_max_ms = 0.0
+ if _panel.visible:
+  _status.text = "%d active / %d target (cap %d) | %d rendered | %d queued" % [state.get("active",0), int(state.get("target",0)), int(state.get("maximum",2048)), int(state.get("rendered",0)), int(state.get("queued",0))]
 
 func _toggle(open: bool) -> void:
  _panel.visible = open
