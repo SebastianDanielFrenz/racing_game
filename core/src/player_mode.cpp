@@ -33,7 +33,14 @@ ModeRules rules_for(PlayerMode mode, std::optional<std::uint64_t> drone_target) 
             r.driving_inputs_live = !drone_target.has_value();
             break;
         case PlayerMode::Cockpit: r.camera_rig = CameraRig::Seat; break;      // reserved, unused
-        case PlayerMode::OnFoot: r.camera_rig = CameraRig::Walker; break;     // R9c
+        case PlayerMode::OnFoot:
+            r.implemented = true;
+            r.vehicle_control = VehicleControl::Unattended; // parked, like in free cam
+            r.driving_inputs_live = false;
+            r.camera_inputs_live = true;  // look
+            r.walking_inputs_live = true; // move / run / jump / interact
+            r.camera_rig = CameraRig::Walker;
+            break;
     }
     return r;
 }
@@ -174,14 +181,24 @@ PlayerModeMachine::Result PlayerModeMachine::request_mode(PlayerMode mode) {
     return Result::Changed;
 }
 
-PlayerMode PlayerModeMachine::cycle_mode() {
+PlayerMode PlayerModeMachine::cycle_mode() { return cycle_mode(0.0); }
+
+PlayerModeMachine::Result PlayerModeMachine::request_mode(PlayerMode mode, double vehicle_speed_mps) {
+    if (mode == PlayerMode::OnFoot && mode_ != PlayerMode::OnFoot && rules_for(mode).implemented &&
+        !may_get_out(vehicle_speed_mps)) {
+        ++get_out_refusals_;
+        return Result::Refused;
+    }
+    return request_mode(mode);
+}
+
+PlayerMode PlayerModeMachine::cycle_mode(double vehicle_speed_mps) {
     int i = static_cast<int>(mode_);
     for (int step = 1; step < kPlayerModeCount; ++step) {
         const auto candidate = static_cast<PlayerMode>((i + step) % kPlayerModeCount);
-        if (rules_for(candidate).implemented) {
-            request_mode(candidate);
-            break;
-        }
+        if (!rules_for(candidate).implemented) continue;
+        if (request_mode(candidate, vehicle_speed_mps) == Result::Refused) continue; // too fast to get out: skip it
+        break;
     }
     return mode_;
 }
@@ -213,6 +230,7 @@ ModeRules PlayerModeMachine::effective_rules() const {
     ModeRules r = rules_for(mode_, drone_target_);
     if (world_phase_ != WorldPhase::Ready) {
         r.driving_inputs_live = false;
+        r.walking_inputs_live = false;
         r.vehicle_control = VehicleControl::Unattended;
     }
     return r;

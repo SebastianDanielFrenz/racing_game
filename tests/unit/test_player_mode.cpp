@@ -69,11 +69,23 @@ TEST_CASE("player mode: rules per mode", "[player_mode]") {
     // The target means nothing outside DroneFollow.
     CHECK(rg::rules_for(rg::PlayerMode::Drive, std::uint64_t{7}).driving_inputs_live);
 
-    // Reserved: no behaviour (Cockpit is unused, OnFoot is the next milestone).
-    for (rg::PlayerMode m : {rg::PlayerMode::Cockpit, rg::PlayerMode::OnFoot}) {
-        CHECK_FALSE(rg::rules_for(m).implemented);
-        CHECK_FALSE(rg::rules_for(m).driving_inputs_live);
+    // On foot (R9c): the car is parked (Unattended like in free cam), the
+    // driving inputs are off and the walking inputs are live.
+    const rg::ModeRules foot = rg::rules_for(rg::PlayerMode::OnFoot);
+    CHECK(foot.implemented);
+    CHECK(foot.vehicle_control == rg::VehicleControl::Unattended);
+    CHECK_FALSE(foot.driving_inputs_live);
+    CHECK(foot.walking_inputs_live);
+    CHECK(foot.camera_inputs_live);
+    CHECK(foot.camera_rig == rg::CameraRig::Walker);
+    // Only OnFoot has walking inputs.
+    for (rg::PlayerMode m : {rg::PlayerMode::Drive, rg::PlayerMode::FreeCam, rg::PlayerMode::DroneFollow}) {
+        CHECK_FALSE(rg::rules_for(m).walking_inputs_live);
     }
+
+    // Reserved: no behaviour (Cockpit is unused - the cockpit is a Drive view toggle).
+    CHECK_FALSE(rg::rules_for(rg::PlayerMode::Cockpit).implemented);
+    CHECK_FALSE(rg::rules_for(rg::PlayerMode::Cockpit).driving_inputs_live);
 }
 
 TEST_CASE("player mode: names round-trip", "[player_mode]") {
@@ -98,14 +110,72 @@ TEST_CASE("player mode: transitions", "[player_mode]") {
     CHECK(m.request_mode(rg::PlayerMode::FreeCam) == rg::PlayerModeMachine::Result::Changed);
     CHECK(m.mode() == rg::PlayerMode::FreeCam);
     CHECK(m.revision() > r0);
-    // cycle: drive -> free_cam -> drone_follow -> drive, skipping the reserved modes
+    // cycle: drive -> free_cam -> drone_follow -> on_foot -> drive, skipping the reserved Cockpit
     CHECK(m.cycle_mode() == rg::PlayerMode::DroneFollow);
+    CHECK(m.cycle_mode() == rg::PlayerMode::OnFoot);
     CHECK(m.cycle_mode() == rg::PlayerMode::Drive);
     CHECK(m.cycle_mode() == rg::PlayerMode::FreeCam);
     CHECK(m.cycle_mode() == rg::PlayerMode::DroneFollow);
     CHECK(m.request_mode(rg::PlayerMode::DroneFollow) == rg::PlayerModeMachine::Result::NoChange);
 
-    CHECK_THROWS_AS(rg::PlayerModeMachine(rg::PlayerMode::OnFoot), std::invalid_argument);
+    CHECK_THROWS_AS(rg::PlayerModeMachine(rg::PlayerMode::Cockpit), std::invalid_argument);
+}
+
+TEST_CASE("player mode: getting out needs a nearly stopped car", "[player_mode][on_foot]") {
+    CHECK(rg::may_get_out(0.0));
+    CHECK(rg::may_get_out(1.99));
+    CHECK(rg::may_get_out(-1.99)); // reversing slowly
+    CHECK_FALSE(rg::may_get_out(rg::kGetOutMaxSpeedMps));
+    CHECK_FALSE(rg::may_get_out(30.0));
+    CHECK_FALSE(rg::may_get_out(-30.0));
+    CHECK_FALSE(rg::may_get_out(std::nan("")));
+
+    rg::PlayerModeMachine m(rg::PlayerMode::Drive);
+    // Moving: refused, no state change, counted.
+    const std::uint64_t r0 = m.revision();
+    CHECK(m.request_mode(rg::PlayerMode::OnFoot, 20.0) == rg::PlayerModeMachine::Result::Refused);
+    CHECK(m.mode() == rg::PlayerMode::Drive);
+    CHECK(m.revision() == r0);
+    CHECK(m.get_out_refusals() == 1);
+    // Nearly stopped: allowed.
+    CHECK(m.request_mode(rg::PlayerMode::OnFoot, 0.5) == rg::PlayerModeMachine::Result::Changed);
+    CHECK(m.mode() == rg::PlayerMode::OnFoot);
+    CHECK(m.get_out_refusals() == 1);
+    // Already on foot: the speed does not matter (the walker is not the car).
+    CHECK(m.request_mode(rg::PlayerMode::OnFoot, 20.0) == rg::PlayerModeMachine::Result::NoChange);
+    // Leaving OnFoot is never refused.
+    CHECK(m.request_mode(rg::PlayerMode::Drive, 20.0) == rg::PlayerModeMachine::Result::Changed);
+    CHECK(m.get_out_refusals() == 1);
+
+    // The cycle skips OnFoot while the car is moving (and counts it): it never gets stuck.
+    rg::PlayerModeMachine c(rg::PlayerMode::DroneFollow);
+    CHECK(c.cycle_mode(15.0) == rg::PlayerMode::Drive);
+    CHECK(c.get_out_refusals() == 1);
+    CHECK(c.cycle_mode(15.0) == rg::PlayerMode::FreeCam);
+    CHECK(c.cycle_mode(15.0) == rg::PlayerMode::DroneFollow);
+    CHECK(c.cycle_mode(0.0) == rg::PlayerMode::OnFoot);
+    CHECK(c.cycle_mode(0.0) == rg::PlayerMode::Drive);
+    CHECK(c.get_out_refusals() == 1);
+
+    // The drone target resets on entering OnFoot like on any other change.
+    rg::PlayerModeMachine d(rg::PlayerMode::DroneFollow);
+    CHECK(d.set_drone_target(std::uint64_t{5}));
+    CHECK(d.request_mode(rg::PlayerMode::OnFoot, 0.0) == rg::PlayerModeMachine::Result::Changed);
+    CHECK_FALSE(d.drone_target().has_value());
+}
+
+TEST_CASE("player mode: walking inputs follow the world phase", "[player_mode][on_foot]") {
+    rg::PlayerModeMachine m(rg::PlayerMode::Drive);
+    REQUIRE(m.request_mode(rg::PlayerMode::OnFoot) == rg::PlayerModeMachine::Result::Changed);
+    // No world yet: masked like the driving inputs, the look input stays live.
+    CHECK_FALSE(m.effective_rules().walking_inputs_live);
+    CHECK(m.effective_rules().camera_inputs_live);
+    const std::uint64_t s = m.begin_world_load(rg::WorldKind::Flat);
+    CHECK_FALSE(m.effective_rules().walking_inputs_live);
+    REQUIRE(m.finish_world_load(s, true));
+    CHECK(m.effective_rules().walking_inputs_live);
+    CHECK(m.effective_rules().vehicle_control == rg::VehicleControl::Unattended);
+    CHECK_FALSE(m.effective_rules().driving_inputs_live);
 }
 
 TEST_CASE("player mode: world switch flow", "[player_mode]") {
@@ -196,7 +266,7 @@ TEST_CASE("player mode: drone follow rules depend on the target", "[player_mode]
     CHECK_FALSE(m.drone_target().has_value());
     CHECK(m.effective_rules().driving_inputs_live);
     CHECK(m.set_drone_target(std::uint64_t{9}));
-    CHECK(m.cycle_mode() == rg::PlayerMode::Drive); // drone_follow -> drive
+    CHECK(m.cycle_mode() == rg::PlayerMode::OnFoot); // drone_follow -> on_foot (R9c)
     CHECK_FALSE(m.drone_target().has_value());
 }
 

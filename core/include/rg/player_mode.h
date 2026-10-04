@@ -36,12 +36,18 @@
 // it. next_drone_target() is the pure cycling order (own car first, then the
 // candidates in range by distance, ties by id, wrapping to the own car).
 //
-// Extension point for R9c: Cockpit and OnFoot are reserved enum values whose
-// rules_for() entry has implemented == false; request_mode() refuses them
-// (NotImplemented) and cycle_mode() skips them. Cockpit is not used at all
-// (the cockpit is a Drive view toggle). OnFoot additionally needs a walker
-// physics interest point (Session::physics_interest_points is already a list
-// for this) and a re-sized TileManager pool.
+// On foot (R9c): the player left the car and walks (rg/walker.h; the walker
+// itself lives in rg::Session). The car is Unattended like in free cam, the
+// driving inputs are off and the walking inputs (move, run, jump, interact)
+// are live; look input (camera_inputs_live) steers the third-person or
+// first-person walker rig. Getting out is only allowed while the car is
+// nearly stopped (kGetOutMaxSpeedMps): the speed-aware request_mode()/
+// cycle_mode() overloads refuse OnFoot above it (Result::Refused; cycle_mode
+// skips it and counts the refusal so a HUD can say why). Mode cycle: drive ->
+// free_cam -> drone_follow -> on_foot -> drive (Cockpit stays unused - the
+// cockpit is a Drive view toggle). Leaving OnFoot by the cycle (or any
+// request_mode) puts the player back into the car wherever the walker is -
+// the range-checked "get in" is the interact action, handled by the Session.
 #pragma once
 
 #include <cstdint>
@@ -56,7 +62,7 @@ enum class PlayerMode : std::uint8_t {
     FreeCam = 1,     // free-flying camera, the car is Unattended
     DroneFollow = 2, // R9b: drone camera trailing a target vehicle (own car: the player keeps driving)
     Cockpit = 3,     // reserved, unused (the cockpit is a Drive view toggle, not a mode)
-    OnFoot = 4,      // R9c (reserved, no behaviour): walker, gets into a vehicle within ~1 m
+    OnFoot = 4,      // R9c: walker beside the car, interact gets back in (own car only)
 };
 inline constexpr int kPlayerModeCount = 5;
 
@@ -70,6 +76,7 @@ struct ModeRules {
     VehicleControl vehicle_control = VehicleControl::Unattended;
     bool driving_inputs_live = false;
     bool camera_inputs_live = false;
+    bool walking_inputs_live = false; // R9c: move/run/jump/interact reach the walker
     CameraRig camera_rig = CameraRig::Free;
 };
 
@@ -104,6 +111,12 @@ struct UnattendedControls {
 };
 inline constexpr double kUnattendedHoldSpeedMps = 2.0;
 inline constexpr double kUnattendedRollingBrake = 0.6;
+// R9c: the player may only get out while the own car is slower than this.
+inline constexpr double kGetOutMaxSpeedMps = 2.0;
+[[nodiscard]] constexpr bool may_get_out(double vehicle_speed_mps) {
+    // NaN speeds fail the comparison: refuse.
+    return vehicle_speed_mps < kGetOutMaxSpeedMps && vehicle_speed_mps > -kGetOutMaxSpeedMps;
+}
 [[nodiscard]] UnattendedControls unattended_controls(double speed_mps);
 
 // One followable vehicle other than the player's own car, session XY in metres.
@@ -129,7 +142,7 @@ struct DroneCandidate {
 
 class PlayerModeMachine {
 public:
-    enum class Result : std::uint8_t { Changed, NoChange, NotImplemented };
+    enum class Result : std::uint8_t { Changed, NoChange, NotImplemented, Refused };
 
     explicit PlayerModeMachine(PlayerMode start = PlayerMode::Drive);
 
@@ -138,6 +151,14 @@ public:
     Result request_mode(PlayerMode mode);
     // Next implemented mode after the current one (wrapping); returns it.
     PlayerMode cycle_mode();
+    // Speed-aware variants (R9c): entering OnFoot needs may_get_out(speed) of
+    // the player's own car. request_mode returns Refused (no state change,
+    // get_out_refusals() +1); cycle_mode skips OnFoot (also +1) and goes on
+    // to the next implemented mode, so the cycle never gets stuck.
+    Result request_mode(PlayerMode mode, double vehicle_speed_mps);
+    PlayerMode cycle_mode(double vehicle_speed_mps);
+    // Lifetime count of refused get-outs (a HUD compares it with the last one it saw).
+    [[nodiscard]] std::uint64_t get_out_refusals() const { return get_out_refusals_; }
 
     // Drone-follow target: nullopt = the player's own car, an id = another
     // vehicle. Only meaningful in DroneFollow: outside it the call changes
@@ -175,6 +196,7 @@ private:
     WorldPhase world_phase_ = WorldPhase::None;
     std::uint64_t world_serial_ = 0;
     std::uint64_t revision_ = 0;
+    std::uint64_t get_out_refusals_ = 0;
 };
 
 } // namespace rg
