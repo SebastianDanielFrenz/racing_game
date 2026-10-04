@@ -137,6 +137,29 @@ public:
     std::int64_t cycle_drone_target();
     [[nodiscard]] godot::Variant get_drone_target_transform() const;
 
+    // --- On foot (R9c, rg/walker.h, rg::Session's walker). The mode machine
+    // decides WHEN the player is on foot (set_player_mode("on_foot") /
+    // cycle_player_mode(); set_player_mode answers "refused" above ~2 m/s);
+    // this object forwards the lifecycle to the Session (spawn beside the
+    // driver door on entering, despawn on leaving) and turns the Session's
+    // get-in answer back into a mode change (the next get_mode_state() puts
+    // the machine back to drive). Input is plain values; the walking physics
+    // lives in rg_core.
+    //  set_walker_input: move_right/move_forward in [-1, 1] relative to the
+    //   look direction, look_forward = the camera's forward in the GODOT frame
+    //   (only its horizontal part is used), run = held.
+    //  request_walker_jump: one jump (honoured while grounded).
+    //  request_walker_enter: the interact key - get into the own car when in
+    //   range (otherwise get_mode_state()["walker_enter_refused"] counts up).
+    //  get_walker_state: {active, position (Godot, origin-relative, feet),
+    //   velocity (Godot), facing (Godot horizontal unit vector), grounded,
+    //   hold, blocked, can_enter, enter_distance_m, car_position (Godot,
+    //   chassis)}; {} while no walker exists.
+    void set_walker_input(double move_right, double move_forward, const godot::Vector3& look_forward, bool run);
+    void request_walker_jump();
+    void request_walker_enter();
+    [[nodiscard]] godot::Dictionary get_walker_state() const;
+
     void start();
     void stop();
     [[nodiscard]] bool is_running() const;
@@ -289,6 +312,8 @@ private:
     void apply_mode_to_session();
     // Returns to the own car when the Session reports its followed vehicle lost.
     void poll_drone_follow();
+    // Turns the Session's walker answers (entered / spawn failed) into mode changes.
+    void poll_walker();
 
     // Tears down whatever this object currently holds - an in-flight init
     // worker (cancelled, then joined - R2.2 R9) and/or a
@@ -358,6 +383,8 @@ private:
     rg::PlayerModeMachine modes_{rg::PlayerMode::Drive};
     std::uint64_t world_load_serial_ = 0; // the mode machine's serial of the load this object is running
     std::uint64_t drone_lost_seen_ = 0;   // Session::followed_loss().count already handled (per Session)
+    bool walker_wanted_ = false;          // last walker spawn/despawn request sent to the Session (per Session)
+    rg::Session::WalkerCounters walker_seen_{}; // counters already handled (per Session)
 };
 
 } // namespace rg_godot

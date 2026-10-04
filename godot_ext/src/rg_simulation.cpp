@@ -104,6 +104,8 @@ void RgSimulation::teardown_current() {
     // A new Session is a new world: its vehicle ids mean nothing to the old
     // follow target, and its loss counter restarts at 0.
     drone_lost_seen_ = 0;
+    walker_wanted_ = false; // the next Session starts without a walker; apply_mode_to_session() re-requests it
+    walker_seen_ = {};
     modes_.set_drone_target(std::nullopt);
     cancel_init();                   // R2.2 R9: cancel-then-join
     reap_init_thread(/*wait=*/true); // joins any in-flight worker first (see its own doc comment)
@@ -142,6 +144,31 @@ void RgSimulation::apply_mode_to_session() {
     // while the drone camera trails it.
     session_->set_followed_vehicle(modes_.mode() == rg::PlayerMode::DroneFollow ? modes_.drone_target()
                                                                                  : std::nullopt);
+    // On foot (R9c): the walker exists exactly while the mode is OnFoot. Only a
+    // change is sent (a repeated spawn request after a get-in could re-spawn it).
+    const bool want_walker = modes_.mode() == rg::PlayerMode::OnFoot;
+    if (want_walker != walker_wanted_) {
+        walker_wanted_ = want_walker;
+        if (want_walker) {
+            session_->request_walker_spawn();
+        } else {
+            session_->request_walker_despawn();
+        }
+    }
+}
+
+void RgSimulation::poll_walker() {
+    if (!session_) return;
+    const rg::Session::WalkerCounters c = session_->walker_counters();
+    const bool entered = c.entered != walker_seen_.entered;
+    const bool failed = c.spawn_failed != walker_seen_.spawn_failed;
+    walker_seen_.entered = c.entered;
+    walker_seen_.spawn_failed = c.spawn_failed;
+    if (!(entered || failed) || modes_.mode() != rg::PlayerMode::OnFoot) return;
+    // Back into the car (leaving OnFoot is never speed-gated). A failed spawn
+    // (no vehicle yet) also falls back to driving.
+    modes_.request_mode(rg::PlayerMode::Drive);
+    apply_mode_to_session();
 }
 
 void RgSimulation::poll_drone_follow() {
@@ -734,9 +761,11 @@ float RgSimulation::get_vehicle_ground_speed_mps(const String& vehicle_name) con
 godot::String RgSimulation::set_player_mode(const String& mode_name) {
     const std::optional<rg::PlayerMode> mode = rg::player_mode_from_string(to_std_string(mode_name));
     if (!mode.has_value()) return String("unknown_mode");
-    const rg::PlayerModeMachine::Result r = modes_.request_mode(*mode);
+    const double speed = session_ ? frame_snapshot().chassis_motion.linear.length() : 0.0;
+    const rg::PlayerModeMachine::Result r = modes_.request_mode(*mode, speed);
     apply_mode_to_session();
     switch (r) {
+        case rg::PlayerModeMachine::Result::Refused: return String("refused");
         case rg::PlayerModeMachine::Result::Changed: return String("changed");
         case rg::PlayerModeMachine::Result::NoChange: return String("no_change");
         case rg::PlayerModeMachine::Result::NotImplemented: return String("not_implemented");
@@ -745,7 +774,8 @@ godot::String RgSimulation::set_player_mode(const String& mode_name) {
 }
 
 godot::String RgSimulation::cycle_player_mode() {
-    const rg::PlayerMode m = modes_.cycle_mode();
+    const double speed = session_ ? frame_snapshot().chassis_motion.linear.length() : 0.0;
+    const rg::PlayerMode m = modes_.cycle_mode(speed);
     apply_mode_to_session();
     return String(rg::to_string(m));
 }
@@ -755,6 +785,7 @@ godot::String RgSimulation::get_player_mode() const { return String(rg::to_strin
 godot::Dictionary RgSimulation::get_mode_state() {
     reap_init_thread(/*wait=*/false); // a just-finished load updates the world phase
     poll_drone_follow();
+    poll_walker();
     const rg::ModeRules r = modes_.effective_rules();
     godot::Dictionary d;
     d["mode"] = String(rg::to_string(modes_.mode()));
@@ -763,6 +794,10 @@ godot::Dictionary RgSimulation::get_mode_state() {
     d["driving_inputs_live"] = r.driving_inputs_live;
     d["camera_inputs_live"] = r.camera_inputs_live;
     d["camera_rig"] = String(rg::to_string(r.camera_rig));
+    d["walking_inputs_live"] = r.walking_inputs_live;
+    d["get_out_refusals"] = static_cast<std::int64_t>(modes_.get_out_refusals());
+    d["walker_enter_refused"] =
+        session_ ? static_cast<std::int64_t>(session_->walker_counters().enter_refused) : std::int64_t{0};
     d["world_kind"] = String(rg::to_string(modes_.world_kind()));
     d["world_phase"] = String(rg::to_string(modes_.world_phase()));
     d["other_world"] = String(rg::to_string(modes_.other_world()));
@@ -815,6 +850,47 @@ std::int64_t RgSimulation::cycle_drone_target() {
     modes_.set_drone_target(next);
     apply_mode_to_session();
     return next ? static_cast<std::int64_t>(*next) : std::int64_t{-1};
+}
+
+void RgSimulation::set_walker_input(double move_right, double move_forward, const godot::Vector3& look_forward, bool run) {
+    if (!session_) return;
+    // Godot (x = -iso.y, z = -iso.x)  ->  iso heading of the look direction.
+    rg::WalkerInput in;
+    in.move_right = move_right;
+    in.move_forward = move_forward;
+    in.look_yaw_rad = std::atan2(-static_cast<double>(look_forward.x), -static_cast<double>(look_forward.z));
+    in.run = run;
+    session_->set_walker_input(in);
+}
+
+void RgSimulation::request_walker_jump() {
+    if (session_) session_->request_walker_jump();
+}
+
+void RgSimulation::request_walker_enter() {
+    if (session_ && modes_.mode() == rg::PlayerMode::OnFoot) session_->request_walker_enter();
+}
+
+godot::Dictionary RgSimulation::get_walker_state() const {
+    godot::Dictionary d;
+    if (!session_) return d;
+    const rg::WalkerSnapshot& w = frame_snapshot().walker;
+    if (!w.active) return d;
+    const ps::Vec3 origin = origin_rebase_ ? origin_rebase_->origin() : ps::Vec3{};
+    d["active"] = true;
+    d["position"] = iso_to_godot(w.feet, origin);
+    d["velocity"] = godot::Vector3(static_cast<float>(-w.velocity.y), static_cast<float>(w.velocity.z),
+                                   static_cast<float>(-w.velocity.x));
+    // Facing as a Godot-frame horizontal unit vector: iso (cos yaw, sin yaw) -> (-sin yaw, 0, -cos yaw).
+    const double cy = std::cos(w.yaw_rad), sy = std::sin(w.yaw_rad);
+    d["facing"] = godot::Vector3(static_cast<float>(-sy), 0.0f, static_cast<float>(-cy));
+    d["grounded"] = w.grounded;
+    d["hold"] = w.hold;
+    d["blocked"] = w.blocked;
+    d["can_enter"] = w.can_enter;
+    d["enter_distance_m"] = w.enter_distance_m;
+    d["car_position"] = iso_to_godot(frame_snapshot().chassis_pose.position, origin);
+    return d;
 }
 
 godot::Variant RgSimulation::get_drone_target_transform() const {
@@ -947,6 +1023,11 @@ void RgSimulation::_bind_methods() {
     godot::ClassDB::bind_method(D_METHOD("set_drone_target", "id"), &RgSimulation::set_drone_target);
     godot::ClassDB::bind_method(D_METHOD("cycle_drone_target"), &RgSimulation::cycle_drone_target);
     godot::ClassDB::bind_method(D_METHOD("get_drone_target_transform"), &RgSimulation::get_drone_target_transform);
+    godot::ClassDB::bind_method(D_METHOD("set_walker_input", "move_right", "move_forward", "look_forward", "run"),
+                                &RgSimulation::set_walker_input);
+    godot::ClassDB::bind_method(D_METHOD("request_walker_jump"), &RgSimulation::request_walker_jump);
+    godot::ClassDB::bind_method(D_METHOD("request_walker_enter"), &RgSimulation::request_walker_enter);
+    godot::ClassDB::bind_method(D_METHOD("get_walker_state"), &RgSimulation::get_walker_state);
     godot::ClassDB::bind_method(D_METHOD("start"), &RgSimulation::start);
     godot::ClassDB::bind_method(D_METHOD("stop"), &RgSimulation::stop);
     godot::ClassDB::bind_method(D_METHOD("is_running"), &RgSimulation::is_running);
