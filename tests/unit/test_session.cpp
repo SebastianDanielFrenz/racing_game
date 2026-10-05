@@ -106,6 +106,26 @@ TEST_CASE("Session control channels round-trip", "[session]") {
     REQUIRE(session.get_control("not_a_real_channel") == 0.0);
 }
 
+// The N2O arm switch (gamepad Y toggles it, main.gd): a pre-seeded plain 0/1 level that the
+// real-time loop copies into the World like every other channel; the shipped cars have no
+// nitrous kit, so for them it is inert and must not disturb stepping.
+TEST_CASE("Session nitrous_arm channel is pre-seeded and reaches the World", "[session]") {
+    rg::Session session(make_test_config());
+    CHECK(session.get_control("nitrous_arm") == 0.0);
+    session.set_control("nitrous_arm", 1.0 - session.get_control("nitrous_arm")); // the toggle
+    CHECK(session.get_control("nitrous_arm") == 1.0);
+    session.start();
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(5);
+    while (session.snapshot().tick < 30 && std::chrono::steady_clock::now() < deadline) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(2));
+    }
+    session.stop();
+    CHECK(session.snapshot().tick >= 30);
+    CHECK(session.world().get_control("nitrous_arm") == 1.0);
+    session.set_control("nitrous_arm", 1.0 - session.get_control("nitrous_arm"));
+    CHECK(session.get_control("nitrous_arm") == 0.0);
+}
+
 TEST_CASE("Session snapshot captures wheel and powertrain state", "[session]") {
     rg::Session session(make_test_config());
     for (int i = 0; i < 10; ++i) session.step();

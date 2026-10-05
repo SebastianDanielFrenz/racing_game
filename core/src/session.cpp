@@ -49,6 +49,7 @@ const char* const kControlChannelNames[] = {
     "assist.auto_shift",
     "assist.auto_clutch",
     "assist.auto_blip",
+    "nitrous_arm", // N2O arm switch, a plain 0/1 level (owner 2026-10-05; only cars with a nitrous kit declare it)
 };
 const std::size_t kControlChannelCount = sizeof(kControlChannelNames) / sizeof(kControlChannelNames[0]);
 

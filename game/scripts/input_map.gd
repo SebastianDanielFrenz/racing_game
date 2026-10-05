@@ -18,7 +18,12 @@ extends Node
 # delta in pixels; the right mouse button captures, Esc releases), fast.
 # Drone-follow zoom (camera group): mouse wheel ticks (consume_zoom_steps) and
 # PageUp/PageDown held (get_camera_zoom_key); next drone target is a global
-# action (N / D-pad right).
+# action (N / D-pad right); the next driving view is B / RB (owner 2026-10-05,
+# matching physics_sim; in free cam RB is also "up", harmless: the view cycle
+# only acts in drive mode). Gamepad Y toggles the nitrous arm switch (the
+# "nitrous_arm" control channel, a plain 0/1 level; only cars with a nitrous kit
+# declare it). Resetting the car is keyboard-only (owner 2026-10-05: "Reset car
+# should never be on the controller").
 # Walking group (on foot, R9c): reuses the camera group's move axes (WASD /
 # left stick: x right, z forward, relative to the look heading, which the walker
 # rig owns) and "fast" as RUN (Shift / left-stick click); adds JUMP (Space /
@@ -52,6 +57,7 @@ var _cycle_mode_count: int = 0
 var _cycle_view_count: int = 0
 var _switch_world_count: int = 0
 var _reset_car_count: int = 0
+var _nitrous_toggle_count: int = 0
 var _flip_upright_count: int = 0
 var _cycle_drone_count: int = 0
 var _jump_count: int = 0
@@ -108,12 +114,14 @@ func configure_vehicle(path: String) -> void:
 func _ready() -> void:
 	_ensure_action("rg_cycle_camera", [KEY_TAB], [JOY_BUTTON_RIGHT_STICK])
 	_ensure_action("rg_cycle_mode", [KEY_V], [JOY_BUTTON_BACK])
-	# R5: next driving view (chase, bumper, cockpit, orbit, cinematic). The pad
-	# button is shared with "next drone target" - the two only act in different
-	# modes (main.gd consumes both every frame and applies each in its own).
-	_ensure_action("rg_cycle_view", [KEY_B], [JOY_BUTTON_DPAD_RIGHT])
+	# R5: next driving view (chase, bumper, cockpit, orbit, cinematic). Pad RB
+	# (was D-pad right until 2026-10-05); RB is also "free cam up", the two only
+	# act in different modes (main.gd consumes the view edge every frame and
+	# applies it in drive mode only).
+	_ensure_action("rg_cycle_view", [KEY_B], [JOY_BUTTON_RIGHT_SHOULDER])
 	_ensure_action("rg_switch_world", [KEY_F8], [])
-	_ensure_action("rg_reset_car", [KEY_R], [JOY_BUTTON_Y])
+	_ensure_action("rg_reset_car", [KEY_R], []) # keyboard only: never on the controller (owner 2026-10-05)
+	_ensure_action("rg_toggle_nitrous", [], [JOY_BUTTON_Y]) # nitrous arm switch (physics_sim 804137e); no keyboard key
 	_ensure_action("rg_npc_truck", [KEY_T], [])
 	_ensure_action("rg_flip_upright", [KEY_F], [JOY_BUTTON_DPAD_DOWN])
 	# Drone follow: N (next target) / D-pad right - both unused by anything else.
@@ -288,6 +296,8 @@ func poll() -> void:
 		_switch_world_count += 1
 	if _edge("reset_car", input.is_action_pressed("rg_reset_car")):
 		_reset_car_count += 1
+	if _edge("toggle_nitrous", input.is_action_pressed("rg_toggle_nitrous")):
+		_nitrous_toggle_count += 1
 	if _edge("flip_upright", input.is_action_pressed("rg_flip_upright")):
 		_flip_upright_count += 1
 	if _edge("cycle_drone_target", input.is_action_pressed("rg_cycle_drone_target")):
@@ -420,6 +430,12 @@ func consume_switch_world() -> int:
 func consume_reset_car() -> int:
 	var n := _reset_car_count
 	_reset_car_count = 0
+	return n
+
+# Rising edges of gamepad Y since last consumed (each one flips the nitrous arm switch).
+func consume_nitrous_toggle() -> int:
+	var n := _nitrous_toggle_count
+	_nitrous_toggle_count = 0
 	return n
 
 func consume_flip_upright() -> int:

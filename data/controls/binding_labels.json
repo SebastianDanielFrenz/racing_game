@@ -16,12 +16,13 @@
         {"action": "rg_ignition", "label": "Ignition on / off"},
         {"action": "rg_starter", "label": "Starter (hold)"},
         {"action": "rg_auto_shift", "label": "Automatic shifting on / off"},
-        {"action": "rg_reset_car", "label": "Reset car to its spawn"},
+        {"action": "rg_reset_car", "label": "Reset car to its spawn (keyboard only)"},
+        {"action": "rg_toggle_nitrous", "label": "Nitrous arm on / off (cars with a nitrous kit)"},
         {"action": "rg_flip_upright", "label": "Flip the car upright"},
         {"action": "rg_npc_truck", "label": "Truck ahead (Shift+T removes it)"}
       ],
       "analog": [
-        "Gamepad: left stick steers, right trigger throttle, left trigger brake, A handbrake, B / X shift up / down, D-pad up ignition, D-pad left automatic shifting, Start starter"
+        "Gamepad: left stick steers, right trigger throttle, left trigger brake, A handbrake, B / X shift up / down, Y nitrous arm on / off, D-pad up ignition, D-pad left automatic shifting, Start starter"
       ]
     },
     {

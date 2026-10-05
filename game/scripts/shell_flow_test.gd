@@ -109,6 +109,76 @@ func _label_texts(node: Node, into: Array) -> void:
 	for child in node.get_children():
 		_label_texts(child, into)
 
+# The pad-binding changes of 2026-10-05 (owner: "Reset car should never be on the controller"):
+# Y arms the nitrous switch instead, the driving-view switch moved from D-pad right to RB. Read
+# from the live InputMap the controls view lists, and from that view's own rows.
+func _joy_buttons(action: String) -> Array:
+	var buttons: Array = []
+	for event in InputMap.action_get_events(action):
+		if event is InputEventJoypadButton:
+			buttons.append((event as InputEventJoypadButton).button_index)
+	buttons.sort()
+	return buttons
+
+# The keys label of the controls-view row whose name label starts with `label_prefix`.
+func _binding_keys(texts: Array, label_prefix: String) -> String:
+	for i in range(texts.size() - 1):
+		if str(texts[i]).begins_with(label_prefix):
+			return str(texts[i + 1])
+	return "(row missing)"
+
+func _check_bindings(ui: CanvasLayer) -> void:
+	for action in ["rg_reset_car", "rg_toggle_nitrous", "rg_cycle_view", "rg_cycle_drone_target", "rg_cam_up"]:
+		if not _check(InputMap.has_action(action), "input action %s exists" % action):
+			return
+	_check(_joy_buttons("rg_reset_car").is_empty(), "no gamepad button resets the car (pad buttons %s)" % str(_joy_buttons("rg_reset_car")))
+	_check(_joy_buttons("rg_toggle_nitrous") == [JOY_BUTTON_Y], "gamepad Y is the nitrous arm toggle (pad buttons %s)" % str(_joy_buttons("rg_toggle_nitrous")))
+	_check(_joy_buttons("rg_cycle_view") == [JOY_BUTTON_RIGHT_SHOULDER], "the driving-view switch is on RB (pad buttons %s)" % str(_joy_buttons("rg_cycle_view")))
+	_check(_joy_buttons("rg_cycle_drone_target") == [JOY_BUTTON_DPAD_RIGHT], "D-pad right is only the next drone target now (pad buttons %s)" % str(_joy_buttons("rg_cycle_drone_target")))
+	var y_users: Array = []
+	var rb_users: Array = []
+	for action in InputMap.get_actions():
+		if not str(action).begins_with("rg_"):
+			continue
+		var buttons: Array = _joy_buttons(str(action))
+		if buttons.has(JOY_BUTTON_Y):
+			y_users.append(str(action))
+		if buttons.has(JOY_BUTTON_RIGHT_SHOULDER):
+			rb_users.append(str(action))
+	y_users.sort()
+	rb_users.sort()
+	_check(y_users == ["rg_toggle_nitrous"], "Y is bound to nothing but the nitrous arm (%s)" % ", ".join(y_users))
+	_check(rb_users == ["rg_cam_up", "rg_cycle_view"], "RB is the driving-view switch and free cam up only - different modes (%s)" % ", ".join(rb_users))
+	# The read-only controls view shows the same.
+	var texts: Array = []
+	_label_texts(ui, texts)
+	var reset_keys: String = _binding_keys(texts, "Reset car to its spawn")
+	_check(reset_keys == "R", "the controls view lists the reset as keyboard R only ('%s')" % reset_keys)
+	var nitrous_keys: String = _binding_keys(texts, "Nitrous arm")
+	_check(nitrous_keys.contains("Pad") and not nitrous_keys.contains("Pad Right"), "the controls view lists the nitrous arm on a pad button ('%s')" % nitrous_keys)
+	var view_keys: String = _binding_keys(texts, "Next driving view")
+	_check(view_keys.contains("B") and view_keys.contains("Pad"), "the controls view lists the driving view on B and a pad button ('%s')" % view_keys)
+	print("RG_SHELL_TEST controls view: reset='%s' nitrous='%s' view='%s'" % [reset_keys, nitrous_keys, view_keys])
+
+# A real gamepad Y press (parsed input event) flips the nitrous_arm control channel once per press.
+func _check_nitrous_toggle() -> void:
+	var sim: Node = main._simulation
+	await _wait_until(func(): return main.world_state == "running", 10.0)
+	var before: float = sim.get_control("nitrous_arm")
+	_check(before == 0.0, "the nitrous arm switch starts off (%s)" % before)
+	for expected in [1.0, 0.0]:
+		var down := InputEventJoypadButton.new()
+		down.button_index = JOY_BUTTON_Y
+		down.pressed = true
+		Input.parse_input_event(down)
+		await _wait_seconds(0.15)
+		var up := InputEventJoypadButton.new()
+		up.button_index = JOY_BUTTON_Y
+		up.pressed = false
+		Input.parse_input_event(up)
+		await _wait_seconds(0.15)
+		_check(sim.get_control("nitrous_arm") == expected, "a Y press flips the nitrous_arm channel to %s (is %s)" % [expected, sim.get_control("nitrous_arm")])
+
 # Free roam -> flat world -> Drive. Returns whether the Drive screen was reached.
 func _start_flat_world(round_name: String) -> bool:
 	var ui: CanvasLayer = main.get_shell_ui()
@@ -204,6 +274,7 @@ func _run() -> void:
 	# ---- settings: change, save by leaving, reload ----
 	_press("settings")
 	_check(_screen() == "settings", "Settings opens")
+	_check_bindings(ui)
 	var fov_control: Control = ui.get_setting_control("camera.fov_deg")
 	if _check(fov_control is HSlider, "the field-of-view setting is a slider"):
 		(fov_control as HSlider).value = 88.0 # value_changed -> RgShell.set_setting
@@ -235,6 +306,7 @@ func _run() -> void:
 	# ---- free roam, round 1 ----
 	var node_count_before: int = _count_nodes(main)
 	if await _start_flat_world("round 1"):
+		await _check_nitrous_toggle()
 		# pause with a real Esc key event
 		_press_escape()
 		_check(await _wait_until(func(): return _screen() == "pause", 5.0), "Esc pauses (screen '%s')" % _screen())

@@ -185,6 +185,20 @@ func _run_bindings_test() -> void:
 		return
 	sim.start()
 
+	# Controls (owner 2026-10-05): the gamepad-Y nitrous toggle writes the pre-seeded
+	# "nitrous_arm" channel; the render-interpolation diagnostics binding exists.
+	sim.set_control("nitrous_arm", 1.0 - sim.get_control("nitrous_arm"))
+	if sim.get_control("nitrous_arm") != 1.0:
+		push_error("bindings test: the nitrous_arm channel did not take the toggle (is %s)" % sim.get_control("nitrous_arm"))
+		get_tree().quit(1)
+		return
+	sim.set_control("nitrous_arm", 0.0)
+	var render_diag: Dictionary = sim.get_render_diagnostics()
+	if not render_diag.has("frames_late"):
+		push_error("bindings test: get_render_diagnostics() lacks frames_late")
+		get_tree().quit(1)
+		return
+
 	var limit: Dictionary = sim.get_vehicle_speed_limit(VEHICLE_NAME)
 	if limit.get("kind", "") != "unknown" or bool(limit.get("road_found", true)):
 		push_error("bindings test: flat-world speed limit should be unknown")
@@ -920,6 +934,7 @@ func _forward_driving(live: bool, delta: float) -> void:
 	# unattended never arrive later as a burst of shifts.
 	var up: int = _input_map.consume_shift_up_count()
 	var down: int = _input_map.consume_shift_down_count()
+	var nitrous_toggles: int = _input_map.consume_nitrous_toggle()
 	if not live or not bool(_simulation.is_running()):
 		_steering.reset()
 		return
@@ -941,6 +956,11 @@ func _forward_driving(live: bool, delta: float) -> void:
 	_simulation.set_control("ignition", 1.0 if _input_map.get_ignition() else 0.0)
 	_simulation.set_control("starter", 1.0 if _input_map.get_starter() else 0.0)
 	_simulation.set_control("assist.auto_shift", 1.0 if _input_map.get_auto_shift() else 0.0)
+	# Nitrous arm switch (gamepad Y, owner 2026-10-05; physics_sim 804137e): each
+	# rising edge flips the plain 0/1 "nitrous_arm" channel. Cars without a nitrous
+	# kit never declare it, so for them it is inert.
+	for _i in range(nitrous_toggles):
+		_simulation.set_control("nitrous_arm", 1.0 - _simulation.get_control("nitrous_arm"))
 	# shift_up_count/shift_down_count are running edge counters on the sim
 	# side (session.cpp's kControlChannelNames): add this frame's edges.
 	if up > 0:
