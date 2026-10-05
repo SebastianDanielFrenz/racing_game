@@ -58,6 +58,20 @@ void RgSimulation::set_spawn_override(double session_x, double session_y, double
 
 void RgSimulation::clear_spawn_override() { spawn_override_.reset(); }
 
+void RgSimulation::set_vehicle_overrides(const godot::Dictionary& overrides) {
+    VehicleOverrides o;
+    if (overrides.has("half_extents") && overrides.has("z_m")) {
+        const godot::Vector3 h = overrides["half_extents"];
+        o.has_chassis = true;
+        o.chassis_half_extents = ps::Vec3{h.x, h.y, h.z};
+        o.chassis_z_m = static_cast<double>(overrides["z_m"]);
+        if (overrides.has("mass_kg")) o.chassis_mass_kg = static_cast<double>(overrides["mass_kg"]);
+    }
+    if (overrides.has("engine_map_cache_dir"))
+        o.engine_map_cache_dir = std::string(godot::String(overrides["engine_map_cache_dir"]).utf8().get_data());
+    vehicle_overrides_ = std::move(o);
+}
+
 void RgSimulation::set_store_dir_override(const String& dir) { store_dir_override_ = std::string(dir.utf8().get_data()); }
 
 void RgSimulation::set_road_ahead_wanted(bool wanted) {

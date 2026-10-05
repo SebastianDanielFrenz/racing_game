@@ -15,6 +15,7 @@ add_library(rg_godot SHARED
   src/rg_simulation.cpp
   src/rg_simulation_shell.cpp
   src/rg_shell.cpp
+  src/rg_garage.cpp
   src/rg_camera_math.cpp
   src/rg_terrain_view.cpp
   src/rg_engine_audio.cpp

@@ -39,6 +39,15 @@ namespace rg_godot {
 
 class RgTerrainView; // shared_world_terrain() friend access, see below
 
+// R6: what the garage tells the next vehicle load (see RgSimulation::set_vehicle_overrides).
+struct VehicleOverrides {
+    bool has_chassis = false;
+    ps::real chassis_mass_kg = 1500.0;
+    ps::Vec3 chassis_half_extents{2.0, 0.4, 0.15};
+    ps::real chassis_z_m = 0.6;
+    std::string engine_map_cache_dir;
+};
+
 class RgSimulation : public godot::Node {
     GDCLASS(RgSimulation, godot::Node)
 
@@ -182,6 +191,12 @@ public:
     // The settings screen's map data folder (rg::apply_store_dir_override),
     // applied by every following initialize_terrain(); "" = the config's own.
     void set_store_dir_override(const godot::String& dir);
+    // R6: what the garage knows about the next vehicle to load (kept until changed or
+    // cleared with {}): {mass_kg, half_extents (Vector3, ISO x/y/z), z_m,
+    // engine_map_cache_dir}. Without "mass_kg"/"half_extents"/"z_m" the filename
+    // defaults of configure_vehicle_chassis apply; without the cache dir the
+    // vehicle-path-derived one. Call before initialize()/initialize_terrain().
+    void set_vehicle_overrides(const godot::Dictionary& overrides);
     // The cinematic camera wants the road ahead of the car
     // (FrameSnapshot::road_ahead); off costs nothing.
     void set_road_ahead_wanted(bool wanted);
@@ -362,6 +377,8 @@ private:
 
     enum class InitPhase : int { Idle, Loading, Ready, Error };
 
+    VehicleOverrides vehicle_overrides_;
+
     struct SpawnOverride {
         double x = 0.0;
         double y = 0.0;
@@ -421,7 +438,7 @@ private:
     void run_terrain_init_worker(std::string world_config_path, std::string vehicle_json_path,
                                  std::string surface_table_path, std::shared_ptr<rg::StartupProgress> progress,
                                  std::int64_t fetch_delay_ms, std::optional<SpawnOverride> spawn,
-                                 std::string store_dir);
+                                 std::string store_dir, VehicleOverrides overrides);
 
     // Access is serialized by init-worker join or Ready acquire. A running
     // world never writes this cache. Different paths invalidate its identity.

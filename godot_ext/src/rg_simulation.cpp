@@ -41,7 +41,17 @@ constexpr double kDroneCandidateRangeM = 1500.0;
 
 std::string to_std_string(const String& s) { return std::string(s.utf8().get_data()); }
 // Match the supplied hypercar's chassis proxy and authored ride height.
-void configure_vehicle_chassis(rg::SessionConfig& config) {
+void configure_vehicle_chassis(rg::SessionConfig& config, const VehicleOverrides& overrides) {
+    // R6: the garage names the chassis (catalog data) and the engine-map cache of the
+    // vehicle the file was materialised from; the filename special case below stays for
+    // callers that do not (the old --vehicle-less direct-start path).
+    if (!overrides.engine_map_cache_dir.empty()) config.engine_map_cache_dir = overrides.engine_map_cache_dir;
+    if (overrides.has_chassis) {
+        config.chassis_mass_kg = overrides.chassis_mass_kg;
+        config.chassis_half_extents = overrides.chassis_half_extents;
+        config.chassis_z_m = overrides.chassis_z_m;
+        return;
+    }
     const auto slash = config.vehicle_json_path.find_last_of("/\\");
     const auto filename = config.vehicle_json_path.substr(slash == std::string::npos ? 0 : slash + 1);
     if (filename == "car_hyper.json") {
@@ -188,7 +198,7 @@ void RgSimulation::run_terrain_init_worker(std::string world_config_path, std::s
                                            std::string surface_table_path,
                                            std::shared_ptr<rg::StartupProgress> progress,
                                            std::int64_t fetch_delay_ms, std::optional<SpawnOverride> spawn,
-                                           std::string store_dir) {
+                                           std::string store_dir, VehicleOverrides overrides) {
     // No C++ exception may be thrown or caught here: this TU is built with
     // godot-cpp's -D_HAS_EXCEPTIONS=0, where `std::exception` names
     // stdext::exception, so a `catch (const std::exception&)` here would never
@@ -240,7 +250,7 @@ void RgSimulation::run_terrain_init_worker(std::string world_config_path, std::s
     config.environment=*environment;
     config.engine_map_cache_enabled = world_config->physics.engine_map_cache_enabled;
     config.vehicle_json_path = std::move(vehicle_json_path);
-    configure_vehicle_chassis(config);
+    configure_vehicle_chassis(config, overrides);
     reuse_vehicle_definition(config);
     config.surface_table_path = std::move(surface_table_path);
     config.terrain = rg::make_terrain_mode(*world_config, terrain); // start-up blocks inside make_session below
@@ -279,7 +289,7 @@ bool RgSimulation::initialize(const String& vehicle_json_absolute_path, const St
     world_load_serial_ = modes_.begin_world_load(rg::WorldKind::Flat);
     rg::SessionConfig config;
     config.vehicle_json_path = to_std_string(vehicle_json_absolute_path);
-    configure_vehicle_chassis(config);
+    configure_vehicle_chassis(config, vehicle_overrides_);
     reuse_vehicle_definition(config);
     config.surface_table_path = to_std_string(surface_table_absolute_path);
     std::string err;
@@ -318,10 +328,11 @@ bool RgSimulation::initialize_terrain(const String& world_config_absolute_path,
     init_thread_ = std::thread([this, world_config_path = std::move(world_config_path),
                                vehicle_json_path = std::move(vehicle_json_path),
                                surface_table_path = std::move(surface_table_path), progress = init_progress_,
-                               delay = fetch_delay_ms_, spawn, store_dir = store_dir_override_]() mutable {
+                               delay = fetch_delay_ms_, spawn, store_dir = store_dir_override_,
+                               overrides = vehicle_overrides_]() mutable {
         run_terrain_init_worker(std::move(world_config_path), std::move(vehicle_json_path),
                                 std::move(surface_table_path), std::move(progress), delay, spawn,
-                                std::move(store_dir));
+                                std::move(store_dir), std::move(overrides));
     });
     return true; // started, not necessarily succeeded - see get_init_status()
 }
@@ -1083,6 +1094,7 @@ void RgSimulation::_bind_methods() {
     godot::ClassDB::bind_method(D_METHOD("set_spawn_override", "session_x", "session_y", "yaw_deg"), &RgSimulation::set_spawn_override);
     godot::ClassDB::bind_method(D_METHOD("clear_spawn_override"), &RgSimulation::clear_spawn_override);
     godot::ClassDB::bind_method(D_METHOD("set_store_dir_override", "dir"), &RgSimulation::set_store_dir_override);
+    godot::ClassDB::bind_method(D_METHOD("set_vehicle_overrides", "overrides"), &RgSimulation::set_vehicle_overrides);
     godot::ClassDB::bind_method(D_METHOD("set_road_ahead_wanted", "wanted"), &RgSimulation::set_road_ahead_wanted);
     godot::ClassDB::bind_method(D_METHOD("get_chassis_session_pose"), &RgSimulation::get_chassis_session_pose);
     godot::ClassDB::bind_method(D_METHOD("session_to_godot", "session_position"), &RgSimulation::session_to_godot);

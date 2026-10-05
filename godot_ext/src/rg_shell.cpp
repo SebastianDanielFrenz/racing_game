@@ -57,6 +57,8 @@ const char* action_kind_name(rg::ShellActionKind k) {
         case rg::ShellActionKind::ResetCar: return "reset_car";
         case rg::ShellActionKind::SaveSettings: return "save_settings";
         case rg::ShellActionKind::Quit: return "quit";
+        case rg::ShellActionKind::OpenGarage: return "open_garage";
+        case rg::ShellActionKind::CloseGarage: return "close_garage";
     }
     return "unknown";
 }
@@ -187,6 +189,12 @@ godot::Dictionary RgShell::load_failed(const String& message) {
     return transition_to_dict(flow_.handle(rg::ShellFlow::load_failed(to_std(message))));
 }
 godot::Dictionary RgShell::load_cancelled() { return transition_to_dict(flow_.handle(rg::ShellFlow::load_cancelled())); }
+godot::Dictionary RgShell::vehicle_chosen(const String& id) {
+    return transition_to_dict(flow_.handle(rg::ShellFlow::vehicle_chosen(to_std(id))));
+}
+godot::Dictionary RgShell::garage_drive() { return transition_to_dict(flow_.handle(rg::ShellFlow::garage_drive())); }
+String RgShell::get_garage_return() const { return String(rg::to_string(flow_.garage_return())); }
+String RgShell::get_garage_vehicle() const { return from_std(flow_.garage_vehicle()); }
 godot::Dictionary RgShell::pause_toggle() { return transition_to_dict(flow_.handle(rg::ShellFlow::pause_toggle())); }
 
 godot::Dictionary RgShell::spawn_picked(const String& choice_id) {
@@ -371,6 +379,10 @@ void RgShell::_bind_methods() {
     ClassDB::bind_method(D_METHOD("load_failed", "message"), &RgShell::load_failed);
     ClassDB::bind_method(D_METHOD("load_cancelled"), &RgShell::load_cancelled);
     ClassDB::bind_method(D_METHOD("pause_toggle"), &RgShell::pause_toggle);
+    ClassDB::bind_method(D_METHOD("vehicle_chosen", "id"), &RgShell::vehicle_chosen);
+    ClassDB::bind_method(D_METHOD("garage_drive"), &RgShell::garage_drive);
+    ClassDB::bind_method(D_METHOD("get_garage_return"), &RgShell::get_garage_return);
+    ClassDB::bind_method(D_METHOD("get_garage_vehicle"), &RgShell::get_garage_vehicle);
     ClassDB::bind_method(D_METHOD("get_main_menu_items"), &RgShell::get_main_menu_items);
     ClassDB::bind_method(D_METHOD("get_pause_menu_items"), &RgShell::get_pause_menu_items);
     ClassDB::bind_method(D_METHOD("get_spawn_choices"), &RgShell::get_spawn_choices);

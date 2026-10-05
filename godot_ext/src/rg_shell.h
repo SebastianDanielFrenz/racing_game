@@ -41,7 +41,7 @@ public:
     // ---- screen flow (rg::ShellFlow). Every event returns the transition:
     // {accepted, from, to, actions: [{kind, screen, world, flag}]} with kind in
     // "show_screen" | "load_world" | "unload_world" | "set_paused" |
-    // "reset_car" | "save_settings" | "quit"; world = {kind: "flat"|"real_world",
+    // "reset_car" | "save_settings" | "quit" | "open_garage" | "close_garage"; world = {kind: "flat"|"real_world",
     // has_spawn, x, y, yaw_deg, label, open_address_search}. ----
     [[nodiscard]] godot::String get_screen() const;
     [[nodiscard]] godot::String get_settings_return() const;
@@ -57,6 +57,11 @@ public:
     godot::Dictionary load_failed(const godot::String& message);
     godot::Dictionary load_cancelled();
     godot::Dictionary pause_toggle();
+    // R6 garage flow: a car chosen in vehicle select; "Drive" in the configurator.
+    godot::Dictionary vehicle_chosen(const godot::String& id);
+    godot::Dictionary garage_drive();
+    [[nodiscard]] godot::String get_garage_return() const;  // "main_menu" | "pause"
+    [[nodiscard]] godot::String get_garage_vehicle() const; // the configurator's car
     [[nodiscard]] godot::Array get_main_menu_items() const; // [{id, label}]
     [[nodiscard]] godot::Array get_pause_menu_items() const;
 
