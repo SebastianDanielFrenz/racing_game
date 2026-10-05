@@ -195,3 +195,55 @@ script/binding overhead rather than relocating the renderer to another thread.
 Every five seconds RG_TRAFFIC_RENDER records active/rendered counts and the
 maximum native packing/upload submission time. This excludes GPU execution and
 other main-thread work; full-drive FPS remains an owner acceptance check.
+
+## Stuck NPCs: detector, causes, fixes (2026-10-05)
+
+Owner report: "NPCs are getting stuck a lot".
+
+**Detector** (`core/include/rg/traffic_stuck.h`, `core/src/traffic_stuck.cpp`, engine-neutral, driven by `Session::update_traffic`):
+an actor is *stuck* when it is not arriving and its speed stays below 0.5 m/s for more than 5 s. The cause recorded is
+the cap that binds its target speed (follow rule, obstacle probe, route/legal/corner cap) and, for a follow/probe cause,
+the blocking actor and its relation (oncoming / crossing / same direction). A wait chain is walked to its root so a
+deadlock cycle (the root) is told from a queue member behind a moving or stopped head. `RG_TRAFFIC_STUCK` lines are
+logged per event and `RG_TRAFFIC_STUCK_SUMMARY` carries the counters (`events`, `active`, `recovered`, `chain_*`,
+`root_*`, `rootrel_*`, `rel_*`, `overrides`). Seams: `Session::traffic_stuck_stats()`, `traffic_actor_count()`,
+`traffic_scan_in_flight()`, `add_test_traffic_actor(pose, speed, route_length_m, stop_at_end)`. Tests
+`tests/unit/test_traffic_stuck.cpp`.
+
+**Harness** `tools/traffic_probe` (deterministic, real home world, default population 2048 cap, 60 s of simulated
+time, waits for the route scans): `out/traffic_stuck/before*.out.txt` vs `after_final.out.txt`.
+
+| (same seed, harness) | before | after |
+|---|---|---|
+| stuck events in 60 s | 1700 | 783 |
+| still stuck at t = 60 | 1700 | 417 |
+| recovered | 0 | 366 |
+| events / actor-hour | 75.9 | 35.1 |
+| wait chains ending in a cycle (deadlock) | 1651 | 6 |
+| distinct deadlock roots | 166 | 2 |
+| root relation oncoming / crossing / same dir | 153 / 7 / 6 | 0 / 0 / 2 |
+
+**Root causes found, fixed at the root:**
+1. *Two-way single-lane roads put both directions on the centre line* (`npc_truck.cpp` `truck_lane`: the offset for one lane was
+   0 for both directions): head-on mutual yield (153 of the 166 deadlock roots were oncoming pairs). A two-way road with one lane
+   in total now puts each direction in the centre of its own half (`-width*.25*dir`); a one-way road stays centred (test in `test_npc_truck.cpp`).
+2. *The follow rule and the obstacle probe obeyed oncoming and crossing NPCs.* An oncoming NPC is now ignored by the
+   follow rule (the lateral separation of the lanes is the avoidance), the probe no longer hits NPC bodies (NPCs are
+   handled by the neighbour rule only).
+3. *Side-by-side overlap:* two NPCs whose lateral distance is under 2.7 m and gap a few cm were each "ahead" of the other.
+   Deterministic tie-break by id (the lower id yields).
+4. *Crossing / mixed wait cycles:* the smallest deterministic right-of-way rule: for a crossing neighbour the lower id has
+   priority; a car waiting longer than `kCrossingPatienceS` (8 s) ignores a crossing blocker (`overrides` counts these,
+   3569 in the 60 s run; each is a cycle broken). Not a real right-of-way.
+5. *Arrival despawn margin 0.5 m* was smaller than the distance from the route end to the speed-0 point (up to one route
+   point spacing): the actor parked just short of the end for ever. The margin is now the last route spacing + 0.1 m,
+   clamped to [0.5, 4] m.
+6. *Corner speed pass* (`npc_traffic.cpp`) divided by a 0.1 m floor at junction joins (curvature spike capping the speed
+   to a crawl): windowed 4 m pass.
+
+**What is left (honest):** the remaining events are queues behind a moving head at default density (`chain_moving` 744 of
+783; a car behind a slow or briefly stopped leader exceeds 5 s at < 0.5 m/s when a head stops for an arrival or a
+junction), not deadlocks; `root_cycle` 2 (a 3-cycle and a 4+-cycle at junctions with crossing flows) remain. The backstop
+despawn is **not** used (`backstop=0`). A full junction right-of-way needs: per-junction reservation or priority from the
+road data (priority roads, give way/stop signs, signals, right-hand rule fallback), turning-conflict zones instead of the
+point-neighbour test, and a yield state that survives the 20 Hz decisions. Not attempted here.

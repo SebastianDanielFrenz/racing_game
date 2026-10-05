@@ -186,7 +186,16 @@ TrafficPlan plan_traffic(std::shared_ptr<WorldTerrain> terrain,ps::Vec3 player,T
     if(std::abs(std::sin(proposed.yaw-previous.yaw))>.4&&delta.length()<12)valid=false;
    }
   }if(!valid)continue;
-  for(std::size_t i=1;i+1<trip.route.points.size();++i){auto& p=trip.route.points[i];double curvature=std::abs(std::remainder(trip.route.points[i+1].yaw-trip.route.points[i-1].yaw,6.283185307179586))/std::max(.1,trip.route.points[i+1].station-trip.route.points[i-1].station);p.speed_m_s=std::min(p.speed_m_s,std::sqrt(2.5*config.grip_multiplier/std::max(.001,curvature)));}
+  // Corner speed from the heading change over a WINDOW of at least 4 m of route each side. The previous 2-neighbour
+  // difference divided by max(0.1, ds) hit the 0.1 floor wherever two route points sit (almost) on top of each other
+  // - the join of two road edges at a junction, where the heading also jumps - giving a corner "radius" of a few cm
+  // and a cap of ~0.4 m/s: the car crawled below the stuck threshold through every junction turn.
+  {const auto& pts=trip.route.points;std::vector<double> cap(pts.size(),1e30);
+   for(std::size_t i=1;i+1<pts.size();++i){std::size_t j0=i,j1=i;
+    while(j0>0&&pts[i].station-pts[j0].station<4)--j0;while(j1+1<pts.size()&&pts[j1].station-pts[i].station<4)++j1;
+    const double curvature=std::abs(std::remainder(pts[j1].yaw-pts[j0].yaw,6.283185307179586))/std::max(1.,pts[j1].station-pts[j0].station);
+    cap[i]=std::sqrt(2.5*config.grip_multiplier/std::max(.001,curvature));}
+   for(std::size_t i=1;i+1<pts.size();++i)trip.route.points[i].speed_m_s=std::min(trip.route.points[i].speed_m_s,cap[i]);}
   trip.route.points.back().speed_m_s=0;
   for(std::size_t i=trip.route.points.size()-1;i>0;--i){double ds=trip.route.points[i].station-trip.route.points[i-1].station;trip.route.points[i-1].speed_m_s=std::min(trip.route.points[i-1].speed_m_s,std::sqrt(trip.route.points[i].speed_m_s*trip.route.points[i].speed_m_s+5*config.grip_multiplier*ds));}
   starts[{sx,sy}].push_back(plan.trips.size());

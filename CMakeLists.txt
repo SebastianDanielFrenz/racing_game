@@ -226,6 +226,7 @@ add_subdirectory(tools/lod_measure)
 add_subdirectory(tools/route_check)
 add_subdirectory(tools/rg_route_gen)
 add_subdirectory(tools/prefetch_probe)
+add_subdirectory(tools/traffic_probe)
 
 if(RG_BUILD_GODOT_EXTENSION)
   add_subdirectory(godot_ext)

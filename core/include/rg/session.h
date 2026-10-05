@@ -39,6 +39,7 @@
 #include "rg/environment.h"
 #include "rg/npc_truck.h"
 #include "rg/npc_traffic.h"
+#include "rg/traffic_stuck.h"
 #include <thread>
 #include "rg/fixed_rate_loop.h"
 #include "rg/player_mode.h"
@@ -68,6 +69,7 @@
 #include <stdexcept>
 #include <string>
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
 namespace g2m::ps_bridge {
@@ -605,7 +607,9 @@ public:
     // data needed, flat or terrain mode), returned id is followable like any
     // traffic actor. Without a follow it despawns after a few unseen seconds
     // (the flat-mode population target is 0), like any surplus actor.
-    std::uint64_t add_test_traffic_actor(const ps::Pose& pose, double speed_mps);
+    // route_length_m / stop_at_end: a shorter route whose last two points reproduce a planned trip end (the second-last
+    // point 0.7 m before the end at 1 m/s, the last at 0 m/s) for the arrival-despawn test.
+    std::uint64_t add_test_traffic_actor(const ps::Pose& pose, double speed_mps, double route_length_m = 2000.0, bool stop_at_end = false);
     // The interest points the latest gate check built (terrain mode; empty in
     // flat mode or before the first one). Stepping thread / tests only.
     [[nodiscard]] std::span<const g2m::phys::InterestPoint> last_interest_points() const;
@@ -614,6 +618,21 @@ public:
     // needs the chassis, so none starts during terrain start-up priming.
     // Stepping thread / tests only.
     [[nodiscard]] std::optional<ps::Vec3> last_traffic_scan_origin() const { return traffic_scan_origin_; }
+    // NPC stuck detector totals and the bounded event list (docs/npc_traffic.md). Stepping thread / tests only.
+    [[nodiscard]] const TrafficStuckStats& traffic_stuck_stats() const { return traffic_stuck_; }
+    [[nodiscard]] std::size_t traffic_actor_count() const { return traffic_actors_.size(); }
+    // World position / controller speed of one traffic actor (nullopt when it is gone). Stepping thread / tests only.
+    [[nodiscard]] std::optional<ps::Vec3> traffic_actor_position(std::uint64_t id) const {
+        for (const auto& a : traffic_actors_) if (a.id == id) return world_->get_pose(a.body).position;
+        return std::nullopt;
+    }
+    [[nodiscard]] std::optional<double> traffic_actor_speed(std::uint64_t id) const {
+        for (const auto& a : traffic_actors_) if (a.id == id) return a.speed;
+        return std::nullopt;
+    }
+    // True while a background traffic scan has not finished (tools/traffic_probe waits on it so a headless run is
+    // deterministic: the plan is consumed at the same tick every time). Stepping thread / tests only.
+    [[nodiscard]] bool traffic_scan_in_flight() const { return traffic_worker_.joinable() && !traffic_done_.load(); }
 
     // --- Direct access: synchronous-mode / test / hash-check-tool only.
     // NOT race-free against a running loop - never call these while
@@ -687,7 +706,15 @@ private:
     [[nodiscard]] FrameSnapshot capture_frame_snapshot() const;
 
     void update_traffic(bool clear=false);
-    struct TrafficActor {std::uint64_t id;ps::BodyId body;TrafficTrip trip;double station=0,speed=0,unseen=0,obstacle_cap=1e30,follow_cap=1e30;};
+    // follow_id/obstacle_* record WHAT the cached caps came from (stuck detector, traffic_stuck.h); route_cap is the
+    // legal/corner/end target of the latest tick; stuck is the per-actor tracker.
+    struct TrafficActor {std::uint64_t id;ps::BodyId body;TrafficTrip trip;double station=0,speed=0,unseen=0,obstacle_cap=1e30,follow_cap=1e30;
+     std::uint64_t follow_id=0;ps::BodyId obstacle_body{};bool obstacle_hit=false;double obstacle_normal_z=0,route_cap=1e30,stuck_since=0;StuckTrack stuck;};
+    static constexpr std::uint64_t kFollowPlayerId=~std::uint64_t{0};
+    TrafficStuckStats traffic_stuck_;
+    double traffic_stuck_summary_time_=0;
+    std::vector<ps::BodyId> deck_bodies_;
+    void note_stuck_events(const std::vector<std::uint64_t>& declared,double now);
     std::vector<TrafficActor> traffic_actors_;
     std::thread traffic_worker_;
     std::atomic<bool> traffic_cancel_{false},traffic_done_{false};
@@ -699,8 +726,10 @@ private:
     double traffic_scan_time_=0;
     std::uint64_t traffic_next_id_=1,traffic_seed_=91731;
     int traffic_population_target_=0;
-    struct TrafficNeighbor {std::uint64_t id;ps::Vec3 position;double speed,half_length;};
+    struct TrafficNeighbor {std::uint64_t id;ps::Vec3 position;double speed,half_length,fx,fy;};
     std::map<std::pair<int,int>,std::vector<TrafficNeighbor>> traffic_neighbor_grid_;
+    std::unordered_set<std::uint64_t> traffic_body_keys_; // bodies of the traffic actors (20 Hz): the obstacle probe leaves NPCs to the follow rule
+    static std::uint64_t body_key(ps::BodyId b){return (static_cast<std::uint64_t>(b.index)<<32)^b.generation;}
     std::string traffic_message_;
     std::optional<ps::Vec3> traffic_scan_origin_;
     void update_npc_truck();

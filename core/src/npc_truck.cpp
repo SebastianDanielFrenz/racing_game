@@ -20,7 +20,10 @@ TruckLane truck_lane(const g2m::RoadGraphWay& w,double width,int lanes,int dir) 
  if(n<=0||n>8||width/n<2.7)n=single?std::max(1,static_cast<int>(width/3.25)):(width>=5.8?2:1);
  const auto direction_tag=tag(w,dir>0?"lanes:forward":"lanes:backward");
  if(direction_tag=="0")return {};
- if(n==1)return {true,0};
+ // One lane in total on a two-way road: each direction still drives in ITS half (centre of the right half),
+ // never on the centre line - both directions on the same line made every oncoming pair a head-on deadlock
+ // (docs/npc_traffic.md, "Stuck traffic"). A one-way road stays centred.
+ if(n==1)return {true,single?0.:-width*.25*dir};
  const int tagged=count(direction_tag);
  const int directional=single?n:(tagged>0&&tagged<n?tagged:std::max(1,n/2));
  double offset=-width*.5+width/(2*n);

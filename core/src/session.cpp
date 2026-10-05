@@ -199,7 +199,7 @@ Session::Session(const SessionConfig& config)
 Session::~Session() { stop(); truck_cancel_.store(true); traffic_cancel_.store(true); if(truck_worker_.joinable())truck_worker_.join(); if(traffic_worker_.joinable())traffic_worker_.join(); }
 
 void Session::build_world_contents(const SessionConfig& config) {
-    installed_decks_.clear();
+    installed_decks_.clear();deck_bodies_.clear();traffic_stuck_.clear();traffic_stuck_summary_time_=0;
     surface_table_ = std::make_shared<ps::io::SurfaceTable>(config.surface_table_path);
     world_->set_surface_table(surface_table_);
 
@@ -818,7 +818,7 @@ bool Session::sync_road_decks(int budget) {
         shape.triangle_surface_ids.assign(shape.indices.size()/3,surface);
         ps::BodyDesc body;body.motion=ps::BodyMotionType::Static;body.shape=std::move(shape);
         body.pose.position={mesh.origin[0]-terrain.frame().e0_m(),mesh.origin[1]-terrain.frame().n0_m(),0};
-        world_->create_body(body);
+        deck_bodies_.push_back(world_->create_body(body));
     }
     return budget==0 || installed==0;
 }
@@ -1417,15 +1417,14 @@ void Session::update_walker() {
 }
 
 namespace rg {
-std::uint64_t Session::add_test_traffic_actor(const ps::Pose& pose,double speed_mps){
+std::uint64_t Session::add_test_traffic_actor(const ps::Pose& pose,double speed_mps,double route_length_m,bool stop_at_end){
  if(loop_.running())throw std::logic_error("Session::add_test_traffic_actor: not while running");
  const ps::Vec3 forward=pose.orientation.rotate(ps::Vec3::unit_x());
  const double yaw=ps::math::atan2(forward.y,forward.x);
  TrafficTrip trip;
- for(const double station:{0.0,2000.0}){
-  TruckRoutePoint point;point.ground=pose.position+forward*station;point.yaw=yaw;point.speed_m_s=speed_mps;point.station=station;
-  trip.route.points.push_back(point);
- }
+ const auto add_point=[&](double station,double speed){TruckRoutePoint point;point.ground=pose.position+forward*station;point.yaw=yaw;point.speed_m_s=speed;point.station=station;trip.route.points.push_back(point);};
+ add_point(0,speed_mps);
+ if(stop_at_end){add_point(route_length_m-5.,speed_mps);add_point(route_length_m-.7,1.);add_point(route_length_m,0.);}else add_point(route_length_m,speed_mps);
  ps::BodyDesc body;body.motion=ps::BodyMotionType::Kinematic;body.gravity_enabled=false;body.shape=ps::BoxShape{{2.3,1.,.65}};
  body.pose=pose;
  const auto id=world_->create_body(body);
@@ -1435,7 +1434,7 @@ std::uint64_t Session::add_test_traffic_actor(const ps::Pose& pose,double speed_
 void Session::configure_traffic(TrafficConfig c){std::lock_guard<std::mutex> lock(traffic_mutex_);traffic_requested_=sanitize_traffic_config(c);traffic_config_changed_=true;}
 void Session::set_visible_traffic(std::vector<std::uint64_t> ids){std::sort(ids.begin(),ids.end());std::lock_guard<std::mutex> lock(traffic_mutex_);traffic_visible_=std::move(ids);}
 void Session::update_traffic(bool clear){
- if(clear){traffic_cancel_.store(true);for(auto& a:traffic_actors_)world_->destroy_body(a.body);traffic_actors_.clear();traffic_ready_.trips.clear();traffic_neighbor_grid_.clear();traffic_loading_=false;traffic_scan_needed_=true;traffic_scan_time_=world_->sim_time()+2;return;}
+ if(clear){traffic_cancel_.store(true);for(auto& a:traffic_actors_)world_->destroy_body(a.body);traffic_actors_.clear();traffic_ready_.trips.clear();traffic_neighbor_grid_.clear();traffic_stuck_.set_active(0);traffic_loading_=false;traffic_scan_needed_=true;traffic_scan_time_=world_->sim_time()+2;return;}
  const auto car=world_->get_pose(chassis_body_);const double now=world_->sim_time(),dt=1/config_.tick_rate_hz;
  const ps::Vec3 anchor=traffic_anchor(); // the walker while on foot (R9c), else the car
  std::vector<std::uint64_t> visible;bool changed=false;
@@ -1486,19 +1485,26 @@ void Session::update_traffic(bool clear){
  const auto traffic_tick=static_cast<std::uint64_t>(std::llround(now*config_.tick_rate_hz));
  const auto decision_period=std::max<std::uint64_t>(1,static_cast<std::uint64_t>(config_.tick_rate_hz/20));
  if(traffic_tick%decision_period==0||traffic_neighbor_grid_.empty()){
-  traffic_neighbor_grid_.clear();
-  for(const auto& actor:traffic_actors_){const auto p=world_->get_pose(actor.body).position;
-   traffic_neighbor_grid_[{static_cast<int>(std::floor(p.x/32)),static_cast<int>(std::floor(p.y/32))}].push_back({actor.id,p,actor.speed,actor.trip.truck?6.5:2.3});}
+  traffic_neighbor_grid_.clear();traffic_body_keys_.clear();
+  for(const auto& actor:traffic_actors_){const auto pose=world_->get_pose(actor.body);const auto p=pose.position;const auto f=pose.orientation.rotate(ps::Vec3::unit_x());
+   traffic_body_keys_.insert(body_key(actor.body));
+   traffic_neighbor_grid_[{static_cast<int>(std::floor(p.x/32)),static_cast<int>(std::floor(p.y/32))}].push_back({actor.id,p,actor.speed,actor.trip.truck?6.5:2.3,f.x,f.y});}
  }
  if(!std::is_sorted(visible.begin(),visible.end()))std::sort(visible.begin(),visible.end());
  std::vector<ps::aero::WakeSource> wakes;
  if(truck_state_.active){auto pose=world_->get_pose(truck_body_);wakes.push_back({truck_body_,pose.position,world_->get_motion(truck_body_).linear,{60,2,.15,.45,.2}});}
+ std::vector<std::uint64_t> stuck_declared;std::uint64_t stuck_active=0;
  for(auto it=traffic_actors_.begin();it!=traffic_actors_.end();){
   auto& a=*it;auto pose=world_->get_pose(a.body);a.unseen=std::binary_search(visible.begin(),visible.end(),a.id)?0:a.unseen+dt;
   const double end=a.trip.route.points.back().station;
   const bool surplus=static_cast<int>(traffic_actors_.size())>traffic_population_target_;
   const bool followed=followed_id_.load(std::memory_order_relaxed)==a.id; // R9b: kept alive (and resident) while the drone camera trails it
-  if((a.station>=end-.5&&a.speed<.5)||(!followed&&(surplus||(pose.position-anchor).length()>traffic_config_.radius_m+50)&&a.unseen>3)){
+  // The route's last point has speed 0 and the point before it is up to one spacing earlier: once the actor passes that
+  // point the cap is 0, so it stops there. A fixed 0.5 m arrival margin left every actor that stopped 0.5-2 m short of
+  // the end (short trips) parked on the road for ever, blocking the lane (measured: the dominant route_cap queue head).
+  const auto& route_points=a.trip.route.points;
+  const double arrive_margin=std::clamp(route_points.size()>1?end-route_points[route_points.size()-2].station+.1:.5,.5,4.);
+  if((a.station>=end-arrive_margin&&a.speed<.5)||(!followed&&(surplus||(pose.position-anchor).length()>traffic_config_.radius_m+50)&&a.unseen>3)){
    world_->destroy_body(a.body);const auto index=static_cast<std::size_t>(it-traffic_actors_.begin());
    if(index+1<traffic_actors_.size())*it=std::move(traffic_actors_.back());
    traffic_actors_.pop_back();it=index<traffic_actors_.size()?traffic_actors_.begin()+index:traffic_actors_.end();continue;
@@ -1509,24 +1515,50 @@ void Session::update_traffic(bool clear){
   const auto forward=pose.orientation.rotate(ps::Vec3::unit_x());
   if((traffic_tick+a.id)%decision_period==0){
   double follow=1e30;
-  const auto avoid=[&](ps::Vec3 other,double speed,double length){const auto relative=other-pose.position;const double gap=ps::dot(relative,forward),side=std::abs(relative.x*forward.y-relative.y*forward.x);
-   if(gap>0&&side<2.7&&std::abs(relative.z)<3){const double clearance=gap-(a.trip.truck?6.5:2.3)-length;follow=std::min(follow,std::max(0.,std::min(speed+(clearance-5)*.5,(clearance-3)/1.5)));}
+  std::uint64_t follow_id=0;
+  // other_cos = cos of the heading difference to the other actor (2 = not an NPC: the player, the truck: always obeyed).
+  // Between NPCs: ONCOMING traffic (cos < -0.5) is never followed - it has its own lane half and kinematic bodies do
+  // not collide (obeying it made every head-on pair on a narrow road a permanent mutual stop); CROSSING traffic
+  // (|cos| <= 0.5) is yielded to only when the other actor has the lower id (a total order, so a pure crossing
+  // conflict can never be a mutual yield); same-direction traffic is followed as before.
+  const auto avoid=[&](ps::Vec3 other,double speed,double length,std::uint64_t other_id,double other_cos){const auto relative=other-pose.position;const double gap=ps::dot(relative,forward),side=std::abs(relative.x*forward.y-relative.y*forward.x);
+   if(other_cos<-0.5)return;
+   if(other_cos<=0.5&&other_id>a.id)return;
+   if(gap>0&&side<2.7&&std::abs(relative.z)<3){const double clearance=gap-(a.trip.truck?6.5:2.3)-length;
+    // Patience: a wait cycle can mix same-lane following with crossing yields (A behind B, B yields to C, C yields to A
+    // by id), which no static priority order breaks. After kCrossingPatienceS below the stuck speed the waiter stops
+    // yielding to crossing NPCs (counted in the stats; kinematic bodies simply pass).
+    if(other_cos<=0.5&&other_cos<2&&a.stuck.below_s>kCrossingPatienceS){if(clearance<6)traffic_stuck_.note_crossing_override();return;}
+    // Two NPCs already overlapping longitudinally and offset sideways (merging lanes, a junction mouth) each see the
+    // other "ahead" by a few centimetres: a mutual yield that never resolves (measured: the persistent 2-cycles with
+    // 100+ queued behind them). Only the higher id yields there.
+    if(clearance<=0&&side>1.2&&other_cos<2&&other_id>a.id)return;
+    const double cap=std::max(0.,std::min(speed+(clearance-5)*.5,(clearance-3)/1.5));if(cap<follow){follow=cap;follow_id=other_id;}}
   };
-  avoid(car.position,world_->get_motion(chassis_body_).linear.length(),2.5);
+  avoid(car.position,world_->get_motion(chassis_body_).linear.length(),2.5,kFollowPlayerId,2.0);
   const int cx=static_cast<int>(std::floor(pose.position.x/32)),cy=static_cast<int>(std::floor(pose.position.y/32));
   for(int y=cy-3;y<=cy+3;++y)for(int x=cx-3;x<=cx+3;++x){auto cell=traffic_neighbor_grid_.find({x,y});if(cell==traffic_neighbor_grid_.end())continue;
-   for(const auto& other:cell->second)if(other.id!=a.id)avoid(other.position,other.speed,other.half_length);}
+   for(const auto& other:cell->second)if(other.id!=a.id)avoid(other.position,other.speed,other.half_length,other.id,other.fx*forward.x+other.fy*forward.y);}
 
-  if(truck_state_.active)avoid(world_->get_pose(truck_body_).position,truck_speed_,6.5);
-  a.follow_cap=follow;
+  if(truck_state_.active)avoid(world_->get_pose(truck_body_).position,truck_speed_,6.5,kNpcTruckVehicleId,2.0);
+  a.follow_cap=follow;a.follow_id=follow_id;
   // Static obstacle probe excludes the moving NPC's own collider.
   const double nose=a.trip.truck?6.5:2.3,look=std::max(12.,a.speed*a.speed/8+8);
   auto obstruction=world_->backend().ray_cast_excluding(pose.position+forward*(nose+.2),forward,look,a.body);
+  // Other NPCs are the follow rule's business (with its heading/priority filter): a probe hit on one would stop an
+  // oncoming or lower-priority actor that the follow rule deliberately ignores.
+  if(obstruction.hit&&traffic_body_keys_.contains(body_key(obstruction.body)))obstruction=ps::RayCastHit{};
   a.obstacle_cap=obstruction.hit?std::sqrt(std::max(0.,8*(obstruction.fraction*look-3))):1e30;
+  a.obstacle_hit=obstruction.hit;a.obstacle_body=obstruction.body;a.obstacle_normal_z=obstruction.normal.z;
   }
+  a.route_cap=target;
   target=std::min({target,a.obstacle_cap,a.follow_cap});
   a.speed+=std::clamp(target-a.speed,-4*dt,(a.trip.truck?1.2:2.5)*dt);
   a.station=std::min(end,a.station+a.speed*dt);
+  {const auto ev=advance_stuck_track(a.stuck,a.speed,end-a.station<kStuckArrivingM,dt);
+   if(ev==StuckTrackEvent::Declared){a.stuck_since=now-kStuckTimeS;stuck_declared.push_back(a.id);}
+   else if(ev==StuckTrackEvent::Recovered)traffic_stuck_.note_recovered(now-a.stuck_since);
+   if(a.stuck.declared)++stuck_active;}
   auto next=std::lower_bound(a.trip.route.points.begin(),a.trip.route.points.end(),a.station,[](const auto& p,double s){return p.station<s;});if(next==a.trip.route.points.end())--next;
   auto previous=next==a.trip.route.points.begin()?next:next-1;const double span=next->station-previous->station,t=span>1e-9?(a.station-previous->station)/span:0;
   auto ground=previous->ground+(next->ground-previous->ground)*t;const double yaw=previous->yaw+std::remainder(next->yaw-previous->yaw,6.283185307179586)*t;
@@ -1538,5 +1570,64 @@ void Session::update_traffic(bool clear){
   ++it;
  }
  world_->set_aero_wakes(std::move(wakes));
+ traffic_stuck_.set_active(stuck_active);
+ note_stuck_events(stuck_declared,now);
+}
+// Classifies each newly declared stuck actor by what the controller is obeying (traffic_stuck.h) and logs it.
+void Session::note_stuck_events(const std::vector<std::uint64_t>& declared,double now){
+ if(!declared.empty()){
+  std::unordered_map<std::uint64_t,std::size_t> index;index.reserve(traffic_actors_.size());
+  for(std::size_t i=0;i<traffic_actors_.size();++i)index.emplace(traffic_actors_[i].id,i);
+  const auto cause_of=[&](const TrafficActor& a,std::uint64_t& other){
+   other=0;
+   if(a.follow_cap<=a.obstacle_cap&&a.follow_cap<a.route_cap){other=a.follow_id;return a.follow_id==kFollowPlayerId?StuckCause::FollowPlayer:a.follow_id==kNpcTruckVehicleId?StuckCause::FollowTruck:StuckCause::FollowNpc;}
+   if(a.obstacle_cap<a.route_cap&&a.obstacle_hit){
+    if(a.obstacle_body==chassis_body_)return StuckCause::ProbePlayer;
+    if(truck_state_.active&&a.obstacle_body==truck_body_)return StuckCause::ProbeTruck;
+    for(const auto& o:traffic_actors_)if(o.body==a.obstacle_body){other=o.id;return StuckCause::ProbeNpc;}
+    for(const auto& d:deck_bodies_)if(d==a.obstacle_body)return StuckCause::ProbeDeck;
+    if(world_->backend().is_static(a.obstacle_body))return config_.terrain?StuckCause::ProbeTerrain:StuckCause::ProbeStatic;
+    return StuckCause::ProbeOther;
+   }
+   if(a.route_cap<kStuckSpeedMps)return StuckCause::RouteCap;
+   return StuckCause::Other;
+  };
+  const StuckLookup lookup=[&](std::uint64_t id)->std::optional<StuckNode>{
+   const auto it=index.find(id);if(it==index.end())return std::nullopt;
+   const auto& o=traffic_actors_[it->second];StuckNode n;n.speed_mps=o.speed;n.cause=cause_of(o,n.other_id);
+   if(stuck_cause_waits_for_npc(n.cause)){
+    const auto oi=index.find(n.other_id);
+    if(oi!=index.end()){
+     const auto fa=world_->get_pose(o.body).orientation.rotate(ps::Vec3::unit_x()),fo=world_->get_pose(traffic_actors_[oi->second].body).orientation.rotate(ps::Vec3::unit_x());
+     n.heading_cos=fa.x*fo.x+fa.y*fo.y;n.has_heading=true;
+    }
+   }
+   return n;
+  };
+  for(const auto id:declared){
+   const auto it=index.find(id);if(it==index.end())continue; // despawned within the same tick
+   const auto& a=traffic_actors_[it->second];
+   StuckEvent e;e.id=id;e.time_s=now;e.cause=cause_of(a,e.other_id);e.chain=walk_stuck_chain(id,lookup);
+   const auto p=world_->get_pose(a.body).position;e.x=p.x;e.y=p.y;e.station_m=a.station;e.route_length_m=a.trip.route.points.back().station;
+   {auto upper=std::upper_bound(a.trip.route.points.begin(),a.trip.route.points.end(),a.station,[](double s,const auto& q){return s<q.station;});
+    e.way_id=(upper==a.trip.route.points.end()?upper-1:upper)->way_id;}
+   if(stuck_cause_waits_for_npc(e.cause)){
+    const auto oi=index.find(e.other_id);
+    if(oi!=index.end()){
+     const auto pa=world_->get_pose(a.body),po=world_->get_pose(traffic_actors_[oi->second].body);
+     const auto fa=pa.orientation.rotate(ps::Vec3::unit_x()),fo=po.orientation.rotate(ps::Vec3::unit_x());
+     const auto rel=po.position-pa.position;
+     e.has_other=true;e.other_heading_cos=fa.x*fo.x+fa.y*fo.y;e.other_gap_m=ps::dot(rel,fa);e.other_lateral_m=rel.x*fa.y-rel.y*fa.x;
+    }
+   }
+   e.route_cap=a.route_cap;e.obstacle_cap=a.obstacle_cap;e.follow_cap=a.follow_cap;e.truck=a.trip.truck;
+   traffic_stuck_.record(e);
+   if(traffic_stuck_.summary().events<=200)std::fprintf(stderr,"%s\n",TrafficStuckStats::format_event(e).c_str());
+  }
+ }
+ if(now>=traffic_stuck_summary_time_+30){
+  traffic_stuck_summary_time_=now;
+  if(traffic_stuck_.summary().events>0)std::fprintf(stderr,"%s\n",traffic_stuck_.format_summary(now).c_str());
+ }
 }
 }

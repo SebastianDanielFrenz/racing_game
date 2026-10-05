@@ -21,6 +21,17 @@ TEST_CASE("Truck lanes honor one-way direction and rightmost through lanes", "[n
  CHECK_FALSE(rg::truck_lane(way,2.5,1,-1).allowed);
  CHECK(rg::truck_lane(way,3.2,6,-1).offset_m==Catch::Approx(0));
 }
+// A two-way road with a single lane in total: each direction drives in the centre of ITS half. Both on the centre line
+// (the old behaviour, offset 0) made every oncoming pair a head-on mutual yield - 153 of 190 deadlock roots measured.
+// Sabotage: returning offset 0 for n == 1 two-way makes both CHECKs below fail.
+TEST_CASE("Single-lane two-way roads put the directions in opposite halves", "[npc_truck]") {
+ g2m::RoadGraphWay way;
+ const auto forward=rg::truck_lane(way,3.2,1,1),reverse=rg::truck_lane(way,3.2,1,-1);
+ REQUIRE(forward.allowed);REQUIRE(reverse.allowed);
+ CHECK(forward.offset_m==Catch::Approx(-0.8));CHECK(reverse.offset_m==Catch::Approx(0.8));
+ way.tags={{"oneway","yes"}};
+ CHECK(rg::truck_lane(way,3.2,1,1).offset_m==Catch::Approx(0)); // a one-way road stays centred
+}
 TEST_CASE("NPC truck publishes moving collision body and reduces trailing airspeed", "[npc_truck]") {
  auto desc=ps::io::load_vehicle_json(std::string(RG_SOURCE_DIR)+"/external/physics_sim/data/vehicles/car_sedan.json");
  desc.aero.drag_area_m2=0;desc.aero.body.drag_area_xyz_m2={.6,.1,.1};desc.aero.body.reference_area_m2=2;
