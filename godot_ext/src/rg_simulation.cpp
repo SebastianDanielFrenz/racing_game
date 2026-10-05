@@ -130,6 +130,7 @@ void RgSimulation::reap_init_thread(bool wait) {
     if (ready) {
         session_ = std::move(pending_session_);
         origin_rebase_ = &session_->origin_rebase();
+        apply_shell_flags_to_session();
     }
     pending_session_.reset(); // no-op on the Ready path (already moved out); frees nothing on Error (never set)
     init_progress_.reset();
@@ -186,7 +187,8 @@ void RgSimulation::poll_drone_follow() {
 void RgSimulation::run_terrain_init_worker(std::string world_config_path, std::string vehicle_json_path,
                                            std::string surface_table_path,
                                            std::shared_ptr<rg::StartupProgress> progress,
-                                           std::int64_t fetch_delay_ms) {
+                                           std::int64_t fetch_delay_ms, std::optional<SpawnOverride> spawn,
+                                           std::string store_dir) {
     // No C++ exception may be thrown or caught here: this TU is built with
     // godot-cpp's -D_HAS_EXCEPTIONS=0, where `std::exception` names
     // stdext::exception, so a `catch (const std::exception&)` here would never
@@ -203,6 +205,15 @@ void RgSimulation::run_terrain_init_worker(std::string world_config_path, std::s
     if (!world_config.has_value()) {
         fail("load_world_config: " + err);
         return;
+    }
+
+    // R5: the settings screen's map data folder and the picked spawn, applied
+    // to the loaded config BEFORE the store is opened / the car is placed.
+    rg::apply_store_dir_override(*world_config, store_dir);
+    if (spawn) {
+        world_config->spawn.e = world_config->session_origin_utm.e0 + spawn->x;
+        world_config->spawn.n = world_config->session_origin_utm.n0 + spawn->y;
+        world_config->spawn.yaw_deg = spawn->yaw_deg;
     }
 
     const auto cancelled = [&progress] { return progress && progress->cancel.load(std::memory_order_relaxed); };
@@ -283,6 +294,7 @@ bool RgSimulation::initialize(const String& vehicle_json_absolute_path, const St
     last_error_ = String();
     modes_.finish_world_load(world_load_serial_, true);
     apply_mode_to_session();
+    apply_shell_flags_to_session();
     return true;
 }
 
@@ -299,12 +311,17 @@ bool RgSimulation::initialize_terrain(const String& world_config_absolute_path,
     std::string world_config_path = to_std_string(world_config_absolute_path);
     std::string vehicle_json_path = to_std_string(vehicle_json_absolute_path);
     std::string surface_table_path = to_std_string(surface_table_absolute_path);
+    // The picked spawn belongs to this load only (a later load without a new
+    // pick goes back to the world config's own spawn).
+    const std::optional<SpawnOverride> spawn = spawn_override_;
+    spawn_override_.reset();
     init_thread_ = std::thread([this, world_config_path = std::move(world_config_path),
                                vehicle_json_path = std::move(vehicle_json_path),
                                surface_table_path = std::move(surface_table_path), progress = init_progress_,
-                               delay = fetch_delay_ms_]() mutable {
+                               delay = fetch_delay_ms_, spawn, store_dir = store_dir_override_]() mutable {
         run_terrain_init_worker(std::move(world_config_path), std::move(vehicle_json_path),
-                                std::move(surface_table_path), std::move(progress), delay);
+                                std::move(surface_table_path), std::move(progress), delay, spawn,
+                                std::move(store_dir));
     });
     return true; // started, not necessarily succeeded - see get_init_status()
 }
@@ -1028,6 +1045,18 @@ void RgSimulation::_bind_methods() {
     godot::ClassDB::bind_method(D_METHOD("request_walker_jump"), &RgSimulation::request_walker_jump);
     godot::ClassDB::bind_method(D_METHOD("request_walker_enter"), &RgSimulation::request_walker_enter);
     godot::ClassDB::bind_method(D_METHOD("get_walker_state"), &RgSimulation::get_walker_state);
+    godot::ClassDB::bind_method(D_METHOD("unload"), &RgSimulation::unload);
+    godot::ClassDB::bind_method(D_METHOD("set_paused", "paused"), &RgSimulation::set_paused);
+    godot::ClassDB::bind_method(D_METHOD("is_paused"), &RgSimulation::is_paused);
+    godot::ClassDB::bind_method(D_METHOD("set_spawn_override", "session_x", "session_y", "yaw_deg"), &RgSimulation::set_spawn_override);
+    godot::ClassDB::bind_method(D_METHOD("clear_spawn_override"), &RgSimulation::clear_spawn_override);
+    godot::ClassDB::bind_method(D_METHOD("set_store_dir_override", "dir"), &RgSimulation::set_store_dir_override);
+    godot::ClassDB::bind_method(D_METHOD("set_road_ahead_wanted", "wanted"), &RgSimulation::set_road_ahead_wanted);
+    godot::ClassDB::bind_method(D_METHOD("get_chassis_session_pose"), &RgSimulation::get_chassis_session_pose);
+    godot::ClassDB::bind_method(D_METHOD("session_to_godot", "session_position"), &RgSimulation::session_to_godot);
+    godot::ClassDB::bind_method(D_METHOD("get_bumper_camera"), &RgSimulation::get_bumper_camera);
+    godot::ClassDB::bind_method(D_METHOD("update_cinematic", "delta"), &RgSimulation::update_cinematic);
+    godot::ClassDB::bind_method(D_METHOD("reset_cinematic"), &RgSimulation::reset_cinematic);
     godot::ClassDB::bind_method(D_METHOD("start"), &RgSimulation::start);
     godot::ClassDB::bind_method(D_METHOD("stop"), &RgSimulation::stop);
     godot::ClassDB::bind_method(D_METHOD("is_running"), &RgSimulation::is_running);

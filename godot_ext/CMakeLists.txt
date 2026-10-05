@@ -13,6 +13,9 @@ set(RG_GODOT_BIN_DIR "${CMAKE_SOURCE_DIR}/game/bin")
 add_library(rg_godot SHARED
   src/register_types.cpp
   src/rg_simulation.cpp
+  src/rg_simulation_shell.cpp
+  src/rg_shell.cpp
+  src/rg_camera_math.cpp
   src/rg_terrain_view.cpp
   src/rg_engine_audio.cpp
   ${CMAKE_SOURCE_DIR}/external/physics_sim/adapters/godot/src/vehicle_voice.cpp

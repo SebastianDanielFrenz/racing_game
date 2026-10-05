@@ -226,6 +226,14 @@ bool PlayerModeMachine::finish_world_load(std::uint64_t serial, bool ok) {
     return true;
 }
 
+void PlayerModeMachine::unload_world() {
+    world_phase_ = WorldPhase::None;
+    ++world_serial_;
+    mode_ = PlayerMode::Drive;
+    drone_target_.reset();
+    ++revision_;
+}
+
 ModeRules PlayerModeMachine::effective_rules() const {
     ModeRules r = rules_for(mode_, drone_target_);
     if (world_phase_ != WorldPhase::Ready) {

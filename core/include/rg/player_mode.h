@@ -173,6 +173,11 @@ public:
     std::uint64_t begin_world_load(WorldKind kind);
     // false (and no state change) when `serial` is not the latest load's.
     bool finish_world_load(std::uint64_t serial, bool ok);
+    // The shell's "back to main menu": no world any more. Phase None (driving
+    // and walking inputs masked), the in-flight load's serial is invalidated (a
+    // late finish_world_load is ignored), and the mode returns to Drive with the
+    // drone target cleared - a new Free roam always starts as a driver.
+    void unload_world();
     [[nodiscard]] WorldKind world_kind() const { return world_kind_; } // the latest requested world
     [[nodiscard]] WorldPhase world_phase() const { return world_phase_; }
     [[nodiscard]] std::uint64_t world_serial() const { return world_serial_; }

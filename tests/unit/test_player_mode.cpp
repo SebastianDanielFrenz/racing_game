@@ -416,3 +416,30 @@ TEST_CASE("player mode: reset to spawn puts the car back at rest (flat)", "[play
     session.step(); // the next attempt drives again
     CHECK(session.streaming_status().relocations == 1);
 }
+
+TEST_CASE("player mode: unload_world clears the world, invalidates the load and returns to drive", "[player_mode]") {
+    rg::PlayerModeMachine m(rg::PlayerMode::Drive);
+    const std::uint64_t serial = m.begin_world_load(rg::WorldKind::RealWorld);
+    REQUIRE(m.finish_world_load(serial, true));
+    REQUIRE(m.request_mode(rg::PlayerMode::FreeCam) == rg::PlayerModeMachine::Result::Changed);
+    CHECK(m.world_phase() == rg::WorldPhase::Ready);
+    const std::uint64_t rev = m.revision();
+
+    m.unload_world();
+    CHECK(m.world_phase() == rg::WorldPhase::None);
+    CHECK(m.mode() == rg::PlayerMode::Drive);
+    CHECK_FALSE(m.drone_target().has_value());
+    CHECK(m.revision() > rev);
+    CHECK_FALSE(m.effective_rules().driving_inputs_live); // masked until a world is ready again
+
+    // A load that was in flight when the world was unloaded cannot finish.
+    const std::uint64_t pending = m.begin_world_load(rg::WorldKind::Flat);
+    m.unload_world();
+    CHECK_FALSE(m.finish_world_load(pending, true));
+    CHECK(m.world_phase() == rg::WorldPhase::None);
+
+    // And a fresh load works as usual.
+    const std::uint64_t again = m.begin_world_load(rg::WorldKind::Flat);
+    CHECK(m.finish_world_load(again, true));
+    CHECK(m.effective_rules().driving_inputs_live);
+}

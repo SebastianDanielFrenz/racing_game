@@ -5,6 +5,8 @@
 
 #include "register_types.h"
 
+#include "rg_camera_math.h"
+#include "rg_shell.h"
 #include "rg_simulation.h"
 #include "rg_terrain_view.h"
 #include "spatial_audio.h"
@@ -18,6 +20,8 @@ using namespace godot;
 void initialize_rg_godot_module(ModuleInitializationLevel p_level) {
     if (p_level != MODULE_INITIALIZATION_LEVEL_SCENE) return;
     ClassDB::register_class<rg_godot::RgSimulation>();
+    ClassDB::register_class<rg_godot::RgShell>();
+    ClassDB::register_class<rg_godot::RgCameraMath>();
     ClassDB::register_class<rg_godot::RgTerrainView>();
     ClassDB::register_class<ps_godot::PsSpatialAudio>();
 }

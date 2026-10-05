@@ -14,6 +14,7 @@
 
 #pragma once
 
+#include "rg/camera_math.h"
 #include "rg/player_mode.h"
 #include "rg/session.h"
 #include "rg/world_config.h"
@@ -31,6 +32,7 @@
 
 #include <atomic>
 #include <memory>
+#include <optional>
 #include <string>
 #include <thread>
 
@@ -159,6 +161,48 @@ public:
     void request_walker_jump();
     void request_walker_enter();
     [[nodiscard]] godot::Dictionary get_walker_state() const;
+
+    // --- Shell (R5, rg_simulation_shell.cpp) ---
+    // Back to "no world": cancels and joins an init in flight, stops and
+    // destroys the Session (sim thread, streaming, engine audio), resets the
+    // mode machine to drive and the cinematic director. Safe at any time, also
+    // with nothing loaded; a later initialize()/initialize_terrain() builds a
+    // fresh world in the same object (Free roam twice in one process).
+    void unload();
+    // Holds the real-time loop (rg::Session::set_paused): the world stands
+    // still and resuming never replays the paused time. Remembered across a
+    // Session that does not exist yet; cleared by unload().
+    void set_paused(bool paused);
+    [[nodiscard]] bool is_paused() const { return paused_; }
+    // Where the NEXT initialize_terrain() puts the car (session metres
+    // east/north of the world's session origin, yaw in degrees: 0 = east,
+    // counter-clockwise) instead of world_config.json's spawn. Consumed by that
+    // one load; the flat world ignores it.
+    void set_spawn_override(double session_x, double session_y, double yaw_deg);
+    void clear_spawn_override();
+    // The settings screen's map data folder (rg::apply_store_dir_override),
+    // applied by every following initialize_terrain(); "" = the config's own.
+    void set_store_dir_override(const godot::String& dir);
+    // The cinematic camera wants the road ahead of the car
+    // (FrameSnapshot::road_ahead); off costs nothing.
+    void set_road_ahead_wanted(bool wanted);
+    // {x, y, z, yaw_deg, speed_mps}: the chassis in the SESSION frame (metres
+    // east/north/up, yaw 0 = east, counter-clockwise); {} without a Session.
+    [[nodiscard]] godot::Dictionary get_chassis_session_pose() const;
+    // The session frame -> the Godot frame the rigs live in (origin-relative,
+    // like get_body_transform). Without a Session the input is returned as is.
+    [[nodiscard]] godot::Vector3 session_to_godot(const godot::Vector3& session_position) const;
+    // {eye_local (chassis frame, ISO: x forward / y left / z up), pitch_down_deg,
+    //  fov_deg}: the bumper camera from the vehicle's own wheels
+    // (rg::bumper_eye_local); {} without a Session.
+    [[nodiscard]] godot::Dictionary get_bumper_camera() const;
+    // One frame of the cinematic director (rg::CinematicDirector): {serial, cut,
+    // source ("road_ahead" | "predicted_path"), side, session_x, session_y,
+    // height_above_ground_m, fov_deg}; {} without a Session. The rig converts
+    // session_x/y with session_to_godot every frame, so a floating-origin
+    // rebase never moves a shot.
+    godot::Dictionary update_cinematic(double delta);
+    void reset_cinematic();
 
     void start();
     void stop();
@@ -307,6 +351,20 @@ private:
 
     enum class InitPhase : int { Idle, Loading, Ready, Error };
 
+    struct SpawnOverride {
+        double x = 0.0;
+        double y = 0.0;
+        double yaw_deg = 0.0;
+    };
+    std::optional<SpawnOverride> spawn_override_;
+    std::string store_dir_override_;
+    bool paused_ = false;
+    bool road_ahead_wanted_ = false;
+    rg::CinematicDirector cinematic_{1};
+    // Pushes the remembered pause / road-ahead flags into a Session that was
+    // just adopted (initialize() or a finished terrain init).
+    void apply_shell_flags_to_session();
+
     // Pushes modes_.effective_rules().vehicle_control and the drone-follow
     // target (only while in drone_follow) into session_.
     void apply_mode_to_session();
@@ -351,7 +409,8 @@ private:
     // so only rg_core itself can catch rg_core's exceptions.
     void run_terrain_init_worker(std::string world_config_path, std::string vehicle_json_path,
                                  std::string surface_table_path, std::shared_ptr<rg::StartupProgress> progress,
-                                 std::int64_t fetch_delay_ms);
+                                 std::int64_t fetch_delay_ms, std::optional<SpawnOverride> spawn,
+                                 std::string store_dir);
 
     // Access is serialized by init-worker join or Ready acquire. A running
     // world never writes this cache. Different paths invalidate its identity.
