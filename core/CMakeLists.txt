@@ -72,6 +72,10 @@ add_library(rg_core STATIC
     src/route_check.cpp
     src/credits.cpp
     src/settings.cpp
+    src/spawn_presets.cpp
+    src/shell_flow.cpp
+    src/road_ahead.cpp
+    src/camera_math.cpp
     "${PS_ADAPTER_SRC_DIR}/frame_convert_core.cpp"
 )
 

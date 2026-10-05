@@ -42,6 +42,7 @@
 #include <thread>
 #include "rg/fixed_rate_loop.h"
 #include "rg/player_mode.h"
+#include "rg/road_ahead.h"
 #include "rg/terrain_mode.h"
 #include "rg/walker.h"
 
@@ -213,6 +214,11 @@ struct FrameSnapshot {
     TrafficSnapshot traffic;
     g2m::RoadSpeedMatch road_speed_limit{};
     WalkerSnapshot walker;
+    // The road under and ahead of the car (session coordinates, first point
+    // = the car's projection onto its road), refreshed ~20 Hz, only while
+    // set_road_ahead_wanted(true). Empty when not wanted, in the flat world,
+    // or when the car is not on a road. Feeds the cinematic camera.
+    std::vector<RoadPoint> road_ahead;
 };
 
 // Terrain streaming state (R2.2 R4), plain values. Each field is its own
@@ -330,6 +336,18 @@ public:
     void start();
     void stop();
     [[nodiscard]] bool running() const { return loop_.running(); }
+    // Pause (the shell's pause menu): while paused every loop attempt is held
+    // back exactly like a terrain-gate freeze - World untouched, the deadline
+    // resynced to now, so resuming never replays a backlog (no catch-up
+    // burst). The published snapshot stays the last stepped tick. Only the
+    // real-time loop honours it; step()/try_step() (hash_check, tests) ignore
+    // it. Any thread. Counted by the loop as frozen attempts, not by
+    // StreamingStatus::freeze_count (that counts terrain-gate episodes only).
+    void set_paused(bool paused) { paused_.store(paused, std::memory_order_relaxed); }
+    [[nodiscard]] bool paused() const { return paused_.load(std::memory_order_relaxed); }
+    // The cinematic camera wants FrameSnapshot::road_ahead. Off by default so a
+    // session that never asks does no road tracing and allocates nothing.
+    void set_road_ahead_wanted(bool wanted) { road_ahead_wanted_.store(wanted, std::memory_order_relaxed); }
     [[nodiscard]] FixedRateLoop::LoopStats loop_stats() const { return loop_.stats(); }
 
     // --- Tick-spike diagnostics (owner drive 2026-09-27: ~170 ms sim-thread
@@ -747,6 +765,13 @@ private:
     bool in_freeze_ = false; // stepping thread only
 
     ps_godot::TripleBuffer<FrameSnapshot> snapshot_buffer_;
+    std::atomic<bool> paused_{false};
+    std::atomic<bool> road_ahead_wanted_{false};
+    // Stepping thread only (capture_frame_snapshot): the last traced road and
+    // the tick it was traced at, reused between refreshes.
+    mutable std::vector<RoadPoint> road_ahead_cache_;
+    mutable std::uint64_t road_ahead_tick_ = 0;
+    mutable bool road_ahead_cache_valid_ = false;
     std::mutex engine_audio_mutex_;
     EngineAudioPublisher engine_audio_publisher_;
     ps_godot::OriginRebase origin_rebase_;

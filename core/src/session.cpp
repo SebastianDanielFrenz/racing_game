@@ -964,7 +964,12 @@ void Session::start() {
         std::printf("rg::Session: RG_WORLD_CSV -> %s\n", csv.c_str());
         std::fflush(stdout);
     }
-    loop_.start([this] { return step_once(true); });
+    loop_.start([this] {
+        // Paused: report "held back" - the loop resyncs its deadline, so
+        // resuming never bursts (set_paused()).
+        if (paused_.load(std::memory_order_relaxed)) return false;
+        return step_once(true);
+    });
 }
 
 void Session::stop() { loop_.stop(); }
@@ -1100,7 +1105,10 @@ FrameSnapshot Session::capture_frame_snapshot() const {
         const auto forward = snap.chassis_pose.orientation.rotate(ps::Vec3::unit_x());
         const g2m::geom::PointMm point{std::llround(frame.grid_easting(position.x) * 1000.0),
                                       std::llround(frame.grid_northing(position.y) * 1000.0)};
+        const bool want_road_ahead = road_ahead_wanted_.load(std::memory_order_relaxed);
+        std::vector<std::shared_ptr<const std::vector<g2m::RoadSegment>>> road_tiles; // kept alive for the trace
         if (key) {
+            if (want_road_ahead) road_tiles.reserve(9);
             // Read already-resident metadata only; no fetches or terrain locks.
             for (int y = -1; y <= 1; ++y) for (int x = -1; x <= 1; ++x) {
                 auto neighbor = *key;
@@ -1110,6 +1118,7 @@ FrameSnapshot Session::capture_frame_snapshot() const {
                 std::shared_ptr<const std::vector<g2m::RoadSegment>> roads;
                 terrain_->resident->find(neighbor, &height, &roads);
                 if (!roads) continue;
+                if (want_road_ahead) road_tiles.push_back(roads);
                 const auto candidate = g2m::match_road_speed_limit(*roads, point, forward.x, forward.y);
                 if (candidate.distance_mm < snap.road_speed_limit.distance_mm ||
                     (candidate.distance_mm == snap.road_speed_limit.distance_mm && candidate.way_id < snap.road_speed_limit.way_id)) {
@@ -1117,6 +1126,28 @@ FrameSnapshot Session::capture_frame_snapshot() const {
                 }
             }
         }
+        // Road ahead for the cinematic camera: re-traced every 12th tick
+        // (~20 Hz), the cached polyline copied into the ticks in between.
+        if (!want_road_ahead) {
+            road_ahead_cache_valid_ = false;
+            road_ahead_cache_.clear();
+        } else {
+            if (!road_ahead_cache_valid_ || snap.tick >= road_ahead_tick_ + 12 || snap.tick < road_ahead_tick_) {
+                std::vector<std::span<const g2m::RoadSegment>> spans;
+                spans.reserve(road_tiles.size());
+                for (const auto& t : road_tiles) spans.emplace_back(t->data(), t->size());
+                RoadAheadParams params;
+                if (!trace_road_ahead(spans, frame.grid_easting(position.x), frame.grid_northing(position.y), forward.x,
+                                      forward.y, position.x, position.y, params, road_ahead_cache_)) {
+                    road_ahead_cache_.clear();
+                }
+                road_ahead_tick_ = snap.tick;
+                road_ahead_cache_valid_ = true;
+            }
+            snap.road_ahead = road_ahead_cache_;
+        }
+    } else {
+        road_ahead_cache_valid_ = false;
     }
 
     const std::size_t wheel_count = world_->vehicle_wheel_count(vehicle_id_);

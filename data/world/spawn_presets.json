@@ -1,0 +1,70 @@
+{
+  "format": "rg.spawn_presets/1",
+  "session_origin_utm": {
+    "zone": 32,
+    "e0": 464000,
+    "n0": 5559000
+  },
+  "presets": [
+    {
+      "id": "world_spawn",
+      "name": "World spawn",
+      "description": "The start point named in the world configuration.",
+      "x": 1364.0,
+      "y": -6515.0,
+      "yaw_deg": 4.05,
+      "measured_max_grade_pct": 0.73,
+      "source": "data/world/world_config.json spawn (50.12359409 N 8.51546541 E, UTM 32 minus the session origin)"
+    },
+    {
+      "id": "engelsruhe",
+      "name": "Engelsruhe, Unterliederbach",
+      "description": "Frankfurt-Unterliederbach, where the B 8 drive route starts.",
+      "x": 2767.79,
+      "y": -7577.48,
+      "yaw_deg": -146.3,
+      "measured_max_grade_pct": 5.04,
+      "source": "spawn of data/routes/home_r1_drive.json (owner-specified point snapped onto OSM way 5890922); yaw = the route's first segment"
+    },
+    {
+      "id": "b8_trunk",
+      "name": "B 8, trunk road",
+      "description": "On the B 8 north-west of Unterliederbach, heading west-north-west.",
+      "x": 1364.0,
+      "y": -6515.0,
+      "yaw_deg": 161.9,
+      "measured_max_grade_pct": 1.45,
+      "source": "waypoint #400 of data/routes/home_r1_drive.json (centreline of the OSM road); yaw = direction to waypoint #412, 60 m ahead"
+    },
+    {
+      "id": "hornau",
+      "name": "Kelkheim-Hornau",
+      "description": "The Hornau trunk link of the B 8, heading west-north-west.",
+      "x": -2449.8,
+      "y": -3306.8,
+      "yaw_deg": 157.3,
+      "measured_max_grade_pct": 4.42,
+      "source": "waypoint #1480 of data/routes/home_r1_drive.json (centreline of the OSM road); yaw = direction to waypoint #1492, 60 m ahead"
+    },
+    {
+      "id": "b8_north",
+      "name": "B 8, north of Hornau",
+      "description": "The B 8 towards Altenhain and Schneidhain, heading north.",
+      "x": -2487.5,
+      "y": -2354.2,
+      "yaw_deg": 84.0,
+      "measured_max_grade_pct": 4.69,
+      "source": "waypoint #1700 of data/routes/home_r1_drive.json (centreline of the OSM road); yaw = direction to waypoint #1712, 60 m ahead"
+    },
+    {
+      "id": "koenigstein",
+      "name": "Koenigstein, southern edge",
+      "description": "Sodener Strasse (B 8 / B 519), just before the Koenigstein im Taunus city limit.",
+      "x": -1679.4,
+      "y": -1204.2,
+      "yaw_deg": 46.6,
+      "measured_max_grade_pct": 6.99,
+      "source": "waypoint #2044 of data/routes/home_r1_drive.json (centreline of the OSM road); yaw = direction to waypoint #2056, 60 m ahead"
+    }
+  ]
+}

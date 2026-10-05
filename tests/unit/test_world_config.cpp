@@ -988,3 +988,39 @@ TEST_CASE("load_world_config: configurable terrain smoothing and bounds", "[worl
         CHECK_FALSE(rg::load_world_config(bad.path(),&error));CHECK_FALSE(error.empty());
     }
 }
+
+TEST_CASE("apply_store_dir_override: points the source store at the folder and the derived store at <dir>/baked", "[world_config]") {
+    ScopedEnvVar env("RG_G2M_HOME", "S:/some/test/g2m/home");
+    ScopedEnvVar derived_env("RG_G2M_DERIVED", "");
+    TempFile file = TempFile::from_json(valid_world_config_json());
+    std::string err;
+    auto cfg = rg::load_world_config(file.path(), &err);
+    REQUIRE(cfg.has_value());
+    const std::string scope = cfg->source_store.scope;
+
+    rg::apply_store_dir_override(*cfg, "D:/maps/home");
+    CHECK(cfg->source_store.dir == "D:/maps/home");
+    CHECK(cfg->derived_store.dir == "D:/maps/home/baked");
+    CHECK(cfg->source_store.scope == scope); // nothing else changes
+
+    // A trailing slash does not double up.
+    rg::apply_store_dir_override(*cfg, "D:/maps/other/");
+    CHECK(cfg->source_store.dir == "D:/maps/other/");
+    CHECK(cfg->derived_store.dir == "D:/maps/other/baked");
+
+    // Empty = no change.
+    rg::apply_store_dir_override(*cfg, "");
+    CHECK(cfg->source_store.dir == "D:/maps/other/");
+}
+
+TEST_CASE("apply_store_dir_override: RG_G2M_DERIVED keeps winning for the derived store", "[world_config]") {
+    ScopedEnvVar env("RG_G2M_HOME", "S:/some/test/g2m/home");
+    ScopedEnvVar derived_env("RG_G2M_DERIVED", "S:/scratch/derived");
+    TempFile file = TempFile::from_json(valid_world_config_json());
+    std::string err;
+    auto cfg = rg::load_world_config(file.path(), &err);
+    REQUIRE(cfg.has_value());
+    rg::apply_store_dir_override(*cfg, "D:/maps/home");
+    CHECK(cfg->source_store.dir == "D:/maps/home");
+    CHECK(cfg->derived_store.dir == "S:/scratch/derived");
+}

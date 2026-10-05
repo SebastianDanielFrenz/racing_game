@@ -37,6 +37,10 @@ add_executable(rg_unit_tests
   test_tick_spikes.cpp
   test_credits.cpp
   test_settings.cpp
+  test_spawn_presets.cpp
+  test_shell_flow.cpp
+  test_road_ahead.cpp
+  test_camera_math.cpp
 )
 
 target_link_libraries(rg_unit_tests

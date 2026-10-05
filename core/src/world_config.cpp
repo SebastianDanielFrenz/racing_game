@@ -630,4 +630,16 @@ std::optional<WorldConfig> load_world_config(const std::string& path, std::strin
     return cfg;
 }
 
+
+void apply_store_dir_override(WorldConfig& config, const std::string& dir) {
+    if (dir.empty()) return;
+    config.source_store.dir = dir;
+    const std::optional<std::string> derived_env = safe_getenv(kDerivedStoreOverrideEnvVar);
+    if (!derived_env.has_value() || derived_env->empty()) {
+        std::string d = dir;
+        while (d.size() > 1 && (d.back() == '/' || d.back() == 0x5c)) d.pop_back();
+        config.derived_store.dir = d + "/baked";
+    }
+}
+
 } // namespace rg

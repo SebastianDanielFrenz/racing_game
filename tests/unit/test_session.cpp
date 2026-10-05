@@ -454,3 +454,54 @@ TEST_CASE("session follow: a followed actor survives, a lost follow is cleared a
     CHECK(session.streaming_status().followed_lost == lost0 + 3);
     CHECK(session.last_interest_points().empty()); // flat mode has no interest points
 }
+
+// Pause (the shell's pause menu): the real-time loop is held back like a
+// terrain-gate freeze - the published tick stops advancing, resuming continues
+// from there, and the simulation never replays the paused wall time (no
+// catch-up burst: the tick count after a 0.6 s pause is a handful of ticks
+// beyond the pre-pause count, nowhere near the ~144 a 0.6 s backlog would be).
+TEST_CASE("Session pause freezes the real-time loop and resumes without a burst", "[session][pause]") {
+    rg::Session session(make_test_config());
+    CHECK_FALSE(session.paused());
+    session.start();
+    const auto wait_for_tick = [&](std::uint64_t tick) {
+        const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(5);
+        while (session.snapshot().tick < tick && std::chrono::steady_clock::now() < deadline) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(2));
+        }
+        return session.snapshot().tick >= tick;
+    };
+    REQUIRE(wait_for_tick(60));
+
+    session.set_paused(true);
+    CHECK(session.paused());
+    std::this_thread::sleep_for(std::chrono::milliseconds(100)); // let an in-flight tick land
+    const std::uint64_t held = session.snapshot().tick;
+    std::this_thread::sleep_for(std::chrono::milliseconds(600));
+    const std::uint64_t still = session.snapshot().tick;
+    CHECK(still == held);
+
+    session.set_paused(false);
+    REQUIRE(wait_for_tick(held + 10));
+    // 50 ms after resuming: if the 0.6 s had been replayed the tick would be
+    // ~144 ahead; real time allows about 12.
+    std::this_thread::sleep_for(std::chrono::milliseconds(50));
+    const std::uint64_t resumed = session.snapshot().tick;
+    CHECK(resumed < held + 60);
+    session.stop();
+}
+
+// FrameSnapshot::road_ahead is empty and costs nothing unless asked for; in
+// the flat world (no road data) it stays empty even when asked.
+TEST_CASE("Session road_ahead stays empty in the flat world", "[session][road_ahead]") {
+    rg::Session session(make_test_config());
+    session.set_road_ahead_wanted(true);
+    session.start();
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(5);
+    while (session.snapshot().tick < 60 && std::chrono::steady_clock::now() < deadline) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(2));
+    }
+    session.stop();
+    CHECK(session.snapshot().tick >= 60);
+    CHECK(session.snapshot().road_ahead.empty());
+}

@@ -148,4 +148,13 @@ struct WorldConfig {
 // "${RG_G2M_HOME}/derived" already tracks the RG_G2M_HOME default above.
 std::optional<WorldConfig> load_world_config(const std::string& path, std::string* err);
 
+// The settings screen's "Map data folder" (rg::Settings map_data.store_dir):
+// points the source store at `dir` and the derived store at "<dir>/baked" (the
+// same relation data/world/world_config.json states with ${RG_G2M_HOME}),
+// unless RG_G2M_DERIVED is set, which keeps winning exactly as in
+// load_world_config. An empty `dir` changes nothing (the config's own
+// ${RG_G2M_HOME} / default stays). Applied by RgSimulation to the loaded
+// config before the world opens; a pure function so it is unit-testable.
+void apply_store_dir_override(WorldConfig& config, const std::string& dir);
+
 } // namespace rg
