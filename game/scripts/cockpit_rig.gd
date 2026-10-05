@@ -16,6 +16,13 @@ func _ready() -> void:
 	camera.fov = 75.0
 	add_child(camera)
 
+# The cockpit view is a little wider than the chase view: the setting
+# "camera.fov_deg" is the base, the offset keeps the original 75 at the default 70.
+const FOV_OFFSET_DEG := 5.0
+
+func set_base_fov(base_fov_deg: float) -> void:
+	camera.fov = base_fov_deg + FOV_OFFSET_DEG
+
 func activate(_from: Transform3D) -> void:
 	_yaw = 0.0
 

@@ -45,6 +45,13 @@ func active_camera() -> Camera3D:
 	var rig := active_rig()
 	return rig.camera if rig != null else null
 
+# The "camera.fov_deg" setting: every rig that has a base field of view takes it
+# (the cinematic rig chooses its own per shot; XR rigs have none).
+func set_base_fov(base_fov_deg: float) -> void:
+	for r in rigs.values():
+		if r.has_method("set_base_fov"):
+			r.set_base_fov(base_fov_deg)
+
 func set_active(rig_name: String) -> void:
 	if rig_name == active_name or not rigs.has(rig_name):
 		return

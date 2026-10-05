@@ -25,8 +25,8 @@ extends Node
 # gamepad A, edge count) and INTERACT (G / gamepad X, edge count). G is also the
 # keyboard GET-OUT key in drive mode (edge count of the KEY only: gamepad X is
 # shift-down while driving, so it must never get the player out of the car).
-# Global actions (edges, consumed once per frame by main.gd): cycle mode,
-# switch world, reset car, next drone target. Those plus the camera keys are added to InputMap
+# Global actions (edges, consumed once per frame by main.gd): cycle mode, cycle
+# driving view, switch world, reset car, next drone target. Those plus the camera keys are added to InputMap
 # at runtime (_ensure_action), so project.godot's [input] section only holds
 # the R0 driving actions.
 #
@@ -49,6 +49,7 @@ var _shift_up_count: int = 0
 var _shift_down_count: int = 0
 var _cycle_camera_count: int = 0
 var _cycle_mode_count: int = 0
+var _cycle_view_count: int = 0
 var _switch_world_count: int = 0
 var _reset_car_count: int = 0
 var _flip_upright_count: int = 0
@@ -79,6 +80,16 @@ var _cam_fast: bool = false
 var _mouse_delta: Vector2 = Vector2.ZERO
 var _mouse_captured: bool = false
 
+# Gives the mouse back (pause menu opened with the keyboard while it was
+# captured for looking around).
+func release_mouse() -> void:
+	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+	_mouse_captured = false
+	_mouse_delta = Vector2.ZERO
+
+func is_mouse_captured() -> bool:
+	return _mouse_captured
+
 func configure_vehicle(path: String) -> void:
 	# Keep the driver toggle across world/reset reloads of the same car.
 	if path == _configured_vehicle_path:
@@ -97,6 +108,10 @@ func configure_vehicle(path: String) -> void:
 func _ready() -> void:
 	_ensure_action("rg_cycle_camera", [KEY_TAB], [JOY_BUTTON_RIGHT_STICK])
 	_ensure_action("rg_cycle_mode", [KEY_V], [JOY_BUTTON_BACK])
+	# R5: next driving view (chase, bumper, cockpit, orbit, cinematic). The pad
+	# button is shared with "next drone target" - the two only act in different
+	# modes (main.gd consumes both every frame and applies each in its own).
+	_ensure_action("rg_cycle_view", [KEY_B], [JOY_BUTTON_DPAD_RIGHT])
 	_ensure_action("rg_switch_world", [KEY_F8], [])
 	_ensure_action("rg_reset_car", [KEY_R], [JOY_BUTTON_Y])
 	_ensure_action("rg_npc_truck", [KEY_T], [])
@@ -267,6 +282,8 @@ func poll() -> void:
 		_cycle_camera_count += 1
 	if _edge("cycle_mode", input.is_action_pressed("rg_cycle_mode")):
 		_cycle_mode_count += 1
+	if _edge("cycle_view", input.is_action_pressed("rg_cycle_view")):
+		_cycle_view_count += 1
 	if _edge("switch_world", input.is_action_pressed("rg_switch_world")):
 		_switch_world_count += 1
 	if _edge("reset_car", input.is_action_pressed("rg_reset_car")):
@@ -383,6 +400,11 @@ func consume_get_out_key_count() -> int:
 func consume_cycle_mode() -> int:
 	var n := _cycle_mode_count
 	_cycle_mode_count = 0
+	return n
+
+func consume_cycle_view() -> int:
+	var n := _cycle_view_count
+	_cycle_view_count = 0
 	return n
 
 func consume_cycle_drone_target() -> int:

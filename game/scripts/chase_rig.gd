@@ -45,6 +45,9 @@ func _ready() -> void:
 	camera.far = 43000.0
 	add_child(camera)
 
+func set_base_fov(base_fov_deg: float) -> void:
+	camera.fov = base_fov_deg
+
 func activate(_from: Transform3D) -> void:
 	_initialized = false # re-seat behind the car
 

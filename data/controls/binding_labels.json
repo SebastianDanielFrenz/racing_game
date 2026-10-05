@@ -1,0 +1,68 @@
+{
+  "format": "rg.binding_labels/1",
+  "note": "Labels for the read-only 'Controls' view in the settings screen (game/scripts/shell_ui.gd). 'actions' are InputMap actions: the view lists the keys and gamepad buttons they are bound to AT RUN TIME (input_map.gd / project.godot), so a changed binding shows up here without editing this file. 'fixed' entries are keys handled directly in a script (no InputMap action) and 'analog' entries are gamepad axes: both are descriptions of what the code does and must be kept in step with it by hand. Rebinding is not available yet (PLAN.md R5 deferred).",
+  "groups": [
+    {
+      "title": "Driving",
+      "actions": [
+        {"action": "rg_throttle", "label": "Throttle"},
+        {"action": "rg_brake", "label": "Brake / reverse"},
+        {"action": "rg_steer_left", "label": "Steer left"},
+        {"action": "rg_steer_right", "label": "Steer right"},
+        {"action": "rg_handbrake", "label": "Handbrake"},
+        {"action": "rg_clutch", "label": "Clutch"},
+        {"action": "rg_shift_up", "label": "Shift up"},
+        {"action": "rg_shift_down", "label": "Shift down"},
+        {"action": "rg_ignition", "label": "Ignition on / off"},
+        {"action": "rg_starter", "label": "Starter (hold)"},
+        {"action": "rg_auto_shift", "label": "Automatic shifting on / off"},
+        {"action": "rg_reset_car", "label": "Reset car to its spawn"},
+        {"action": "rg_flip_upright", "label": "Flip the car upright"},
+        {"action": "rg_npc_truck", "label": "Truck ahead (Shift+T removes it)"}
+      ],
+      "analog": [
+        "Gamepad: left stick steers, right trigger throttle, left trigger brake, A handbrake, B / X shift up / down, D-pad up ignition, D-pad left automatic shifting, Start starter"
+      ]
+    },
+    {
+      "title": "Cameras and modes",
+      "actions": [
+        {"action": "rg_cycle_camera", "label": "Chase / cockpit (first / third person on foot)"},
+        {"action": "rg_cycle_view", "label": "Next driving view (chase, bumper, cockpit, orbit, cinematic)"},
+        {"action": "rg_cycle_mode", "label": "Next mode (drive, free cam, drone follow, on foot)"},
+        {"action": "rg_cycle_drone_target", "label": "Next drone target"},
+        {"action": "rg_zoom_in", "label": "Zoom in (drone, orbit)"},
+        {"action": "rg_zoom_out", "label": "Zoom out (drone, orbit)"},
+        {"action": "rg_cam_forward", "label": "Free cam / walk forward"},
+        {"action": "rg_cam_back", "label": "Free cam / walk back"},
+        {"action": "rg_cam_left", "label": "Free cam / walk left"},
+        {"action": "rg_cam_right", "label": "Free cam / walk right"},
+        {"action": "rg_cam_up", "label": "Free cam up"},
+        {"action": "rg_cam_down", "label": "Free cam down"},
+        {"action": "rg_cam_fast", "label": "Free cam fast / run"},
+        {"action": "rg_look_left", "label": "Look left"},
+        {"action": "rg_look_right", "label": "Look right"},
+        {"action": "rg_look_up", "label": "Look up"},
+        {"action": "rg_look_down", "label": "Look down"}
+      ],
+      "analog": [
+        "Gamepad: right stick looks around (chase / cockpit / bumper), orbits (orbit view) and looks (free cam); left stick moves in free cam and on foot"
+      ]
+    },
+    {
+      "title": "Game",
+      "actions": [
+        {"action": "rg_switch_world", "label": "Switch between the flat scene and the real world"}
+      ],
+      "fixed": [
+        {"keys": "Esc or P", "label": "Pause menu (Esc also closes a panel or releases the mouse first)"},
+        {"keys": "F6", "label": "Seat adjustment"},
+        {"keys": "F7", "label": "Traffic settings"},
+        {"keys": "F10", "label": "Teleport to an address"},
+        {"keys": "G", "label": "Get out of the car / get in at the door"},
+        {"keys": "Right mouse button", "label": "Capture the mouse for looking (Esc releases)"},
+        {"keys": "Middle mouse button", "label": "Log the current location"}
+      ]
+    }
+  ]
+}

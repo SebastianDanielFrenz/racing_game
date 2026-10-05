@@ -21,6 +21,15 @@ var _engine_capacity := 0
 var _initialized := false
 var _shutdown := false
 var _engine_gain: float = db_to_linear(-12.0)
+# Gain multipliers from the audio settings (0..1, set by main.gd). The engine
+# and tyre sound go through the native spatial backend, which bypasses Godot's
+# audio buses, so the volumes are applied to the samples / the backend gain here.
+var master_volume: float = 1.0
+var engine_volume: float = 1.0
+var tyre_volume: float = 1.0
+# True while the world is paused: the simulation stands still, and so must its
+# sound (the engine voice would otherwise keep playing the last rpm).
+var muted: bool = false
 var _view_levels: Dictionary = {}
 var _engine_native := false
 var _diagnostic_elapsed := 0.0
@@ -79,12 +88,18 @@ func _initialize_audio() -> void:
 		if engine_spatial != null:
 			_engine_native = simulation.connect_engine_audio_spatial(engine_spatial, int(clampf(float(_view_levels.get("audio_native_latency_ms", 12.0)), 5.0, 50.0)))
 			if _engine_native:
-				engine_spatial.set_native_gain(_engine_gain / 15.0)
+				engine_spatial.set_native_gain(_applied_engine_gain() / 15.0)
 			print("RG_AUDIO engine native pump: ", _engine_native)
 
 		if engine_spatial == null:
 			for point in engine_points:
 				engine_players.append(_player(engine_rate, point))
+
+func _applied_engine_gain() -> float:
+	return 0.0 if muted else _engine_gain * master_volume * engine_volume
+
+func _applied_tyre_gain() -> float:
+	return 0.0 if muted else master_volume * tyre_volume
 
 func _relative(points: PackedVector3Array) -> PackedVector3Array:
 	var result := PackedVector3Array()
@@ -158,13 +173,14 @@ func _process(delta: float) -> void:
 	else:
 		needed = _fallback_needed(fallback_players, RATE, false)
 	var pcm := PackedFloat32Array()
+	var tyre_gain := _applied_tyre_gain()
 	pcm.resize(needed * tyres.size())
 	for frame in range(needed):
 		for wheel in range(tyres.size()):
 			# Preserve the demo's 24 kHz sample pitch when feeding 48 kHz output.
 			if _sample_even:
 				tyre_values[wheel] += (tyres[wheel].sample(1.0 / 24000.0) - tyre_values[wheel]) * 0.65
-			pcm[frame * tyres.size() + wheel] = tyre_values[wheel]
+			pcm[frame * tyres.size() + wheel] = tyre_values[wheel] * tyre_gain
 		_sample_even = not _sample_even
 	if not tyres.is_empty():
 		_output(pcm, tyres.size(), tyre_spatial, fallback_players)
@@ -183,11 +199,12 @@ func _process(delta: float) -> void:
 			level = float(_view_levels.get("engine_free_db", -6.0))
 		_engine_gain = lerpf(_engine_gain,db_to_linear(clampf(level,-60.0,0.0)),1.0-exp(-8.0*delta))
 		if _engine_native:
-			engine_spatial.set_native_gain(_engine_gain / 15.0)
+			engine_spatial.set_native_gain(_applied_engine_gain() / 15.0)
 		else:
 			var engine_pcm: PackedFloat32Array = simulation.read_engine_audio(needed)
+			var applied_gain := _applied_engine_gain()
 			for i in range(engine_pcm.size()):
-				engine_pcm[i] *= _engine_gain
+				engine_pcm[i] *= applied_gain
 			_output(engine_pcm, engine_points.size(), engine_spatial, engine_players)
 	_diagnostic_elapsed += delta
 	if _diagnostic_elapsed >= 5.0:
