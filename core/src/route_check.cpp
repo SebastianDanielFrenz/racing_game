@@ -153,7 +153,7 @@ bool load_criteria(const json& root, const std::string& path, RouteCriteria* out
     for (auto it = c.begin(); it != c.end(); ++it) {
         const std::string& key = it.key();
         if (key != "min_length_m" && key != "max_grade_pct" && key != "min_seam_crossings" &&
-            key != "min_corner_radius_m") {
+            key != "min_corner_radius_m" && key != "min_junctions") {
             return fail(err, path, "unknown key \"" + key + "\" in " + where);
         }
         double v = 0.0;
@@ -175,6 +175,11 @@ bool load_criteria(const json& root, const std::string& path, RouteCriteria* out
                 return fail(err, path, "\"criteria.min_seam_crossings\" must be an integer >= 0");
             }
             out->min_seam_crossings = static_cast<int>(v);
+        } else if (key == "min_junctions") {
+            if (v != std::floor(v) || v < 0.0 || v > 1.0e6) {
+                return fail(err, path, "\"criteria.min_junctions\" must be an integer >= 0");
+            }
+            out->min_junctions = static_cast<int>(v);
         } else {
             if (v < 0.0) {
                 return fail(err, path, "\"criteria.min_corner_radius_m\" must be >= 0");
@@ -182,6 +187,99 @@ bool load_criteria(const json& root, const std::string& path, RouteCriteria* out
             out->min_corner_radius_m = v;
         }
     }
+    return true;
+}
+
+bool get_int64(const json& obj, const char* key, const std::string& path, const std::string& where,
+               std::int64_t* out, std::string* err) {
+    double d = 0.0;
+    if (!get_number(obj, key, path, where, &d, err)) return false;
+    if (d != std::floor(d) || std::abs(d) > 9.0e15) {
+        return fail(err, path, "\"" + std::string(key) + "\" in " + where + " must be an integer");
+    }
+    *out = static_cast<std::int64_t>(d);
+    return true;
+}
+
+bool load_junctions(const json& root, const std::string& path, std::vector<RouteJunction>* out, std::string* err) {
+    if (!root.contains("junctions")) return true;
+    const json& arr = root.at("junctions");
+    if (!arr.is_array()) return fail(err, path, "\"junctions\" must be an array");
+    for (std::size_t i = 0; i < arr.size(); ++i) {
+        const json& j = arr.at(i);
+        const std::string where = "junctions[" + std::to_string(i) + "]";
+        if (!j.is_object()) return fail(err, path, where + " must be an object");
+        RouteJunction r;
+        if (!get_string(j, "id", path, where, &r.id, err) || !get_number(j, "x", path, where, &r.x, err) ||
+            !get_number(j, "y", path, where, &r.y, err) || !get_number(j, "radius_m", path, where, &r.radius_m, err) ||
+            !get_number(j, "s_m", path, where, &r.s_m, err)) {
+            return false;
+        }
+        if (r.radius_m <= 0.0) return fail(err, path, where + ".radius_m must be > 0");
+        if (!j.contains("node_ids") || !j.at("node_ids").is_array() || j.at("node_ids").empty()) {
+            return fail(err, path, where + ".node_ids must be a non-empty array of integers");
+        }
+        for (const json& n : j.at("node_ids")) {
+            if (!n.is_number_integer()) return fail(err, path, where + ".node_ids must hold integers");
+            r.node_ids.push_back(n.get<std::int64_t>());
+        }
+        for (const RouteJunction& o : *out) {
+            if (o.id == r.id) return fail(err, path, where + ": duplicate junction id \"" + r.id + "\"");
+        }
+        out->push_back(std::move(r));
+    }
+    return true;
+}
+
+bool load_bridges(const json& root, const std::string& path, std::vector<RouteBridge>* out, std::string* err) {
+    if (!root.contains("bridges")) return true;
+    const json& arr = root.at("bridges");
+    if (!arr.is_array()) return fail(err, path, "\"bridges\" must be an array");
+    for (std::size_t i = 0; i < arr.size(); ++i) {
+        const json& b = arr.at(i);
+        const std::string where = "bridges[" + std::to_string(i) + "]";
+        if (!b.is_object()) return fail(err, path, where + " must be an object");
+        RouteBridge r;
+        double dir = 0.0;
+        if (!get_string(b, "group", path, where, &r.group, err) || !get_int64(b, "way_id", path, where, &r.way_id, err) ||
+            !get_number(b, "direction", path, where, &dir, err) ||
+            !get_int64(b, "enter_node", path, where, &r.enter_node, err) ||
+            !get_int64(b, "exit_node", path, where, &r.exit_node, err) ||
+            !get_number(b, "enter_x", path, where, &r.enter_x, err) || !get_number(b, "enter_y", path, where, &r.enter_y, err) ||
+            !get_number(b, "exit_x", path, where, &r.exit_x, err) || !get_number(b, "exit_y", path, where, &r.exit_y, err) ||
+            !get_number(b, "length_m", path, where, &r.length_m, err) ||
+            !get_number(b, "s_enter_m", path, where, &r.s_enter_m, err) ||
+            !get_number(b, "s_exit_m", path, where, &r.s_exit_m, err)) {
+            return false;
+        }
+        if (dir != 1.0 && dir != -1.0) return fail(err, path, where + ".direction must be 1 or -1");
+        r.direction = static_cast<int>(dir);
+        if (!(r.length_m > 0.0)) return fail(err, path, where + ".length_m must be > 0");
+        out->push_back(std::move(r));
+    }
+    return true;
+}
+
+bool load_generator(const json& root, const std::string& path, std::optional<RouteGeneratorInfo>* out,
+                    std::string* err) {
+    if (!root.contains("generator")) return true;
+    const json& g = root.at("generator");
+    if (!g.is_object()) return fail(err, path, "\"generator\" must be an object");
+    RouteGeneratorInfo r;
+    double v = 0.0;
+    if (!get_string(g, "tool", path, "\"generator\"", &r.tool, err) ||
+        !get_number(g, "version", path, "\"generator\"", &v, err)) {
+        return false;
+    }
+    r.version = static_cast<int>(v);
+    if (!get_string(g, "config", path, "\"generator\"", &r.config, err) ||
+        !get_string(g, "geo2map_pin", path, "\"generator\"", &r.geo2map_pin, err) ||
+        !get_number(g, "drivable_classes_version", path, "\"generator\"", &v, err)) {
+        return false;
+    }
+    r.drivable_classes_version = static_cast<int>(v);
+    if (!get_number(g, "junction_cluster_m", path, "\"generator\"", &r.junction_cluster_m, err)) return false;
+    *out = std::move(r);
     return true;
 }
 
@@ -265,10 +363,51 @@ std::optional<Route> load_route(const std::string& path, std::string* err) {
         fail(err, path, "\"waypoints\" needs at least 2 points");
         return std::nullopt;
     }
-    if (!load_criteria(root, path, &route.criteria, err)) {
+    if (!load_criteria(root, path, &route.criteria, err) || !load_junctions(root, path, &route.junctions, err) ||
+        !load_bridges(root, path, &route.bridges, err) || !load_generator(root, path, &route.generator, err)) {
         return std::nullopt;
     }
     return route;
+}
+
+int count_junctions_crossed(const std::vector<RoutePoint>& waypoints, const std::vector<RouteJunction>& junctions,
+                            std::vector<std::string>* crossed_ids) {
+    int n = 0;
+    if (crossed_ids != nullptr) crossed_ids->clear();
+    std::vector<std::string> seen;
+    for (const RouteJunction& j : junctions) {
+        bool crossed = false;
+        for (const RoutePoint& p : waypoints) {
+            if (std::hypot(p.x - j.x, p.y - j.y) <= j.radius_m) {
+                crossed = true;
+                break;
+            }
+        }
+        if (!crossed) continue;
+        if (std::find(seen.begin(), seen.end(), j.id) != seen.end()) continue;
+        seen.push_back(j.id);
+        ++n;
+        if (crossed_ids != nullptr) crossed_ids->push_back(j.id);
+    }
+    return n;
+}
+
+bool route_crosses_bridge(const std::vector<RoutePoint>& waypoints, const RouteBridge& bridge, double tol_m) {
+    std::vector<double> cum(waypoints.size(), 0.0);
+    for (std::size_t i = 1; i < waypoints.size(); ++i) cum[i] = cum[i - 1] + dist(waypoints[i - 1], waypoints[i]);
+    const double slack = 2.0 * tol_m + 0.1 * bridge.length_m;
+    for (std::size_t i = 0; i < waypoints.size(); ++i) {
+        if (std::hypot(waypoints[i].x - bridge.enter_x, waypoints[i].y - bridge.enter_y) > tol_m) continue;
+        for (std::size_t j = i + 1; j < waypoints.size(); ++j) {
+            const double along = cum[j] - cum[i];
+            if (along > bridge.length_m + slack) break;
+            if (std::hypot(waypoints[j].x - bridge.exit_x, waypoints[j].y - bridge.exit_y) <= tol_m &&
+                along >= bridge.length_m - slack) {
+                return true;
+            }
+        }
+    }
+    return false;
 }
 
 void apply_route_criteria(const RouteCriteria& criteria, RouteCheckParams& params) {
@@ -413,6 +552,21 @@ RouteCheckReport check_route(const std::vector<RoutePoint>& waypoints, const Rou
         if (!heights[k].has_value() || !heights[k2].has_value()) {
             continue;
         }
+        bool exempt = false;
+        for (const auto& range : params.grade_exempt_s) {
+            if (samples[k].s <= range.second && samples[k2].s >= range.first) {
+                exempt = true;
+                break;
+            }
+        }
+        if (exempt) {
+            ++rep.grade_window_exempt_count;
+            if (in_steep) {
+                rep.steep_stretches.push_back(steep);
+                in_steep = false;
+            }
+            continue;
+        }
         const double g = std::abs(*heights[k2] - *heights[k]) / window_len;
         if (g > rep.max_grade) {
             rep.max_grade = g;
@@ -551,6 +705,11 @@ std::string format_route_report(const RouteCheckReport& r) {
                   r.grade_window_count, r.max_grade * 100.0, r.max_grade_at_m, r.p99_grade * 100.0,
                   r.mean_abs_grade * 100.0);
     o << buf;
+    if (r.grade_window_exempt_count > 0) {
+        std::snprintf(buf, sizeof(buf), "grade_windows_exempt=%d (touch a listed bridge)\n",
+                      r.grade_window_exempt_count);
+        o << buf;
+    }
     std::snprintf(buf, sizeof(buf), "steep_stretches=%zu (grade > %.2f %%)\n", r.steep_stretches.size(),
                   r.grade_report_threshold * 100.0);
     o << buf;
@@ -558,6 +717,14 @@ std::string format_route_report(const RouteCheckReport& r) {
         std::snprintf(buf, sizeof(buf),
                       "  steep max_grade_pct=%.2f at s=%.1f m (x=%.1f y=%.1f), s=%.1f..%.1f m\n",
                       st.max_grade * 100.0, st.at_m, st.x, st.y, st.begin_m, st.end_m);
+        o << buf;
+    }
+    if (r.junctions_crossed >= 0) {
+        std::snprintf(buf, sizeof(buf), "junctions_crossed=%d\n", r.junctions_crossed);
+        o << buf;
+    }
+    if (r.bridges_listed > 0) {
+        std::snprintf(buf, sizeof(buf), "bridges_crossed=%d of %d listed\n", r.bridges_crossed, r.bridges_listed);
         o << buf;
     }
     std::snprintf(buf, sizeof(buf), "seam_crossings=%d (x=%d y=%d)\n", r.seam_crossings, r.seam_crossings_x,
@@ -623,7 +790,30 @@ RouteCheckReport check_route_on_world(const Route& route, const WorldConfig& wor
     };
     const HeightAtFn height_at = [&](double x, double y) { return sample_l0_height(lookup, zone, e0, n0, x, y); };
 
-    RouteCheckReport rep = check_route(route.waypoints, route.spawn, height_at, params);
+    // A bridge crosses a gap the L0 terrain heights do not bridge (the deck is not in them), so
+    // grade windows touching a listed bridge are exempt from the grade criterion; they are counted
+    // in RouteCheckReport::grade_window_exempt_count, never silently dropped.
+    RouteCheckParams with_bridges = params;
+    for (const RouteBridge& b : route.bridges) {
+        with_bridges.grade_exempt_s.emplace_back(b.s_enter_m, b.s_exit_m);
+    }
+    RouteCheckReport rep = check_route(route.waypoints, route.spawn, height_at, with_bridges);
+    if (!route.junctions.empty() || route.criteria.min_junctions.has_value()) {
+        rep.junctions_crossed = count_junctions_crossed(route.waypoints, route.junctions);
+        if (route.criteria.min_junctions.has_value() && rep.junctions_crossed < *route.criteria.min_junctions) {
+            rep.failures.push_back("junctions: " + std::to_string(rep.junctions_crossed) +
+                                   " distinct junctions crossed < " + std::to_string(*route.criteria.min_junctions));
+        }
+    }
+    rep.bridges_listed = static_cast<int>(route.bridges.size());
+    for (const RouteBridge& b : route.bridges) {
+        if (route_crosses_bridge(route.waypoints, b)) {
+            ++rep.bridges_crossed;
+        } else {
+            rep.failures.push_back("bridge: " + b.group + " way " + std::to_string(b.way_id) + " direction " +
+                                   std::to_string(b.direction) + " is not crossed by the waypoints");
+        }
+    }
     const std::string mismatch =
         route_matches_world(route, world.session_origin_utm.zone, world.session_origin_utm.e0,
                             world.session_origin_utm.n0, world.spawn.e, world.spawn.n, world.spawn.yaw_deg);

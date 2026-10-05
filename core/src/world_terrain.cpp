@@ -438,6 +438,41 @@ std::shared_ptr<const RoadSurfacePatch> WorldTerrain::road_surface_patch(const g
     geometry_cache_.emplace(key,patch); return patch;
 }
 
+std::shared_ptr<const g2m::RoadGraphTile> WorldTerrain::road_graph_tile(const g2m::TileKey& key) {
+    {
+        std::lock_guard<std::mutex> lock(graph_mutex_);
+        if (auto it = graph_cache_.find(key); it != graph_cache_.end()) return it->second;
+    }
+    auto response = transport_->send(g2m::Request{g2m::TileRequest{manifest_rid_, std::string(g2m::kRoadGraphLayer), key, std::nullopt}});
+    auto* tile = std::get_if<g2m::TileResponse>(&response);
+    if (!tile) return nullptr;
+    std::shared_ptr<const g2m::RoadGraphTile> result;
+    if (tile->meta.status == g2m::Status::NotFound && tile->meta.message == "outside coverage") {
+        auto empty = std::make_shared<g2m::RoadGraphTile>();
+        empty->key = key;
+        result = std::move(empty);
+    } else if (tile->meta.status == g2m::Status::Ok) {
+        auto container = g2m::parse_container(tile->container);
+        if (!container.ok() || container.value().header.key != key || container.value().header.layer != g2m::kRoadGraphLayer) {
+            std::fprintf(stderr, "RG_ROAD_GRAPH invalid_container key=%s\n", g2m::to_string(key).c_str());
+            return nullptr;
+        }
+        auto body = g2m::decode_body(container.value().body);
+        if (!body.ok()) return nullptr;
+        auto graph = g2m::decode_road_graph(body.value());
+        if (!graph.ok()) {
+            std::fprintf(stderr, "RG_ROAD_GRAPH invalid_graph key=%s message=%s\n", g2m::to_string(key).c_str(), graph.error().message.c_str());
+            return nullptr;
+        }
+        result = std::make_shared<g2m::RoadGraphTile>(std::move(graph.value()));
+    } else {
+        std::fprintf(stderr, "RG_ROAD_GRAPH fetch_failed key=%s message=%s\n", g2m::to_string(key).c_str(), tile->meta.message.c_str());
+        return nullptr;
+    }
+    std::lock_guard<std::mutex> lock(graph_mutex_);
+    return graph_cache_.emplace(key, std::move(result)).first->second;
+}
+
 std::vector<std::shared_ptr<const RoadDeck>> WorldTerrain::road_decks() {
     // Publication has its own brief lock: a physics tick must never wait for
     // seconds of background DEM/profile derivation under geometry_mutex_.

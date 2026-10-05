@@ -71,6 +71,7 @@ add_library(rg_core STATIC
     src/terrain_view_streamer.cpp
     src/route_check.cpp
     src/route_follower.cpp
+    src/road_network.cpp
     src/credits.cpp
     src/settings.cpp
     src/spawn_presets.cpp

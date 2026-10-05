@@ -51,6 +51,42 @@ struct RouteCriteria {
     std::optional<double> max_grade; // fraction (file: max_grade_pct / 100)
     std::optional<int> min_seam_crossings;
     std::optional<double> min_corner_radius_m;
+    std::optional<int> min_junctions; // G3/R3 S3: distinct junction clusters the route must pass
+};
+
+// A junction cluster the route passes (G3/R3 S3). Identity = the sorted OSM node ids of the
+// cluster, which survive a geo2map pin bump; x/y/radius are for the recount only. The route
+// passes it iff some waypoint lies within radius_m of (x, y).
+struct RouteJunction {
+    std::string id; // "n<smallest node id>"
+    std::vector<std::int64_t> node_ids;
+    double x = 0.0, y = 0.0;
+    double radius_m = 0.0;
+    double s_m = 0.0; // arc length of the first approach
+};
+
+// One bridge crossing the route makes (G3/R3 S3): `group` names the structure (a dual
+// carriageway pair is one group, each carriageway its own entry in its own direction),
+// direction is along the way's own node order (+1) or against it (-1).
+struct RouteBridge {
+    std::string group;
+    std::int64_t way_id = 0;
+    int direction = 1;
+    std::int64_t enter_node = 0, exit_node = 0;
+    double enter_x = 0.0, enter_y = 0.0, exit_x = 0.0, exit_y = 0.0;
+    double length_m = 0.0;
+    double s_enter_m = 0.0, s_exit_m = 0.0;
+};
+
+// How a generated route was produced (provenance; the generator is deterministic, so the
+// same config + data pin regenerates the same bytes).
+struct RouteGeneratorInfo {
+    std::string tool;
+    int version = 0;
+    std::string config;
+    std::string geo2map_pin;
+    int drivable_classes_version = 0;
+    double junction_cluster_m = 0.0;
 };
 
 // "rg.route/1". Waypoints are in the SESSION frame of the world config named
@@ -66,6 +102,9 @@ struct Route {
     double spawn_yaw_deg = 0.0;
     std::vector<RoutePoint> waypoints; // >= 2; waypoints[0] must equal spawn
     RouteCriteria criteria;            // optional "criteria" object
+    std::vector<RouteJunction> junctions; // optional "junctions" array (generated routes)
+    std::vector<RouteBridge> bridges;     // optional "bridges" array
+    std::optional<RouteGeneratorInfo> generator; // optional "generator" object
 };
 
 // Strict loader: returns nullopt and sets *err ("<path>: <problem>") on any
@@ -76,6 +115,17 @@ std::optional<Route> load_route(const std::string& path, std::string* err);
 // grid (g2m::phys::PhysicsTileGrid::index_for_local): floor((v - origin) /
 // tile_size). Negative for points west/south of the grid origin.
 std::int64_t phys_tile_index(double v, double tile_size_m = 255.0, double origin_m = 0.5);
+
+// Recount of a route's junctions from its waypoints alone: a junction is crossed iff some
+// waypoint is within its radius_m of (x, y). `crossed_ids` (if set) lists the crossed
+// junction ids in file order; the return value is their number (ids are distinct by
+// construction of a file, duplicates counted once).
+int count_junctions_crossed(const std::vector<RoutePoint>& waypoints, const std::vector<RouteJunction>& junctions,
+                            std::vector<std::string>* crossed_ids = nullptr);
+
+// True iff the waypoints enter `bridge` near its entry point and later leave it near its exit
+// point, with an arc length in between matching bridge.length_m (within 2 * tol_m + 10 %).
+bool route_crosses_bridge(const std::vector<RoutePoint>& waypoints, const RouteBridge& bridge, double tol_m = 6.0);
 
 // Number of physics-tile seam LINES the polyline crosses: per segment,
 // |dix| + |diy| of the endpoints' physics-tile indices (exact, independent of
@@ -112,6 +162,9 @@ struct RouteCheckParams {
     int min_seam_crossings = 12;
     double min_corner_radius_m = 30.0;
     double start_tolerance_m = 0.01; // waypoints[0] vs the expected start (the spawn)
+    // Arc-length ranges (begin, end) whose grade windows are exempt from the grade criterion
+    // (check_route_on_world fills it from a route's bridges: the L0 terrain has no deck).
+    std::vector<std::pair<double, double>> grade_exempt_s;
 };
 
 // Overwrites the criteria fields of `params` that `criteria` sets. Callers
@@ -147,6 +200,7 @@ struct RouteCheckReport {
     int sample_count = 0;
     // Grade over grade_window_m (windows with a NoData end are skipped).
     int grade_window_count = 0;
+    int grade_window_exempt_count = 0; // windows skipped because they touch RouteCheckParams::grade_exempt_s
     double max_grade = 0.0;
     double max_grade_at_m = 0.0; // arc length of the steepest window's start
     double p99_grade = 0.0;      // nearest-rank 99th percentile over all windows
@@ -175,6 +229,11 @@ struct RouteCheckReport {
     std::vector<RouteCorner> tight_corners; // every stretch below it, in route order
     double start_offset_m = 0.0;     // |waypoints[0] - expected start|
     double start_heading_deg = 0.0;  // first segment, math convention (0 = east, 90 = north)
+    // G3/R3 S3 (check_route_on_world only; -1 / 0 when the route lists none): distinct listed
+    // junctions the waypoints cross, and listed bridge crossings the waypoints make.
+    int junctions_crossed = -1;
+    int bridges_listed = 0;
+    int bridges_crossed = 0;
     std::vector<std::string> failures; // one line per failed criterion; empty = pass
 
     [[nodiscard]] bool ok() const { return failures.empty(); }

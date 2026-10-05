@@ -27,6 +27,8 @@ add_executable(rg_unit_tests
   test_terrain_view_streamer.cpp
   test_route_check.cpp
   test_route_follower.cpp
+  test_road_network.cpp
+  test_route_g3.cpp
   test_terrain_mode.cpp
   test_session_terrain.cpp
   test_session_reinit.cpp

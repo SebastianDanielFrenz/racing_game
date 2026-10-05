@@ -697,6 +697,59 @@ message.
 - **Tests:** a realdata test recounts junction rings crossed (≥ 20) and both
   directions over B8 #4 and the L3014 bridge.
 - **Sabotage:** delete waypoints across one junction → count fails.
+- **As built (S3):** `core/include/rg/road_network.h` + `core/src/road_network.cpp`
+  (`RoadNetwork`, `plan_path`, `smooth_polyline`), the `rg.route/1` extensions in
+  `core/include/rg/route_check.h`, `WorldTerrain::road_graph_tile`, `tools/rg_route_gen`,
+  `data/routes/home_g3_junctions.gen.json` (the generator config) and the generated
+  `data/routes/home_g3_junctions.json`. Tests: `tests/unit/test_road_network.cpp` (synthetic
+  networks, planner, smoothing), `tests/unit/test_route_g3.cpp` (the committed file recounted
+  from its waypoints, loader, grade exemption; a hidden `[.][realdata]` case checks the file
+  against the real roads.graph store). Deviations from the text above:
+  - **Junctions are derived from `roads.graph`, not from roads.geom junction records.** At the
+    pinned geo2map (54d7083) there are no junction records (they arrive with encoding 7, S1).
+    A junction here is a cluster (nodes within 30 m, `kJunctionClusterM`) of OSM nodes with >= 3
+    distinct drivable neighbours and >= 2 ways; drivable = motorway..residential and their
+    `_link`s, access not private/no (`kDrivableClassesVersion` 1, recorded in the file). The
+    generator and the route do not depend on the pin bump.
+  - **Junction and bridge lists are top-level arrays (`junctions`, `bridges`, `generator`), not
+    inside `criteria`.** `criteria` stays a set of numeric limits and gained `min_junctions`; the
+    lists are data, not limits. The loader is strict about all of them.
+  - **The generator is a deterministic standalone tool plus the committed output**, not a hidden
+    test that writes the file (the test side only recounts). Same config + same data pin gives the
+    same bytes (checked by regenerating and comparing the SHA-256).
+  - **`bridges` lists every bridge crossing on the path**, not only the two required ones (a
+    marked traversal of the L3014 way is followed by an unavoidable third crossing, see the
+    stats). B8 bridge #4 is a dual carriageway (oneway ways 1096866569 north-west and
+    1096866567 south-east, 13.3 m each): "both directions" is each carriageway in its own
+    direction (`group` "B8 bridge #4"); the L3014 bridge (way 14799333, 47.3 m) is two-way and is
+    crossed with direction -1, +1, and -1 again.
+  - **`check_route_on_world` exempts grade windows touching a listed bridge** from
+    `max_grade_pct` (`RouteCheckParams::grade_exempt_s`, counted in
+    `grade_window_exempt_count`). The L0 heights carry no deck: the L3014 bridge crosses a cutting
+    and read 65 % without it. The criterion is unchanged everywhere else. The route also sets
+    `min_corner_radius_m` 4 (junction turns; `home_r1_drive` sets 7 and 31 % grade for the same
+    reason). `tools/route_check` now also reports `junctions_crossed` / `bridges_crossed` and fails
+    on a missed `min_junctions` or an uncrossed listed bridge.
+  - **Corners are rounded** (`smooth_polyline`: a quadratic Bezier corner of tangent length
+    min(10 m * tan(turn/2), 0.45 * the shorter segment), resampled to <= 5 m): OSM junction turns
+    are 90-degree kinks, which a driver cannot follow and `route_check` reads as radius 0. The
+    route therefore deviates up to ~3.5 m from the way centre-line at a 90-degree turn.
+  - Route (home world, pin 54d7083): 1819 waypoints, 9080 m; 25 distinct junction clusters
+    (criterion 20); five bridge crossings; 46 physics-tile seam crossings; elevation 109-185 m;
+    max grade 4.75 % outside the 210 exempt windows; tightest corner radius 4.9 m. It runs spawn
+    (Engelsruhe, as `home_r1_drive`) -> the 12-node junction at OSM node 94147307 -> B8 over the
+    north-west carriageway bridge -> the L3014 bridge (both directions) -> the B8 south-east
+    carriageway bridge. `tools/route_check` fails only on the pre-existing `world:` spawn
+    mismatch, which `home_r1_drive` shows too (the world config's spawn moved to the old spawn).
+  - **Re-resolving the junctions after the S1 pin bump.** The identity of a junction is its set of
+    OSM node ids (`junctions[].node_ids`; OSM ids survive a data pin, positions and geo2map record
+    ids may not). With P2 records, for each stored junction find the record whose node set
+    contains a stored node id (records carry `owner_node_id` and node ids), fall back to the
+    nearest record centre within 30 m, and check the route passes through the record's ring
+    (replace the recount radius `radius_m` by the ring). The route itself stays valid: it was
+    planned on way ids and node ids, and the generator can re-run on the new pin (the config
+    names ways and nodes, not coordinates). The `generator.geo2map_pin` field records which pin
+    the file was generated against.
 
 ### S4: Fz metric and calibration (Opus)
 

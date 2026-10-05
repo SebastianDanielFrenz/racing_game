@@ -285,6 +285,12 @@ public:
     std::shared_ptr<const g2m::RoadGeomTile> cached_road_geometry_at(double easting,double northing);
     std::shared_ptr<const g2m::RoadGeomTile> road_geometry_at(double easting, double northing);
 
+    // Blocking fetch + decode of one g2m.roads.graph tile (level 2, 1024 m; the OSM road topology with
+    // way ids, node ids and ALL tags - no profile fitting, no DEM), cached. A key outside the release's
+    // coverage yields an empty tile (like road_surface_patch); a fetch/decode failure yields nullptr and
+    // is not cached. Used by the route generator (tools/rg_route_gen) and the route planner tests.
+    std::shared_ptr<const g2m::RoadGraphTile> road_graph_tile(const g2m::TileKey& key);
+
     // Builds every LOD-selected chunk around (cam_x, cam_y) (session-local
     // metres) using this WorldTerrain's own store/server and
     // lod_params() - see build_static_view_from_lookup's doc comment above
@@ -382,6 +388,8 @@ private:
     std::shared_ptr<const RoadSurfacePatch> road_surface_patch(const g2m::TileKey& key);
     std::mutex decks_mutex_;
     std::map<std::tuple<std::int64_t,int,int>,std::shared_ptr<const RoadDeck>> published_decks_;
+    std::mutex graph_mutex_;
+    std::map<g2m::TileKey, std::shared_ptr<const g2m::RoadGraphTile>> graph_cache_;
     std::mutex geometry_mutex_;
     std::map<g2m::TileKey,std::shared_ptr<const g2m::RoadGeomTile>> road_geometry_cache_;
     std::map<g2m::TileKey, std::shared_ptr<const RoadSurfacePatch>> geometry_cache_;

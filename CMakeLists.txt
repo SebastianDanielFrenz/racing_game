@@ -224,6 +224,7 @@ add_subdirectory(core)
 add_subdirectory(tools/hash_check)
 add_subdirectory(tools/lod_measure)
 add_subdirectory(tools/route_check)
+add_subdirectory(tools/rg_route_gen)
 add_subdirectory(tools/prefetch_probe)
 
 if(RG_BUILD_GODOT_EXTENSION)
