@@ -628,11 +628,10 @@ func _fill_stats() -> void:
 	if not bool(st.get("ok", false)):
 		_stats_box.add_child(_label("stats unavailable: " + str(st.get("error", "")), 13, HORIZONTAL_ALIGNMENT_LEFT))
 		return
-	var declared := "  (as documented)" if bool(st["figures_declared"]) else ""
 	var kw := float(st["peak_power_kw"])
-	_stat_bar("Power", "%.0f kW  (%.0f hp) at %.0f rpm%s" % [kw, kw * 1.34102, float(st["peak_power_rpm"]), declared], kw / best_kw)
+	_stat_bar("Power", "%.0f kW at %.0f rpm" % [kw, float(st["peak_power_rpm"])], kw / best_kw)
 	var nm := float(st["peak_torque_nm"])
-	_stat_bar("Torque", "%.0f N*m at %.0f rpm%s" % [nm, float(st["peak_torque_rpm"]), declared], nm / best_nm)
+	_stat_bar("Torque", "%.0f N*m at %.0f rpm" % [nm, float(st["peak_torque_rpm"])], nm / best_nm)
 	_stat_line("Mass", "%.0f kg" % float(st["mass_kg"]))
 	_stat_line("Drive", "%s  (%d of %d wheels driven)" % [str(st["layout"]), int(st["driven_wheels"]), int(st["wheel_count"])])
 	_stat_line("Gearbox", "%d-speed" % int(st["gear_count"]))
