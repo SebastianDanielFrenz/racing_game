@@ -430,10 +430,13 @@ acceptance remain outstanding; R3 is not complete.
 - **R5 status (2026-10-05, Sonnet 5.5): shell done in the scope below; deferred items listed.** Done: boot splash with attribution, main menu (Free roam | Settings | Credits | Quit), spawn picker (versioned presets in `data/world/spawn_presets.json`, last position, address search, flat world), loading screen with the real init/streaming numbers and the attribution line, pause menu (Resume | Reset car | Settings | Main menu), settings that really apply (window mode, vsync, max fps, field of view, three volumes, map store dir), credits from `data/credits.json`, six cameras (chase, bumper, cockpit, orbit, cinematic, free; B cycles the drive views, Tab/V unchanged), clean world teardown so Free roam repeats in one process, `tools/run.ps1` opens the shell by default (`-Drive` / `-Flat` skip it). Tests: core unit tests per new header, `tools/smoke_test.ps1 -Shell` (headless UI flow) and `-Cameras` (PHYS-008, every ordered pair of views, with and without a floating-origin rebase), both in `tools/ci.ps1`. **Deferred:** pick-on-map in the spawn picker (needs R4's map), Garage / Events / Map & route entries (R6, R4), boot-time map-server contact and the map server / cache / pin-region settings (no map server yet), input rebinding (read-only controls view only), resolution scale / FSR, gamepad pause button, drone and walker rigs in the camera-switch matrix. Details: CLAUDE.md "Shell (R5)".
 
 **R6: vehicle select and configurator.** Model: Sonnet. Prerequisite: [R5 or the catalog interim].
+- Scope: section 11.6 plus the shell entries R5 deferred (main menu Garage, pause "Garage (respawn)").
+- **Garage set (owner 2026-10-04: "We need a garage set for the configurator. You may inspire yourself on Forza Horizon 6 there.")**: vehicle select and configurator happen in a dedicated 3D garage/showroom scene, not over the driving world - the car on a turntable, studio/garage lighting with reflections, camera moves between overview and the area being edited. Forza Horizon is inspiration for mood and flow only: no copied assets, logos, trademarks or UI. Built inside racing_game (procedural/primitive geometry and own materials; physics_sim `tools/assetgen` and `data/models` belong to another session).
 - Acceptance:
   - every whitelisted change round-trips through `load_vehicle_json`;
   - an out-of-range or invalid overlay is rejected with the loader message;
-  - the setup persists.
+  - the setup persists;
+  - the garage set loads from the main menu and from the pause menu, and returning to the world (or the main menu) leaves no garage nodes behind.
 
 **G5 + R7: land cover, buildings, water, vegetation, building collision.** Model: Sonnet (Opus for building-collision streaming). Prerequisite: [R2].
 - Acceptance:
