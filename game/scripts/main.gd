@@ -152,6 +152,9 @@ func _rg_data_path(relative: String) -> String:
 	return (project_root.path_join("../data").path_join(relative)).simplify_path()
 
 func _ready() -> void:
+	# Window close is handled in _notification: the audio players are stopped and the
+	# audio thread given time to release their generator playbacks before quitting.
+	get_tree().set_auto_accept_quit(false)
 	var user_args := OS.get_cmdline_user_args()
 	if "--bindings-test" in user_args:
 		_run_bindings_test()
@@ -633,6 +636,9 @@ var _vehicle_audio: Node3D
 # Frees everything that belongs to the running world and reads its Session (road
 # and building streams, the vehicle audio, the terrain view): a world switch and
 # the way back to the main menu both start with this.
+const AUDIO_SETTLE_S := 0.1
+var _quitting := false
+
 func _release_world_nodes() -> void:
 	if _roads != null:
 		_roads.shutdown()
@@ -836,10 +842,14 @@ func _report_tick_spikes() -> void:
 # greps it.
 func _notification(what: int) -> void:
 	if what == NOTIFICATION_WM_CLOSE_REQUEST:
+		if _quitting:
+			return
+		_quitting = true
 		if world_kind == "real_world" and world_state == "running":
 			_save_drive_location()
 		if _shell != null:
 			_shell.save_settings()
+		await _shutdown_audio_and_quit()
 
 func _save_drive_location() -> void:
 	var p := chassis_session_position()
@@ -1204,6 +1214,19 @@ func _toggle_pause() -> void:
 
 func _quit_game() -> void:
 	_unload_world()
+	await _shutdown_audio_and_quit()
+
+# Stops every AudioStreamPlayer3D generator playback (vehicle_audio.gd) and waits
+# ~0.1 s for Godot's audio thread to release them before the process quits -
+# quitting straight away leaks the AudioStreamGeneratorPlayback objects
+# ("ObjectDB instances were leaked at exit", physics_sim 804137e). A `--quit-after`
+# exit never reaches here: vehicle_audio.gd's _exit_tree does the same wait.
+func _shutdown_audio_and_quit() -> void:
+	if _vehicle_audio != null:
+		_vehicle_audio.shutdown()
+		_vehicle_audio.queue_free()
+		_vehicle_audio = null
+	await get_tree().create_timer(AUDIO_SETTLE_S, true, false, true).timeout
 	get_tree().quit()
 
 func _typing() -> bool:

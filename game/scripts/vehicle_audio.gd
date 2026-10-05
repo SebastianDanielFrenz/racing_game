@@ -238,4 +238,10 @@ func shutdown() -> void:
 	engine_spatial = null
 
 func _exit_tree() -> void:
+	# Reached with players still alive only when the tree is torn down without going
+	# through main.gd (`--quit-after`): stop them and give the audio thread ~0.1 s to
+	# release the generator playbacks, or Godot reports them leaked at exit.
+	var had_players := not _shutdown and not (fallback_players.is_empty() and engine_players.is_empty())
 	shutdown()
+	if had_players:
+		OS.delay_msec(100)
