@@ -21,6 +21,7 @@ racing_game/
     include/rg/
       session.h                       rg::Session, SessionConfig (optional `terrain`, optional `startup`), FrameSnapshot, WheelSnapshot, StreamingStatus, kControlChannelNames[]/kControlChannelCount; R9: StartupProgress/SessionCancelled, set_vehicle_control, request_relocate/request_reset_to_spawn, make_session(); R9b: set_followed_vehicle/followed_vehicle/followed_loss (drone-follow second physics interest point), kNpcTruckVehicleId, StreamingStatus followed_id/followed_lost/followed_lost_id/interest_points - see "Session terrain mode (R4)" and "Player modes and world switch (R9)" below
       player_mode.h                   rg::PlayerMode/ModeRules/rules_for(mode, drone_target)/PlayerModeMachine (incl. set_drone_target)/DroneCandidate/next_drone_target/unattended_controls (R9/R9b, engine-neutral mode state machine) - see "Player modes and world switch (R9)" below
+      walker.h                        (R9c, engine-neutral, no Jolt/Godot type) rg::WalkerController (kinematic capsule body in the ps::World, own collision with collide_shape_into/ray_cast: walk 1.4 / run 5 m/s, gravity, jump, 15 cm step-up, 45 deg slope limit, snap-down 0.3 m, hold when no ground is loaded), WalkerConfig/WalkerInput/WalkerState, OrientedRect + vehicle_footprint() (the own car's wheel/chassis footprint the walker is blocked by - the thin physical chassis box is ignored), within_enter_range(), select_spawn_spot() (driver side, passenger side, rear, front, above the roof) - see "On foot (R9c)" below
       terrain_mode.h                  rg::TerrainModeConfig (SessionConfig::terrain), rg::HeightTileSharedFetch (g2m::phys::IHeightTileFetch over a HeightTileFetchFn - WorldTerrain::height_tile_shared), make_terrain_mode(WorldConfig, WorldTerrain) + a pure (WorldConfig, SessionFrame, fetch) overload
       drive_script.h                  rg::DriveScript (header-only, Godot-free): tick-indexed sample-and-hold control events in DRIVE ticks (since spawn) plus an optional per-tick controller hook (the R5 autopilot's extension point); Session::set_drive_script
       fixed_rate_loop.h               rg::FixedRateLoop: fixed-rate wall-clock loop around a bool try_step() (frozen tick resyncs the deadline - no catch-up burst), LoopStats; runs Session::start()'s ticks
@@ -31,6 +32,7 @@ racing_game/
     src/
       session.cpp                     Session implementation - builds a ps::World by hand (flat: ground box + chassis + one vehicle; terrain: streamed G2mTerrainSource + chassis + one vehicle), never parses a scenario JSON; the terrain gate, start-up, priming, spawn rays, StreamingStatus atomics, relocation, make_session
       player_mode.cpp                 player_mode.h implementation
+      walker.cpp                      walker.h implementation (uses ps::math::sincos/atan2 only)
       terrain_mode.cpp                terrain_mode.h implementation
       fixed_rate_loop.cpp             FixedRateLoop implementation
       world_config.cpp                load_world_config() implementation - strict, exception-free JSON validation (see "World config" below)
@@ -56,6 +58,7 @@ racing_game/
       terrain_stream_test.gd          `--terrain-preview --stream-test` (R8 headless check): after the initial upload, moves the LOD focus through 5 fixed steps from spawn, waits for each streamed diff to be fully applied, prints one line per step + `terrain stream test done: ...`, quits (180 s wall-clock timeout)
       camera_director.gd              (R9) owns the camera rigs; floating-origin rebase by the ACTIVE rig only (moves rig ROOTS), set_render_origin in the same frame, update_focus from the active camera (priority -1000)
       chase_rig.gd                    (R9) Drive rig: root + Camera3D, lagged chase of the chassis, look-around from the camera input group; replaces R0's chase_cam.gd. side_offset_m (carvis, 2026-09-27, default 0.0 - no behaviour change for any normal chase view): adds a lateral offset (chassis basis.y, ISO left) to the "behind" position, still looking at the centreline - a directly-behind camera can never show a front wheel (the body occludes it face-on); drive_tour.gd's steering_close shot is the only caller that sets it nonzero, for a 3/4-rear angle
+      walker_rig.gd                   (R9c) OnFoot rig (`walker`): root + Camera3D, third person (orbit, wheel/PgUp/PgDn zoom, terrain clearance) or first person (Tab); owns the look yaw/pitch, `get_look_forward()` is what main.gd forwards with the walking input; reads RgSimulation.get_walker_state(). walker_visual.gd: placeholder capsule + facing nose (data/models untouched)
       free_rig.gd                     (R9) FreeCam rig: root (position, yaw) + Camera3D (pitch), driven only by the camera input group; place(pos, yaw, pitch)
       body_visuals.gd                 (R9; carvis) ChassisRoot (Node3D, transform = get_body_transform("chassis") every frame, priority 0) carries two children: ChassisBox (the red placeholder, CHASSIS_HALF_EXTENTS, unswapped) and VehicleVisual (vehicle_visual.gd, the real car_sedan.glb); the box is hidden once the model reports loaded, shown as fallback otherwise (vehicle_model_ok(), read by hud.gd). Also the flat world's ground box - its BoxMesh size/local position are authored in ISO order (x fwd, y left, z up, matching CHASSIS_HALF_EXTENTS), NOT native Godot order (bug found/fixed 2026-09-27: `_ground_anchor.transform` is `get_body_transform("ground")`'s ISO->Godot basis - an ISO-native mesh authored Y-up instead rendered as a ~2000-unit vertical wall, invisible edge-on from most angles and a "green plane sideways through the middle of the car" from others). on_session_ready() (called by main.gd right after a Session starts/re-starts) rebuilds VehicleVisual's wheel bindings for the new Session. get_wheel_visual_steer_angle_rad(i) (carvis steering-proof fix, 2026-09-27) forwards to VehicleVisual's own accessor of the same name
       vehicle_visual.gd               (carvis, 2026-09-26) near-copy port of physics_sim's adapters/godot/demo/scripts/vehicle_visual.gd (read-only reference): loads external/physics_sim/data/models/car_sedan/car_sedan.glb at runtime via GLTFDocument (data/models is owned by another session - read, never copied into this repo), binds susp_*/steer_*/wheel_* nodes by name from car_sedan.rig.json, aligns the model to the physics wheel attachment points, and drives suspension travel/steer angle/spin angle from RgSimulation's per-wheel accessors every frame - no client-side spin integration (unlike the reference) since rg::vehicle::WheelState already carries an integrated spin_angle. Keyed by a model-name string (vehicle_name) so a future car_hyper reuses it. rebuild() re-binds wheel nodes without reloading the .glb - called by body_visuals.gd's on_session_ready() after a runtime world switch (R7/R9) rebuilds the Session; `_process()` also retries `_bind_wheel_nodes()` on its own while `_wheel_nodes` is still empty (bug found/fixed 2026-09-27: the flat world's `on_session_ready()` call lands the same frame as `Session::start()`, before the sim thread's first tick has created the vehicle, so `get_vehicle_wheel_count()` read 0 at that instant and the binding silently stayed empty forever - poses.txt's `wheel_steer_visual_rad` stuck at 0.0 every frame was the symptom; the real world's own step-count-gated `on_session_ready()` call was already correct). get_wheel_visual_steer_angle_rad(wheel_index) (carvis steering-proof fix, 2026-09-27) reads back the steer_<corner> node's own last-applied local Y rotation (0.0 if unsteered/missing) - read by drive_tour.gd for poses.txt so a sign/axis mismatch between the physics steer angle and what actually got applied to the visual shows up as two numbers, not just a screenshot
@@ -88,7 +91,9 @@ racing_game/
       catch_main.cpp                  custom Catch2 v3 entry point (installs headless CRT handlers via physics_sim's always-built ps_headless_env)
       test_session.cpp                rg::Session tests: step stability, control-channel round-trip, snapshot/wheel-state sanity
       test_player_mode.cpp            rg::PlayerModeMachine/rules_for/unattended_controls (R9), Session::set_vehicle_control on a flat Session, reset to spawn
-      test_session_terrain.cpp        rg::Session terrain mode (R4, tag [session_terrain]); R9 adds StartupProgress/cancel incl. make_session, relocation with a forced freeze, and a hidden `[.][realdata]` real-store cancel-at-several-points case; on a synthetic in-memory IHeightTileFetch (sine hills in 1/256 m, a NoData patch, 404 outside +-3 km, a switchable 503 storm): spawn ride height vs flat mode, 30 s scripted drive (0 falls/fill misses, state_hash identical at 1 vs 4 workers, fetch delay 0 vs 20 ms, and with a forced mid-drive freeze on Failed (503) keys lifted by retry_failed_tiles), spawn over NoData throws, coverage edge never freezes, 503 storm freezes the real-time loop with no step and resumes without a burst
+      test_walker.cpp                 (R9c, tags [on_foot], [determinism]) walker helpers (rect/footprint/enter range/spawn-spot order) and WalkerController on a plain ps::World: walk/run/diagonal, fall/land/jump, 12 cm kerb stepped / 25 cm blocked, wall stop + slide, 30 deg ramp climbed / 60 deg refused, footprint block, no-ground hold, ledge fall, 1 vs 4 workers state_hash
+      test_session_walker.cpp         (R9c, tag [on_foot]) Session walker: spawn beside the driver door / passenger-side / roof fallback, the car blocks the walker and is undisturbed, get-in range + counters, despawn, input/run/jump, 1 vs 4 workers hash, relocation, real-time loop snapshot
+      test_session_terrain.cpp        rg::Session terrain mode (R4, tag [session_terrain]); R9c adds the on-foot streaming cases (walker = point 0, parked car = point 1, never below terrain; worker-count determinism); R9 adds StartupProgress/cancel incl. make_session, relocation with a forced freeze, and a hidden `[.][realdata]` real-store cancel-at-several-points case; on a synthetic in-memory IHeightTileFetch (sine hills in 1/256 m, a NoData patch, 404 outside +-3 km, a switchable 503 storm): spawn ride height vs flat mode, 30 s scripted drive (0 falls/fill misses, state_hash identical at 1 vs 4 workers, fetch delay 0 vs 20 ms, and with a forced mid-drive freeze on Failed (503) keys lifted by retry_failed_tiles), spawn over NoData throws, coverage edge never freezes, 503 storm freezes the real-time loop with no step and resumes without a burst
       test_terrain_mode.cpp           rg/terrain_mode.h (R4, tag [terrain_mode]): physics heights (HeightTileSharedFetch -> ResidentHeightSet -> G2mTerrainSource::fill_tile) == render heights (same cache -> build_render_chunks L0 meshes) == (raw + height_offset)/256 for containers with non-zero offsets, one decode per tile; racing_game's container decode == geo2map's TransportHeightTileFetch; status pass-through; make_terrain_mode conversion
       test_fixed_rate_loop.cpp        rg::FixedRateLoop tests: no catch-up burst after a freeze, prompt stop(), stats
       test_terrain_view_streamer.cpp  rg::TerrainViewStreamer tests (R8) over a synthetic, optionally gated tile store: exact key diff, hole-free adds-then-removals at every step (plus a wrong-order negative control), no work while stationary, 1-vs-8 build-thread identical diffs, coalescing while busy, cancel+join on destruction
@@ -653,10 +658,14 @@ rigs, the input mapping and the HUD.
 | `drone_follow`, own car (default) | yes | player | live | live | `drone` |
 | `drone_follow`, NPC target | yes | unattended | - | live | `drone` |
 | `cockpit` | reserved | - | - | - | `seat` |
-| `on_foot` | no (R9c) | - | - | - | `walker` |
+| `on_foot` (R9c) | yes | unattended | - (walking inputs live) | live (look) | `walker` |
 
 - `request_mode` refuses an unimplemented mode; `cycle_mode` skips them.
-  Cycle order: drive -> free_cam -> drone_follow -> drive.
+  Cycle order: drive -> free_cam -> drone_follow -> on_foot -> drive. Getting
+  out is gated on the car speed (`kGetOutMaxSpeedMps` 2.0): the speed-aware
+  `request_mode(mode, speed)` answers `Result::Refused` (counted in
+  `get_out_refusals()`), `cycle_mode(speed)` skips on_foot; the binding passes
+  the chassis speed.
 - Drone follow (R9b): the camera trails a TARGET vehicle from above/behind
   (`drone_rig.gd`, pure display). `PlayerModeMachine::set_drone_target(id)`
   holds the target (empty = the player's own car, the default on entering the
@@ -678,6 +687,7 @@ rigs, the input mapping and the HUD.
   `Session::kNpcTruckVehicleId` = 1<<62: traffic ids count up from 1 so they
   can never reach it, and it stays a positive int64 for Godot. VR keeps its
   `xr_free` rig for the drone view (no XR drone rig yet).
+- On foot (R9c): see "On foot (R9c)" below.
 - World switch: `begin_world_load(kind)` -> Loading (supersedes a load in
   flight) -> `finish_world_load(serial, ok)` -> Ready/Failed. The mode is
   kept across a switch; while the world is not Ready, `effective_rules()`
@@ -708,7 +718,10 @@ Keys (`input_map.gd`; the HUD shows a one-line summary):
 
 | action | keyboard | gamepad |
 |---|---|---|
-| cycle mode (drive / free cam / drone follow) | V | Back |
+| cycle mode (drive / free cam / drone follow / on foot) | V | Back |
+| get out of the car (below 2 m/s) / get into it at the door | G | X (get in only: X is shift-down while driving) |
+| on foot: move / run / jump | WASD / Shift / Space | left stick / L3 / A |
+| on foot: first / third person | Tab | right-stick click |
 | drone follow: next target (own car -> NPC vehicles) | N | D-pad right |
 | drone follow: zoom | mouse wheel, PageUp / PageDown | - |
 | switch world (flat / real; also cancels a load) | F8 | - |
@@ -720,6 +733,69 @@ Keys (`input_map.gd`; the HUD shows a one-line summary):
 | auto-shift toggle (starts on) | F5 | D-pad left |
 | free cam: move / up / down / fast | WASD / E, Space / Q, Ctrl / Shift | left stick / RB, RT / LB, LT / L3 |
 | look (both rigs) | arrows; right mouse button captures the mouse, Esc releases | right stick |
+
+## On foot (R9c)
+
+The player walks beside the parked car, then gets back in. Engine-neutral
+logic in `rg_core`; GDScript only reads state and forwards input.
+
+- `rg/walker.h`/`walker.cpp`: `WalkerController` owns ONE kinematic Jolt
+  capsule (radius 0.3, height 1.75, moved like the NPC traffic bodies:
+  `set_motion((target - pos)/dt)`, so the body pose after `World::step` equals
+  the controller's state and it is hashed through pose + velocity). Collision is
+  the controller's own: `collide_shape_into` for walls/ceilings, `ray_cast`/
+  `ray_cast_excluding` for ground (never `shape_cast`, which cannot exclude the
+  walker's own body). Ground move = raise by the step height, move, resolve
+  walls (contacts at or below the step height are not walls), drop ray; a rise
+  over 15 cm or a slope over 45 deg is refused and slid along. A drop deeper
+  than 0.3 m goes airborne. No ground at all (terrain tile not loaded):
+  `hold` keeps the height instead of falling into the void.
+- The own car's physical chassis box is thin (wheel casts need it), so it is
+  IGNORED by the walker; instead `vehicle_footprint()` builds an oriented
+  rectangle from the wheel attachments + chassis half extents (+5 cm margin,
+  z prism chassis -1.0..+0.85 m) that blocks the walker and defines the get-in
+  range (<= 1.5 m from the outline, |dz| <= 2.5 m). NPC cars and the truck are
+  kinematic boxes and block through overlap queries. NPC TAKEOVER IS NOT
+  SUPPORTED: traffic actors have no drivetrain, so getting in only ever means
+  the own car.
+- `Session` (session.h "walker" block): requests are atomics processed in
+  `step_once` AFTER the terrain gate and any relocation (`process_walker_request`,
+  1 spawn, 2 enter, 3 despawn), so a spawn only happens with the car's terrain
+  resident; answers are counters (`walker_counters()`: spawned, entered,
+  enter_refused, despawned, spawn_failed) the binding polls. Input:
+  `set_walker_input` (mutex) + `request_walker_jump` (atomic counter); a
+  synchronous `step()` applies it too. `update_walker()` runs in the vehicle
+  block of `step_once` and refreshes the car footprint each tick.
+  `spawn_walker`: `select_spawn_spot` tries the driver side (+local y, door at
+  x 0.3, offsets 0/0.7/1.4 m), the passenger side, rear, front, then above the
+  roof, facing away from the car.
+- Interest points: the walker is point 0 (`kPlayerInterestId`), the parked car
+  (or the relocation target) point 1 (`kParkedCarInterestId` = `kFollowedInterestId`);
+  a followed vehicle is ignored while a walker is active. The TileManager pool
+  was already sized for two points. NPC traffic spawns/despawns/wakes relative
+  to `traffic_anchor()` (the walker while on foot) and the truck's 200 m rule
+  uses the nearer of car and walker.
+- Binding (`rg_simulation.cpp`): `apply_mode_to_session()` sends a spawn/despawn
+  request only when "mode == OnFoot" changes (`walker_wanted_`, reset per
+  Session, so a world switch re-spawns the walker in the new Session);
+  `poll_walker()` (from `get_mode_state()`) turns `entered`/`spawn_failed` into
+  `request_mode(Drive)`; `set_walker_input(move_right, move_forward,
+  look_forward (Godot), run)`, `request_walker_jump()`, `request_walker_enter()`
+  (only while on foot), `get_walker_state()` ({} without a walker; position/
+  velocity/facing in the Godot frame, origin-relative, grounded, hold, blocked,
+  can_enter, enter_distance_m, car_position); `get_mode_state()` adds
+  `walking_inputs_live`, `get_out_refusals`, `walker_enter_refused`;
+  `set_player_mode` answers `"refused"`.
+- GDScript: `walker_rig.gd`/`walker_visual.gd` (above); `input_map.gd` walking
+  group (`get_walk_move/get_walk_run`, edge counts `consume_jump_count`,
+  `consume_interact_count`, `consume_get_out_key_count`); `main.gd`
+  `_forward_walking`, `_notify_mode_events` (HUD messages for a refused get-out
+  / get-in), `scripted_walk` (drive_smoke), the G / Space handling in
+  `_process`; `hud.gd` `show_message`, the bottom prompt ("G / X: get into the
+  car") and the on-foot line. VR has no walker rig (`xr_free` is kept).
+- Tests: `[on_foot]` (see the layout entries above) and `tools/smoke_test.ps1
+  -Drive` (drive_smoke.gd: get-out refused at speed, spawn, run away, get-in
+  refused out of range, run back, get in, drive).
 
 ## Vehicle visual (carvis, 2026-09-26)
 
