@@ -392,6 +392,22 @@ boundaries stay fixed. G3-D/E carving, junction surfaces,
 ribbons, markings and bridge bodies, and G3-F/R3 route acceptance remain open.
 Physics fixture fix bd41ac4 is integrated.
 
+G3 status (2026-10-05, supersedes the open list above): the owner restarted G3/R3
+("Start work on G3/R3") and it continues from geo2map street fidelity
+(geo2map docs/street_fidelity/plan.md). Done in geo2map: P1 lane-aware
+cross-sections, roads.geom encoding 6, carve footprint/lane API, carved traffic
+calming (vault G2M-016); P2 = G3-D design (p2_junction_design.md) and slices 1-7 -
+rules, the canonical road height, junction rings/trims/clusters, junction heights
+and raised tables, profile completion tier (relaxed fits served flagged
+"completed", owner 2026-10-05), crossings/stop lines/signal posts (vault G2M-017).
+Owner decisions: endpoint heights win over class grade (over-steep = grade
+exception, never clamped); carving moves to the server with G3-D and the game then
+deletes its own carve step with no fallback; no zero-gap gate for that switch.
+Open: P2 slice 8 (roads.geom encoding 7) in progress, slices 9-12 (g2m.terrain.carved,
+terrain.class, wiring, census), G3-C profile acceptance, the racing_game carve
+switch, G3-E ribbons from roads.geom + P3 markings + bridge bodies, G3-F/R3 route
+acceptance.
+
 OSM dashboard extension: directional explicit speed limits are carried on
 resident road metadata and exposed in car snapshots and Godot. Numeric,
 unrestricted and unknown values remain distinct; conditional values are marked.
