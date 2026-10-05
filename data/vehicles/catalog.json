@@ -1,0 +1,57 @@
+{
+  "format": "rg.vehicle_catalog/1",
+  "source": "R6 (PLAN.md 11.6). v1 lists the cars that drive today and have a model: the game's own car_sedan (3.0 L), physics_sim's car_hyper and the 2.0 L sedan layouts car_sedan_rwd / car_sedan_awd. Not listed: car_sedan_787b (a rotary race car whose shuffle-mode driveline is a test vehicle, not a road car), the pipes/gen/sim/fuel/x3 variants (engine experiments that share the sedan model), tractor (no road use) - they can be added as plain entries. Paths are relative to the repository root. Chassis mass, box and spawn height are the interim copy of what physics_sim's vehicle files do not carry yet (physics request R5/R6): they equal what rg::Session and the Godot adapter used before the catalog existed.",
+  "default": "car_hyper",
+  "vehicles": [
+    {
+      "id": "car_hyper",
+      "title": "Hyper One",
+      "subtitle": "Twin-turbo V8 hypercar",
+      "description": "Mid-engined, rear-wheel-drive hypercar with a Torsen differential, a seven-speed manual and aero. The reference car of the game.",
+      "vehicle": "external/physics_sim/data/vehicles/car_hyper.json",
+      "model": "external/physics_sim/data/models/car_hyper/car_hyper.glb",
+      "engine_bay": "mid",
+      "chassis": { "mass_kg": 1500.0, "half_extents": [2.0, 0.4, 0.12], "spawn_z_m": 0.5,
+                   "source": "rg::Session defaults (mass) plus the adapter's car_hyper chassis proxy and ride height (godot_ext configure_vehicle_chassis) before R6" },
+      "declared_engine": { "peak_torque_nm": 1371.0, "peak_torque_rpm": 6000.0, "peak_power_kw": 1000.2, "peak_power_rpm": 7500.0,
+                           "source": "data/engines/hyper_v8_one1_audio.json is a simulated engine (no torque curve); these are the calibrated net figures its source text and physics_sim data/engines/HYPER_ONE1.md cite" },
+      "visual": { "paint": "#9aa0ac", "rim": "#2b2d31" }
+    },
+    {
+      "id": "car_sedan",
+      "title": "Sedan 3.0",
+      "subtitle": "Front-wheel-drive saloon",
+      "description": "The game's own sedan: a 3.0 litre naturally aspirated six with a six-speed manual, front-wheel drive.",
+      "vehicle": "data/vehicles/car_sedan.json",
+      "model": "external/physics_sim/data/models/car_sedan/car_sedan.glb",
+      "engine_bay": "front",
+      "chassis": { "mass_kg": 1500.0, "half_extents": [2.0, 0.4, 0.15], "spawn_z_m": 0.6,
+                   "source": "rg::Session defaults before R6 (the SessionConfig mass/box/height)" },
+      "visual": { "paint": "#7a8a99", "rim": "#c4c8cf" }
+    },
+    {
+      "id": "car_sedan_rwd",
+      "title": "Sedan 2.0 RWD",
+      "subtitle": "Rear-wheel-drive saloon",
+      "description": "The 2.0 litre sedan with a rear-wheel-drive layout and an even weight split.",
+      "vehicle": "external/physics_sim/data/vehicles/car_sedan_rwd.json",
+      "model": "external/physics_sim/data/models/car_sedan/car_sedan.glb",
+      "engine_bay": "front",
+      "chassis": { "mass_kg": 1500.0, "half_extents": [2.0, 0.4, 0.15], "spawn_z_m": 0.6,
+                   "source": "rg::Session defaults before R6" },
+      "visual": { "paint": "#a8473f", "rim": "#c4c8cf" }
+    },
+    {
+      "id": "car_sedan_awd",
+      "title": "Sedan 2.0 AWD",
+      "subtitle": "All-wheel-drive saloon",
+      "description": "The 2.0 litre sedan with an open centre differential driving all four wheels.",
+      "vehicle": "external/physics_sim/data/vehicles/car_sedan_awd.json",
+      "model": "external/physics_sim/data/models/car_sedan/car_sedan.glb",
+      "engine_bay": "front",
+      "chassis": { "mass_kg": 1500.0, "half_extents": [2.0, 0.4, 0.15], "spawn_z_m": 0.6,
+                   "source": "rg::Session defaults before R6" },
+      "visual": { "paint": "#3f6b8f", "rim": "#c4c8cf" }
+    }
+  ]
+}

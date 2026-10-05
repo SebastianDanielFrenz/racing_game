@@ -39,6 +39,8 @@ add_executable(rg_unit_tests
   test_settings.cpp
   test_spawn_presets.cpp
   test_shell_flow.cpp
+  test_vehicle_catalog.cpp
+  test_vehicle_setup.cpp
   test_road_ahead.cpp
   test_camera_math.cpp
   test_render_pose.cpp
