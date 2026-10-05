@@ -242,14 +242,18 @@ geo2map to keep optional RoadSegment metadata in the class-mode
 | **world_config tables, names resolved against the game surfaces.json (recommended)** | Data, not code. The owner tunes grip in the same file as grass. Engine-neutral. | Two tables to keep complete |
 | Hard-coded switch in Session | Simple | Grip tuning needs a rebuild. Not data-driven. |
 
-**SurfaceKind grip values.** Interim mapping until the owner decides
-(question O-2):
+**SurfaceKind grip values (owner O-2: own surfaces).** Every SurfaceKind has
+its own entry in the world_config `physics.surface_kinds` table; there is no
+folding onto asphalt or dirt. surfaces.json gains named surfaces for the kinds
+that have none today, each with a cited `lambda_mu`/`crr` that the owner tunes by
+driving (grass precedent, docs/grass_grip.md):
 
 | SurfaceKind | Surface |
 |---|---|
-| Asphalt, Concrete, PavingStones | asphalt |
-| Sett, Cobblestone | asphalt |
-| Gravel, Compacted, Dirt, Sand | dirt |
+| Asphalt | asphalt |
+| Concrete, PavingStones, Sett, Cobblestone | `concrete`, `paving_stones`, `sett`, `cobblestone` (new, cited) |
+| Gravel, Compacted, Sand | `gravel`, `compacted`, `sand` (new, cited) |
+| Dirt | dirt |
 | Grass | grass |
 | Water | grass (not drivable in practice) |
 | Unknown | the land_class mapping |
@@ -409,11 +413,11 @@ The new builder replaces `deck()`/`abutment()`:
 | Option | Pros | Cons |
 |---|---|---|
 | A. Current path: `create_body(MeshShape)` on the stepping thread, clock frozen until the required decks are in | Works at 7d5316f. Deterministic if the required set is defined deterministically. | Jolt's mesh BVH build runs between ticks on the sim thread. Long decks cost real time (to be measured in S11). |
-| **B. Physics_sim R2: thread-safe `create_shape` off-tick + cheap `create_body(handle)` (recommended target)** | BVH build on a worker. Install cost is O(1). | Does not exist at 7d5316f. It needs an owner-approved physics brief (O-1). |
+| **B. Physics_sim R2: thread-safe `create_shape` off-tick + cheap `create_body(handle)` (recommended target)** | BVH build on a worker. Install cost is O(1). | Does not exist at 7d5316f. Requested from physics_sim with owner approval (O-1). |
 | C. Decks as chains of oriented boxes | No BVH, available now | Box joints create steps and gaps on curved or vertically curved decks, which is exactly what the 2 cm acceptance forbids. Active box edges create ghost contacts for the chassis. |
 | D. Decks as extra heightfield bodies | Heightfield spares exist (dd4799b) | A deck sits over terrain. A heightfield cannot represent the slab or overhangs, and it collides with the terrain tile's own heightfield at the abutment. |
 
-Recommendation: A now, B when R2 lands. A is made deterministic and bounded:
+Recommendation: A now, B when R2 lands (the owner agreed, O-1; the coordinator has asked physics_sim for R2, and a later slice after it lands moves the deck build off the sim thread). A is made deterministic and bounded:
 
 - **Required set:** at each tick boundary, the decks whose footprint
   intersects (physics radius + 255 m) around each interest point. This is a
@@ -508,8 +512,7 @@ Each is driven at 10, 20, 30 and 40 m/s, both directions.
   - there is no chassis contact event with terrain or a deck.
 
 So "within the R3 bound" means "no worse than a 2 cm step", which is the G3
-deck/approach tolerance. Question O-3 asks the owner to accept this
-definition.
+deck/approach tolerance. The owner accepted this definition (O-3).
 
 Alternatives considered:
 
@@ -587,7 +590,7 @@ own tests.
 | S13 abutment geometry + contact measurement | after S12 (the approach must be the server-carved one) | S12 |
 | S14 R3 acceptance run | after S13 | S13 |
 | Final markings | geo2map P3 | P3 |
-| Off-tick deck install | physics_sim R2 | owner brief O-1 |
+| Off-tick deck install | physics_sim R2 | R2 requested (O-1 answered yes) |
 
 Slice 12 (census) is informational for S12/S14. It does not block.
 
@@ -789,7 +792,8 @@ message.
 - **Change:** deck builder (5.1) replacing `deck()`/`abutment()`/
   `road_deck_height`; deterministic required set and K-per-boundary install
   (5.2) in `Session::sync_road_decks`. Tunnel-roof inference stays until
-  S12.
+  S12. The install stays between ticks with the clock frozen (O-1: R2 is
+  requested, not landed); moving the deck build to R2 is a later slice.
 - **Tests:**
   - deck top equals `road_surface_height_m` at every station/column to 1 mm;
   - triangle edges ≤ 20 m;
@@ -804,9 +808,16 @@ message.
   - consume carved L0 and class (3.1); delete list 3.2;
   - world_config `physics.surface_kinds`/`physics.land_classes` tables, with
     `physics.road_surfaces` rejected;
+  - owner O-2: the new named surfaces (`concrete`, `paving_stones`, `sett`,
+    `cobblestone`, `gravel`, `compacted`, `sand`) in `data/surfaces/surfaces.json`
+    with cited `lambda_mu`/`crr`, every SurfaceKind pointing at its own entry
+    (no asphalt/dirt folding); the alphabetical SurfaceId renumbering re-records
+    the hashes that pin ids (CLAUDE.md lists them);
   - ClassWindow render colour.
 - **Tests:**
-  - every SurfaceKind and LandClass is mapped (load error otherwise);
+  - every SurfaceKind and LandClass is mapped (load error otherwise), and no
+    SurfaceKind maps to a surface shared with another kind except Water/Unknown
+    (O-2);
   - `test_route_grip` realdata (2103/2103 asphalt, 84/84 grass controls);
   - S5 harness rerun.
 - **Recorded:** `b8_contact_smoke`; B8 dips (3.3); harness deltas vs. the S5
@@ -871,23 +882,30 @@ message.
   `IRigidBackend::create_shape(ShapeDesc) -> ShapeHandle` and
   `create_body(handle)`. Not present at 7d5316f; only heightfield spares
   exist (dd4799b). Needed to move deck BVH builds off the sim thread. Per
-  D16 it is briefed with owner approval (O-1).
+  D16 it is briefed with owner approval (given, O-1; requested 2026-10-05).
 
 ---
 
 ## 10. Owner decisions
 
-- **O-1.** May the coordinator brief physics_sim for R2 (prebuilt static
-  shapes) now, so bridge decks stop building their mesh on the sim thread?
-  Until then decks install between ticks with the clock frozen.
-- **O-2.** Grip for the non-asphalt road surfaces. Is the interim mapping
-  fine:
-  - Concrete, PavingStones, Sett, Cobblestone → asphalt;
-  - Gravel, Compacted, Sand → dirt.
+Answered by the owner 2026-10-05.
 
-  Or do you want separate named surfaces (for example cobblestone and
-  gravel) with cited values that you then tune by driving, as with grass?
-- **O-3.** The R3 route bound. Accept the definition "no wheel load spike
-  worse than a 2 cm step at the same speed"? It is calibrated on synthetic
-  fixtures, plus a hard cap of 3× static corner load and no chassis contact.
-  PLAN.md has no number today.
+- **O-1. Prebuilt shapes: "Yes, ask now".** The coordinator has asked
+  physics_sim for R2. S11 keeps the between-ticks install with the clock
+  frozen (5.2 option A) until R2 lands; a later slice, after R2, moves the deck
+  build to a worker and installs through `create_body(handle)` (5.2 option B).
+- **O-2. Road grip: "Own surfaces".** Concrete, PavingStones, Sett,
+  Cobblestone, Gravel, Compacted and Sand each become a named surface in
+  `data/surfaces/surfaces.json`, with cited grip values (`lambda_mu`, `crr`)
+  that the owner then tunes by driving, as was done for grass. There is no
+  mapping onto asphalt or dirt. **Chosen: part of S12's SurfaceKind ->
+  SurfaceId table (G-3), not its own slice.** Reason: before the switch these
+  kinds do not reach the physics at all (the bridge's road mode only knows
+  paved/unpaved/off_road), and surfaces.json assigns SurfaceIds alphabetically,
+  so adding eight names earlier would renumber every id and move recorded
+  hashes for nothing. S12 already owns the table, its completeness check and the
+  hash re-record.
+- **O-3. R3 route bound: "Accept".** The bound is: no wheel Fz spike worse than
+  a 2 cm step at the same speed (B(v), calibrated in S4 and stored in
+  `data/acceptance/r3_bound.json`), plus a cap of 3x the static corner load, plus
+  no chassis contact with terrain or a deck. Section 6.2 stands as written.
