@@ -70,6 +70,8 @@ add_library(rg_core STATIC
     src/fixed_rate_loop.cpp
     src/terrain_view_streamer.cpp
     src/route_check.cpp
+    src/credits.cpp
+    src/settings.cpp
     "${PS_ADAPTER_SRC_DIR}/frame_convert_core.cpp"
 )
 

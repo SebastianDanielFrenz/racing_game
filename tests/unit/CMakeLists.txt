@@ -35,6 +35,8 @@ add_executable(rg_unit_tests
   test_vehicle_data.cpp
   test_route_grip.cpp
   test_tick_spikes.cpp
+  test_credits.cpp
+  test_settings.cpp
 )
 
 target_link_libraries(rg_unit_tests
