@@ -41,6 +41,9 @@ extends Node3D
 var simulation: Node
 var vehicle_name: String = ""
 var model_absolute_path: String = "" # set by body_visuals.gd before add_child
+# R6 (garage): the setup's paint and rim colours; alpha 0 = keep the model's own materials.
+var paint_colour: Color = Color(0, 0, 0, 0)
+var rim_colour: Color = Color(0, 0, 0, 0)
 
 var _wheel_nodes: Array = []
 var _model_root: Node3D
@@ -115,7 +118,44 @@ func _load_model() -> void:
 	if _wing_lift != null:
 		_wing_rest_position = _wing_lift.position
 	_load_ok = true
+	apply_colours()
 	print("rg_godot vehicle_visual.gd: loaded model ", model_absolute_path)
+
+# Paints the model's `paint` and `rim_*` materials with the setup's colours (visual only,
+# the physics never sees them). Every surface gets its own material copy first so a colour
+# never leaks into another car loaded from the same file.
+func apply_colours() -> void:
+	if _model_root == null or (paint_colour.a == 0.0 and rim_colour.a == 0.0):
+		return
+	var stack: Array = [_model_root]
+	while not stack.is_empty():
+		var n: Node = stack.pop_back()
+		for c in n.get_children():
+			stack.append(c)
+		if not n is MeshInstance3D or (n as MeshInstance3D).mesh == null:
+			continue
+		var mi := n as MeshInstance3D
+		for s in range(mi.mesh.get_surface_count()):
+			var mat: Material = mi.get_active_material(s)
+			if not mat is StandardMaterial3D:
+				continue
+			var role := ""
+			var lname := mat.resource_name.to_lower()
+			if lname.begins_with("paint"):
+				role = "paint"
+			elif lname.begins_with("rim"):
+				role = "rim"
+			if role == "" or (role == "paint" and paint_colour.a == 0.0) or (role == "rim" and rim_colour.a == 0.0):
+				continue
+			var copy := mi.get_surface_override_material(s)
+			if copy == null:
+				copy = mat.duplicate()
+				copy.resource_name = mat.resource_name
+				mi.set_surface_override_material(s, copy)
+			var std := copy as StandardMaterial3D
+			std.vertex_color_use_as_albedo = false
+			std.albedo_texture = null
+			std.albedo_color = paint_colour if role == "paint" else rim_colour
 
 func _bind_wheel_nodes() -> void:
 	if simulation == null or _model_root == null or vehicle_name == "":

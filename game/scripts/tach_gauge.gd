@@ -61,6 +61,11 @@ const COLOR_SPEED_TEXT := Color(0.95, 0.95, 1.0, 1.0)
 const SYSTEM_LAMP_NAMES := ["ABS", "TC", "ESP", "LC", "HILL"]
 const SYSTEM_LAMP_SLOTS_CLOCK_DEG := [250.0, 322.0, 34.0, 106.0, 178.0]
 
+# R6: a different car (garage): the gauge info is read again for it.
+func set_vehicle_name(name_in: String) -> void:
+	vehicle_name = name_in
+	_gauge_info = {}
+
 func _ready() -> void:
 	set_anchors_preset(Control.PRESET_FULL_RECT)
 	mouse_filter = Control.MOUSE_FILTER_IGNORE

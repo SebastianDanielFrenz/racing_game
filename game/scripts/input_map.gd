@@ -96,9 +96,12 @@ func release_mouse() -> void:
 func is_mouse_captured() -> bool:
 	return _mouse_captured
 
-func configure_vehicle(path: String) -> void:
+# `auto_shift_default` (R6): the car's assist default after its saved setup; -1 = decide
+# from the controller block (a manual gearbox starts with auto-shift off).
+func configure_vehicle(path: String, auto_shift_default = null) -> void:
 	# Keep the driver toggle across world/reset reloads of the same car.
-	if path == _configured_vehicle_path:
+	var key := "%s|%s" % [path, str(auto_shift_default)]
+	if key == _configured_vehicle_path:
 		return
 	var vehicle = JSON.parse_string(FileAccess.get_file_as_string(path))
 	if not vehicle is Dictionary:
@@ -108,8 +111,8 @@ func configure_vehicle(path: String) -> void:
 		if controller is Dictionary and str(controller.get("type", "")) == "manual_tcu":
 			manual = true
 			break
-	_auto_shift_on = not manual
-	_configured_vehicle_path = path
+	_auto_shift_on = (not manual) if auto_shift_default == null else bool(auto_shift_default)
+	_configured_vehicle_path = key
 
 func _ready() -> void:
 	_ensure_action("rg_cycle_camera", [KEY_TAB], [JOY_BUTTON_RIGHT_STICK])

@@ -65,7 +65,10 @@ extends Node3D
 # point (also while loading - R9's cancel-then-join returns promptly) releases
 # the terrain view and loads the other world; the player mode is kept.
 
-const VEHICLE_NAME := "car_hyper"
+# The simulation's name of the car being driven (the vehicle file's "name"); set by
+# _apply_vehicle from the garage's drive selection before every world load. "car_hyper"
+# until the first load (the --bindings-test path and the catalog default).
+var VEHICLE_NAME := "car_hyper"
 const WORLD_LABEL := {"flat": "flat test scene", "real_world": "real world"}
 
 # --- unified scene state (read by drive_smoke.gd / drive_tour.gd) ---
@@ -107,6 +110,11 @@ var _spawn_reported: bool = false
 # --- shell (R5) ---
 var _shell: Node # RgShell: flow, settings, credits, spawn presets
 var _shell_ui: CanvasLayer
+# --- garage (R6) ---
+var _garage: Node                 # RgGarage: catalog, setups, edit session, drive hand-over
+var _garage_scene: CanvasLayer    # garage_scene.gd while the garage is open, else null
+var _drive_selection: Dictionary = {} # RgGarage.prepare_drive() of the car being driven
+var _direct_vehicle: String = ""  # direct-start flags drive --vehicle <id> or the catalog default, never the saved choice
 var _teleport_dialog: CanvasLayer
 var _gauge: Control
 var _screen: String = "boot" # mirrors rg::ShellFlow's screen
@@ -433,7 +441,7 @@ func _build_scene(user_args: PackedStringArray) -> void:
 	_visuals.set_script(load("res://scripts/body_visuals.gd"))
 	_visuals.simulation = _simulation
 	_visuals.vehicle_name = VEHICLE_NAME
-	_visuals.model_absolute_path = _data_path("models/%s/%s.glb" % [VEHICLE_NAME, VEHICLE_NAME])
+	_visuals.model_absolute_path = "" # the car comes with the first world load (_apply_vehicle)
 	add_child(_visuals)
 
 	_seat_ui = preload("res://scripts/seat_adjustment.gd").new()
@@ -578,6 +586,26 @@ func _build_scene(user_args: PackedStringArray) -> void:
 		shell_test.set_script(load("res://scripts/shell_flow_test.gd"))
 		shell_test.main = self
 		add_child(shell_test)
+	var garage_shots_index := user_args.find("--garage-shots")
+	if garage_shots_index >= 0 and garage_shots_index + 1 < user_args.size():
+		var garage_shots := Node.new()
+		garage_shots.name = "GarageShots"
+		garage_shots.set_script(load("res://scripts/garage_shots.gd"))
+		garage_shots.main = self
+		garage_shots.out_dir = user_args[garage_shots_index + 1]
+		var vehicle_arg := user_args.find("--garage-shots-vehicle")
+		if vehicle_arg >= 0 and vehicle_arg + 1 < user_args.size():
+			garage_shots.vehicle = user_args[vehicle_arg + 1]
+		var prefix_arg := user_args.find("--garage-shots-prefix")
+		if prefix_arg >= 0 and prefix_arg + 1 < user_args.size():
+			garage_shots.prefix = user_args[prefix_arg + 1]
+		add_child(garage_shots)
+	if "--garage-test" in user_args:
+		var garage_test := Node.new()
+		garage_test.name = "GarageTest"
+		garage_test.set_script(load("res://scripts/garage_test.gd"))
+		garage_test.main = self
+		add_child(garage_test)
 	if "--camera-test" in user_args:
 		var camera_test := Node.new()
 		camera_test.name = "CameraSwitchTest"
@@ -666,9 +694,13 @@ func _load_world(kind: String) -> void:
 	_load_started_ms = Time.get_ticks_msec()
 	_hud.reset_tick_window()
 	_visuals.show_ground = kind == "flat"
-	var vehicle_json: String = _data_path("vehicles/%s.json" % VEHICLE_NAME)
+	var sel: Dictionary = _prepare_vehicle()
+	if not bool(sel.get("ok", false)):
+		_load_failed("vehicle: %s" % str(sel.get("error", "?")))
+		return
+	var vehicle_json: String = str(sel["vehicle_path"])
 	_steering.configure_vehicle(vehicle_json)
-	_input_map.configure_vehicle(vehicle_json)
+	_input_map.configure_vehicle(vehicle_json, bool(sel["assist_auto_shift"]))
 	var surface_table_json: String = ProjectSettings.globalize_path("res://../data/surfaces/surfaces.json")
 	if kind == "flat":
 		_simulation.clear_spawn_override()
@@ -729,8 +761,9 @@ func _post_load_ready() -> void:
 # toggles (ignition starts on; manual cars start with auto-shift off).
 func _apply_start_controls() -> void:
 	_simulation.set_control("ignition", 1.0 if _input_map.get_ignition() else 0.0)
-	_simulation.set_control("assist.auto_clutch", 1.0)
-	_simulation.set_control("assist.auto_blip", 1.0)
+	# the vehicle file's own assist defaults (after the saved setup), read by RgGarage.prepare_drive
+	_simulation.set_control("assist.auto_clutch", 1.0 if bool(_drive_selection.get("assist_auto_clutch", true)) else 0.0)
+	_simulation.set_control("assist.auto_blip", 1.0 if bool(_drive_selection.get("assist_auto_blip", true)) else 0.0)
 	_simulation.set_control("assist.auto_shift", 1.0 if _input_map.get_auto_shift() else 0.0)
 
 func _poll_loading() -> void:
@@ -1098,6 +1131,133 @@ func _input(event: InputEvent) -> void:
 		elif event.keycode == KEY_P and (_screen == "drive" or _screen == "pause") and not _typing():
 			_toggle_pause()
 
+# --- garage (R6) ------------------------------------------------------------------
+
+# The catalog's default car (data/vehicles/catalog.json "default").
+func _default_vehicle_id() -> String:
+	for v in _garage.get_vehicles():
+		if bool(v["default"]):
+			return str(v["id"])
+	var all: Array = _garage.get_vehicles()
+	return str(all[0]["id"]) if not all.is_empty() else "car_hyper"
+
+# Which car the next world load drives: a direct-start flag run the catalog default
+# (or --vehicle), a menu start the player's saved choice.
+func _vehicle_choice() -> String:
+	return _direct_vehicle if _direct_start else str(_garage.get_selected_id())
+
+# Materialises the chosen car's saved setup (RgGarage) and points every consumer of
+# the car at it: simulation chassis/cache overrides, model + colours, HUD/gauge names.
+func _prepare_vehicle() -> Dictionary:
+	var sel: Dictionary = _garage.prepare_drive(_vehicle_choice())
+	if bool(sel.get("ok", false)):
+		_apply_vehicle(sel)
+	return sel
+
+func _apply_vehicle(sel: Dictionary) -> void:
+	_drive_selection = sel
+	VEHICLE_NAME = str(sel["sim_name"])
+	var chassis: Dictionary = sel["chassis"]
+	_simulation.set_vehicle_overrides({
+		"mass_kg": float(chassis["mass_kg"]),
+		"half_extents": chassis["half_extents"],
+		"z_m": float(chassis["z_m"]),
+		"engine_map_cache_dir": str(sel["engine_map_cache_dir"]),
+	})
+	_visuals.set_vehicle(VEHICLE_NAME, str(sel["model_path"]), str(sel["paint"]), str(sel["rim"]))
+	_hud.vehicle_name = VEHICLE_NAME
+	_gauge.set_vehicle_name(VEHICLE_NAME)
+	_seat_ui.vehicle_name = VEHICLE_NAME
+	if str(sel.get("warning", "")) != "":
+		print("RG_GARAGE warning: %s" % sel["warning"])
+	print("RG_GARAGE drive car=%s sim=%s modified=%s path=%s" % [sel["vehicle_id"], VEHICLE_NAME, sel["modified"], sel["vehicle_path"]])
+
+func get_garage() -> Node:
+	return _garage
+
+func get_garage_scene() -> CanvasLayer:
+	return _garage_scene
+
+func get_drive_selection() -> Dictionary:
+	return _drive_selection
+
+func _open_garage() -> void:
+	if _garage_scene != null:
+		return
+	_garage_scene = load("res://scripts/garage_scene.gd").new()
+	_garage_scene.name = "GarageScene"
+	_garage_scene.garage = _garage
+	add_child(_garage_scene)
+
+# Removes the garage scene and every node it created (the acceptance test counts
+# the tree), ends any edit session and removes the scratch files.
+func _close_garage() -> void:
+	_garage.discard()
+	if _garage_scene != null:
+		remove_child(_garage_scene)
+		_garage_scene.queue_free()
+		_garage_scene = null
+
+func _enter_vehicle_select() -> void:
+	_garage.discard() # coming back from the configurator ends the edit session
+	if _garage_scene == null:
+		_open_garage()
+	var id := str(_garage.get_selected_id())
+	_garage_scene.show_vehicle(_garage.get_vehicle(id))
+	_garage_scene.panel_side = "left"
+	_garage_scene.panel_px = 498.0
+	_garage_scene.go_to_area("overview", true)
+
+func _enter_configurator() -> void:
+	var id := str(_shell.get_garage_vehicle())
+	_shell_ui.garage_vehicle = id
+	var begun: Dictionary = _garage.begin_edit(id)
+	if not bool(begun.get("ok", false)):
+		push_error("RG_GARAGE begin_edit failed: %s" % begun.get("error", "?"))
+	if _garage_scene == null:
+		_open_garage()
+	_garage_scene.show_vehicle(_garage.get_vehicle(id))
+	var colours: Dictionary = _garage.get_working_colours()
+	_garage_scene.set_colours(str(colours.get("paint", "")), str(colours.get("rim", "")))
+	_garage_scene.panel_side = "right"
+	_garage_scene.panel_px = 528.0
+	_garage_scene.go_to_area("overview", false)
+
+func _on_vehicle_highlighted(id: String) -> void:
+	if _garage_scene != null:
+		_garage_scene.show_vehicle(_garage.get_vehicle(id))
+		_garage_scene.go_to_area("overview", false)
+
+func _on_vehicle_chosen(id: String) -> void:
+	_garage.select(id)
+	_apply_transition(_shell.vehicle_chosen(id))
+
+func _on_garage_area_chosen(area_id: String) -> void:
+	if _garage_scene != null:
+		_garage_scene.go_to_area(area_id, false)
+
+func _on_garage_option_changed(option_id: String) -> void:
+	if _garage_scene == null:
+		return
+	if option_id == "paint" or option_id == "rim" or option_id == "":
+		var colours: Dictionary = _garage.get_working_colours()
+		_garage_scene.set_colours(str(colours.get("paint", "")), str(colours.get("rim", "")))
+
+func _on_garage_save() -> void:
+	var saved: Dictionary = _garage.save()
+	print("RG_GARAGE save ok=%s %s" % [saved.get("ok", false), saved.get("error", "")])
+	_shell_ui.refresh_configurator()
+
+# Drive: valid unsaved changes are saved first; an invalid working copy cannot be driven.
+func _on_garage_drive() -> void:
+	if _garage.is_dirty():
+		var saved: Dictionary = _garage.save()
+		if not bool(saved.get("ok", false)):
+			_shell_ui.refresh_configurator()
+			return
+	_garage.discard()
+	_apply_transition(_shell.garage_drive())
+
 # --- shell (R5) -------------------------------------------------------------------
 
 func _user_dir() -> String:
@@ -1129,6 +1289,25 @@ func _build_shell(user_args: PackedStringArray) -> void:
 	_shell_ui.back_requested.connect(func(): _apply_transition(_shell.back()))
 	_shell_ui.boot_finished.connect(func(): _apply_transition(_shell.boot_finished()))
 	_shell_ui.setting_changed.connect(_apply_setting)
+	_garage = ClassDB.instantiate("RgGarage")
+	_garage.name = "Garage"
+	add_child(_garage)
+	var garage_report: Dictionary = _garage.initialize(ProjectSettings.globalize_path("res://").path_join("..").simplify_path(), _user_dir(), _user_dir().path_join("garage_work"))
+	if bool(garage_report.get("ok", false)):
+		print("RG_GARAGE ready vehicles=%d selected=%s" % [_garage.get_vehicles().size(), _garage.get_selected_id()])
+	else:
+		push_error("RG_GARAGE initialise failed: %s" % garage_report.get("error", "?"))
+	_direct_vehicle = _default_vehicle_id()
+	var vehicle_flag := user_args.find("--vehicle")
+	if vehicle_flag >= 0 and vehicle_flag + 1 < user_args.size():
+		_direct_vehicle = user_args[vehicle_flag + 1]
+	_shell_ui.garage = _garage
+	_shell_ui.vehicle_highlighted.connect(_on_vehicle_highlighted)
+	_shell_ui.vehicle_chosen.connect(_on_vehicle_chosen)
+	_shell_ui.garage_area_chosen.connect(_on_garage_area_chosen)
+	_shell_ui.garage_option_changed.connect(_on_garage_option_changed)
+	_shell_ui.garage_save_requested.connect(_on_garage_save)
+	_shell_ui.garage_drive_requested.connect(_on_garage_drive)
 	add_child(_shell_ui)
 	_overlay.attribution_line = str(_shell.get_attribution_line())
 	for section in _shell.get_settings_schema():
@@ -1148,7 +1327,11 @@ func _apply_transition(transition: Dictionary) -> void:
 			"show_screen":
 				_show_screen(str(action["screen"]))
 			"load_world":
-				_begin_world_load(action["world"])
+				_begin_world_load(action["world"], bool(action["flag"]))
+			"open_garage":
+				_open_garage()
+			"close_garage":
+				_close_garage()
 			"unload_world":
 				_unload_world()
 			"set_paused":
@@ -1163,6 +1346,10 @@ func _apply_transition(transition: Dictionary) -> void:
 
 func _show_screen(screen_name: String) -> void:
 	_screen = screen_name
+	if screen_name == "vehicle_select":
+		_enter_vehicle_select()
+	elif screen_name == "configurator":
+		_enter_configurator()
 	_shell_ui.show_screen(screen_name)
 	_set_world_ui_visible(screen_name == "drive" or screen_name == "pause")
 	if screen_name != "loading":
@@ -1174,10 +1361,14 @@ func _set_world_ui_visible(visible_now: bool) -> void:
 	_hud.visible = visible_now
 	_gauge.visible = visible_now
 
-func _begin_world_load(world: Dictionary) -> void:
+func _begin_world_load(world: Dictionary, respawn: bool = false) -> void:
 	_world_request = world.duplicate()
 	var kind := str(world.get("kind", "flat"))
-	if kind == "real_world" and bool(world.get("has_spawn", false)):
+	var old_pose: Dictionary = _simulation.get_chassis_session_pose() if respawn and world_state == "running" else {}
+	if respawn and kind == "real_world" and not old_pose.is_empty():
+		# the garage respawn: the new car starts where the old one stood (the flat world has one spawn)
+		_simulation.set_spawn_override(float(old_pose["x"]), float(old_pose["y"]), float(old_pose["yaw_deg"]))
+	elif kind == "real_world" and bool(world.get("has_spawn", false)):
 		_simulation.set_spawn_override(float(world["x"]), float(world["y"]), float(world["yaw_deg"]))
 	else:
 		_simulation.clear_spawn_override()
@@ -1188,6 +1379,7 @@ func _begin_world_load(world: Dictionary) -> void:
 func _unload_world() -> void:
 	_release_world_nodes()
 	_simulation.unload()
+	_garage.cleanup() # the setup materialisation of the car just unloaded (R6)
 	world_kind = ""
 	world_state = "none"
 	ready_sim_time = -1.0
@@ -1234,7 +1426,7 @@ func _typing() -> bool:
 
 func _on_escape() -> void:
 	match _screen:
-		"spawn_picker", "credits", "settings", "loading":
+		"spawn_picker", "credits", "settings", "loading", "vehicle_select", "configurator":
 			_apply_transition(_shell.back())
 		"pause":
 			_apply_transition(_shell.pause_toggle())

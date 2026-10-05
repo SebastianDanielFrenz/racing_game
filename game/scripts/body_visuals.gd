@@ -31,6 +31,8 @@ var show_ground: bool = false
 # future car_hyper reuse only ever changes this one string.
 var vehicle_name: String = ""
 var model_absolute_path: String = ""
+var paint_colour: Color = Color(0, 0, 0, 0) # alpha 0: keep the model's own colours
+var rim_colour: Color = Color(0, 0, 0, 0)
 
 var _chassis_root: Node3D
 var _chassis_box: MeshInstance3D
@@ -86,16 +88,42 @@ func _ready() -> void:
 	_chassis_box.material_override = chassis_mat
 	_chassis_root.add_child(_chassis_box)
 
+	if model_absolute_path != "":
+		_make_vehicle_visual()
+
+	_chassis_root.visible = false
+	_ground_anchor.visible = false
+
+func _make_vehicle_visual() -> void:
 	_vehicle_visual = Node3D.new()
 	_vehicle_visual.name = "VehicleVisual"
 	_vehicle_visual.set_script(load("res://scripts/vehicle_visual.gd"))
 	_vehicle_visual.simulation = simulation
 	_vehicle_visual.vehicle_name = vehicle_name
 	_vehicle_visual.model_absolute_path = model_absolute_path
+	_vehicle_visual.paint_colour = paint_colour
+	_vehicle_visual.rim_colour = rim_colour
 	_chassis_root.add_child(_vehicle_visual)
 
-	_chassis_root.visible = false
-	_ground_anchor.visible = false
+# R6: the garage's car for the next world (a different model, colours from its setup).
+# The same car again only re-binds; a different one replaces the visual.
+func set_vehicle(name_in: String, model_path: String, paint_hex: String, rim_hex: String) -> void:
+	var same := _vehicle_visual != null and model_path == model_absolute_path
+	vehicle_name = name_in
+	model_absolute_path = model_path
+	paint_colour = Color.html(paint_hex)
+	rim_colour = Color.html(rim_hex)
+	if same:
+		_vehicle_visual.vehicle_name = name_in
+		_vehicle_visual.paint_colour = paint_colour
+		_vehicle_visual.rim_colour = rim_colour
+		_vehicle_visual.apply_colours()
+		return
+	if _vehicle_visual != null:
+		_chassis_root.remove_child(_vehicle_visual)
+		_vehicle_visual.queue_free()
+		_vehicle_visual = null
+	_make_vehicle_visual()
 
 # Called by main.gd right after a Session starts running (flat: immediately
 # after start(); real world: _attach_world_view()'s first tick) - a world

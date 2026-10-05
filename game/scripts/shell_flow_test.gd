@@ -25,8 +25,8 @@ extends Node
 
 const TIMEOUT_S := 60.0
 const TIMEOUT_REAL_S := 400.0
-const EXPECTED_MAIN_ITEMS := ["free_roam", "settings", "credits", "quit"]
-const EXPECTED_PAUSE_ITEMS := ["resume", "reset_car", "settings", "main_menu"]
+const EXPECTED_MAIN_ITEMS := ["free_roam", "garage", "settings", "credits", "quit"]
+const EXPECTED_PAUSE_ITEMS := ["resume", "reset_car", "garage", "settings", "main_menu"]
 
 var main: Node
 var _checks := 0
@@ -267,7 +267,7 @@ func _run() -> void:
 	# ---- main menu ----
 	var expected_main: Array = EXPECTED_MAIN_ITEMS.duplicate()
 	expected_main.sort()
-	_check(_sorted_ids(ui) == expected_main, "main menu is exactly Free roam | Settings | Credits | Quit (has %s)" % ", ".join(ui.button_ids()))
+	_check(_sorted_ids(ui) == expected_main, "main menu is exactly Free roam | Garage | Settings | Credits | Quit (has %s)" % ", ".join(ui.button_ids()))
 	_check(not main._hud.visible, "no HUD on the main menu")
 	_check(main.world_state == "none" or main.world_state == "", "no world is loaded on the main menu (state '%s')" % main.world_state)
 
@@ -313,7 +313,7 @@ func _run() -> void:
 		var pause_ids := _sorted_ids(ui)
 		var expected_pause: Array = EXPECTED_PAUSE_ITEMS.duplicate()
 		expected_pause.sort()
-		_check(pause_ids == expected_pause, "pause menu is exactly Resume | Reset car | Settings | Main menu (has %s)" % ", ".join(pause_ids))
+		_check(pause_ids == expected_pause, "pause menu is exactly Resume | Reset car | Garage | Settings | Main menu (has %s)" % ", ".join(pause_ids))
 		var sim: Node = main._simulation
 		_check(sim.is_paused(), "the simulation is paused")
 		# the pause takes effect on the sim thread: let a tick in flight finish first

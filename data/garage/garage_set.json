@@ -8,8 +8,7 @@
     { "id": "key",       "kind": "spot", "position": [5.5, 5.0, 6.2],   "target": [0, 0, 0.5], "colour": "#fff1de", "energy": 11.0, "range_m": 24, "angle_deg": 38, "shadow": true },
     { "id": "rim_left",  "kind": "spot", "position": [-6.0, 6.0, 3.6],  "target": [0, 0, 0.7], "colour": "#9cc4ff", "energy": 7.0,  "range_m": 24, "angle_deg": 34, "shadow": false },
     { "id": "rim_right", "kind": "spot", "position": [-6.0, -6.0, 3.6], "target": [0, 0, 0.7], "colour": "#ffc79a", "energy": 7.0,  "range_m": 24, "angle_deg": 34, "shadow": false },
-    { "id": "front_fill","kind": "spot", "position": [8.0, -3.0, 2.4],  "target": [0, 0, 0.6], "colour": "#e9efff", "energy": 4.0,  "range_m": 24, "angle_deg": 40, "shadow": false },
-    { "id": "floor_glow","kind": "omni", "position": [0, 0, 0.6],       "colour": "#ff9a52", "energy": 0.6, "range_m": 7.0 }
+    { "id": "front_fill","kind": "spot", "position": [8.0, -3.0, 2.4],  "target": [0, 0, 0.6], "colour": "#e9efff", "energy": 4.0,  "range_m": 24, "angle_deg": 40, "shadow": false }
   ],
   "softboxes": [
     { "id": "roof_a",  "position": [1.5, 2.2, 6.6],  "target": [0, 0, 0], "width_m": 9.0, "height_m": 1.4, "colour": "#ffffff", "energy": 5.0 },
