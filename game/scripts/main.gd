@@ -1489,6 +1489,17 @@ func _log_owner_mark() -> void:
 	if world_kind == "real_world":
 		mark["utm_zone"] = origin.get("zone")
 		mark["utm_m"] = [float(origin.get("e0",0))+point.x,float(origin.get("n0",0))+point.y,point.z]
+	# The camera pose too: in free cam / drone the owner marks what the camera sees, not the car.
+	var cam: Camera3D = _director.active_camera()
+	if cam != null:
+		var cam_xform := cam.global_transform
+		var cam_p: Vector3 = _world_view.godot_to_session(cam_xform.origin)
+		var cam_f: Vector3 = _world_view.godot_to_session(cam_xform.origin - cam_xform.basis.z) - cam_p
+		mark["camera_session_m"] = [cam_p.x, cam_p.y, cam_p.z]
+		mark["camera_heading_deg"] = rad_to_deg(atan2(cam_f.x, cam_f.y)) # compass: 0 = +y (north), 90 = +x (east)
+		mark["camera_pitch_deg"] = rad_to_deg(atan2(cam_f.z, Vector2(cam_f.x, cam_f.y).length()))
+		if world_kind == "real_world":
+			mark["camera_utm_m"] = [float(origin.get("e0",0))+cam_p.x,float(origin.get("n0",0))+cam_p.y,cam_p.z]
 	mark["camera_input"] = _input_map.get_camera_diagnostics()
 	mark["camera_input"]["enabled"] = _director.camera_input_live
 	mark["camera_input"]["seat_settings_open"] = get_tree().get_nodes_in_group("seat_adjustment_open").size() > 0
