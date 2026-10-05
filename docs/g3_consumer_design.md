@@ -656,6 +656,33 @@ message.
   - speed within ±1 m/s of target after 5 s;
   - identical inputs at 1 and 10 workers.
 - **Sabotage:** flip the steering sign → circle test fails.
+- **As built (S2):** `core/include/rg/route_follower.h`, `core/src/route_follower.cpp`,
+  `tests/unit/test_route_follower.cpp` (tag `[route_follower]`). Deviations and
+  refinements, all kept inside the design's intent:
+  - The controller reads the chassis pose and motion from the `World` on the
+    stepping thread right before `World::step()`, not from a published
+    `FrameSnapshot` (the snapshot is only published by the real-time loop and
+    a synchronous `Session::step()` publishes nothing). It is the same
+    state, so it is just as deterministic; `FollowerState` is a plain struct,
+    so a harness can also feed it from a snapshot.
+  - Target speed is `min(cap, sqrt(a_lat / kappa))` as designed, plus a
+    backward braking pass at 3.5 m/s² and 0 at the route end: a pure
+    `sqrt(a_lat R)` is only valid at the corner, the car must slow before it.
+    Curvature is route_check's definition (circle through the points ±10 m).
+  - The projection onto the route searches only a window (5 m back, 12 m
+    ahead of the previous projection; the first fix is limited to the first
+    60 m, `seek(s)` starts mid-route). A global nearest-point search jumps onto
+    the return leg of an out-and-back (S3's route crosses two bridges both
+    ways) or onto a later lap; it is only the fallback when the car is more
+    than 25 m from the route.
+  - Reference point = rear axle, wheelbase / rear-axle x / steering limit come
+    from the loaded `VehicleDesc` (`follower_params_for_vehicle`).
+  - The adapter sets `ignition`, `assist.auto_clutch`, `assist.auto_shift` once
+    and writes `steer`/`throttle`/`brake` every tick.
+  - Measured on the flat world with car_sedan.json: 50 m circle at 15 m/s,
+    steady state max |r - R| 0.43 m (rear axle 0.43 m outside the route);
+    S-bend (R 60 m, 50 deg each way) max route distance 0.33 m; speed within
+    0.30 m/s of the plan after 5 s on a straight.
 
 ### S3: junction route
 

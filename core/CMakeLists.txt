@@ -70,6 +70,7 @@ add_library(rg_core STATIC
     src/fixed_rate_loop.cpp
     src/terrain_view_streamer.cpp
     src/route_check.cpp
+    src/route_follower.cpp
     src/credits.cpp
     src/settings.cpp
     src/spawn_presets.cpp
