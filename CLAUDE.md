@@ -1212,7 +1212,7 @@ acceptance. `last_drive.json` in the existing Godot user-data directory records
 session/UTM positions, build and status; the HUD/native build info reports the
 source revision. Source libraries remain unchanged.
 
-Current physics pin: 9e94f0f (external/physics_sim submodule, bumped 2026-10-05 from 976e8d7; supersedes upgrade notes above). OSM building presentation and future mixed asset/imagery approach: docs/buildings.md.
+Current physics pin: 7d5316f (external/physics_sim submodule, bumped 2026-10-05 from 9e94f0f, which was bumped from 976e8d7; supersedes upgrade notes above). 9e94f0f -> 7d5316f brings weather W6 (water film, wet grip as a factor on SurfaceTable lambda_mu, tyre profiles): a no-op while no physics_sim environment with surface conditions is installed, and racing_game installs none; no source change needed, hash_check vehicle_step_steer state_hash 0xbab69b300eba41a3 unchanged. OSM building presentation and future mixed asset/imagery approach: docs/buildings.md.
 
 Aerodynamics: docs/aerodynamics.md; configuration data/world/environment.json. Native surfaces, drafting wakes, ground effect and fan energy are owned by physics_sim; game Session supplies weather and active-wing policy, with latched HUD/art/bookmark telemetry.
 
