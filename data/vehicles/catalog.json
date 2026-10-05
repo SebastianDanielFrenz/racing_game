@@ -1,6 +1,6 @@
 {
   "format": "rg.vehicle_catalog/1",
-  "source": "R6 (PLAN.md 11.6). v1 lists the cars that drive today and have a model: the game's own car_sedan (3.0 L), physics_sim's car_hyper and the 2.0 L sedan layouts car_sedan_rwd / car_sedan_awd. Not listed: car_sedan_787b (a rotary race car whose shuffle-mode driveline is a test vehicle, not a road car), the pipes/gen/sim/fuel/x3 variants (engine experiments that share the sedan model), tractor (no road use) - they can be added as plain entries. Paths are relative to the repository root. Chassis mass, box and spawn height are the interim copy of what physics_sim's vehicle files do not carry yet (physics request R5/R6): they equal what rg::Session and the Godot adapter used before the catalog existed.",
+  "source": "R6 (PLAN.md 11.6). v1 lists the cars that drive today and have a model: the game's own car_sedan (3.0 L), physics_sim's car_hyper and the 2.0 L sedan layouts car_sedan_rwd / car_sedan_awd. Not listed: car_sedan_787b (a rotary race car whose shuffle-mode driveline is a test vehicle, not a road car), the pipes/gen/sim/fuel/x3 variants (engine experiments that share the sedan model), tractor (no road use) - they can be added as plain entries. Paths are relative to the repository root. Chassis mass, box and spawn height are the interim copy of what physics_sim's vehicle files do not carry yet (physics request R5/R6): they equal what rg::Session and the Godot adapter used before the catalog existed. R6c: every entry is one car in the car browser. A base entry names its physics vehicle file; a preset (\"preset_of\" a base entry listed before it plus \"preset_setup\", the same option ids and values as a saved setup) is a separate car with its own id, title, subtitle, body type and look, inheriting everything else from its base; the player's own saved setup stays per entry and is applied on top of the preset. \"body_type\" is an open list; \"manufacturer\" is optional (none yet); \"displacement_l\" + \"displacement_source\" are for engine files without cylinder geometry (simulated engines are computed from bore x stroke x cylinders).",
   "default": "car_hyper",
   "vehicles": [
     {
@@ -8,50 +8,251 @@
       "title": "Hyper One",
       "subtitle": "Twin-turbo V8 hypercar",
       "description": "Mid-engined, rear-wheel-drive hypercar with a Torsen differential, a seven-speed manual and aero. The reference car of the game.",
+      "body_type": "hypercar",
       "vehicle": "external/physics_sim/data/vehicles/car_hyper.json",
       "model": "external/physics_sim/data/models/car_hyper/car_hyper.glb",
       "engine_bay": "mid",
-      "chassis": { "mass_kg": 1500.0, "half_extents": [2.0, 0.4, 0.12], "spawn_z_m": 0.5,
-                   "source": "rg::Session defaults (mass) plus the adapter's car_hyper chassis proxy and ride height (godot_ext configure_vehicle_chassis) before R6" },
-      "declared_engine": { "peak_torque_nm": 1371.0, "peak_torque_rpm": 6000.0, "peak_power_kw": 1000.2, "peak_power_rpm": 7500.0,
-                           "source": "data/engines/hyper_v8_one1_audio.json is a simulated engine (no torque curve); these are the calibrated net figures its source text and physics_sim data/engines/HYPER_ONE1.md cite" },
-      "visual": { "paint": "#9aa0ac", "rim": "#2b2d31" }
+      "chassis": {
+        "mass_kg": 1500.0,
+        "half_extents": [
+          2.0,
+          0.4,
+          0.12
+        ],
+        "spawn_z_m": 0.5,
+        "source": "rg::Session defaults (mass) plus the adapter's car_hyper chassis proxy and ride height (godot_ext configure_vehicle_chassis) before R6"
+      },
+      "declared_engine": {
+        "peak_torque_nm": 1371.0,
+        "peak_torque_rpm": 6000.0,
+        "peak_power_kw": 1000.2,
+        "peak_power_rpm": 7500.0,
+        "source": "data/engines/hyper_v8_one1_audio.json is a simulated engine (no torque curve); these are the calibrated net figures its source text and physics_sim data/engines/HYPER_ONE1.md cite"
+      },
+      "visual": {
+        "paint": "#9aa0ac",
+        "rim": "#2b2d31"
+      }
     },
     {
       "id": "car_sedan",
       "title": "Sedan 3.0",
       "subtitle": "Front-wheel-drive saloon",
       "description": "The game's own sedan: a 3.0 litre naturally aspirated six with a six-speed manual, front-wheel drive.",
+      "body_type": "sedan",
+      "displacement_l": 3.0,
+      "displacement_source": "data/engines/n52b30_3l_na.json is a torque-map engine named 3.0 L (I6) and carries no cylinder geometry",
       "vehicle": "data/vehicles/car_sedan.json",
       "model": "external/physics_sim/data/models/car_sedan/car_sedan.glb",
       "engine_bay": "front",
-      "chassis": { "mass_kg": 1500.0, "half_extents": [2.0, 0.4, 0.15], "spawn_z_m": 0.6,
-                   "source": "rg::Session defaults before R6 (the SessionConfig mass/box/height)" },
-      "visual": { "paint": "#7a8a99", "rim": "#c4c8cf" }
+      "chassis": {
+        "mass_kg": 1500.0,
+        "half_extents": [
+          2.0,
+          0.4,
+          0.15
+        ],
+        "spawn_z_m": 0.6,
+        "source": "rg::Session defaults before R6 (the SessionConfig mass/box/height)"
+      },
+      "visual": {
+        "paint": "#7a8a99",
+        "rim": "#c4c8cf"
+      }
     },
     {
       "id": "car_sedan_rwd",
       "title": "Sedan 2.0 RWD",
       "subtitle": "Rear-wheel-drive saloon",
       "description": "The 2.0 litre sedan with a rear-wheel-drive layout and an even weight split.",
+      "body_type": "sedan",
+      "displacement_l": 2.0,
+      "displacement_source": "physics_sim data/engines/i4_2l_na.json is a torque-map engine described as a 2.0 L I4 and carries no cylinder geometry",
       "vehicle": "external/physics_sim/data/vehicles/car_sedan_rwd.json",
       "model": "external/physics_sim/data/models/car_sedan/car_sedan.glb",
       "engine_bay": "front",
-      "chassis": { "mass_kg": 1500.0, "half_extents": [2.0, 0.4, 0.15], "spawn_z_m": 0.6,
-                   "source": "rg::Session defaults before R6" },
-      "visual": { "paint": "#a8473f", "rim": "#c4c8cf" }
+      "chassis": {
+        "mass_kg": 1500.0,
+        "half_extents": [
+          2.0,
+          0.4,
+          0.15
+        ],
+        "spawn_z_m": 0.6,
+        "source": "rg::Session defaults before R6"
+      },
+      "visual": {
+        "paint": "#a8473f",
+        "rim": "#c4c8cf"
+      }
     },
     {
       "id": "car_sedan_awd",
       "title": "Sedan 2.0 AWD",
       "subtitle": "All-wheel-drive saloon",
       "description": "The 2.0 litre sedan with an open centre differential driving all four wheels.",
+      "body_type": "sedan",
+      "displacement_l": 2.0,
+      "displacement_source": "physics_sim data/engines/i4_2l_na.json is a torque-map engine described as a 2.0 L I4 and carries no cylinder geometry",
       "vehicle": "external/physics_sim/data/vehicles/car_sedan_awd.json",
       "model": "external/physics_sim/data/models/car_sedan/car_sedan.glb",
       "engine_bay": "front",
-      "chassis": { "mass_kg": 1500.0, "half_extents": [2.0, 0.4, 0.15], "spawn_z_m": 0.6,
-                   "source": "rg::Session defaults before R6" },
-      "visual": { "paint": "#3f6b8f", "rim": "#c4c8cf" }
+      "chassis": {
+        "mass_kg": 1500.0,
+        "half_extents": [
+          2.0,
+          0.4,
+          0.15
+        ],
+        "spawn_z_m": 0.6,
+        "source": "rg::Session defaults before R6"
+      },
+      "visual": {
+        "paint": "#3f6b8f",
+        "rim": "#c4c8cf"
+      }
+    },
+    {
+      "id": "car_sedan_comfort",
+      "title": "Sedan 3.0 Comfort",
+      "subtitle": "Soft springs, comfort tyres",
+      "description": "The 3.0 litre sedan set up for long, relaxed drives: softer springs and dampers, comfort tyres.",
+      "body_type": "sedan",
+      "preset_of": "car_sedan",
+      "preset_setup": {
+        "spring_front": 0.85,
+        "spring_rear": 0.85,
+        "damper_front": 0.9,
+        "damper_rear": 0.9,
+        "tyre_front": "passenger_comfort_225_45r17",
+        "tyre_rear": "passenger_comfort_225_45r17",
+        "paint": "#c4c8cf"
+      }
+    },
+    {
+      "id": "car_sedan_sport",
+      "title": "Sedan 3.0 Sport",
+      "subtitle": "Firm springs, sport tyres",
+      "description": "The 3.0 litre sedan with firmer springs and anti-roll bars, sport tyres, a shorter final drive and a taller top gear.",
+      "body_type": "sports",
+      "preset_of": "car_sedan",
+      "preset_setup": {
+        "spring_front": 1.2,
+        "spring_rear": 1.15,
+        "arb_front": 1.2,
+        "arb_rear": 1.1,
+        "tyre_front": "passenger_sport_225_45r17",
+        "tyre_rear": "passenger_sport_225_45r17",
+        "final_drive": 1.08,
+        "gear_ratios": [
+          1.0,
+          1.0,
+          1.0,
+          1.0,
+          0.96,
+          0.92
+        ],
+        "paint": "#c9262e"
+      }
+    },
+    {
+      "id": "car_sedan_rwd_drift",
+      "title": "Sedan 2.0 RWD Drift",
+      "subtitle": "Loose rear, comfort rear tyres",
+      "description": "The rear-wheel-drive sedan with a soft rear anti-roll bar and comfort tyres on the rear axle: it slides easily.",
+      "body_type": "sports",
+      "preset_of": "car_sedan_rwd",
+      "preset_setup": {
+        "arb_rear": 0.7,
+        "arb_front": 1.2,
+        "tyre_rear": "passenger_comfort_225_45r17",
+        "tyre_front": "passenger_sport_225_45r17",
+        "paint": "#e8742a"
+      }
+    },
+    {
+      "id": "car_sedan_rwd_track",
+      "title": "Sedan 2.0 RWD Track",
+      "subtitle": "Stiff and grippy",
+      "description": "The rear-wheel-drive sedan prepared for the track: stiff springs, dampers and anti-roll bars, strong brakes, sport tyres.",
+      "body_type": "race",
+      "preset_of": "car_sedan_rwd",
+      "preset_setup": {
+        "spring_front": 1.3,
+        "spring_rear": 1.3,
+        "damper_front": 1.25,
+        "damper_rear": 1.25,
+        "arb_front": 1.25,
+        "arb_rear": 1.25,
+        "brake_force": 1.2,
+        "tyre_front": "passenger_sport_225_45r17",
+        "tyre_rear": "passenger_sport_225_45r17",
+        "paint": "#1b1d22"
+      }
+    },
+    {
+      "id": "car_sedan_awd_rally",
+      "title": "Sedan 2.0 AWD Rally",
+      "subtitle": "Soft and long-geared",
+      "description": "The all-wheel-drive sedan with soft springs and a shorter final drive for rough, loose roads.",
+      "body_type": "race",
+      "preset_of": "car_sedan_awd",
+      "preset_setup": {
+        "spring_front": 0.8,
+        "spring_rear": 0.8,
+        "damper_front": 0.9,
+        "damper_rear": 0.9,
+        "final_drive": 1.1,
+        "paint": "#3f7a4a"
+      }
+    },
+    {
+      "id": "car_sedan_awd_winter",
+      "title": "Sedan 2.0 AWD Winter",
+      "subtitle": "Comfort tyres, calm setup",
+      "description": "The all-wheel-drive sedan on comfort tyres with a calm, forgiving setup.",
+      "body_type": "sedan",
+      "preset_of": "car_sedan_awd",
+      "preset_setup": {
+        "spring_front": 0.9,
+        "spring_rear": 0.9,
+        "arb_front": 0.9,
+        "tyre_front": "passenger_comfort_225_45r17",
+        "tyre_rear": "passenger_comfort_225_45r17",
+        "paint": "#e8e8ea"
+      }
+    },
+    {
+      "id": "car_hyper_track",
+      "title": "Hyper One Track",
+      "subtitle": "Track tyres, strong brakes",
+      "description": "The hypercar on track tyres with stiffer springs and stronger brakes.",
+      "body_type": "race",
+      "preset_of": "car_hyper",
+      "preset_setup": {
+        "spring_front": 1.15,
+        "spring_rear": 1.15,
+        "brake_force": 1.15,
+        "tyre_front": "hyper_front_track_265_35r20",
+        "tyre_rear": "hyper_rear_track_325_30r21",
+        "paint": "#e8742a"
+      }
+    },
+    {
+      "id": "car_hyper_stealth",
+      "title": "Hyper One Stealth",
+      "subtitle": "Dark paint, softer ride",
+      "description": "The hypercar in dark paint with a softer ride.",
+      "body_type": "hypercar",
+      "preset_of": "car_hyper",
+      "preset_setup": {
+        "spring_front": 0.9,
+        "spring_rear": 0.9,
+        "damper_front": 0.9,
+        "damper_rear": 0.9,
+        "paint": "#1b1d22",
+        "rim": "#111111"
+      }
     }
   ]
 }

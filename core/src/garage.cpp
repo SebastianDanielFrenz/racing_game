@@ -74,6 +74,16 @@ bool option_value_type_ok(OptionKind kind, const SetupValue& v) {
     return false;
 }
 
+// Two overlays hold the same options with equal values.
+bool setups_equal(const std::map<std::string, SetupValue>& a, const std::map<std::string, SetupValue>& b) {
+    if (a.size() != b.size()) return false;
+    for (const auto& [id, value] : a) {
+        const auto it = b.find(id);
+        if (it == b.end() || !setup_values_equal(value, it->second)) return false;
+    }
+    return true;
+}
+
 } // namespace
 
 SetupContext Garage::context_for(const CatalogEntry& entry) const {
@@ -108,6 +118,21 @@ std::unique_ptr<Garage> Garage::open(const GarageConfig& config, std::string* er
         return nullptr;
     }
     g->set_ = std::move(*set);
+    // A preset's overlay must name known options with values of the right type (the value ranges and
+    // the vehicle loader's verdict are checked when the preset is applied, see validate_setup).
+    for (const CatalogEntry& e : g->catalog_.entries) {
+        for (const auto& [option_id, value] : e.preset_setup) {
+            const SetupOptionDef* def = g->options_.find(option_id);
+            if (def == nullptr) {
+                if (err != nullptr) *err = config.catalog_path + " (" + e.id + "): preset option \"" + option_id + "\" does not exist";
+                return nullptr;
+            }
+            if (!option_value_type_ok(def->kind, value)) {
+                if (err != nullptr) *err = config.catalog_path + " (" + e.id + "): preset option \"" + option_id + "\" has the wrong type of value";
+                return nullptr;
+            }
+        }
+    }
     g->ctx_.tyre_dirs = config.tyre_dirs;
     g->ctx_.work_root = config.work_root;
     g->ctx_.engine_map_cache_dir = config.engine_map_cache_dir;
@@ -130,6 +155,7 @@ std::unique_ptr<Garage> Garage::open(const GarageConfig& config, std::string* er
             if (detail::get_string(*doc, "selected", id) && g->catalog_.find(id) != nullptr) g->selected_ = id;
         }
     }
+    g->refresh_browser();
     return g;
 }
 
@@ -221,6 +247,19 @@ VehicleSetup Garage::saved_setup(const std::string& id) const {
 
 bool Garage::has_saved_setup(const std::string& id) const { return !saved_setup(id).values.empty(); }
 
+VehicleSetup Garage::preset_setup(const std::string& id) const {
+    VehicleSetup s;
+    s.vehicle_id = id;
+    if (const CatalogEntry* e = catalog_.find(id)) s.values = e->preset_setup;
+    return s;
+}
+
+VehicleSetup Garage::effective_setup(const std::string& id) const {
+    VehicleSetup s = preset_setup(id);
+    for (const auto& [option_id, value] : saved_setup(id).values) s.values[option_id] = value; // the player's own values win
+    return s;
+}
+
 bool Garage::begin_edit(const std::string& id, std::string* err) {
     const CatalogEntry* e = catalog_.find(id);
     if (e == nullptr) {
@@ -233,7 +272,7 @@ bool Garage::begin_edit(const std::string& id, std::string* err) {
         return false;
     }
     edit_id_ = id;
-    working_ = saved_setup(id);
+    working_ = effective_setup(id);
     saved_at_begin_ = working_;
     revalidate();
     return true;
@@ -288,7 +327,9 @@ EditResult Garage::set_option(const std::string& option_id, const SetupValue& va
         r.validation = validation_;
         return r;
     }
-    if (setup_values_equal(value, view->stock)) {
+    const CatalogEntry* entry = catalog_.find(edit_id_);
+    const bool preset_has = entry != nullptr && entry->preset_setup.count(option_id) != 0;
+    if (setup_values_equal(value, view->stock) && !preset_has) {
         working_.values.erase(option_id); // back to stock: not part of the overlay
     } else {
         working_.values[option_id] = value;
@@ -302,12 +343,18 @@ EditResult Garage::set_option(const std::string& option_id, const SetupValue& va
 void Garage::reset_option(const std::string& option_id) {
     if (!editing()) return;
     working_.values.erase(option_id);
+    const CatalogEntry* entry = catalog_.find(edit_id_);
+    if (entry != nullptr) { // a preset's own value is the car's reset value, not the base car's stock one
+        if (const auto it = entry->preset_setup.find(option_id); it != entry->preset_setup.end()) {
+            working_.values[option_id] = it->second;
+        }
+    }
     revalidate();
 }
 
 void Garage::reset_all() {
     if (!editing()) return;
-    working_.values.clear();
+    working_ = preset_setup(edit_id_);
     revalidate();
 }
 
@@ -347,13 +394,14 @@ bool Garage::save(std::string* err) {
     }
     const std::string path = setup_path(edit_id_);
     std::error_code ec;
-    if (working_.values.empty()) {
-        fs::remove(fs::path(path), ec);
+    if (setups_equal(working_.values, preset_setup(edit_id_).values)) {
+        fs::remove(fs::path(path), ec); // nothing beyond the car's own preset: no player setup file
     } else {
         working_.vehicle_id = edit_id_;
         if (!write_file_atomic(path, setup_to_json(working_), err)) return false;
     }
     saved_at_begin_ = working_;
+    refresh_browser();
     return true;
 }
 
@@ -394,13 +442,13 @@ DriveSelection Garage::prepare_drive(const std::string& id) {
     d.engine_map_cache_dir = context_for(*e).engine_map_cache_dir;
 
     remove_drive_dir();
-    const VehicleSetup setup = saved_setup(id);
+    const VehicleSetup setup = effective_setup(id);
     if (!setup.values.empty()) {
         const std::string dir = config_.work_root + "/drive_" + id + "_" + hex16(fnv1a(setup_to_json(setup)));
         const MaterialisedSetup m = materialise_setup(*e, options_, context_for(*e), setup, dir);
         if (!m.ok) {
             // The saved setup no longer fits the data (a file changed): drive the stock car and say so.
-            d.warning = "The saved setup for " + e->title + " was not applied: " + m.error;
+            d.warning = std::string(e->preset_of.empty() ? "The saved setup for " : "The setup of ") + e->title + " was not applied: " + m.error;
             std::error_code ec;
             fs::remove_all(fs::path(dir), ec);
         } else {
@@ -450,5 +498,55 @@ DriveSelection Garage::prepare_drive(const std::string& id) {
     d.ok = true;
     return d;
 }
+
+} // namespace rg
+
+namespace rg {
+
+std::vector<BrowserCar> Garage::browser_cars() const {
+    std::vector<BrowserCar> out;
+    out.reserve(catalog_.entries.size());
+    for (const CatalogEntry& e : catalog_.entries) {
+        BrowserCar c;
+        c.id = e.id;
+        c.title = e.title;
+        c.subtitle = e.subtitle;
+        c.body_type = e.body_type;
+        c.manufacturer = e.manufacturer;
+        c.model_path = e.model_path;
+        c.preset = !e.preset_of.empty();
+        c.paint = e.default_paint;
+        c.rim = e.default_rim;
+        const VehicleSetup setup = effective_setup(e.id);
+        const auto colour = [&](const char* key, std::string& into) {
+            const auto it = setup.values.find(key);
+            if (it != setup.values.end() && std::holds_alternative<std::string>(it->second) &&
+                is_hex_colour(std::get<std::string>(it->second))) {
+                into = std::get<std::string>(it->second);
+            }
+        };
+        colour("paint", c.paint);
+        colour("rim", c.rim);
+        auto cached = stats_cache_.find(e.id);
+        if (cached == stats_cache_.end()) {
+            std::string err;
+            cached = stats_cache_.emplace(e.id, compute_vehicle_stats(e, &err)).first;
+        }
+        if (const std::optional<VehicleStats>& st = cached->second) {
+            c.layout = st->layout.empty() ? "other" : st->layout;
+            c.power_kw = st->peak_power_kw;
+            c.power_rpm = st->peak_power_rpm;
+            c.torque_nm = st->peak_torque_nm;
+            c.torque_rpm = st->peak_torque_rpm;
+            c.mass_kg = st->mass_kg;
+            c.displacement_known = st->displacement_known;
+            c.displacement_l = st->displacement_l;
+        }
+        out.push_back(std::move(c));
+    }
+    return out;
+}
+
+void Garage::refresh_browser() { browser_.set_cars(browser_cars()); }
 
 } // namespace rg

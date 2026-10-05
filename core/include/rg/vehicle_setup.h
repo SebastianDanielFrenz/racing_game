@@ -82,7 +82,7 @@ std::optional<SetupOptionTable> load_setup_options(const std::string& path, std:
 std::optional<SetupOptionTable> parse_setup_options(const std::string& json_text, const std::string& origin,
                                                     std::string* err);
 
-using SetupValue = std::variant<double, bool, std::string, std::vector<double>>;
+// SetupValue (the variant of one option value) lives in vehicle_catalog.h: a preset entry carries one.
 
 // The overlay: only the options the player changed from the stock value.
 struct VehicleSetup {

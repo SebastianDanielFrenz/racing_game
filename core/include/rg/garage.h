@@ -14,10 +14,12 @@
 // run is removed when the garage opens.
 #pragma once
 
+#include "rg/car_browser.h"
 #include "rg/garage_set.h"
 #include "rg/vehicle_catalog.h"
 #include "rg/vehicle_setup.h"
 
+#include <map>
 #include <memory>
 #include <optional>
 #include <string>
@@ -87,9 +89,26 @@ public:
     // loaded model's bounds) override the chassis-box based estimate when given.
     [[nodiscard]] std::optional<GarageSubject> subject(const std::string& id, const GVec3* model_min,
                                                        const GVec3* model_max, std::string* err) const;
-    [[nodiscard]] VehicleSetup saved_setup(const std::string& id) const; // empty values when none
+    // The player's saved setup file of this car (empty values when none).
+    [[nodiscard]] VehicleSetup saved_setup(const std::string& id) const;
+    // A preset entry's own overlay (empty for a base car) and the setup a drive/edit starts from:
+    // the preset's overlay with the player's saved values on top.
+    [[nodiscard]] VehicleSetup preset_setup(const std::string& id) const;
+    [[nodiscard]] VehicleSetup effective_setup(const std::string& id) const;
     [[nodiscard]] bool has_saved_setup(const std::string& id) const;
     [[nodiscard]] std::string setup_path(const std::string& id) const;
+
+    // ---- the car browser (R6c) ----
+    // The model of the browser screen: one BrowserCar per catalog entry (a preset is a car of its own),
+    // with the stats of its vehicle file and the paint/rim a drive of it would use (the saved setup on top
+    // of the preset overlay). The view state (group/sort/filter) lives in the model; the caller persists it
+    // through CarBrowser::apply_settings / store_settings. The stats are those of the entry's vehicle file:
+    // a preset's overlay is not applied to them.
+    [[nodiscard]] CarBrowser& browser() { return browser_; }
+    [[nodiscard]] const CarBrowser& browser() const { return browser_; }
+    [[nodiscard]] std::vector<BrowserCar> browser_cars() const;
+    // Rebuilds the browser's cars (after a setup was saved: the paint may have changed).
+    void refresh_browser();
 
     // ---- the configurator's edit session ----
     bool begin_edit(const std::string& id, std::string* err); // loads the saved setup as the working copy
@@ -104,8 +123,8 @@ public:
     void reset_all();
     [[nodiscard]] bool dirty() const; // the working copy differs from the saved one
     [[nodiscard]] const ValidationResult& validation() const { return validation_; }
-    // Writes the working copy as the vehicle's saved setup (an empty one removes the
-    // file). false + *err while the working copy does not validate or the write fails.
+    // Writes the working copy as the vehicle's saved setup (a working copy equal to the car's own
+    // preset overlay - empty for a base car - removes the file). false + *err while the working copy does not validate or the write fails.
     bool save(std::string* err);
     void discard(); // ends the session, keeps nothing
     // Paint/rim of the working copy (visual only).
@@ -138,6 +157,8 @@ private:
     ValidationResult validation_;
 
     std::string drive_dir_;
+    CarBrowser browser_;
+    mutable std::map<std::string, std::optional<VehicleStats>> stats_cache_; // by entry id (the vehicle files do not change while the game runs)
 };
 
 } // namespace rg

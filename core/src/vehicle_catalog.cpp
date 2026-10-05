@@ -5,6 +5,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdio>
 #include <filesystem>
 #include <set>
 
@@ -89,7 +90,25 @@ std::string component_ref(const json& vehicle, const std::string& vehicle_path, 
     return {};
 }
 
+std::optional<double> displacement_from_json(const json& engine) {
+    double bore = 0.0, stroke = 0.0, cylinders = 0.0;
+    if (!detail::get_number(engine, "bore_mm", bore) || !detail::get_number(engine, "stroke_mm", stroke) ||
+        !detail::get_number(engine, "cylinders", cylinders)) {
+        return std::nullopt;
+    }
+    if (!(bore > 0.0) || !(stroke > 0.0) || !(cylinders >= 1.0) || !std::isfinite(bore) || !std::isfinite(stroke)) {
+        return std::nullopt;
+    }
+    return cylinders * kPi / 4.0 * bore * bore * stroke / 1.0e6; // mm^3 -> litres
+}
+
 } // namespace
+
+std::optional<double> displacement_from_engine_json(const std::string& engine_json_text) {
+    const std::optional<json> doc = detail::parse_json(engine_json_text);
+    if (!doc || !doc->is_object()) return std::nullopt;
+    return displacement_from_json(*doc);
+}
 
 const CatalogEntry* VehicleCatalog::find(const std::string& id) const {
     for (const CatalogEntry& e : entries) {
@@ -132,73 +151,156 @@ std::optional<VehicleCatalog> parse_vehicle_catalog(const std::string& json_text
             fail(err, origin, "duplicate vehicle id \"" + e.id + "\"");
             return std::nullopt;
         }
-        std::string vehicle_rel, model_rel;
         if (!detail::get_string(v, "title", e.title) || e.title.empty()) {
             fail(err, where, "\"title\" missing");
             return std::nullopt;
         }
-        detail::get_string(v, "subtitle", e.subtitle);
-        detail::get_string(v, "description", e.description);
-        if (!detail::get_string(v, "vehicle", vehicle_rel) || !detail::get_string(v, "model", model_rel)) {
-            fail(err, where, "\"vehicle\" and \"model\" paths are required");
-            return std::nullopt;
-        }
-        e.vehicle_path = resolve(repo_root, vehicle_rel);
-        e.model_path = resolve(repo_root, model_rel);
-        std::string file_err;
-        const std::optional<json> vehicle_doc = read_json_file(e.vehicle_path, &file_err);
-        if (!vehicle_doc) {
-            fail(err, where, file_err);
-            return std::nullopt;
-        }
-        if (!detail::get_string(*vehicle_doc, "name", e.sim_name) || e.sim_name.empty()) {
-            fail(err, where, e.vehicle_path + ": the vehicle file has no \"name\"");
-            return std::nullopt;
-        }
-        std::error_code ec;
-        if (!fs::is_regular_file(fs::path(e.model_path), ec)) {
-            fail(err, where, "model not found: " + e.model_path);
-            return std::nullopt;
-        }
-        const auto chassis = v.find("chassis");
-        if (chassis == v.end() || !chassis->is_object()) {
-            fail(err, where, "\"chassis\" block missing (mass_kg, half_extents, spawn_z_m)");
-            return std::nullopt;
-        }
-        if (!detail::get_number(*chassis, "mass_kg", e.chassis.mass_kg) || !(e.chassis.mass_kg > 100.0) ||
-            !(e.chassis.mass_kg < 100000.0)) {
-            fail(err, where, "chassis.mass_kg must be a number in 100..100000");
-            return std::nullopt;
-        }
-        if (!read_triple(*chassis, "half_extents", e.chassis.half_extents) || !(e.chassis.half_extents[0] > 0.1) ||
-            !(e.chassis.half_extents[1] > 0.1) || !(e.chassis.half_extents[2] > 0.01)) {
-            fail(err, where, "chassis.half_extents must be three positive numbers");
-            return std::nullopt;
-        }
-        if (!detail::get_number(*chassis, "spawn_z_m", e.chassis.spawn_z_m) || !(e.chassis.spawn_z_m > 0.0) ||
-            !(e.chassis.spawn_z_m < 5.0)) {
-            fail(err, where, "chassis.spawn_z_m must be a number in 0..5");
-            return std::nullopt;
-        }
-        detail::get_string(*chassis, "source", e.chassis.source);
-        if (detail::get_string(v, "engine_bay", e.engine_bay) &&
-            e.engine_bay != "front" && e.engine_bay != "mid" && e.engine_bay != "rear") {
-            fail(err, where, "\"engine_bay\" must be front, mid or rear");
-            return std::nullopt;
-        }
-        const auto declared = v.find("declared_engine");
-        if (declared != v.end()) {
-            DeclaredEngineStats d;
-            if (!declared->is_object() || !detail::get_number(*declared, "peak_torque_nm", d.peak_torque_nm) ||
-                !detail::get_number(*declared, "peak_torque_rpm", d.peak_torque_rpm) ||
-                !detail::get_number(*declared, "peak_power_kw", d.peak_power_kw) ||
-                !detail::get_number(*declared, "peak_power_rpm", d.peak_power_rpm) ||
-                !detail::get_string(*declared, "source", d.source) || d.source.empty() || !(d.peak_torque_nm > 0.0) ||
-                !(d.peak_power_kw > 0.0)) {
-                fail(err, where, "\"declared_engine\" needs peak_torque_nm/_rpm, peak_power_kw/_rpm (> 0) and a source");
+        std::string preset_of;
+        const bool is_preset = v.contains("preset_of");
+        if (is_preset) {
+            if (!detail::get_string(v, "preset_of", preset_of) || preset_of.empty()) {
+                fail(err, where, "\"preset_of\" must be the id of a base vehicle");
                 return std::nullopt;
             }
-            e.declared_engine = d;
+            const CatalogEntry* base = nullptr;
+            for (const CatalogEntry& prior : out.entries) {
+                if (prior.id == preset_of && prior.preset_of.empty()) base = &prior;
+            }
+            if (base == nullptr) {
+                fail(err, where, "\"preset_of\" \"" + preset_of + "\" names no base vehicle listed before this entry");
+                return std::nullopt;
+            }
+            for (const char* inherited : {"vehicle", "model", "chassis", "engine_bay", "declared_engine", "setup"}) {
+                if (v.contains(inherited)) {
+                    fail(err, where, std::string("a preset takes \"") + inherited + "\" from its base (\"" + preset_of + "\")");
+                    return std::nullopt;
+                }
+            }
+            const std::string id = e.id;
+            const std::string title = e.title;
+            e = *base;
+            e.id = id;
+            e.title = title;
+            e.preset_of = preset_of;
+            e.preset_setup.clear();
+            const auto setup_values = v.find("preset_setup");
+            if (setup_values == v.end() || !setup_values->is_object() || setup_values->empty()) {
+                fail(err, where, "a preset needs a non-empty \"preset_setup\" object (option id -> value)");
+                return std::nullopt;
+            }
+            for (auto it = setup_values->begin(); it != setup_values->end(); ++it) {
+                SetupValue value;
+                const json& jv = it.value();
+                if (jv.is_boolean()) {
+                    value = jv.get<bool>();
+                } else if (jv.is_number()) {
+                    value = jv.get<double>();
+                } else if (jv.is_string()) {
+                    value = jv.get<std::string>();
+                } else if (jv.is_array() && !jv.empty()) {
+                    std::vector<double> list;
+                    for (const json& x : jv) {
+                        if (!x.is_number()) {
+                            fail(err, where, "preset_setup." + it.key() + ": a list holds numbers only");
+                            return std::nullopt;
+                        }
+                        list.push_back(x.get<double>());
+                    }
+                    value = std::move(list);
+                } else {
+                    fail(err, where, "preset_setup." + it.key() + ": expected a number, a switch, a string or a list of numbers");
+                    return std::nullopt;
+                }
+                e.preset_setup[it.key()] = std::move(value);
+            }
+        } else {
+            std::string vehicle_rel, model_rel;
+            if (!detail::get_string(v, "vehicle", vehicle_rel) || !detail::get_string(v, "model", model_rel)) {
+                fail(err, where, "\"vehicle\" and \"model\" paths are required");
+                return std::nullopt;
+            }
+            e.vehicle_path = resolve(repo_root, vehicle_rel);
+            e.model_path = resolve(repo_root, model_rel);
+            std::string file_err;
+            const std::optional<json> vehicle_doc = read_json_file(e.vehicle_path, &file_err);
+            if (!vehicle_doc) {
+                fail(err, where, file_err);
+                return std::nullopt;
+            }
+            if (!detail::get_string(*vehicle_doc, "name", e.sim_name) || e.sim_name.empty()) {
+                fail(err, where, e.vehicle_path + ": the vehicle file has no \"name\"");
+                return std::nullopt;
+            }
+            std::error_code ec;
+            if (!fs::is_regular_file(fs::path(e.model_path), ec)) {
+                fail(err, where, "model not found: " + e.model_path);
+                return std::nullopt;
+            }
+            const auto chassis = v.find("chassis");
+            if (chassis == v.end() || !chassis->is_object()) {
+                fail(err, where, "\"chassis\" block missing (mass_kg, half_extents, spawn_z_m)");
+                return std::nullopt;
+            }
+            if (!detail::get_number(*chassis, "mass_kg", e.chassis.mass_kg) || !(e.chassis.mass_kg > 100.0) ||
+                !(e.chassis.mass_kg < 100000.0)) {
+                fail(err, where, "chassis.mass_kg must be a number in 100..100000");
+                return std::nullopt;
+            }
+            if (!read_triple(*chassis, "half_extents", e.chassis.half_extents) || !(e.chassis.half_extents[0] > 0.1) ||
+                !(e.chassis.half_extents[1] > 0.1) || !(e.chassis.half_extents[2] > 0.01)) {
+                fail(err, where, "chassis.half_extents must be three positive numbers");
+                return std::nullopt;
+            }
+            if (!detail::get_number(*chassis, "spawn_z_m", e.chassis.spawn_z_m) || !(e.chassis.spawn_z_m > 0.0) ||
+                !(e.chassis.spawn_z_m < 5.0)) {
+                fail(err, where, "chassis.spawn_z_m must be a number in 0..5");
+                return std::nullopt;
+            }
+            detail::get_string(*chassis, "source", e.chassis.source);
+            if (detail::get_string(v, "engine_bay", e.engine_bay) &&
+                e.engine_bay != "front" && e.engine_bay != "mid" && e.engine_bay != "rear") {
+                fail(err, where, "\"engine_bay\" must be front, mid or rear");
+                return std::nullopt;
+            }
+            const auto declared = v.find("declared_engine");
+            if (declared != v.end()) {
+                DeclaredEngineStats d;
+                if (!declared->is_object() || !detail::get_number(*declared, "peak_torque_nm", d.peak_torque_nm) ||
+                    !detail::get_number(*declared, "peak_torque_rpm", d.peak_torque_rpm) ||
+                    !detail::get_number(*declared, "peak_power_kw", d.peak_power_kw) ||
+                    !detail::get_number(*declared, "peak_power_rpm", d.peak_power_rpm) ||
+                    !detail::get_string(*declared, "source", d.source) || d.source.empty() || !(d.peak_torque_nm > 0.0) ||
+                    !(d.peak_power_kw > 0.0)) {
+                    fail(err, where, "\"declared_engine\" needs peak_torque_nm/_rpm, peak_power_kw/_rpm (> 0) and a source");
+                    return std::nullopt;
+                }
+                e.declared_engine = d;
+            }
+        }
+        detail::get_string(v, "subtitle", e.subtitle);
+        detail::get_string(v, "description", e.description);
+        if (v.contains("body_type")) {
+            if (!detail::get_string(v, "body_type", e.body_type) || !valid_id(e.body_type)) {
+                fail(err, where, "\"body_type\" must be a lower_snake word (sedan, hatchback, estate, pickup, suv, sports, hypercar, race, utility, ...)");
+                return std::nullopt;
+            }
+        }
+        if (v.contains("manufacturer")) {
+            if (!detail::get_string(v, "manufacturer", e.manufacturer) || e.manufacturer.size() > 64) {
+                fail(err, where, "\"manufacturer\" must be a short string");
+                return std::nullopt;
+            }
+        }
+        if (v.contains("displacement_l")) {
+            double d = 0.0;
+            std::string source;
+            if (!detail::get_number(v, "displacement_l", d) || !(d > 0.0) || !(d < 30.0) ||
+                !detail::get_string(v, "displacement_source", source) || source.empty()) {
+                fail(err, where, "\"displacement_l\" needs a number in 0..30 litres and a \"displacement_source\"");
+                return std::nullopt;
+            }
+            e.displacement_l = d;
+            e.displacement_source = source;
         }
         const auto visual = v.find("visual");
         if (visual != v.end()) {
@@ -376,6 +478,17 @@ std::optional<VehicleStats> compute_vehicle_stats(const CatalogEntry& entry, std
         const auto engine = read_json_file(engine_path, err);
         if (!engine) return std::nullopt;
         detail::get_string(*engine, "name", stats.engine_name);
+        if (const auto liters = displacement_from_json(*engine)) {
+            double bore = 0.0, stroke = 0.0, cylinders = 0.0;
+            detail::get_number(*engine, "bore_mm", bore);
+            detail::get_number(*engine, "stroke_mm", stroke);
+            detail::get_number(*engine, "cylinders", cylinders);
+            stats.displacement_known = true;
+            stats.displacement_l = *liters;
+            char text[96];
+            std::snprintf(text, sizeof text, "engine file: %g cylinders x bore %g x stroke %g mm", cylinders, bore, stroke);
+            stats.displacement_source = text;
+        }
         std::string kind = "torque_map";
         detail::get_string(*engine, "kind", kind);
         stats.engine_kind = kind;
@@ -401,6 +514,11 @@ std::optional<VehicleStats> compute_vehicle_stats(const CatalogEntry& entry, std
                 }
             }
         }
+    }
+    if (!stats.displacement_known && entry.displacement_l) {
+        stats.displacement_known = true;
+        stats.displacement_l = *entry.displacement_l;
+        stats.displacement_source = entry.displacement_source;
     }
     if (stats.peak_torque_nm <= 0.0 && entry.declared_engine) {
         stats.peak_torque_nm = entry.declared_engine->peak_torque_nm;
