@@ -8,6 +8,7 @@
 #include <godot_cpp/variant/dictionary.hpp>
 #include <godot_cpp/variant/packed_string_array.hpp>
 #include <godot_cpp/variant/string.hpp>
+#include <godot_cpp/variant/vector3.hpp>
 
 namespace rg_godot {
 
@@ -27,6 +28,9 @@ public:
     // zoom_key, live}. Returns the new state's keys plus "offset": a Vector3 in
     // the ISO heading frame (x forward, y left, z up) from the look-at point.
     static godot::Dictionary orbit_step(const godot::Dictionary& state, const godot::Dictionary& input, double dt);
+    // The chase rig's follow smoothing (rg::chase_follow_offset): the camera's smoothed offset from the car, easing
+    // toward `desired` with 1 - exp(-rate * dt). Any frame, isotropic - the rig passes Godot-space offsets.
+    static godot::Vector3 chase_follow_offset(const godot::Vector3& previous, const godot::Vector3& desired, double dt, double rate);
 
 protected:
     static void _bind_methods();

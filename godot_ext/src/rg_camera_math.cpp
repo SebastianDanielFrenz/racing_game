@@ -80,12 +80,18 @@ Dictionary RgCameraMath::orbit_step(const Dictionary& state, const Dictionary& i
     return d;
 }
 
+godot::Vector3 RgCameraMath::chase_follow_offset(const godot::Vector3& previous, const godot::Vector3& desired, double dt, double rate) {
+    const ps::Vec3 o = rg::chase_follow_offset(ps::Vec3{previous.x, previous.y, previous.z}, ps::Vec3{desired.x, desired.y, desired.z}, dt, rate);
+    return godot::Vector3(static_cast<float>(o.x), static_cast<float>(o.y), static_cast<float>(o.z));
+}
+
 void RgCameraMath::_bind_methods() {
     godot::ClassDB::bind_static_method("RgCameraMath", godot::D_METHOD("drive_view_names"), &RgCameraMath::drive_view_names);
     godot::ClassDB::bind_static_method("RgCameraMath", godot::D_METHOD("next_drive_view", "view"), &RgCameraMath::next_drive_view);
     godot::ClassDB::bind_static_method("RgCameraMath", godot::D_METHOD("toggle_cockpit_view", "view"), &RgCameraMath::toggle_cockpit_view);
     godot::ClassDB::bind_static_method("RgCameraMath", godot::D_METHOD("orbit_default_state"), &RgCameraMath::orbit_default_state);
     godot::ClassDB::bind_static_method("RgCameraMath", godot::D_METHOD("orbit_step", "state", "input", "dt"), &RgCameraMath::orbit_step);
+    godot::ClassDB::bind_static_method("RgCameraMath", godot::D_METHOD("chase_follow_offset", "previous", "desired", "dt", "rate"), &RgCameraMath::chase_follow_offset);
 }
 
 } // namespace rg_godot

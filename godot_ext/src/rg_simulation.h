@@ -13,6 +13,7 @@
 
 #pragma once
 
+#include "rg/building_footprints.h"
 #include "rg/camera_math.h"
 #include "rg/player_mode.h"
 #include "rg/session.h"
@@ -217,6 +218,8 @@ public:
     // rebase never moves a shot.
     godot::Dictionary update_cinematic(double delta);
     void reset_cinematic();
+    void release_cinematic_obstacles();
+    void sync_cinematic_obstacles(double car_x, double car_y);
 
     void start();
     void stop();
@@ -389,6 +392,10 @@ private:
     bool paused_ = false;
     bool road_ahead_wanted_ = false;
     rg::CinematicDirector cinematic_{1};
+    // Cinematic occlusion (docs/buildings.md "Camera obstacles"): building footprints of the 3 x 3 tiles around the car, loaded
+    // by a worker thread, handed to the director; null in the flat world. The terrain is held so the worker cannot outlive it.
+    std::shared_ptr<rg::WorldTerrain> cinematic_terrain_;
+    std::unique_ptr<rg::BuildingObstacles> cinematic_obstacles_;
     // Pushes the remembered pause / road-ahead flags into a Session that was
     // just adopted (initialize() or a finished terrain init).
     void apply_shell_flags_to_session();

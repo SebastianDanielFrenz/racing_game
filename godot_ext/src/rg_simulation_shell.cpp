@@ -11,6 +11,8 @@
 
 #include "frame_convert.h"
 
+#include "rg/route_check.h"
+
 #include <godot_cpp/variant/dictionary.hpp>
 #include <godot_cpp/variant/string.hpp>
 #include <godot_cpp/variant/vector3.hpp>
@@ -35,6 +37,7 @@ void RgSimulation::unload() {
     teardown_current();
     modes_.unload_world();
     cinematic_.reset();
+    release_cinematic_obstacles();
     spawn_override_.reset();
     paused_ = false;
     road_ahead_wanted_ = false;
@@ -125,6 +128,7 @@ Dictionary RgSimulation::update_cinematic(double delta) {
         car.heading_x = forward.x / flat;
         car.heading_y = forward.y / flat;
     }
+    sync_cinematic_obstacles(car.x, car.y);
     const rg::CinematicShot& shot = cinematic_.update(delta, car, f.road_ahead);
     d["serial"] = static_cast<std::int64_t>(shot.serial);
     d["cut"] = cinematic_.cut_this_update();
@@ -138,5 +142,37 @@ Dictionary RgSimulation::update_cinematic(double delta) {
 }
 
 void RgSimulation::reset_cinematic() { cinematic_.reset(); }
+
+void RgSimulation::release_cinematic_obstacles() {
+    cinematic_.set_obstacles(nullptr);
+    cinematic_obstacles_.reset(); // joins the worker before the terrain it reads from can go
+    cinematic_terrain_.reset();
+}
+
+// Building footprints and terrain for the cinematic director's occlusion checks (rg_core does the geometry; this only
+// feeds it the world's own data). The 1 km OSM tiles load on a worker thread; until a tile has arrived the director
+// frames from behind the car instead of trusting missing data. Flat world: no terrain, no obstacles.
+void RgSimulation::sync_cinematic_obstacles(double car_x, double car_y) {
+    const std::shared_ptr<rg::WorldTerrain> terrain = session_ ? session_->world_terrain() : nullptr;
+    if (terrain != cinematic_terrain_) {
+        release_cinematic_obstacles();
+        cinematic_terrain_ = terrain;
+        if (terrain) {
+            const auto zone = terrain->frame().zone();
+            const double e0 = terrain->frame().e0_m();
+            const double n0 = terrain->frame().n0_m();
+            rg::WorldTerrain* t = terrain.get();
+            cinematic_obstacles_ = std::make_unique<rg::BuildingObstacles>(
+                e0, n0,
+                [t, zone](int tx, int ty) { return t->buildings_tile(g2m::TileKey{zone, 2, tx, ty}, 0.0, 8.0, 3.0); },
+                [t, zone, e0, n0](double x, double y) {
+                    return rg::sample_l0_height([t](const auto& key) { return t->cached_height_tile(key); }, zone, e0, n0,
+                                                x, y);
+                });
+        }
+        cinematic_.set_obstacles(cinematic_obstacles_.get());
+    }
+    if (cinematic_obstacles_) cinematic_obstacles_->request_around(car_x, car_y);
+}
 
 } // namespace rg_godot

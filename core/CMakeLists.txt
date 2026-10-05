@@ -56,6 +56,8 @@ add_library(rg_core STATIC
     src/npc_truck.cpp
     src/walker.cpp
     src/npc_traffic.cpp
+    src/traffic_stuck.cpp
+    src/building_footprints.cpp
     src/session.cpp
     src/player_mode.cpp
     src/terrain_mode.cpp

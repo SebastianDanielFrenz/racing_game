@@ -9,6 +9,7 @@ extends Node3D
 # update_cinematic): where the next camera stands (beside the road ahead of the
 # car from the client's road data - FrameSnapshot::road_ahead - or, where there
 # is none (the flat world, off-road), beside the car's own predicted path;
+# "chase_fallback" = no clear spot (buildings/terrain in the way), framed from behind;
 # "source" says which), how high, which field of view and when to cut. A shot is
 # a SESSION-frame point: this script converts it to the Godot frame every frame
 # with RgSimulation.session_to_godot, so a floating-origin rebase can never move

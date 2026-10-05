@@ -18,6 +18,7 @@
 #include "ps/vehicle/vehicle_desc.h"
 
 #include "rg/road_ahead.h"
+#include "rg/shot_obstacles.h"
 
 #include <cstdint>
 #include <optional>
@@ -111,9 +112,21 @@ OrbitState orbit_step(const OrbitState& s, const OrbitInput& in, double dt, cons
 // y left, z up).
 ps::Vec3 orbit_offset(const OrbitState& s);
 
+// ---------------------------------------------------------------- chase ------
+
+// One frame of the chase camera's follow smoothing. The camera is kept at a smoothed OFFSET from the car, not at a
+// smoothed absolute position: the car's own translation then carries the camera rigidly (zero lag at any speed or
+// acceleration), and only the change of the wanted offset - the car yawing or pitching, a changed follow distance -
+// is eased in. Smoothing the absolute position (the earlier rig) trails the car by speed / rate metres, so the
+// camera dropped back 5 m at 30 m/s and 10 m at 60 m/s. The easing is 1 - exp(-rate * dt): the same curve at any frame
+// rate. `previous`/`desired` are offsets from the car (any frame, the maths is isotropic); rate <= 0 = no smoothing.
+ps::Vec3 chase_follow_offset(const ps::Vec3& previous, const ps::Vec3& desired, double dt, double rate_per_s);
+
 // -------------------------------------------------------------- cinematic --
 
-enum class ShotSource { RoadAhead, PredictedPath };
+// ChaseFallback: no clear roadside shot exists (buildings or terrain in the way), so the camera frames the car from
+// behind and above like a chase camera; its x/y follow the car every update.
+enum class ShotSource { RoadAhead, PredictedPath, ChaseFallback };
 const char* to_string(ShotSource s);
 
 struct CarKinematics {
@@ -154,6 +167,30 @@ struct CinematicParams {
     double predict_length_m = 160.0;
     double predict_step_m = 8.0;
     double max_turn_rate_rad_s = 0.8;  // clamp on the turn rate extrapolated from the recent path
+    // Occlusion (only with CinematicDirector::set_obstacles): a candidate camera is rejected when it lies inside or within
+    // building_margin_m of a building footprint whose vertical span covers the camera height, or when the line of sight to
+    // the car (now, and to the road a third and two thirds of the way to the camera) passes through a building or
+    // terrain. The director then tries the other road side, then other lead distances (lead_factors), and only then
+    // frames the car from behind (ShotSource::ChaseFallback).
+    double building_margin_m = 1.0;
+    double car_target_height_m = 1.0;      // the point above the ground the sight line is checked to
+    double sight_ground_clearance_m = 0.3; // the sight line must stay this far above sampled terrain
+    double sight_sample_step_m = 5.0;      // terrain sampling interval along a sight line
+    int sight_max_samples = 48;
+    double lead_factors[4] = {0.7, 1.35, 0.5, 1.7}; // other leads tried after the preferred one (x the preferred lead)
+    double min_candidate_lead_m = 25.0;
+    double fallback_distance_m = 8.0;      // ChaseFallback: behind the car by this much
+    double fallback_height_m = 2.4;        // ... and this high above the ground
+    double fallback_retry_s = 1.0;         // look for a clear roadside shot again after this long
+};
+
+// How the occlusion search went (cumulative since reset()): tests and diagnostics read it.
+struct CinematicStats {
+    std::uint64_t candidates = 0;           // roadside candidates examined
+    std::uint64_t rejected_in_building = 0; // camera point inside/near a building footprint
+    std::uint64_t rejected_sight = 0;       // line of sight through a building or terrain
+    std::uint64_t rejected_not_ready = 0;   // obstacle data still loading
+    std::uint64_t fallbacks = 0;            // shots that ended as ChaseFallback
 };
 
 // Pure shot placement: the point `lead` metres of road/path ahead, pushed to
@@ -190,11 +227,21 @@ public:
     [[nodiscard]] const CinematicShot& shot() const { return shot_; }
     [[nodiscard]] const CinematicParams& params() const { return params_; }
 
+    // Non-owning; nullptr (the default) = nothing is checked, shots are placed purely along the road. Must outlive the
+    // director or be cleared first. Not thread safe: call from the thread that calls update().
+    void set_obstacles(const ShotObstacles* obstacles) { obstacles_ = obstacles; }
+    [[nodiscard]] const CinematicStats& stats() const { return stats_; }
+
 private:
     std::uint64_t next_random();
     double random_unit(); // [0, 1)
     void start_shot(const CarKinematics& car, const std::vector<RoadPoint>& road_ahead);
     [[nodiscard]] bool shot_expired(const CarKinematics& car) const;
+    // Camera point and sight lines of a candidate; counts the reason in stats_ when it fails.
+    [[nodiscard]] bool candidate_clear(const CinematicShot& shot, const CarKinematics& car,
+                                       const std::vector<RoadPoint>& poly, double lead_m);
+    [[nodiscard]] bool sight_clear(double ax, double ay, double az, double bx, double by, double bz) const;
+    void place_chase_fallback(const CarKinematics& car);
 
     CinematicParams params_;
     std::uint64_t seed_ = 1;
@@ -206,6 +253,8 @@ private:
     int next_side_ = 1;
     double history_clock_s_ = 0.0;
     std::vector<std::pair<double, double>> history_; // oldest first
+    const ShotObstacles* obstacles_ = nullptr;
+    CinematicStats stats_;
 };
 
 } // namespace rg

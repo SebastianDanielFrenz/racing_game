@@ -7,6 +7,7 @@
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/matchers/catch_matchers_floating_point.hpp>
 
+#include <algorithm>
 #include <cmath>
 #include <set>
 #include <string>
@@ -406,4 +407,126 @@ TEST_CASE("camera math: the shot is cut when the car has passed it or it is too 
     const auto second = dir.shot();
     dir.update(dt, car_at(second.x - p.cut_when_far_m - 10.0, 0.0, 30.0, 0.0), road);
     CHECK(dir.shot().serial == second.serial + 1);
+}
+
+// ------------------------------------------------------------------ chase --
+// The chase camera must stay at its wanted offset from the car whatever the speed, acceleration or frame rate (owner:
+// "the first camera still lags"). The earlier rig smoothed the camera's ABSOLUTE position, which trails a moving car
+// by speed / rate metres; rg::chase_follow_offset smooths the car-relative offset instead.
+namespace {
+
+struct ChaseRun {
+    double max_err_m = 0.0; // worst |camera - car - wanted offset| after the first second
+    double final_err_m = 0.0;
+};
+
+ps::Vec3 add(const ps::Vec3& a, const ps::Vec3& b) { return {a.x + b.x, a.y + b.y, a.z + b.z}; }
+ps::Vec3 sub(const ps::Vec3& a, const ps::Vec3& b) { return {a.x - b.x, a.y - b.y, a.z - b.z}; }
+double len(const ps::Vec3& a) { return std::sqrt(a.x * a.x + a.y * a.y + a.z * a.z); }
+
+enum class FollowKind { Offset, AbsolutePosition /* the earlier rig, kept as the reference */, FixedAlphaPerFrame /* sabotage */ };
+
+// Car on a straight line with speed v(t) = v0 + a*t (turn_rate = 0) or on a circle at constant speed v0 with the given
+// yaw rate. The wanted offset is 7 m behind and 2.5 m above, rotated with the car's heading.
+ChaseRun run_chase(FollowKind kind, double fps, double v0, double accel, double turn_rate, double seconds = 8.0,
+                   double rate = 6.0) {
+    const double dt = 1.0 / fps;
+    double x = 0.0, y = 0.0, heading = 0.0, v = v0;
+    auto wanted = [&](double h) { return ps::Vec3{-7.0 * std::cos(h), -7.0 * std::sin(h), 2.5}; };
+    ps::Vec3 offset = wanted(heading);
+    ps::Vec3 abs_cam = add(ps::Vec3{x, y, 0.0}, offset);
+    ChaseRun r;
+    const int frames = static_cast<int>(seconds * fps);
+    for (int i = 0; i < frames; ++i) {
+        v += accel * dt;
+        heading += turn_rate * dt;
+        x += std::cos(heading) * v * dt;
+        y += std::sin(heading) * v * dt;
+        const ps::Vec3 car{x, y, 0.0};
+        const ps::Vec3 want = wanted(heading);
+        double err = 0.0;
+        switch (kind) {
+        case FollowKind::Offset:
+            offset = rg::chase_follow_offset(offset, want, dt, rate);
+            err = len(sub(offset, want));
+            break;
+        case FollowKind::AbsolutePosition: {
+            const double a = 1.0 - std::exp(-rate * dt);
+            const ps::Vec3 target = add(car, want);
+            abs_cam = add(abs_cam, ps::Vec3{(target.x - abs_cam.x) * a, (target.y - abs_cam.y) * a, (target.z - abs_cam.z) * a});
+            err = len(sub(abs_cam, target));
+            break;
+        }
+        case FollowKind::FixedAlphaPerFrame:
+            offset = rg::chase_follow_offset(offset, want, 1.0 / 60.0, rate); // ignores the real dt
+            err = len(sub(offset, want));
+            break;
+        }
+        if (i >= static_cast<int>(fps)) r.max_err_m = std::max(r.max_err_m, err);
+        r.final_err_m = err;
+    }
+    return r;
+}
+
+} // namespace
+
+TEST_CASE("camera math: chase offset smoothing", "[camera_math]") {
+    SECTION("straight driving: the camera stays exactly at its offset at any speed, acceleration and frame rate") {
+        for (const double fps : {30.0, 60.0, 144.0, 240.0}) {
+            for (const double v : {0.0, 10.0, 30.0, 60.0}) {
+                const ChaseRun cruise = run_chase(FollowKind::Offset, fps, v, 0.0, 0.0);
+                const ChaseRun accel = run_chase(FollowKind::Offset, fps, v, 6.0, 0.0);
+                CHECK(cruise.max_err_m < 1e-9);
+                CHECK(accel.max_err_m < 1e-9);
+            }
+        }
+    }
+
+    SECTION("before: smoothing the absolute position trailed the car by speed / rate") {
+        // The numbers the fix is measured against: 10 / 30 / 60 m/s at 60 fps.
+        const double e10 = run_chase(FollowKind::AbsolutePosition, 60.0, 10.0, 0.0, 0.0).max_err_m;
+        const double e30 = run_chase(FollowKind::AbsolutePosition, 60.0, 30.0, 0.0, 0.0).max_err_m;
+        const double e60 = run_chase(FollowKind::AbsolutePosition, 60.0, 60.0, 0.0, 0.0).max_err_m;
+        INFO("absolute-position follow lag at 10/30/60 m/s: " << e10 << " / " << e30 << " / " << e60 << " m");
+        CHECK_THAT(e10, WithinAbs(10.0 / 6.0, 0.1 + 0.05 * 10.0 / 6.0));
+        CHECK_THAT(e30, WithinAbs(30.0 / 6.0, 0.1 + 0.05 * 30.0 / 6.0));
+        CHECK_THAT(e60, WithinAbs(60.0 / 6.0, 0.1 + 0.05 * 60.0 / 6.0));
+        // ... which the offset form removes entirely.
+        CHECK(run_chase(FollowKind::Offset, 60.0, 60.0, 0.0, 0.0).max_err_m < 1e-9);
+    }
+
+    SECTION("cornering: the swing-in error is the same curve at every frame rate and never worse than before") {
+        // 15 m/s on a 50 m circle (yaw rate 0.3 rad/s): the wanted offset rotates, the camera eases after it.
+        const double ref = run_chase(FollowKind::Offset, 240.0, 15.0, 0.0, 0.3).max_err_m;
+        INFO("cornering swing error at 240 fps: " << ref << " m");
+        for (const double fps : {30.0, 60.0, 144.0}) {
+            const double e = run_chase(FollowKind::Offset, fps, 15.0, 0.0, 0.3).max_err_m;
+            CHECK_THAT(e, WithinAbs(ref, (fps < 60.0 ? 0.12 : 0.06) * ref)); // first-order discretisation: O(rate * dt)
+        }
+        const double before = run_chase(FollowKind::AbsolutePosition, 60.0, 15.0, 0.0, 0.3).max_err_m;
+        INFO("absolute-position follow in the same corner: " << before << " m");
+        CHECK(run_chase(FollowKind::Offset, 60.0, 15.0, 0.0, 0.3).max_err_m < before);
+    }
+
+    SECTION("a changed wanted offset eases in with 1 - exp(-rate * t), whatever the frame rate") {
+        for (const double fps : {30.0, 60.0, 240.0}) {
+            ps::Vec3 o{-7.0, 0.0, 2.5};
+            const ps::Vec3 want{-3.4, 0.0, 1.5};
+            const int frames = static_cast<int>(0.5 * fps);
+            for (int i = 0; i < frames; ++i) o = rg::chase_follow_offset(o, want, 1.0 / fps, 6.0);
+            const double expected = -7.0 + 3.6 * (1.0 - std::exp(-6.0 * 0.5));
+            CHECK_THAT(o.x, WithinAbs(expected, 1e-9));
+        }
+        // rate <= 0 = no smoothing.
+        const ps::Vec3 o = rg::chase_follow_offset({-7, 0, 2.5}, {-3, 1, 1}, 0.016, 0.0);
+        CHECK_THAT(o.x, WithinAbs(-3.0, 1e-12));
+    }
+
+    SECTION("a smoothing step that ignored the real frame time would show up as frame-rate dependence") {
+        // The sabotage reference: always easing as if at 60 fps. At 240 fps the camera then swings in 4x faster.
+        const double honest = run_chase(FollowKind::Offset, 240.0, 15.0, 0.0, 0.3).max_err_m;
+        const double broken = run_chase(FollowKind::FixedAlphaPerFrame, 240.0, 15.0, 0.0, 0.3).max_err_m;
+        INFO("honest " << honest << " m vs fixed-alpha " << broken << " m");
+        CHECK(std::abs(honest - broken) > 0.1 * honest);
+    }
 }

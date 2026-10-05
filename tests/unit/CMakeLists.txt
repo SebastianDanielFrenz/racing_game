@@ -12,6 +12,7 @@ target_link_libraries(rg_test_catch_main
 add_executable(rg_unit_tests
   test_environment.cpp
   test_npc_truck.cpp
+  test_traffic_stuck.cpp
   test_npc_traffic.cpp
   test_session.cpp
   test_world_config.cpp
@@ -47,6 +48,7 @@ add_executable(rg_unit_tests
   test_garage.cpp
   test_road_ahead.cpp
   test_camera_math.cpp
+  test_cinematic_obstacles.cpp
   test_render_pose.cpp
 )
 

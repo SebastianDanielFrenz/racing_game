@@ -100,7 +100,14 @@ ps::Vec3 orbit_offset(const OrbitState& s) {
 
 // -------------------------------------------------------------- cinematic ---
 
-const char* to_string(ShotSource s) { return s == ShotSource::RoadAhead ? "road_ahead" : "predicted_path"; }
+const char* to_string(ShotSource s) {
+    switch (s) {
+        case ShotSource::RoadAhead: return "road_ahead";
+        case ShotSource::PredictedPath: return "predicted_path";
+        case ShotSource::ChaseFallback: return "chase_fallback";
+    }
+    return "road_ahead";
+}
 
 std::optional<CinematicShot> place_roadside_shot(const std::vector<RoadPoint>& poly, double lead_m, int side,
                                                  double height_m, const CinematicParams& p, ShotSource source) {
@@ -177,6 +184,7 @@ void CinematicDirector::reset() {
     next_side_ = 1;
     history_clock_s_ = 0.0;
     history_.clear();
+    stats_ = CinematicStats{};
 }
 
 std::uint64_t CinematicDirector::next_random() {
@@ -199,6 +207,105 @@ bool CinematicDirector::shot_expired(const CarKinematics& car) const {
     // The car has gone past the camera: its position relative to the camera,
     // along its own heading, is positive.
     return rx * car.heading_x + ry * car.heading_y > params_.cut_when_passed_m;
+}
+
+namespace {
+
+// The point `s` metres along a polyline (clamped to its ends), horizontal position only.
+std::pair<double, double> point_along(const std::vector<RoadPoint>& poly, double s) {
+    if (poly.empty()) return {0.0, 0.0};
+    double remaining = std::max(0.0, s);
+    for (std::size_t i = 0; i + 1 < poly.size(); ++i) {
+        const double dx = poly[i + 1].x - poly[i].x;
+        const double dy = poly[i + 1].y - poly[i].y;
+        const double l = hypot2(dx, dy);
+        if (remaining <= l && l > 1.0e-9) {
+            const double t = remaining / l;
+            return {poly[i].x + dx * t, poly[i].y + dy * t};
+        }
+        remaining -= l;
+    }
+    return {poly.back().x, poly.back().y};
+}
+
+double polyline_length(const std::vector<RoadPoint>& poly) {
+    double len = 0.0;
+    for (std::size_t i = 0; i + 1 < poly.size(); ++i) {
+        len += hypot2(poly[i + 1].x - poly[i].x, poly[i + 1].y - poly[i].y);
+    }
+    return len;
+}
+
+} // namespace
+
+bool CinematicDirector::sight_clear(double ax, double ay, double az, double bx, double by, double bz) const {
+    if (!obstacles_) return true;
+    if (obstacles_->building_blocks(ax, ay, az, bx, by, bz)) return false;
+    const double dx = bx - ax, dy = by - ay, dz = bz - az;
+    const double len = std::sqrt(dx * dx + dy * dy + dz * dz);
+    const int n = std::clamp(static_cast<int>(std::ceil(len / std::max(0.5, params_.sight_sample_step_m))), 1,
+                             std::max(1, params_.sight_max_samples));
+    for (int i = 1; i < n; ++i) {
+        const double t = static_cast<double>(i) / static_cast<double>(n);
+        const double x = ax + dx * t, y = ay + dy * t, z = az + dz * t;
+        const auto ground = obstacles_->ground_height(x, y);
+        if (ground && z < *ground + params_.sight_ground_clearance_m) return false;
+    }
+    return true;
+}
+
+bool CinematicDirector::candidate_clear(const CinematicShot& shot, const CarKinematics& car,
+                                        const std::vector<RoadPoint>& poly, double lead_m) {
+    if (!obstacles_) return true;
+    ++stats_.candidates;
+    if (!obstacles_->ready(shot.x, shot.y) || !obstacles_->ready(car.x, car.y)) {
+        ++stats_.rejected_not_ready;
+        return false;
+    }
+    const double cam_ground = obstacles_->ground_height(shot.x, shot.y).value_or(0.0);
+    const double cam_z = cam_ground + shot.height_above_ground_m;
+    if (obstacles_->building_covers(shot.x, shot.y, cam_z, params_.building_margin_m)) {
+        ++stats_.rejected_in_building;
+        return false;
+    }
+    // The car now, then the road a third and two thirds of the way to the camera (the stretch the shot films).
+    const double car_ground = obstacles_->ground_height(car.x, car.y).value_or(0.0);
+    if (!sight_clear(shot.x, shot.y, cam_z, car.x, car.y, car_ground + params_.car_target_height_m)) {
+        ++stats_.rejected_sight;
+        return false;
+    }
+    for (const double fraction : {1.0 / 3.0, 2.0 / 3.0}) {
+        const auto p = point_along(poly, lead_m * fraction);
+        const double g = obstacles_->ground_height(p.first, p.second).value_or(0.0);
+        if (!sight_clear(shot.x, shot.y, cam_z, p.first, p.second, g + params_.car_target_height_m)) {
+            ++stats_.rejected_sight;
+            return false;
+        }
+    }
+    return true;
+}
+
+void CinematicDirector::place_chase_fallback(const CarKinematics& car) {
+    // Behind the car on its own path (the road under it is clear by construction); shorten the distance if even that
+    // lands inside a building (a narrow street corner).
+    double dist = params_.fallback_distance_m;
+    double x = car.x - car.heading_x * dist, y = car.y - car.heading_y * dist;
+    if (obstacles_) {
+        const double ground_car = obstacles_->ground_height(car.x, car.y).value_or(0.0);
+        for (const double factor : {1.0, 0.6, 0.35}) {
+            dist = params_.fallback_distance_m * factor;
+            x = car.x - car.heading_x * dist;
+            y = car.y - car.heading_y * dist;
+            const double z = obstacles_->ground_height(x, y).value_or(ground_car) + params_.fallback_height_m;
+            if (!obstacles_->building_covers(x, y, z, params_.building_margin_m)) break;
+        }
+    }
+    shot_.x = x;
+    shot_.y = y;
+    shot_.height_above_ground_m = params_.fallback_height_m;
+    shot_.source = ShotSource::ChaseFallback;
+    shot_.side = 1;
+    shot_.fov_deg = params_.base_fov_deg;
 }
 
 void CinematicDirector::start_shot(const CarKinematics& car, const std::vector<RoadPoint>& road_ahead) {
@@ -225,9 +332,36 @@ void CinematicDirector::start_shot(const CarKinematics& car, const std::vector<R
     next_side_ = -side;
     const double height = params_.min_height_m + (params_.max_height_m - params_.min_height_m) * random_unit();
 
-    std::optional<CinematicShot> shot = place_roadside_shot(poly, std::min(lead, road_len > 0.0 ? road_len : lead), side,
-                                                           height, params_, source);
-    if (!shot) {
+    const double base_lead = std::min(lead, road_len > 0.0 ? road_len : lead);
+    std::optional<CinematicShot> shot;
+    double shot_lead = base_lead;
+    if (!obstacles_) {
+        shot = place_roadside_shot(poly, base_lead, side, height, params_, source);
+    } else {
+        // Preferred lead on the preferred side, then the other side, then the other leads (shorter and longer) on both.
+        const double poly_len = polyline_length(poly);
+        double leads[5];
+        int lead_count = 0;
+        leads[lead_count++] = base_lead;
+        for (const double factor : params_.lead_factors) {
+            const double l = std::clamp(base_lead * factor, std::min(params_.min_candidate_lead_m, poly_len), poly_len);
+            bool duplicate = false;
+            for (int i = 0; i < lead_count; ++i) duplicate = duplicate || std::fabs(leads[i] - l) < 2.0;
+            if (!duplicate && lead_count < 5) leads[lead_count++] = l;
+        }
+        for (int i = 0; i < lead_count && !shot; ++i) {
+            for (const int s : {side, -side}) {
+                auto candidate = place_roadside_shot(poly, leads[i], s, height, params_, source);
+                if (candidate && candidate_clear(*candidate, car, poly, leads[i])) {
+                    shot = candidate;
+                    shot_lead = leads[i];
+                    break;
+                }
+            }
+        }
+        (void)shot_lead;
+    }
+    if (!shot && !obstacles_) {
         // Cannot happen with a >= 2 point polyline; keep a sane shot anyway.
         CinematicShot s;
         s.x = car.x + car.heading_x * lead - car.heading_y * 6.0 * side;
@@ -236,6 +370,19 @@ void CinematicDirector::start_shot(const CarKinematics& car, const std::vector<R
         s.source = ShotSource::PredictedPath;
         s.side = side;
         shot = s;
+    }
+    if (!shot) {
+        // Every candidate was blocked (or the data is still loading): film from behind the car and look again soon.
+        const bool already = serial_ > 0 && shot_.source == ShotSource::ChaseFallback;
+        place_chase_fallback(car);
+        age_s_ = 0.0;
+        if (!already) {
+            ++serial_;
+            shot_.serial = serial_;
+            cut_ = true;
+        }
+        ++stats_.fallbacks;
+        return;
     }
     const double dist = std::max(1.0, hypot2(shot->x - car.x, shot->y - car.y));
     shot->fov_deg = std::clamp(2.0 * std::atan(15.0 / dist) * 180.0 / kPi, 14.0, params_.base_fov_deg);
@@ -257,10 +404,27 @@ const CinematicShot& CinematicDirector::update(double dt, const CarKinematics& c
         while (history_.size() > max_points) history_.erase(history_.begin());
     }
     age_s_ += dt;
-    if (serial_ == 0 || age_s_ >= params_.max_hold_s || (age_s_ >= params_.min_hold_s && shot_expired(car))) {
+    if (serial_ == 0) {
+        start_shot(car, road_ahead);
+    } else if (shot_.source == ShotSource::ChaseFallback) {
+        // The fallback rides with the car (allocation free); every fallback_retry_s look for a clear roadside shot again.
+        if (age_s_ >= params_.fallback_retry_s) start_shot(car, road_ahead);
+        else place_chase_fallback(car);
+    } else if (age_s_ >= params_.max_hold_s || (age_s_ >= params_.min_hold_s && shot_expired(car))) {
         start_shot(car, road_ahead);
     }
     return shot_;
+}
+
+} // namespace rg
+
+namespace rg {
+
+ps::Vec3 chase_follow_offset(const ps::Vec3& previous, const ps::Vec3& desired, double dt, double rate_per_s) {
+    if (!(rate_per_s > 0.0) || !(dt > 0.0)) return rate_per_s > 0.0 ? previous : desired;
+    const double a = 1.0 - std::exp(-rate_per_s * dt);
+    return ps::Vec3{previous.x + (desired.x - previous.x) * a, previous.y + (desired.y - previous.y) * a,
+                    previous.z + (desired.z - previous.z) * a};
 }
 
 } // namespace rg
