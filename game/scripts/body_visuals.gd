@@ -125,6 +125,16 @@ func set_vehicle(name_in: String, model_path: String, paint_hex: String, rim_hex
 		_vehicle_visual = null
 	_make_vehicle_visual()
 
+# The world is gone: the car's visual (model, wheels) goes with it, so the node count
+# returns to the pre-drive value (R5/R6 acceptance); the next load builds it again.
+func clear_vehicle() -> void:
+	if _vehicle_visual == null:
+		return
+	_chassis_root.remove_child(_vehicle_visual)
+	_vehicle_visual.queue_free()
+	_vehicle_visual = null
+	model_absolute_path = ""
+
 # Called by main.gd right after a Session starts running (flat: immediately
 # after start(); real world: _attach_world_view()'s first tick) - a world
 # switch (R7/R9) rebuilds rg::Session from under the same RgSimulation node,

@@ -276,6 +276,18 @@ func _run() -> void:
 			_check(sim.get_step_count() > steps0, "the respawned car's sim ticks")
 			await _pause_to_main_menu()
 
+	# ---- back to the hyper car through the garage: the same node count as after the stock drive ----
+	_press("garage")
+	_press("veh:%s" % hyper_id)
+	_press("choose")
+	_check(str(garage.get_edit_id()) == hyper_id and bool(garage.get_vehicle(hyper_id)["has_setup"]), "the hyper car's saved setup is still there")
+	_press("drive")
+	_press("spawn:flat")
+	if await _wait_until(func(): return _screen() == "drive", WORLD_LOAD_S):
+		await _after_world_load("hyper again", 1.0)
+		_check(bool(main.get_drive_selection()["modified"]), "the saved setup is applied again (persistence across drives)")
+		await _pause_to_main_menu()
+
 	# ---- everything released ----
 	await _wait_seconds(0.4)
 	_check(not sim.is_running(), "the sim is stopped at the main menu")
@@ -289,4 +301,5 @@ func _run() -> void:
 	await _wait_seconds(0.4)
 	_check(main.get_garage_scene() == null, "the garage scene is removed")
 	_check(_count_nodes(main) == nodes_before, "no garage node is left after Back (%d before, %d after)" % [nodes_before, _count_nodes(main)])
+	_press("quit")
 	_finish()

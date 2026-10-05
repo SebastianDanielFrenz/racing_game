@@ -99,6 +99,16 @@
     lines / exit 0 plus "RG_SHELL_TEST PASS" and no "RG_SHELL_TEST FAIL" line.
     The settings go to a scratch dir under the build dir, never to user://.
 
+.PARAMETER Garage
+    R6 headless garage acceptance test: launches with `-- --garage-test --shell-user-dir <dir>`
+    (game/scripts/garage_test.gd). Presses the real buttons and slider controls: Free roam
+    with the stock hyper car (suspension compression read from the physics) -> Main menu ->
+    Garage -> vehicle select -> Configure -> front springs slider -> an invalid gear set is
+    rejected with the loader's message (Save/Drive disabled) -> Save -> a second RgGarage
+    reads the setup -> Drive -> flat world, the physics shows the stiffer front springs ->
+    pause -> Garage (respawn) -> the sedan -> Main menu: no world, no garage node, no work
+    file left. Asserts 0 ERROR lines / exit 0 plus "RG_GARAGE_TEST PASS" and no FAIL line.
+
 .PARAMETER Cameras
     R5 PHYS-008 camera-switch test: launches with `-- --camera-test` (flat world,
     game/scripts/camera_switch_test.gd). Every ordered pair of the five driving
@@ -125,6 +135,7 @@ param(
     [switch]$BindingsTest,
     [switch]$Drive,
     [switch]$Shell,
+    [switch]$Garage,
     [switch]$Cameras,
     [int]$DriveDelayMs = 0
 )
@@ -135,9 +146,9 @@ if ($TerrainStream) {
     if (-not $PSBoundParameters.ContainsKey('QuitAfterFrames')) { $QuitAfterFrames = 200000 }
 }
 if ($DriveDelayMs -gt 0) { $Drive = $true }
-if (($Drive -or $Shell -or $Cameras) -and -not $PSBoundParameters.ContainsKey('QuitAfterFrames')) { $QuitAfterFrames = 200000 }
-if ((@($BindingsTest, $TerrainPreview, $Drive, $Shell, $Cameras) | Where-Object { $_ }).Count -gt 1) {
-    throw "smoke_test.ps1: -BindingsTest, -TerrainPreview/-TerrainStream, -Drive/-DriveDelayMs, -Shell and -Cameras are mutually exclusive"
+if (($Drive -or $Shell -or $Garage -or $Cameras) -and -not $PSBoundParameters.ContainsKey('QuitAfterFrames')) { $QuitAfterFrames = 200000 }
+if ((@($BindingsTest, $TerrainPreview, $Drive, $Shell, $Garage, $Cameras) | Where-Object { $_ }).Count -gt 1) {
+    throw "smoke_test.ps1: -BindingsTest, -TerrainPreview/-TerrainStream, -Drive/-DriveDelayMs, -Shell, -Garage and -Cameras are mutually exclusive"
 }
 $repoRoot = Split-Path -Parent $PSScriptRoot
 $gameDir  = Join-Path $repoRoot 'game'
@@ -265,6 +276,11 @@ if ($script:Failures.Count -eq 0 -and -not $script:DriveSkipped) {
         $shellStoreHome = if ($env:RG_G2M_HOME) { $env:RG_G2M_HOME } else { Join-Path $repoRoot 'cache\g2m\home-r1' }
         $script:ShellReal = Test-Path (Join-Path $shellStoreHome 'tiles.sqlite3')
         if ($script:ShellReal) { $godotArgs += @('--shell-real') } else { Write-Host "note: no geo2map store at $shellStoreHome - the shell test skips its real-world round" -ForegroundColor Yellow }
+    } elseif ($Garage) {
+        $garageUserDir = Join-Path $buildDir 'garage_test_user'
+        if (Test-Path $garageUserDir) { Remove-Item -Recurse -Force $garageUserDir }
+        New-Item -ItemType Directory -Force $garageUserDir | Out-Null
+        $godotArgs += @('--', '--garage-test', '--shell-user-dir', $garageUserDir)
     } elseif ($Cameras) {
         $godotArgs += @('--', '--camera-test')
     } else {
@@ -422,6 +438,17 @@ if ($script:Failures.Count -eq 0 -and -not $script:DriveSkipped) {
         }
         $shellLines = @($logContent | Select-String -Pattern 'RG_SHELL \S+ -> \S+')
         Write-Host "shell transitions: $($shellLines.Count)"
+    } elseif ($Garage) {
+        $failLines = @($logContent | Select-String -SimpleMatch -Pattern 'RG_GARAGE_TEST FAIL')
+        $okLines = @($logContent | Select-String -SimpleMatch -Pattern 'RG_GARAGE_TEST ok:')
+        $passLine = $logContent | Select-String -Pattern 'RG_GARAGE_TEST PASS checks=(\d+)' | Select-Object -Last 1
+        if ($failLines.Count -gt 0) {
+            Report-Fail "garage test reported failure(s):`n$($failLines -join "`n")"
+        } elseif (-not $passLine) {
+            Report-Fail "no 'RG_GARAGE_TEST PASS' line - garage_test.gd did not finish (is main.gd's --garage-test node running?)"
+        } else {
+            Report-Ok "garage test: $($passLine.Line) ($($okLines.Count) ok lines)"
+        }
     } elseif ($Cameras) {
         $failLines = @($logContent | Select-String -SimpleMatch -Pattern 'RG_CAMERA_TEST FAIL')
         $passLine = $logContent | Select-String -Pattern 'RG_CAMERA_TEST PASS .*' | Select-Object -Last 1

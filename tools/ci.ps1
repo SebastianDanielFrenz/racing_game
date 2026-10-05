@@ -127,10 +127,11 @@ if (-not $SkipSmoke) {
         $script:LegResults['smoke_test_bindings'] = "FAIL ($($bindingsSw.Elapsed.ToString('mm\:ss')))"
     }
 
-    # R5: the headless UI flow test of the game shell (-Shell) and the PHYS-008
+    # R5: the headless UI flow test of the game shell (-Shell), R6: the garage
+    # acceptance flow (-Garage) and the PHYS-008
     # camera-switch test (-Cameras). Both run flat-world only (no geo2map store)
     # and reuse the built binary, a few seconds each.
-    foreach ($extra in @(@('Shell', 'smoke_test_shell'), @('Cameras', 'smoke_test_cameras'))) {
+    foreach ($extra in @(@('Shell', 'smoke_test_shell'), @('Garage', 'smoke_test_garage'), @('Cameras', 'smoke_test_cameras'))) {
         Write-Host "`n=== leg: smoke_test (-$($extra[0])) ===" -ForegroundColor Cyan
         $extraSw = [System.Diagnostics.Stopwatch]::StartNew()
         $extraArgs = @{ SkipBuild = $true }

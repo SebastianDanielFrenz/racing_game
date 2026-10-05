@@ -1379,6 +1379,7 @@ func _begin_world_load(world: Dictionary, respawn: bool = false) -> void:
 func _unload_world() -> void:
 	_release_world_nodes()
 	_simulation.unload()
+	_visuals.clear_vehicle()
 	_garage.cleanup() # the setup materialisation of the car just unloaded (R6)
 	world_kind = ""
 	world_state = "none"
