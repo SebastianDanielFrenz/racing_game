@@ -631,7 +631,7 @@ func _fill_stats() -> void:
 	var kw := float(st["peak_power_kw"])
 	_stat_bar("Power", "%.0f kW at %.0f rpm" % [kw, float(st["peak_power_rpm"])], kw / best_kw)
 	var nm := float(st["peak_torque_nm"])
-	_stat_bar("Torque", "%.0f N*m at %.0f rpm" % [nm, float(st["peak_torque_rpm"])], nm / best_nm)
+	_stat_bar("Torque", "%.0f Nm at %.0f rpm" % [nm, float(st["peak_torque_rpm"])], nm / best_nm)
 	_stat_line("Mass", "%.0f kg" % float(st["mass_kg"]))
 	_stat_line("Drive", "%s  (%d of %d wheels driven)" % [str(st["layout"]), int(st["driven_wheels"]), int(st["wheel_count"])])
 	_stat_line("Gearbox", "%d-speed" % int(st["gear_count"]))
