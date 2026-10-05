@@ -14,7 +14,7 @@
     build + unit tests + smoke test)".
 
 .PARAMETER Only
-    Run only the named leg(s) (debug, release). Default: both.
+    Run only the named leg(s) (debug, release). Default: both. NOTE: smoke_test.ps1 targets the debug build dir, so the smoke legs below also run for -Only release.
 
 .PARAMETER SkipSmoke
     Skip tools/smoke_test.ps1 (faster iteration on build/test failures
@@ -125,6 +125,26 @@ if (-not $SkipSmoke) {
     } else {
         Report-Fail "smoke_test (bindings) exited $bindingsExit"
         $script:LegResults['smoke_test_bindings'] = "FAIL ($($bindingsSw.Elapsed.ToString('mm\:ss')))"
+    }
+
+    # R5: the headless UI flow test of the game shell (-Shell) and the PHYS-008
+    # camera-switch test (-Cameras). Both run flat-world only (no geo2map store)
+    # and reuse the built binary, a few seconds each.
+    foreach ($extra in @(@('Shell', 'smoke_test_shell'), @('Cameras', 'smoke_test_cameras'))) {
+        Write-Host "`n=== leg: smoke_test (-$($extra[0])) ===" -ForegroundColor Cyan
+        $extraSw = [System.Diagnostics.Stopwatch]::StartNew()
+        $extraArgs = @{ SkipBuild = $true }
+        $extraArgs[$extra[0]] = $true
+        & (Join-Path $PSScriptRoot 'smoke_test.ps1') @extraArgs
+        $extraExit = $LASTEXITCODE
+        $extraSw.Stop()
+        if ($extraExit -eq 0) {
+            Report-Ok "smoke_test (-$($extra[0]))"
+            $script:LegResults[$extra[1]] = "PASS ($($extraSw.Elapsed.ToString('mm\:ss')))"
+        } else {
+            Report-Fail "smoke_test (-$($extra[0])) exited $extraExit"
+            $script:LegResults[$extra[1]] = "FAIL ($($extraSw.Elapsed.ToString('mm\:ss')))"
+        }
     }
 }
 

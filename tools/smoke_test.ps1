@@ -88,6 +88,25 @@
     "RG_DRIVE done" line. --quit-after is raised to 200000 (the script
     quits itself; 300 s wall-clock timeout).
 
+.PARAMETER Shell
+    R5 headless UI flow test: launches with `-- --shell-test --shell-user-dir <dir>`
+    (game/scripts/shell_flow_test.gd; no direct-start flag, so the game boots into
+    the shell). The script presses the real buttons: boot -> main menu -> settings
+    (change a value, Back saves, a second RgShell reloads it) -> credits -> Free roam
+    -> flat world -> drive -> Esc pause -> Resume -> Reset car -> Main menu (world
+    torn down) -> Free roam again in the same process -> Main menu -> Quit. Needs no
+    geo2map store (flat world), so it runs everywhere. Asserts the usual 0 ERROR
+    lines / exit 0 plus "RG_SHELL_TEST PASS" and no "RG_SHELL_TEST FAIL" line.
+    The settings go to a scratch dir under the build dir, never to user://.
+
+.PARAMETER Cameras
+    R5 PHYS-008 camera-switch test: launches with `-- --camera-test` (flat world,
+    game/scripts/camera_switch_test.gd). Every ordered pair of the five driving
+    views (and the free cam) is switched, plain and across a floating-origin
+    rebase in the switch frame, with the sim paused; the camera must land on its
+    baseline within the script's tolerances. Asserts 0 ERROR lines / exit 0 plus
+    "RG_CAMERA_TEST PASS".
+
 .PARAMETER DriveDelayMs
     Implies -Drive and forwards `--g2m-fetch-delay-ms N` (every tile fetch
     is delayed by N ms), and drive_smoke.gd then relocates the car ~3 km
@@ -105,6 +124,8 @@ param(
     [switch]$TerrainStream,
     [switch]$BindingsTest,
     [switch]$Drive,
+    [switch]$Shell,
+    [switch]$Cameras,
     [int]$DriveDelayMs = 0
 )
 
@@ -114,9 +135,9 @@ if ($TerrainStream) {
     if (-not $PSBoundParameters.ContainsKey('QuitAfterFrames')) { $QuitAfterFrames = 200000 }
 }
 if ($DriveDelayMs -gt 0) { $Drive = $true }
-if ($Drive -and -not $PSBoundParameters.ContainsKey('QuitAfterFrames')) { $QuitAfterFrames = 200000 }
-if ((@($BindingsTest, $TerrainPreview, $Drive) | Where-Object { $_ }).Count -gt 1) {
-    throw "smoke_test.ps1: -BindingsTest, -TerrainPreview/-TerrainStream and -Drive/-DriveDelayMs are mutually exclusive"
+if (($Drive -or $Shell -or $Cameras) -and -not $PSBoundParameters.ContainsKey('QuitAfterFrames')) { $QuitAfterFrames = 200000 }
+if ((@($BindingsTest, $TerrainPreview, $Drive, $Shell, $Cameras) | Where-Object { $_ }).Count -gt 1) {
+    throw "smoke_test.ps1: -BindingsTest, -TerrainPreview/-TerrainStream, -Drive/-DriveDelayMs, -Shell and -Cameras are mutually exclusive"
 }
 $repoRoot = Split-Path -Parent $PSScriptRoot
 $gameDir  = Join-Path $repoRoot 'game'
@@ -233,6 +254,22 @@ if ($script:Failures.Count -eq 0 -and -not $script:DriveSkipped) {
     } elseif ($Drive) {
         $godotArgs += @('--', '--drive', '--drive-smoke')
         if ($DriveDelayMs -gt 0) { $godotArgs += @('--g2m-fetch-delay-ms', $DriveDelayMs) }
+    } elseif ($Shell) {
+        # No direct-start flag: the game boots into the shell. A scratch user dir
+        # keeps the test's settings.json out of the real user://.
+        $shellUserDir = Join-Path $buildDir 'shell_test_user'
+        if (Test-Path $shellUserDir) { Remove-Item -Recurse -Force $shellUserDir }
+        New-Item -ItemType Directory -Force $shellUserDir | Out-Null
+        $godotArgs += @('--', '--shell-test', '--shell-user-dir', $shellUserDir)
+        # With a geo2map store the test also loads the real world through the menu.
+        $shellStoreHome = if ($env:RG_G2M_HOME) { $env:RG_G2M_HOME } else { Join-Path $repoRoot 'cache\g2m\home-r1' }
+        $script:ShellReal = Test-Path (Join-Path $shellStoreHome 'tiles.sqlite3')
+        if ($script:ShellReal) { $godotArgs += @('--shell-real') } else { Write-Host "note: no geo2map store at $shellStoreHome - the shell test skips its real-world round" -ForegroundColor Yellow }
+    } elseif ($Cameras) {
+        $godotArgs += @('--', '--camera-test')
+    } else {
+        # A plain launch now opens the shell; the plain smoke checks the flat sim.
+        $godotArgs += @('--', '--flat')
     }
     Write-Host "`n-- headless run: $godotExe $($godotArgs -join ' ') --" -ForegroundColor Cyan
 
@@ -367,6 +404,36 @@ if ($script:Failures.Count -eq 0 -and -not $script:DriveSkipped) {
                 if ($freezes -ge 1) { Report-Ok "the terrain gate froze the clock (relocate_freezes=$freezes)" } else { Report-Fail "relocate_freezes=$freezes (expected >= 1 with a $DriveDelayMs ms fetch delay)" }
                 if ($advanced -gt 0) { Report-Ok "ticks advanced after the relocation (advanced_after_relocate=$advanced)" } else { Report-Fail "advanced_after_relocate=$advanced (expected > 0)" }
             }
+        }
+    } elseif ($Shell) {
+        $failLines = @($logContent | Select-String -SimpleMatch -Pattern 'RG_SHELL_TEST FAIL')
+        $okLines = @($logContent | Select-String -SimpleMatch -Pattern 'RG_SHELL_TEST ok:')
+        $passLine = $logContent | Select-String -Pattern 'RG_SHELL_TEST PASS checks=(\d+)' | Select-Object -Last 1
+        if ($failLines.Count -gt 0) {
+            Report-Fail "shell flow test reported failure(s):`n$($failLines -join "`n")"
+        } elseif (-not $passLine) {
+            Report-Fail "no 'RG_SHELL_TEST PASS' line - shell_flow_test.gd did not finish (is main.gd's --shell-test node running?)"
+        } else {
+            Report-Ok "shell flow test: $($passLine.Line) ($($okLines.Count) ok lines)"
+        }
+        if ($script:ShellReal) {
+            $realOk = @($logContent | Select-String -SimpleMatch -Pattern 'RG_SHELL_TEST ok: real:')
+            if ($realOk.Count -ge 8) { Report-Ok "shell flow test: the real-world round ran ($($realOk.Count) checks)" } else { Report-Fail "shell flow test: only $($realOk.Count) 'real:' checks ran (expected the real-world round)" }
+        }
+        $shellLines = @($logContent | Select-String -Pattern 'RG_SHELL \S+ -> \S+')
+        Write-Host "shell transitions: $($shellLines.Count)"
+    } elseif ($Cameras) {
+        $failLines = @($logContent | Select-String -SimpleMatch -Pattern 'RG_CAMERA_TEST FAIL')
+        $passLine = $logContent | Select-String -Pattern 'RG_CAMERA_TEST PASS .*' | Select-Object -Last 1
+        $pairsLine = $logContent | Select-String -Pattern 'RG_CAMERA_TEST pairs=(\d+) rebase_pairs=(\d+)' | Select-Object -Last 1
+        if ($failLines.Count -gt 0) {
+            Report-Fail "camera switch test reported failure(s):`n$($failLines -join "`n")"
+        } elseif (-not $passLine) {
+            Report-Fail "no 'RG_CAMERA_TEST PASS' line - camera_switch_test.gd did not finish"
+        } elseif (-not $pairsLine -or [int]$pairsLine.Matches[0].Groups[1].Value -lt 20 -or [int]$pairsLine.Matches[0].Groups[2].Value -lt 20) {
+            Report-Fail "camera switch test: fewer than 20 plain + 20 rebase pairs ran ($($pairsLine.Line))"
+        } else {
+            Report-Ok "camera switch test: $($passLine.Line); $($pairsLine.Line)"
         }
     } elseif ($BindingsTest) {
         $doneLine = $logContent | Select-String -Pattern 'bindings test: ok' | Select-Object -Last 1

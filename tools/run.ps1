@@ -29,16 +29,25 @@
         run.ps1
         run.ps1 -SkipBuild
         run.ps1 -NoConsole
+        run.ps1 -Drive
         run.ps1 -Flat
         run.cmd -- --some-godot-flag
 
-    WHAT STARTS (R9): by default the game starts in the real world
-    (home region, needs the geo2map store - see game/scripts/main.gd) in
-    Drive mode, i.e. `--drive` is forwarded to Godot. -Flat starts the flat
-    test scene instead (no store needed). Either way the world and the
-    player mode switch at runtime (F8 / V) - the flag picks only the start.
-    Nothing is added when the forwarded args already choose a start
-    (--drive, --terrain-preview, --bindings-test).
+    WHAT STARTS (R5): by default the game opens its SHELL - the boot splash,
+    then the main menu (Free roam / Settings / Credits / Quit; Esc or P pauses
+    in the world). Nothing is forwarded to Godot for that.
+      -Drive  keeps the pre-R5 behaviour: skips the menu and starts straight in
+              the real world (home region, needs the geo2map store - see
+              game/scripts/main.gd) in Drive mode, i.e. `--drive` is forwarded.
+      -Flat   skips the menu and starts straight in the flat test scene (no
+              store needed), i.e. `--flat` is forwarded.
+      -VR     also starts straight in the world (the menus are screen UI, not
+              built for a headset yet): the real world unless -Flat is given.
+    Either way the world and the player mode switch at runtime (F8 / V / B) -
+    the flags pick only the start. Nothing is added when the forwarded args
+    already choose a start (--drive, --flat, --free-cam, --terrain-preview,
+    --bindings-test, --shell-test, --camera-test, --drive-smoke, --screenshots,
+    --road-shots).
 
 .PARAMETER -SkipBuild
     Skip the configure/build step entirely and launch whatever is already
@@ -47,9 +56,12 @@
 .PARAMETER -NoConsole
     Launch the non-console Godot executable (no extra terminal window).
 
+.PARAMETER -Drive
+    Skip the shell and start straight in the real world, Drive mode (the
+    behaviour before the R5 shell existed).
+
 .PARAMETER -Flat
-    Start in the flat test scene instead of the real world (Drive mode
-    either way).
+    Skip the shell and start straight in the flat test scene (Drive mode).
 
 .PARAMETER -Editor
     Open the Godot editor on game/ instead of running it.
@@ -78,6 +90,7 @@ $SkipBuild = $false
 $NoConsole = $false
 $Editor    = $false
 $Flat      = $false
+$Drive     = $false
 $VR        = $false
 $DryRun    = $false
 $Preset    = 'relwithdebinfo'
@@ -93,6 +106,7 @@ foreach ($a in $args) {
         '^--?NoConsole$' { $NoConsole = $true; continue }
         '^--?Editor$'    { $Editor    = $true; continue }
         '^--?Flat$'      { $Flat      = $true; continue }
+        '^--?Drive$'     { $Drive     = $true; continue }
         '^--?VR$'        { $VR        = $true; continue }
         '^--?DryRun$'    { $DryRun    = $true; continue }
         '^--?Preset$'    { $expectPresetValue = $true; continue }
@@ -103,13 +117,17 @@ foreach ($a in $args) {
 
 $buildDir = Join-Path $repoRoot "out\build\$Preset"
 
-# R9: the start world. Real-world Drive unless -Flat or the forwarded args
-# already choose a start themselves.
-$choosesStart = @($GodotArgs | Where-Object { $_ -in @('--drive', '--terrain-preview', '--bindings-test') }).Count -gt 0
-if (-not $Flat -and -not $choosesStart) {
-    $GodotArgs.Insert(0, '--drive')
+# R5: the shell (boot splash + main menu) unless -Drive/-Flat (or -VR) or the
+# forwarded args already choose a start themselves.
+$choosesStart = @($GodotArgs | Where-Object { $_ -in @('--drive', '--flat', '--free-cam', '--terrain-preview', '--bindings-test', '--shell-test', '--camera-test', '--drive-smoke', '--screenshots', '--road-shots') }).Count -gt 0
+if (-not $choosesStart) {
+    if ($Flat) {
+        $GodotArgs.Insert(0, '--flat')
+    } elseif ($Drive -or $VR) {
+        $GodotArgs.Insert(0, '--drive')
+    }
 }
-$startLabel = if ($Flat) { 'flat scene' } elseif ($GodotArgs -contains '--drive') { 'real world' } else { 'chosen by the forwarded args' }
+$startLabel = if ($GodotArgs -contains '--flat') { 'flat scene' } elseif ($GodotArgs -contains '--drive') { 'real world' } elseif ($choosesStart) { 'chosen by the forwarded args' } else { 'game shell: boot + main menu' }
 
 Write-Host "=== run: build + launch racing_game ($startLabel) ===" -ForegroundColor Cyan
 Write-Host "repo root: $repoRoot"
