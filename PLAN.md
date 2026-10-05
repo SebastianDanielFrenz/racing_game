@@ -455,6 +455,9 @@ acceptance remain outstanding; R3 is not complete.
   - the setup persists;
   - the garage set loads from the main menu and from the pause menu, and returning to the world (or the main menu) leaves no garage nodes behind.
 
+**R6b: engine selection and tuning (owner 2026-10-05: a separate step after R6).** Model: Opus design with the physics_sim coordinator, then Sonnet. Prerequisite: [R6; physics_sim modular parts system].
+- Scope: engine swap per car (whitelisted engine `ref`, loader-validated), turbo configuration choice (physics_sim `World::replace_turbo_configuration`), engine tuning (rev limiter, throttle response, later ECU calibration as a slot-in part - the owner's 2026-09-29 parts/override model). Engine design (geometry, intake, exhaust; map regeneration in seconds) stays with the engine design GUI.
+
 **G5 + R7: land cover, buildings, water, vegetation, building collision.** Model: Sonnet (Opus for building-collision streaming). Prerequisite: [R2].
 - Acceptance:
   - building bases sit on terrain (max gap < 5 cm);
