@@ -430,6 +430,11 @@ CLAUDE.md and tests/unit/test_route_grip.cpp. Road ribbons/markings, bridge
 bodies and bidirectional bridge driving, and the 20-junction wheel-force
 acceptance remain outstanding; R3 is not complete.
 
+R3/G3 consumer plan (2026-10-05): docs/g3_consumer_design.md - carve switch,
+ribbons, bridge decks, route acceptance harness and a proposed definition of
+the R3 route bound (Fz residual no worse than a calibrated 2 cm step, 3x static
+corner load cap, no chassis contact; owner question O-3). Slices S1-S14 there.
+
 **G4: routing and map geometry.** Model: Opus for graph/routing design; Sonnet for map geometry.
 - Scope: A* + hierarchy, restrictions, guidance data, client map geometry.
 - Acceptance:
