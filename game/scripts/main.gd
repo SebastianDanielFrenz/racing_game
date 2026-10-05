@@ -5,9 +5,18 @@ extends Node3D
 # a one-node stub with this script attached).
 #
 # Command line (user args after `--`):
-#   (none)                  flat test scene, Drive mode
-#   --drive                 real world (RG_G2M_HOME store), Drive mode
-#   --free-cam              start in FreeCam mode instead of Drive
+#   (none)                  the game shell: boot splash, then the main menu
+#                           (shell_ui.gd; the screen flow is rg::ShellFlow)
+#   --flat                  flat test scene, Drive mode, straight in (no menu)
+#   --drive                 real world (RG_G2M_HOME store), Drive mode, straight in
+#   --free-cam              start in FreeCam mode instead of Drive (straight in:
+#                           the flat scene unless --drive is also given)
+#   --shell-user-dir <dir>  keep settings.json / last_drive.json in <dir> instead
+#                           of user:// (the headless shell test uses this)
+#   --shell-test            the headless UI flow test (shell_flow_test.gd;
+#                           tools/smoke_test.ps1 -Shell)
+#   --camera-test           the PHYS-008 camera-switch test (camera_switch_test.gd;
+#                           tools/smoke_test.ps1 -Cameras), flat scene
 #   --g2m-fetch-delay-ms N  real world: every tile fetch is delayed N..2N ms
 #                           (g2m::phys::DelayedFetch) - forces gate freezes
 #   --drive-smoke           scripted drive + relocation, prints RG_DRIVE lines
@@ -22,7 +31,10 @@ extends Node3D
 #                           alone, no Session, no car (unchanged; also
 #                           --stream-test)
 #   --bindings-test         the R7 binding smoke check (unchanged)
-# The flags only pick the STARTING world and mode: both change at runtime.
+# Every flag above except --shell-test/--shell-user-dir (and every scripted run:
+# --drive-smoke, --screenshots, --road-shots, --g2m-fetch-delay-ms) starts a
+# world directly (rg::ShellFlow's DirectStart) without showing the menu. The
+# flags only pick the STARTING world and mode: both change at runtime.
 #
 # Who decides what: the player-mode state machine and its rules live in
 # rg_core (rg::PlayerModeMachine, via RgSimulation.set_player_mode/
@@ -37,6 +49,13 @@ extends Node3D
 # Process priority -2000: input is polled, mode/world actions are applied and
 # the driving controls are forwarded BEFORE camera_director.gd (-1000) moves
 # the rigs and rebases, and before body_visuals.gd (0) places the meshes.
+#
+# Shell (R5): rg_core's rg::ShellFlow (via RgShell) decides which screen follows
+# which and hands back actions (show a screen, load/unload a world, pause, reset
+# the car, save settings, quit); _apply_transition() carries them out. The
+# screens are shell_ui.gd (boot, main menu, spawn picker, pause, settings,
+# credits) and loading_overlay.gd (loading); the Drive screen is the world
+# itself with the HUD. Esc/P pause, Esc backs out of every other screen.
 #
 # World load flow: flat = RgSimulation.initialize() + start() at once. Real
 # world = initialize_terrain() (start-up runs on a worker thread) -> poll
@@ -65,7 +84,7 @@ var ready_sim_time: float = -1.0 # sim time when the current world became "runni
 var _steering = preload("res://scripts/adaptive_steering.gd").new()
 var _simulation: Node
 var _input_map: Node
-var _cockpit_view: bool = false
+var _drive_view: String = "chase" # chase / bumper / cockpit / orbit / cinematic (rg::DriveView)
 var _drone_target_seen: int = -1 # last drone_target_id printed (-1 = own car)
 var _walker_rig: Node3D
 var _walker_visual: Node3D
@@ -84,6 +103,19 @@ var _load_started_ms: int = 0
 var _last_report_ms: int = 0
 const FRAME_SPIKE_S := 0.05
 var _spawn_reported: bool = false
+
+# --- shell (R5) ---
+var _shell: Node # RgShell: flow, settings, credits, spawn presets
+var _shell_ui: CanvasLayer
+var _teleport_dialog: CanvasLayer
+var _gauge: Control
+var _screen: String = "boot" # mirrors rg::ShellFlow's screen
+var _direct_start: bool = false # a start flag skipped the menu
+var _world_request: Dictionary = {} # what the flow asked to load (place label, address search)
+var _paused: bool = false
+var _panels_open_prev: bool = false # a panel was open at the end of the last frame (Esc then belongs to it)
+var _mouse_captured_prev: bool = false # likewise for the captured mouse (Esc then releases it)
+var shell_log: PackedStringArray = PackedStringArray() # "from>to" of every accepted transition (shell_flow_test.gd)
 
 # Held as a script member (NOT a local var) so the Resource stays alive for as
 # long as Main does - a local ShaderMaterial would be freed (and its
@@ -334,13 +366,18 @@ func _add_sun_and_sky() -> void:
 	add_child(env_node)
 
 func _build_scene(user_args: PackedStringArray) -> void:
-	var teleport_dialog := CanvasLayer.new()
-	teleport_dialog.set_script(load("res://scripts/address_teleport.gd"))
-	teleport_dialog.main = self
-	add_child(teleport_dialog)
+	_teleport_dialog = CanvasLayer.new()
+	_teleport_dialog.set_script(load("res://scripts/address_teleport.gd"))
+	_teleport_dialog.main = self
+	add_child(_teleport_dialog)
 	set_process_priority(-2000)
 	var start_world := "real_world" if "--drive" in user_args else "flat"
 	var start_mode := "free_cam" if "--free-cam" in user_args else "drive"
+	# Anything that names a start skips the menu (R5): the flags the scripted
+	# runs and the old run.ps1 use keep starting directly.
+	for direct_flag in ["--drive", "--flat", "--free-cam", "--drive-smoke", "--screenshots", "--road-shots", "--g2m-fetch-delay-ms", "--camera-test"]:
+		if direct_flag in user_args:
+			_direct_start = true
 	var delay_index := user_args.find("--g2m-fetch-delay-ms")
 	if delay_index >= 0 and delay_index + 1 < user_args.size():
 		fetch_delay_ms = int(user_args[delay_index + 1])
@@ -405,6 +442,21 @@ func _build_scene(user_args: PackedStringArray) -> void:
 	cockpit.body_visuals = _visuals
 	add_child(cockpit)
 	_director.add_rig("cockpit", cockpit)
+	var bumper := Node3D.new()
+	bumper.name = "BumperRig"
+	bumper.set_script(load("res://scripts/bumper_rig.gd"))
+	add_child(bumper)
+	_director.add_rig("bumper", bumper)
+	var orbit := Node3D.new()
+	orbit.name = "OrbitRig"
+	orbit.set_script(load("res://scripts/orbit_rig.gd"))
+	add_child(orbit)
+	_director.add_rig("orbit", orbit)
+	var cinematic := Node3D.new()
+	cinematic.name = "CinematicRig"
+	cinematic.set_script(load("res://scripts/cinematic_rig.gd"))
+	add_child(cinematic)
+	_director.add_rig("cinematic", cinematic)
 	var free := Node3D.new()
 	free.name = "FreeRig"
 	free.set_script(load("res://scripts/free_rig.gd"))
@@ -466,13 +518,13 @@ func _build_scene(user_args: PackedStringArray) -> void:
 	add_child(_hud)
 
 	# --- tach/speed gauge ---
-	var gauge := Control.new()
-	gauge.name = "TachGauge"
-	gauge.set_script(load("res://scripts/tach_gauge.gd"))
-	gauge.simulation_path = NodePath("../Simulation")
-	gauge.input_map_path = NodePath("../InputMap")
-	gauge.vehicle_name = VEHICLE_NAME
-	add_child(gauge)
+	_gauge = Control.new()
+	_gauge.name = "TachGauge"
+	_gauge.set_script(load("res://scripts/tach_gauge.gd"))
+	_gauge.simulation_path = NodePath("../Simulation")
+	_gauge.input_map_path = NodePath("../InputMap")
+	_gauge.vehicle_name = VEHICLE_NAME
+	add_child(_gauge)
 
 	# --- loading overlay ---
 	_overlay = CanvasLayer.new()
@@ -480,8 +532,13 @@ func _build_scene(user_args: PackedStringArray) -> void:
 	_overlay.set_script(load("res://scripts/loading_overlay.gd"))
 	add_child(_overlay)
 
+	_build_shell(user_args)
 	_apply_mode_state()
-	_load_world(start_world)
+	if _direct_start:
+		_apply_transition(_shell.direct_start({"kind": start_world, "has_spawn": false}))
+	else:
+		_set_world_ui_visible(false)
+		_show_screen("boot")
 
 	# --- scripted runs ---
 	if "--drive-smoke" in user_args:
@@ -498,6 +555,18 @@ func _build_scene(user_args: PackedStringArray) -> void:
 		tour.main = self
 		tour.out_dir = user_args[shot_index + 1]
 		add_child(tour)
+	if "--shell-test" in user_args:
+		var shell_test := Node.new()
+		shell_test.name = "ShellFlowTest"
+		shell_test.set_script(load("res://scripts/shell_flow_test.gd"))
+		shell_test.main = self
+		add_child(shell_test)
+	if "--camera-test" in user_args:
+		var camera_test := Node.new()
+		camera_test.name = "CameraSwitchTest"
+		camera_test.set_script(load("res://scripts/camera_switch_test.gd"))
+		camera_test.main = self
+		add_child(camera_test)
 	var road_shots_index := user_args.find("--road-shots")
 	if road_shots_index >= 0 and road_shots_index + 1 < user_args.size():
 		var road_shots := Node.new()
@@ -520,6 +589,18 @@ func get_overlay() -> Node:
 func get_world_view() -> Node:
 	return _world_view
 
+func get_shell() -> Node:
+	return _shell
+
+func get_shell_ui() -> CanvasLayer:
+	return _shell_ui
+
+func shell_screen() -> String:
+	return _screen
+
+func drive_view() -> String:
+	return _drive_view
+
 func get_body_visuals() -> Node:
 	return _visuals
 
@@ -530,11 +611,15 @@ func chassis_session_position() -> Vector3:
 func switch_world() -> void:
 	var other: String = str(_simulation.get_mode_state().get("other_world", "flat"))
 	print("RG_WORLD switch %s -> %s (was %s)" % [world_kind, other, world_state])
+	_world_request = {}
 	_load_world(other)
 
 var _vehicle_audio: Node3D
 
-func _load_world(kind: String) -> void:
+# Frees everything that belongs to the running world and reads its Session (road
+# and building streams, the vehicle audio, the terrain view): a world switch and
+# the way back to the main menu both start with this.
+func _release_world_nodes() -> void:
 	if _roads != null:
 		_roads.shutdown()
 		_roads.queue_free()
@@ -551,6 +636,9 @@ func _load_world(kind: String) -> void:
 	# The view shares the old Session's WorldTerrain: release it first.
 	_world_view.release()
 	_director.set_terrain_view(null)
+
+func _load_world(kind: String) -> void:
+	_release_world_nodes()
 	world_kind = kind
 	world_state = "loading"
 	ready_sim_time = -1.0
@@ -563,6 +651,7 @@ func _load_world(kind: String) -> void:
 	_input_map.configure_vehicle(vehicle_json)
 	var surface_table_json: String = ProjectSettings.globalize_path("res://../data/surfaces/surfaces.json")
 	if kind == "flat":
+		_simulation.clear_spawn_override()
 		if not _simulation.initialize(vehicle_json, surface_table_json):
 			_load_failed(str(_simulation.get_last_error()))
 			return
@@ -573,15 +662,45 @@ func _load_world(kind: String) -> void:
 		_overlay.hide_overlay()
 		_visuals.on_session_ready()
 		print("RG_WORLD ready world=flat")
+		_world_running()
 	else:
+		# The spawn the player picked belongs to a load started from the shell
+		# (set_spawn_override in _begin_world_load); F8 starts at the world's own.
+		_simulation.set_store_dir_override(str(_shell.get_setting("map_data.store_dir")))
 		_simulation.initialize_terrain(_world_config_path(), vehicle_json, surface_table_json)
-		_overlay.show_loading(WORLD_LABEL[kind], {}, 0.0)
+		_overlay.show_loading(WORLD_LABEL[kind], {}, 0.0, _loading_footer(), str(_world_request.get("label", "")))
 		print("RG_WORLD loading world=real_world fetch_delay_ms=%d" % fetch_delay_ms)
+
+func _loading_footer() -> String:
+	return "Esc cancels and returns to the main menu   F8 switches to the other world"
 
 func _load_failed(message: String) -> void:
 	world_state = "failed"
-	_overlay.show_error(WORLD_LABEL.get(world_kind, world_kind), message)
-	push_error("%s did not load: %s" % [WORLD_LABEL.get(world_kind, world_kind), message])
+	var label: String = WORLD_LABEL.get(world_kind, world_kind)
+	if _screen == "loading" and not _direct_start:
+		# Started from the menu: the flow returns to the main menu, which shows
+		# the message. Expected (a missing map store), so no script error.
+		print("RG_WORLD load failed: %s" % message)
+		_apply_transition(_shell.load_failed(message))
+		return
+	_overlay.show_error(label, message, "Esc returns to the main menu   F8 switches to the other world")
+	push_error("%s did not load: %s" % [label, message])
+
+# The world just became drivable (flat: at once; real world: its first tick).
+# The flow hears about it one frame later (_post_load_ready) so a transition that
+# started the load has finished applying its own actions first.
+func _world_running() -> void:
+	_simulation.set_road_ahead_wanted(_drive_view == "cinematic")
+	_apply_audio_settings()
+	call_deferred("_post_load_ready")
+
+func _post_load_ready() -> void:
+	if _screen != "loading" or world_state != "running":
+		return
+	_apply_transition(_shell.load_ready())
+	if bool(_world_request.get("open_address_search", false)) and world_kind == "real_world":
+		_world_request["open_address_search"] = false
+		_teleport_dialog.open_dialog()
 
 # Controls a fresh Session needs before its first tick: every channel starts
 # at 0 in rg::Session, so ignition must be on BEFORE start() or the car
@@ -599,9 +718,9 @@ func _poll_loading() -> void:
 	var elapsed := (Time.get_ticks_msec() - _load_started_ms) / 1000.0
 	match str(st.get("state", "")):
 		"loading":
-			_overlay.show_loading(WORLD_LABEL[world_kind], st, elapsed)
+			_overlay.show_loading(WORLD_LABEL[world_kind], st, elapsed, _loading_footer(), str(_world_request.get("label", "")))
 		"ready":
-			_overlay.show_loading(WORLD_LABEL[world_kind], st, elapsed)
+			_overlay.show_loading(WORLD_LABEL[world_kind], st, elapsed, _loading_footer(), str(_world_request.get("label", "")))
 			_apply_start_controls()
 			_simulation.start()
 			world_state = "starting"
@@ -650,6 +769,7 @@ func _attach_world_view() -> void:
 	ready_sim_time = float(_simulation.get_sim_time())
 	_overlay.hide_overlay()
 	_visuals.on_session_ready()
+	_world_running()
 	var ss: Dictionary = _simulation.get_streaming_status()
 	DisplayServer.window_set_title("racing_game | " + _simulation.get_build_info())
 	print("RG_DRIVE ready world=real_world load_s=%.2f startup_ms=%.0f resident_l0=%d prime_ticks=%d chassis_session=(%.2f, %.2f, %.2f) chunks=%d fetch_delay_ms=%d mode=%s build=%s" % [
@@ -701,17 +821,21 @@ func _report_tick_spikes() -> void:
 # line too): "falls=%d misses=%d" stays one contiguous token pair, the smoke
 # greps it.
 func _notification(what: int) -> void:
-	if what == NOTIFICATION_WM_CLOSE_REQUEST and world_kind == "real_world" and world_state == "running":
-		_save_drive_location()
+	if what == NOTIFICATION_WM_CLOSE_REQUEST:
+		if world_kind == "real_world" and world_state == "running":
+			_save_drive_location()
+		if _shell != null:
+			_shell.save_settings()
 
 func _save_drive_location() -> void:
 	var p := chassis_session_position()
 	var config = JSON.parse_string(FileAccess.get_file_as_string(_world_config_path()))
 	var origin: Dictionary = config.get("session_origin_utm", {}) if config is Dictionary else {}
-	var file := FileAccess.open("user://last_drive.json", FileAccess.WRITE)
+	var pose: Dictionary = _simulation.get_chassis_session_pose()
+	var file := FileAccess.open(_user_dir().path_join("last_drive.json"), FileAccess.WRITE)
 	if file:
 		file.store_string(JSON.stringify({"saved_at": Time.get_datetime_string_from_system(),
-			"session_m": [p.x, p.y, p.z], "world": world_kind,
+			"session_m": [p.x, p.y, p.z], "yaw_deg": float(pose.get("yaw_deg", 0.0)), "world": world_kind,
 			"utm_zone": origin.get("zone"), "utm_m": [float(origin.get("e0", 0))+p.x, float(origin.get("n0", 0))+p.y, p.z],
 			"build": _simulation.get_build_info(), "status": status_line("last_drive")}, "	"))
 
@@ -740,8 +864,8 @@ func status_line(prefix: String) -> String:
 func _apply_mode_state() -> Dictionary:
 	var ms: Dictionary = _simulation.get_mode_state()
 	var rig_name := str(ms.get("camera_rig", "chase"))
-	if rig_name == "chase" and _cockpit_view:
-		rig_name = "cockpit"
+	if rig_name == "chase":
+		rig_name = _drive_view # chase / bumper / cockpit / orbit / cinematic
 	if _vr_active:
 		# VR keeps its own free rig for the drone view too (no XR drone rig yet).
 		# (No XR walker rig yet either: on foot the player keeps the tracked free flight.)
@@ -752,8 +876,12 @@ func _apply_mode_state() -> Dictionary:
 		print("RG_WORLD drone target -> %s (id %d)" % [ms.get("drone_target_label", "?"), drone_id])
 	_director.set_active(rig_name)
 	_notify_mode_events(ms)
-	_director.camera_input_live = bool(ms.get("camera_inputs_live", true)) and not (get_tree().get_nodes_in_group("seat_adjustment_open").size() > 0 or get_tree().get_nodes_in_group("traffic_settings_open").size() > 0 or get_tree().get_nodes_in_group("address_teleport_open").size() > 0)
+	_director.camera_input_live = bool(ms.get("camera_inputs_live", true)) and _screen == "drive" and not _panel_open()
 	return ms
+
+# One of the F6 / F7 / F10 panels is open (they own the keyboard and the mouse).
+func _panel_open() -> bool:
+	return get_tree().get_nodes_in_group("seat_adjustment_open").size() > 0 or get_tree().get_nodes_in_group("traffic_settings_open").size() > 0 or get_tree().get_nodes_in_group("address_teleport_open").size() > 0
 
 # Messages for what the mode framework refused, and a log line per mode change
 # (a get-in changes the mode without any key press of the cycle).
@@ -777,7 +905,7 @@ func _notify_mode_events(ms: Dictionary) -> void:
 func _forward_walking(live: bool) -> void:
 	if not bool(_simulation.is_running()):
 		return
-	var blocked: bool = get_tree().get_nodes_in_group("seat_adjustment_open").size() > 0 or get_tree().get_nodes_in_group("traffic_settings_open").size() > 0 or get_tree().get_nodes_in_group("address_teleport_open").size() > 0
+	var blocked: bool = _panel_open()
 	if not live or blocked:
 		_simulation.set_walker_input(0.0, 0.0, _walker_rig.get_look_forward(), false)
 		return
@@ -838,16 +966,25 @@ func _process(delta: float) -> void:
 		return
 
 	_input_map.poll()
-	if world_state == "running" and get_tree().get_nodes_in_group("address_teleport_open").is_empty() and Input.is_action_just_pressed("rg_npc_truck"):
+	# In-world actions only count on the Drive screen; the edge counts are consumed
+	# every frame either way so a press in a menu never arrives later.
+	var in_drive := _screen == "drive"
+	if in_drive and world_state == "running" and get_tree().get_nodes_in_group("address_teleport_open").is_empty() and Input.is_action_just_pressed("rg_npc_truck"):
 		_simulation.request_npc_truck(not Input.is_key_pressed(KEY_SHIFT), 70.0)
 	var camera_presses: int = _input_map.consume_cycle_camera()
-	if camera_presses % 2 == 1 and not _vr_active:
+	var view_presses: int = _input_map.consume_cycle_view()
+	if in_drive and not _vr_active:
 		var tab_mode: String = _simulation.get_player_mode()
+		if camera_presses % 2 == 1:
+			if tab_mode == "drive":
+				set_drive_view(RgCameraMath.toggle_cockpit_view(_drive_view))
+			elif tab_mode == "on_foot":
+				_walker_rig.toggle_first_person()
 		if tab_mode == "drive":
-			_cockpit_view = not _cockpit_view
-		elif tab_mode == "on_foot":
-			_walker_rig.toggle_first_person()
-	for _i in range(_input_map.consume_cycle_mode()):
+			for _i in range(view_presses):
+				set_drive_view(RgCameraMath.next_drive_view(_drive_view))
+	var mode_presses: int = _input_map.consume_cycle_mode()
+	for _i in range(mode_presses if in_drive else 0):
 		print("RG_WORLD mode -> %s" % _simulation.cycle_player_mode())
 	# On foot (R9c): G gets out of a (nearly stopped) car in drive mode and gets
 	# back in when standing at its door; Space jumps. The counts are consumed
@@ -855,7 +992,7 @@ func _process(delta: float) -> void:
 	var get_out_presses: int = _input_map.consume_get_out_key_count()
 	var interact_presses: int = _input_map.consume_interact_count()
 	var jump_presses: int = _input_map.consume_jump_count()
-	if world_state == "running":
+	if in_drive and world_state == "running":
 		var foot_mode: String = _simulation.get_player_mode()
 		if foot_mode == "drive" and get_out_presses > 0 and not _vr_active:
 			print("RG_WORLD get out -> %s" % _simulation.set_player_mode("on_foot"))
@@ -867,13 +1004,13 @@ func _process(delta: float) -> void:
 	# Next drone-follow target (own car -> nearest NPC vehicles -> own car);
 	# presses outside drone_follow are consumed and ignored.
 	for _i in range(_input_map.consume_cycle_drone_target()):
-		if world_state == "running" and _simulation.get_player_mode() == "drone_follow":
+		if in_drive and world_state == "running" and _simulation.get_player_mode() == "drone_follow":
 			_simulation.cycle_drone_target()
-	if _input_map.consume_switch_world() > 0:
+	if _input_map.consume_switch_world() > 0 and (in_drive or _screen == "loading"):
 		switch_world()
-	if _input_map.consume_reset_car() > 0 and world_state == "running":
+	if _input_map.consume_reset_car() > 0 and in_drive and world_state == "running":
 		_simulation.reset_vehicle_to_spawn()
-	if _input_map.consume_flip_upright() > 0 and world_state == "running" and _simulation.get_player_mode() == "drive":
+	if _input_map.consume_flip_upright() > 0 and in_drive and world_state == "running" and _simulation.get_player_mode() == "drive":
 		_simulation.flip_vehicle_upright()
 
 	match world_state:
@@ -892,9 +1029,14 @@ func _process(delta: float) -> void:
 		_vehicle_audio.director = _director
 		_vehicle_audio.vehicle_name = VEHICLE_NAME
 		add_child(_vehicle_audio)
+		_apply_audio_settings()
+	if _vehicle_audio != null:
+		_vehicle_audio.muted = _paused
 	var ms := _apply_mode_state()
-	_forward_driving(bool(ms.get("driving_inputs_live", false)), delta)
-	_forward_walking(bool(ms.get("walking_inputs_live", false)))
+	_forward_driving(bool(ms.get("driving_inputs_live", false)) and in_drive, delta)
+	_forward_walking(bool(ms.get("walking_inputs_live", false)) and in_drive)
+	_panels_open_prev = _panel_open()
+	_mouse_captured_prev = _input_map.is_mouse_captured()
 
 var _vr_active := false
 
@@ -920,6 +1062,185 @@ func _try_start_vr() -> void:
 func _input(event: InputEvent) -> void:
 	if event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_MIDDLE and world_state == "running":
 		_log_owner_mark()
+	if _shell != null and event is InputEventKey and event.pressed and not event.echo:
+		if event.keycode == KEY_ESCAPE:
+			_on_escape()
+		elif event.keycode == KEY_P and (_screen == "drive" or _screen == "pause") and not _typing():
+			_toggle_pause()
+
+# --- shell (R5) -------------------------------------------------------------------
+
+func _user_dir() -> String:
+	return _user_dir_override if _user_dir_override != "" else ProjectSettings.globalize_path("user://")
+
+var _user_dir_override: String = ""
+
+func _build_shell(user_args: PackedStringArray) -> void:
+	var dir_index := user_args.find("--shell-user-dir")
+	if dir_index >= 0 and dir_index + 1 < user_args.size():
+		_user_dir_override = user_args[dir_index + 1]
+		DirAccess.make_dir_recursive_absolute(_user_dir_override)
+	_shell = ClassDB.instantiate("RgShell")
+	_shell.name = "Shell"
+	add_child(_shell)
+	var report: Dictionary = _shell.initialize(_rg_data_path(""), _user_dir(), _world_config_path())
+	for problem in report.get("problems", PackedStringArray()):
+		print("RG_SHELL problem: %s" % problem)
+	print("RG_SHELL ready credits=%d presets=%d settings=%s%s" % [
+		int(report.get("credits_entries", 0)), int(report.get("preset_count", 0)), report.get("settings_path", ""),
+		" (new)" if bool(report.get("settings_file_missing", false)) else ""])
+	_shell_ui = CanvasLayer.new()
+	_shell_ui.name = "ShellUi"
+	_shell_ui.set_script(load("res://scripts/shell_ui.gd"))
+	_shell_ui.shell = _shell
+	_shell_ui.binding_labels_path = _rg_data_path("controls/binding_labels.json")
+	_shell_ui.menu_item_chosen.connect(func(id: String): _apply_transition(_shell.menu_item(id)))
+	_shell_ui.spawn_chosen.connect(func(id: String): _apply_transition(_shell.spawn_picked(id)))
+	_shell_ui.back_requested.connect(func(): _apply_transition(_shell.back()))
+	_shell_ui.boot_finished.connect(func(): _apply_transition(_shell.boot_finished()))
+	_shell_ui.setting_changed.connect(_apply_setting)
+	add_child(_shell_ui)
+	_overlay.attribution_line = str(_shell.get_attribution_line())
+	for section in _shell.get_settings_schema():
+		for def in section["settings"]:
+			_apply_setting(str(def["key"]))
+
+# Carries out what rg::ShellFlow decided. `show_screen` is always the last action
+# of a transition, so a load or an unload has been started when the new screen
+# appears.
+func _apply_transition(transition: Dictionary) -> void:
+	if not bool(transition.get("accepted", false)):
+		return
+	shell_log.append("%s>%s" % [transition["from"], transition["to"]])
+	print("RG_SHELL %s -> %s" % [transition["from"], transition["to"]])
+	for action in transition["actions"]:
+		match str(action["kind"]):
+			"show_screen":
+				_show_screen(str(action["screen"]))
+			"load_world":
+				_begin_world_load(action["world"])
+			"unload_world":
+				_unload_world()
+			"set_paused":
+				_set_paused(bool(action["flag"]))
+			"reset_car":
+				if world_state == "running":
+					_simulation.reset_vehicle_to_spawn()
+			"save_settings":
+				_shell.save_settings()
+			"quit":
+				_quit_game()
+
+func _show_screen(screen_name: String) -> void:
+	_screen = screen_name
+	_shell_ui.show_screen(screen_name)
+	_set_world_ui_visible(screen_name == "drive" or screen_name == "pause")
+	if screen_name != "loading":
+		_overlay.hide_overlay()
+	if screen_name != "drive" and screen_name != "loading":
+		_input_map.release_mouse()
+
+func _set_world_ui_visible(visible_now: bool) -> void:
+	_hud.visible = visible_now
+	_gauge.visible = visible_now
+
+func _begin_world_load(world: Dictionary) -> void:
+	_world_request = world.duplicate()
+	var kind := str(world.get("kind", "flat"))
+	if kind == "real_world" and bool(world.get("has_spawn", false)):
+		_simulation.set_spawn_override(float(world["x"]), float(world["y"]), float(world["yaw_deg"]))
+	else:
+		_simulation.clear_spawn_override()
+	_load_world(kind)
+
+# Back to "no world": stops the sim thread, the terrain streaming and the audio
+# (RgSimulation.unload) after freeing the nodes that read them.
+func _unload_world() -> void:
+	_release_world_nodes()
+	_simulation.unload()
+	world_kind = ""
+	world_state = "none"
+	ready_sim_time = -1.0
+	_world_request = {}
+	_paused = false
+	scripted_controls = {}
+	_visuals.show_ground = false
+	_overlay.hide_overlay()
+	_hud.reset_tick_window()
+	print("RG_WORLD unloaded")
+
+func _set_paused(paused: bool) -> void:
+	_paused = paused
+	_simulation.set_paused(paused)
+	if _vehicle_audio != null:
+		_vehicle_audio.muted = paused
+	if paused:
+		_input_map.release_mouse()
+	print("RG_WORLD paused=%s" % paused)
+
+func _toggle_pause() -> void:
+	if world_state == "running":
+		_apply_transition(_shell.pause_toggle())
+
+func _quit_game() -> void:
+	_unload_world()
+	get_tree().quit()
+
+func _typing() -> bool:
+	return _panel_open() or get_viewport().gui_get_focus_owner() is LineEdit
+
+func _on_escape() -> void:
+	match _screen:
+		"spawn_picker", "credits", "settings", "loading":
+			_apply_transition(_shell.back())
+		"pause":
+			_apply_transition(_shell.pause_toggle())
+		"drive":
+			# An open panel or a captured mouse takes the Esc (closes / releases) first.
+			if _panels_open_prev or _mouse_captured_prev:
+				return
+			_toggle_pause()
+
+# The driving view (rg::DriveView): the director's rig for Drive mode.
+func set_drive_view(view: String) -> void:
+	if view == _drive_view:
+		return
+	_drive_view = view
+	print("RG_WORLD view -> %s" % view)
+	if _simulation != null:
+		_simulation.set_road_ahead_wanted(view == "cinematic")
+
+# One setting's effect, read back from RgShell (the value there is already
+# validated and clamped by rg::Settings). Called at start-up for every setting
+# and whenever the settings screen changes one.
+func _apply_setting(key: String) -> void:
+	var value: Variant = _shell.get_setting(key)
+	match key:
+		"graphics.window_mode":
+			var mode := DisplayServer.WINDOW_MODE_WINDOWED
+			if str(value) == "fullscreen":
+				mode = DisplayServer.WINDOW_MODE_FULLSCREEN
+			elif str(value) == "exclusive_fullscreen":
+				mode = DisplayServer.WINDOW_MODE_EXCLUSIVE_FULLSCREEN
+			DisplayServer.window_set_mode(mode)
+		"graphics.vsync":
+			if not _vr_active: # the headset's own refresh drives frame pacing
+				DisplayServer.window_set_vsync_mode(DisplayServer.VSYNC_ENABLED if bool(value) else DisplayServer.VSYNC_DISABLED)
+		"graphics.max_fps":
+			Engine.max_fps = int(value)
+		"camera.fov_deg":
+			_director.set_base_fov(float(value))
+		"audio.master_volume", "audio.engine_volume", "audio.tyre_volume":
+			_apply_audio_settings()
+		"map_data.store_dir":
+			_simulation.set_store_dir_override(str(value))
+
+func _apply_audio_settings() -> void:
+	if _vehicle_audio == null:
+		return
+	_vehicle_audio.master_volume = float(_shell.get_setting("audio.master_volume"))
+	_vehicle_audio.engine_volume = float(_shell.get_setting("audio.engine_volume"))
+	_vehicle_audio.tyre_volume = float(_shell.get_setting("audio.tyre_volume"))
 
 func _log_owner_mark() -> void:
 	var point := chassis_session_position()

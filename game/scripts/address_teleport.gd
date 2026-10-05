@@ -79,6 +79,11 @@ func _input(event: InputEvent) -> void:
    _toggle(false)
    get_viewport().set_input_as_handled()
 
+# The shell's "Search for an address" start (main.gd) opens the panel once the
+# world is running.
+func open_dialog() -> void:
+ _toggle(true)
+
 func _toggle(open: bool) -> void:
  if open:
   if main == null or main.world_state != "running" or main.world_kind != "real_world":
