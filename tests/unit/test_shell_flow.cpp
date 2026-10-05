@@ -63,12 +63,13 @@ TEST_CASE("shell: menus hold exactly the shipped items", "[shell]") {
     for (const auto& m : rg::main_menu_items()) main_ids.push_back(m.id);
     for (const auto& m : rg::pause_menu_items()) pause_ids.push_back(m.id);
     CHECK(main_ids == std::vector<std::string>{"free_roam", "garage", "settings", "credits", "quit"});
-    CHECK(pause_ids == std::vector<std::string>{"resume", "reset_car", "garage", "settings", "main_menu"});
+    CHECK(pause_ids == std::vector<std::string>{"resume", "reset_car", "change_car", "garage", "settings", "main_menu"});
     for (const auto& m : rg::main_menu_items()) CHECK_FALSE(m.label.empty());
     for (const auto& m : rg::pause_menu_items()) CHECK_FALSE(m.label.empty());
     CHECK(std::string(rg::to_string(Screen::SpawnPicker)) == "spawn_picker");
     CHECK(std::string(rg::to_string(Screen::VehicleSelect)) == "vehicle_select");
     CHECK(std::string(rg::to_string(Screen::Configurator)) == "configurator");
+    CHECK(std::string(rg::to_string(Screen::ChangeCar)) == "change_car");
 }
 
 TEST_CASE("shell: boot goes to the main menu", "[shell]") {
@@ -316,6 +317,7 @@ TEST_CASE("shell: events outside their screen are refused and change nothing", "
                        (e.kind == K::MenuItem && (e.item == "resume" || e.item == "garage"));
             case Screen::VehicleSelect: return e.kind == K::Back || e.kind == K::VehicleChosen;
             case Screen::Configurator: return e.kind == K::Back || e.kind == K::GarageDrive;
+            case Screen::ChangeCar: return e.kind == K::Back || e.kind == K::VehicleChosen;
             case Screen::Settings: return e.kind == K::Back;
             case Screen::Credits: return e.kind == K::Back;
             case Screen::Quit: return false;
@@ -325,7 +327,7 @@ TEST_CASE("shell: events outside their screen are refused and change nothing", "
     // Build a flow standing on each screen, then throw every event at it.
     const std::vector<Screen> screens = {Screen::Boot,    Screen::MainMenu, Screen::SpawnPicker, Screen::Loading, Screen::Drive,
                                          Screen::Pause,   Screen::Settings, Screen::Credits,     Screen::VehicleSelect,
-                                         Screen::Configurator, Screen::Quit};
+                                         Screen::Configurator, Screen::ChangeCar, Screen::Quit};
     for (const Screen target : screens) {
         for (std::size_t i = 0; i < all.size(); ++i) {
             ShellFlow f;
@@ -358,6 +360,11 @@ TEST_CASE("shell: events outside their screen are refused and change nothing", "
                     f.handle(ShellFlow::boot_finished());
                     f.handle(ShellFlow::menu_item("garage"));
                     f.handle(ShellFlow::vehicle_chosen("car_sedan"));
+                    break;
+                case Screen::ChangeCar:
+                    to_drive(f);
+                    f.handle(ShellFlow::pause_toggle());
+                    f.handle(ShellFlow::menu_item("change_car"));
                     break;
                 case Screen::Quit:
                     f.handle(ShellFlow::boot_finished());
@@ -492,4 +499,43 @@ TEST_CASE("shell: garage from the pause menu respawns the chosen car", "[shell][
     CHECK(f.screen() == Screen::MainMenu);
     CHECK(f.last_error() == "boom");
     CHECK(has_action(failed, ShellActionKind::UnloadWorld));
+}
+
+TEST_CASE("shell: Change car from the pause menu swaps the car in place", "[shell][garage][car_browser]") {
+    // sabotage: Back going to Drive instead of Pause, or the reload without the respawn flag, fails
+    ShellFlow f;
+    to_drive(f);
+    f.handle(ShellFlow::pause_toggle());
+    const auto open = f.handle(ShellFlow::menu_item("change_car"));
+    REQUIRE(open.accepted);
+    CHECK(f.screen() == Screen::ChangeCar);
+    CHECK(f.garage_return() == Screen::Pause);
+    CHECK(has_action(open, ShellActionKind::OpenGarage));
+    CHECK_FALSE(has_action(open, ShellActionKind::UnloadWorld)); // the paused world stays up
+    CHECK(f.world_loaded());
+
+    // Back: pause menu again, garage scene closed, world still loaded
+    const auto back = f.handle(ShellFlow::back());
+    REQUIRE(back.accepted);
+    CHECK(f.screen() == Screen::Pause);
+    CHECK(has_action(back, ShellActionKind::CloseGarage));
+    CHECK(f.world_loaded());
+
+    // choose a car: no configurator in between, the world reloads at the old pose
+    f.handle(ShellFlow::menu_item("change_car"));
+    CHECK_FALSE(f.handle(ShellFlow::vehicle_chosen("")).accepted);
+    CHECK_FALSE(f.handle(ShellFlow::garage_drive()).accepted); // there is no Configurator step here
+    const auto chosen = f.handle(ShellFlow::vehicle_chosen("car_hyper_track"));
+    REQUIRE(chosen.accepted);
+    CHECK(f.screen() == Screen::Loading);
+    CHECK(f.garage_vehicle() == "car_hyper_track");
+    CHECK(has_action(chosen, ShellActionKind::CloseGarage));
+    CHECK(has_action(chosen, ShellActionKind::SetPaused));
+    const auto* load = find_action(chosen, ShellActionKind::LoadWorld);
+    REQUIRE(load != nullptr);
+    CHECK(load->flag);
+    CHECK(load->world.kind == rg::WorldKind::Flat);
+    CHECK_FALSE(has_action(chosen, ShellActionKind::ResetCar)); // not a reset to the road
+    CHECK(f.handle(ShellFlow::load_ready()).accepted);
+    CHECK(f.screen() == Screen::Drive);
 }

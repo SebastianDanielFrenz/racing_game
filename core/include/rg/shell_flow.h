@@ -10,7 +10,9 @@
 //   Loading -> Drive (world ready) | MainMenu (cancelled or failed; the error
 //              is kept for the menu to show)
 //   Drive <-> Pause
-//   Pause -> Settings | VehicleSelect ("Garage (respawn)") | MainMenu (unloads the world) | Drive (resume / reset car)
+//   Pause -> Settings | VehicleSelect ("Garage (respawn)") | ChangeCar ("Change car") | MainMenu (unloads the world) | Drive (resume / reset car)
+//   ChangeCar -> Loading (a car chosen: the world reloads with it, the new car starting where the old one stood, no road reset) |
+//                Pause (back)
 //   VehicleSelect -> Configurator (a car chosen) | back to where the garage was opened (MainMenu or Pause)
 //   Configurator -> VehicleSelect (back) | SpawnPicker (Drive, garage opened from the main menu) |
 //                   Loading (Drive, garage opened from the pause menu: the world reloads with the
@@ -36,18 +38,18 @@
 
 namespace rg {
 
-enum class Screen { Boot, MainMenu, SpawnPicker, Loading, Drive, Pause, Settings, Credits, VehicleSelect, Configurator, Quit };
+enum class Screen { Boot, MainMenu, SpawnPicker, Loading, Drive, Pause, Settings, Credits, VehicleSelect, Configurator, ChangeCar, Quit };
 
 const char* to_string(Screen s);
 
 struct MenuItem {
-    std::string id;    // "free_roam", "garage", "settings", "credits", "quit", "resume", "reset_car", "main_menu"
+    std::string id;    // "free_roam", "garage", "settings", "credits", "quit", "resume", "reset_car", "change_car", "main_menu"
     std::string label; // shown text
 };
 
 // Main menu: Free roam | Garage | Settings | Credits | Quit.
 const std::vector<MenuItem>& main_menu_items();
-// Pause menu: Resume | Reset car | Garage (respawn) | Settings | Main menu.
+// Pause menu: Resume | Reset car | Change car | Garage (respawn) | Settings | Main menu.
 const std::vector<MenuItem>& pause_menu_items();
 
 enum class ShellEventKind {

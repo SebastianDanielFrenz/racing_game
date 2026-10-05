@@ -18,6 +18,7 @@ const char* to_string(Screen s) {
         case Screen::Credits: return "credits";
         case Screen::VehicleSelect: return "vehicle_select";
         case Screen::Configurator: return "configurator";
+        case Screen::ChangeCar: return "change_car";
         case Screen::Quit: return "quit";
     }
     return "boot";
@@ -38,6 +39,7 @@ const std::vector<MenuItem>& pause_menu_items() {
     static const std::vector<MenuItem> items = {
         {"resume", "Resume"},
         {"reset_car", "Reset car"},
+        {"change_car", "Change car"},
         {"garage", "Garage (respawn)"},
         {"settings", "Settings"},
         {"main_menu", "Main menu"},
@@ -179,6 +181,11 @@ ShellTransition ShellFlow::handle(const ShellEvent& e) {
                     garage_vehicle_.clear();
                     return go(Screen::VehicleSelect, {simple(ShellActionKind::OpenGarage)});
                 }
+                if (e.item == "change_car") {
+                    garage_return_ = Screen::Pause;
+                    garage_vehicle_.clear();
+                    return go(Screen::ChangeCar, {simple(ShellActionKind::OpenGarage)});
+                }
                 if (e.item == "settings") {
                     settings_return_ = Screen::Pause;
                     return go(Screen::Settings, {});
@@ -212,6 +219,20 @@ ShellTransition ShellFlow::handle(const ShellEvent& e) {
                               {simple(ShellActionKind::CloseGarage), simple(ShellActionKind::SetPaused, false), reload});
                 }
                 return go(Screen::SpawnPicker, {simple(ShellActionKind::CloseGarage)});
+            }
+            return refuse();
+
+        case Screen::ChangeCar:
+            if (e.kind == ShellEventKind::Back) return go(Screen::Pause, {simple(ShellActionKind::CloseGarage)});
+            if (e.kind == ShellEventKind::VehicleChosen && !e.item.empty()) {
+                // The paused world reloads with the chosen car, which starts where the old one stood.
+                garage_vehicle_ = e.item;
+                ShellAction reload = load(world_);
+                reload.flag = true;
+                world_loaded_ = false;
+                last_error_.clear();
+                return go(Screen::Loading,
+                          {simple(ShellActionKind::CloseGarage), simple(ShellActionKind::SetPaused, false), reload});
             }
             return refuse();
 
