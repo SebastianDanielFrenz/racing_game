@@ -90,6 +90,20 @@ public:
 
     [[nodiscard]] bool running() const { return running_.load(std::memory_order_relaxed); }
 
+    // LOOP THREAD ONLY (valid inside the TryStep callback): the NOMINAL time
+    // of the tick attempt being run - the scheduled due time, exactly one
+    // period after the previous stepped tick's however long its step took -
+    // and whether the schedule was re-anchored since the previous attempt
+    // (first attempt, a freeze resync, a stall resync), in which case the gap
+    // to the previous nominal time does not describe elapsed motion.
+    // Render-time pose sampling (render_interp.h's PoseHistory, via
+    // Session) stamps frames with these instead of the wall time a step
+    // finished: publish times jitter by most of a tick, the schedule does not
+    // (physics_sim 2d8f0b8, follow-camera shake).
+    [[nodiscard]] std::chrono::steady_clock::time_point tick_nominal_time() const { return tick_nominal_; }
+    [[nodiscard]] bool tick_clock_break() const { return tick_clock_break_; }
+    [[nodiscard]] double period_s() const { return std::chrono::duration<double>(period_).count(); }
+
     // Safe to call from any thread, including while running() - guarded by
     // stats_mutex_ (see the private section below for why this is a plain
     // mutex rather than a lock-free structure).
@@ -106,6 +120,10 @@ private:
     std::thread thread_;
     std::atomic<bool> running_{false};
     TryStep try_step_; // set once in start() before the thread is launched; only ever read on the loop thread
+    // Loop-thread-only (see tick_nominal_time()).
+    std::chrono::steady_clock::time_point tick_nominal_{};
+    bool tick_clock_break_ = true;
+    bool pending_clock_break_ = true;
 
     static constexpr std::size_t kStepSampleCapacity = 256;
 

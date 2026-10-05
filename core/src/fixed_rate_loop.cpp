@@ -51,6 +51,7 @@ void FixedRateLoop::start(TryStep try_step) {
 #endif
 
     try_step_ = std::move(try_step);
+    pending_clock_break_ = true; // a (re)start is a fresh schedule
     {
         std::lock_guard<std::mutex> lk(stats_mutex_);
         start_time_ = std::chrono::steady_clock::now();
@@ -99,6 +100,9 @@ void FixedRateLoop::loop() {
         int ran = 0;
         while (running_.load(std::memory_order_relaxed) && clock::now() >= next && ran < max_catch_up_) {
             const auto t0 = clock::now();
+            tick_nominal_ = next;
+            tick_clock_break_ = pending_clock_break_;
+            pending_clock_break_ = false;
             const bool stepped = try_step_();
             const auto t1 = clock::now();
             const double dur_ms = std::chrono::duration<double, std::milli>(t1 - t0).count();
@@ -117,6 +121,7 @@ void FixedRateLoop::loop() {
                 // stop attempting further catch-up this wake-up: one frozen
                 // attempt per wake-up, not kMaxCatchUp of them.
                 next = clock::now() + period_;
+                pending_clock_break_ = true; // the schedule was re-anchored
                 break;
             }
         }
@@ -132,6 +137,7 @@ void FixedRateLoop::loop() {
                 dropped_ticks_ += static_cast<std::uint64_t>((now - next) / period_) + 1;
             }
             next = now + period_;
+            pending_clock_break_ = true; // the schedule was re-anchored
         }
     }
 }

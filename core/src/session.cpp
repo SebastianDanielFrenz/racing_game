@@ -890,7 +890,18 @@ void Session::post_step(bool from_loop) {
             if(engine_audio_publisher_ && !frame.powertrain.engines.empty())
                 engine_audio_publisher_(frame.powertrain.engines.front(), frame.sim_time);
         }
+        pose_history_scratch_[0] = frame.chassis_pose; // before publish(): the slot belongs to readers afterwards
+        const std::uint64_t published_tick = frame.tick;
         snapshot_buffer_.publish();
+        // Nominal-clock pose history (session.h sample_render_poses). Only on the
+        // real-time loop thread: tick_nominal_time() is meaningless for a plain
+        // try_step() call from a test.
+        if (loop_.running()) {
+            const std::uint64_t relocations = status_.relocations.load(std::memory_order_relaxed);
+            pose_history_teleport_[0] = relocations != pose_history_relocations_ ? 1 : 0;
+            pose_history_relocations_ = relocations;
+            pose_history_.push(loop_.tick_nominal_time(), published_tick, loop_.tick_clock_break(), pose_history_scratch_, pose_history_teleport_);
+        }
     }
     if (!terrain_) return;
 
@@ -949,6 +960,8 @@ bool Session::try_step() { return step_once(true); }
 
 void Session::start() {
     loop_started_ = Clock::now();
+    pose_history_.reset(1); // chassis only, before the loop thread exists
+    pose_history_relocations_ = status_.relocations.load(std::memory_order_relaxed);
     have_last_attempt_ = false;
     spikes_.reserve(kTickSpikeCapacity);
     // Diagnostics: RG_WORLD_CSV=<path> records ps::World's per-tick telemetry

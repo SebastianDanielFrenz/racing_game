@@ -54,6 +54,7 @@
 #include "ps/world/world.h"
 
 #include "origin_rebase.h"
+#include "render_interp.h"
 #include "triple_buffer.h"
 
 #include <atomic>
@@ -388,6 +389,21 @@ public:
     // Race-free once start() has produced at least one tick; before that,
     // returns a default-constructed FrameSnapshot (tick == 0).
     [[nodiscard]] const FrameSnapshot& snapshot() { return snapshot_buffer_.read(); }
+    // Render-time pose sampling on the sim's NOMINAL clock (physics_sim 2d8f0b8,
+    // render_interp.h): while the real-time loop runs, every stepped tick pushes
+    // its chassis pose into an 8-frame history stamped with the tick's scheduled
+    // time (FixedRateLoop::tick_nominal_time), not the wall time the step
+    // finished, so a render frame samples a piecewise-linear function of the
+    // SCHEDULE (the follow-camera shake came from publish-time jitter). Pose
+    // layout of RenderSample::poses: [0] = the chassis. A relocation is flagged
+    // per frame and rendered as a step, never a smear. Render thread; false (and
+    // nothing valid in `out`) when the history is empty - not running, or no tick
+    // yet - the caller then falls back to snapshot().chassis_pose. Sample at
+    // ps_godot::render_time_for(now, tick_period_s(), delay_ticks) with a delay
+    // of 2 ticks (covers the publish lateness).
+    bool sample_render_poses(ps_godot::SimClock::time_point render_time, ps_godot::RenderSample& out) const { return pose_history_.sample(render_time, out); }
+    [[nodiscard]] const ps_godot::PoseHistory& render_pose_history() const { return pose_history_; }
+    [[nodiscard]] double tick_period_s() const { return 1.0 / config_.tick_rate_hz; }
     // Single engine-input publisher on the physics thread. Clearing waits for
     // an in-flight callback, so its owner can safely destroy the audio voice.
     using EngineAudioPublisher = std::function<void(const ps::drivetrain::EngineSoundState&, double)>;
@@ -765,6 +781,10 @@ private:
     bool in_freeze_ = false; // stepping thread only
 
     ps_godot::TripleBuffer<FrameSnapshot> snapshot_buffer_;
+    ps_godot::PoseHistory pose_history_; // pushed by the loop thread (post_step), sampled by the render thread
+    std::vector<ps::Pose> pose_history_scratch_{1};           // loop thread only
+    std::vector<std::uint8_t> pose_history_teleport_{0};     // loop thread only
+    std::uint64_t pose_history_relocations_ = 0;             // loop thread only: status_.relocations at the last push
     std::atomic<bool> paused_{false};
     std::atomic<bool> road_ahead_wanted_{false};
     // Stepping thread only (capture_frame_snapshot): the last traced road and

@@ -41,6 +41,7 @@ add_executable(rg_unit_tests
   test_shell_flow.cpp
   test_road_ahead.cpp
   test_camera_math.cpp
+  test_render_pose.cpp
 )
 
 target_link_libraries(rg_unit_tests

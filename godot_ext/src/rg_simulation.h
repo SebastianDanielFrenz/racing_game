@@ -4,9 +4,8 @@
 // exposing simulation state as Godot-native types/Dictionaries to
 // GDScript) but is deliberately much smaller - R0 scope is one ground body,
 // one car_sedan-shaped vehicle, no terrain streaming, no articulations, no
-// debug draw, no render-time interpolation (PLAN.md's judder fix is a
-// later-milestone concern - see this file's own get_body_transform comment
-// for exactly what is skipped and why).
+// debug draw (the chassis pose is render-time interpolated on the sim's nominal
+// clock - see render_chassis_pose; other bodies still read the latest tick).
 //
 // Every ps::/rg:: type crossing into a godot:: type happens in THIS file
 // (plus frame_convert.h) - the engine-neutral/Godot boundary PLAN.md 11.1
@@ -259,13 +258,17 @@ public:
     void add_adapter_time_us(std::int64_t us);
     [[nodiscard]] std::int64_t consume_adapter_frame_time_us();
 
-    // --- Body transforms. "ground"/"chassis" are the only two body names
-    // in R0 (rg::Session::build_world_contents). NOT render-time
-    // interpolated (unlike physics_sim's own get_body_transform) - R0 reads
-    // the session's latest published FrameSnapshot as-is; a visible
-    // 240 Hz-vs-render-rate judder fix is deferred (see repo CLAUDE.md's
-    // deviations list). ---
+    // --- Body transforms. "ground"/"chassis"/"npc_truck". The chassis is
+    // render-time interpolated on the sim's NOMINAL clock (render_chassis_pose,
+    // physics_sim 2d8f0b8 port) - the follow-camera shake fix; the truck still
+    // reads the latest published FrameSnapshot as-is. ---
     [[nodiscard]] godot::Transform3D get_body_transform(const godot::String& body_name) const;
+    // Render-interpolation tuning/diagnostics (main thread). Delay D in ticks (default 2.0, covers the
+    // sim's publish lateness); off = the old latest-snapshot read, kept for A/B. Diagnostics: frames
+    // sampled/late/early/stepped (cumulative since the loop started), the last blend, the delay in use.
+    void set_render_delay_ticks(double ticks) { render_delay_ticks_ = ticks; }
+    void set_render_interpolation(bool enabled) { render_interpolation_ = enabled; }
+    [[nodiscard]] godot::Dictionary get_render_diagnostics() const;
     godot::Dictionary get_aero_state() const;
     void configure_traffic(double density,double radius,double minimum,double grip,int maximum);
     void set_visible_traffic(const godot::Array& ids);
@@ -333,6 +336,14 @@ private:
     mutable std::optional<rg::FrameSnapshot> render_snapshot_;
     mutable std::uint64_t render_snapshot_frame_ = static_cast<std::uint64_t>(-1);
     const rg::FrameSnapshot& frame_snapshot() const;
+    // The chassis pose at the nominal-clock render time, sampled once per rendered frame; the frame
+    // snapshot's own chassis pose when interpolation is off or the history is empty.
+    ps::Pose render_chassis_pose() const;
+    mutable ps_godot::RenderSample render_sample_;
+    mutable ps::Pose render_chassis_pose_{};
+    mutable std::uint64_t render_pose_frame_ = static_cast<std::uint64_t>(-1);
+    double render_delay_ticks_ = 2.0;
+    bool render_interpolation_ = true;
 
     friend class RgTerrainView; // shared_world_terrain() below
 

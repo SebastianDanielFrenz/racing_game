@@ -126,9 +126,11 @@ func _process(_delta: float) -> void:
 		_frame_time_sum_us = 0
 		_frame_time_max_us = 0
 		_frame_time_count = 0
-		print("rg_godot HUD: measured sim tick rate over last window: %.2f Hz (target %.1f Hz), fps=%.1f, adapter_ms avg=%.3f max=%.3f" % [
+		var rd: Dictionary = _simulation.get_render_diagnostics() # nominal-clock pose sampling counters (cumulative)
+		print("rg_godot HUD: measured sim tick rate over last window: %.2f Hz (target %.1f Hz), fps=%.1f, adapter_ms avg=%.3f max=%.3f, render sampled=%d late=%d early=%d stepped=%d" % [
 			_last_measured_hz, _simulation.get_tick_rate_hz(), Engine.get_frames_per_second(),
-			_last_avg_frame_time_us / 1000.0, _last_max_frame_time_us / 1000.0])
+			_last_avg_frame_time_us / 1000.0, _last_max_frame_time_us / 1000.0,
+			rd.get("frames_sampled", 0), rd.get("frames_late", 0), rd.get("frames_early", 0), rd.get("frames_stepped", 0)])
 
 	var mode: Dictionary = _simulation.get_mode_state()
 	var ss: Dictionary = _simulation.get_streaming_status()

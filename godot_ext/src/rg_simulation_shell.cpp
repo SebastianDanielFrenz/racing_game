@@ -100,11 +100,12 @@ Dictionary RgSimulation::update_cinematic(double delta) {
     if (!session_) return d;
     const rg::FrameSnapshot& f = frame_snapshot();
     rg::CarKinematics car;
-    car.x = f.chassis_pose.position.x;
-    car.y = f.chassis_pose.position.y;
+    const ps::Pose render_pose = render_chassis_pose(); // nominal-clock sample, the same pose the car is drawn at
+    car.x = render_pose.position.x;
+    car.y = render_pose.position.y;
     car.vx = f.chassis_motion.linear.x;
     car.vy = f.chassis_motion.linear.y;
-    const ps::Vec3 forward = f.chassis_pose.orientation.rotate(ps::Vec3{1.0, 0.0, 0.0});
+    const ps::Vec3 forward = render_pose.orientation.rotate(ps::Vec3{1.0, 0.0, 0.0});
     const double flat = std::sqrt(forward.x * forward.x + forward.y * forward.y);
     if (flat > 1e-6) {
         car.heading_x = forward.x / flat;

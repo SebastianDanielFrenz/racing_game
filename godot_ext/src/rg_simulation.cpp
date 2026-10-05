@@ -542,12 +542,44 @@ const rg::FrameSnapshot& RgSimulation::frame_snapshot() const {
     return *render_snapshot_;
 }
 
+ps::Pose RgSimulation::render_chassis_pose() const {
+    if (!session_) return ps::Pose{};
+    const auto frame = static_cast<std::uint64_t>(godot::Engine::get_singleton()->get_process_frames());
+    if (render_pose_frame_ == frame) return render_chassis_pose_;
+    render_pose_frame_ = frame;
+    // Nominal-clock sample (Session::sample_render_poses): at most one per rendered frame, so every
+    // reader of the chassis pose in this frame (camera, model, audio listener) sees the same pose.
+    if (render_interpolation_ && session_->running()) {
+        const auto t = ps_godot::render_time_for(ps_godot::SimClock::now(), session_->tick_period_s(), render_delay_ticks_);
+        if (session_->sample_render_poses(t, render_sample_) && render_sample_.valid && !render_sample_.poses.empty()) {
+            render_chassis_pose_ = render_sample_.poses[0];
+            return render_chassis_pose_;
+        }
+    }
+    render_chassis_pose_ = frame_snapshot().chassis_pose;
+    return render_chassis_pose_;
+}
+
+godot::Dictionary RgSimulation::get_render_diagnostics() const {
+    godot::Dictionary d;
+    if (!session_) return d;
+    const ps_godot::PoseHistory& h = session_->render_pose_history();
+    d["interpolation"] = render_interpolation_;
+    d["delay_ticks"] = render_delay_ticks_;
+    d["frames_sampled"] = static_cast<std::int64_t>(h.frames_sampled());
+    d["frames_late"] = static_cast<std::int64_t>(h.frames_late());
+    d["frames_early"] = static_cast<std::int64_t>(h.frames_early());
+    d["frames_stepped"] = static_cast<std::int64_t>(h.frames_stepped());
+    d["last_alpha"] = render_sample_.alpha;
+    return d;
+}
+
 godot::Transform3D RgSimulation::get_body_transform(const String& body_name) const {
     if (!session_) return godot::Transform3D();
     const std::string name = to_std_string(body_name);
     ps::Pose pose;
     if (name == "chassis") {
-        pose = frame_snapshot().chassis_pose;
+        pose = render_chassis_pose();
     } else if (name == "npc_truck") {
         pose=frame_snapshot().truck.pose;
     } else if (name == "ground") {
@@ -906,7 +938,7 @@ godot::Dictionary RgSimulation::get_walker_state() const {
     d["blocked"] = w.blocked;
     d["can_enter"] = w.can_enter;
     d["enter_distance_m"] = w.enter_distance_m;
-    d["car_position"] = iso_to_godot(frame_snapshot().chassis_pose.position, origin);
+    d["car_position"] = iso_to_godot(render_chassis_pose().position, origin);
     return d;
 }
 
@@ -1084,6 +1116,9 @@ void RgSimulation::_bind_methods() {
     godot::ClassDB::bind_method(D_METHOD("consume_adapter_frame_time_us"), &RgSimulation::consume_adapter_frame_time_us);
 
     godot::ClassDB::bind_method(D_METHOD("get_body_transform", "body_name"), &RgSimulation::get_body_transform);
+    godot::ClassDB::bind_method(D_METHOD("set_render_delay_ticks", "ticks"), &RgSimulation::set_render_delay_ticks);
+    godot::ClassDB::bind_method(D_METHOD("set_render_interpolation", "enabled"), &RgSimulation::set_render_interpolation);
+    godot::ClassDB::bind_method(D_METHOD("get_render_diagnostics"), &RgSimulation::get_render_diagnostics);
     godot::ClassDB::bind_method(D_METHOD("get_camera_ground_height", "position"), &RgSimulation::get_camera_ground_height);
     godot::ClassDB::bind_method(D_METHOD("get_aero_state"), &RgSimulation::get_aero_state);
     godot::ClassDB::bind_method(D_METHOD("configure_traffic","density","radius","minimum","grip","maximum"), &RgSimulation::configure_traffic);
