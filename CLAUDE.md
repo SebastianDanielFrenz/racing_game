@@ -1193,7 +1193,7 @@ acceptance. `last_drive.json` in the existing Godot user-data directory records
 session/UTM positions, build and status; the HUD/native build info reports the
 source revision. Source libraries remain unchanged.
 
-Current physics pin: 60d60fa09f48e38c5fc382b0a082a1407d94ff6c (S: library; supersedes upgrade notes above). OSM building presentation and future mixed asset/imagery approach: docs/buildings.md.
+Current physics pin: 9e94f0f (external/physics_sim submodule, bumped 2026-10-05 from 976e8d7; supersedes upgrade notes above). OSM building presentation and future mixed asset/imagery approach: docs/buildings.md.
 
 Aerodynamics: docs/aerodynamics.md; configuration data/world/environment.json. Native surfaces, drafting wakes, ground effect and fan energy are owned by physics_sim; game Session supplies weather and active-wing policy, with latched HUD/art/bookmark telemetry.
 
