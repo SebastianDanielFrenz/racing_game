@@ -1208,3 +1208,5 @@ physics-thread actor lifecycle, collision bodies and combined wakes. Adapter
 get_traffic_state publishes frame-latched actors; game/scripts/npc_traffic.gd owns
 presentation and F7 configuration. WorldTerrain::source_osm_tile is blocking,
 background-only source access. Specification/current scope: docs/npc_traffic.md.
+
+Game server (plan only, nothing built): docs/game_server.md - authority model, protocol, interest management, deployment on the estate, increments S1-S9 and the required physics_sim seams; section 16.1 holds the owner's binding answers (30 Hz snapshots, environment time continues after a restart, remote cars silent apart from tyre audio, all other questions at the recommended defaults). Vault RACE-009.
