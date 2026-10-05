@@ -170,13 +170,14 @@ func _run() -> void:
 	_check(_screen() == "vehicle_select", "Garage opens the vehicle select (is '%s')" % _screen())
 	_check(main.get_garage_scene() != null, "the garage scene exists")
 	await _wait_seconds(0.5)
+	var listed: PackedStringArray = ui.browser().listed_ids()
 	for v in vehicles:
-		_check(ui.get_button("veh:%s" % v["id"]) != null, "vehicle select lists %s" % v["id"])
+		_check(listed.has(str(v["id"])), "the car browser lists %s" % v["id"])
 	var stats: Dictionary = garage.get_vehicle(hyper_id)["stats"]
 	_check(bool(stats["ok"]) and float(stats["mass_kg"]) > 500.0 and float(stats["peak_power_kw"]) > 100.0 and int(stats["gear_count"]) >= 5, "the stats come from the data (power %.0f kW, mass %.0f kg, %d gears)" % [stats["peak_power_kw"], stats["mass_kg"], stats["gear_count"]])
-	_press("veh:%s" % sedan_id)
+	ui.browser().focus_car(sedan_id)
 	_check(ui.highlighted_vehicle() == sedan_id, "highlighting the sedan shows it (%s)" % ui.highlighted_vehicle())
-	_press("veh:%s" % hyper_id)
+	ui.browser().focus_car(hyper_id)
 	_check(ui.highlighted_vehicle() == hyper_id, "highlighting the hyper car shows it (%s)" % ui.highlighted_vehicle())
 	_press("choose")
 	_check(_screen() == "configurator", "Configure opens the configurator (is '%s')" % _screen())
@@ -259,7 +260,7 @@ func _run() -> void:
 		_press("garage")
 		_check(_screen() == "vehicle_select" and main.get_garage_scene() != null, "pause -> Garage opens the vehicle select (is '%s')" % _screen())
 		await _wait_seconds(0.5)
-		_press("veh:%s" % sedan_id)
+		ui.browser().focus_car(sedan_id)
 		_press("choose")
 		_check(_screen() == "configurator" and str(garage.get_edit_id()) == sedan_id, "the sedan's configurator opens (is '%s')" % _screen())
 		_press("drive")
@@ -278,7 +279,7 @@ func _run() -> void:
 
 	# ---- back to the hyper car through the garage: the same node count as after the stock drive ----
 	_press("garage")
-	_press("veh:%s" % hyper_id)
+	ui.browser().focus_car(hyper_id)
 	_press("choose")
 	_check(str(garage.get_edit_id()) == hyper_id and bool(garage.get_vehicle(hyper_id)["has_setup"]), "the hyper car's saved setup is still there")
 	_press("drive")

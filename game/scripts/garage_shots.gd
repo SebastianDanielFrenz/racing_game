@@ -46,7 +46,7 @@ func _run() -> void:
 	main._apply_transition(main.get_shell().menu_item("garage"))
 	await _frames(5)
 	if vehicle != "":
-		_press("veh:" + vehicle)
+		main.get_shell_ui().browser().focus_car(vehicle)
 	await _seconds(2.5)
 	await _shot("vehicle_select")
 	_press("choose")

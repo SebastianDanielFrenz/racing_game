@@ -113,6 +113,8 @@ var _shell_ui: CanvasLayer
 # --- garage (R6) ---
 var _garage: Node                 # RgGarage: catalog, setups, edit session, drive hand-over
 var _garage_scene: CanvasLayer    # garage_scene.gd while the garage is open, else null
+var _thumbs: Node                 # car_thumbnails.gd while the car browser is up, else null (R6c)
+var _catalog_override: String = "" # --catalog <path>: a different vehicle catalog (tests, the 200-car synthetic one)
 var _drive_selection: Dictionary = {} # RgGarage.prepare_drive() of the car being driven
 var _direct_vehicle: String = ""  # direct-start flags drive --vehicle <id> or the catalog default, never the saved choice
 var _teleport_dialog: CanvasLayer
@@ -600,6 +602,22 @@ func _build_scene(user_args: PackedStringArray) -> void:
 		if prefix_arg >= 0 and prefix_arg + 1 < user_args.size():
 			garage_shots.prefix = user_args[prefix_arg + 1]
 		add_child(garage_shots)
+	if "--car-browser-test" in user_args:
+		var browser_test := Node.new()
+		browser_test.name = "CarBrowserTest"
+		browser_test.set_script(load("res://scripts/car_browser_test.gd"))
+		browser_test.main = self
+		browser_test.big = "--car-browser-big" in user_args
+		add_child(browser_test)
+	var browser_shots_index := user_args.find("--car-browser-shots")
+	if browser_shots_index >= 0 and browser_shots_index + 1 < user_args.size():
+		var browser_shots := Node.new()
+		browser_shots.name = "CarBrowserShots"
+		browser_shots.set_script(load("res://scripts/car_browser_shots.gd"))
+		browser_shots.main = self
+		browser_shots.out_dir = user_args[browser_shots_index + 1]
+		browser_shots.big = "--car-browser-big" in user_args
+		add_child(browser_shots)
 	if "--garage-test" in user_args:
 		var garage_test := Node.new()
 		garage_test.name = "GarageTest"
@@ -685,7 +703,7 @@ func _release_world_nodes() -> void:
 	_world_view.release()
 	_director.set_terrain_view(null)
 
-func _load_world(kind: String) -> void:
+func _load_world(kind: String, keep_spawn_override: bool = false) -> void:
 	_release_world_nodes()
 	world_kind = kind
 	world_state = "loading"
@@ -703,7 +721,8 @@ func _load_world(kind: String) -> void:
 	_input_map.configure_vehicle(vehicle_json, bool(sel["assist_auto_shift"]))
 	var surface_table_json: String = ProjectSettings.globalize_path("res://../data/surfaces/surfaces.json")
 	if kind == "flat":
-		_simulation.clear_spawn_override()
+		if not keep_spawn_override:
+			_simulation.clear_spawn_override()
 		if not _simulation.initialize(vehicle_json, surface_table_json):
 			_load_failed(str(_simulation.get_last_error()))
 			return
@@ -1198,15 +1217,52 @@ func _close_garage() -> void:
 		_garage_scene.queue_free()
 		_garage_scene = null
 
-func _enter_vehicle_select() -> void:
+# The car browser screens (R6c): vehicle_select (main menu / pause "Garage", leads on to the
+# configurator) and change_car (pause, swaps the car in place). Both show the same browser; the
+# garage 3D scene is not drawn behind it (the browser's backdrop is opaque), the thumbnail
+# renderer exists only while a browser is up, and the saved group/sort/filter state is loaded.
+func _enter_car_browser() -> void:
 	_garage.discard() # coming back from the configurator ends the edit session
 	if _garage_scene == null:
 		_open_garage()
-	var id := str(_garage.get_selected_id())
-	_garage_scene.show_vehicle(_garage.get_vehicle(id))
-	_garage_scene.panel_side = "left"
-	_garage_scene.panel_px = 498.0
-	_garage_scene.go_to_area("overview", true)
+	_garage_scene.set_rendering(false)
+	_garage.browser_load_state(_browser_state_from_settings())
+	_garage.browser_refresh()
+	_make_thumbs()
+	_shell_ui.thumbs = _thumbs
+
+func _make_thumbs() -> void:
+	if _thumbs != null:
+		return
+	_thumbs = load("res://scripts/car_thumbnails.gd").new()
+	_thumbs.name = "CarThumbnails"
+	add_child(_thumbs)
+
+func _free_thumbs() -> void:
+	if _thumbs == null:
+		return
+	_shell_ui.thumbs = null
+	remove_child(_thumbs)
+	_thumbs.queue_free()
+	_thumbs = null
+
+func get_thumbnails() -> Node:
+	return _thumbs
+
+const BROWSER_KEYS := ["group_by", "sort_key", "sort_desc", "filter_layouts", "filter_body_types", "filter_power_bands"]
+
+func _browser_state_from_settings() -> Dictionary:
+	var state := {}
+	for key in BROWSER_KEYS:
+		state[key] = _shell.get_setting("browser." + key)
+	return state
+
+# The browser changed its group / sort / filter: keep it in the settings file.
+func _on_browser_state_changed() -> void:
+	var state: Dictionary = _garage.browser_get_state()
+	for key in BROWSER_KEYS:
+		_shell.set_setting("browser." + key, state[key])
+	_shell.save_settings()
 
 func _enter_configurator() -> void:
 	var id := str(_shell.get_garage_vehicle())
@@ -1216,6 +1272,7 @@ func _enter_configurator() -> void:
 		push_error("RG_GARAGE begin_edit failed: %s" % begun.get("error", "?"))
 	if _garage_scene == null:
 		_open_garage()
+	_garage_scene.set_rendering(true)
 	_garage_scene.show_vehicle(_garage.get_vehicle(id))
 	var colours: Dictionary = _garage.get_working_colours()
 	_garage_scene.set_colours(str(colours.get("paint", "")), str(colours.get("rim", "")))
@@ -1223,13 +1280,9 @@ func _enter_configurator() -> void:
 	_garage_scene.panel_px = 528.0
 	_garage_scene.go_to_area("overview", false)
 
-func _on_vehicle_highlighted(id: String) -> void:
-	if _garage_scene != null:
-		_garage_scene.show_vehicle(_garage.get_vehicle(id))
-		_garage_scene.go_to_area("overview", false)
-
 func _on_vehicle_chosen(id: String) -> void:
 	_garage.select(id)
+	_direct_vehicle = id # a "Change car" in a direct-start session drives the new car too
 	_apply_transition(_shell.vehicle_chosen(id))
 
 func _on_garage_area_chosen(area_id: String) -> void:
@@ -1292,7 +1345,10 @@ func _build_shell(user_args: PackedStringArray) -> void:
 	_garage = ClassDB.instantiate("RgGarage")
 	_garage.name = "Garage"
 	add_child(_garage)
-	var garage_report: Dictionary = _garage.initialize(ProjectSettings.globalize_path("res://").path_join("..").simplify_path(), _user_dir(), _user_dir().path_join("garage_work"))
+	var catalog_flag := user_args.find("--catalog")
+	if catalog_flag >= 0 and catalog_flag + 1 < user_args.size():
+		_catalog_override = user_args[catalog_flag + 1]
+	var garage_report: Dictionary = _garage.initialize(ProjectSettings.globalize_path("res://").path_join("..").simplify_path(), _user_dir(), _user_dir().path_join("garage_work"), _catalog_override)
 	if bool(garage_report.get("ok", false)):
 		print("RG_GARAGE ready vehicles=%d selected=%s" % [_garage.get_vehicles().size(), _garage.get_selected_id()])
 	else:
@@ -1302,7 +1358,7 @@ func _build_shell(user_args: PackedStringArray) -> void:
 	if vehicle_flag >= 0 and vehicle_flag + 1 < user_args.size():
 		_direct_vehicle = user_args[vehicle_flag + 1]
 	_shell_ui.garage = _garage
-	_shell_ui.vehicle_highlighted.connect(_on_vehicle_highlighted)
+	_shell_ui.browser_state_changed.connect(_on_browser_state_changed)
 	_shell_ui.vehicle_chosen.connect(_on_vehicle_chosen)
 	_shell_ui.garage_area_chosen.connect(_on_garage_area_chosen)
 	_shell_ui.garage_option_changed.connect(_on_garage_option_changed)
@@ -1346,10 +1402,13 @@ func _apply_transition(transition: Dictionary) -> void:
 
 func _show_screen(screen_name: String) -> void:
 	_screen = screen_name
-	if screen_name == "vehicle_select":
-		_enter_vehicle_select()
+	if screen_name == "vehicle_select" or screen_name == "change_car":
+		_enter_car_browser()
 	elif screen_name == "configurator":
+		_free_thumbs()
 		_enter_configurator()
+	else:
+		_free_thumbs()
 	_shell_ui.show_screen(screen_name)
 	_set_world_ui_visible(screen_name == "drive" or screen_name == "pause")
 	if screen_name != "loading":
@@ -1365,14 +1424,17 @@ func _begin_world_load(world: Dictionary, respawn: bool = false) -> void:
 	_world_request = world.duplicate()
 	var kind := str(world.get("kind", "flat"))
 	var old_pose: Dictionary = _simulation.get_chassis_session_pose() if respawn and world_state == "running" else {}
-	if respawn and kind == "real_world" and not old_pose.is_empty():
-		# the garage respawn: the new car starts where the old one stood (the flat world has one spawn)
+	var keep_override := false
+	if respawn and not old_pose.is_empty():
+		# the garage respawn / "Change car": the new car starts where the old one stood, same heading
+		# (the flat world applies it as a relocation right after the session exists)
 		_simulation.set_spawn_override(float(old_pose["x"]), float(old_pose["y"]), float(old_pose["yaw_deg"]))
+		keep_override = true
 	elif kind == "real_world" and bool(world.get("has_spawn", false)):
 		_simulation.set_spawn_override(float(world["x"]), float(world["y"]), float(world["yaw_deg"]))
 	else:
 		_simulation.clear_spawn_override()
-	_load_world(kind)
+	_load_world(kind, keep_override)
 
 # Back to "no world": stops the sim thread, the terrain streaming and the audio
 # (RgSimulation.unload) after freeing the nodes that read them.
@@ -1427,7 +1489,11 @@ func _typing() -> bool:
 
 func _on_escape() -> void:
 	match _screen:
-		"spawn_picker", "credits", "settings", "loading", "vehicle_select", "configurator":
+		"vehicle_select", "change_car":
+			# an open filter panel takes the Esc first
+			if not _shell_ui.browser_consume_back():
+				_apply_transition(_shell.back())
+		"spawn_picker", "credits", "settings", "loading", "configurator":
 			_apply_transition(_shell.back())
 		"pause":
 			_apply_transition(_shell.pause_toggle())

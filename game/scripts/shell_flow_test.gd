@@ -26,7 +26,7 @@ extends Node
 const TIMEOUT_S := 60.0
 const TIMEOUT_REAL_S := 400.0
 const EXPECTED_MAIN_ITEMS := ["free_roam", "garage", "settings", "credits", "quit"]
-const EXPECTED_PAUSE_ITEMS := ["resume", "reset_car", "garage", "settings", "main_menu"]
+const EXPECTED_PAUSE_ITEMS := ["resume", "reset_car", "change_car", "garage", "settings", "main_menu"]
 
 var main: Node
 var _checks := 0
@@ -313,7 +313,7 @@ func _run() -> void:
 		var pause_ids := _sorted_ids(ui)
 		var expected_pause: Array = EXPECTED_PAUSE_ITEMS.duplicate()
 		expected_pause.sort()
-		_check(pause_ids == expected_pause, "pause menu is exactly Resume | Reset car | Garage | Settings | Main menu (has %s)" % ", ".join(pause_ids))
+		_check(pause_ids == expected_pause, "pause menu is exactly Resume | Reset car | Change car | Garage | Settings | Main menu (has %s)" % ", ".join(pause_ids))
 		var sim: Node = main._simulation
 		_check(sim.is_paused(), "the simulation is paused")
 		# the pause takes effect on the sim thread: let a tick in flight finish first

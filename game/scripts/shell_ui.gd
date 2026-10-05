@@ -9,7 +9,7 @@ extends CanvasLayer
 # into a flow event. This script decides nothing: it does not know which menu
 # comes after which, what a setting's valid range is or what is credited.
 #
-# R6: vehicle select and the configurator are drawn here too, as side panels over
+# R6: vehicle select (R6c: the car browser, car_browser_ui.gd) and the configurator are drawn here too, over
 # the garage scene (garage_scene.gd, one layer below). Their view-models come from
 # RgGarage (stats and options as data, the loader's verdict on every change); the
 # controls forward the player's values to RgGarage.set_option and show what it
@@ -29,8 +29,8 @@ signal back_requested
 signal setting_changed(key: String)
 signal boot_finished
 # R6 garage
-signal vehicle_highlighted(id: String)
 signal vehicle_chosen(id: String)
+signal browser_state_changed # group, sort or filter of the car browser changed (main.gd persists it)
 signal garage_area_chosen(area_id: String)
 signal garage_option_changed(option_id: String)
 signal garage_save_requested
@@ -52,9 +52,8 @@ var _buttons: Dictionary = {} # id -> Button of the current screen
 var _setting_controls: Dictionary = {} # key -> control of the settings screen
 var _setting_displays: Dictionary = {} # key -> Label with the shown value
 var _setting_notes: Dictionary = {} # key -> Label for a validation message
-var _highlight_id: String = ""                 # vehicle select: the car shown
-var _vehicle_rows: Dictionary = {}             # vehicle select: id -> Button
-var _stats_box: VBoxContainer                  # vehicle select: stats of the highlighted car
+var thumbs: Node                                # car_thumbnails.gd while a browser screen is up (main.gd owns it)
+var _browser: Control                          # car_browser_ui.gd on the vehicle_select / change_car screens
 var _option_controls: Dictionary = {}          # configurator: option id -> control
 var _option_values: Dictionary = {}            # configurator: option id -> Label with the shown value
 var _option_notes: Dictionary = {}             # configurator: option id -> Label with a rejection
@@ -83,12 +82,11 @@ func show_screen(screen_name: String) -> void:
 	_setting_controls.clear()
 	_setting_displays.clear()
 	_setting_notes.clear()
-	_vehicle_rows.clear()
 	_option_controls.clear()
 	_option_values.clear()
 	_option_notes.clear()
 	_area_buttons.clear()
-	_stats_box = null
+	_browser = null
 	_option_box = null
 	_status_label = null
 	screen = screen_name
@@ -107,8 +105,8 @@ func show_screen(screen_name: String) -> void:
 			_build_settings()
 		"credits":
 			_build_credits()
-		"vehicle_select":
-			_build_vehicle_select()
+		"vehicle_select", "change_car":
+			_build_browser(screen_name)
 		"configurator":
 			_build_configurator()
 		_:
@@ -137,9 +135,6 @@ func active_area() -> String:
 
 func status_text() -> String:
 	return _status_label.text if _status_label != null else ""
-
-func highlighted_vehicle() -> String:
-	return _highlight_id
 
 func _process(delta: float) -> void:
 	if screen == "boot" and not _boot_done:
@@ -527,115 +522,32 @@ func _side_panel(on_left: bool, width: float) -> VBoxContainer:
 	panel.add_child(column)
 	return column
 
-func _build_vehicle_select() -> void:
-	var column := _side_panel(true, 470)
-	column.add_child(_label("Garage", 34, HORIZONTAL_ALIGNMENT_LEFT))
-	column.add_child(_label("Choose a car", 14, HORIZONTAL_ALIGNMENT_LEFT, true))
-	var vehicles: Array = garage.get_vehicles()
-	_highlight_id = str(garage.get_selected_id())
-	var known := false
-	for v in vehicles:
-		if str(v["id"]) == _highlight_id:
-			known = true
-	if not known and not vehicles.is_empty():
-		_highlight_id = str(vehicles[0]["id"])
-	for v in vehicles:
-		var id: String = str(v["id"])
-		var holder := VBoxContainer.new()
-		holder.add_theme_constant_override("separation", 0)
-		column.add_child(holder)
-		var text := str(v["title"])
-		if bool(v["has_setup"]):
-			text += "   (setup)"
-		var button := _button(holder, "veh:" + id, text, func(): _highlight_vehicle(id), 0)
-		button.alignment = HORIZONTAL_ALIGNMENT_LEFT
-		_vehicle_rows[id] = button
-		holder.add_child(_label(str(v["subtitle"]), 13, HORIZONTAL_ALIGNMENT_LEFT, true))
-	column.add_child(HSeparator.new())
-	_stats_box = VBoxContainer.new()
-	_stats_box.add_theme_constant_override("separation", 4)
-	column.add_child(_stats_box)
-	var footer := HBoxContainer.new()
-	footer.add_theme_constant_override("separation", 12)
-	column.add_child(footer)
-	_button(footer, "back", "Back", func(): back_requested.emit(), 120)
-	var choose := _button(footer, "choose", "Configure", func(): vehicle_chosen.emit(_highlight_id), 0)
-	choose.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	_fill_stats()
-	_mark_highlight()
-	_focus_first()
+func _build_browser(screen_name: String) -> void:
+	var ui = Control.new()
+	ui.set_script(load("res://scripts/car_browser_ui.gd"))
+	ui.name = "CarBrowser"
+	ui.garage = garage
+	ui.thumbs = thumbs
+	ui.screen_title = "Garage" if screen_name == "vehicle_select" else "Change car"
+	ui.choose_text = "Configure" if screen_name == "vehicle_select" else "Change car"
+	ui.car_chosen.connect(func(id: String): vehicle_chosen.emit(id))
+	ui.back_requested.connect(func(): back_requested.emit())
+	ui.state_changed.connect(func(): browser_state_changed.emit())
+	_root.add_child(ui)
+	_browser = ui
+	_buttons["choose"] = ui.get_control("choose")
+	_buttons["back"] = ui.get_control("back")
+	_buttons["filter"] = ui.get_control("filter_button")
 
-func _highlight_vehicle(id: String) -> void:
-	if id == _highlight_id:
-		return
-	_highlight_id = id
-	_fill_stats()
-	_mark_highlight()
-	vehicle_highlighted.emit(id)
+# Esc closes the browser's filter panel first; true when it did.
+func browser_consume_back() -> bool:
+	return _browser != null and _browser.consume_back()
 
-func _mark_highlight() -> void:
-	for id in _vehicle_rows:
-		var b: Button = _vehicle_rows[id]
-		b.add_theme_color_override("font_color", Color(1.0, 0.62, 0.3) if id == _highlight_id else Color(1, 1, 1))
+func browser() -> Control:
+	return _browser
 
-func _stat_bar(label: String, value_text: String, ratio: float) -> void:
-	var row := VBoxContainer.new()
-	row.add_theme_constant_override("separation", 1)
-	_stats_box.add_child(row)
-	var line := HBoxContainer.new()
-	row.add_child(line)
-	var name_label := _label(label, 14, HORIZONTAL_ALIGNMENT_LEFT, true)
-	name_label.custom_minimum_size = Vector2(90, 0)
-	line.add_child(name_label)
-	var value_label := _label(value_text, 15, HORIZONTAL_ALIGNMENT_LEFT)
-	value_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	line.add_child(value_label)
-	var bar := ProgressBar.new()
-	bar.min_value = 0.0
-	bar.max_value = 1.0
-	bar.value = clampf(ratio, 0.0, 1.0)
-	bar.show_percentage = false
-	bar.custom_minimum_size = Vector2(0, 6)
-	row.add_child(bar)
-
-func _stat_line(label: String, value_text: String) -> void:
-	var line := HBoxContainer.new()
-	_stats_box.add_child(line)
-	var name_label := _label(label, 14, HORIZONTAL_ALIGNMENT_LEFT, true)
-	name_label.custom_minimum_size = Vector2(90, 0)
-	line.add_child(name_label)
-	var value_label := _label(value_text, 15, HORIZONTAL_ALIGNMENT_LEFT)
-	value_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	line.add_child(value_label)
-
-func _fill_stats() -> void:
-	for child in _stats_box.get_children():
-		_stats_box.remove_child(child)
-		child.queue_free()
-	var best_kw := 1.0
-	var best_nm := 1.0
-	for other in garage.get_vehicles():
-		var other_stats: Dictionary = other["stats"]
-		if bool(other_stats.get("ok", false)):
-			best_kw = maxf(best_kw, float(other_stats["peak_power_kw"]))
-			best_nm = maxf(best_nm, float(other_stats["peak_torque_nm"]))
-	var v: Dictionary = garage.get_vehicle(_highlight_id)
-	if v.is_empty():
-		return
-	_stats_box.add_child(_label(str(v["title"]), 24, HORIZONTAL_ALIGNMENT_LEFT))
-	_stats_box.add_child(_label(str(v["description"]), 13, HORIZONTAL_ALIGNMENT_LEFT, true))
-	var st: Dictionary = v["stats"]
-	if not bool(st.get("ok", false)):
-		_stats_box.add_child(_label("stats unavailable: " + str(st.get("error", "")), 13, HORIZONTAL_ALIGNMENT_LEFT))
-		return
-	var kw := float(st["peak_power_kw"])
-	_stat_bar("Power", "%.0f kW at %.0f rpm" % [kw, float(st["peak_power_rpm"])], kw / best_kw)
-	var nm := float(st["peak_torque_nm"])
-	_stat_bar("Torque", "%.0f Nm at %.0f rpm" % [nm, float(st["peak_torque_rpm"])], nm / best_nm)
-	_stat_line("Mass", "%.0f kg" % float(st["mass_kg"]))
-	_stat_line("Drive", "%s  (%d of %d wheels driven)" % [str(st["layout"]), int(st["driven_wheels"]), int(st["wheel_count"])])
-	_stat_line("Gearbox", "%d-speed" % int(st["gear_count"]))
-	_stat_line("Engine", str(st["engine_name"]))
+func highlighted_vehicle() -> String:
+	return _browser.focused_id() if _browser != null else ""
 
 # ---- garage: configurator ---------------------------------------------------------
 

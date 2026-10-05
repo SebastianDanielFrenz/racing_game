@@ -128,10 +128,11 @@ if (-not $SkipSmoke) {
     }
 
     # R5: the headless UI flow test of the game shell (-Shell), R6: the garage
-    # acceptance flow (-Garage) and the PHYS-008
+    # acceptance flow (-Garage), R6c: the car browser and the in-world car switch (-CarBrowser,
+    # -CarBrowserBig with a synthetic 200-car catalog) and the PHYS-008
     # camera-switch test (-Cameras). Both run flat-world only (no geo2map store)
     # and reuse the built binary, a few seconds each.
-    foreach ($extra in @(@('Shell', 'smoke_test_shell'), @('Garage', 'smoke_test_garage'), @('Cameras', 'smoke_test_cameras'))) {
+    foreach ($extra in @(@('Shell', 'smoke_test_shell'), @('Garage', 'smoke_test_garage'), @('CarBrowser', 'smoke_test_browser'), @('CarBrowserBig', 'smoke_test_browser_big'), @('Cameras', 'smoke_test_cameras'))) {
         Write-Host "`n=== leg: smoke_test (-$($extra[0])) ===" -ForegroundColor Cyan
         $extraSw = [System.Diagnostics.Stopwatch]::StartNew()
         $extraArgs = @{ SkipBuild = $true }

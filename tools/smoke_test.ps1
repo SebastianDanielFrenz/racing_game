@@ -109,6 +109,21 @@
     pause -> Garage (respawn) -> the sedan -> Main menu: no world, no garage node, no work
     file left. Asserts 0 ERROR lines / exit 0 plus "RG_GARAGE_TEST PASS" and no FAIL line.
 
+.PARAMETER CarBrowser
+    R6c headless car browser test: launches with `-- --car-browser-test --shell-user-dir <dir>`
+    (game/scripts/car_browser_test.gd). Main menu -> Garage -> the browser lists every catalog
+    car, arrow keys move the focus, grouping by body type, the AWD filter leaves exactly the AWD
+    cars and is stored in the settings, F/Esc open and close the filter panel -> Free roam -> the
+    car is moved away from the spawn -> Esc -> Change car -> another car (a preset) -> the new
+    car stands where the old one stood (within 0.5 m, read from the physics), at rest, with its
+    weight on the wheels -> Main menu: the node count is what it was before. Asserts 0 ERROR
+    lines / exit 0 plus "RG_CAR_BROWSER_TEST PASS" and no FAIL line.
+
+.PARAMETER CarBrowserBig
+    Implies -CarBrowser with a synthetic 200-entry catalog (tools/make_synthetic_catalog.ps1,
+    `--catalog`, `--car-browser-big`): additionally asserts that only a window of the tiles
+    exists as nodes while every car is listed, also after scrolling far right.
+
 .PARAMETER Cameras
     R5 PHYS-008 camera-switch test: launches with `-- --camera-test` (flat world,
     game/scripts/camera_switch_test.gd). Every ordered pair of the five driving
@@ -137,6 +152,8 @@ param(
     [switch]$Shell,
     [switch]$Garage,
     [switch]$Cameras,
+    [switch]$CarBrowser,
+    [switch]$CarBrowserBig,
     [int]$DriveDelayMs = 0
 )
 
@@ -146,9 +163,10 @@ if ($TerrainStream) {
     if (-not $PSBoundParameters.ContainsKey('QuitAfterFrames')) { $QuitAfterFrames = 200000 }
 }
 if ($DriveDelayMs -gt 0) { $Drive = $true }
-if (($Drive -or $Shell -or $Garage -or $Cameras) -and -not $PSBoundParameters.ContainsKey('QuitAfterFrames')) { $QuitAfterFrames = 200000 }
-if ((@($BindingsTest, $TerrainPreview, $Drive, $Shell, $Garage, $Cameras) | Where-Object { $_ }).Count -gt 1) {
-    throw "smoke_test.ps1: -BindingsTest, -TerrainPreview/-TerrainStream, -Drive/-DriveDelayMs, -Shell, -Garage and -Cameras are mutually exclusive"
+if ($CarBrowserBig) { $CarBrowser = $true }
+if (($Drive -or $Shell -or $Garage -or $Cameras -or $CarBrowser) -and -not $PSBoundParameters.ContainsKey('QuitAfterFrames')) { $QuitAfterFrames = 200000 }
+if ((@($BindingsTest, $TerrainPreview, $Drive, $Shell, $Garage, $Cameras, $CarBrowser) | Where-Object { $_ }).Count -gt 1) {
+    throw "smoke_test.ps1: -BindingsTest, -TerrainPreview/-TerrainStream, -Drive/-DriveDelayMs, -Shell, -Garage, -Cameras and -CarBrowser are mutually exclusive"
 }
 $repoRoot = Split-Path -Parent $PSScriptRoot
 $gameDir  = Join-Path $repoRoot 'game'
@@ -281,6 +299,16 @@ if ($script:Failures.Count -eq 0 -and -not $script:DriveSkipped) {
         if (Test-Path $garageUserDir) { Remove-Item -Recurse -Force $garageUserDir }
         New-Item -ItemType Directory -Force $garageUserDir | Out-Null
         $godotArgs += @('--', '--garage-test', '--shell-user-dir', $garageUserDir)
+    } elseif ($CarBrowser) {
+        $browserUserDir = Join-Path $buildDir 'car_browser_test_user'
+        if (Test-Path $browserUserDir) { Remove-Item -Recurse -Force $browserUserDir }
+        New-Item -ItemType Directory -Force $browserUserDir | Out-Null
+        $godotArgs += @('--', '--car-browser-test', '--shell-user-dir', $browserUserDir)
+        if ($CarBrowserBig) {
+            $bigCatalog = Join-Path $buildDir 'car_browser_big_catalog.json'
+            & (Join-Path $PSScriptRoot 'make_synthetic_catalog.ps1') -OutFile $bigCatalog -Total 200 | Out-Host
+            $godotArgs += @('--catalog', $bigCatalog, '--car-browser-big')
+        }
     } elseif ($Cameras) {
         $godotArgs += @('--', '--camera-test')
     } else {
@@ -448,6 +476,17 @@ if ($script:Failures.Count -eq 0 -and -not $script:DriveSkipped) {
             Report-Fail "no 'RG_GARAGE_TEST PASS' line - garage_test.gd did not finish (is main.gd's --garage-test node running?)"
         } else {
             Report-Ok "garage test: $($passLine.Line) ($($okLines.Count) ok lines)"
+        }
+    } elseif ($CarBrowser) {
+        $failLines = @($logContent | Select-String -SimpleMatch -Pattern 'RG_CAR_BROWSER_TEST FAIL')
+        $okLines = @($logContent | Select-String -SimpleMatch -Pattern 'RG_CAR_BROWSER_TEST ok:')
+        $passLine = $logContent | Select-String -Pattern 'RG_CAR_BROWSER_TEST PASS checks=(\d+)' | Select-Object -Last 1
+        if ($failLines.Count -gt 0) {
+            Report-Fail "car browser test reported failure(s):`n$($failLines -join "`n")"
+        } elseif (-not $passLine) {
+            Report-Fail "no 'RG_CAR_BROWSER_TEST PASS' line - car_browser_test.gd did not finish (is main.gd's --car-browser-test node running?)"
+        } else {
+            Report-Ok "car browser test: $($passLine.Line) ($($okLines.Count) ok lines)"
         }
     } elseif ($Cameras) {
         $failLines = @($logContent | Select-String -SimpleMatch -Pattern 'RG_CAMERA_TEST FAIL')

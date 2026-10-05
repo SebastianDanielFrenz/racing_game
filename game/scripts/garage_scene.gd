@@ -77,6 +77,12 @@ func _exit_tree() -> void:
 func is_built() -> bool:
 	return _built
 
+# The car browser covers the whole screen: nothing to draw behind it (PLAN.md R6c).
+func set_rendering(on: bool) -> void:
+	if _viewport != null:
+		_viewport.render_target_update_mode = SubViewport.UPDATE_ALWAYS if on else SubViewport.UPDATE_DISABLED
+	set_process(on)
+
 func models_loaded() -> int:
 	return _models_loaded
 
