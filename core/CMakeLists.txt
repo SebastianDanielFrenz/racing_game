@@ -78,6 +78,7 @@ add_library(rg_core STATIC
     src/settings.cpp
     src/spawn_presets.cpp
     src/shell_flow.cpp
+    src/car_browser.cpp
     src/vehicle_catalog.cpp
     src/vehicle_setup.cpp
     src/garage_set.cpp

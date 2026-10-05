@@ -253,7 +253,7 @@ godot::Array RgShell::get_settings_schema() const {
         sd["title"] = from_std(rg::settings_section_title(section));
         godot::Array list;
         for (const rg::SettingDef& def : rg::settings_schema()) {
-            if (def.section != section) continue;
+            if (def.section != section || !def.shown) continue;
             godot::Dictionary d;
             d["key"] = from_std(def.key);
             d["label"] = from_std(def.label);

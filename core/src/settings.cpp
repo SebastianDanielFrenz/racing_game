@@ -97,6 +97,27 @@ std::vector<SettingDef> build_schema() {
     store.default_value = std::string();
     store.applies_live = false;
     s.push_back(std::move(store));
+
+    // Car browser view state (R6c): persisted, not shown on the settings screen.
+    const auto hidden = [](SettingDef d) {
+        d.shown = false;
+        if (d.help.empty()) d.help = "Car browser view state.";
+        return d;
+    };
+    s.push_back(hidden(make_choice("browser", "group_by", "Browser grouping", "", "body_type",
+                                   {"body_type", "drive_layout", "power_band", "manufacturer", "none"})));
+    s.push_back(hidden(make_choice("browser", "sort_key", "Browser sort", "", "name",
+                                   {"name", "power", "torque", "mass", "power_to_weight", "displacement"})));
+    s.push_back(hidden(make_bool("browser", "sort_desc", "Browser sort descending", "", false)));
+    for (const char* name : {"filter_layouts", "filter_body_types", "filter_power_bands"}) {
+        SettingDef d;
+        d.section = "browser";
+        d.key = std::string("browser.") + name;
+        d.label = std::string("Browser ") + name;
+        d.type = SettingType::Path; // a comma-separated list of ids
+        d.default_value = std::string();
+        s.push_back(hidden(std::move(d)));
+    }
     return s;
 }
 
@@ -218,6 +239,7 @@ const SettingDef* find_setting(const std::string& key) {
 std::vector<std::string> settings_sections() {
     std::vector<std::string> out;
     for (const SettingDef& d : settings_schema()) {
+        if (!d.shown) continue;
         if (std::find(out.begin(), out.end(), d.section) == out.end()) out.push_back(d.section);
     }
     return out;
