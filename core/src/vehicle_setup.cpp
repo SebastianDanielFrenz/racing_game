@@ -800,6 +800,8 @@ bool set_number(Target& t, double value) {
 
 } // namespace
 
+bool setup_values_equal(const SetupValue& a, const SetupValue& b) { return values_equal(a, b); }
+
 CompiledSetup compile_setup_internal(const CatalogEntry& entry, const SetupOptionTable& table, const SetupContext& ctx,
                                      const VehicleSetup& setup, Files& files);
 

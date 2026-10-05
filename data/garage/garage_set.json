@@ -1,0 +1,30 @@
+{
+  "format": "rg.garage_set/1",
+  "source": "racing_game-owned showroom set (R6). Procedural/primitive geometry and own materials only; mood reference is the 'garage turntable under studio light' look of modern racing games, no asset, logo or layout is copied. Frame: ISO 8855 (x forward, y left, z up), origin = turntable centre on the floor. Lights/softboxes are authored values (energy in Godot units).",
+  "room": { "radius_m": 15.0, "height_m": 7.5, "floor_colour": "#14161a", "wall_colour": "#181c23", "accent_colour": "#e8742a" },
+  "turntable": { "radius_m": 3.7, "height_m": 0.1, "spin_deg_s": 14.0, "colour": "#23262c", "rim_colour": "#e8742a" },
+  "environment": { "exposure": 1.0, "ambient_energy": 0.30, "ambient_colour": "#39414f", "reflection_energy": 1.15, "floor_reflectivity": 0.40 },
+  "lights": [
+    { "id": "key",       "kind": "spot", "position": [5.5, 5.0, 6.2],   "target": [0, 0, 0.5], "colour": "#fff1de", "energy": 11.0, "range_m": 24, "angle_deg": 38, "shadow": true },
+    { "id": "rim_left",  "kind": "spot", "position": [-6.0, 6.0, 3.6],  "target": [0, 0, 0.7], "colour": "#9cc4ff", "energy": 7.0,  "range_m": 24, "angle_deg": 34, "shadow": false },
+    { "id": "rim_right", "kind": "spot", "position": [-6.0, -6.0, 3.6], "target": [0, 0, 0.7], "colour": "#ffc79a", "energy": 7.0,  "range_m": 24, "angle_deg": 34, "shadow": false },
+    { "id": "front_fill","kind": "spot", "position": [8.0, -3.0, 2.4],  "target": [0, 0, 0.6], "colour": "#e9efff", "energy": 4.0,  "range_m": 24, "angle_deg": 40, "shadow": false },
+    { "id": "floor_glow","kind": "omni", "position": [0, 0, 0.6],       "colour": "#ff9a52", "energy": 0.6, "range_m": 7.0 }
+  ],
+  "softboxes": [
+    { "id": "roof_a",  "position": [1.5, 2.2, 6.6],  "target": [0, 0, 0], "width_m": 9.0, "height_m": 1.4, "colour": "#ffffff", "energy": 5.0 },
+    { "id": "roof_b",  "position": [1.5, -2.2, 6.6], "target": [0, 0, 0], "width_m": 9.0, "height_m": 1.4, "colour": "#ffffff", "energy": 5.0 },
+    { "id": "side_l",  "position": [0, 9.0, 3.2],    "target": [0, 0, 1.0], "width_m": 7.0, "height_m": 2.6, "colour": "#dbe8ff", "energy": 3.2 },
+    { "id": "side_r",  "position": [0, -9.0, 3.2],   "target": [0, 0, 1.0], "width_m": 7.0, "height_m": 2.6, "colour": "#ffe6cf", "energy": 3.2 },
+    { "id": "back",    "position": [-10.5, 0, 3.0],  "target": [0, 0, 1.0], "width_m": 4.0, "height_m": 3.5, "colour": "#ffffff", "energy": 2.4 }
+  ],
+  "cameras": {
+    "transition_s": 1.0,
+    "areas": [
+      { "id": "overview", "label": "Overview",        "anchor": "centre",      "anchor_offset": [0, 0, 0.05], "azimuth_deg": 34,  "elevation_deg": 12, "distance_scale": 1.85, "fov_deg": 38, "spin": true },
+      { "id": "wheels",   "label": "Wheels & brakes", "anchor": "front_wheel", "anchor_offset": [0, 0, 0.0],  "azimuth_deg": 70,  "elevation_deg": 9,  "distance_m": 2.7,       "fov_deg": 40, "car_yaw_deg": 0 },
+      { "id": "engine",   "label": "Engine bay",      "anchor": "engine_bay",  "anchor_offset": [0, 0, 0.0],  "azimuth_deg": 28,  "elevation_deg": 42, "distance_scale": 0.85, "fov_deg": 44, "car_yaw_deg": 0 },
+      { "id": "rear",     "label": "Rear",            "anchor": "rear",        "anchor_offset": [0, 0, 0.05], "azimuth_deg": 152, "elevation_deg": 10, "distance_scale": 1.15, "fov_deg": 40, "car_yaw_deg": 0 }
+    ]
+  }
+}

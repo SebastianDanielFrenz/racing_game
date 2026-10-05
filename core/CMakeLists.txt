@@ -76,6 +76,8 @@ add_library(rg_core STATIC
     src/shell_flow.cpp
     src/vehicle_catalog.cpp
     src/vehicle_setup.cpp
+    src/garage_set.cpp
+    src/garage.cpp
     src/road_ahead.cpp
     src/camera_math.cpp
     "${PS_ADAPTER_SRC_DIR}/frame_convert_core.cpp"

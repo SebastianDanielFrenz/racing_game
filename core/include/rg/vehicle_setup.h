@@ -179,6 +179,9 @@ private:
     std::string path_;
 };
 
+// Equality of two option values (numbers within 1e-9), used to drop a value set back to stock.
+bool setup_values_equal(const SetupValue& a, const SetupValue& b);
+
 // "#rrggbb" check shared by the setup and the UI view-models.
 bool is_hex_colour(const std::string& s);
 
