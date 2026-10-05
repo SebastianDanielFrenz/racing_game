@@ -20,9 +20,9 @@
     },
     "grass": {
       "display_name": "Dry grass on firm soil",
-      "lambda_mu": 0.84,
+      "lambda_mu": 0.63,
       "crr": 0.08,
-      "source": "Owner handling adjustment: doubled previous lambda_mu=0.42 to 0.84; this is an asphalt-relative tyre friction scale, not measured absolute grass friction. Cenek/Jamieson/McLarin, Frictional Characteristics of Roadside Grass Types, Table 4: locked-wheel car braking dry clover/rye-grass mu=0.21/0.36/0.38, wet=0.17/0.21/0.24. These braking measurements do not establish driven-wheel peak acceleration. https://saferroadsconference.com/wp-content/uploads/2016/05/Peter-Cenek-Frictional-Characteristics-Roadside-Grass-Types.pdf"
+      "source": "Owner handling adjustment: doubled previous lambda_mu=0.42 to 0.84 (RACE-002), then reduced to 0.63 on 2026-10-05 (owner: \"a bit too grippy now\", halfway back; still above dirt 0.6 - to be judged by driving); this is an asphalt-relative tyre friction scale, not measured absolute grass friction. Cenek/Jamieson/McLarin, Frictional Characteristics of Roadside Grass Types, Table 4: locked-wheel car braking dry clover/rye-grass mu=0.21/0.36/0.38, wet=0.17/0.21/0.24. These braking measurements do not establish driven-wheel peak acceleration. https://saferroadsconference.com/wp-content/uploads/2016/05/Peter-Cenek-Frictional-Characteristics-Roadside-Grass-Types.pdf"
     },
     "dirt": {
       "display_name": "Dry compact dirt / gravel road",

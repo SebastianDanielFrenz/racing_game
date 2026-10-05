@@ -1,8 +1,10 @@
 # Grass traction
 
 The game loads data/surfaces/surfaces.json rather than modifying the read-only
-physics_sim surface table. Grass lambda_mu is 0.84, exactly twice the previous
-0.42. This scales longitudinal and lateral tyre friction; rolling resistance
+physics_sim surface table. Grass lambda_mu is 0.63. It was doubled from 0.42 to 0.84 (RACE-002) and
+reduced to 0.63 on 2026-10-05 after the owner found it "a bit too grippy now"
+(halfway back; dirt is 0.6, so grass is still marginally above dirt - the owner
+judges the value by driving, and wet grass will multiply the dry value later). This scales longitudinal and lateral tyre friction; rolling resistance
 stays 0.08. lambda_mu is relative to the tyre model's dry-asphalt friction, not
 an absolute coefficient or guaranteed chassis acceleration.
 
@@ -22,6 +24,6 @@ measurements. As a first-order traction estimate, a ≈ mu*g when all weight is
 carried by driven tyres; driven-axle weight, transfer, rolling resistance,
 aerodynamics, tyre slip and soil deformation change acceleration. The study's
 lightly loaded tyre-drag numbers (0.68–0.80 dry) are explicitly unsuitable as
-full-car friction values. The new doubled game grip is an owner-requested
-handling choice above the measured sliding values, not a realism calibration.
+full-car friction values. The game grip is an owner-requested handling choice above the measured sliding
+values, not a realism calibration.
 No wet-grass weather switching is added by this change. Restart to load it.
