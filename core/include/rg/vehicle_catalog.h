@@ -77,6 +77,10 @@ std::optional<VehicleCatalog> load_vehicle_catalog(const std::string& path, cons
 std::optional<VehicleCatalog> parse_vehicle_catalog(const std::string& json_text, const std::string& repo_root,
                                                     const std::string& origin, std::string* err);
 
+// The persistent engine-map cache directory rg::Session uses for a vehicle file:
+// <the tree that holds data/vehicles>/out/godot_engine_cache (physics_sim's demo location).
+std::string default_engine_cache_dir(const std::string& vehicle_path);
+
 // The stats vehicle select shows, all read from data.
 struct VehicleStats {
     std::string engine_name;

@@ -76,6 +76,12 @@ bool option_value_type_ok(OptionKind kind, const SetupValue& v) {
 
 } // namespace
 
+SetupContext Garage::context_for(const CatalogEntry& entry) const {
+    SetupContext c = ctx_;
+    if (c.engine_map_cache_dir.empty()) c.engine_map_cache_dir = default_engine_cache_dir(entry.vehicle_path);
+    return c;
+}
+
 std::string Garage::garage_dir() const { return config_.user_dir + "/garage"; }
 
 std::string Garage::setup_path(const std::string& id) const { return garage_dir() + "/setups/" + id + ".json"; }
@@ -221,7 +227,7 @@ bool Garage::begin_edit(const std::string& id, std::string* err) {
         if (err != nullptr) *err = "unknown vehicle \"" + id + "\"";
         return false;
     }
-    model_ = build_setup_model(*e, options_, ctx_);
+    model_ = build_setup_model(*e, options_, context_for(*e));
     if (!model_.error.empty()) {
         if (err != nullptr) *err = model_.error;
         return false;
@@ -253,7 +259,7 @@ void Garage::revalidate() {
         validation_.ok = true;
         return;
     }
-    validation_ = validate_setup(*e, options_, ctx_, working_);
+    validation_ = validate_setup(*e, options_, context_for(*e), working_);
 }
 
 EditResult Garage::set_option(const std::string& option_id, const SetupValue& value) {
@@ -385,12 +391,13 @@ DriveSelection Garage::prepare_drive(const std::string& id) {
     d.paint = e->default_paint;
     d.rim = e->default_rim;
     d.vehicle_path = e->vehicle_path;
+    d.engine_map_cache_dir = context_for(*e).engine_map_cache_dir;
 
     remove_drive_dir();
     const VehicleSetup setup = saved_setup(id);
     if (!setup.values.empty()) {
         const std::string dir = config_.work_root + "/drive_" + id + "_" + hex16(fnv1a(setup_to_json(setup)));
-        const MaterialisedSetup m = materialise_setup(*e, options_, ctx_, setup, dir);
+        const MaterialisedSetup m = materialise_setup(*e, options_, context_for(*e), setup, dir);
         if (!m.ok) {
             // The saved setup no longer fits the data (a file changed): drive the stock car and say so.
             d.warning = "The saved setup for " + e->title + " was not applied: " + m.error;

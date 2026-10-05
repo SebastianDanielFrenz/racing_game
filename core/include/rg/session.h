@@ -144,6 +144,9 @@ struct SessionConfig {
     // Engine maps remain shared/const; each world creates fresh runtime state.
     std::shared_ptr<const ps::vehicle::VehicleDesc> vehicle_definition;
     bool engine_map_cache_enabled = true; // Persistent simulated-engine maps, matching the physics demo.
+    // Non-empty: the .psmaps cache directory to use (R6: a materialised garage setup lives outside
+    // physics_sim's tree, so the path-derived default would put its cache in the work directory).
+    std::string engine_map_cache_dir;
     std::string vehicle_json_path;  // e.g. .../data/vehicles/car_sedan.json
     std::string surface_table_path; // e.g. .../data/surfaces/surfaces.json
 

@@ -16,6 +16,8 @@ const char* to_string(Screen s) {
         case Screen::Pause: return "pause";
         case Screen::Settings: return "settings";
         case Screen::Credits: return "credits";
+        case Screen::VehicleSelect: return "vehicle_select";
+        case Screen::Configurator: return "configurator";
         case Screen::Quit: return "quit";
     }
     return "boot";
@@ -24,6 +26,7 @@ const char* to_string(Screen s) {
 const std::vector<MenuItem>& main_menu_items() {
     static const std::vector<MenuItem> items = {
         {"free_roam", "Free roam"},
+        {"garage", "Garage"},
         {"settings", "Settings"},
         {"credits", "Credits"},
         {"quit", "Quit"},
@@ -35,6 +38,7 @@ const std::vector<MenuItem>& pause_menu_items() {
     static const std::vector<MenuItem> items = {
         {"resume", "Resume"},
         {"reset_car", "Reset car"},
+        {"garage", "Garage (respawn)"},
         {"settings", "Settings"},
         {"main_menu", "Main menu"},
     };
@@ -114,6 +118,11 @@ ShellTransition ShellFlow::handle(const ShellEvent& e) {
         case Screen::MainMenu:
             if (e.kind == ShellEventKind::MenuItem && has_item(main_menu_items(), e.item)) {
                 if (e.item == "free_roam") return go(Screen::SpawnPicker, {});
+                if (e.item == "garage") {
+                    garage_return_ = Screen::MainMenu;
+                    garage_vehicle_.clear();
+                    return go(Screen::VehicleSelect, {simple(ShellActionKind::OpenGarage)});
+                }
                 if (e.item == "settings") {
                     settings_return_ = Screen::MainMenu;
                     return go(Screen::Settings, {});
@@ -165,6 +174,11 @@ ShellTransition ShellFlow::handle(const ShellEvent& e) {
                     return go(Screen::Drive,
                               {simple(ShellActionKind::ResetCar), simple(ShellActionKind::SetPaused, false)});
                 }
+                if (e.item == "garage") {
+                    garage_return_ = Screen::Pause;
+                    garage_vehicle_.clear();
+                    return go(Screen::VehicleSelect, {simple(ShellActionKind::OpenGarage)});
+                }
                 if (e.item == "settings") {
                     settings_return_ = Screen::Pause;
                     return go(Screen::Settings, {});
@@ -174,6 +188,30 @@ ShellTransition ShellFlow::handle(const ShellEvent& e) {
                     return go(Screen::MainMenu,
                               {simple(ShellActionKind::SetPaused, false), simple(ShellActionKind::UnloadWorld)});
                 }
+            }
+            return refuse();
+
+        case Screen::VehicleSelect:
+            if (e.kind == ShellEventKind::Back) return go(garage_return_, {simple(ShellActionKind::CloseGarage)});
+            if (e.kind == ShellEventKind::VehicleChosen && !e.item.empty()) {
+                garage_vehicle_ = e.item;
+                return go(Screen::Configurator, {});
+            }
+            return refuse();
+
+        case Screen::Configurator:
+            if (e.kind == ShellEventKind::Back) return go(Screen::VehicleSelect, {});
+            if (e.kind == ShellEventKind::GarageDrive) {
+                if (garage_return_ == Screen::Pause) {
+                    // The paused world reloads with the chosen car (a respawn where the old one stood).
+                    ShellAction reload = load(world_);
+                    reload.flag = true;
+                    world_loaded_ = false;
+                    last_error_.clear();
+                    return go(Screen::Loading,
+                              {simple(ShellActionKind::CloseGarage), simple(ShellActionKind::SetPaused, false), reload});
+                }
+                return go(Screen::SpawnPicker, {simple(ShellActionKind::CloseGarage)});
             }
             return refuse();
 
@@ -235,6 +273,17 @@ ShellEvent ShellFlow::load_failed(std::string message) {
 ShellEvent ShellFlow::load_cancelled() {
     ShellEvent e;
     e.kind = ShellEventKind::LoadCancelled;
+    return e;
+}
+ShellEvent ShellFlow::vehicle_chosen(std::string id) {
+    ShellEvent e;
+    e.kind = ShellEventKind::VehicleChosen;
+    e.item = std::move(id);
+    return e;
+}
+ShellEvent ShellFlow::garage_drive() {
+    ShellEvent e;
+    e.kind = ShellEventKind::GarageDrive;
     return e;
 }
 ShellEvent ShellFlow::pause_toggle() {

@@ -248,9 +248,13 @@ void Session::build_world_contents(const SessionConfig& config) {
         if (config.engine_map_cache_enabled) {
             // Vehicle files live in <physics_sim>/data/vehicles; use the
             // same persistent cache location as physics_sim's Godot demo.
-            const auto vehicle_path = std::filesystem::absolute(config.vehicle_json_path);
-            const auto library_root = vehicle_path.parent_path().parent_path().parent_path();
-            options.cache_dir = (library_root / "out" / "godot_engine_cache").string();
+            if (!config.engine_map_cache_dir.empty()) {
+                options.cache_dir = config.engine_map_cache_dir;
+            } else {
+                const auto vehicle_path = std::filesystem::absolute(config.vehicle_json_path);
+                const auto library_root = vehicle_path.parent_path().parent_path().parent_path();
+                options.cache_dir = (library_root / "out" / "godot_engine_cache").string();
+            }
         }
         vehicle_desc_ = ps::io::load_vehicle_json(config.vehicle_json_path, options);
         std::fprintf(stderr, "RG_ENGINE_MAP_CACHE enabled=%s generated=%zu dir=%s\n",

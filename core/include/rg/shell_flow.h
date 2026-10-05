@@ -5,12 +5,16 @@
 // simulation, quit). It decides nothing about drawing.
 //
 //   Boot -> MainMenu
-//   MainMenu -> SpawnPicker ("Free roam") | Settings | Credits | Quit
+//   MainMenu -> SpawnPicker ("Free roam") | VehicleSelect ("Garage") | Settings | Credits | Quit
 //   SpawnPicker -> Loading (a spawn was picked) | MainMenu (back)
 //   Loading -> Drive (world ready) | MainMenu (cancelled or failed; the error
 //              is kept for the menu to show)
 //   Drive <-> Pause
-//   Pause -> Settings | MainMenu (unloads the world) | Drive (resume / reset car)
+//   Pause -> Settings | VehicleSelect ("Garage (respawn)") | MainMenu (unloads the world) | Drive (resume / reset car)
+//   VehicleSelect -> Configurator (a car chosen) | back to where the garage was opened (MainMenu or Pause)
+//   Configurator -> VehicleSelect (back) | SpawnPicker (Drive, garage opened from the main menu) |
+//                   Loading (Drive, garage opened from the pause menu: the world reloads with the
+//                   chosen car, respawning where the old one stood)
 //   Settings -> back to where it was opened (MainMenu or Pause)
 //   Credits -> MainMenu
 // Start flags that skip the menu (--drive, --flat, ...) enter through
@@ -19,7 +23,10 @@
 // listed above - a stray key never moves the shell.
 //
 // Menu content is data here too (main_menu_items()/pause_menu_items()): no
-// "Garage", "Events" or "Map & route" entries until those features exist.
+// "Events" or "Map & route" entries until those features exist. Which car is
+// shown, selected and configured is rg::Garage's business, not the flow's: the
+// flow only knows the garage screens and tells the Godot layer to open/close the
+// garage scene (OpenGarage/CloseGarage).
 #pragma once
 
 #include "rg/player_mode.h"
@@ -29,18 +36,18 @@
 
 namespace rg {
 
-enum class Screen { Boot, MainMenu, SpawnPicker, Loading, Drive, Pause, Settings, Credits, Quit };
+enum class Screen { Boot, MainMenu, SpawnPicker, Loading, Drive, Pause, Settings, Credits, VehicleSelect, Configurator, Quit };
 
 const char* to_string(Screen s);
 
 struct MenuItem {
-    std::string id;    // "free_roam", "settings", "credits", "quit", "resume", "reset_car", "main_menu"
+    std::string id;    // "free_roam", "garage", "settings", "credits", "quit", "resume", "reset_car", "main_menu"
     std::string label; // shown text
 };
 
-// Main menu: Free roam | Settings | Credits | Quit.
+// Main menu: Free roam | Garage | Settings | Credits | Quit.
 const std::vector<MenuItem>& main_menu_items();
-// Pause menu: Resume | Reset car | Settings | Main menu.
+// Pause menu: Resume | Reset car | Garage (respawn) | Settings | Main menu.
 const std::vector<MenuItem>& pause_menu_items();
 
 enum class ShellEventKind {
@@ -53,6 +60,8 @@ enum class ShellEventKind {
     LoadFailed,     // Loading: it did not load; message in `message`
     LoadCancelled,  // Loading: the player gave up
     PauseToggle,    // Esc/P while driving or paused
+    VehicleChosen,  // VehicleSelect: the highlighted car was chosen: id in `item`
+    GarageDrive,    // Configurator: "Drive" (the chosen car, with its saved setup)
 };
 
 // What the player asked to load. WorldKind::Flat has no position.
@@ -81,12 +90,17 @@ enum class ShellActionKind {
     ResetCar,       // Pause menu "Reset car"
     SaveSettings,   // leaving the settings screen: persist
     Quit,           // exit the application
+    OpenGarage,     // show the garage scene (main menu: nothing behind it; pause: the paused world stays loaded)
+    CloseGarage,    // remove the garage scene and every node it created
 };
 
 struct ShellAction {
     ShellActionKind kind = ShellActionKind::ShowScreen;
     Screen screen = Screen::Boot;
     WorldRequest world;
+    // LoadWorld: true = the garage respawn of the pause menu - the world reloads with the
+    // chosen car and the new car starts where the old one stood (the Godot layer swaps
+    // the spawn for the current pose). SetPaused: the paused state.
     bool flag = false;
 };
 
@@ -106,6 +120,10 @@ public:
     [[nodiscard]] Screen settings_return() const { return settings_return_; }
     // The world being loaded or running (Loading/Drive/Pause/Settings-from-Pause).
     [[nodiscard]] const WorldRequest& world() const { return world_; }
+    // Where the garage was opened from (MainMenu or Pause); meaningful in VehicleSelect/Configurator.
+    [[nodiscard]] Screen garage_return() const { return garage_return_; }
+    // The car chosen in VehicleSelect (the Configurator's car); empty before one was chosen.
+    [[nodiscard]] const std::string& garage_vehicle() const { return garage_vehicle_; }
     [[nodiscard]] bool world_loaded() const { return world_loaded_; }
     // The last LoadFailed message; cleared when a new load starts. The main
     // menu shows it once.
@@ -124,6 +142,8 @@ public:
     static ShellEvent load_failed(std::string message);
     static ShellEvent load_cancelled();
     static ShellEvent pause_toggle();
+    static ShellEvent vehicle_chosen(std::string id);
+    static ShellEvent garage_drive();
 
 private:
     ShellTransition refuse() const;
@@ -131,6 +151,8 @@ private:
 
     Screen screen_ = Screen::Boot;
     Screen settings_return_ = Screen::MainMenu;
+    Screen garage_return_ = Screen::MainMenu;
+    std::string garage_vehicle_;
     WorldRequest world_;
     bool world_loaded_ = false; // a world is up (Drive, Pause, or Settings opened from Pause)
     std::string last_error_;

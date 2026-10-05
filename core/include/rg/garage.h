@@ -33,7 +33,7 @@ struct GarageConfig {
     std::vector<std::string> tyre_dirs;
     std::string user_dir;      // selection and setups are saved under <user_dir>/garage/
     std::string work_root;     // scratch and drive materialisations
-    std::string engine_map_cache_dir; // .psmaps cache for the loader ("" = none)
+    std::string engine_map_cache_dir; // .psmaps cache for the loader ("" = the per-vehicle default rg::Session uses)
 };
 
 // Everything the world load needs for the chosen car.
@@ -47,6 +47,7 @@ struct DriveSelection {
     VehicleChassis chassis;
     std::string paint;         // "#rrggbb", the setup's or the catalog default
     std::string rim;
+    std::string engine_map_cache_dir; // the .psmaps cache the world load should use (the vehicle's own default)
     bool modified = false;     // a saved setup is applied
     bool assist_auto_clutch = true;  // the vehicle file's controller defaults (after the setup)
     bool assist_auto_blip = true;
@@ -74,6 +75,8 @@ public:
     [[nodiscard]] const GarageSetDesc& set() const { return set_; }
     [[nodiscard]] const GarageConfig& config() const { return config_; }
     [[nodiscard]] const SetupContext& context() const { return ctx_; }
+    // The setup context for one vehicle (its engine-map cache directory filled in).
+    [[nodiscard]] SetupContext context_for(const CatalogEntry& entry) const;
 
     // ---- selection (persisted) ----
     [[nodiscard]] const std::string& selected_id() const { return selected_; }

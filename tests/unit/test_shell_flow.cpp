@@ -62,11 +62,13 @@ TEST_CASE("shell: menus hold exactly the shipped items", "[shell]") {
     std::vector<std::string> main_ids, pause_ids;
     for (const auto& m : rg::main_menu_items()) main_ids.push_back(m.id);
     for (const auto& m : rg::pause_menu_items()) pause_ids.push_back(m.id);
-    CHECK(main_ids == std::vector<std::string>{"free_roam", "settings", "credits", "quit"});
-    CHECK(pause_ids == std::vector<std::string>{"resume", "reset_car", "settings", "main_menu"});
+    CHECK(main_ids == std::vector<std::string>{"free_roam", "garage", "settings", "credits", "quit"});
+    CHECK(pause_ids == std::vector<std::string>{"resume", "reset_car", "garage", "settings", "main_menu"});
     for (const auto& m : rg::main_menu_items()) CHECK_FALSE(m.label.empty());
     for (const auto& m : rg::pause_menu_items()) CHECK_FALSE(m.label.empty());
     CHECK(std::string(rg::to_string(Screen::SpawnPicker)) == "spawn_picker");
+    CHECK(std::string(rg::to_string(Screen::VehicleSelect)) == "vehicle_select");
+    CHECK(std::string(rg::to_string(Screen::Configurator)) == "configurator");
 }
 
 TEST_CASE("shell: boot goes to the main menu", "[shell]") {
@@ -140,7 +142,7 @@ TEST_CASE("shell: main menu items", "[shell]") {
     // An item that is not in the main menu (pause items, garbage) is refused.
     ShellFlow f;
     f.handle(ShellFlow::boot_finished());
-    for (const char* bad : {"resume", "reset_car", "main_menu", "garage", "events", "map_and_route", ""}) {
+    for (const char* bad : {"resume", "reset_car", "main_menu", "events", "map_and_route", ""}) {
         CAPTURE(bad);
         CHECK_FALSE(f.handle(ShellFlow::menu_item(bad)).accepted);
         CHECK(f.screen() == Screen::MainMenu);
@@ -297,18 +299,23 @@ TEST_CASE("shell: events outside their screen are refused and change nothing", "
         ShellFlow::boot_finished(),  ShellFlow::direct_start(flat_request()), ShellFlow::menu_item("free_roam"),
         ShellFlow::menu_item("resume"), ShellFlow::spawn_picked(flat_request()), ShellFlow::back(),
         ShellFlow::load_ready(),     ShellFlow::load_failed("x"),             ShellFlow::load_cancelled(),
-        ShellFlow::pause_toggle(),
+        ShellFlow::pause_toggle(),   ShellFlow::vehicle_chosen("car_sedan"), ShellFlow::garage_drive(),
+        ShellFlow::menu_item("garage"),
     };
     // Which events each screen accepts (everything else must be refused).
     const auto accepts = [](Screen s, const rg::ShellEvent& e) {
         using K = rg::ShellEventKind;
         switch (s) {
             case Screen::Boot: return e.kind == K::BootFinished || e.kind == K::Back || e.kind == K::DirectStart;
-            case Screen::MainMenu: return e.kind == K::MenuItem && e.item == "free_roam";
+            case Screen::MainMenu: return e.kind == K::MenuItem && (e.item == "free_roam" || e.item == "garage");
             case Screen::SpawnPicker: return e.kind == K::Back || e.kind == K::SpawnPicked;
             case Screen::Loading: return e.kind == K::LoadReady || e.kind == K::LoadFailed || e.kind == K::LoadCancelled || e.kind == K::Back;
             case Screen::Drive: return e.kind == K::PauseToggle;
-            case Screen::Pause: return e.kind == K::PauseToggle || e.kind == K::Back || (e.kind == K::MenuItem && e.item == "resume");
+            case Screen::Pause:
+                return e.kind == K::PauseToggle || e.kind == K::Back ||
+                       (e.kind == K::MenuItem && (e.item == "resume" || e.item == "garage"));
+            case Screen::VehicleSelect: return e.kind == K::Back || e.kind == K::VehicleChosen;
+            case Screen::Configurator: return e.kind == K::Back || e.kind == K::GarageDrive;
             case Screen::Settings: return e.kind == K::Back;
             case Screen::Credits: return e.kind == K::Back;
             case Screen::Quit: return false;
@@ -317,7 +324,8 @@ TEST_CASE("shell: events outside their screen are refused and change nothing", "
     };
     // Build a flow standing on each screen, then throw every event at it.
     const std::vector<Screen> screens = {Screen::Boot,    Screen::MainMenu, Screen::SpawnPicker, Screen::Loading, Screen::Drive,
-                                         Screen::Pause,   Screen::Settings, Screen::Credits,     Screen::Quit};
+                                         Screen::Pause,   Screen::Settings, Screen::Credits,     Screen::VehicleSelect,
+                                         Screen::Configurator, Screen::Quit};
     for (const Screen target : screens) {
         for (std::size_t i = 0; i < all.size(); ++i) {
             ShellFlow f;
@@ -341,6 +349,15 @@ TEST_CASE("shell: events outside their screen are refused and change nothing", "
                 case Screen::Credits:
                     f.handle(ShellFlow::boot_finished());
                     f.handle(ShellFlow::menu_item("credits"));
+                    break;
+                case Screen::VehicleSelect:
+                    f.handle(ShellFlow::boot_finished());
+                    f.handle(ShellFlow::menu_item("garage"));
+                    break;
+                case Screen::Configurator:
+                    f.handle(ShellFlow::boot_finished());
+                    f.handle(ShellFlow::menu_item("garage"));
+                    f.handle(ShellFlow::vehicle_chosen("car_sedan"));
                     break;
                 case Screen::Quit:
                     f.handle(ShellFlow::boot_finished());
@@ -386,4 +403,93 @@ TEST_CASE("shell: every accepted transition ends with ShowScreen of its target",
         CHECK(f.screen() == t.to);
     }
     CHECK(f.screen() == Screen::Quit);
+}
+
+TEST_CASE("shell: garage from the main menu -> select -> configurator -> spawn picker", "[shell][garage]") {
+    ShellFlow f;
+    f.handle(ShellFlow::boot_finished());
+    const auto open = f.handle(ShellFlow::menu_item("garage"));
+    REQUIRE(open.accepted);
+    CHECK(f.screen() == Screen::VehicleSelect);
+    CHECK(f.garage_return() == Screen::MainMenu);
+    CHECK(has_action(open, ShellActionKind::OpenGarage));
+    CHECK_FALSE(has_action(open, ShellActionKind::LoadWorld));
+
+    // back closes the garage and returns to the main menu
+    const auto back = f.handle(ShellFlow::back());
+    CHECK(back.accepted);
+    CHECK(f.screen() == Screen::MainMenu);
+    CHECK(has_action(back, ShellActionKind::CloseGarage));
+
+    f.handle(ShellFlow::menu_item("garage"));
+    CHECK_FALSE(f.handle(ShellFlow::vehicle_chosen("")).accepted); // an empty id is refused
+    const auto chosen = f.handle(ShellFlow::vehicle_chosen("car_hyper"));
+    REQUIRE(chosen.accepted);
+    CHECK(f.screen() == Screen::Configurator);
+    CHECK(f.garage_vehicle() == "car_hyper");
+    CHECK_FALSE(has_action(chosen, ShellActionKind::CloseGarage)); // the garage scene stays up
+
+    // back to the selection keeps the garage open
+    const auto to_select = f.handle(ShellFlow::back());
+    CHECK(to_select.accepted);
+    CHECK(f.screen() == Screen::VehicleSelect);
+    CHECK_FALSE(has_action(to_select, ShellActionKind::CloseGarage));
+    f.handle(ShellFlow::vehicle_chosen("car_sedan"));
+    CHECK(f.garage_vehicle() == "car_sedan");
+
+    // Drive: the garage closes and the spawn picker follows (as in Free roam)
+    const auto drive = f.handle(ShellFlow::garage_drive());
+    REQUIRE(drive.accepted);
+    CHECK(f.screen() == Screen::SpawnPicker);
+    CHECK(has_action(drive, ShellActionKind::CloseGarage));
+    CHECK_FALSE(has_action(drive, ShellActionKind::LoadWorld));
+    CHECK(f.handle(ShellFlow::spawn_picked(flat_request())).accepted);
+    CHECK(f.screen() == Screen::Loading);
+    CHECK(f.handle(ShellFlow::load_ready()).accepted);
+    CHECK(f.screen() == Screen::Drive);
+}
+
+TEST_CASE("shell: garage from the pause menu respawns the chosen car", "[shell][garage]") {
+    ShellFlow f;
+    to_drive(f);
+    f.handle(ShellFlow::pause_toggle());
+    const auto open = f.handle(ShellFlow::menu_item("garage"));
+    REQUIRE(open.accepted);
+    CHECK(f.screen() == Screen::VehicleSelect);
+    CHECK(f.garage_return() == Screen::Pause);
+    CHECK(has_action(open, ShellActionKind::OpenGarage));
+    CHECK_FALSE(has_action(open, ShellActionKind::UnloadWorld)); // the paused world stays up
+    CHECK(f.world_loaded());
+
+    // back returns to the pause menu (world still loaded)
+    const auto back = f.handle(ShellFlow::back());
+    CHECK(back.accepted);
+    CHECK(f.screen() == Screen::Pause);
+    CHECK(has_action(back, ShellActionKind::CloseGarage));
+    CHECK(f.world_loaded());
+
+    f.handle(ShellFlow::menu_item("garage"));
+    f.handle(ShellFlow::vehicle_chosen("car_sedan_rwd"));
+    const auto drive = f.handle(ShellFlow::garage_drive());
+    REQUIRE(drive.accepted);
+    CHECK(f.screen() == Screen::Loading);
+    CHECK(has_action(drive, ShellActionKind::CloseGarage));
+    const auto* load = find_action(drive, ShellActionKind::LoadWorld);
+    REQUIRE(load != nullptr);
+    CHECK(load->flag); // "respawn where the old car stood"
+    CHECK(load->world.kind == rg::WorldKind::Flat);
+    CHECK(has_action(drive, ShellActionKind::SetPaused));
+    CHECK(f.handle(ShellFlow::load_ready()).accepted);
+    CHECK(f.screen() == Screen::Drive);
+
+    // a failed respawn load returns to the main menu with the message, like any load
+    f.handle(ShellFlow::pause_toggle());
+    f.handle(ShellFlow::menu_item("garage"));
+    f.handle(ShellFlow::vehicle_chosen("car_hyper"));
+    f.handle(ShellFlow::garage_drive());
+    const auto failed = f.handle(ShellFlow::load_failed("boom"));
+    CHECK(failed.accepted);
+    CHECK(f.screen() == Screen::MainMenu);
+    CHECK(f.last_error() == "boom");
+    CHECK(has_action(failed, ShellActionKind::UnloadWorld));
 }

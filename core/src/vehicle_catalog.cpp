@@ -302,6 +302,12 @@ std::optional<VehicleCatalog> load_vehicle_catalog(const std::string& path, cons
     return parse_vehicle_catalog(*text, repo_root, path, err);
 }
 
+std::string default_engine_cache_dir(const std::string& vehicle_path) {
+    std::error_code ec;
+    const fs::path abs = fs::absolute(fs::path(vehicle_path), ec);
+    return (abs.parent_path().parent_path().parent_path() / "out" / "godot_engine_cache").generic_string();
+}
+
 std::optional<VehicleStats> compute_vehicle_stats(const CatalogEntry& entry, std::string* err) {
     const std::optional<json> vehicle = read_json_file(entry.vehicle_path, err);
     if (!vehicle) return std::nullopt;
