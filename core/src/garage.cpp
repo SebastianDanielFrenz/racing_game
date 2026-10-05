@@ -184,7 +184,12 @@ std::optional<VehicleStats> Garage::stats(const std::string& id, std::string* er
         if (err != nullptr) *err = "unknown vehicle \"" + id + "\"";
         return std::nullopt;
     }
-    return compute_vehicle_stats(*e, err);
+    // Presets share their base's vehicle file: one computation per file (and declared displacement).
+    const std::string key = e->vehicle_path + "#" + (e->displacement_l ? std::to_string(*e->displacement_l) : std::string());
+    if (const auto it = stats_cache_.find(key); it != stats_cache_.end()) return it->second;
+    std::optional<VehicleStats> computed = compute_vehicle_stats(*e, err);
+    if (computed) stats_cache_.emplace(key, *computed); // a failure is not cached: its message is wanted every time
+    return computed;
 }
 
 std::optional<GarageSubject> Garage::subject(const std::string& id, const GVec3* model_min, const GVec3* model_max,
@@ -527,12 +532,7 @@ std::vector<BrowserCar> Garage::browser_cars() const {
         };
         colour("paint", c.paint);
         colour("rim", c.rim);
-        auto cached = stats_cache_.find(e.id);
-        if (cached == stats_cache_.end()) {
-            std::string err;
-            cached = stats_cache_.emplace(e.id, compute_vehicle_stats(e, &err)).first;
-        }
-        if (const std::optional<VehicleStats>& st = cached->second) {
+        if (const std::optional<VehicleStats> st = stats(e.id, nullptr)) {
             c.layout = st->layout.empty() ? "other" : st->layout;
             c.power_kw = st->peak_power_kw;
             c.power_rpm = st->peak_power_rpm;

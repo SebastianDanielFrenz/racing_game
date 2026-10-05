@@ -18,6 +18,7 @@
 #include <godot_cpp/classes/node.hpp>
 #include <godot_cpp/variant/array.hpp>
 #include <godot_cpp/variant/dictionary.hpp>
+#include <godot_cpp/variant/packed_string_array.hpp>
 #include <godot_cpp/variant/string.hpp>
 #include <godot_cpp/variant/variant.hpp>
 #include <godot_cpp/variant/vector3.hpp>
@@ -40,7 +41,7 @@ public:
     // validations and the drive materialisation go (a folder under the user dir).
     // {ok, error}
     godot::Dictionary initialize(const godot::String& repo_root, const godot::String& user_dir,
-                                 const godot::String& work_root);
+                                 const godot::String& work_root, const godot::String& catalog_path = godot::String());
     [[nodiscard]] bool is_ready() const { return garage_ != nullptr; }
 
     // ---- vehicles ----
@@ -52,6 +53,40 @@ public:
     [[nodiscard]] godot::String get_selected_id() const;
     godot::Dictionary select(const godot::String& id); // {ok, error}; persisted
     [[nodiscard]] godot::Dictionary get_vehicle(const godot::String& id);
+
+    // ---- the car browser (R6c; rg::CarBrowser through rg::Garage::browser()) ----
+    // The whole model stays in rg_core: the screen only asks what to show and forwards what the player did.
+    // The persisted view state travels as the six rg::Settings values (browser.group_by, .sort_key, .sort_desc,
+    // .filter_layouts, .filter_body_types, .filter_power_bands): GDScript reads them from RgShell settings and
+    // hands them here, and writes browser_get_state() back after a change.
+    void browser_load_state(const godot::Dictionary& state);
+    [[nodiscard]] godot::Dictionary browser_get_state() const;
+    [[nodiscard]] godot::Array browser_get_group_choices() const; // [{id, label}]
+    [[nodiscard]] godot::Array browser_get_sort_choices() const;  // [{id, label}]
+    bool browser_set_group_by(const godot::String& id);
+    void browser_set_sort(const godot::String& key, bool descending);
+    void browser_toggle_filter(const godot::String& facet, const godot::String& value);
+    void browser_clear_filter();
+    [[nodiscard]] godot::Array browser_get_filter_options(const godot::String& facet) const; // [{value, label, count, selected}]
+    void browser_set_rows(int rows);
+    [[nodiscard]] int browser_rows_for_height(double available_px, double tile_px, double gap_px, double header_px) const;
+    // {rows, total_columns, listed, total, first_column, filter_active, categories: [{key, title, first_column, column_count, count}]}
+    [[nodiscard]] godot::Dictionary browser_get_layout() const;
+    // {first_column, tiles: [{id, column, row}], headers: [{category, title, first_column, column_count, count}]}
+    [[nodiscard]] godot::Dictionary browser_get_view(int visible_columns, int overscan) const;
+    [[nodiscard]] godot::PackedStringArray browser_get_listed_ids() const; // display order
+    bool browser_move_focus(const godot::String& dir); // "left" "right" "up" "down" "prev_category" "next_category"
+    bool browser_set_focus(const godot::String& id);
+    [[nodiscard]] godot::String browser_get_focus_id() const;
+    [[nodiscard]] godot::Dictionary browser_get_focus_cell() const; // {column, row} or empty
+    void browser_scroll_to_focus(int visible_columns);
+    void browser_scroll_by(int delta, int visible_columns);
+    void browser_set_first_column(int column, int visible_columns);
+    [[nodiscard]] int browser_get_first_column() const;
+    // {id, title, subtitle, body_type, manufacturer, layout, preset, paint, rim, model_path, power_kw, torque_nm, mass_kg, thumbnail_key}
+    [[nodiscard]] godot::Dictionary browser_get_car(const godot::String& id) const;
+    [[nodiscard]] godot::Dictionary browser_get_maxima() const; // {power_kw, torque_nm} over every car (stat bars)
+    void browser_refresh();
 
     // ---- the set (garage_set.json as a Dictionary, positions in Godot axes) ----
     [[nodiscard]] godot::Dictionary get_set() const;
@@ -101,6 +136,7 @@ protected:
     static void _bind_methods();
 
 private:
+    static void bind_browser_methods();
     [[nodiscard]] godot::Dictionary options_to_array_result() const;
     godot::Dictionary edit_reply(const rg::EditResult& r) const;
 

@@ -302,6 +302,13 @@ bool RgSimulation::initialize(const String& vehicle_json_absolute_path, const St
     remember_vehicle_definition(config, *session_);
     origin_rebase_ = &session_->origin_rebase();
     last_error_ = String();
+    // A "Change car" respawn (PLAN.md R6c): the new car starts where the old one stood. The flat world
+    // has no terrain gate, so the relocation lands on the first ticks like any other.
+    if (spawn_override_) {
+        session_->request_relocate(spawn_override_->x, spawn_override_->y,
+                                   spawn_override_->yaw_deg * (3.14159265358979323846 / 180.0));
+        spawn_override_.reset();
+    }
     modes_.finish_world_load(world_load_serial_, true);
     apply_mode_to_session();
     apply_shell_flags_to_session();

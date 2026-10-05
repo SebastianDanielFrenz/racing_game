@@ -75,6 +75,9 @@ godot::Dictionary stats_to_dict(const rg::VehicleStats& s) {
     d["driven_wheels"] = static_cast<int64_t>(s.driven_wheels);
     d["wheel_count"] = static_cast<int64_t>(s.wheel_count);
     d["gear_count"] = static_cast<int64_t>(s.gear_count);
+    d["displacement_known"] = s.displacement_known;
+    d["displacement_l"] = s.displacement_l;
+    d["displacement_source"] = from_std(s.displacement_source);
     return d;
 }
 
@@ -96,12 +99,13 @@ godot::Dictionary fail_reply(const std::string& err) {
 
 RgGarage::~RgGarage() = default;
 
-godot::Dictionary RgGarage::initialize(const String& repo_root, const String& user_dir, const String& work_root) {
+godot::Dictionary RgGarage::initialize(const String& repo_root, const String& user_dir, const String& work_root,
+                                      const String& catalog_path) {
     garage_.reset();
     camera_.reset();
     rg::GarageConfig c;
     c.repo_root = to_std(repo_root);
-    c.catalog_path = c.repo_root + "/data/vehicles/catalog.json";
+    c.catalog_path = catalog_path.is_empty() ? c.repo_root + "/data/vehicles/catalog.json" : to_std(catalog_path);
     c.options_path = c.repo_root + "/data/vehicles/setup_options.json";
     c.set_path = c.repo_root + "/data/garage/garage_set.json";
     c.tyre_dirs = {c.repo_root + "/external/physics_sim/data/tyres", c.repo_root + "/data/tyres"};
@@ -136,15 +140,18 @@ godot::Dictionary RgGarage::get_vehicle(const String& id) {
     d["model_path"] = from_std(e->model_path);
     d["sim_name"] = from_std(e->sim_name);
     d["engine_bay"] = from_std(e->engine_bay);
-    const rg::VehicleSetup saved = garage_->saved_setup(e->id);
+    // The paint a drive of this car shows: the saved setup on top of the preset's overlay (rg::Garage::browser_cars).
     std::string paint = e->default_paint;
     std::string rim = e->default_rim;
-    if (const auto it = saved.values.find("paint"); it != saved.values.end() && std::holds_alternative<std::string>(it->second))
-        paint = std::get<std::string>(it->second);
-    if (const auto it = saved.values.find("rim"); it != saved.values.end() && std::holds_alternative<std::string>(it->second))
-        rim = std::get<std::string>(it->second);
+    if (const rg::BrowserCar* bc = garage_->browser().find(e->id)) {
+        paint = bc->paint;
+        rim = bc->rim;
+    }
     d["paint"] = from_std(paint);
     d["rim"] = from_std(rim);
+    d["body_type"] = from_std(e->body_type);
+    d["manufacturer"] = from_std(e->manufacturer);
+    d["preset_of"] = from_std(e->preset_of);
     std::string err;
     if (const auto s = garage_->stats(e->id, &err)) {
         d["stats"] = stats_to_dict(*s);
@@ -450,7 +457,8 @@ String RgGarage::get_area_for_option(const String& option_id) const {
 
 void RgGarage::_bind_methods() {
     using godot::ClassDB;
-    ClassDB::bind_method(D_METHOD("initialize", "repo_root", "user_dir", "work_root"), &RgGarage::initialize);
+    ClassDB::bind_method(D_METHOD("initialize", "repo_root", "user_dir", "work_root", "catalog_path"), &RgGarage::initialize, DEFVAL(String()));
+    bind_browser_methods();
     ClassDB::bind_method(D_METHOD("is_ready"), &RgGarage::is_ready);
     ClassDB::bind_method(D_METHOD("get_vehicles"), &RgGarage::get_vehicles);
     ClassDB::bind_method(D_METHOD("get_vehicle", "id"), &RgGarage::get_vehicle);

@@ -158,7 +158,7 @@ private:
 
     std::string drive_dir_;
     CarBrowser browser_;
-    mutable std::map<std::string, std::optional<VehicleStats>> stats_cache_; // by entry id (the vehicle files do not change while the game runs)
+    mutable std::map<std::string, VehicleStats> stats_cache_; // by vehicle file + declared displacement (the files do not change while the game runs)
 };
 
 } // namespace rg
