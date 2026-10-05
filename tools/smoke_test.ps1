@@ -340,6 +340,18 @@ if ($script:Failures.Count -eq 0 -and -not $script:DriveSkipped) {
                 Report-Fail "spawn surface0=$spawnSurface (expected asphalt)"
             }
         }
+        # R9c on-foot round trip (drive_smoke.gd): refused while moving, spawn at
+        # the door, run away, get-in out of range refused, run back, get in, drive.
+        foreach ($step in @(
+                @('on_foot refused at', 'getting out of a moving car is refused'),
+                @('on_foot ok: walker spawned', 'the walker spawns beside the car (rig walker, car unattended, 2 interest points)'),
+                @('on_foot walked', 'the walker runs away from the car'),
+                @('on_foot get-in out of range refused ok', 'a get-in out of range is refused'),
+                @('on_foot get-in ok', 'the walker gets back in (drive, 1 interest point)'),
+                @('on_foot round trip ok', 'the car drives again after the round trip'))) {
+            $stepLine = $logContent | Select-String -SimpleMatch -Pattern ('RG_DRIVE smoke ' + $step[0]) | Select-Object -First 1
+            if ($stepLine) { Report-Ok "on foot: $($step[1])" } else { Report-Fail "on foot: no 'RG_DRIVE smoke $($step[0])' line ($($step[1]))" }
+        }
         $doneLine = $logContent | Select-String -Pattern 'RG_DRIVE done .*' | Select-Object -Last 1
         if (-not $doneLine) {
             Report-Fail "no 'RG_DRIVE done' line - drive_smoke.gd did not finish"

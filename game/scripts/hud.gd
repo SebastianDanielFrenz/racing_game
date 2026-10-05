@@ -15,7 +15,7 @@ extends CanvasLayer
 # running, first observed tick count" and "measured sim tick rate over last
 # window") - keep their wording.
 
-const KEY_HELP := "F7 traffic  F6 seat adjustment  Middle-click log location  Tab/right-stick click chase/cockpit  V mode (drive/free cam/drone follow)  N or D-pad right next drone target  wheel/PgUp/PgDn drone zoom  F8 world (flat/real)  R reset car  F flip upright  WASD drive | fly  E/Q shift | up/down  Space handbrake  C clutch  I ignition  K starter  F5 auto-shift  arrows/right stick/RMB+mouse look"
+const KEY_HELP := "F7 traffic  F6 seat adjustment  Middle-click log location  Tab/right-stick click chase/cockpit (first/third person on foot)  V/Back mode (drive/free cam/drone follow/on foot)  G get out (car below 2 m/s) | get in at the door (on foot: WASD move, Shift run, Space jump, G or pad X get in)  N or D-pad right next drone target  wheel/PgUp/PgDn drone zoom  F8 world (flat/real)  R reset car  F flip upright  WASD drive | fly  E/Q shift | up/down  Space handbrake  C clutch  I ignition  K starter  F5 auto-shift  arrows/right stick/RMB+mouse look"
 
 @export var simulation_path: NodePath
 @export var input_map_path: NodePath
@@ -29,6 +29,9 @@ var _director: Node
 var _body_visuals: Node
 var _label: Label
 var _streaming_label: Label
+var _prompt_label: Label
+var _message_text: String = ""
+var _message_until_ms: int = 0
 
 # Rolling one-second measurement window for the sim's own tick rate,
 # independent of Godot's render fps - same technique as the reference file.
@@ -50,12 +53,48 @@ func _ready() -> void:
 	_body_visuals = get_node_or_null(body_visuals_path)
 	_label = get_node("Readout")
 	_streaming_label = get_node_or_null("Streaming")
+	# Bottom-centre prompt line (on-foot get-in prompt and short refusals).
+	_prompt_label = Label.new()
+	_prompt_label.name = "Prompt"
+	_prompt_label.set_anchors_preset(Control.PRESET_CENTER_BOTTOM)
+	_prompt_label.grow_horizontal = Control.GROW_DIRECTION_BOTH
+	_prompt_label.grow_vertical = Control.GROW_DIRECTION_BEGIN
+	_prompt_label.position.y = -90
+	_prompt_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_prompt_label.add_theme_font_size_override("font_size", 26)
+	_prompt_label.add_theme_color_override("font_outline_color", Color.BLACK)
+	_prompt_label.add_theme_constant_override("outline_size", 6)
+	_prompt_label.visible = false
+	add_child(_prompt_label)
 	_window_start_s = Time.get_ticks_msec() / 1000.0
 
 func _bar(value01: float, width: int = 20) -> String:
 	var v: float = clampf(value01, 0.0, 1.0)
 	var filled: int = int(round(v * width))
 	return "[" + "#".repeat(filled) + "-".repeat(width - filled) + "]"
+
+# A short message on the prompt line (e.g. a refused get-out), for `seconds`.
+func show_message(text: String, seconds: float = 3.0) -> void:
+	_message_text = text
+	_message_until_ms = Time.get_ticks_msec() + int(seconds * 1000.0)
+
+# The prompt line: a pending message wins, else the on-foot get-in prompt.
+func _update_prompt(mode: Dictionary) -> void:
+	if _prompt_label == null:
+		return
+	var text := ""
+	if Time.get_ticks_msec() < _message_until_ms:
+		text = _message_text
+	elif str(mode.get("mode", "")) == "on_foot":
+		var ws: Dictionary = _simulation.get_walker_state()
+		if ws.is_empty():
+			text = "Getting out..."
+		elif bool(ws.get("can_enter", false)):
+			text = "G / X: get into the car"
+		else:
+			text = "On foot - car %.0f m away (get within 1.5 m of it to get in)" % maxf(float(ws.get("enter_distance_m", 0.0)), 0.0)
+	_prompt_label.text = text
+	_prompt_label.visible = text != ""
 
 # A world switch builds a new Session whose tick count restarts at 0.
 func reset_tick_window() -> void:
@@ -101,9 +140,19 @@ func _process(_delta: float) -> void:
 		if frozen:
 			_streaming_label.text = "STREAMING TERRAIN... (%d)" % int(ss.get("missing_required", 0))
 
+	_update_prompt(mode)
+
 	var lines := PackedStringArray()
 	lines.append("racing_game R9 - mode: %s   world: %s (%s)   car: %s" % [
 		mode.get("mode", "?"), mode.get("world_kind", "?"), mode.get("world_phase", "?"), mode.get("vehicle_control", "?")])
+	if str(mode.get("mode", "")) == "on_foot":
+		var foot: Dictionary = _simulation.get_walker_state()
+		if not foot.is_empty():
+			lines.append("on foot: speed %.1f m/s  %s%s  car %.1f m away" % [
+				Vector2(foot["velocity"].x, foot["velocity"].z).length(),
+				"grounded" if bool(foot.get("grounded", false)) else "airborne",
+				"  (no ground loaded: holding)" if bool(foot.get("hold", false)) else "",
+				float(foot.get("enter_distance_m", 0.0))])
 	if str(mode.get("mode", "")) == "drone_follow":
 		lines.append("drone target: %s   (N / D-pad right: next target, wheel / PgUp / PgDn: zoom)" % mode.get("drone_target_label", "own car"))
 	lines.append(_simulation.get_build_info())

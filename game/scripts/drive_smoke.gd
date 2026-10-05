@@ -25,8 +25,14 @@ extends Node
 #     sim; then, when a traffic car or the NPC truck exists - the truck is
 #     requested - cycles to it: car unattended, driving inputs dropped, two
 #     physics interest points; returns to the own car; when the target is the
-#     truck, removing it must fall back to the own car by itself) and back to
-#     drive; switches the world to flat, back to the real world, cancels that
+#     truck, removing it must fall back to the own car by itself), then the
+#     on-foot round trip (R9c): getting out while the car is moving is refused,
+#     after braking to a stop the cycle reaches on_foot (a walker spawns beside
+#     the car, the walker rig is active, the car unattended, two interest
+#     points), the walker runs a few metres away (scripted walking input), a
+#     get-in attempt out of range is refused, the walker runs back to the
+#     door, gets in (mode drive, one interest point, the walker gone) and the
+#     car drives again; then back on drive; switches the world to flat, back to the real world, cancels that
 #     load CANCEL_AFTER_FRAMES frames in with another switch (prints how long the
 #     cancel-then-join took), and switches to the real world once more;
 #  6. prints one "RG_DRIVE done ..." line (main.gd's status_line numbers of
@@ -49,6 +55,9 @@ const TIMEOUT_S := 300.0
 const NPC_WAIT_S := 20.0 # wall time to wait for a traffic car / the truck in drone_follow
 const TRUCK_ID := 4611686018427387904 # rg::Session::kNpcTruckVehicleId, 2^62
 const ROUTE := "../data/routes/home_r1_drive.json"
+const FOOT_PHASE_TIMEOUT_S := 25.0 # wall time per on-foot phase
+const GET_OUT_MIN_SPEED_MPS := 3.0 # the car must be faster than this for the refusal check
+const FOOT_RUN_S := 1.5 # wall time of the run away from the car
 
 var main: Node
 
@@ -69,6 +78,9 @@ var _cancel_ms: int = -1
 var _frames: int = 0
 var _drone_lost_before: int = 0
 var _drone_target: int = -1
+var _foot_start := Vector3.ZERO
+var _foot_refused_before: int = 0
+var _foot_enter_refused_before: int = 0
 
 func _ready() -> void:
 	_started_ms = Time.get_ticks_msec()
@@ -219,9 +231,7 @@ func _process(_delta: float) -> void:
 			elif (Time.get_ticks_msec() - _mark_ms) / 1000.0 >= NPC_WAIT_S:
 				print("RG_DRIVE smoke drone: no NPC car or truck appeared within %.0f s - own-car path only" % NPC_WAIT_S)
 				sim.request_npc_truck(false, 70.0)
-				print("RG_DRIVE smoke mode -> %s" % sim.cycle_player_mode())
-				_frames = 0
-				_phase = "mode_drive"
+				_begin_foot_check()
 		"mode_drone_other":
 			_frames += 1
 			if _frames >= 30:
@@ -270,9 +280,124 @@ func _process(_delta: float) -> void:
 					return
 				print("RG_DRIVE smoke drone_follow back on own car ok: car=player interest_points=1")
 				sim.request_npc_truck(false, 70.0)
-				print("RG_DRIVE smoke mode -> %s" % sim.cycle_player_mode())
+				_begin_foot_check()
+		"foot_speedup":
+			# Drive (drone_follow keeps the own car player-driven) until the car is
+			# clearly moving, then getting out must be refused.
+			if float(sim.get_body_speed_mps("chassis")) > GET_OUT_MIN_SPEED_MPS:
+				var before := int(sim.get_mode_state().get("get_out_refusals", 0))
+				var answer := str(sim.set_player_mode("on_foot"))
+				var ms: Dictionary = sim.get_mode_state()
+				if answer != "refused" or str(ms.get("mode")) != "drone_follow" or int(ms.get("get_out_refusals", 0)) != before + 1:
+					_finish(1, "getting out at %.1f m/s was not refused: answer=%s state=%s" % [float(sim.get_body_speed_mps("chassis")), answer, ms])
+					return
+				print("RG_DRIVE smoke on_foot refused at %.1f m/s ok: mode stays drone_follow" % float(sim.get_body_speed_mps("chassis")))
+				main.scripted_controls = {"throttle": 0.0, "steer": 0.0, "brake": 1.0, "handbrake": 1.0, "clutch": 0.0}
+				_mark_ms = Time.get_ticks_msec()
+				_phase = "foot_slowdown"
+			elif _foot_timed_out():
+				_finish(1, "foot_speedup: the car never exceeded %.1f m/s (speed %.2f)" % [GET_OUT_MIN_SPEED_MPS, float(sim.get_body_speed_mps("chassis"))])
+		"foot_slowdown":
+			if float(sim.get_body_speed_mps("chassis")) < 0.5:
+				var answer := str(sim.cycle_player_mode())
+				print("RG_DRIVE smoke mode -> %s" % answer)
+				if answer != "on_foot":
+					_finish(1, "the cycle from drone_follow did not reach on_foot at a standstill: %s" % answer)
+					return
+				_mark_ms = Time.get_ticks_msec()
+				_phase = "foot_spawn"
+			elif _foot_timed_out():
+				_finish(1, "foot_slowdown: the car did not stop (speed %.2f)" % float(sim.get_body_speed_mps("chassis")))
+		"foot_spawn":
+			var ws: Dictionary = sim.get_walker_state()
+			if not ws.is_empty():
+				var ms: Dictionary = sim.get_mode_state()
+				var ss: Dictionary = sim.get_streaming_status()
+				if str(ms.get("mode")) != "on_foot" or main.get_director().active_name != "walker" \
+						or str(ms.get("vehicle_control")) != "unattended" or bool(ms.get("driving_inputs_live")) \
+						or not bool(ms.get("walking_inputs_live")):
+					_finish(1, "on_foot mode state wrong: %s rig=%s" % [ms, main.get_director().active_name])
+					return
+				if not bool(ws.get("can_enter")) or float(ws.get("enter_distance_m")) > 1.5:
+					_finish(1, "the walker did not spawn at the car's door: %s" % ws)
+					return
+				_frames += 1
+				if _frames < 20: # a few frames: the interest points and the grounding settle
+					return
+				if int(ss.get("interest_points", 0)) != 2 or not bool(ws.get("grounded")) or bool(ws.get("hold")):
+					_finish(1, "on_foot spawn state wrong: interest_points=%s walker=%s" % [ss.get("interest_points"), ws])
+					return
+				_foot_start = ws["position"]
+				print("RG_DRIVE smoke on_foot ok: walker spawned %.2f m from the car, rig=walker car=unattended interest_points=2 grounded" % float(ws.get("enter_distance_m")))
+				var away: Vector3 = ws["position"] - ws["car_position"]
+				away.y = 0.0
+				main.scripted_walk = {"move_right": 0.0, "move_forward": 1.0, "look": away.normalized(), "run": true}
+				_mark_ms = Time.get_ticks_msec()
+				_phase = "foot_walk"
+			elif _foot_timed_out():
+				_finish(1, "foot_spawn: no walker appeared (mode state %s)" % sim.get_mode_state())
+		"foot_walk":
+			if (Time.get_ticks_msec() - _mark_ms) / 1000.0 >= FOOT_RUN_S:
+				main.scripted_walk = {"move_right": 0.0, "move_forward": 0.0, "run": false}
+				var ws: Dictionary = sim.get_walker_state()
+				var moved := Vector2(ws["position"].x - _foot_start.x, ws["position"].z - _foot_start.z).length()
+				if moved < 2.0 or not bool(ws.get("grounded")) or bool(ws.get("hold")):
+					_finish(1, "the walker did not run away: moved %.2f m walker=%s" % [moved, ws])
+					return
+				if bool(ws.get("can_enter")):
+					_finish(1, "the walker still reports get-in range after running %.2f m" % moved)
+					return
+				_foot_enter_refused_before = int(sim.get_mode_state().get("walker_enter_refused", 0))
+				sim.request_walker_enter()
+				_frames = 0
+				print("RG_DRIVE smoke on_foot walked %.1f m away (%.1f m/s)" % [moved, Vector2(ws["velocity"].x, ws["velocity"].z).length()])
+				_phase = "foot_enter_far"
+		"foot_enter_far":
+			_frames += 1
+			if _frames >= 20:
+				var ms: Dictionary = sim.get_mode_state()
+				if str(ms.get("mode")) != "on_foot" or int(ms.get("walker_enter_refused", 0)) != _foot_enter_refused_before + 1:
+					_finish(1, "a get-in out of range was not refused: %s" % ms)
+					return
+				print("RG_DRIVE smoke on_foot get-in out of range refused ok")
+				_mark_ms = Time.get_ticks_msec()
+				_phase = "foot_return"
+		"foot_return":
+			var ws: Dictionary = sim.get_walker_state()
+			if bool(ws.get("can_enter")):
+				main.scripted_walk = {"move_right": 0.0, "move_forward": 0.0, "run": false}
+				sim.request_walker_enter()
+				_frames = 0
+				_phase = "foot_enter"
+				return
+			var back: Vector3 = ws["car_position"] - ws["position"]
+			back.y = 0.0
+			main.scripted_walk = {"move_right": 0.0, "move_forward": 1.0, "look": back.normalized(), "run": true}
+			if _foot_timed_out():
+				_finish(1, "foot_return: never got within get-in range (%s)" % ws)
+		"foot_enter":
+			_frames += 1
+			if _frames >= 30:
+				var ms: Dictionary = sim.get_mode_state()
+				var ss: Dictionary = sim.get_streaming_status()
+				if str(ms.get("mode")) != "drive" or main.get_director().active_name != "chase" \
+						or str(ms.get("vehicle_control")) != "player" or not sim.get_walker_state().is_empty() \
+						or int(ss.get("interest_points", 0)) != 1:
+					_finish(1, "after getting in, the state is wrong: %s interest_points=%s walker=%s" % [ms, ss.get("interest_points"), sim.get_walker_state()])
+					return
+				print("RG_DRIVE smoke on_foot get-in ok: mode=drive rig=chase car=player interest_points=1")
+				main.scripted_walk = {}
+				main.scripted_controls = {"throttle": 0.5, "steer": 0.0, "brake": 0.0, "handbrake": 0.0, "clutch": 0.0, "ignition": 1.0, "assist.auto_shift": 1.0}
+				_mark_ms = Time.get_ticks_msec()
+				_phase = "foot_drive"
+		"foot_drive":
+			if float(sim.get_body_speed_mps("chassis")) > 1.0:
+				print("RG_DRIVE smoke on_foot round trip ok: the car drives again at %.1f m/s" % float(sim.get_body_speed_mps("chassis")))
+				main.scripted_controls = {}
 				_frames = 0
 				_phase = "mode_drive"
+			elif _foot_timed_out():
+				_finish(1, "foot_drive: the car did not drive away after getting in (speed %.2f)" % float(sim.get_body_speed_mps("chassis")))
 		"mode_drive":
 			_frames += 1
 			if _frames >= 5:
@@ -304,6 +429,16 @@ func _process(_delta: float) -> void:
 			if _running("real_world"):
 				print(main.status_line("RG_DRIVE smoke switched back to the real world:"))
 				_finish(0, "")
+
+# Wall-time guard for one on-foot phase (drive_smoke's own TIMEOUT_S covers the whole run).
+func _foot_timed_out() -> bool:
+	return (Time.get_ticks_msec() - _mark_ms) / 1000.0 > FOOT_PHASE_TIMEOUT_S
+
+func _begin_foot_check() -> void:
+	main.scripted_controls = {"throttle": 1.0, "steer": 0.0, "brake": 0.0, "handbrake": 0.0, "clutch": 0.0, "ignition": 1.0, "assist.auto_shift": 1.0}
+	_mark_ms = Time.get_ticks_msec()
+	_frames = 0
+	_phase = "foot_speedup"
 
 func _begin_mode_check(sim: Node) -> void:
 	main.scripted_controls = {}

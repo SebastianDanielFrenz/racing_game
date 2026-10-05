@@ -56,6 +56,10 @@ var fetch_delay_ms: int = 0
 # Non-empty: overrides the driving input group (channel -> value), used by the
 # scripted smoke and screenshot tour instead of an autopilot.
 var scripted_controls: Dictionary = {}
+# On-foot counterpart of scripted_controls (drive_smoke.gd): while non-empty
+# {move_right, move_forward, look (Godot-frame Vector3), run} replaces the
+# player's walking input.
+var scripted_walk: Dictionary = {}
 var ready_sim_time: float = -1.0 # sim time when the current world became "running"
 
 var _steering = preload("res://scripts/adaptive_steering.gd").new()
@@ -63,6 +67,11 @@ var _simulation: Node
 var _input_map: Node
 var _cockpit_view: bool = false
 var _drone_target_seen: int = -1 # last drone_target_id printed (-1 = own car)
+var _walker_rig: Node3D
+var _walker_visual: Node3D
+var _refusals_seen: int = 0 # get_mode_state()["get_out_refusals"] already reported to the HUD
+var _enter_refused_seen: int = 0 # ... ["walker_enter_refused"]
+var _mode_seen: String = "drive"
 var _seat_ui: CanvasLayer
 var _director: Node
 var _hud: Node
@@ -406,6 +415,16 @@ func _build_scene(user_args: PackedStringArray) -> void:
 	drone.set_script(load("res://scripts/drone_rig.gd"))
 	add_child(drone)
 	_director.add_rig("drone", drone)
+	_walker_rig = Node3D.new()
+	_walker_rig.name = "WalkerRig"
+	_walker_rig.set_script(load("res://scripts/walker_rig.gd"))
+	add_child(_walker_rig)
+	_director.add_rig("walker", _walker_rig)
+	_walker_visual = Node3D.new()
+	_walker_visual.set_script(load("res://scripts/walker_visual.gd"))
+	_walker_visual.simulation = _simulation
+	_walker_visual.director = _director
+	add_child(_walker_visual)
 
 	_try_start_vr()
 
@@ -725,14 +744,48 @@ func _apply_mode_state() -> Dictionary:
 		rig_name = "cockpit"
 	if _vr_active:
 		# VR keeps its own free rig for the drone view too (no XR drone rig yet).
-		rig_name = "xr_free" if rig_name == "free" or rig_name == "drone" else "xr_cockpit"
+		# (No XR walker rig yet either: on foot the player keeps the tracked free flight.)
+		rig_name = "xr_free" if rig_name == "free" or rig_name == "drone" or rig_name == "walker" else "xr_cockpit"
 	var drone_id := int(ms.get("drone_target_id", -1))
 	if drone_id != _drone_target_seen:
 		_drone_target_seen = drone_id
 		print("RG_WORLD drone target -> %s (id %d)" % [ms.get("drone_target_label", "?"), drone_id])
 	_director.set_active(rig_name)
+	_notify_mode_events(ms)
 	_director.camera_input_live = bool(ms.get("camera_inputs_live", true)) and not (get_tree().get_nodes_in_group("seat_adjustment_open").size() > 0 or get_tree().get_nodes_in_group("traffic_settings_open").size() > 0 or get_tree().get_nodes_in_group("address_teleport_open").size() > 0)
 	return ms
+
+# Messages for what the mode framework refused, and a log line per mode change
+# (a get-in changes the mode without any key press of the cycle).
+func _notify_mode_events(ms: Dictionary) -> void:
+	var mode_now := str(ms.get("mode", "drive"))
+	if mode_now != _mode_seen:
+		_mode_seen = mode_now
+		print("RG_WORLD mode now %s" % mode_now)
+	var refusals := int(ms.get("get_out_refusals", 0))
+	if refusals > _refusals_seen and _hud != null:
+		_hud.show_message("Stop the car first: getting out needs a speed below 2 m/s", 3.0)
+	_refusals_seen = refusals
+	var enter_refused := int(ms.get("walker_enter_refused", 0))
+	if enter_refused > _enter_refused_seen and _hud != null:
+		_hud.show_message("Too far from the car: walk up to its door (within 1.5 m)", 3.0)
+	_enter_refused_seen = enter_refused
+
+# Walking input (on foot): the camera group's move axes, run, plus the look
+# heading the walker rig owns; jump and interact are edge presses handled in
+# _process. The walker's physics lives in rg_core.
+func _forward_walking(live: bool) -> void:
+	if not bool(_simulation.is_running()):
+		return
+	var blocked: bool = get_tree().get_nodes_in_group("seat_adjustment_open").size() > 0 or get_tree().get_nodes_in_group("traffic_settings_open").size() > 0 or get_tree().get_nodes_in_group("address_teleport_open").size() > 0
+	if not live or blocked:
+		_simulation.set_walker_input(0.0, 0.0, _walker_rig.get_look_forward(), false)
+		return
+	if not scripted_walk.is_empty():
+		_simulation.set_walker_input(float(scripted_walk.get("move_right", 0.0)), float(scripted_walk.get("move_forward", 0.0)), scripted_walk.get("look", _walker_rig.get_look_forward()), bool(scripted_walk.get("run", false)))
+		return
+	var m: Vector2 = _input_map.get_walk_move()
+	_simulation.set_walker_input(m.x, m.y, _walker_rig.get_look_forward(), _input_map.get_walk_run())
 
 func _forward_driving(live: bool, delta: float) -> void:
 	# Edge counts are consumed every frame, so presses made while the car is
@@ -788,10 +841,29 @@ func _process(delta: float) -> void:
 	if world_state == "running" and get_tree().get_nodes_in_group("address_teleport_open").is_empty() and Input.is_action_just_pressed("rg_npc_truck"):
 		_simulation.request_npc_truck(not Input.is_key_pressed(KEY_SHIFT), 70.0)
 	var camera_presses: int = _input_map.consume_cycle_camera()
-	if camera_presses % 2 == 1 and not _vr_active and _simulation.get_player_mode() == "drive":
-		_cockpit_view = not _cockpit_view
+	if camera_presses % 2 == 1 and not _vr_active:
+		var tab_mode: String = _simulation.get_player_mode()
+		if tab_mode == "drive":
+			_cockpit_view = not _cockpit_view
+		elif tab_mode == "on_foot":
+			_walker_rig.toggle_first_person()
 	for _i in range(_input_map.consume_cycle_mode()):
 		print("RG_WORLD mode -> %s" % _simulation.cycle_player_mode())
+	# On foot (R9c): G gets out of a (nearly stopped) car in drive mode and gets
+	# back in when standing at its door; Space jumps. The counts are consumed
+	# every frame so presses in the wrong mode never arrive later.
+	var get_out_presses: int = _input_map.consume_get_out_key_count()
+	var interact_presses: int = _input_map.consume_interact_count()
+	var jump_presses: int = _input_map.consume_jump_count()
+	if world_state == "running":
+		var foot_mode: String = _simulation.get_player_mode()
+		if foot_mode == "drive" and get_out_presses > 0 and not _vr_active:
+			print("RG_WORLD get out -> %s" % _simulation.set_player_mode("on_foot"))
+		elif foot_mode == "on_foot":
+			if interact_presses > 0:
+				_simulation.request_walker_enter()
+			for _i in range(jump_presses):
+				_simulation.request_walker_jump()
 	# Next drone-follow target (own car -> nearest NPC vehicles -> own car);
 	# presses outside drone_follow are consumed and ignored.
 	for _i in range(_input_map.consume_cycle_drone_target()):
@@ -822,6 +894,7 @@ func _process(delta: float) -> void:
 		add_child(_vehicle_audio)
 	var ms := _apply_mode_state()
 	_forward_driving(bool(ms.get("driving_inputs_live", false)), delta)
+	_forward_walking(bool(ms.get("walking_inputs_live", false)))
 
 var _vr_active := false
 

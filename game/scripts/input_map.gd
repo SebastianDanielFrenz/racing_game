@@ -19,6 +19,12 @@ extends Node
 # Drone-follow zoom (camera group): mouse wheel ticks (consume_zoom_steps) and
 # PageUp/PageDown held (get_camera_zoom_key); next drone target is a global
 # action (N / D-pad right).
+# Walking group (on foot, R9c): reuses the camera group's move axes (WASD /
+# left stick: x right, z forward, relative to the look heading, which the walker
+# rig owns) and "fast" as RUN (Shift / left-stick click); adds JUMP (Space /
+# gamepad A, edge count) and INTERACT (G / gamepad X, edge count). G is also the
+# keyboard GET-OUT key in drive mode (edge count of the KEY only: gamepad X is
+# shift-down while driving, so it must never get the player out of the car).
 # Global actions (edges, consumed once per frame by main.gd): cycle mode,
 # switch world, reset car, next drone target. Those plus the camera keys are added to InputMap
 # at runtime (_ensure_action), so project.godot's [input] section only holds
@@ -47,6 +53,9 @@ var _switch_world_count: int = 0
 var _reset_car_count: int = 0
 var _flip_upright_count: int = 0
 var _cycle_drone_count: int = 0
+var _jump_count: int = 0
+var _interact_count: int = 0
+var _get_out_key_count: int = 0
 var _zoom_steps: float = 0.0 # mouse-wheel ticks since last consumed, + = zoom in
 var _cam_zoom_key: float = 0.0 # PageUp (+1, zoom in) / PageDown (-1, zoom out)
 
@@ -266,6 +275,14 @@ func poll() -> void:
 		_flip_upright_count += 1
 	if _edge("cycle_drone_target", input.is_action_pressed("rg_cycle_drone_target")):
 		_cycle_drone_count += 1
+	# --- walking group edges (on foot) ---
+	var g_key: bool = input.is_physical_key_pressed(KEY_G)
+	if _edge("jump", jb.call(JOY_BUTTON_A) or input.is_physical_key_pressed(KEY_SPACE)):
+		_jump_count += 1
+	if _edge("interact", jb.call(JOY_BUTTON_X) or g_key):
+		_interact_count += 1
+	if _edge("get_out_key", g_key):
+		_get_out_key_count += 1
 
 # --- driving group getters ---
 func get_steer() -> float:
@@ -336,6 +353,31 @@ func consume_mouse_delta() -> Vector2:
 	var d := _mouse_delta
 	_mouse_delta = Vector2.ZERO
 	return d
+
+# --- walking group getters (on foot) ---
+# x = right, y = forward, each -1..1 (the camera group's move, horizontal part).
+func get_walk_move() -> Vector2:
+	return Vector2(_cam_move.x, _cam_move.z)
+
+func get_walk_run() -> bool:
+	return _cam_fast
+
+func consume_jump_count() -> int:
+	var n := _jump_count
+	_jump_count = 0
+	return n
+
+# G or gamepad X: get into the own car when on foot.
+func consume_interact_count() -> int:
+	var n := _interact_count
+	_interact_count = 0
+	return n
+
+# The G key alone: get out of the car in drive mode.
+func consume_get_out_key_count() -> int:
+	var n := _get_out_key_count
+	_get_out_key_count = 0
+	return n
 
 # --- global actions (edge counts, read-and-reset once per frame) ---
 func consume_cycle_mode() -> int:
