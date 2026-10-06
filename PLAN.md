@@ -434,7 +434,8 @@ R3/G3 consumer plan (2026-10-05): docs/g3_consumer_design.md - carve switch,
 ribbons, bridge decks, route acceptance harness and a proposed definition of
 the R3 route bound (Fz residual no worse than a calibrated 2 cm step, 3x static
 corner load cap, no chassis contact; owner question O-3). Slices S1-S14 there.
-S1 done (2026-10-06): pins bumped (physics_sim 24bdeae, geo2map_engine 072a321), own surfaces for the seven new surface kinds, N2O test cars (sedan and hypercar) with a HUD, and the road deck BVH build moved off the sim thread through physics_sim R2 (`rg::DeckInstaller`, option B of docs/g3_consumer_design.md 5.2).
+S1 done (2026-10-06): pins bumped (physics_sim 606c428, geo2map_engine 072a321), own surfaces for the seven new surface kinds, N2O test cars (sedan and hypercar) with a HUD, and the road deck BVH build moved off the sim thread through physics_sim R2 (`rg::DeckInstaller`, option B of docs/g3_consumer_design.md 5.2).
+S1 open item: the N2O armed-versus-unarmed gain measurement for BOTH N2O cars (car_sedan_gen_n2o, car_hyper_n2o) is postponed, not dropped (owner: do not drop it forever). Plan: WOT in 3rd (hyper) / 2nd (sedan, FWD wheelspin hides it in 1st) armed vs not armed, report dv, rpm-to-6000 time, boost. Earlier rough numbers on the pre-606c428 hyper: +25.9 % dv in 0.6 s. Known physics caveat: with spray the hyper boost can overshoot 1.8 bar to 2.0-2.4 bar and the turbo can sit on the rotor speed cap at 6000-7000 rpm.
 
 **G4: routing and map geometry.** Model: Opus for graph/routing design; Sonnet for map geometry.
 - Scope: A* + hierarchy, restrictions, guidance data, client map geometry.
