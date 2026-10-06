@@ -212,7 +212,7 @@ func _process(_delta: float) -> void:
 		var aero: Dictionary = _simulation.get_aero_state()
 		if bool(aero.get("enabled",false)):
 			lines.append("aero: air %.0f km/h | drag %.0f N | downforce %.0f N | front %.0f%% | wing %+.1f deg | fan %.1f kW" % [float(aero.airspeed_m_s)*3.6,float(aero.drag_n),float(aero.downforce_n),float(aero.front_balance)*100.0,float(aero.wing_pitch_offset_deg),float(aero.fan_power_w)/1000.0])
-		# Nitrous (physics_sim N2O): only a car with a kit (car_sedan_gen_n2o) has this line.
+		# Nitrous (physics_sim N2O): only a car with a kit (car_sedan_gen_n2o, car_hyper_n2o) has this line.
 		var n2o: Dictionary = _simulation.get_vehicle_nitrous(vehicle_name)
 		if bool(n2o.get("present", false)):
 			var n2o_state: String = str(n2o.get("state", "off"))

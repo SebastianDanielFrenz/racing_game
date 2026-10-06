@@ -819,7 +819,10 @@ godot::Dictionary RgSimulation::get_vehicle_nitrous(const String& vehicle_name) 
     const rg::NitrousHud h = rg::nitrous_hud(info, frame_snapshot().powertrain, session_->get_control("nitrous_arm"));
     d["armed"] = h.armed;
     d["spraying"] = h.spraying;
-    d["state"] = String(std::string(rg::nitrous_state_label(h.present, h.armed, h.spraying, h.safety_cut)).c_str());
+    d["solenoid_open"] = h.solenoid_open;
+    d["purging"] = h.purging;
+    d["flow_fraction"] = h.flow_fraction;
+    d["state"] = String(std::string(rg::nitrous_state_label(h.present, h.armed, h.spraying, h.safety_cut, h.purging)).c_str());
     d["cut_reason"] = String(std::string(rg::nitrous_cut_name(h.safety_cut)).c_str());
     d["bottle_kg"] = h.bottle_kg;
     d["capacity_kg"] = h.bottle_capacity_kg;
