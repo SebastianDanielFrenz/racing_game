@@ -63,7 +63,7 @@ TEST_CASE("shell: menus hold exactly the shipped items", "[shell]") {
     for (const auto& m : rg::main_menu_items()) main_ids.push_back(m.id);
     for (const auto& m : rg::pause_menu_items()) pause_ids.push_back(m.id);
     CHECK(main_ids == std::vector<std::string>{"free_roam", "garage", "settings", "credits", "quit"});
-    CHECK(pause_ids == std::vector<std::string>{"resume", "reset_car", "change_car", "garage", "settings", "main_menu"});
+    CHECK(pause_ids == std::vector<std::string>{"resume", "reset_car", "change_car", "garage", "controls", "settings", "main_menu"});
     for (const auto& m : rg::main_menu_items()) CHECK_FALSE(m.label.empty());
     for (const auto& m : rg::pause_menu_items()) CHECK_FALSE(m.label.empty());
     CHECK(std::string(rg::to_string(Screen::SpawnPicker)) == "spawn_picker");
@@ -301,7 +301,7 @@ TEST_CASE("shell: events outside their screen are refused and change nothing", "
         ShellFlow::menu_item("resume"), ShellFlow::spawn_picked(flat_request()), ShellFlow::back(),
         ShellFlow::load_ready(),     ShellFlow::load_failed("x"),             ShellFlow::load_cancelled(),
         ShellFlow::pause_toggle(),   ShellFlow::vehicle_chosen("car_sedan"), ShellFlow::garage_drive(),
-        ShellFlow::menu_item("garage"),
+        ShellFlow::menu_item("garage"),      ShellFlow::menu_item("controls"),
     };
     // Which events each screen accepts (everything else must be refused).
     const auto accepts = [](Screen s, const rg::ShellEvent& e) {
@@ -314,11 +314,12 @@ TEST_CASE("shell: events outside their screen are refused and change nothing", "
             case Screen::Drive: return e.kind == K::PauseToggle;
             case Screen::Pause:
                 return e.kind == K::PauseToggle || e.kind == K::Back ||
-                       (e.kind == K::MenuItem && (e.item == "resume" || e.item == "garage"));
+                       (e.kind == K::MenuItem && (e.item == "resume" || e.item == "garage" || e.item == "controls"));
             case Screen::VehicleSelect: return e.kind == K::Back || e.kind == K::VehicleChosen;
             case Screen::Configurator: return e.kind == K::Back || e.kind == K::GarageDrive;
             case Screen::ChangeCar: return e.kind == K::Back || e.kind == K::VehicleChosen;
-            case Screen::Settings: return e.kind == K::Back;
+            case Screen::Settings: return e.kind == K::Back || (e.kind == K::MenuItem && e.item == "controls");
+            case Screen::Controls: return e.kind == K::Back;
             case Screen::Credits: return e.kind == K::Back;
             case Screen::Quit: return false;
         }
@@ -327,7 +328,7 @@ TEST_CASE("shell: events outside their screen are refused and change nothing", "
     // Build a flow standing on each screen, then throw every event at it.
     const std::vector<Screen> screens = {Screen::Boot,    Screen::MainMenu, Screen::SpawnPicker, Screen::Loading, Screen::Drive,
                                          Screen::Pause,   Screen::Settings, Screen::Credits,     Screen::VehicleSelect,
-                                         Screen::Configurator, Screen::ChangeCar, Screen::Quit};
+                                         Screen::Configurator, Screen::ChangeCar, Screen::Controls, Screen::Quit};
     for (const Screen target : screens) {
         for (std::size_t i = 0; i < all.size(); ++i) {
             ShellFlow f;
@@ -366,6 +367,11 @@ TEST_CASE("shell: events outside their screen are refused and change nothing", "
                     f.handle(ShellFlow::pause_toggle());
                     f.handle(ShellFlow::menu_item("change_car"));
                     break;
+                case Screen::Controls:
+                    f.handle(ShellFlow::boot_finished());
+                    f.handle(ShellFlow::menu_item("settings"));
+                    f.handle(ShellFlow::menu_item("controls"));
+                    break;
                 case Screen::Quit:
                     f.handle(ShellFlow::boot_finished());
                     f.handle(ShellFlow::menu_item("quit"));
@@ -382,6 +388,41 @@ TEST_CASE("shell: events outside their screen are refused and change nothing", "
             }
         }
     }
+}
+
+TEST_CASE("shell: controls opens from settings and from the pause menu and saves on the way out", "[shell][controls]") {
+    // From Settings (main menu): Settings -> Controls -> back to Settings -> back to the main menu.
+    ShellFlow f;
+    f.handle(ShellFlow::boot_finished());
+    f.handle(ShellFlow::menu_item("settings"));
+    const auto open = f.handle(ShellFlow::menu_item("controls"));
+    REQUIRE(open.accepted);
+    CHECK(open.to == Screen::Controls);
+    CHECK(f.controls_return() == Screen::Settings);
+    CHECK_FALSE(has_action(open, ShellActionKind::SaveControls));
+    const auto back = f.handle(ShellFlow::back());
+    CHECK(back.to == Screen::Settings);
+    CHECK(has_action(back, ShellActionKind::SaveControls));
+    CHECK(f.settings_return() == Screen::MainMenu); // the settings screen still knows where it came from
+    CHECK(f.handle(ShellFlow::back()).to == Screen::MainMenu);
+
+    // From the pause menu directly: the world stays up behind it and Back returns to the pause menu.
+    ShellFlow g;
+    to_drive(g);
+    g.handle(ShellFlow::pause_toggle());
+    const auto from_pause = g.handle(ShellFlow::menu_item("controls"));
+    REQUIRE(from_pause.accepted);
+    CHECK(from_pause.to == Screen::Controls);
+    CHECK(g.controls_return() == Screen::Pause);
+    CHECK(g.world_loaded());
+    const auto out = g.handle(ShellFlow::back());
+    CHECK(out.to == Screen::Pause);
+    CHECK(has_action(out, ShellActionKind::SaveControls));
+    // Esc / P while on the controls screen do nothing but Back (the pause toggle is refused there).
+    g.handle(ShellFlow::menu_item("controls"));
+    CHECK_FALSE(g.handle(ShellFlow::pause_toggle()).accepted);
+    CHECK(g.screen() == Screen::Controls);
+    // sabotage: dropping the SaveControls action from the Controls -> back transition fails the has_action checks.
 }
 
 TEST_CASE("shell: every accepted transition ends with ShowScreen of its target", "[shell]") {

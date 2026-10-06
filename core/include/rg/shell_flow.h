@@ -10,14 +10,15 @@
 //   Loading -> Drive (world ready) | MainMenu (cancelled or failed; the error
 //              is kept for the menu to show)
 //   Drive <-> Pause
-//   Pause -> Settings | VehicleSelect ("Garage (respawn)") | ChangeCar ("Change car") | MainMenu (unloads the world) | Drive (resume / reset car)
+//   Pause -> Controls | Settings | VehicleSelect ("Garage (respawn)") | ChangeCar ("Change car") | MainMenu (unloads the world) | Drive (resume / reset car)
 //   ChangeCar -> Loading (a car chosen: the world reloads with it, the new car starting where the old one stood, no road reset) |
 //                Pause (back)
 //   VehicleSelect -> Configurator (a car chosen) | back to where the garage was opened (MainMenu or Pause)
 //   Configurator -> VehicleSelect (back) | SpawnPicker (Drive, garage opened from the main menu) |
 //                   Loading (Drive, garage opened from the pause menu: the world reloads with the
 //                   chosen car, respawning where the old one stood)
-//   Settings -> back to where it was opened (MainMenu or Pause)
+//   Settings -> Controls ("Controls" row) | back to where it was opened (MainMenu or Pause)
+//   Controls -> back to where it was opened (Settings or Pause); the player's bindings are saved on the way out
 //   Credits -> MainMenu
 // Start flags that skip the menu (--drive, --flat, ...) enter through
 // DirectStart: Boot -> Loading with the world already chosen. Every other
@@ -38,18 +39,18 @@
 
 namespace rg {
 
-enum class Screen { Boot, MainMenu, SpawnPicker, Loading, Drive, Pause, Settings, Credits, VehicleSelect, Configurator, ChangeCar, Quit };
+enum class Screen { Boot, MainMenu, SpawnPicker, Loading, Drive, Pause, Settings, Credits, VehicleSelect, Configurator, ChangeCar, Controls, Quit };
 
 const char* to_string(Screen s);
 
 struct MenuItem {
-    std::string id;    // "free_roam", "garage", "settings", "credits", "quit", "resume", "reset_car", "change_car", "main_menu"
+    std::string id;    // "free_roam", "garage", "settings", "credits", "quit", "resume", "reset_car", "change_car", "controls", "main_menu"
     std::string label; // shown text
 };
 
 // Main menu: Free roam | Garage | Settings | Credits | Quit.
 const std::vector<MenuItem>& main_menu_items();
-// Pause menu: Resume | Reset car | Change car | Garage (respawn) | Settings | Main menu.
+// Pause menu: Resume | Reset car | Change car | Garage (respawn) | Controls | Settings | Main menu.
 const std::vector<MenuItem>& pause_menu_items();
 
 enum class ShellEventKind {
@@ -91,6 +92,7 @@ enum class ShellActionKind {
     SetPaused,      // `flag`: pause / resume the simulation
     ResetCar,       // Pause menu "Reset car"
     SaveSettings,   // leaving the settings screen: persist
+    SaveControls,   // leaving the controls screen: persist the bindings (user://controls.json)
     Quit,           // exit the application
     OpenGarage,     // show the garage scene (main menu: nothing behind it; pause: the paused world stays loaded)
     CloseGarage,    // remove the garage scene and every node it created
@@ -120,6 +122,8 @@ public:
     [[nodiscard]] Screen screen() const { return screen_; }
     // Where Settings was opened from (MainMenu or Pause); meaningful in Settings.
     [[nodiscard]] Screen settings_return() const { return settings_return_; }
+    // Where Controls was opened from (Settings or Pause); meaningful in Controls.
+    [[nodiscard]] Screen controls_return() const { return controls_return_; }
     // The world being loaded or running (Loading/Drive/Pause/Settings-from-Pause).
     [[nodiscard]] const WorldRequest& world() const { return world_; }
     // Where the garage was opened from (MainMenu or Pause); meaningful in VehicleSelect/Configurator.
@@ -153,6 +157,7 @@ private:
 
     Screen screen_ = Screen::Boot;
     Screen settings_return_ = Screen::MainMenu;
+    Screen controls_return_ = Screen::Settings;
     Screen garage_return_ = Screen::MainMenu;
     std::string garage_vehicle_;
     WorldRequest world_;

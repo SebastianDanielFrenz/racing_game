@@ -56,6 +56,7 @@ const char* action_kind_name(rg::ShellActionKind k) {
         case rg::ShellActionKind::SetPaused: return "set_paused";
         case rg::ShellActionKind::ResetCar: return "reset_car";
         case rg::ShellActionKind::SaveSettings: return "save_settings";
+        case rg::ShellActionKind::SaveControls: return "save_controls";
         case rg::ShellActionKind::Quit: return "quit";
         case rg::ShellActionKind::OpenGarage: return "open_garage";
         case rg::ShellActionKind::CloseGarage: return "close_garage";
@@ -174,6 +175,7 @@ godot::Dictionary RgShell::transition_to_dict(const rg::ShellTransition& t) cons
 
 String RgShell::get_screen() const { return String(rg::to_string(flow_.screen())); }
 String RgShell::get_settings_return() const { return String(rg::to_string(flow_.settings_return())); }
+String RgShell::get_controls_return() const { return String(rg::to_string(flow_.controls_return())); }
 godot::Dictionary RgShell::get_world_request() const { return world_request_to_dict(flow_.world()); }
 String RgShell::get_last_error() const { return from_std(flow_.last_error()); }
 void RgShell::clear_last_error() { flow_.clear_error(); }
@@ -367,6 +369,7 @@ void RgShell::_bind_methods() {
     ClassDB::bind_method(D_METHOD("initialize", "data_dir", "user_dir", "world_config_path"), &RgShell::initialize);
     ClassDB::bind_method(D_METHOD("get_screen"), &RgShell::get_screen);
     ClassDB::bind_method(D_METHOD("get_settings_return"), &RgShell::get_settings_return);
+    ClassDB::bind_method(D_METHOD("get_controls_return"), &RgShell::get_controls_return);
     ClassDB::bind_method(D_METHOD("get_world_request"), &RgShell::get_world_request);
     ClassDB::bind_method(D_METHOD("get_last_error"), &RgShell::get_last_error);
     ClassDB::bind_method(D_METHOD("clear_last_error"), &RgShell::clear_last_error);

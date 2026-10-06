@@ -41,10 +41,11 @@ public:
     // ---- screen flow (rg::ShellFlow). Every event returns the transition:
     // {accepted, from, to, actions: [{kind, screen, world, flag}]} with kind in
     // "show_screen" | "load_world" | "unload_world" | "set_paused" |
-    // "reset_car" | "save_settings" | "quit" | "open_garage" | "close_garage"; world = {kind: "flat"|"real_world",
+    // "reset_car" | "save_settings" | "save_controls" | "quit" | "open_garage" | "close_garage"; world = {kind: "flat"|"real_world",
     // has_spawn, x, y, yaw_deg, label, open_address_search}. ----
     [[nodiscard]] godot::String get_screen() const;
     [[nodiscard]] godot::String get_settings_return() const;
+    [[nodiscard]] godot::String get_controls_return() const; // "settings" | "pause"
     [[nodiscard]] godot::Dictionary get_world_request() const;
     [[nodiscard]] godot::String get_last_error() const;
     void clear_last_error();

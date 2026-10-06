@@ -19,6 +19,7 @@ const char* to_string(Screen s) {
         case Screen::VehicleSelect: return "vehicle_select";
         case Screen::Configurator: return "configurator";
         case Screen::ChangeCar: return "change_car";
+        case Screen::Controls: return "controls";
         case Screen::Quit: return "quit";
     }
     return "boot";
@@ -41,6 +42,7 @@ const std::vector<MenuItem>& pause_menu_items() {
         {"reset_car", "Reset car"},
         {"change_car", "Change car"},
         {"garage", "Garage (respawn)"},
+        {"controls", "Controls"},
         {"settings", "Settings"},
         {"main_menu", "Main menu"},
     };
@@ -186,6 +188,10 @@ ShellTransition ShellFlow::handle(const ShellEvent& e) {
                     garage_vehicle_.clear();
                     return go(Screen::ChangeCar, {simple(ShellActionKind::OpenGarage)});
                 }
+                if (e.item == "controls") {
+                    controls_return_ = Screen::Pause;
+                    return go(Screen::Controls, {});
+                }
                 if (e.item == "settings") {
                     settings_return_ = Screen::Pause;
                     return go(Screen::Settings, {});
@@ -240,6 +246,14 @@ ShellTransition ShellFlow::handle(const ShellEvent& e) {
             if (e.kind == ShellEventKind::Back) {
                 return go(settings_return_, {simple(ShellActionKind::SaveSettings)});
             }
+            if (e.kind == ShellEventKind::MenuItem && e.item == "controls") {
+                controls_return_ = Screen::Settings;
+                return go(Screen::Controls, {});
+            }
+            return refuse();
+
+        case Screen::Controls:
+            if (e.kind == ShellEventKind::Back) return go(controls_return_, {simple(ShellActionKind::SaveControls)});
             return refuse();
 
         case Screen::Credits:

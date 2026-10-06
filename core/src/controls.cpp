@@ -797,6 +797,7 @@ ActionState Controls::empty_state() const {
     s.pulses.assign(n, 0.0F);
     s.keyboard.assign(n, 0.0F);
     s.pad.assign(n, 0.0F);
+    s.pad_raw.assign(n, 0.0F);
     s.source.assign(n, -1);
     return s;
 }
@@ -878,6 +879,7 @@ void merge_into(ActionState& total, const ActionState& one, DeviceClass cls) {
             total.keyboard[i] = one.value[i];
         } else if (is_pad_class(cls)) {
             if (std::fabs(one.value[i]) > std::fabs(total.pad[i])) total.pad[i] = one.value[i];
+            if (std::fabs(one.raw[i]) > std::fabs(total.pad_raw[i])) total.pad_raw[i] = one.raw[i];
         }
     }
 }

@@ -77,6 +77,7 @@ struct ActionState {
     std::vector<float> pulses;   // wheel ticks bound to the action (zoom steps)
     std::vector<float> keyboard; // the keyboard's own contribution
     std::vector<float> pad;      // the joypads' own contribution (largest magnitude)
+    std::vector<float> pad_raw;  // the joypads' own raw channel (largest magnitude): the camera rigs' stick position
     std::vector<int> source;     // DeviceClass (as int) of the device whose value won, -1 = none
 };
 
