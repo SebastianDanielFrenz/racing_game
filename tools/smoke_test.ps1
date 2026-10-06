@@ -124,6 +124,21 @@
     `--catalog`, `--car-browser-big`): additionally asserts that only a window of the tiles
     exists as nodes while every car is listed, also after scrolling far right.
 
+.PARAMETER Controls
+    R5b headless control configuration test: launches twice with `--shell-user-dir <dir>`
+    (game/scripts/controls_test.gd). Run 1 (`--controls-test`): main menu -> Settings ->
+    Controls; every default keyboard binding name survives the engine's key-name round trip;
+    the keyboard throttle is rebound by capture with synthetic key events (Esc cancels, a
+    conflict is shown inline and resolved, a second binding is added and cleared); a simulated
+    pad (SDL GUID A) gets its own profile (a button as throttle), tuning (deadzone, invert) and
+    the live monitor follow an injected stick, a trigger is calibrated, a second pad of the
+    same GUID shares the setup and a pad of another GUID does not inherit it; the input map
+    really uses the new bindings; reset action / reset device; Esc leaves and controls.json is
+    written; a second RgControls reads it; a broken file gives defaults plus a .bak. Run 2
+    (`--controls-verify`, a NEW process on the same dir): the choices were loaded at boot,
+    before any input was read. Asserts 0 ERROR lines / exit 0 plus "RG_CONTROLS_TEST PASS" on
+    both runs and no FAIL line. The files go to a scratch dir under the build dir.
+
 .PARAMETER Cameras
     R5 PHYS-008 camera-switch test: launches with `-- --camera-test` (flat world,
     game/scripts/camera_switch_test.gd). Every ordered pair of the five driving
@@ -152,6 +167,7 @@ param(
     [switch]$Shell,
     [switch]$Garage,
     [switch]$Cameras,
+    [switch]$Controls,
     [switch]$CarBrowser,
     [switch]$CarBrowserBig,
     [int]$DriveDelayMs = 0
@@ -164,9 +180,9 @@ if ($TerrainStream) {
 }
 if ($DriveDelayMs -gt 0) { $Drive = $true }
 if ($CarBrowserBig) { $CarBrowser = $true }
-if (($Drive -or $Shell -or $Garage -or $Cameras -or $CarBrowser) -and -not $PSBoundParameters.ContainsKey('QuitAfterFrames')) { $QuitAfterFrames = 200000 }
-if ((@($BindingsTest, $TerrainPreview, $Drive, $Shell, $Garage, $Cameras, $CarBrowser) | Where-Object { $_ }).Count -gt 1) {
-    throw "smoke_test.ps1: -BindingsTest, -TerrainPreview/-TerrainStream, -Drive/-DriveDelayMs, -Shell, -Garage, -Cameras and -CarBrowser are mutually exclusive"
+if (($Drive -or $Shell -or $Garage -or $Cameras -or $CarBrowser -or $Controls) -and -not $PSBoundParameters.ContainsKey('QuitAfterFrames')) { $QuitAfterFrames = 200000 }
+if ((@($BindingsTest, $TerrainPreview, $Drive, $Shell, $Garage, $Cameras, $CarBrowser, $Controls) | Where-Object { $_ }).Count -gt 1) {
+    throw "smoke_test.ps1: -BindingsTest, -TerrainPreview/-TerrainStream, -Drive/-DriveDelayMs, -Shell, -Garage, -Cameras, -CarBrowser and -Controls are mutually exclusive"
 }
 $repoRoot = Split-Path -Parent $PSScriptRoot
 $gameDir  = Join-Path $repoRoot 'game'
@@ -309,6 +325,11 @@ if ($script:Failures.Count -eq 0 -and -not $script:DriveSkipped) {
             & (Join-Path $PSScriptRoot 'make_synthetic_catalog.ps1') -OutFile $bigCatalog -Total 200 | Out-Host
             $godotArgs += @('--catalog', $bigCatalog, '--car-browser-big')
         }
+    } elseif ($Controls) {
+        $controlsUserDir = Join-Path $buildDir 'controls_test_user'
+        if (Test-Path $controlsUserDir) { Remove-Item -Recurse -Force $controlsUserDir }
+        New-Item -ItemType Directory -Force $controlsUserDir | Out-Null
+        $godotArgs += @('--', '--controls-test', '--shell-user-dir', $controlsUserDir)
     } elseif ($Cameras) {
         $godotArgs += @('--', '--camera-test')
     } else {
@@ -487,6 +508,39 @@ if ($script:Failures.Count -eq 0 -and -not $script:DriveSkipped) {
             Report-Fail "no 'RG_CAR_BROWSER_TEST PASS' line - car_browser_test.gd did not finish (is main.gd's --car-browser-test node running?)"
         } else {
             Report-Ok "car browser test: $($passLine.Line) ($($okLines.Count) ok lines)"
+        }
+    } elseif ($Controls) {
+        $failLines = @($logContent | Select-String -SimpleMatch -Pattern 'RG_CONTROLS_TEST FAIL')
+        $okLines = @($logContent | Select-String -SimpleMatch -Pattern 'RG_CONTROLS_TEST ok:')
+        $passLine = $logContent | Select-String -Pattern 'RG_CONTROLS_TEST PASS checks=(\d+)' | Select-Object -Last 1
+        if ($failLines.Count -gt 0) {
+            Report-Fail "controls test (write phase) reported failure(s):`n$($failLines -join "`n")"
+        } elseif (-not $passLine) {
+            Report-Fail "no 'RG_CONTROLS_TEST PASS' line - controls_test.gd did not finish (is main.gd's --controls-test node running?)"
+        } else {
+            Report-Ok "controls test, write phase: $($passLine.Line) ($($okLines.Count) ok lines)"
+        }
+        # Phase 2: a NEW process on the same user dir reads what phase 1 saved, at boot.
+        $verifyArgs = @('--headless', '--path', $gameDir, '--quit-after', $QuitAfterFrames, '--', '--controls-verify', '--shell-user-dir', $controlsUserDir)
+        Write-Host "`n-- headless run (restart): $godotExe $($verifyArgs -join ' ') --" -ForegroundColor Cyan
+        $previousEap = $ErrorActionPreference
+        $ErrorActionPreference = 'Continue'
+        & $godotExe @verifyArgs 1>$stdoutFile 2>$stderrFile
+        $verifyExit = $LASTEXITCODE
+        $ErrorActionPreference = $previousEap
+        $verifyLog = @(Get-Content $stdoutFile) + @(Get-Content $stderrFile)
+        $verifyLog | ForEach-Object { Write-Host $_ }
+        $verifyErrors = $verifyLog | Select-String -CaseSensitive -Pattern 'ERROR|SCRIPT ERROR|Unhandled exception|Segmentation fault'
+        if ($verifyErrors) { Report-Fail "restart run printed error line(s):`n$($verifyErrors -join "`n")" } else { Report-Ok "restart run: no ERROR lines" }
+        if ($verifyExit -ne 0) { Report-Fail "restart run exited $verifyExit" } else { Report-Ok "restart run exited 0" }
+        $verifyFail = @($verifyLog | Select-String -SimpleMatch -Pattern 'RG_CONTROLS_TEST FAIL')
+        $verifyPass = $verifyLog | Select-String -Pattern 'RG_CONTROLS_TEST PASS checks=(\d+)' | Select-Object -Last 1
+        if ($verifyFail.Count -gt 0) {
+            Report-Fail "controls test (restart phase) reported failure(s):`n$($verifyFail -join "`n")"
+        } elseif (-not $verifyPass) {
+            Report-Fail "no 'RG_CONTROLS_TEST PASS' line in the restart run"
+        } else {
+            Report-Ok "controls test, restart phase: $($verifyPass.Line)"
         }
     } elseif ($Cameras) {
         $failLines = @($logContent | Select-String -SimpleMatch -Pattern 'RG_CAMERA_TEST FAIL')

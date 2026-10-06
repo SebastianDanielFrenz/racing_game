@@ -269,6 +269,23 @@ godot::Dictionary RgControls::bind_captured_combined_pedals(const String& device
     return result(true);
 }
 
+// The half-span axis binding `index` of throttle or brake, turned into combined pedals (one axis, both pedals).
+godot::Dictionary RgControls::make_combined_pedals(const String& device_key, const String& action, int index) {
+    const std::string key = to_std(device_key);
+    const std::string act = to_std(action);
+    if (act != "throttle" && act != "brake") return result(false, "only the throttle and brake can be combined");
+    const std::vector<rg::Binding> eff = controls_.effective_bindings(key, act);
+    if (index < 0 || static_cast<std::size_t>(index) >= eff.size()) return result(false, "no such binding");
+    const rg::Binding& b = eff[static_cast<std::size_t>(index)];
+    if (b.type != rg::BindingType::JoyAxis || b.tuning.calibrated || b.span == rg::AxisSpan::Full)
+        return result(false, "this axis rests at its end, not in the middle: it cannot be combined pedals");
+    const rg::AxisSpan opposite = b.span == rg::AxisSpan::Positive ? rg::AxisSpan::Negative : rg::AxisSpan::Positive;
+    const rg::AxisSpan throttle_half = act == "throttle" ? b.span : opposite;
+    std::string err;
+    if (!controls_.bind_combined_pedals(key, b.index, throttle_half, rg::AxisTuning{}, &err)) return result(false, err);
+    return result(true);
+}
+
 bool RgControls::remove_binding(const String& device_key, const String& action, int index) {
     return controls_.remove_binding(to_std(device_key), to_std(action), index);
 }
@@ -482,6 +499,7 @@ void RgControls::_bind_methods() {
     ClassDB::bind_method(D_METHOD("get_conflicts", "device_key"), &RgControls::get_conflicts);
     ClassDB::bind_method(D_METHOD("bind_captured", "device_key", "action", "sign", "replace"), &RgControls::bind_captured);
     ClassDB::bind_method(D_METHOD("bind_captured_combined_pedals", "device_key"), &RgControls::bind_captured_combined_pedals);
+    ClassDB::bind_method(D_METHOD("make_combined_pedals", "device_key", "action", "index"), &RgControls::make_combined_pedals);
     ClassDB::bind_method(D_METHOD("remove_binding", "device_key", "action", "index"), &RgControls::remove_binding);
     ClassDB::bind_method(D_METHOD("clear_row", "device_key", "action", "sign"), &RgControls::clear_row);
     ClassDB::bind_method(D_METHOD("reset_action", "device_key", "action"), &RgControls::reset_action);

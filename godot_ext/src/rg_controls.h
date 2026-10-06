@@ -63,6 +63,8 @@ public:
     godot::Dictionary bind_captured(const godot::String& device_key, const godot::String& action, int sign, bool replace);
     // A combined pedal axis from the captured axis: it becomes throttle and brake, opposite halves.
     godot::Dictionary bind_captured_combined_pedals(const godot::String& device_key);
+    // The half-span axis binding `index` of throttle or brake becomes combined pedals (one axis, opposite halves).
+    godot::Dictionary make_combined_pedals(const godot::String& device_key, const godot::String& action, int index);
     bool remove_binding(const godot::String& device_key, const godot::String& action, int index);
     bool clear_row(const godot::String& device_key, const godot::String& action, int sign);
     bool reset_action(const godot::String& device_key, const godot::String& action);

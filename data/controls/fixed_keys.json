@@ -1,0 +1,13 @@
+{
+  "format": "rg.fixed_keys/1",
+  "note": "Keys the controls screen lists but does not let you rebind (game/scripts/controls_ui.gd): they are handled directly in a script, not through rg::Controls' action schema. This file DESCRIBES what the code does and must be kept in step with it by hand. Everything else in the game is a rebindable action (data/controls/actions.json).",
+  "entries": [
+    {"keys": "Esc or P", "label": "Pause menu (Esc also closes a panel or releases the mouse first; the menu 'Back' action is rebindable)"},
+    {"keys": "F6", "label": "Seat adjustment"},
+    {"keys": "F7", "label": "Traffic settings"},
+    {"keys": "F10", "label": "Teleport to an address"},
+    {"keys": "F9", "label": "Recentre the view (VR)"},
+    {"keys": "Middle mouse button", "label": "Log the current location"},
+    {"keys": "Shift (held)", "label": "With the 'Truck ahead' key: removes the truck instead of adding one"}
+  ]
+}

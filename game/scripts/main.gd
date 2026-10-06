@@ -15,6 +15,10 @@ extends Node3D
 #                           of user:// (the headless shell test uses this)
 #   --shell-test            the headless UI flow test (shell_flow_test.gd;
 #                           tools/smoke_test.ps1 -Shell)
+#   --controls-test         the headless control configuration test (controls_test.gd,
+#                           tools/smoke_test.ps1 -Controls); --controls-verify is its second
+#                           phase in a NEW process on the same --shell-user-dir;
+#                           --controls-shots <dir> screenshots the controls screen (controls_shots.gd)
 #   --camera-test           the PHYS-008 camera-switch test (camera_switch_test.gd;
 #                           tools/smoke_test.ps1 -Cameras), flat scene
 #   --g2m-fetch-delay-ms N  real world: every tile fetch is delayed N..2N ms
@@ -110,6 +114,7 @@ var _spawn_reported: bool = false
 # --- shell (R5) ---
 var _shell: Node # RgShell: flow, settings, credits, spawn presets
 var _shell_ui: CanvasLayer
+var _controls: Node # RgControls (R5b): the player's control configuration, loaded before the input map exists
 # --- garage (R6) ---
 var _garage: Node                 # RgGarage: catalog, setups, edit session, drive hand-over
 var _garage_scene: CanvasLayer    # garage_scene.gd while the garage is open, else null
@@ -424,9 +429,11 @@ func _build_scene(user_args: PackedStringArray) -> void:
 	# Main is inside the tree, so an export set afterwards would be read too
 	# late (R0's smoke-test finding).
 
-	# --- input (devices -> values only) ---
+	# --- input (devices -> values only; the bindings are the player's, R5b) ---
+	_build_controls(user_args)
 	_input_map = load("res://scripts/input_map.gd").new()
 	_input_map.name = "InputMap"
+	_input_map.controls = _controls
 	var truck_visual := preload("res://scripts/npc_truck.gd").new()
 	truck_visual.simulation = _simulation
 	add_child(truck_visual)
@@ -588,6 +595,21 @@ func _build_scene(user_args: PackedStringArray) -> void:
 		shell_test.set_script(load("res://scripts/shell_flow_test.gd"))
 		shell_test.main = self
 		add_child(shell_test)
+	if "--controls-test" in user_args or "--controls-verify" in user_args:
+		var controls_test := Node.new()
+		controls_test.name = "ControlsTest"
+		controls_test.set_script(load("res://scripts/controls_test.gd"))
+		controls_test.main = self
+		controls_test.verify_phase = "--controls-verify" in user_args
+		add_child(controls_test)
+	var controls_shots_index := user_args.find("--controls-shots")
+	if controls_shots_index >= 0 and controls_shots_index + 1 < user_args.size():
+		var controls_shots := Node.new()
+		controls_shots.name = "ControlsShots"
+		controls_shots.set_script(load("res://scripts/controls_shots.gd"))
+		controls_shots.main = self
+		controls_shots.out_dir = user_args[controls_shots_index + 1]
+		add_child(controls_shots)
 	var garage_shots_index := user_args.find("--garage-shots")
 	if garage_shots_index >= 0 and garage_shots_index + 1 < user_args.size():
 		var garage_shots := Node.new()
@@ -901,6 +923,8 @@ func _notification(what: int) -> void:
 			_save_drive_location()
 		if _shell != null:
 			_shell.save_settings()
+		if _controls != null:
+			_controls.save()
 		await _shutdown_audio_and_quit()
 
 func _save_drive_location() -> void:
@@ -1051,7 +1075,8 @@ func _process(delta: float) -> void:
 	# In-world actions only count on the Drive screen; the edge counts are consumed
 	# every frame either way so a press in a menu never arrives later.
 	var in_drive := _screen == "drive"
-	if in_drive and world_state == "running" and get_tree().get_nodes_in_group("address_teleport_open").is_empty() and Input.is_action_just_pressed("rg_npc_truck"):
+	var truck_presses: int = _input_map.consume_npc_truck()
+	if in_drive and world_state == "running" and get_tree().get_nodes_in_group("address_teleport_open").is_empty() and truck_presses > 0:
 		_simulation.request_npc_truck(not Input.is_key_pressed(KEY_SHIFT), 70.0)
 	var camera_presses: int = _input_map.consume_cycle_camera()
 	var view_presses: int = _input_map.consume_cycle_view()
@@ -1318,11 +1343,38 @@ func _user_dir() -> String:
 
 var _user_dir_override: String = ""
 
-func _build_shell(user_args: PackedStringArray) -> void:
+func _apply_user_dir_flag(user_args: PackedStringArray) -> void:
 	var dir_index := user_args.find("--shell-user-dir")
 	if dir_index >= 0 and dir_index + 1 < user_args.size():
 		_user_dir_override = user_args[dir_index + 1]
 		DirAccess.make_dir_recursive_absolute(_user_dir_override)
+
+# The control configuration (R5b): schema, default profiles and the player's
+# user://controls.json, loaded before anything reads a device. A broken file
+# never stops the game: defaults, the bad file kept as controls.json.bak.
+func _build_controls(user_args: PackedStringArray) -> void:
+	_apply_user_dir_flag(user_args)
+	_controls = ClassDB.instantiate("RgControls")
+	_controls.name = "Controls"
+	add_child(_controls)
+	var report: Dictionary = _controls.initialize(_rg_data_path(""), _user_dir())
+	if not bool(report.get("ok", false)):
+		push_error("RG_CONTROLS initialise failed: %s" % report.get("error", "?"))
+		return
+	print("RG_CONTROLS ready file=%s%s" % [report.get("path", ""), " (new)" if bool(report.get("file_missing", false)) else ""])
+	if str(report.get("message", "")) != "":
+		print("RG_CONTROLS warning: %s" % report["message"])
+		for line in report.get("dropped", PackedStringArray()):
+			print("RG_CONTROLS dropped: %s" % line)
+
+func get_controls() -> Node:
+	return _controls
+
+func get_input_map() -> Node:
+	return _input_map
+
+func _build_shell(user_args: PackedStringArray) -> void:
+	_apply_user_dir_flag(user_args)
 	_shell = ClassDB.instantiate("RgShell")
 	_shell.name = "Shell"
 	add_child(_shell)
@@ -1336,7 +1388,10 @@ func _build_shell(user_args: PackedStringArray) -> void:
 	_shell_ui.name = "ShellUi"
 	_shell_ui.set_script(load("res://scripts/shell_ui.gd"))
 	_shell_ui.shell = _shell
-	_shell_ui.binding_labels_path = _rg_data_path("controls/binding_labels.json")
+	_shell_ui.fixed_keys_path = _rg_data_path("controls/fixed_keys.json")
+	_shell_ui.controls = _controls
+	_shell_ui.input_map = _input_map
+	_shell_ui.controls_changed.connect(func(): _input_map.sync_menu_actions())
 	_shell_ui.menu_item_chosen.connect(func(id: String): _apply_transition(_shell.menu_item(id)))
 	_shell_ui.spawn_chosen.connect(func(id: String): _apply_transition(_shell.spawn_picked(id)))
 	_shell_ui.back_requested.connect(func(): _apply_transition(_shell.back()))
@@ -1397,6 +1452,8 @@ func _apply_transition(transition: Dictionary) -> void:
 					_simulation.reset_vehicle_to_spawn()
 			"save_settings":
 				_shell.save_settings()
+			"save_controls":
+				_controls.save()
 			"quit":
 				_quit_game()
 
@@ -1409,6 +1466,7 @@ func _show_screen(screen_name: String) -> void:
 		_enter_configurator()
 	else:
 		_free_thumbs()
+	_input_map.suspended = screen_name == "controls" # the controls screen reads devices itself
 	_shell_ui.show_screen(screen_name)
 	_set_world_ui_visible(screen_name == "drive" or screen_name == "pause")
 	if screen_name != "loading":
@@ -1492,6 +1550,10 @@ func _on_escape() -> void:
 		"vehicle_select", "change_car":
 			# an open filter panel takes the Esc first
 			if not _shell_ui.browser_consume_back():
+				_apply_transition(_shell.back())
+		"controls":
+			# a running capture / calibration takes the Esc first
+			if not _shell_ui.controls_consume_back():
 				_apply_transition(_shell.back())
 		"spawn_picker", "credits", "settings", "loading", "configurator":
 			_apply_transition(_shell.back())

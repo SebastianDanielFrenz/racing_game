@@ -26,7 +26,7 @@ extends Node
 const TIMEOUT_S := 60.0
 const TIMEOUT_REAL_S := 400.0
 const EXPECTED_MAIN_ITEMS := ["free_roam", "garage", "settings", "credits", "quit"]
-const EXPECTED_PAUSE_ITEMS := ["resume", "reset_car", "change_car", "garage", "settings", "main_menu"]
+const EXPECTED_PAUSE_ITEMS := ["resume", "reset_car", "change_car", "garage", "settings", "controls", "main_menu"]
 
 var main: Node
 var _checks := 0
@@ -110,74 +110,70 @@ func _label_texts(node: Node, into: Array) -> void:
 		_label_texts(child, into)
 
 # The pad-binding changes of 2026-10-05 (owner: "Reset car should never be on the controller"):
-# Y arms the nitrous switch instead, the driving-view switch moved from D-pad right to RB. Read
-# from the live InputMap the controls view lists, and from that view's own rows.
-func _joy_buttons(action: String) -> Array:
+# Y arms the nitrous switch instead, the driving-view switch moved from D-pad right to RB. Since R5b
+# these are the built-in default profiles (data/controls/defaults/*.json, read by rg::Controls); the
+# settings screen only links to the controls screen (controls_test.gd covers that screen).
+func _default_pad_buttons(defaults: Dictionary, action: String) -> Array:
 	var buttons: Array = []
-	for event in InputMap.action_get_events(action):
-		if event is InputEventJoypadButton:
-			buttons.append((event as InputEventJoypadButton).button_index)
+	for b in defaults.get("bindings", {}).get(action, []):
+		if str(b.get("type", "")) == "joy_button":
+			buttons.append(int(b["button"]))
 	buttons.sort()
 	return buttons
 
-# The keys label of the controls-view row whose name label starts with `label_prefix`.
-func _binding_keys(texts: Array, label_prefix: String) -> String:
-	for i in range(texts.size() - 1):
-		if str(texts[i]).begins_with(label_prefix):
-			return str(texts[i + 1])
-	return "(row missing)"
-
 func _check_bindings(ui: CanvasLayer) -> void:
-	for action in ["rg_reset_car", "rg_toggle_nitrous", "rg_cycle_view", "rg_cycle_drone_target", "rg_cam_up"]:
-		if not _check(InputMap.has_action(action), "input action %s exists" % action):
-			return
-	_check(_joy_buttons("rg_reset_car").is_empty(), "no gamepad button resets the car (pad buttons %s)" % str(_joy_buttons("rg_reset_car")))
-	_check(_joy_buttons("rg_toggle_nitrous") == [JOY_BUTTON_Y], "gamepad Y is the nitrous arm toggle (pad buttons %s)" % str(_joy_buttons("rg_toggle_nitrous")))
-	_check(_joy_buttons("rg_cycle_view") == [JOY_BUTTON_RIGHT_SHOULDER], "the driving-view switch is on RB (pad buttons %s)" % str(_joy_buttons("rg_cycle_view")))
-	_check(_joy_buttons("rg_cycle_drone_target") == [JOY_BUTTON_DPAD_RIGHT], "D-pad right is only the next drone target now (pad buttons %s)" % str(_joy_buttons("rg_cycle_drone_target")))
+	var path: String = main._rg_data_path("controls/defaults/gamepad.json")
+	var parsed = JSON.parse_string(FileAccess.get_file_as_string(path))
+	if not _check(parsed is Dictionary, "the default gamepad profile loads (%s)" % path):
+		return
+	var defaults: Dictionary = parsed
+	_check(_default_pad_buttons(defaults, "reset_car").is_empty(), "no gamepad button resets the car (pad buttons %s)" % str(_default_pad_buttons(defaults, "reset_car")))
+	_check(_default_pad_buttons(defaults, "toggle_nitrous") == [JOY_BUTTON_Y], "gamepad Y is the nitrous arm toggle (pad buttons %s)" % str(_default_pad_buttons(defaults, "toggle_nitrous")))
+	_check(_default_pad_buttons(defaults, "cycle_view") == [JOY_BUTTON_RIGHT_SHOULDER], "the driving-view switch is on RB (pad buttons %s)" % str(_default_pad_buttons(defaults, "cycle_view")))
+	_check(_default_pad_buttons(defaults, "cycle_drone_target") == [JOY_BUTTON_DPAD_RIGHT], "D-pad right is only the next drone target now (pad buttons %s)" % str(_default_pad_buttons(defaults, "cycle_drone_target")))
 	var y_users: Array = []
 	var rb_users: Array = []
-	for action in InputMap.get_actions():
-		if not str(action).begins_with("rg_"):
-			continue
-		var buttons: Array = _joy_buttons(str(action))
+	for action in defaults.get("bindings", {}).keys():
+		var buttons: Array = _default_pad_buttons(defaults, str(action))
 		if buttons.has(JOY_BUTTON_Y):
 			y_users.append(str(action))
 		if buttons.has(JOY_BUTTON_RIGHT_SHOULDER):
 			rb_users.append(str(action))
 	y_users.sort()
 	rb_users.sort()
-	_check(y_users == ["rg_toggle_nitrous"], "Y is bound to nothing but the nitrous arm (%s)" % ", ".join(y_users))
-	_check(rb_users == ["rg_cam_up", "rg_cycle_view"], "RB is the driving-view switch and free cam up only - different modes (%s)" % ", ".join(rb_users))
-	# The read-only controls view shows the same.
-	var texts: Array = []
-	_label_texts(ui, texts)
-	var reset_keys: String = _binding_keys(texts, "Reset car to its spawn")
-	_check(reset_keys == "R", "the controls view lists the reset as keyboard R only ('%s')" % reset_keys)
-	var nitrous_keys: String = _binding_keys(texts, "Nitrous arm")
-	_check(nitrous_keys.contains("Pad") and not nitrous_keys.contains("Pad Right"), "the controls view lists the nitrous arm on a pad button ('%s')" % nitrous_keys)
-	var view_keys: String = _binding_keys(texts, "Next driving view")
-	_check(view_keys.contains("B") and view_keys.contains("Pad"), "the controls view lists the driving view on B and a pad button ('%s')" % view_keys)
-	print("RG_SHELL_TEST controls view: reset='%s' nitrous='%s' view='%s'" % [reset_keys, nitrous_keys, view_keys])
+	_check(y_users == ["toggle_nitrous"], "Y is bound to nothing but the nitrous arm (%s)" % ", ".join(y_users))
+	_check(rb_users == ["cam_move_y", "cycle_view"], "RB is the driving-view switch and free cam up only - different modes (%s)" % ", ".join(rb_users))
+	# the live keyboard profile still has the reset on R only (the first run: nothing was rebound)
+	var controls: Node = main.get_controls()
+	var reset_keys := PackedStringArray()
+	for r in controls.get_rows("keyboard"):
+		if str(r["action"]) == "reset_car":
+			for bnd in r["bindings"]:
+				reset_keys.append(str(bnd["text"]))
+	_check(", ".join(reset_keys) == "R", "the keyboard resets the car on R only ('%s')" % ", ".join(reset_keys))
+	# the settings screen links to the controls screen instead of a read-only list
+	_check(ui.get_button("controls") != null, "the settings screen has a Controls button")
+	print("RG_SHELL_TEST controls: reset='%s'" % ", ".join(reset_keys))
 
-# A real gamepad Y press (parsed input event) flips the nitrous_arm control channel once per press.
+# A gamepad Y press flips the nitrous_arm control channel once per press. A headless run has no real pad,
+# so a simulated one (its own SDL GUID, slot 901) is registered with RgControls and its Y button is fed
+# through input_map.gd's test snapshot - the same path a real pad takes (RgControls.evaluate).
 func _check_nitrous_toggle() -> void:
 	var sim: Node = main._simulation
+	var input_map: Node = main.get_input_map()
+	var controls: Node = main.get_controls()
 	await _wait_until(func(): return main.world_state == "running", 10.0)
+	controls.joypad_connected(901, "030000005e040000ea02000000000000", "Xbox Wireless Controller", 0x045e, 0x02ea, true)
 	var before: float = sim.get_control("nitrous_arm")
 	_check(before == 0.0, "the nitrous arm switch starts off (%s)" % before)
 	for expected in [1.0, 0.0]:
-		var down := InputEventJoypadButton.new()
-		down.button_index = JOY_BUTTON_Y
-		down.pressed = true
-		Input.parse_input_event(down)
+		input_map.set_test_snapshot({"pads": [{"slot": 901, "buttons": PackedInt32Array([JOY_BUTTON_Y]), "axes": PackedFloat32Array([0, 0, 0, 0, 0, 0])}]})
 		await _wait_seconds(0.15)
-		var up := InputEventJoypadButton.new()
-		up.button_index = JOY_BUTTON_Y
-		up.pressed = false
-		Input.parse_input_event(up)
+		input_map.set_test_snapshot({"pads": [{"slot": 901, "buttons": PackedInt32Array(), "axes": PackedFloat32Array([0, 0, 0, 0, 0, 0])}]})
 		await _wait_seconds(0.15)
 		_check(sim.get_control("nitrous_arm") == expected, "a Y press flips the nitrous_arm channel to %s (is %s)" % [expected, sim.get_control("nitrous_arm")])
+	input_map.set_test_snapshot({})
+	controls.joypad_disconnected(901)
 
 # Free roam -> flat world -> Drive. Returns whether the Drive screen was reached.
 func _start_flat_world(round_name: String) -> bool:
@@ -313,7 +309,7 @@ func _run() -> void:
 		var pause_ids := _sorted_ids(ui)
 		var expected_pause: Array = EXPECTED_PAUSE_ITEMS.duplicate()
 		expected_pause.sort()
-		_check(pause_ids == expected_pause, "pause menu is exactly Resume | Reset car | Change car | Garage | Settings | Main menu (has %s)" % ", ".join(pause_ids))
+		_check(pause_ids == expected_pause, "pause menu is exactly Resume | Reset car | Change car | Garage | Settings | Controls | Main menu (has %s)" % ", ".join(pause_ids))
 		var sim: Node = main._simulation
 		_check(sim.is_paused(), "the simulation is paused")
 		# the pause takes effect on the sim thread: let a tick in flight finish first

@@ -15,6 +15,9 @@ extends CanvasLayer
 # controls forward the player's values to RgGarage.set_option and show what it
 # answers - this script knows no range, no whitelist and no vehicle.
 #
+# R5b: the controls screen (Settings -> Controls, pause menu -> Controls) is controls_ui.gd, built over
+# RgControls (rg_core's rg::Controls); this script only instantiates it and relays its signals.
+#
 # The loading screen is loading_overlay.gd (it needs the per-frame start-up
 # numbers); the drive screen is no screen at all (this layer hides itself).
 #
@@ -35,12 +38,15 @@ signal garage_area_chosen(area_id: String)
 signal garage_option_changed(option_id: String)
 signal garage_save_requested
 signal garage_drive_requested
+signal controls_changed # a binding / tuning changed on the controls screen
 
 const BOOT_SECONDS := 1.5
 const TITLE := "racing_game"
 
 var shell: Node # RgShell
-var binding_labels_path: String = "" # data/controls/binding_labels.json
+var fixed_keys_path: String = "" # data/controls/fixed_keys.json (keys the controls screen lists but cannot rebind)
+var controls: Node # RgControls (R5b)
+var input_map: Node # input_map.gd (kept for the controls screen's tests)
 var screen: String = "" # the screen built now ("" before the first)
 var garage: Node # RgGarage (vehicle select / configurator view-models)
 var garage_vehicle: String = "" # the configurator's car (RgShell.get_garage_vehicle)
@@ -54,6 +60,7 @@ var _setting_displays: Dictionary = {} # key -> Label with the shown value
 var _setting_notes: Dictionary = {} # key -> Label for a validation message
 var thumbs: Node                                # car_thumbnails.gd while a browser screen is up (main.gd owns it)
 var _browser: Control                          # car_browser_ui.gd on the vehicle_select / change_car screens
+var _controls_ui: Control                      # controls_ui.gd on the controls screen
 var _option_controls: Dictionary = {}          # configurator: option id -> control
 var _option_values: Dictionary = {}            # configurator: option id -> Label with the shown value
 var _option_notes: Dictionary = {}             # configurator: option id -> Label with a rejection
@@ -87,6 +94,7 @@ func show_screen(screen_name: String) -> void:
 	_option_notes.clear()
 	_area_buttons.clear()
 	_browser = null
+	_controls_ui = null
 	_option_box = null
 	_status_label = null
 	screen = screen_name
@@ -109,6 +117,8 @@ func show_screen(screen_name: String) -> void:
 			_build_browser(screen_name)
 		"configurator":
 			_build_configurator()
+		"controls":
+			_build_controls()
 		_:
 			visible = false
 			return
@@ -336,7 +346,12 @@ func _build_settings() -> void:
 		body.add_child(_label(str(section["title"]), 24, HORIZONTAL_ALIGNMENT_LEFT))
 		for def in section["settings"]:
 			body.add_child(_setting_row(def))
-	_add_bindings_view(body)
+	body.add_child(_label("Controls", 24, HORIZONTAL_ALIGNMENT_LEFT))
+	var controls_row := HBoxContainer.new()
+	controls_row.add_theme_constant_override("separation", 12)
+	body.add_child(controls_row)
+	_button(controls_row, "controls", "Controls...", func(): menu_item_chosen.emit("controls"), 240)
+	controls_row.add_child(_label("Rebind keys, buttons, axes and pedals per device; the choices are remembered per device.", 13, HORIZONTAL_ALIGNMENT_LEFT, true))
 	_button(page["footer"], "reset_settings", "Reset to defaults", func():
 		shell.reset_all_settings()
 		for key in _setting_controls.keys():
@@ -434,55 +449,27 @@ func _apply_setting(key: String, value: Variant) -> void:
 		(_setting_displays[key] as Label).text = str(shell.get_setting_display(key))
 	setting_changed.emit(key)
 
-# ---- bindings view (read-only; rebinding is deferred) --------------------------
+# ---- controls (R5b) -------------------------------------------------------------------------
 
-func _event_text(event: InputEvent) -> String:
-	if event is InputEventKey:
-		return (event as InputEventKey).as_text_physical_keycode().replace(" (Physical)", "")
-	if event is InputEventJoypadButton:
-		var text := (event as InputEventJoypadButton).as_text()
-		var open := text.find("(")
-		if open >= 0:
-			var inner := text.substr(open + 1)
-			var cut := inner.find(",")
-			if cut < 0:
-				cut = inner.find(")")
-			if cut > 0:
-				return "Pad " + inner.substr(0, cut)
-		return text
-	return event.as_text()
+func _build_controls() -> void:
+	var ui := Control.new()
+	ui.set_script(load("res://scripts/controls_ui.gd"))
+	ui.name = "ControlsUi"
+	ui.controls = controls
+	ui.fixed_keys_path = fixed_keys_path
+	ui.back_requested.connect(func(): back_requested.emit())
+	ui.changed.connect(func(): controls_changed.emit())
+	_root.add_child(ui)
+	_controls_ui = ui
+	_buttons["back"] = ui.get_hook("back")
+	ui.focus_first_device()
 
-func _add_bindings_view(body: VBoxContainer) -> void:
-	body.add_child(_label("Controls", 24, HORIZONTAL_ALIGNMENT_LEFT))
-	body.add_child(_label("Read-only: rebinding is not available yet.", 13, HORIZONTAL_ALIGNMENT_LEFT, true))
-	var parsed = JSON.parse_string(FileAccess.get_file_as_string(binding_labels_path)) if binding_labels_path != "" else null
-	if not parsed is Dictionary:
-		body.add_child(_label("(the bindings list could not be read)", 14, HORIZONTAL_ALIGNMENT_LEFT, true))
-		return
-	for group in parsed.get("groups", []):
-		body.add_child(_label(str(group.get("title", "")), 18, HORIZONTAL_ALIGNMENT_LEFT))
-		for entry in group.get("actions", []):
-			var action := str(entry.get("action", ""))
-			var keys := PackedStringArray()
-			if InputMap.has_action(action):
-				for event in InputMap.action_get_events(action):
-					keys.append(_event_text(event))
-			_binding_row(body, str(entry.get("label", action)), ", ".join(keys) if not keys.is_empty() else "(unbound)")
-		for entry in group.get("fixed", []):
-			_binding_row(body, str(entry.get("label", "")), str(entry.get("keys", "")))
-		for line in group.get("analog", []):
-			body.add_child(_label(str(line), 14, HORIZONTAL_ALIGNMENT_LEFT, true))
+# Esc cancels a running capture / calibration first; true when it did.
+func controls_consume_back() -> bool:
+	return _controls_ui != null and _controls_ui.consume_back()
 
-func _binding_row(parent: VBoxContainer, label: String, keys: String) -> void:
-	var row := HBoxContainer.new()
-	row.add_theme_constant_override("separation", 12)
-	var name_label := _label(label, 15, HORIZONTAL_ALIGNMENT_LEFT)
-	name_label.custom_minimum_size = Vector2(520, 0)
-	row.add_child(name_label)
-	var keys_label := _label(keys, 15, HORIZONTAL_ALIGNMENT_LEFT)
-	keys_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	row.add_child(keys_label)
-	parent.add_child(row)
+func controls_screen() -> Control:
+	return _controls_ui
 
 # ---- garage: vehicle select ----------------------------------------------------
 
