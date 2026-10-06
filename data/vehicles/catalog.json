@@ -113,6 +113,30 @@
       }
     },
     {
+      "id": "car_sedan_gen_n2o",
+      "title": "Sedan 2.5 N2O",
+      "subtitle": "Nitrous test sedan",
+      "description": "The 2.5 litre simulated four-cylinder sedan with a wet nitrous kit: a 10 lb bottle and an Edelbrock 50 hp shot. Arm the kit (pad Y, N key), then full throttle in gear 1 or higher inside the controller's rpm window sprays. Unvalidated kit data (physics_sim N2O plan N5 pending).",
+      "body_type": "sedan",
+      "vehicle": "external/physics_sim/data/vehicles/car_sedan_gen_n2o.json",
+      "model": "external/physics_sim/data/models/car_sedan/car_sedan.glb",
+      "engine_bay": "front",
+      "chassis": {
+        "mass_kg": 1500.0,
+        "half_extents": [
+          2.0,
+          0.4,
+          0.15
+        ],
+        "spawn_z_m": 0.6,
+        "source": "the car_sedan chassis proxy: physics_sim car_sedan_gen_n2o.json is car_sedan_gen with a nitrous kit and keeps car_sedan's wheel layout (60/40 split), mass and model"
+      },
+      "visual": {
+        "paint": "#d9822b",
+        "rim": "#2b2d31"
+      }
+    },
+    {
       "id": "car_sedan_comfort",
       "title": "Sedan 3.0 Comfort",
       "subtitle": "Soft springs, comfort tyres",

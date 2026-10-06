@@ -2,6 +2,7 @@
 
 #include "frame_convert.h"
 #include "rg/route_check.h"
+#include "rg/nitrous_info.h"
 
 #include "g2m/phys/height_tile_loader.h"
 
@@ -806,6 +807,31 @@ godot::Dictionary RgSimulation::get_vehicle_powertrain(const String& vehicle_nam
     return d;
 }
 
+// Nitrous kit state for the HUD (rg::nitrous_hud, physics_sim N2O N1/N2): {present, armed, spraying, state, cut_reason,
+// bottle_kg, capacity_kg, bottle_bar, flow_g_s, kit_fuel_g_s, retard_deg, charge_temperature_k, lambda_combined}.
+// "present" is false (and nothing else is set) for a car without a kit.
+godot::Dictionary RgSimulation::get_vehicle_nitrous(const String& vehicle_name) const {
+    godot::Dictionary d;
+    if (!has_vehicle(vehicle_name)) return d;
+    const rg::NitrousInfo info = rg::nitrous_info(session_->vehicle_desc());
+    d["present"] = info.present;
+    if (!info.present) return d;
+    const rg::NitrousHud h = rg::nitrous_hud(info, frame_snapshot().powertrain, session_->get_control("nitrous_arm"));
+    d["armed"] = h.armed;
+    d["spraying"] = h.spraying;
+    d["state"] = String(std::string(rg::nitrous_state_label(h.present, h.armed, h.spraying, h.safety_cut)).c_str());
+    d["cut_reason"] = String(std::string(rg::nitrous_cut_name(h.safety_cut)).c_str());
+    d["bottle_kg"] = h.bottle_kg;
+    d["capacity_kg"] = h.bottle_capacity_kg;
+    d["bottle_bar"] = h.bottle_bar;
+    d["flow_g_s"] = h.flow_g_s;
+    d["kit_fuel_g_s"] = h.kit_fuel_g_s;
+    d["retard_deg"] = h.retard_deg;
+    d["charge_temperature_k"] = h.charge_temperature_k;
+    d["lambda_combined"] = h.lambda_combined;
+    return d;
+}
+
 godot::Dictionary RgSimulation::get_vehicle_speed_limit(const String& vehicle_name) const {
     godot::Dictionary d;
     if (!has_vehicle(vehicle_name)) return d;
@@ -1170,6 +1196,7 @@ void RgSimulation::_bind_methods() {
     godot::ClassDB::bind_method(D_METHOD("get_vehicle_gauge_info", "vehicle_name"), &RgSimulation::get_vehicle_gauge_info);
     godot::ClassDB::bind_method(D_METHOD("get_vehicle_speed_limit", "vehicle_name"), &RgSimulation::get_vehicle_speed_limit);
     godot::ClassDB::bind_method(D_METHOD("get_vehicle_powertrain", "vehicle_name"), &RgSimulation::get_vehicle_powertrain);
+    godot::ClassDB::bind_method(D_METHOD("get_vehicle_nitrous", "vehicle_name"), &RgSimulation::get_vehicle_nitrous);
     godot::ClassDB::bind_method(D_METHOD("get_vehicle_ground_speed_mps", "vehicle_name"), &RgSimulation::get_vehicle_ground_speed_mps);
 }
 

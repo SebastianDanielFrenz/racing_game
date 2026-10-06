@@ -180,11 +180,11 @@ TEST_CASE("controls: the default profiles equal the bindings the game had before
     c.joypad_connected(0, kGuidA, "Xbox Controller", 0x045e, 0x02ea, true);
     const std::string pad_key = c.key_for_slot(0);
 
-    // Keyboard: the keys of the old project.godot [input] section and input_map.gd.
+    // Keyboard: the keys of the old project.godot [input] section and input_map.gd (plus N = nitrous arm, S1 2026-10-06: B is taken by the driving view, N is the drone-follow target key only in another mode).
     const std::map<std::string, std::string> keyboard = {
         {"steer", "key:A:-1, key:D"}, {"throttle", "key:W"}, {"brake", "key:S"}, {"handbrake", "key:Space"}, {"clutch", "key:C"},
         {"shift_up", "key:E"}, {"shift_down", "key:Q"}, {"ignition", "key:I"}, {"starter", "key:K"}, {"auto_shift", "key:F5"},
-        {"toggle_nitrous", ""}, {"flip_upright", "key:F"}, {"npc_truck", "key:T"}, {"get_out", "key:G"}, {"cycle_view", "key:B"},
+        {"toggle_nitrous", "key:N"}, {"flip_upright", "key:F"}, {"npc_truck", "key:T"}, {"get_out", "key:G"}, {"cycle_view", "key:B"},
         {"cycle_camera", "key:Tab"}, {"cycle_drone_target", "key:N"}, {"cam_zoom_in", "key:PageUp"}, {"cam_zoom_out", "key:PageDown"},
         {"cam_move_x", "key:A:-1, key:D"}, {"cam_move_z", "key:S:-1, key:W"},
         {"cam_move_y", "key:Q:-1, key:Ctrl:-1, key:E, key:Space"}, {"cam_fast", "key:Shift"},

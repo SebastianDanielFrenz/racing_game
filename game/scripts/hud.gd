@@ -212,6 +212,19 @@ func _process(_delta: float) -> void:
 		var aero: Dictionary = _simulation.get_aero_state()
 		if bool(aero.get("enabled",false)):
 			lines.append("aero: air %.0f km/h | drag %.0f N | downforce %.0f N | front %.0f%% | wing %+.1f deg | fan %.1f kW" % [float(aero.airspeed_m_s)*3.6,float(aero.drag_n),float(aero.downforce_n),float(aero.front_balance)*100.0,float(aero.wing_pitch_offset_deg),float(aero.fan_power_w)/1000.0])
+		# Nitrous (physics_sim N2O): only a car with a kit (car_sedan_gen_n2o) has this line.
+		var n2o: Dictionary = _simulation.get_vehicle_nitrous(vehicle_name)
+		if bool(n2o.get("present", false)):
+			var n2o_state: String = str(n2o.get("state", "off"))
+			var n2o_line := "nitrous %s (N key / pad Y: arm)   bottle %.2f/%.2f kg  %.0f bar   N2O %.0f g/s  kit fuel %.0f g/s" % [
+				n2o_state, float(n2o.get("bottle_kg", 0.0)), float(n2o.get("capacity_kg", 0.0)), float(n2o.get("bottle_bar", 0.0)),
+				float(n2o.get("flow_g_s", 0.0)), float(n2o.get("kit_fuel_g_s", 0.0))]
+			if bool(n2o.get("spraying", false)):
+				n2o_line += "   charge %.0f K  lambda %.2f  retard %.1f deg" % [
+					float(n2o.get("charge_temperature_k", 0.0)), float(n2o.get("lambda_combined", 0.0)), float(n2o.get("retard_deg", 0.0))]
+			if str(n2o.get("cut_reason", "")) != "":
+				n2o_line += "   safety cut: %s" % str(n2o.get("cut_reason", ""))
+			lines.append(n2o_line)
 		var truck: Dictionary = _simulation.get_npc_truck_state()
 		lines.append("T: truck ahead | Shift+T: remove | %s | %.0f km/h" % [str(truck.get("message", "")), float(truck.get("speed_kph", 0))])
 		if bool(truck.get("active", false)):
