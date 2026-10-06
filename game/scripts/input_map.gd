@@ -205,7 +205,7 @@ func _input(event: InputEvent) -> void:
 	if event is InputEventMouseButton and event.pressed and controls.is_mouse_button_bound("mouse_capture", event.button_index):
 		Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 		_mouse_captured = true
-	elif event is InputEventKey and event.pressed and not event.echo and event.keycode == KEY_ESCAPE:
+	elif (event is InputEventKey and event.pressed and not event.echo and event.keycode == KEY_ESCAPE) 			or (event is InputEventJoypadButton and event.pressed and event.button_index == JOY_BUTTON_START):
 		Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 		_mouse_captured = false
 	elif event is InputEventMouseMotion and _mouse_captured:

@@ -170,6 +170,7 @@ func _ready() -> void:
 	# Window close is handled in _notification: the audio players are stopped and the
 	# audio thread given time to release their generator playbacks before quitting.
 	get_tree().set_auto_accept_quit(false)
+	preload("res://scripts/ui_scale.gd").apply(get_tree())
 	var user_args := OS.get_cmdline_user_args()
 	if "--bindings-test" in user_args:
 		_run_bindings_test()
@@ -1174,6 +1175,9 @@ func _input(event: InputEvent) -> void:
 			_on_escape()
 		elif event.keycode == KEY_P and (_screen == "drive" or _screen == "pause") and not _typing():
 			_toggle_pause()
+	# Pad Menu/Start opens and closes the pause menu like Esc (owner 2026-10-06).
+	if _shell != null and event is InputEventJoypadButton and event.pressed and event.button_index == JOY_BUTTON_START:
+		_on_escape()
 
 # --- garage (R6) ------------------------------------------------------------------
 

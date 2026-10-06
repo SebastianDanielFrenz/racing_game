@@ -96,6 +96,10 @@ struct StartupProgress {
     enum Stage : int { NotStarted = 0, WaitingForGate = 1, Priming = 2, Spawning = 3, Done = 4 };
     std::atomic<int> stage{NotStarted};
     std::atomic<std::uint32_t> missing_required{0};
+    // Largest missing_required seen while waiting for the gate: the gate's
+    // full key set at its first update, so (gate_total - missing_required) /
+    // gate_total is a real loading fraction (the loading screen's bar).
+    std::atomic<std::uint32_t> gate_total{0};
     std::atomic<std::uint32_t> inflight{0};
     std::atomic<std::uint32_t> resident_l0{0};
     std::atomic<std::uint32_t> failed{0};

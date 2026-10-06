@@ -29,7 +29,10 @@ var garage: Node # RgGarage, set by main.gd before add_child
 var vehicle_id: String = ""
 var vehicle_info: Dictionary = {}
 
-var _container: SubViewportContainer
+# A TextureRect showing the SubViewport, not a stretching SubViewportContainer:
+# under the root content_scale_factor (ui_scale.gd) a container would render
+# the car at canvas size (1/factor of the physical pixels) and blur it.
+var _container: TextureRect
 var _viewport: SubViewport
 var _world_root: Node3D
 var _camera: Camera3D
@@ -50,9 +53,10 @@ var _panel_frac: float = 0.0  # smoothed share of the screen the panel covers
 
 func _ready() -> void:
 	layer = 20
-	_container = SubViewportContainer.new()
+	_container = TextureRect.new()
 	_container.name = "Container"
-	_container.stretch = true
+	_container.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	_container.stretch_mode = TextureRect.STRETCH_SCALE
 	_container.set_anchors_preset(Control.PRESET_FULL_RECT)
 	_container.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(_container)
@@ -63,11 +67,19 @@ func _ready() -> void:
 	_viewport.positional_shadow_atlas_size = 4096
 	_viewport.handle_input_locally = false
 	_viewport.render_target_update_mode = SubViewport.UPDATE_ALWAYS
-	_container.add_child(_viewport)
+	add_child(_viewport)
+	_container.texture = _viewport.get_texture()
+	_container.resized.connect(_fit_viewport)
+	_fit_viewport()
 	_world_root = Node3D.new()
 	_world_root.name = "GarageWorld"
 	_viewport.add_child(_world_root)
 	_build_set()
+
+# Render at physical pixels: the rect's canvas size times the root's content scale.
+func _fit_viewport() -> void:
+	var px := (_container.size * get_tree().root.content_scale_factor).round()
+	_viewport.size = Vector2i(maxi(int(px.x), 1), maxi(int(px.y), 1))
 
 func _exit_tree() -> void:
 	_cars.clear()
@@ -150,7 +162,7 @@ func _process(delta: float) -> void:
 	if pos.distance_to(look) > 0.001:
 		_camera.look_at(look, Vector3.UP)
 	# shift the view so the car centres in the part of the screen the panel leaves free
-	var size := Vector2(_viewport.size)
+	var size := _container.size # canvas units, like panel_px
 	var target_shift := 0.0
 	if panel_side != "" and size.x > 1.0:
 		target_shift = (panel_px * 0.5 / size.x) * (-1.0 if panel_side == "left" else 1.0)

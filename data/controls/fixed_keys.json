@@ -2,7 +2,7 @@
   "format": "rg.fixed_keys/1",
   "note": "Keys the controls screen lists but does not let you rebind (game/scripts/controls_ui.gd): they are handled directly in a script, not through rg::Controls' action schema. This file DESCRIBES what the code does and must be kept in step with it by hand. Everything else in the game is a rebindable action (data/controls/actions.json).",
   "entries": [
-    {"keys": "Esc or P", "label": "Pause menu (Esc also closes a panel or releases the mouse first; the menu 'Back' action is rebindable)"},
+    {"keys": "Esc, P or pad Menu/Start", "label": "Pause menu (Esc also closes a panel or releases the mouse first; the menu 'Back' action is rebindable)"},
     {"keys": "F6", "label": "Seat adjustment"},
     {"keys": "F7", "label": "Traffic settings"},
     {"keys": "F10", "label": "Teleport to an address"},

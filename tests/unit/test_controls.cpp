@@ -212,7 +212,7 @@ TEST_CASE("controls: the default profiles equal the bindings the game had before
     const std::map<std::string, std::string> gamepad = {
         {"steer", "axis:0:full:dz0.08"}, {"throttle", "axis:5:positive:dz0.02"}, {"brake", "axis:4:positive:dz0.02"},
         {"handbrake", "btn:0"}, {"clutch", "btn:9"}, {"shift_up", "btn:1"}, {"shift_down", "btn:2"}, {"ignition", "btn:11"},
-        {"starter", "btn:6"}, {"auto_shift", "btn:13"}, {"toggle_nitrous", "btn:3"}, {"flip_upright", "btn:12"},
+        {"starter", ""}, {"auto_shift", "btn:13"}, {"toggle_nitrous", "btn:3"}, {"flip_upright", "btn:12"},
         {"cycle_view", "btn:10"}, {"cycle_camera", "btn:8"}, {"cycle_drone_target", "btn:14"}, {"cycle_mode", "btn:4"},
         {"cam_move_x", "axis:0:full:dz0.15"}, {"cam_move_z", "axis:1:full:dz0.15:inv"},
         {"cam_move_y", "btn:9:-1, btn:10, axis:4:positive:dz0.02:s-1, axis:5:positive:dz0.02"}, {"cam_fast", "btn:7"},
@@ -272,7 +272,7 @@ TEST_CASE("controls: two pads of one GUID are #1 and #2, #2 starts from #1 and g
     CHECK_FALSE(c.device(two)->inherits);
     CHECK(fmt_list(c.effective_bindings(two, "ignition")) == "btn:7");
     CHECK(fmt_list(c.effective_bindings(two, "starter")) == "btn:8");
-    CHECK(fmt_list(c.effective_bindings(one, "starter")) == "btn:6");
+    CHECK(fmt_list(c.effective_bindings(one, "starter")).empty());
     // Changing #1 afterwards no longer reaches #2.
     REQUIRE(c.bind(one, "ignition", 0, joy_button(9), true));
     CHECK(fmt_list(c.effective_bindings(two, "ignition")) == "btn:7");

@@ -15,7 +15,7 @@ extends CanvasLayer
 # running, first observed tick count" and "measured sim tick rate over last
 # window") - keep their wording.
 
-const KEY_HELP := "F7 traffic  F6 seat adjustment  Middle-click log location  Tab/right-stick click chase/cockpit (first/third person on foot)  B/RB next view (chase, bumper, cockpit, orbit, cinematic)  Esc/P pause  V/Back mode (drive/free cam/drone follow/on foot)  G get out (car below 2 m/s) | get in at the door (on foot: WASD move, Shift run, Space jump, G or pad X get in)  N or D-pad right next drone target  wheel/PgUp/PgDn drone zoom  F8 world (flat/real)  R reset car (keyboard)  Y(pad) nitrous arm  F flip upright  WASD drive | fly  E/Q shift | up/down  Space handbrake  C clutch  I ignition  K starter  F5 auto-shift  arrows/right stick/RMB+mouse look"
+# Key help removed (owner 2026-10-06): bindings live in Settings -> Controls (R5b).
 
 @export var simulation_path: NodePath
 @export var input_map_path: NodePath
@@ -243,6 +243,4 @@ func _process(_delta: float) -> void:
 	else:
 		lines.append("(no vehicle spawned)")
 
-	lines.append("")
-	lines.append(KEY_HELP)
 	_label.text = "\n".join(lines)

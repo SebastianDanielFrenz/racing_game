@@ -2,7 +2,7 @@
   "format": "rg.control_profile/1",
   "class": "gamepad",
   "name": "Gamepad",
-  "note": "Built-in default profile (PLAN.md R5b) for XInput / standard-mapped pads (and wheels with a standard mapping): the pad bindings the game always had, unchanged. Reset car is deliberately not on the pad (owner 2026-10-05).",
+  "note": "Built-in default profile (PLAN.md R5b) for XInput / standard-mapped pads (and wheels with a standard mapping): the pad bindings the game always had, unchanged. Reset car is deliberately not on the pad (owner 2026-10-05). Start (button 6) is hard-wired to the pause menu (owner 2026-10-06), and the starter has no pad default (owner: starter does not need a native controller key; bindable in Settings -> Controls).",
   "bindings": {
     "steer": [{"type": "joy_axis", "axis": 0, "deadzone": 0.08}],
     "throttle": [{"type": "joy_axis", "axis": 5, "span": "positive", "deadzone": 0.02}],
@@ -12,7 +12,6 @@
     "shift_up": [{"type": "joy_button", "button": 1}],
     "shift_down": [{"type": "joy_button", "button": 2}],
     "ignition": [{"type": "joy_button", "button": 11}],
-    "starter": [{"type": "joy_button", "button": 6}],
     "auto_shift": [{"type": "joy_button", "button": 13}],
     "toggle_nitrous": [{"type": "joy_button", "button": 3}],
     "flip_upright": [{"type": "joy_button", "button": 12}],

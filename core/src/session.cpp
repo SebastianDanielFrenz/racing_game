@@ -652,6 +652,9 @@ bool Session::gate_check() {
     status_.failed.store(gs.failed, std::memory_order_relaxed);
     if (StartupProgress* progress = config_.startup.get(); progress != nullptr && !have_vehicle_) {
         progress->missing_required.store(gs.missing_required, std::memory_order_relaxed);
+        if (gs.missing_required > progress->gate_total.load(std::memory_order_relaxed)) {
+            progress->gate_total.store(gs.missing_required, std::memory_order_relaxed);
+        }
         progress->inflight.store(gs.inflight, std::memory_order_relaxed);
         progress->resident_l0.store(gs.resident, std::memory_order_relaxed);
         progress->failed.store(gs.failed, std::memory_order_relaxed);

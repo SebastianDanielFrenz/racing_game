@@ -103,7 +103,8 @@ public:
     // {state: "idle"|"loading"|"ready"|"error", message: String,
     //  resident_l0: int, missing_required: int, inflight: int, failed: int,
     //  stage: "opening"|"waiting_for_gate"|"priming"|"spawning"|"done",
-    //  prime_done: int, prime_total: int}. Non-blocking - safe to poll every
+    //  prime_done: int, prime_total: int, gate_total: int (largest missing_required
+    //  seen while streaming = the spawn gate's key set)}. Non-blocking - safe to poll every
     // frame from GDScript for a loading screen (see reap_init_thread()'s doc
     // comment for exactly why this never blocks). While "loading" the
     // figures come from the worker's rg::StartupProgress (R2.2 R9, live gate

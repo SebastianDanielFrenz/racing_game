@@ -6,9 +6,10 @@ extends CanvasLayer
 # rg::StartupProgress (R9): the stage, resident L0 tiles, required tiles still
 # missing, fetches in flight, failed fetches and priming ticks done of total.
 # The four start-up stages are listed with their state (done / current /
-# waiting) and the bar is a REAL fraction: it exists only while the physics
-# tiles are being primed (prime_done / prime_total) - the other stages have no
-# known total, so no bar is drawn for them rather than an invented one.
+# waiting) and the bar is a REAL fraction: spawn-area tiles resident out of the
+# gate's key set (gate_total, its first missing count) while streaming, then
+# priming ticks (prime_done / prime_total) - opening and spawning have no known
+# total, so no bar is drawn for them rather than an invented one.
 # The data attribution line (data/credits.json, via RgShell) sits at the foot.
 # A future XR build shows the same numbers on a world-space panel.
 
@@ -116,13 +117,19 @@ func show_loading(world_label: String, st: Dictionary, elapsed_s: float, footer:
 		step_lines.append("%s %s" % [mark, STAGE_TEXT[STAGES[i]]])
 	_steps.text = "\n".join(step_lines)
 	var total: int = int(st.get("prime_total", 0))
-	_bar.visible = stage == "priming" and total > 0
-	if _bar.visible:
+	var gate_total: int = int(st.get("gate_total", 0))
+	_bar.visible = (stage == "priming" and total > 0) or (stage == "waiting_for_gate" and gate_total > 0)
+	if stage == "priming" and total > 0:
 		_bar.value = clampf(float(st.get("prime_done", 0)) / float(total), 0.0, 1.0)
+	elif _bar.visible:
+		# Spawn-area tiles resident out of the gate's full key set (gate_total).
+		_bar.value = clampf(float(gate_total - int(st.get("missing_required", 0))) / float(gate_total), 0.0, 1.0)
 	var lines := PackedStringArray()
 	lines.append("L0 tiles resident %d   required missing %d   in flight %d   failed %d" % [
 		int(st.get("resident_l0", 0)), int(st.get("missing_required", 0)),
 		int(st.get("inflight", 0)), int(st.get("failed", 0))])
+	if stage == "waiting_for_gate" and gate_total > 0:
+		lines.append("spawn area tiles %d / %d" % [gate_total - int(st.get("missing_required", 0)), gate_total])
 	if total > 0:
 		lines.append("priming ticks %d / %d" % [int(st.get("prime_done", 0)), total])
 	lines.append("%.1f s" % elapsed_s)

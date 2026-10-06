@@ -358,7 +358,7 @@ godot::Dictionary RgSimulation::get_init_status() {
     }
     d["state"] = String(state);
     d["message"] = String(init_message_.c_str());
-    std::int64_t resident = 0, missing = 0, inflight = 0, failed = 0, prime_done = 0, prime_total = 0;
+    std::int64_t resident = 0, missing = 0, inflight = 0, failed = 0, prime_done = 0, prime_total = 0, gate_total = 0;
     const char* stage = "done";
     if (phase == InitPhase::Ready && session_) {
         const rg::StreamingStatus s = session_->streaming_status();
@@ -371,6 +371,7 @@ godot::Dictionary RgSimulation::get_init_status() {
         const rg::StartupProgress& p = *init_progress_;
         resident = p.resident_l0.load(std::memory_order_relaxed);
         missing = p.missing_required.load(std::memory_order_relaxed);
+        gate_total = p.gate_total.load(std::memory_order_relaxed);
         inflight = p.inflight.load(std::memory_order_relaxed);
         failed = p.failed.load(std::memory_order_relaxed);
         prime_done = p.prime_done.load(std::memory_order_relaxed);
@@ -385,6 +386,7 @@ godot::Dictionary RgSimulation::get_init_status() {
     }
     d["resident_l0"] = resident;
     d["missing_required"] = missing;
+    d["gate_total"] = gate_total;
     d["inflight"] = inflight;
     d["failed"] = failed;
     d["stage"] = String(stage);

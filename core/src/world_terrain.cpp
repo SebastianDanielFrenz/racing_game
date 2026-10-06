@@ -386,6 +386,16 @@ std::shared_ptr<const RoadSurfacePatch> WorldTerrain::road_surface_patch(const g
         auto empty=std::make_shared<RoadSurfacePatch>(g2m::RoadGeomTile{});
         geometry_cache_.emplace(key,empty);return empty;
     }
+    if(tile->meta.status!=g2m::Status::Ok &&
+       tile->meta.message.rfind("deriver g2m.roads.geom: roads.geom: ",0)==0) {
+        // The deriver's own validation rejected this tile (deterministic, e.g.
+        // utm32n/2/452/5428 "reference endpoints" near Koenigstein, 2026-10-06).
+        // Retrying cannot succeed and blocked the start-up gate for 30 s;
+        // degrade to smoothed terrain like a missing dependency.
+        std::fprintf(stderr,"RG_ROAD_SURFACE unavailable key=%s reason=deriver_rejected message=%s fallback=smoothed_terrain\n",g2m::to_string(key).c_str(),tile->meta.message.c_str());
+        auto empty=std::make_shared<RoadSurfacePatch>(g2m::RoadGeomTile{});
+        geometry_cache_.emplace(key,empty);return empty;
+    }
     if(tile->meta.status!=g2m::Status::Ok) {
         std::fprintf(stderr,"RG_ROAD_SURFACE fetch_failed key=%s message=%s\n",g2m::to_string(key).c_str(),tile->meta.message.c_str());
         return nullptr;
