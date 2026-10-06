@@ -434,6 +434,7 @@ R3/G3 consumer plan (2026-10-05): docs/g3_consumer_design.md - carve switch,
 ribbons, bridge decks, route acceptance harness and a proposed definition of
 the R3 route bound (Fz residual no worse than a calibrated 2 cm step, 3x static
 corner load cap, no chassis contact; owner question O-3). Slices S1-S14 there.
+S1 done (2026-10-06): pins bumped (physics_sim 24bdeae, geo2map_engine 072a321), own surfaces for the seven new surface kinds, N2O test cars (sedan and hypercar) with a HUD, and the road deck BVH build moved off the sim thread through physics_sim R2 (`rg::DeckInstaller`, option B of docs/g3_consumer_design.md 5.2).
 
 **G4: routing and map geometry.** Model: Opus for graph/routing design; Sonnet for map geometry.
 - Scope: A* + hierarchy, restrictions, guidance data, client map geometry.

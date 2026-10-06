@@ -433,6 +433,24 @@ Recommendation: A now, B when R2 lands (the owner agreed, O-1; the coordinator h
 Determinism test: shuffle the worker preparation order; BodyIds and
 `state_hash` must be equal.
 
+**As built (S1, 2026-10-06, option B at physics_sim 24bdeae):** `rg::DeckInstaller` (`core/include/rg/deck_installer.h`,
+`core/src/deck_installer.cpp`) owns two plain `std::thread`s (never `ps::jobs` workers: `create_shape` allocates) that
+turn a `RoadDeck` mesh into a `ps::MeshShape` (`make_deck_mesh_shape`) and build its `ps::ShapeHandle` with
+`World::create_shape`. `Session::sync_road_decks` hands it two lists in ascending `(way_id, start, end)` order: the
+REQUIRED decks (footprint within physics radius + 255 m of the focus, same rule as before) and PREFETCH decks (a
+further 600 m, `kDeckPrefetchMarginM`), which are only built. `update()` installs required decks with
+`create_body(desc, handle)` strictly in that order: a deck whose shape is not ready holds back every later one
+and the call returns false, so the existing gate freezes the clock; completion order never reaches a `BodyId`.
+K is now `kDeckInstallBudget` = 16 per attempt (install is O(1)) and an install no longer costs an extra frozen tick.
+A deck Jolt rejects fails on its worker (one stderr line, `stats().failed`) and does not block the rest. The start-up
+path (`sync_road_decks()` with budget 0) waits for the required shapes. `SessionConfig::legacy_deck_install` keeps
+the old path (shape built on the sim thread inside `create_body(desc)`, one deck per attempt) as the reference and
+the "before" for the measurement. Tests: `tests/unit/test_deck_installer.cpp` [deck_installer] - BodyIds and
+`state_hash` equal to the reference path for 1/2/4 workers with per-deck sleeps shuffling the completion order; strict
+order/hold-back; prefetch; rejected mesh. Sabotage (install any ready deck instead of holding back) fails 3 of the 5
+cases. Measurement: hidden `tests/unit/test_deck_install_perf.cpp` [.][realdata][perf][s1] drives the seven A66/B8
+structure points (~4.5 km at 45 m/s, paced to real time) once per mode and prints a `DECK_PERF` line.
+
 ### 5.3 Abutment joint (Opus, after the switch)
 
 What happens where the deck meets the carved approach:

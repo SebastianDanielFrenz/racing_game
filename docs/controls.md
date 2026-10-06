@@ -41,6 +41,8 @@ choosing the half; a pedal resting at +-1 is bound calibrated (rest -> opposite 
   version -> defaults, the bad file is kept as `controls.json.bak`; an entry that does not validate is
   dropped and reported, the rest loads. Saved when the screen is left and on window close.
 
+Nitrous (S1): the action `toggle_nitrous` (driving group, edge) toggles the plain 0/1 control channel `nitrous_arm`; default pad Y, key N. A car without a nitrous kit ignores it.
+
 A binding: `{type: key|joy_button|joy_axis|mouse_button|mouse_motion, key|button|axis, span:
 full|positive|negative, sign, deadzone, saturation, curve, sensitivity, invert, calibrated, cal_min,
 cal_max}`. Axis pipeline in order: calibration -> invert -> span -> deadzone/saturation -> curve ->
