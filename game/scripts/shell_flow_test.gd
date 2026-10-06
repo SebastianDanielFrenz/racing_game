@@ -328,6 +328,13 @@ func _run() -> void:
 		_check(_screen() == "settings", "Settings opens from the pause menu")
 		_press("back")
 		_check(_screen() == "pause", "Back from Settings returns to the pause menu (is '%s')" % _screen())
+		# pause -> controls -> Esc returns to the pause menu (the sim stays paused, the input map is live again)
+		_press("controls")
+		_check(_screen() == "controls" and sim.is_paused(), "Controls opens from the pause menu (screen '%s')" % _screen())
+		_check(main.get_input_map().suspended, "the input map is suspended on the controls screen")
+		_press_escape()
+		await _wait_until(func(): return _screen() == "pause", 5.0)
+		_check(_screen() == "pause" and not main.get_input_map().suspended, "Esc from Controls returns to the pause menu (is '%s')" % _screen())
 		_press("reset_car")
 		_check(_screen() == "drive" and not sim.is_paused(), "Reset car resumes the drive")
 		# pause -> main menu: the world goes away
