@@ -1,0 +1,13 @@
+{
+  "format": "rg.control_profile/1",
+  "class": "mouse",
+  "name": "Mouse",
+  "note": "Built-in default profile (PLAN.md R5b): right button captures the mouse for looking, the wheel zooms, motion looks. The middle button (log location) and Esc (release) are fixed keys.",
+  "bindings": {
+    "mouse_capture": [{"type": "mouse_button", "button": 2}],
+    "cam_zoom_in": [{"type": "mouse_button", "button": 4}],
+    "cam_zoom_out": [{"type": "mouse_button", "button": 5}],
+    "mouse_look_x": [{"type": "mouse_motion", "axis": 0}],
+    "mouse_look_y": [{"type": "mouse_motion", "axis": 1}]
+  }
+}
