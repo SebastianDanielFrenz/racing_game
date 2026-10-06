@@ -54,6 +54,7 @@ add_executable(rg_unit_tests
   test_camera_math.cpp
   test_cinematic_obstacles.cpp
   test_render_pose.cpp
+  test_surface_kinds.cpp
 )
 
 target_link_libraries(rg_unit_tests
