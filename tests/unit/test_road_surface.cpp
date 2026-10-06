@@ -198,3 +198,21 @@ TEST_CASE("Owner B8 crossing has no terrain protruding through its roof", "[.][r
   CHECK(roof_start->grade==Catch::Approx(start->grade).margin(1e-8));CHECK(roof_end->grade==Catch::Approx(end->grade).margin(1e-8));
  }
 }
+
+TEST_CASE("Bridge decks keep their last station whatever the span length", "[road_surface][deck]") {
+    // The deck mesh samples stations from+(to-from)*i/count. That value can sit one ulp past the profile end,
+    // which a served profile rejects ("station outside profile"); the deck then vanished (way 32275368 at 072a321).
+    int checked=0;
+    for(int k=0;k<400;++k) {
+        const double length=20+0.3731*k+1e-7*k;
+        auto tile=geometry(true);
+        auto& p=*tile.entries[0].profile;
+        p.reference.length_m=length;p.reference.segments[0].curve.length=length;
+        p.vertical.segments[0].length_m=length;
+        const auto decks=rg::build_road_decks(tile);
+        INFO("span length "<<length);
+        REQUIRE(decks.size()==1);
+        ++checked;
+    }
+    CHECK(checked==400);
+}

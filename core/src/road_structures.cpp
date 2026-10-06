@@ -71,7 +71,9 @@ std::shared_ptr<const RoadDeck> deck(const g2m::RoadProfile& profile,std::int64_
     const double half=profile.attributes.width_mm/2000.0;
     auto& m=output->mesh;
     for(int i=0;i<=count;++i) {
-        const double station=from+(to-from)*i/count;
+        // The last station is exactly `to`: from+(to-from)*count/count can land one ulp past the profile end,
+        // which a served (geo2map 072a321) bridge profile rejects as "station outside profile" (way 32275368 lost its deck).
+        const double station=i==count?to:from+(to-from)*i/count;
         auto xy=profile.reference.at(station);auto z=profile.at(station);if(!xy||!z) return {};
         const double nx=-std::sin(xy->heading),ny=std::cos(xy->heading);
         // Five vertices across the carriageway give a rounded crown and
