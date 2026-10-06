@@ -54,6 +54,9 @@ add_executable(rg_unit_tests
   test_camera_math.cpp
   test_cinematic_obstacles.cpp
   test_render_pose.cpp
+  test_deck_installer.cpp
+  test_deck_install_perf.cpp
+  test_nitrous_pull.cpp
   test_surface_kinds.cpp
 )
 

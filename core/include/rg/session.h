@@ -35,6 +35,7 @@
 
 #include "g2m/layer/osm_roads.h"
 
+#include "rg/deck_installer.h"
 #include "rg/drive_script.h"
 #include "rg/environment.h"
 #include "rg/npc_truck.h"
@@ -115,6 +116,10 @@ struct SessionConfig {
     ps::Vec3 gravity{0.0, 0.0, -9.81};
     EnvironmentConfig environment;
     unsigned job_workers = 0; // 0 = ps::World's own auto (WorldConfig::job_workers)
+    // Reference/measurement switch (S1): install road decks the pre-S1 way - the mesh shape built on the sim thread inside
+    // create_body(desc), one deck per tick attempt, only decks in range. false = DeckInstaller (shapes built on own
+    // threads, prefetched, strict key-order install).
+    bool legacy_deck_install = false;
 
     // Ground (flat mode only): one large flat static box, mirrors
     // external/physics_sim/data/scenarios/vehicle_step_steer.json's own
@@ -388,6 +393,9 @@ public:
     // Returns (and clears) the queued spikes, oldest first; *overflow gets
     // the number dropped since the previous drain.
     [[nodiscard]] std::vector<TickSpike> drain_tick_spikes(std::uint64_t* overflow = nullptr);
+    // Road-deck installer counters (S1): sim-thread install time, worker build time, waits. Stepping thread, or any
+    // thread while the session is not stepping. Zeros without a deck installer (flat mode, no road decks).
+    [[nodiscard]] DeckInstallStats deck_install_stats() const { return deck_installer_ ? deck_installer_->stats() : DeckInstallStats{}; }
     // One log line (no prefix, no newline), key=value tokens.
     [[nodiscard]] static std::string format_tick_spike(const TickSpike& spike);
 
@@ -713,7 +721,6 @@ private:
     static constexpr std::uint64_t kFollowPlayerId=~std::uint64_t{0};
     TrafficStuckStats traffic_stuck_;
     double traffic_stuck_summary_time_=0;
-    std::vector<ps::BodyId> deck_bodies_;
     void note_stuck_events(const std::vector<std::uint64_t>& declared,double now);
     std::vector<TrafficActor> traffic_actors_;
     std::thread traffic_worker_;
@@ -746,6 +753,8 @@ private:
     EnvironmentSample environment_sample_;
     std::shared_ptr<ps::io::SurfaceTable> surface_table_;
     std::unique_ptr<ps::World> world_;
+    // Built lazily by sync_road_decks; declared after world_ so it is destroyed first (its workers call into the World).
+    std::unique_ptr<DeckInstaller> deck_installer_;
     ps::BodyId ground_body_{};
     ps::BodyId chassis_body_{};
     ps::VehicleId vehicle_id_{};
@@ -808,8 +817,13 @@ private:
     std::atomic<std::uint64_t> followed_id_{0}; // 0 = none (traffic ids start at 1)
     bool follow_point_active_ = false;          // stepping thread: the TileManager holds kFollowedInterestId
     StatusAtomics status_;
+    // Road decks (S1): create_body(desc, handle) is O(1) in the shape size (6.4 us for a 48k-triangle deck, was 22 ms), so
+    // many decks install per tick; the shape builds run on kDeckBuildWorkers own threads, decks within
+    // kDeckPrefetchMarginM beyond the required radius are built ahead.
+    static constexpr int kDeckInstallBudget = 16;
+    static constexpr unsigned kDeckBuildWorkers = 2;
+    static constexpr double kDeckPrefetchMarginM = 600.0;
     bool sync_road_decks(int budget=0);
-    std::set<std::tuple<std::int64_t,int,int>> installed_decks_;
     bool in_freeze_ = false; // stepping thread only
 
     ps_godot::TripleBuffer<FrameSnapshot> snapshot_buffer_;

@@ -199,7 +199,7 @@ Session::Session(const SessionConfig& config)
 Session::~Session() { stop(); truck_cancel_.store(true); traffic_cancel_.store(true); if(truck_worker_.joinable())truck_worker_.join(); if(traffic_worker_.joinable())traffic_worker_.join(); }
 
 void Session::build_world_contents(const SessionConfig& config) {
-    installed_decks_.clear();deck_bodies_.clear();traffic_stuck_.clear();traffic_stuck_summary_time_=0;
+    traffic_stuck_.clear();traffic_stuck_summary_time_=0;
     surface_table_ = std::make_shared<ps::io::SurfaceTable>(config.surface_table_path);
     world_->set_surface_table(surface_table_);
 
@@ -799,28 +799,40 @@ bool Session::sync_road_decks(int budget) {
     const auto focus=relocation_?ps::Vec3{relocation_->x,relocation_->y,0}:have_vehicle_?world_->get_pose(chassis_body_).position:ps::Vec3{config_.terrain->spawn_x,config_.terrain->spawn_y,0};
     const double e=focus.x+terrain.frame().e0_m(),n=focus.y+terrain.frame().n0_m();
     const double radius=config_.terrain->physics.radius_m+255;
-    int installed=0;
+    const double prefetch_radius=radius+kDeckPrefetchMarginM;
+    if(!deck_installer_) {
+        DeckInstaller::Options options;
+        options.workers=kDeckBuildWorkers;
+        deck_installer_=std::make_unique<DeckInstaller>(*world_,std::move(options));
+    }
+    // Decks in range are REQUIRED (installed in (way, start, end) order before the clock runs); decks a margin
+    // further out are only built, so their shape is ready by the time the car gets there (S1, design 5.2 option B).
+    std::vector<DeckCandidate> required,prefetch;
     for(const auto& deck:terrain.road_decks()) {
-        const auto id=std::tuple{deck->way_id,static_cast<int>(std::round(deck->start_station)),static_cast<int>(std::round(deck->end_station))};
-        if(installed_decks_.contains(id)) continue;
+        const DeckKey key=deck_key(*deck);
+        if(deck_installer_->installed(key)) continue;
         const double dx=std::max({deck->min_easting-e,e-deck->max_easting,0.0});
         const double dy=std::max({deck->min_northing-n,n-deck->max_northing,0.0});
-        if(dx*dx+dy*dy>radius*radius) continue;
-        // Shape construction happens while the simulation gate is frozen,
-        // one nearby structure per attempt. It cannot become a dropped-tick
-        // burst when a new region or a relocation publishes many decks.
-        if(budget>0&&installed>=budget) return false;
-        installed_decks_.insert(id);++installed;
-        const auto& mesh=deck->mesh;ps::MeshShape shape;
-        for(std::size_t i=0;i<mesh.positions.size();i+=3) shape.vertices.push_back({mesh.positions[i],mesh.positions[i+1],mesh.positions[i+2]});
-        shape.indices.assign(mesh.indices.begin(),mesh.indices.end());
-        const auto surface=surface_table_->id_for(deck->land_class==g2m::LandClass::PavedRoad?config_.terrain->physics.road_surfaces.paved:config_.terrain->physics.road_surfaces.unpaved);
-        shape.triangle_surface_ids.assign(shape.indices.size()/3,surface);
-        ps::BodyDesc body;body.motion=ps::BodyMotionType::Static;body.shape=std::move(shape);
-        body.pose.position={mesh.origin[0]-terrain.frame().e0_m(),mesh.origin[1]-terrain.frame().n0_m(),0};
-        deck_bodies_.push_back(world_->create_body(body));
+        const double d2=dx*dx+dy*dy;
+        if(d2>(config_.legacy_deck_install?radius:prefetch_radius)*(config_.legacy_deck_install?radius:prefetch_radius)) continue;
+        DeckCandidate c;
+        c.key=key;c.deck=deck;
+        c.surface=surface_table_->id_for(deck->land_class==g2m::LandClass::PavedRoad?config_.terrain->physics.road_surfaces.paved:config_.terrain->physics.road_surfaces.unpaved);
+        c.x=deck->mesh.origin[0]-terrain.frame().e0_m();
+        c.y=deck->mesh.origin[1]-terrain.frame().n0_m();
+        (d2<=radius*radius?required:prefetch).push_back(std::move(c));
     }
-    return budget==0 || installed==0;
+    const auto by_key=[](const DeckCandidate& a,const DeckCandidate& b){return a.key<b.key;};
+    std::stable_sort(required.begin(),required.end(),by_key);
+    std::stable_sort(prefetch.begin(),prefetch.end(),by_key);
+    if(config_.legacy_deck_install) // reference path: the old pacing was one deck per attempt, built on this thread
+        return deck_installer_->update_legacy(*world_,required,budget>0?1:0);
+    if(budget<=0) { // start-up / relocation: block until every deck in range is installed
+        (void)deck_installer_->update(*world_,{},prefetch,0);
+        deck_installer_->wait_until_installed(*world_,required);
+        return true;
+    }
+    return deck_installer_->update(*world_,required,prefetch,kDeckInstallBudget);
 }
 
 std::vector<Session::TickSpike> Session::drain_tick_spikes(std::uint64_t* overflow) {
@@ -1585,7 +1597,7 @@ void Session::note_stuck_events(const std::vector<std::uint64_t>& declared,doubl
     if(a.obstacle_body==chassis_body_)return StuckCause::ProbePlayer;
     if(truck_state_.active&&a.obstacle_body==truck_body_)return StuckCause::ProbeTruck;
     for(const auto& o:traffic_actors_)if(o.body==a.obstacle_body){other=o.id;return StuckCause::ProbeNpc;}
-    for(const auto& d:deck_bodies_)if(d==a.obstacle_body)return StuckCause::ProbeDeck;
+    if(deck_installer_)for(const auto& d:deck_installer_->bodies())if(d==a.obstacle_body)return StuckCause::ProbeDeck;
     if(world_->backend().is_static(a.obstacle_body))return config_.terrain?StuckCause::ProbeTerrain:StuckCause::ProbeStatic;
     return StuckCause::ProbeOther;
    }
