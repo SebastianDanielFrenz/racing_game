@@ -247,6 +247,7 @@ func _build() -> void:
 	right.add_child(detail.get_parent())
 	_detail_box = _scroll(detail)
 	var monitor := _panel(0)
+	monitor.get_parent().size_flags_vertical = Control.SIZE_EXPAND_FILL
 	right.add_child(monitor.get_parent())
 	_build_monitor(monitor)
 	# footer
@@ -266,9 +267,19 @@ func _build_monitor(column: VBoxContainer) -> void:
 	_mon_header = _label("Live input", 18)
 	column.add_child(_mon_header)
 	column.add_child(_label("Raw device state on top, what the game receives below.", 12, HORIZONTAL_ALIGNMENT_LEFT, true))
+	# a fixed-height scroll area: the tuning panel above keeps the room it needs on a small window
+	var scroll := ScrollContainer.new()
+	scroll.custom_minimum_size = Vector2(0, 150)
+	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	column.add_child(scroll)
+	var inner := VBoxContainer.new()
+	inner.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	inner.add_theme_constant_override("separation", 2)
+	scroll.add_child(inner)
 	_mon_raw_box = VBoxContainer.new()
 	_mon_raw_box.add_theme_constant_override("separation", 1)
-	column.add_child(_mon_raw_box)
+	inner.add_child(_mon_raw_box)
 	for i in range(RAW_AXIS_ROWS):
 		var box := HBoxContainer.new()
 		box.add_theme_constant_override("separation", 6)
@@ -289,8 +300,8 @@ func _build_monitor(column: VBoxContainer) -> void:
 		_mon_raw_box.add_child(box)
 		_mon_raw.append({"box": box, "bar": bar, "value": value})
 	_mon_digital = _label("", 12)
-	column.add_child(_mon_digital)
-	column.add_child(_label("Game receives", 14))
+	inner.add_child(_mon_digital)
+	inner.add_child(_label("Game receives", 14))
 	for i in range(MAPPED_ROWS):
 		var box := HBoxContainer.new()
 		box.add_theme_constant_override("separation", 6)
@@ -311,7 +322,7 @@ func _build_monitor(column: VBoxContainer) -> void:
 		value.custom_minimum_size = Vector2(96, 0)
 		box.add_child(value)
 		box.visible = false
-		column.add_child(box)
+		inner.add_child(box)
 		_mon_mapped.append({"box": box, "name": name_label, "bar": bar, "value": value})
 
 func _build_overlay() -> void:
@@ -477,7 +488,7 @@ func _action_row(row: Dictionary, key: String, connected: bool, others: Array) -
 	_row_labels[key] = name_label
 	var texts := PackedStringArray()
 	for b in row["bindings"]:
-		texts.append(str(b["text"]))
+		texts.append(_binding_text(b, sign))
 	var main := _button(" / ".join(texts) if not texts.is_empty() else "(unbound)", "bind:" + key, func(): _begin_capture(action, sign, true))
 	main.alignment = HORIZONTAL_ALIGNMENT_LEFT
 	main.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -508,6 +519,15 @@ func _action_row(row: Dictionary, key: String, connected: bool, others: Array) -
 	if action == _selected_action and sign == _selected_sign:
 		name_label.add_theme_color_override("font_color", ACCENT)
 	return holder
+
+# A key bound to one side of a signed axis is shown without the "(-)" / "(+)" tag: the row already says which side.
+func _binding_text(b: Dictionary, row_sign: int) -> String:
+	var text := str(b["text"])
+	if row_sign != 0 and str(b["type"]) == "key":
+		for tag in [" (-)", " (+)"]:
+			if text.ends_with(tag):
+				return text.substr(0, text.length() - tag.length())
+	return text
 
 func _add_fixed_keys() -> void:
 	var parsed = JSON.parse_string(FileAccess.get_file_as_string(fixed_keys_path)) if fixed_keys_path != "" else null
@@ -593,7 +613,7 @@ func _binding_detail(action: String, b: Dictionary, connected: bool) -> Control:
 	var head := HBoxContainer.new()
 	head.add_theme_constant_override("separation", 6)
 	box.add_child(head)
-	var title := _label(str(b["text"]), 16)
+	var title := _label(_binding_text(b, _selected_sign), 16)
 	title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	head.add_child(title)
 	head.add_child(_button("Remove", "remove:%d" % index, func(): _on_remove_binding(action, index)))
@@ -966,6 +986,8 @@ func _update_monitor(snap: Dictionary) -> void:
 		for i in range(RAW_AXIS_ROWS):
 			var entry: Dictionary = _mon_raw[i]
 			var v := axes[i] if i < axes.size() else 0.0
+			# the usual six axes are always listed, a seventh / eighth only while it moves
+			(entry["box"] as Control).visible = i < 6 or absf(v) > 0.01
 			(entry["bar"] as ProgressBar).value = v
 			(entry["value"] as Label).text = "%.2f" % v
 		var held := PackedStringArray()
