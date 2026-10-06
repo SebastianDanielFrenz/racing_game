@@ -19,7 +19,7 @@ g2m::RoadGeomTile geometry(bool bridge=false) {
     g2m::RoadReferenceSegment s; s.curve={0,128.5,0,512,0,0};
     p.reference.segments.push_back(s);
     p.vertical.segments.push_back({0,512,100,125.6,.05,.05});
-    tile.entries.push_back({1,{0,1},std::move(p),{}});
+    tile.entries.push_back({1,{0,1},std::move(p),{},{},{}});
     return tile;
 }
 std::unique_ptr<g2m::HeightTile> terrain(int x) {
