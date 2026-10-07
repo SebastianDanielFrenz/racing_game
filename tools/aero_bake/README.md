@@ -33,3 +33,28 @@ has no ride-height/wing axes and is free-air only. A full-car fixed-wing map
 must not masquerade as variable-wing data; dynamic wing configurations require
 a wing_offset_deg axis and a wing_surface binding. Use replace_body only for
 a body-only CFD geometry with separately authored surface loads.
+
+## Supplied hypercar geometry
+
+```powershell
+python tools/aero_bake/geometry.py external/physics_sim/data/models/car_hyper/car_hyper.glb out/aero_hypercar_geometry
+python -m unittest discover -s tools/aero_bake -p 'test_*.py'
+```
+
+Exports hypercar_rest_iso.obj with named primitives and audit.json. Node hierarchy,
+TRS/matrix transforms and interleaved accessors follow the Khronos glTF 2.0
+specification: https://registry.khronos.org/glTF/specs/2.0/glTF-2.0.html.
+Axes follow this asset's rig permutation. Coordinates remain at the rig's ground
+origin, NOT chassis COM; keep that distinction in solver moments. Before baking,
+apply/review the same wheel-derived body alignment as vehicle_visual.gd and
+record suspension compression/ride height and actual aero actuator pose.
+Export retains all visual geometry, including interior details; it is input for
+solid preparation, not an automatic selection of exposed flow surfaces.
+
+Audit uses configurable --weld-tolerance-m (default 1 micrometre) for edge
+identity only and never changes exported vertices. Reports open/nonmanifold
+edges, inconsistent winding, duplicate faces and degeneracies per primitive and
+combined. Closed edge topology alone does not establish CFD readiness: check
+self intersections, internal components, cooling flow, solid volume and mesh
+quality independently. Do not fill all holes blindly: wheel arches and intakes
+can be intentional. Unsupported compressed/skinned/morphed geometry fails.

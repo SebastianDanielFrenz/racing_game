@@ -73,3 +73,31 @@ cannot silently replace the hypercar's airbrake behavior.
 ## Foundation status (2026-10-07)
 
 Runtime and game integration use physics_sim a949346b3d4e0d63a775951a2bde8edbbcffb9ba, fetched from S:/claude_code/physics_sim. Game selection checks passed (8 assertions); Python bake checks passed (8 cases), including exact exported-byte hashing on Windows. The native worker reports 6492 assertions across 23 aero cases. A 195-case baseline sweep manifest is prepared in out/aero_hypercar_cases; no solver has run. Stage 1 is complete in source; stage 2 still requires a CFD-ready solid and an actual solver setup. Default selection is disabled.
+
+## Supplied hypercar baseline preparation (2026-10-07)
+
+The owner selected the existing supplied car_hyper shape as the first baseline.
+Added tools/aero_bake/geometry.py: deterministic rest-pose GLB-to-OBJ export in
+ISO axes, configurable topology audit and part-by-part report. Current output:
+out/aero_hypercar_geometry/hypercar_rest_iso.obj and audit.json (source/art unchanged).
+113,960 triangles; dimensions approximately 4.702 x 2.140 x 1.155 m. Combined
+1-micrometre audit: 3300 boundary edges, 244 nonmanifold edges, 224 degenerate
+triangles; no duplicate faces or inconsistent winding edges. These are mesh
+preparation findings, not CFD results. Repair body panels/closed seams while
+retaining intended intake and wheel flow; distinguish interior trim from the
+flow boundary. Review intersections and cooling paths separately after repairs.
+
+The exporter deliberately retains the rig ground origin and rest actuator pose.
+The game aligns the art using wheel attachment differences (vehicle_visual.gd);
+solver preparation must explicitly reproduce that body/COM relationship and
+chosen ride height before importing moments. Do not silently interpret ground
+origin moments as chassis COM moments. Full passive runtime maps still require
+actual wing-angle sweep/binding before activation.
+
+13 Python tests pass: accessor stride and hierarchy, coordinate permutation,
+closed/open topology, reversed winding, duplicate/degenerate faces, bake/load
+conversion and exact hashes. The available WSL Ubuntu has no foamRun,
+simpleFoam or surfaceCheck; no Blender executable was found in the normal
+Windows installation path or PATH. Stage 2 has export/audit complete; solid
+repair and CFD solver installation/configuration remain outstanding. There are
+still no measured coefficients and the selection remains disabled.
