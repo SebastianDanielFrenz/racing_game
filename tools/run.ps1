@@ -43,6 +43,9 @@
               store needed), i.e. `--flat` is forwarded.
       -VR     also starts straight in the world (the menus are screen UI, not
               built for a headset yet): the real world unless -Flat is given.
+              Its default start is the A 5 at Rosbach (preset a5_north) in the
+              rhein_main_corridor world; RG_WORLD_CONFIG or a forwarded
+              --spawn=ID (any id in data/world/spawn_presets.json) overrides.
     Either way the world and the player mode switch at runtime (F8 / V / B) -
     the flags pick only the start. Nothing is added when the forwarded args
     already choose a start (--drive, --flat, --free-cam, --terrain-preview,
@@ -126,6 +129,15 @@ if (-not $choosesStart) {
     } elseif ($Drive -or $VR) {
         $GodotArgs.Insert(0, '--drive')
     }
+}
+# -VR default spawn (owner 2026-10-07): the A 5 at Rosbach in the corridor world,
+# unless RG_WORLD_CONFIG or a forwarded --spawn=ID already chooses.
+# The variable is set for the Godot child only and restored after it exits.
+$vrSetWorldConfig = $false
+if ($VR -and ($GodotArgs -contains '--drive')) {
+    if (-not $env:RG_WORLD_CONFIG) { $env:RG_WORLD_CONFIG = 'data/world/world_config_rhein_main_corridor.json'; $vrSetWorldConfig = $true }
+    if (-not @($GodotArgs | Where-Object { $_ -like '--spawn=*' }).Count) { $GodotArgs.Add('--spawn=a5_north') }
+    Write-Host "VR start: world config $env:RG_WORLD_CONFIG"
 }
 $startLabel = if ($GodotArgs -contains '--flat') { 'flat scene' } elseif ($GodotArgs -contains '--drive') { 'real world' } elseif ($choosesStart) { 'chosen by the forwarded args' } else { 'game shell: boot + main menu' }
 
@@ -247,8 +259,11 @@ Write-Host "$godotExe $($launchArgsArr -join ' ')"
 
 if ($DryRun) {
     Write-Host "`n(dry run - not launching Godot)" -ForegroundColor Yellow
+    if ($vrSetWorldConfig) { Remove-Item Env:RG_WORLD_CONFIG }
     exit 0
 }
 
 & $godotExe @launchArgsArr
-exit $LASTEXITCODE
+$godotExit = $LASTEXITCODE
+if ($vrSetWorldConfig) { Remove-Item Env:RG_WORLD_CONFIG }
+exit $godotExit

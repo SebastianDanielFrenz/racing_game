@@ -575,7 +575,7 @@ func _build_scene(user_args: PackedStringArray) -> void:
 	_build_shell(user_args)
 	_apply_mode_state()
 	if _direct_start:
-		_apply_transition(_shell.direct_start({"kind": start_world, "has_spawn": false}))
+		_apply_transition(_shell.direct_start(_direct_start_world(start_world, user_args)))
 	else:
 		_set_world_ui_visible(false)
 		_show_screen("boot")
@@ -1486,6 +1486,28 @@ func _show_screen(screen_name: String) -> void:
 func _set_world_ui_visible(visible_now: bool) -> void:
 	_hud.visible = visible_now
 	_gauge.visible = visible_now
+
+# A direct start into the real world may name a spawn preset with --spawn=ID
+# (data/world/spawn_presets.json; tools/run.ps1 -VR passes --spawn=a5_north).
+# An unknown id falls back to the world's own spawn with a warning.
+func _direct_start_world(start_world: String, user_args: PackedStringArray) -> Dictionary:
+	var world := {"kind": start_world, "has_spawn": false}
+	if start_world != "real_world":
+		return world
+	for a in user_args:
+		if not a.begins_with("--spawn="):
+			continue
+		var id := a.get_slice("=", 1)
+		var path := ProjectSettings.globalize_path("res://").path_join("../data/world/spawn_presets.json").simplify_path()
+		var data = JSON.parse_string(FileAccess.get_file_as_string(path))
+		if data is Dictionary:
+			for p in data.get("presets", []):
+				if str(p.get("id", "")) == id:
+					print("RG_SPAWN preset=%s x=%.1f y=%.1f yaw=%.1f" % [id, float(p["x"]), float(p["y"]), float(p["yaw_deg"])])
+					return {"kind": start_world, "has_spawn": true, "x": float(p["x"]), "y": float(p["y"]),
+						"yaw_deg": float(p["yaw_deg"]), "label": str(p.get("name", id))}
+		push_warning("--spawn=%s: no such preset in %s; using the world's own spawn" % [id, path])
+	return world
 
 func _begin_world_load(world: Dictionary, respawn: bool = false) -> void:
 	_world_request = world.duplicate()
