@@ -171,7 +171,7 @@
       "label": "Tyres front",
       "group": "Tyres",
       "area": "wheels",
-      "help": "Compatible compound/tread and width variants, capped by this body\u2019s axle fitment limits. Width updates wheel geometry and inertia.",
+      "help": "Compatible compound/tread and width variants, capped by this body’s axle fitment limits. Width updates wheel geometry and inertia.",
       "kind": "tyre_choice",
       "axle": "front",
       "file": "vehicle",
@@ -186,7 +186,7 @@
       "label": "Tyres rear",
       "group": "Tyres",
       "area": "wheels",
-      "help": "Compatible compound/tread and width variants, capped by this body\u2019s axle fitment limits. Width updates wheel geometry and inertia.",
+      "help": "Compatible compound/tread and width variants, capped by this body’s axle fitment limits. Width updates wheel geometry and inertia.",
       "kind": "tyre_choice",
       "axle": "rear",
       "file": "vehicle",
@@ -247,6 +247,38 @@
       "area": "wheels",
       "help": "Rim colour. Visual only.",
       "kind": "colour"
+    },
+    {
+      "id": "engine_rev_limit",
+      "label": "Rev limiter",
+      "group": "Engine calibration",
+      "area": "engine",
+      "unit": "x",
+      "help": "Multiplier of the installed engine rev limit. Lower the cut-off for a conservative setup; stock is the upper limit until upgraded internals are available.",
+      "kind": "scale",
+      "min": 0.75,
+      "max": 1.0,
+      "step": 0.01,
+      "file": "engine",
+      "pointers": [
+        "/limiter/rpm"
+      ]
+    },
+    {
+      "id": "engine_throttle_response",
+      "label": "Throttle response time",
+      "group": "Engine calibration",
+      "area": "engine",
+      "unit": "x",
+      "help": "Multiplier of the electronic throttle actuator time constant. Lower responds faster; higher smooths pedal changes. Available only on engines with an electronic actuator.",
+      "kind": "scale",
+      "min": 0.5,
+      "max": 2.0,
+      "step": 0.05,
+      "file": "engine",
+      "pointers": [
+        "/throttle_actuator_tau_s"
+      ]
     }
   ]
 }

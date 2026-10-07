@@ -434,3 +434,25 @@ TEST_CASE("setup: road tyre technology levels retain their physical tradeoffs", 
     CHECK(levels[3].wheels[0].tyre.qsy1 < levels[4].wheels[0].tyre.qsy1); // sport favors grip
     CHECK(levels[0].wheels[0].tyre.qsy4 > levels[4].wheels[0].tyre.qsy4); // low-speed fit penalizes overspeed
 }
+
+TEST_CASE("engine calibration changes real parameters and rejects excessive limits", "[engine_setup][garage]") {
+    Fixture f;
+    const auto& e = f.entry("car_hyper");
+    auto setup = setup_of("car_hyper", {{"engine_rev_limit", 0.9}, {"engine_throttle_response", 0.5}});
+    auto result = rg::compile_setup(e, f.table, f.ctx, setup);
+    INFO(result.error);
+    REQUIRE(result.ok);
+    REQUIRE(result.patches.count("engine:hyper_v8_one1_audio") == 1);
+    const auto& patch = result.patches.at("engine:hyper_v8_one1_audio");
+    REQUIRE_THAT(patch, ContainsSubstring("limiter"));
+    REQUIRE_THAT(patch, ContainsSubstring("7425"));
+    REQUIRE_THAT(patch, ContainsSubstring("throttle_actuator_tau_s"));
+    REQUIRE_THAT(patch, ContainsSubstring("0.02"));
+    auto validation = rg::validate_setup(e, f.table, f.ctx, setup);
+    INFO(validation.message);
+    REQUIRE(validation.ok);
+    REQUIRE_FALSE(rg::compile_setup(e, f.table, f.ctx,
+        setup_of("car_hyper", {{"engine_rev_limit", 1.1}})).ok);
+    REQUIRE_FALSE(rg::compile_setup(e, f.table, f.ctx,
+        setup_of("car_hyper", {{"engine_throttle_response", 0.0}})).ok);
+}
