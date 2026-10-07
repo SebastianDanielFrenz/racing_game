@@ -186,7 +186,21 @@ func _run() -> void:
 	var save_button: Button = ui.get_button("save")
 	_check(save_button != null and save_button.disabled, "Save is disabled while nothing changed")
 
+	# Upgrades installs real tyre definitions; Tuning owns scalar adjustments.
+	var tyre_option: Dictionary = {}
+	for opt in garage.get_options():
+		if str(opt["id"]) == "tyre_front":
+			tyre_option = opt
+	var tyre_choices: PackedStringArray = tyre_option.get("choices", PackedStringArray())
+	if tyre_choices.size() > 1:
+		var original := str(tyre_option["value"])
+		var replacement := str(tyre_choices[1] if str(tyre_choices[0]) == original else tyre_choices[0])
+		_press("part:tyre_front:" + replacement)
+		_check(garage.is_dirty() and bool(garage.get_validation()["ok"]), "installing a tyre card changes a validated setup")
+		_press("part:tyre_front:" + original)
+		_check(not garage.is_dirty(), "reinstalling the original tyres restores the clean setup")
 	# ---- a valid change through the real control ----
+	_press("garage:tuning")
 	_press("area:wheels")
 	await _wait_seconds(0.3)
 	_check(ui.active_area() == "wheels", "the Wheels tab is active")

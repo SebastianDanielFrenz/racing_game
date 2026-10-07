@@ -164,13 +164,23 @@ func _process(delta: float) -> void:
 	# shift the view so the car centres in the part of the screen the panel leaves free
 	var size := _container.size # canvas units, like panel_px
 	var target_shift := 0.0
-	if panel_side != "" and size.x > 1.0:
+	var panel_widths := Vector2.ZERO
+	var owner := get_parent()
+	if owner.has_method("get_shell_ui"):
+		var ui: Node = owner.get_shell_ui()
+		if ui != null and ui.has_method("garage_panel_widths"):
+			panel_widths = ui.garage_panel_widths()
+	if panel_widths != Vector2.ZERO and size.x > 1.0:
+		target_shift = (panel_widths.y - panel_widths.x) * 0.5 / size.x
+	elif panel_side != "" and size.x > 1.0:
 		target_shift = (panel_px * 0.5 / size.x) * (-1.0 if panel_side == "left" else 1.0)
 	_panel_shift = lerpf(_panel_shift, target_shift, clampf(delta * 6.0, 0.0, 1.0))
 	var target_frac := (panel_px / size.x) if (panel_side != "" and size.x > 1.0) else 0.0
+	if panel_widths != Vector2.ZERO:
+		target_frac = (panel_widths.x + panel_widths.y) / maxf(size.x,1.0)
 	_panel_frac = lerpf(_panel_frac, target_frac, clampf(delta * 6.0, 0.0, 1.0))
 	# back off so the car still fits the free part of the screen
-	pos = look + (pos - look) / maxf(1.0 - _panel_frac * 0.5, 0.4)
+	pos = look + (pos - look) / maxf(1.0 - _panel_frac * (0.65 if panel_widths != Vector2.ZERO else 0.5), 0.25)
 	_camera.position = pos
 	var dist := pos.distance_to(look)
 	var view_width := 2.0 * dist * tan(deg_to_rad(_camera.fov) * 0.5) * (size.x / maxf(size.y, 1.0))

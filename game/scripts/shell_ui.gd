@@ -71,6 +71,26 @@ var _status_label: Label                       # configurator: the loader's verd
 const PAINT_PALETTE := ["#9aa0ac", "#e8e8ea", "#1b1d22", "#a8473f", "#c9262e", "#e8742a", "#e0b43a", "#3f7a4a", "#3f6b8f", "#2848a8", "#6b3fa0", "#7a8a99"]
 const RIM_PALETTE := ["#2b2d31", "#c4c8cf", "#e8e8ea", "#e8742a", "#c9262e", "#e0b43a", "#3f6b8f", "#111111"]
 
+
+var _garage_mode := "upgrades"
+var _garage_left: PanelContainer
+var _garage_right: PanelContainer
+var _garage_performance: VBoxContainer
+var _garage_category := "tyre_front"
+var _garage_categories: OptionButton
+
+func garage_panel_widths() -> Vector2:
+	if screen != "configurator" or _garage_left == null or _garage_right == null:
+		return Vector2.ZERO
+	return Vector2(_garage_left.size.x + 28.0, _garage_right.size.x + 28.0)
+
+func _fit_garage_panels() -> void:
+	if screen != "configurator" or _garage_left == null or _garage_right == null:
+		return
+	var width := _root.size.x
+	_garage_left.custom_minimum_size.x = clampf(width * 0.25, 170.0, 360.0)
+	_garage_right.custom_minimum_size.x = clampf(width * 0.29, 220.0, 440.0)
+
 func _ready() -> void:
 	layer = 30
 	_root = Control.new()
@@ -97,6 +117,9 @@ func show_screen(screen_name: String) -> void:
 	_controls_ui = null
 	_option_box = null
 	_status_label = null
+	_garage_left = null
+	_garage_right = null
+	_garage_performance = null
 	screen = screen_name
 	match screen_name:
 		"boot":
@@ -147,6 +170,7 @@ func status_text() -> String:
 	return _status_label.text if _status_label != null else ""
 
 func _process(delta: float) -> void:
+	_fit_garage_panels()
 	if screen == "boot" and not _boot_done:
 		_boot_elapsed += delta
 		if _boot_elapsed >= BOOT_SECONDS:
@@ -539,58 +563,109 @@ func highlighted_vehicle() -> String:
 # ---- garage: configurator ---------------------------------------------------------
 
 func _build_configurator() -> void:
-	var column := _side_panel(false, 500)
-	var v: Dictionary = garage.get_vehicle(garage_vehicle)
-	column.add_child(_label(str(v.get("title", garage_vehicle)), 30, HORIZONTAL_ALIGNMENT_LEFT))
-	column.add_child(_label("Setup", 14, HORIZONTAL_ALIGNMENT_LEFT, true))
+	var left := _side_panel(true, 300)
+	_garage_left = left.get_parent()
+	left.add_child(_label("VEHICLE PERFORMANCE", 22, HORIZONTAL_ALIGNMENT_LEFT))
+	var perf_scroll := ScrollContainer.new()
+	perf_scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	perf_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	left.add_child(perf_scroll)
+	_garage_performance = VBoxContainer.new()
+	_garage_performance.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_garage_performance.add_theme_constant_override("separation", 14)
+	perf_scroll.add_child(_garage_performance)
+	_refresh_performance()
+	var column := _side_panel(false, 400)
+	_garage_right = column.get_parent()
+	var vehicle: Dictionary = garage.get_vehicle(garage_vehicle)
+	column.add_child(_label(str(vehicle.get("title", garage_vehicle)), 20, HORIZONTAL_ALIGNMENT_LEFT))
+	var modes := HBoxContainer.new()
+	column.add_child(modes)
+	var mode_group := ButtonGroup.new()
+	for mode in ["upgrades", "tuning"]:
+		var button := _button(modes,"garage:" + mode,mode.capitalize(),func(): _set_garage_mode(mode),0)
+		button.toggle_mode = true
+		button.button_group = mode_group
+		button.add_theme_font_size_override("font_size",16)
+		button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		button.set_pressed_no_signal(mode == _garage_mode)
 	var tabs := HFlowContainer.new()
-	tabs.add_theme_constant_override("h_separation", 6)
 	column.add_child(tabs)
 	var area_group := ButtonGroup.new()
 	for area in garage.get_set().get("areas", []):
-		var id: String = str(area["id"])
+		var id := str(area["id"])
 		var button := Button.new()
 		button.text = str(area["label"])
 		button.toggle_mode = true
 		button.button_group = area_group
-		button.add_theme_font_size_override("font_size", 16)
-		button.pressed.connect(func(): _select_area(id, true))
+		button.add_theme_font_size_override("font_size",14)
+		button.pressed.connect(func(): _select_area(id,true))
 		tabs.add_child(button)
 		_buttons["area:" + id] = button
 		_area_buttons[id] = button
+	_garage_categories = OptionButton.new()
+	_garage_categories.item_selected.connect(func(index: int):
+		_garage_category = str(_garage_categories.get_item_metadata(index))
+		_draw_garage_options())
+	column.add_child(_garage_categories)
 	var scroll := ScrollContainer.new()
 	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
 	column.add_child(scroll)
 	_option_box = VBoxContainer.new()
 	_option_box.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	_option_box.add_theme_constant_override("separation", 8)
+	_option_box.add_theme_constant_override("separation",12)
 	scroll.add_child(_option_box)
-	_status_label = _label("", 14, HORIZONTAL_ALIGNMENT_LEFT)
+	_status_label = _label("",14,HORIZONTAL_ALIGNMENT_LEFT)
+	_status_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	column.add_child(_status_label)
-	var footer := HBoxContainer.new()
-	footer.add_theme_constant_override("separation", 8)
+	var footer := GridContainer.new()
+	footer.columns = 2
 	column.add_child(footer)
-	_button(footer, "back", "Back", func(): back_requested.emit(), 90)
-	_button(footer, "reset_all", "Reset all", func():
+	_button(footer,"back","Back",func(): back_requested.emit(),0)
+	_button(footer,"reset_all","Reset all",func():
 		garage.reset_all()
-		_select_area(_active_area, false)
+		_draw_garage_options()
 		garage_option_changed.emit("")
-		_refresh_status(), 120)
-	_button(footer, "save", "Save", func(): garage_save_requested.emit(), 90)
-	var drive := _button(footer, "drive", "Drive", func(): garage_drive_requested.emit(), 0)
-	drive.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	_active_area = "overview"
-	if _area_buttons.has("overview"):
-		(_area_buttons["overview"] as Button).button_pressed = true
-	_select_area(_active_area, false)
+		_refresh_status(),0)
+	_button(footer,"save","Save",func(): garage_save_requested.emit(),0)
+	_button(footer,"drive","Drive",func(): garage_drive_requested.emit(),0)
+	for button in footer.get_children():
+		button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_active_area = "wheels" if _garage_mode == "upgrades" else "overview"
+	_select_area(_active_area,false)
 	_refresh_status()
+	_fit_garage_panels()
 	_focus_first()
 
-func _select_area(area_id: String, move_camera: bool) -> void:
-	_active_area = area_id
-	if _area_buttons.has(area_id):
-		(_area_buttons[area_id] as Button).set_pressed_no_signal(true)
+func _set_garage_mode(mode: String) -> void:
+	_garage_mode = mode
+	_garage_categories.visible = mode == "upgrades"
+	_draw_garage_options()
+
+func _refresh_performance() -> void:
+	if _garage_performance == null:
+		return
+	for child in _garage_performance.get_children():
+		_garage_performance.remove_child(child)
+		child.queue_free()
+	var stats: Dictionary = garage.get_vehicle(garage_vehicle).get("stats", {})
+	_garage_performance.add_child(_label("Acceleration",20,HORIZONTAL_ALIGNMENT_LEFT))
+	# No made-up times: measured results will be supplied by the performance model.
+	var note := _label("No measured acceleration runs for this setup yet.",14,HORIZONTAL_ALIGNMENT_LEFT,true)
+	note.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_garage_performance.add_child(note)
+	for heading in ["Top speed", "Maximum lateral acceleration", "Maximum longitudinal acceleration"]:
+		_garage_performance.add_child(_label(heading,17,HORIZONTAL_ALIGNMENT_LEFT))
+		_garage_performance.add_child(_label("Not measured",14,HORIZONTAL_ALIGNMENT_LEFT,true))
+	_garage_performance.add_child(HSeparator.new())
+	_garage_performance.add_child(_label("Vehicle specification",19,HORIZONTAL_ALIGNMENT_LEFT))
+	for text in ["Mass  %.0f kg" % float(stats.get("mass_kg",0)),"Power  %.1f kW" % float(stats.get("peak_power_kw",0)),"Torque  %.0f Nm" % float(stats.get("peak_torque_nm",0)),"%s · %d gears" % [str(stats.get("layout","")),int(stats.get("gear_count",0))]]:
+		_garage_performance.add_child(_label(text,16,HORIZONTAL_ALIGNMENT_LEFT))
+	if bool(stats.get("figures_declared",false)):
+		_garage_performance.add_child(_label("Declared engine figures",13,HORIZONTAL_ALIGNMENT_LEFT,true))
+
+func _draw_garage_options() -> void:
 	if _option_box == null:
 		return
 	for child in _option_box.get_children():
@@ -599,18 +674,85 @@ func _select_area(area_id: String, move_camera: bool) -> void:
 	_option_controls.clear()
 	_option_values.clear()
 	_option_notes.clear()
+	_garage_categories.visible = _garage_mode == "upgrades"
+	if _garage_mode == "upgrades":
+		_draw_upgrades()
+		return
 	var group := ""
-	var shown := 0
+	var count := 0
 	for opt in garage.get_options():
-		if str(opt["area"]) != area_id or not bool(opt["available"]):
+		if str(opt["area"]) != _active_area or not bool(opt["available"]):
+			continue
+		if str(opt["kind"]) == "tyre_choice":
+			_option_box.add_child(_label("Installed " + str(opt["label"]).to_lower(),17,HORIZONTAL_ALIGNMENT_LEFT))
+			var installed := _label(_display_value("tyre_choice",opt["value"]),14,HORIZONTAL_ALIGNMENT_LEFT,true)
+			installed.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+			_option_box.add_child(installed)
+			count += 1
 			continue
 		if str(opt["group"]) != group:
 			group = str(opt["group"])
-			_option_box.add_child(_label(group, 20, HORIZONTAL_ALIGNMENT_LEFT))
+			_option_box.add_child(_label(group,20,HORIZONTAL_ALIGNMENT_LEFT))
 		_option_box.add_child(_option_row(opt))
-		shown += 1
-	if shown == 0:
-		_option_box.add_child(_label("Nothing to set up here for this car.", 14, HORIZONTAL_ALIGNMENT_LEFT, true))
+		count += 1
+	if count == 0:
+		_option_box.add_child(_label("No adjustable installed parts in this area.",14,HORIZONTAL_ALIGNMENT_LEFT,true))
+
+func _draw_upgrades() -> void:
+	_garage_categories.clear()
+	var choices: Array = []
+	for opt in garage.get_options():
+		if bool(opt["available"]) and str(opt["area"]) == _active_area and str(opt["kind"]) == "tyre_choice":
+			choices.append(opt)
+	for opt in choices:
+		_garage_categories.add_item(str(opt["label"]))
+		_garage_categories.set_item_metadata(_garage_categories.item_count-1,str(opt["id"]))
+	if choices.is_empty():
+		var label := _label("Installed parts",20,HORIZONTAL_ALIGNMENT_LEFT)
+		_option_box.add_child(label)
+		var groups: Array[String] = []
+		for opt in garage.get_options():
+			if bool(opt["available"]) and str(opt["area"]) == _active_area and not groups.has(str(opt["group"])):
+				groups.append(str(opt["group"]))
+		for group in groups:
+			var card := Button.new()
+			card.text = group + "\nInstalled · adjust in Tuning"
+			card.custom_minimum_size.y = 76
+			card.pressed.connect(func(): _set_garage_mode("tuning"))
+			_option_box.add_child(card)
+		return
+	var selected: Dictionary = choices[0]
+	for i in range(choices.size()):
+		if str(choices[i]["id"]) == _garage_category:
+			selected = choices[i]
+			_garage_categories.select(i)
+	_garage_category = str(selected["id"])
+	_option_box.add_child(_label(str(selected["label"]),22,HORIZONTAL_ALIGNMENT_LEFT))
+	var grid := GridContainer.new()
+	grid.columns = 3
+	grid.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_option_box.add_child(grid)
+	for choice in selected["choices"]:
+		var installed := str(choice) == str(selected["value"])
+		var card := Button.new()
+		card.text = str(choice).replace("hyper_front_", "").replace("hyper_rear_", "").replace("_", "\n") + ("\nINSTALLED" if installed else "\nInstall")
+		card.custom_minimum_size = Vector2(0,160)
+		card.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		card.add_theme_font_size_override("font_size",13)
+		card.toggle_mode = true
+		card.set_pressed_no_signal(installed)
+		card.tooltip_text = str(choice)
+		card.pressed.connect(func():
+			_edit_option(_garage_category,str(choice))
+			_draw_garage_options())
+		grid.add_child(card)
+		_buttons["part:" + _garage_category + ":" + str(choice)] = card
+
+func _select_area(area_id: String, move_camera: bool) -> void:
+	_active_area = area_id
+	if _area_buttons.has(area_id):
+		(_area_buttons[area_id] as Button).set_pressed_no_signal(true)
+	_draw_garage_options()
 	if move_camera:
 		garage_area_chosen.emit(area_id)
 
@@ -642,7 +784,7 @@ func _option_row(opt: Dictionary) -> Control:
 	head.add_theme_constant_override("separation", 8)
 	holder.add_child(head)
 	var name_label := _label(str(opt["label"]), 16, HORIZONTAL_ALIGNMENT_LEFT)
-	name_label.custom_minimum_size = Vector2(170, 0)
+	name_label.custom_minimum_size = Vector2(130, 0)
 	head.add_child(name_label)
 	var value_label := _label("" if kind == "scale_list" else _display_value(kind, opt["value"]), 14, HORIZONTAL_ALIGNMENT_LEFT, true)
 	value_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
