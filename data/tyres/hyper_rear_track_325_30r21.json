@@ -1,16 +1,20 @@
 {
   "format": "physics_sim.tyre/1",
   "name": "hyper_rear_track_325_30r21",
-  "source": "racing_game-owned compound variant of hyper_rear_325_30r21.json (physics_sim is read-only, so this is a full copy): only the name and the lambda_mux/lambda_muy friction scaling differ (x1.10 - track, more grip). The scaling is an AUTHORED game value, not measured compound data; real compound files are a physics_sim data request (R6 report). Original source: Fictional performance tyre using existing passenger-car Magic Formula coefficients. Authored dimensions match the art; reference load equals the 1500 kg 42/58 static corner load. Friction scales 1.15, vertical stiffness 260/300 kN/m; not a measured tyre fit.",
+  "source": "racing_game-owned compound variant of hyper_rear_325_30r21.json (physics_sim is read-only, so this is a full copy): only the name and the lambda_mux/lambda_muy friction scaling differ (x1.10 - track, more grip). The scaling is an AUTHORED game value, not measured compound data; real compound files are a physics_sim data request (R6 report). Original source: Fictional performance tyre using existing passenger-car Magic Formula coefficients. Authored dimensions match the art; reference load equals the 1500 kg 42/58 static corner load. Friction scales 1.15, vertical stiffness 260/300 kN/m; not a measured tyre fit. Rolling resistance (2026-10-07): the rolling_resistance anchor block of the physics_sim base tyre (physics_sim 7423d82, rated 500 km/h) replaces the old raw qsy1/qsy4.",
   "unloaded_radius": 0.364,
   "width": 0.325,
   "rim_radius": 0.267,
   "fz0": 4267.35,
   "vertical_stiffness": 300000.0,
   "v0": 16.7,
-  "qsy1": 0.01,
   "qsy2": 0.0,
-  "qsy4": 0.0002,
+  "rolling_resistance": {
+    "rated_speed_kmh": 500,
+    "crr_base": 0.01,
+    "rise_at_fraction": { "fraction": 0.8, "factor": 1.5 },
+    "factor_at_rated": 2.0
+  },
   "relaxation_length_x": 0.1,
   "relaxation_length_y": 0.15,
   "low_speed_damping_ratio": 1.5,
