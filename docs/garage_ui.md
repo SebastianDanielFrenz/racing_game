@@ -6,7 +6,7 @@ Upgrades has vehicle information on the left, the showroom car in the middle and
 
 Tyres use two distinct menus:
 
-1. Choose a compound/tread combination: performance road, track semi-slick, racing slick or drag. Each has a visibly different product image. This selection only opens a submenu; it does not install anything.
+1. Choose a compound/tread combination: Cord Touring, Belted Touring, Steel Radial, Eco Touring, Sport Radial, Performance Road, Track Semi-Slick, Racing Slick or Drag. Each has a visibly different product image. This selection only opens a submenu; it does not install anything.
 2. Choose a width and install the corresponding physical definition. Widths can be displayed every 10 or 20 mm. The installed width remains visible even when it falls between the selected 20 mm samples. Return to the compound/tread menu using its own back button.
 
 Front/rear axles are selected independently. Rim radius and unloaded tyre radius must remain compatible. Body-specific width envelopes are configured in data/vehicles/catalog.json under setup.ranges.tyre_front and tyre_rear (millimetres), inherited by presets. Initial authored envelopes are hyper front 235–305, hyper rear 275–365, and sedan axles 195–255. These are conservative game limits, not measured fender clearance. The candidate catalog contains wider definitions too, but the native model does not offer or accept them until the body allows them.
@@ -23,7 +23,7 @@ For width ratio r = selected width / baseline width:
 - Rolling resistance base scales by r^0.65, with a family factor.
 - Wheel inertia scales by r at unchanged unloaded radius.
 
-Relative family factors (longitudinal grip, lateral grip, rolling resistance): road 1/1/1, track 1.10/1.10/1.10, slick 1.20/1.20/1.15, drag 1.25/0.80/1.35. The drag fit favors straight-line traction and sacrifices lateral grip.
+Relative family factors (longitudinal grip, lateral grip, rolling resistance): road 1/1/1, track 1.10/1.10/1.10, slick 1.20/1.20/1.15, drag 1.25/0.80/1.35. The drag fit favors straight-line traction and sacrifices lateral grip. The additional ordinary road families, their researched naming and authored numerical fits are detailed in docs/tyre_families.md. Parameters/display order live in data/tyres/families.json.
 
 Hyper road/track ratings are 500 km/h, slick 450 and drag 350; sedan versions are capped at their 270 km/h baseline rating. Ratings participate in the physics library's existing speed-dependent rolling resistance anchors. They are displayed in the UI, but are not a blowout, temperature or comprehensive high-speed grip/failure model. These fictional fits require driving calibration; no measured tyre claim is made.
 

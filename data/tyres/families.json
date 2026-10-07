@@ -1,0 +1,107 @@
+{
+  "format": "racing_game.tyre_families/1",
+  "source": "Qualitative construction/compound inspiration researched from manufacturer sources in docs/tyre_families.md. All force coefficients and speed assignments are authored game fits, not historical measurements or product certifications. Fixed modern compatible dimensions are retained.",
+  "grip_width_exponent": 0.35,
+  "rolling_resistance_width_exponent": 0.65,
+  "families": [
+    {
+      "id": "cord",
+      "label": "Cord Touring",
+      "longitudinal_grip": 0.52,
+      "lateral_grip": 0.52,
+      "rolling_resistance": 1.9,
+      "rated_speed_kmh": 120,
+      "stiffness_scale": 0.65,
+      "image": "res://assets/components/tyres/cord.png",
+      "description": "Natural-rubber and cotton-cord inspiration; simple rib tread, modest grip and a low-speed profile."
+    },
+    {
+      "id": "belted",
+      "label": "Belted Touring",
+      "longitudinal_grip": 0.68,
+      "lateral_grip": 0.68,
+      "rolling_resistance": 1.5,
+      "rated_speed_kmh": 180,
+      "stiffness_scale": 0.8,
+      "image": "res://assets/components/tyres/belted.png",
+      "description": "Synthetic-rubber and belted-bias inspiration; repeating zigzag blocks, improved road holding."
+    },
+    {
+      "id": "touring",
+      "label": "Steel Radial",
+      "longitudinal_grip": 0.82,
+      "lateral_grip": 0.82,
+      "rolling_resistance": 1.2,
+      "rated_speed_kmh": 210,
+      "stiffness_scale": 0.9,
+      "image": "res://assets/components/tyres/touring.png",
+      "description": "Steel-belted radial inspiration; conventional block tread and balanced touring behavior."
+    },
+    {
+      "id": "economy",
+      "label": "Eco Touring",
+      "longitudinal_grip": 0.87,
+      "lateral_grip": 0.87,
+      "rolling_resistance": 0.8,
+      "rated_speed_kmh": 240,
+      "stiffness_scale": 0.95,
+      "image": "res://assets/components/tyres/economy.png",
+      "description": "Modern silica-compound inspiration; fine drainage/siping and low rolling resistance."
+    },
+    {
+      "id": "sport",
+      "label": "Sport Radial",
+      "longitudinal_grip": 0.98,
+      "lateral_grip": 0.98,
+      "rolling_resistance": 1.0,
+      "rated_speed_kmh": 300,
+      "stiffness_scale": 1.05,
+      "image": "res://assets/components/tyres/sport.png",
+      "description": "Modern performance-compound inspiration; directional tread and stronger dry grip."
+    },
+    {
+      "id": "road",
+      "label": "Performance Road",
+      "longitudinal_grip": 1,
+      "lateral_grip": 1,
+      "rolling_resistance": 1,
+      "rated_speed_kmh": 500,
+      "stiffness_scale": 1,
+      "image": "res://assets/components/tyres/road.png",
+      "description": "Existing high-speed road fit; broad drainage channels."
+    },
+    {
+      "id": "track",
+      "label": "Track Semi-Slick",
+      "longitudinal_grip": 1.1,
+      "lateral_grip": 1.1,
+      "rolling_resistance": 1.1,
+      "rated_speed_kmh": 500,
+      "stiffness_scale": 1,
+      "image": "res://assets/components/tyres/track.png",
+      "description": "Broad contact patches with sparse grooves for dry track use."
+    },
+    {
+      "id": "slick",
+      "label": "Racing Slick",
+      "longitudinal_grip": 1.2,
+      "lateral_grip": 1.2,
+      "rolling_resistance": 1.15,
+      "rated_speed_kmh": 450,
+      "stiffness_scale": 1,
+      "image": "res://assets/components/tyres/slick.png",
+      "description": "Smooth dry racing tread."
+    },
+    {
+      "id": "drag",
+      "label": "Drag",
+      "longitudinal_grip": 1.25,
+      "lateral_grip": 0.8,
+      "rolling_resistance": 1.35,
+      "rated_speed_kmh": 350,
+      "stiffness_scale": 1,
+      "image": "res://assets/components/tyres/drag.png",
+      "description": "Straight-line traction at the expense of lateral grip."
+    }
+  ]
+}

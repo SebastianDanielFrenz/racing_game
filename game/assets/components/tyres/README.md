@@ -1,6 +1,6 @@
 # Garage tyre component images
 
-Transparent product renders generated for the garage upgrade cards. `catalog.json` explicitly maps selectable definition IDs to image, label and size; it also lists the four style images. All four families now have generated physical width variants, offered only within the body fitment limits.
+Transparent product renders generated for the garage upgrade cards. `catalog.json` explicitly maps selectable definition IDs to image, label and size; it also lists family descriptions and display order. All nine families now have generated physical width variants, offered only within the body fitment limits.
 
 - road.png: drainage channels and diagonal tread blocks.
 - track.png: semi-slick with broad contact patches and sparse grooves.
@@ -10,3 +10,4 @@ Transparent product renders generated for the garage upgrade cards. `catalog.jso
 The current tyre files specify dimensions and force coefficients, not measured tread geometry. These images are authored visual representations of the fictional parts, not scans or evidence of an exact real tyre. Front/rear variants share the style thumbnail; their actual dimensions remain in the captions and physics definitions. Future definitions should receive explicit presentation entries, rather than choosing images from their friction coefficient. Individual tread geometry and tyre customization can later supply generated thumbnails from the actual component mesh.
 
 All captions and state labels are native UI, not baked into the artwork. Runtime PNG loading and per-screen texture caching avoid reliance on editor import side effects. Images do not intercept pointer input; the whole card remains the installation button.
+Additional thumbnails: cord.png (fine longitudinal rib tread), belted.png (zigzag blocks), touring.png (conventional block tread), economy.png (dense grooves and sipes), sport.png (directional V tread). Research and authored fit parameters: docs/tyre_families.md and data/tyres/families.json.

@@ -405,7 +405,7 @@ TEST_CASE("setup: each tyre family offers width variants within its axle body en
         const std::string rim = front ? "_r20" : "_r21";
         const int minimum = front ? 235 : 275;
         const int maximum = front ? 305 : 365;
-        for (const char* family : {"road", "track", "slick", "drag"}) {
+        for (const char* family : {"cord", "belted", "touring", "economy", "sport", "road", "track", "slick", "drag"}) {
             for (int width = minimum; width <= maximum; width += 10) {
                 const auto key = prefix + family + "_w" + std::to_string(width) + rim;
                 CHECK(std::find(opt.choices.begin(), opt.choices.end(), key) != opt.choices.end());
@@ -414,4 +414,23 @@ TEST_CASE("setup: each tyre family offers width variants within its axle body en
             CHECK(std::find(opt.choices.begin(), opt.choices.end(), too_wide) == opt.choices.end());
         }
     }
+}
+
+TEST_CASE("setup: road tyre technology levels retain their physical tradeoffs", "[setup][tyre_width]") {
+    Fixture f;
+    const auto& e = f.entry("car_sedan");
+    std::vector<ps::vehicle::VehicleDesc> levels;
+    for (const char* family : {"cord", "belted", "touring", "economy", "sport"}) {
+        const std::string key = std::string("passenger_") + family + "_w225_r17";
+        levels.push_back(load_materialised(f, e, setup_of("car_sedan", {{"tyre_front", key}})));
+        REQUIRE(levels.back().wheels.size() == 4);
+        CHECK(levels.back().wheels[0].wheel_width == Approx(.225));
+    }
+    for (std::size_t i = 1; i < levels.size(); ++i) {
+        CHECK(levels[i].wheels[0].tyre.lambda_mux > levels[i-1].wheels[0].tyre.lambda_mux);
+        CHECK(levels[i].wheels[0].tyre.lambda_muy > levels[i-1].wheels[0].tyre.lambda_muy);
+    }
+    CHECK(levels[3].wheels[0].tyre.qsy1 < levels[2].wheels[0].tyre.qsy1); // eco reduces resistance
+    CHECK(levels[3].wheels[0].tyre.qsy1 < levels[4].wheels[0].tyre.qsy1); // sport favors grip
+    CHECK(levels[0].wheels[0].tyre.qsy4 > levels[4].wheels[0].tyre.qsy4); // low-speed fit penalizes overspeed
 }

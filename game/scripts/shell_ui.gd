@@ -734,7 +734,8 @@ func _draw_upgrades() -> void:
 			_garage_categories.select(i)
 	_garage_category = str(selected["id"])
 	_option_box.add_child(_label(str(selected["label"]),22,HORIZONTAL_ALIGNMENT_LEFT))
-	var families := ["road", "track", "slick", "drag"]
+	_tyre_presentation(str(selected["value"])) # load presentation metadata
+	var families: Array = _component_catalog.get("family_order", ["road", "track", "slick", "drag"])
 	if not _garage_width_menu:
 		var type_grid := GridContainer.new()
 		type_grid.columns = 3
@@ -750,7 +751,8 @@ func _draw_upgrades() -> void:
 			if representative.is_empty():
 				continue
 			representative.erase("size")
-			var type_card := _make_tyre_card(representative,"Choose width")
+			var type_card := _make_tyre_card(representative,"")
+			type_card.tooltip_text = str(_component_catalog.get("families", {}).get(family, {}).get("description", ""))
 			type_card.pressed.connect(func():
 				_garage_tyre_family = family
 				_garage_width_menu = true
@@ -761,7 +763,7 @@ func _draw_upgrades() -> void:
 	_button(_option_box,"tyre:types","‹ Compound / tread",func():
 		_garage_width_menu = false
 		_draw_garage_options(),0)
-	_option_box.add_child(_label("Choose width · " + _garage_tyre_family.capitalize(),17,HORIZONTAL_ALIGNMENT_LEFT))
+	_option_box.add_child(_label(str(_component_catalog.get("families", {}).get(_garage_tyre_family, {}).get("label", _garage_tyre_family.capitalize())) + " · Width",17,HORIZONTAL_ALIGNMENT_LEFT))
 	var increments := OptionButton.new()
 	increments.add_item("Widths every 10 mm")
 	increments.add_item("Widths every 20 mm")

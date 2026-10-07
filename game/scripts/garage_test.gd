@@ -186,6 +186,16 @@ func _run() -> void:
 	var save_button: Button = ui.get_button("save")
 	_check(save_button != null and save_button.disabled, "Save is disabled while nothing changed")
 
+	# All researched road families open their own width menu and remain real parts.
+	for family in ["cord","belted","touring","economy","sport","road","track","slick","drag"]:
+		_check(ui.get_button("tyre:family:"+family) != null, "type card exists: " + family)
+	_press("tyre:family:economy")
+	_check(not garage.is_dirty(), "opening the economy widths does not install a tyre")
+	_press("part:tyre_front:hyper_front_economy_w305_r20")
+	_check(garage.is_dirty() and bool(garage.get_validation()["ok"]), "economy tyre width installs a valid physical definition")
+	_press("reset_all")
+	_check(not garage.is_dirty(), "reset restores the original tyres after a family change")
+	_press("tyre:types")
 	# Upgrades installs real tyre definitions; Tuning owns scalar adjustments.
 	_press("tyre:family:road")
 	_check(not garage.is_dirty(), "choosing compound/tread opens widths without installing a tyre")
