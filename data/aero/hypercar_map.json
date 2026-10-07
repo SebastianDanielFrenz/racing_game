@@ -1,0 +1,7 @@
+{
+  "enabled": false,
+  "coefficient_map": {
+    "file": "hypercar_coefficients.json",
+    "scope": "replace_passive_aero"
+  }
+}

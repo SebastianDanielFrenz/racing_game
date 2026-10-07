@@ -253,6 +253,7 @@ void RgSimulation::run_terrain_init_worker(std::string world_config_path, std::s
     config.vehicle_json_path = std::move(vehicle_json_path);
     configure_vehicle_chassis(config, overrides);
     reuse_vehicle_definition(config);
+    config.aero_map_selection_path=aero_map_selection_path_;
     config.surface_table_path = std::move(surface_table_path);
     config.terrain = rg::make_terrain_mode(*world_config, terrain); // start-up blocks inside make_session below
     config.startup = progress;
@@ -273,6 +274,10 @@ void RgSimulation::run_terrain_init_worker(std::string world_config_path, std::s
     init_phase_.store(InitPhase::Ready, std::memory_order_release);
 }
 
+void RgSimulation::set_aero_map_selection_path(const String& path) {
+    if(session_ || init_phase_.load()==InitPhase::Loading) { last_error_="set aero map selection before initialization";return; }
+    aero_map_selection_path_=to_std_string(path);
+}
 void RgSimulation::reuse_vehicle_definition(rg::SessionConfig& config) const {
     if (config.vehicle_json_path == cached_vehicle_path_)
         config.vehicle_definition = cached_vehicle_definition_;
@@ -292,6 +297,7 @@ bool RgSimulation::initialize(const String& vehicle_json_absolute_path, const St
     config.vehicle_json_path = to_std_string(vehicle_json_absolute_path);
     configure_vehicle_chassis(config, vehicle_overrides_);
     reuse_vehicle_definition(config);
+    config.aero_map_selection_path=aero_map_selection_path_;
     config.surface_table_path = to_std_string(surface_table_absolute_path);
     std::string err;
     session_ = rg::make_session(config, &err); // never throws (see run_terrain_init_worker)
@@ -623,6 +629,9 @@ godot::Variant RgSimulation::get_camera_ground_height(godot::Vector3 position) c
 
 godot::Dictionary RgSimulation::get_aero_state() const {
     godot::Dictionary d;if(!session_)return d;const auto& a=frame_snapshot().aero;
+    d["coefficient_map_active"]=a.coefficient_map_active;d["coefficient_map_ground_missing"]=a.coefficient_map_ground_missing;d["coefficient_map_clamped_axes"]=a.coefficient_map_clamped_axes;
+    godot::Array map_inputs,map_coefficients;for(auto value:a.coefficient_map_inputs)map_inputs.push_back(value);for(auto value:a.coefficient_map_coefficients)map_coefficients.push_back(value);
+    d["coefficient_map_inputs"]=map_inputs;d["coefficient_map_coefficients"]=map_coefficients;
     d["enabled"]=a.enabled;d["airspeed_m_s"]=a.airspeed_m_s;d["drag_n"]=a.drag_n;d["downforce_n"]=a.downforce_n;d["side_force_n"]=a.side_force_n;
     d["front_balance"]=a.front_balance;d["wing_pitch_offset_deg"]=a.wing_pitch_offset_deg;d["wing_lift_m"]=a.wing_lift_m;
     d["fan_power_w"]=a.fan_power_w;d["wake_factor"]=a.wake_factor;d["air_density"]=a.environment.air_density;
@@ -1170,6 +1179,7 @@ void RgSimulation::_bind_methods() {
     godot::ClassDB::bind_method(D_METHOD("set_render_interpolation", "enabled"), &RgSimulation::set_render_interpolation);
     godot::ClassDB::bind_method(D_METHOD("get_render_diagnostics"), &RgSimulation::get_render_diagnostics);
     godot::ClassDB::bind_method(D_METHOD("get_camera_ground_height", "position"), &RgSimulation::get_camera_ground_height);
+    godot::ClassDB::bind_method(D_METHOD("set_aero_map_selection_path", "path"), &RgSimulation::set_aero_map_selection_path);
     godot::ClassDB::bind_method(D_METHOD("get_aero_state"), &RgSimulation::get_aero_state);
     godot::ClassDB::bind_method(D_METHOD("configure_traffic","density","radius","minimum","grip","maximum"), &RgSimulation::configure_traffic);
     godot::ClassDB::bind_method(D_METHOD("set_visible_traffic","ids"), &RgSimulation::set_visible_traffic);

@@ -1,4 +1,5 @@
 #include "rg/session.h"
+#include "rg/aero_map_selection.h"
 
 #include "g2m/phys/height_tile_loader.h"
 #include "g2m/phys/physics_grid.h"
@@ -260,6 +261,7 @@ void Session::build_world_contents(const SessionConfig& config) {
         std::fprintf(stderr, "RG_ENGINE_MAP_CACHE enabled=%s generated=%zu dir=%s\n",
                      config.engine_map_cache_enabled ? "yes" : "no", generated, options.cache_dir.c_str());
     }
+    apply_aero_map_selection(config.aero_map_selection_path,vehicle_desc_);
     vehicle_id_ = world_->create_vehicle(vehicle_desc_, chassis_body_);
     have_vehicle_ = true;
     walker_wheels_.clear();
@@ -1110,6 +1112,11 @@ FrameSnapshot Session::capture_frame_snapshot() const {
     const auto& aero=world_->vehicle_aero_telemetry(vehicle_id_);
     snap.aero.enabled=!vehicle_desc_.aero.surfaces.empty()||!vehicle_desc_.aero.fans.empty()||vehicle_desc_.aero.body.reference_area_m2>0;
     snap.aero.airspeed_m_s=aero.body_airspeed_m_s;
+    snap.aero.coefficient_map_active=aero.coefficient_map_active;
+    snap.aero.coefficient_map_ground_missing=aero.coefficient_map_ground_missing;
+    snap.aero.coefficient_map_clamped_axes=aero.coefficient_map_clamped_axes;
+    std::copy(aero.coefficient_map_inputs.begin(),aero.coefficient_map_inputs.end(),snap.aero.coefficient_map_inputs.begin());
+    std::copy(aero.coefficient_map_coefficients.begin(),aero.coefficient_map_coefficients.end(),snap.aero.coefficient_map_coefficients.begin());
     snap.aero.downforce_n=aero.downforce_n;snap.aero.front_balance=aero.front_balance;
     snap.aero.fan_power_w=aero.fan_power_w;
     snap.aero.fan_energy_remaining_j=aero.fan_energy_remaining_j;

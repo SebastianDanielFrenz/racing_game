@@ -6,6 +6,11 @@
 
 #include "rg/drive_script.h"
 #include "rg/session.h"
+#include "rg/aero_map_selection.h"
+#include "g2m/core/hash.h"
+#include <nlohmann/json.hpp>
+#include <filesystem>
+#include <fstream>
 
 #include "ps/math/quat.h"
 #include "ps/math/transcendental.h"
@@ -524,4 +529,44 @@ TEST_CASE("Session road_ahead stays empty in the flat world", "[session][road_ah
     session.stop();
     CHECK(session.snapshot().tick >= 60);
     CHECK(session.snapshot().road_ahead.empty());
+}
+
+TEST_CASE("Game aero selection binds reviewed bytes and rejects stale geometry", "[aero_map_selection]") {
+    using nlohmann::json;
+    const auto dir=std::filesystem::temp_directory_path()/("rg_aero_map_test_"+std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()));
+    std::filesystem::create_directories(dir);
+    struct Cleanup { std::filesystem::path path;~Cleanup(){std::error_code error;std::filesystem::remove_all(path,error);} } cleanup{dir};
+    auto write=[&](const char* name,const std::string& text){std::ofstream file(dir/name,std::ios::binary);file<<text;};
+    auto digest=[](const std::string& text){return g2m::to_hex(g2m::Sha256::of(std::string_view(text)));};
+    // Synthetic schema fixture only; never shipped or represented as measured CFD.
+    const std::string geometry="synthetic test geometry";write("geometry.bin",geometry);
+    const auto geometry_sha=digest(geometry);
+    json rows=json::array();for(int i=0;i<6;++i)rows.push_back({-.3,0,0,0,0,0});
+    json map={{"schema","physics_sim.aero_coefficients/1"},{"frame","ISO_BODY_X_FORWARD_Y_LEFT_Z_UP"},{"units","SI_DEGREES_DIMENSIONLESS_COEFFICIENTS"},
+        {"reference",{{"area_m2",1.9},{"lengths_m",{2.7,2.7,2.7}},{"point_local_m",{0,0,0}}}},
+        {"provenance",{{"geometry_sha256",geometry_sha},{"solver","synthetic unit fixture"},{"source","not CFD"}}},
+        {"axes",{{"yaw_deg",{-180,0,180}},{"pitch_deg",{-90,90}},{"speed_m_s",{20}}}},{"coefficients",rows}};
+    const auto encoded=map.dump();write("map.json",encoded);
+    json proof={{"validated",false},{"kind","cfd"},{"map_sha256",digest(encoded)},{"geometry_sha256",geometry_sha},
+        {"geometry",json::array({{{"path","geometry.bin"},{"sha256",geometry_sha}}})}};
+    write("map.json.provenance.json",proof.dump());
+    json selection={{"enabled",false},{"coefficient_map",{{"file","map.json"},{"scope","replace_body"}}}};write("selection.json",selection.dump());
+    ps::vehicle::VehicleDesc vehicle;
+    rg::apply_aero_map_selection((dir/"selection.json").string(),vehicle);
+    CHECK_FALSE(vehicle.aero.coefficient_map.table);
+    selection["enabled"]=true;write("selection.json",selection.dump());
+    CHECK_THROWS(rg::apply_aero_map_selection((dir/"selection.json").string(),vehicle));
+    CHECK_FALSE(vehicle.aero.coefficient_map.table);
+    proof["validated"]=true;write("map.json.provenance.json",proof.dump());
+    rg::apply_aero_map_selection((dir/"selection.json").string(),vehicle);
+    REQUIRE(vehicle.aero.coefficient_map.table);
+    const auto retained=vehicle.aero.coefficient_map.table;
+    write("geometry.bin","changed geometry");
+    CHECK_THROWS(rg::apply_aero_map_selection((dir/"selection.json").string(),vehicle));
+    CHECK(vehicle.aero.coefficient_map.table==retained);
+    write("geometry.bin",geometry);write("map.json",encoded+" ");
+    CHECK_THROWS(rg::apply_aero_map_selection((dir/"selection.json").string(),vehicle));
+    selection["enabled"]=false;write("selection.json",selection.dump());
+    rg::apply_aero_map_selection((dir/"selection.json").string(),vehicle);
+    CHECK_FALSE(vehicle.aero.coefficient_map.table);
 }

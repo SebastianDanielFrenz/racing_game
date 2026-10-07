@@ -115,6 +115,8 @@ public:
 };
 
 struct SessionConfig {
+    std::string aero_map_selection_path; // startup-only game-owned CFD map selection
+
     double tick_rate_hz = 240.0;
     double substep_rate_hz = 960.0;
     ps::Vec3 gravity{0.0, 0.0, -9.81};
@@ -191,6 +193,10 @@ struct AeroSurfaceSnapshot {
     ps::Vec3 force_world{};
 };
 struct AeroSnapshot {
+    bool coefficient_map_active=false,coefficient_map_ground_missing=false;
+    std::uint32_t coefficient_map_clamped_axes=0;
+    std::array<double,5> coefficient_map_inputs{};
+    std::array<double,6> coefficient_map_coefficients{};
     bool enabled=false;
     double airspeed_m_s=0,drag_n=0,downforce_n=0,side_force_n=0;
     double front_balance=0,wing_pitch_offset_deg=0,wing_lift_m=0,fan_power_w=0,wake_factor=1;

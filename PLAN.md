@@ -849,3 +849,5 @@ spawns/tick, spatial neighbor checks/staggered 20 Hz probes, nearby-only wakes a
 instanced 22-part rendering replace the main quadratic/spawn/render bottlenecks.
 47 focused assertions pass; headless renderer instantiated 2048 cars + 256 trucks.
 Full-game performance at high populations remains owner acceptance.
+
+2026-10-07 offline CFD aero-map plan: runtime interpolates offline body-axis force/moment coefficients, with explicit model replacement and provenance. Authored hypercar coefficients remain unchanged until validated results are available. Implementation stages and acceptance: docs/aero_cfd_plan.md; bake configuration: data/aero/hypercar_bake.json.

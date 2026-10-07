@@ -423,6 +423,7 @@ func _build_scene(user_args: PackedStringArray) -> void:
 	# --- simulation node ---
 	_simulation = ClassDB.instantiate("RgSimulation")
 	_simulation.name = "Simulation"
+	_simulation.set_aero_map_selection_path(ProjectSettings.globalize_path("res://../data/aero/hypercar_map.json"))
 	add_child(_simulation)
 	if fetch_delay_ms > 0:
 		_simulation.set_fetch_delay_ms(fetch_delay_ms)

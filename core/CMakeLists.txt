@@ -60,6 +60,7 @@ add_library(rg_core STATIC
     src/building_footprints.cpp
     src/deck_installer.cpp
     src/session.cpp
+    src/aero_map_selection.cpp
     src/player_mode.cpp
     src/terrain_mode.cpp
     src/world_config.cpp
