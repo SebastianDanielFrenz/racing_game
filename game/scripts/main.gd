@@ -154,7 +154,12 @@ func _data_path(relative: String) -> String:
 
 func _world_config_path() -> String:
 	# racing_game's OWN data/world/world_config.json (PLAN.md R2.0/R2.1).
+	# RG_WORLD_CONFIG (env) picks another world, e.g.
+	# data/world/world_config_rhein_main_hessen.json (relative to the repo root).
 	var project_root: String = ProjectSettings.globalize_path("res://")
+	var override := OS.get_environment("RG_WORLD_CONFIG")
+	if override != "":
+		return override if override.is_absolute_path() else (project_root.path_join("..").path_join(override)).simplify_path()
 	return (project_root.path_join("../data/world/world_config.json")).simplify_path()
 
 # racing_game's OWN data/ (data/vehicles/, data/engines/ - carvis brief

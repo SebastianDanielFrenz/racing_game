@@ -1,0 +1,60 @@
+{
+  "format": "rg.world/1",
+  "region": "rhein_main_hessen",
+  "session_origin_utm": {
+    "zone": 32,
+    "e0": 464000,
+    "n0": 5559000
+  },
+  "source_store": {
+    "dir": "S:/claude_code/geo2map_cache/rhein-main-hessen-r1",
+    "scope": "rhein-main-hessen-2026-10r1",
+    "read_only": true
+  },
+  "derived_store": {
+    "dir": "S:/claude_code/geo2map_cache/rhein-main-hessen-r1/baked",
+    "name": "tiles"
+  },
+  "spawn": {
+    "latitude": 50.12359409,
+    "longitude": 8.51546541,
+    "yaw_deg": 4.05
+  },
+  "lod": {
+    "max_distance_m": 20000.0
+  },
+  "surface_map": "data/world/landclass_surfaces.json",
+  "palette": "data/world/landclass_palette.json",
+  "physics": {
+    "engine_map_cache_enabled": true,
+    "prefetch_margin_tiles": 1,
+    "prefetch_max_tiles": 24,
+    "road_surfaces": {
+      "enabled": true,
+      "paved": "asphalt",
+      "unpaved": "dirt",
+      "off_road": "grass"
+    }
+  },
+  "terrain_smoothing": {
+    "enabled": true,
+    "radius_m": 2.0,
+    "strength": 0.35,
+    "passes": 1
+  },
+  "buildings": {
+    "enabled": true,
+    "ordinary_distance_m": 2200.0,
+    "skyline_min_height_m": 50.0,
+    "skyline_distance_m": 40000.0,
+    "fallback_height_m": 8.0,
+    "storey_height_m": 3.0
+  },
+  "road_visuals": {
+    "enabled": true,
+    "distance_m": 2500.0,
+    "surface_lift_m": 0.018,
+    "line_width_m": 0.15,
+    "verge_drop_m": 0.06
+  }
+}
