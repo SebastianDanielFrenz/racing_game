@@ -391,10 +391,14 @@ std::vector<WheelInfo> wheels_of(const json& vehicle, bool front) {
 
 // Tyre files (by stem -> absolute path) whose size matches every wheel of `axle`.
 std::map<std::string, std::string> tyre_candidates(const SetupContext& ctx, const std::vector<WheelInfo>& axle,
-                                                    const std::string& stock_path) {
+                                                    const std::string& stock_path,
+                                                    const std::pair<double, double>* width_limits = nullptr) {
     std::map<std::string, std::string> out;
     if (axle.empty()) return out;
     constexpr double kTolM = 0.006;
+    json stock_doc;
+    double stock_rim = 0.0;
+    if (read_doc(stock_path, stock_doc, nullptr)) detail::get_number(stock_doc, "rim_radius", stock_rim);
     std::error_code ec;
     for (const std::string& dir : ctx.tyre_dirs) {
         if (!fs::is_directory(fs::path(dir), ec)) continue;
@@ -410,9 +414,15 @@ std::map<std::string, std::string> tyre_candidates(const SetupContext& ctx, cons
             if (!detail::get_string(doc, "format", format) || format.rfind("physics_sim.tyre", 0) != 0) continue;
             double radius = 0.0, width = 0.0;
             if (!detail::get_number(doc, "unloaded_radius", radius) || !detail::get_number(doc, "width", width)) continue;
-            bool fits = true;
+            double rim = 0.0;
+            detail::get_number(doc, "rim_radius", rim);
+            bool fits = stock_rim <= 0.0 || std::abs(rim - stock_rim) < 0.001;
             for (const WheelInfo& w : axle) {
-                if (std::abs(w.radius - radius) > kTolM || std::abs(w.width - width) > kTolM) fits = false;
+                if (std::abs(w.radius - radius) > kTolM) fits = false;
+                if (width_limits != nullptr) {
+                    const double mm = width * 1000.0;
+                    if (mm < width_limits->first - 1e-6 || mm > width_limits->second + 1e-6) fits = false;
+                } else if (std::abs(w.width - width) > kTolM) fits = false;
             }
             const std::string path = norm_path(f.generic_string());
             if (!fits && path != stock_path) continue;
@@ -740,7 +750,8 @@ SetupModel build_setup_model(const CatalogEntry& entry, const SetupOptionTable& 
                     stock_path = resolve_ref(dir_of(files.vehicle.path), axle.front().tyre);
                 }
                 v.stock = stem_of(stock_path);
-                for (const auto& kv : tyre_candidates(ctx, axle, stock_path)) v.choices.push_back(kv.first);
+                const auto limits = entry.setup_ranges.find(def.id);
+                for (const auto& kv : tyre_candidates(ctx, axle, stock_path, limits == entry.setup_ranges.end() ? nullptr : &limits->second)) v.choices.push_back(kv.first);
                 if (axle.empty() || stock_path.empty() || v.choices.size() < 2) v.available = false;
                 break;
             }
@@ -903,12 +914,15 @@ std::string apply_option(const CatalogEntry& entry, const SetupOptionDef& def, c
             const std::vector<WheelInfo> axle = wheels_of(files.vehicle.work, def.axle == "front");
             std::string stock_path;
             if (!axle.empty() && !axle.front().tyre.empty()) stock_path = resolve_ref(dir_of(files.vehicle.path), axle.front().tyre);
-            const auto candidates = tyre_candidates(ctx, axle, stock_path);
+            const auto limits = entry.setup_ranges.find(def.id);
+            const auto candidates = tyre_candidates(ctx, axle, stock_path, limits == entry.setup_ranges.end() ? nullptr : &limits->second);
             const auto it = candidates.find(stem);
             if (it == candidates.end()) {
                 return id + ": \"" + stem + "\" is not a tyre that fits the " + def.axle + " wheels";
             }
-            std::vector<Target> targets = targets_of(files, def, patterns);
+            std::vector<std::string> ref_patterns;
+            for (const auto& pattern : patterns) if (pattern.size() >= 5 && pattern.substr(pattern.size()-5) == "/tyre") ref_patterns.push_back(pattern);
+            std::vector<Target> targets = targets_of(files, def, ref_patterns);
             if (targets.empty()) return "option \"" + id + "\" matches nothing in " + entry.id + "'s files";
             for (Target& t : targets) {
                 try {
@@ -917,6 +931,16 @@ std::string apply_option(const CatalogEntry& entry, const SetupOptionDef& def, c
                     return "option \"" + id + "\": cannot edit " + t.pointer;
                 }
                 touched.emplace_back(t.file, t.pointer);
+            }
+            json selected_doc;
+            double selected_width = 0.0;
+            if (!read_doc(it->second, selected_doc, nullptr) || !detail::get_number(selected_doc, "width", selected_width)) return id + ": tyre width unavailable";
+            for (const auto& wheel : axle) {
+                auto& target = files.vehicle.work["wheels"][wheel.index];
+                if (wheel.width <= 0.0) return id + ": invalid original wheel width";
+                target["wheel_width"] = selected_width;
+                if (target.contains("wheel_inertia") && target["wheel_inertia"].is_number())
+                    target["wheel_inertia"] = target["wheel_inertia"].get<double>() * selected_width / wheel.width;
             }
             return {};
         }

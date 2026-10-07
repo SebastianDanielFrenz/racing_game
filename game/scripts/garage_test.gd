@@ -187,6 +187,8 @@ func _run() -> void:
 	_check(save_button != null and save_button.disabled, "Save is disabled while nothing changed")
 
 	# Upgrades installs real tyre definitions; Tuning owns scalar adjustments.
+	_press("tyre:family:road")
+	_check(not garage.is_dirty(), "choosing compound/tread opens widths without installing a tyre")
 	var tyre_option: Dictionary = {}
 	for opt in garage.get_options():
 		if str(opt["id"]) == "tyre_front":
@@ -194,9 +196,10 @@ func _run() -> void:
 	var tyre_choices: PackedStringArray = tyre_option.get("choices", PackedStringArray())
 	if tyre_choices.size() > 1:
 		var original := str(tyre_option["value"])
-		var replacement := str(tyre_choices[1] if str(tyre_choices[0]) == original else tyre_choices[0])
+		var replacement := "hyper_front_road_w305_r20"
 		_press("part:tyre_front:" + replacement)
 		_check(garage.is_dirty() and bool(garage.get_validation()["ok"]), "installing a tyre card changes a validated setup")
+		_check(absf(ui.garage_wheel_widths().x - 0.305) < 0.0001, "installed front width is 305 mm")
 		_press("part:tyre_front:" + original)
 		_check(not garage.is_dirty(), "reinstalling the original tyres restores the clean setup")
 	# ---- a valid change through the real control ----

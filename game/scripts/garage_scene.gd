@@ -134,6 +134,30 @@ func set_colours(paint_hex: String, rim_hex: String) -> void:
 	if rim_hex != "":
 		_rim = Color.html(rim_hex)
 	_apply_colours()
+	_apply_tyre_widths()
+
+func _apply_tyre_widths() -> void:
+	var owner := get_parent()
+	if not owner.has_method("get_shell_ui"):
+		return
+	var ui: Node = owner.get_shell_ui()
+	if ui == null or not ui.has_method("garage_wheel_widths"):
+		return
+	var widths: Vector2 = ui.garage_wheel_widths()
+	for id in _cars:
+		if not _cars[id]["real"].visible:
+			continue
+		for instance in [_cars[id]["real"],_cars[id]["mirror"]]:
+			for corner in ["FL","FR","RL","RR"]:
+				var wheel: Node3D = instance.find_child("wheel_"+corner,true,false)
+				if wheel == null:
+					continue
+				if not wheel.has_meta("stock_width_scale"):
+					wheel.set_meta("stock_width_scale",wheel.scale.x)
+				var front: bool = str(corner).begins_with("F")
+				var reference: float = (0.265 if front else 0.325) if str(garage.get_vehicle(str(id)).get("model_path", "")).get_file() == "car_hyper.glb" else 0.225
+				var width: float = widths.x if front else widths.y
+				wheel.scale.x = float(wheel.get_meta("stock_width_scale")) * width / reference if width > 0.0 else float(wheel.get_meta("stock_width_scale"))
 
 func go_to_area(area_id: String, instant: bool = false) -> void:
 	garage.camera_go_to(area_id, instant)

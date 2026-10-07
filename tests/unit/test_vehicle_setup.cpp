@@ -12,6 +12,7 @@
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/matchers/catch_matchers_string.hpp>
 
+#include <algorithm>
 #include <filesystem>
 #include <initializer_list>
 #include <string>
@@ -353,5 +354,64 @@ TEST_CASE("setup: every catalog entry accepts a setup touching each available op
         const auto v = rg::validate_setup(e, f.table, f.ctx, s);
         INFO(v.message);
         CHECK(v.ok);
+    }
+}
+
+TEST_CASE("setup: tyre width changes geometry, grip and resistance together", "[setup][tyre_width]") {
+    Fixture f;
+    const auto& e = f.entry("car_sedan");
+    const auto narrow = load_materialised(f, e, setup_of("car_sedan", {{"tyre_front", std::string("passenger_road_w195_r17")}}));
+    const auto wide = load_materialised(f, e, setup_of("car_sedan", {{"tyre_front", std::string("passenger_road_w255_r17")}}));
+    const auto stock = ps::io::load_vehicle_json(e.vehicle_path);
+    REQUIRE(narrow.wheels.size() == 4);
+    REQUIRE(wide.wheels.size() == 4);
+    for (int i : {0, 1}) {
+        CHECK(narrow.wheels[i].wheel_width == Approx(.195));
+        CHECK(wide.wheels[i].wheel_width == Approx(.255));
+        CHECK(wide.wheels[i].tyre.lambda_mux > narrow.wheels[i].tyre.lambda_mux);
+        CHECK(wide.wheels[i].tyre.lambda_muy > narrow.wheels[i].tyre.lambda_muy);
+        CHECK(wide.wheels[i].tyre.qsy1 > narrow.wheels[i].tyre.qsy1);
+        CHECK(wide.wheels[i].wheel_inertia == Approx(stock.wheels[i].wheel_inertia * .255/.225));
+        CHECK(wide.wheels[i].wheel_radius == Approx(stock.wheels[i].wheel_radius));
+    }
+    std::string saved_error;
+    const auto saved = rg::parse_setup(rg::setup_to_json(setup_of("car_sedan", {{"tyre_front", std::string("passenger_road_w255_r17")}})), f.table, "width save test", &saved_error);
+    REQUIRE(saved.has_value());
+    const auto reloaded = load_materialised(f, e, *saved);
+    CHECK(reloaded.wheels[0].wheel_width == Approx(.255));
+    CHECK(reloaded.wheels[0].tyre.lambda_mux == Approx(wide.wheels[0].tyre.lambda_mux));
+    CHECK(wide.wheels[2].wheel_width == Approx(stock.wheels[2].wheel_width));
+    CHECK(wide.wheels[2].tyre.lambda_mux == Approx(stock.wheels[2].tyre.lambda_mux));
+    std::string error;
+    load_materialised(f, e, setup_of("car_sedan", {{"tyre_front", std::string("passenger_road_w265_r17")}}), &error);
+    CHECK_THAT(error, ContainsSubstring("not a tyre that fits"));
+    // Catalog range changes the limit without changing compiler code.
+    auto enlarged = e;
+    enlarged.setup_ranges["tyre_front"] = {195, 275};
+    const auto expanded = load_materialised(f, enlarged, setup_of("car_sedan", {{"tyre_front", std::string("passenger_road_w275_r17")}}));
+    REQUIRE(expanded.wheels.size() == 4);
+    CHECK(expanded.wheels[0].wheel_width == Approx(.275));
+}
+
+TEST_CASE("setup: each tyre family offers width variants within its axle body envelope", "[setup][tyre_width]") {
+    Fixture f;
+    const auto& e = f.entry("car_hyper");
+    const auto model = rg::build_setup_model(e, f.table, f.ctx);
+    REQUIRE(model.error.empty());
+    for (const auto& opt : model.options) {
+        if (opt.def.id != "tyre_front" && opt.def.id != "tyre_rear") continue;
+        const bool front = opt.def.id == "tyre_front";
+        const std::string prefix = front ? "hyper_front_" : "hyper_rear_";
+        const std::string rim = front ? "_r20" : "_r21";
+        const int minimum = front ? 235 : 275;
+        const int maximum = front ? 305 : 365;
+        for (const char* family : {"road", "track", "slick", "drag"}) {
+            for (int width = minimum; width <= maximum; width += 10) {
+                const auto key = prefix + family + "_w" + std::to_string(width) + rim;
+                CHECK(std::find(opt.choices.begin(), opt.choices.end(), key) != opt.choices.end());
+            }
+            const auto too_wide = prefix + family + "_w" + std::to_string(maximum + 10) + rim;
+            CHECK(std::find(opt.choices.begin(), opt.choices.end(), too_wide) == opt.choices.end());
+        }
     }
 }

@@ -192,6 +192,13 @@ func _bind_wheel_nodes() -> void:
 			"is_front": simulation.get_wheel_is_front(vehicle_name, i),
 			"steered": simulation.get_wheel_steered(vehicle_name, i),
 		}
+		if wheel != null:
+			var reference := 0.265 if entry["is_front"] else 0.325
+			if model_absolute_path.get_file() != "car_hyper.glb":
+				reference = 0.225
+			if not wheel.has_meta("stock_width_scale"):
+				wheel.set_meta("stock_width_scale", wheel.scale.x)
+			wheel.scale.x = float(wheel.get_meta("stock_width_scale")) * simulation.get_wheel_width(vehicle_name,i) / reference
 		_wheel_nodes.append(entry)
 		if susp == null or wheel == null:
 			missing += 1

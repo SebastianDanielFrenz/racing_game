@@ -4,42 +4,1688 @@
       "label": "Performance road",
       "size": "265/35 R20",
       "image": "res://assets/components/tyres/road.png",
-      "rated_speed_kmh": 500
+      "rated_speed_kmh": 500,
+      "family": "road",
+      "width_mm": 265
     },
     "hyper_front_track_265_35r20": {
       "label": "Track semi-slick",
       "size": "265/35 R20",
       "image": "res://assets/components/tyres/track.png",
-      "rated_speed_kmh": 500
+      "rated_speed_kmh": 500,
+      "family": "track",
+      "width_mm": 265
     },
     "hyper_rear_325_30r21": {
       "label": "Performance road",
       "size": "325/30 R21",
       "image": "res://assets/components/tyres/road.png",
-      "rated_speed_kmh": 500
+      "rated_speed_kmh": 500,
+      "family": "road",
+      "width_mm": 325
     },
     "hyper_rear_track_325_30r21": {
       "label": "Track semi-slick",
       "size": "325/30 R21",
       "image": "res://assets/components/tyres/track.png",
-      "rated_speed_kmh": 500
+      "rated_speed_kmh": 500,
+      "family": "track",
+      "width_mm": 325
     },
     "passenger_car_225_45r17": {
       "label": "Road",
       "size": "225/45 R17",
       "image": "res://assets/components/tyres/road.png",
-      "rated_speed_kmh": 270
+      "rated_speed_kmh": 270,
+      "family": "road",
+      "width_mm": 225
     },
     "passenger_sport_225_45r17": {
       "label": "Sport road",
       "size": "225/45 R17",
       "image": "res://assets/components/tyres/road.png",
-      "rated_speed_kmh": 270
+      "rated_speed_kmh": 270,
+      "family": "road",
+      "width_mm": 225
     },
     "passenger_comfort_225_45r17": {
       "label": "Comfort road",
       "size": "225/45 R17",
       "image": "res://assets/components/tyres/road.png",
+      "rated_speed_kmh": 270,
+      "family": "road",
+      "width_mm": 225
+    },
+    "hyper_front_road_w235_r20": {
+      "label": "Performance road",
+      "family": "road",
+      "width_mm": 235,
+      "size": "235/40 R20",
+      "image": "res://assets/components/tyres/road.png",
+      "rated_speed_kmh": 500
+    },
+    "hyper_front_road_w245_r20": {
+      "label": "Performance road",
+      "family": "road",
+      "width_mm": 245,
+      "size": "245/38 R20",
+      "image": "res://assets/components/tyres/road.png",
+      "rated_speed_kmh": 500
+    },
+    "hyper_front_road_w255_r20": {
+      "label": "Performance road",
+      "family": "road",
+      "width_mm": 255,
+      "size": "255/36 R20",
+      "image": "res://assets/components/tyres/road.png",
+      "rated_speed_kmh": 500
+    },
+    "hyper_front_road_w265_r20": {
+      "label": "Performance road",
+      "family": "road",
+      "width_mm": 265,
+      "size": "265/35 R20",
+      "image": "res://assets/components/tyres/road.png",
+      "rated_speed_kmh": 500
+    },
+    "hyper_front_road_w275_r20": {
+      "label": "Performance road",
+      "family": "road",
+      "width_mm": 275,
+      "size": "275/34 R20",
+      "image": "res://assets/components/tyres/road.png",
+      "rated_speed_kmh": 500
+    },
+    "hyper_front_road_w285_r20": {
+      "label": "Performance road",
+      "family": "road",
+      "width_mm": 285,
+      "size": "285/33 R20",
+      "image": "res://assets/components/tyres/road.png",
+      "rated_speed_kmh": 500
+    },
+    "hyper_front_road_w295_r20": {
+      "label": "Performance road",
+      "family": "road",
+      "width_mm": 295,
+      "size": "295/32 R20",
+      "image": "res://assets/components/tyres/road.png",
+      "rated_speed_kmh": 500
+    },
+    "hyper_front_road_w305_r20": {
+      "label": "Performance road",
+      "family": "road",
+      "width_mm": 305,
+      "size": "305/30 R20",
+      "image": "res://assets/components/tyres/road.png",
+      "rated_speed_kmh": 500
+    },
+    "hyper_front_road_w315_r20": {
+      "label": "Performance road",
+      "family": "road",
+      "width_mm": 315,
+      "size": "315/30 R20",
+      "image": "res://assets/components/tyres/road.png",
+      "rated_speed_kmh": 500
+    },
+    "hyper_front_road_w325_r20": {
+      "label": "Performance road",
+      "family": "road",
+      "width_mm": 325,
+      "size": "325/29 R20",
+      "image": "res://assets/components/tyres/road.png",
+      "rated_speed_kmh": 500
+    },
+    "hyper_front_road_w335_r20": {
+      "label": "Performance road",
+      "family": "road",
+      "width_mm": 335,
+      "size": "335/28 R20",
+      "image": "res://assets/components/tyres/road.png",
+      "rated_speed_kmh": 500
+    },
+    "hyper_front_road_w345_r20": {
+      "label": "Performance road",
+      "family": "road",
+      "width_mm": 345,
+      "size": "345/27 R20",
+      "image": "res://assets/components/tyres/road.png",
+      "rated_speed_kmh": 500
+    },
+    "hyper_front_road_w355_r20": {
+      "label": "Performance road",
+      "family": "road",
+      "width_mm": 355,
+      "size": "355/26 R20",
+      "image": "res://assets/components/tyres/road.png",
+      "rated_speed_kmh": 500
+    },
+    "hyper_front_road_w365_r20": {
+      "label": "Performance road",
+      "family": "road",
+      "width_mm": 365,
+      "size": "365/25 R20",
+      "image": "res://assets/components/tyres/road.png",
+      "rated_speed_kmh": 500
+    },
+    "hyper_front_road_w375_r20": {
+      "label": "Performance road",
+      "family": "road",
+      "width_mm": 375,
+      "size": "375/25 R20",
+      "image": "res://assets/components/tyres/road.png",
+      "rated_speed_kmh": 500
+    },
+    "hyper_front_road_w385_r20": {
+      "label": "Performance road",
+      "family": "road",
+      "width_mm": 385,
+      "size": "385/24 R20",
+      "image": "res://assets/components/tyres/road.png",
+      "rated_speed_kmh": 500
+    },
+    "hyper_front_road_w395_r20": {
+      "label": "Performance road",
+      "family": "road",
+      "width_mm": 395,
+      "size": "395/24 R20",
+      "image": "res://assets/components/tyres/road.png",
+      "rated_speed_kmh": 500
+    },
+    "hyper_front_track_w235_r20": {
+      "label": "Track semi-slick",
+      "family": "track",
+      "width_mm": 235,
+      "size": "235/40 R20",
+      "image": "res://assets/components/tyres/track.png",
+      "rated_speed_kmh": 500
+    },
+    "hyper_front_track_w245_r20": {
+      "label": "Track semi-slick",
+      "family": "track",
+      "width_mm": 245,
+      "size": "245/38 R20",
+      "image": "res://assets/components/tyres/track.png",
+      "rated_speed_kmh": 500
+    },
+    "hyper_front_track_w255_r20": {
+      "label": "Track semi-slick",
+      "family": "track",
+      "width_mm": 255,
+      "size": "255/36 R20",
+      "image": "res://assets/components/tyres/track.png",
+      "rated_speed_kmh": 500
+    },
+    "hyper_front_track_w265_r20": {
+      "label": "Track semi-slick",
+      "family": "track",
+      "width_mm": 265,
+      "size": "265/35 R20",
+      "image": "res://assets/components/tyres/track.png",
+      "rated_speed_kmh": 500
+    },
+    "hyper_front_track_w275_r20": {
+      "label": "Track semi-slick",
+      "family": "track",
+      "width_mm": 275,
+      "size": "275/34 R20",
+      "image": "res://assets/components/tyres/track.png",
+      "rated_speed_kmh": 500
+    },
+    "hyper_front_track_w285_r20": {
+      "label": "Track semi-slick",
+      "family": "track",
+      "width_mm": 285,
+      "size": "285/33 R20",
+      "image": "res://assets/components/tyres/track.png",
+      "rated_speed_kmh": 500
+    },
+    "hyper_front_track_w295_r20": {
+      "label": "Track semi-slick",
+      "family": "track",
+      "width_mm": 295,
+      "size": "295/32 R20",
+      "image": "res://assets/components/tyres/track.png",
+      "rated_speed_kmh": 500
+    },
+    "hyper_front_track_w305_r20": {
+      "label": "Track semi-slick",
+      "family": "track",
+      "width_mm": 305,
+      "size": "305/30 R20",
+      "image": "res://assets/components/tyres/track.png",
+      "rated_speed_kmh": 500
+    },
+    "hyper_front_track_w315_r20": {
+      "label": "Track semi-slick",
+      "family": "track",
+      "width_mm": 315,
+      "size": "315/30 R20",
+      "image": "res://assets/components/tyres/track.png",
+      "rated_speed_kmh": 500
+    },
+    "hyper_front_track_w325_r20": {
+      "label": "Track semi-slick",
+      "family": "track",
+      "width_mm": 325,
+      "size": "325/29 R20",
+      "image": "res://assets/components/tyres/track.png",
+      "rated_speed_kmh": 500
+    },
+    "hyper_front_track_w335_r20": {
+      "label": "Track semi-slick",
+      "family": "track",
+      "width_mm": 335,
+      "size": "335/28 R20",
+      "image": "res://assets/components/tyres/track.png",
+      "rated_speed_kmh": 500
+    },
+    "hyper_front_track_w345_r20": {
+      "label": "Track semi-slick",
+      "family": "track",
+      "width_mm": 345,
+      "size": "345/27 R20",
+      "image": "res://assets/components/tyres/track.png",
+      "rated_speed_kmh": 500
+    },
+    "hyper_front_track_w355_r20": {
+      "label": "Track semi-slick",
+      "family": "track",
+      "width_mm": 355,
+      "size": "355/26 R20",
+      "image": "res://assets/components/tyres/track.png",
+      "rated_speed_kmh": 500
+    },
+    "hyper_front_track_w365_r20": {
+      "label": "Track semi-slick",
+      "family": "track",
+      "width_mm": 365,
+      "size": "365/25 R20",
+      "image": "res://assets/components/tyres/track.png",
+      "rated_speed_kmh": 500
+    },
+    "hyper_front_track_w375_r20": {
+      "label": "Track semi-slick",
+      "family": "track",
+      "width_mm": 375,
+      "size": "375/25 R20",
+      "image": "res://assets/components/tyres/track.png",
+      "rated_speed_kmh": 500
+    },
+    "hyper_front_track_w385_r20": {
+      "label": "Track semi-slick",
+      "family": "track",
+      "width_mm": 385,
+      "size": "385/24 R20",
+      "image": "res://assets/components/tyres/track.png",
+      "rated_speed_kmh": 500
+    },
+    "hyper_front_track_w395_r20": {
+      "label": "Track semi-slick",
+      "family": "track",
+      "width_mm": 395,
+      "size": "395/24 R20",
+      "image": "res://assets/components/tyres/track.png",
+      "rated_speed_kmh": 500
+    },
+    "hyper_front_slick_w235_r20": {
+      "label": "Racing slick",
+      "family": "slick",
+      "width_mm": 235,
+      "size": "235/40 R20",
+      "image": "res://assets/components/tyres/slick.png",
+      "rated_speed_kmh": 450
+    },
+    "hyper_front_slick_w245_r20": {
+      "label": "Racing slick",
+      "family": "slick",
+      "width_mm": 245,
+      "size": "245/38 R20",
+      "image": "res://assets/components/tyres/slick.png",
+      "rated_speed_kmh": 450
+    },
+    "hyper_front_slick_w255_r20": {
+      "label": "Racing slick",
+      "family": "slick",
+      "width_mm": 255,
+      "size": "255/36 R20",
+      "image": "res://assets/components/tyres/slick.png",
+      "rated_speed_kmh": 450
+    },
+    "hyper_front_slick_w265_r20": {
+      "label": "Racing slick",
+      "family": "slick",
+      "width_mm": 265,
+      "size": "265/35 R20",
+      "image": "res://assets/components/tyres/slick.png",
+      "rated_speed_kmh": 450
+    },
+    "hyper_front_slick_w275_r20": {
+      "label": "Racing slick",
+      "family": "slick",
+      "width_mm": 275,
+      "size": "275/34 R20",
+      "image": "res://assets/components/tyres/slick.png",
+      "rated_speed_kmh": 450
+    },
+    "hyper_front_slick_w285_r20": {
+      "label": "Racing slick",
+      "family": "slick",
+      "width_mm": 285,
+      "size": "285/33 R20",
+      "image": "res://assets/components/tyres/slick.png",
+      "rated_speed_kmh": 450
+    },
+    "hyper_front_slick_w295_r20": {
+      "label": "Racing slick",
+      "family": "slick",
+      "width_mm": 295,
+      "size": "295/32 R20",
+      "image": "res://assets/components/tyres/slick.png",
+      "rated_speed_kmh": 450
+    },
+    "hyper_front_slick_w305_r20": {
+      "label": "Racing slick",
+      "family": "slick",
+      "width_mm": 305,
+      "size": "305/30 R20",
+      "image": "res://assets/components/tyres/slick.png",
+      "rated_speed_kmh": 450
+    },
+    "hyper_front_slick_w315_r20": {
+      "label": "Racing slick",
+      "family": "slick",
+      "width_mm": 315,
+      "size": "315/30 R20",
+      "image": "res://assets/components/tyres/slick.png",
+      "rated_speed_kmh": 450
+    },
+    "hyper_front_slick_w325_r20": {
+      "label": "Racing slick",
+      "family": "slick",
+      "width_mm": 325,
+      "size": "325/29 R20",
+      "image": "res://assets/components/tyres/slick.png",
+      "rated_speed_kmh": 450
+    },
+    "hyper_front_slick_w335_r20": {
+      "label": "Racing slick",
+      "family": "slick",
+      "width_mm": 335,
+      "size": "335/28 R20",
+      "image": "res://assets/components/tyres/slick.png",
+      "rated_speed_kmh": 450
+    },
+    "hyper_front_slick_w345_r20": {
+      "label": "Racing slick",
+      "family": "slick",
+      "width_mm": 345,
+      "size": "345/27 R20",
+      "image": "res://assets/components/tyres/slick.png",
+      "rated_speed_kmh": 450
+    },
+    "hyper_front_slick_w355_r20": {
+      "label": "Racing slick",
+      "family": "slick",
+      "width_mm": 355,
+      "size": "355/26 R20",
+      "image": "res://assets/components/tyres/slick.png",
+      "rated_speed_kmh": 450
+    },
+    "hyper_front_slick_w365_r20": {
+      "label": "Racing slick",
+      "family": "slick",
+      "width_mm": 365,
+      "size": "365/25 R20",
+      "image": "res://assets/components/tyres/slick.png",
+      "rated_speed_kmh": 450
+    },
+    "hyper_front_slick_w375_r20": {
+      "label": "Racing slick",
+      "family": "slick",
+      "width_mm": 375,
+      "size": "375/25 R20",
+      "image": "res://assets/components/tyres/slick.png",
+      "rated_speed_kmh": 450
+    },
+    "hyper_front_slick_w385_r20": {
+      "label": "Racing slick",
+      "family": "slick",
+      "width_mm": 385,
+      "size": "385/24 R20",
+      "image": "res://assets/components/tyres/slick.png",
+      "rated_speed_kmh": 450
+    },
+    "hyper_front_slick_w395_r20": {
+      "label": "Racing slick",
+      "family": "slick",
+      "width_mm": 395,
+      "size": "395/24 R20",
+      "image": "res://assets/components/tyres/slick.png",
+      "rated_speed_kmh": 450
+    },
+    "hyper_front_drag_w235_r20": {
+      "label": "Drag",
+      "family": "drag",
+      "width_mm": 235,
+      "size": "235/40 R20",
+      "image": "res://assets/components/tyres/drag.png",
+      "rated_speed_kmh": 350
+    },
+    "hyper_front_drag_w245_r20": {
+      "label": "Drag",
+      "family": "drag",
+      "width_mm": 245,
+      "size": "245/38 R20",
+      "image": "res://assets/components/tyres/drag.png",
+      "rated_speed_kmh": 350
+    },
+    "hyper_front_drag_w255_r20": {
+      "label": "Drag",
+      "family": "drag",
+      "width_mm": 255,
+      "size": "255/36 R20",
+      "image": "res://assets/components/tyres/drag.png",
+      "rated_speed_kmh": 350
+    },
+    "hyper_front_drag_w265_r20": {
+      "label": "Drag",
+      "family": "drag",
+      "width_mm": 265,
+      "size": "265/35 R20",
+      "image": "res://assets/components/tyres/drag.png",
+      "rated_speed_kmh": 350
+    },
+    "hyper_front_drag_w275_r20": {
+      "label": "Drag",
+      "family": "drag",
+      "width_mm": 275,
+      "size": "275/34 R20",
+      "image": "res://assets/components/tyres/drag.png",
+      "rated_speed_kmh": 350
+    },
+    "hyper_front_drag_w285_r20": {
+      "label": "Drag",
+      "family": "drag",
+      "width_mm": 285,
+      "size": "285/33 R20",
+      "image": "res://assets/components/tyres/drag.png",
+      "rated_speed_kmh": 350
+    },
+    "hyper_front_drag_w295_r20": {
+      "label": "Drag",
+      "family": "drag",
+      "width_mm": 295,
+      "size": "295/32 R20",
+      "image": "res://assets/components/tyres/drag.png",
+      "rated_speed_kmh": 350
+    },
+    "hyper_front_drag_w305_r20": {
+      "label": "Drag",
+      "family": "drag",
+      "width_mm": 305,
+      "size": "305/30 R20",
+      "image": "res://assets/components/tyres/drag.png",
+      "rated_speed_kmh": 350
+    },
+    "hyper_front_drag_w315_r20": {
+      "label": "Drag",
+      "family": "drag",
+      "width_mm": 315,
+      "size": "315/30 R20",
+      "image": "res://assets/components/tyres/drag.png",
+      "rated_speed_kmh": 350
+    },
+    "hyper_front_drag_w325_r20": {
+      "label": "Drag",
+      "family": "drag",
+      "width_mm": 325,
+      "size": "325/29 R20",
+      "image": "res://assets/components/tyres/drag.png",
+      "rated_speed_kmh": 350
+    },
+    "hyper_front_drag_w335_r20": {
+      "label": "Drag",
+      "family": "drag",
+      "width_mm": 335,
+      "size": "335/28 R20",
+      "image": "res://assets/components/tyres/drag.png",
+      "rated_speed_kmh": 350
+    },
+    "hyper_front_drag_w345_r20": {
+      "label": "Drag",
+      "family": "drag",
+      "width_mm": 345,
+      "size": "345/27 R20",
+      "image": "res://assets/components/tyres/drag.png",
+      "rated_speed_kmh": 350
+    },
+    "hyper_front_drag_w355_r20": {
+      "label": "Drag",
+      "family": "drag",
+      "width_mm": 355,
+      "size": "355/26 R20",
+      "image": "res://assets/components/tyres/drag.png",
+      "rated_speed_kmh": 350
+    },
+    "hyper_front_drag_w365_r20": {
+      "label": "Drag",
+      "family": "drag",
+      "width_mm": 365,
+      "size": "365/25 R20",
+      "image": "res://assets/components/tyres/drag.png",
+      "rated_speed_kmh": 350
+    },
+    "hyper_front_drag_w375_r20": {
+      "label": "Drag",
+      "family": "drag",
+      "width_mm": 375,
+      "size": "375/25 R20",
+      "image": "res://assets/components/tyres/drag.png",
+      "rated_speed_kmh": 350
+    },
+    "hyper_front_drag_w385_r20": {
+      "label": "Drag",
+      "family": "drag",
+      "width_mm": 385,
+      "size": "385/24 R20",
+      "image": "res://assets/components/tyres/drag.png",
+      "rated_speed_kmh": 350
+    },
+    "hyper_front_drag_w395_r20": {
+      "label": "Drag",
+      "family": "drag",
+      "width_mm": 395,
+      "size": "395/24 R20",
+      "image": "res://assets/components/tyres/drag.png",
+      "rated_speed_kmh": 350
+    },
+    "hyper_rear_road_w235_r21": {
+      "label": "Performance road",
+      "family": "road",
+      "width_mm": 235,
+      "size": "235/41 R21",
+      "image": "res://assets/components/tyres/road.png",
+      "rated_speed_kmh": 500
+    },
+    "hyper_rear_road_w245_r21": {
+      "label": "Performance road",
+      "family": "road",
+      "width_mm": 245,
+      "size": "245/40 R21",
+      "image": "res://assets/components/tyres/road.png",
+      "rated_speed_kmh": 500
+    },
+    "hyper_rear_road_w255_r21": {
+      "label": "Performance road",
+      "family": "road",
+      "width_mm": 255,
+      "size": "255/38 R21",
+      "image": "res://assets/components/tyres/road.png",
+      "rated_speed_kmh": 500
+    },
+    "hyper_rear_road_w265_r21": {
+      "label": "Performance road",
+      "family": "road",
+      "width_mm": 265,
+      "size": "265/37 R21",
+      "image": "res://assets/components/tyres/road.png",
+      "rated_speed_kmh": 500
+    },
+    "hyper_rear_road_w275_r21": {
+      "label": "Performance road",
+      "family": "road",
+      "width_mm": 275,
+      "size": "275/35 R21",
+      "image": "res://assets/components/tyres/road.png",
+      "rated_speed_kmh": 500
+    },
+    "hyper_rear_road_w285_r21": {
+      "label": "Performance road",
+      "family": "road",
+      "width_mm": 285,
+      "size": "285/34 R21",
+      "image": "res://assets/components/tyres/road.png",
+      "rated_speed_kmh": 500
+    },
+    "hyper_rear_road_w295_r21": {
+      "label": "Performance road",
+      "family": "road",
+      "width_mm": 295,
+      "size": "295/33 R21",
+      "image": "res://assets/components/tyres/road.png",
+      "rated_speed_kmh": 500
+    },
+    "hyper_rear_road_w305_r21": {
+      "label": "Performance road",
+      "family": "road",
+      "width_mm": 305,
+      "size": "305/32 R21",
+      "image": "res://assets/components/tyres/road.png",
+      "rated_speed_kmh": 500
+    },
+    "hyper_rear_road_w315_r21": {
+      "label": "Performance road",
+      "family": "road",
+      "width_mm": 315,
+      "size": "315/31 R21",
+      "image": "res://assets/components/tyres/road.png",
+      "rated_speed_kmh": 500
+    },
+    "hyper_rear_road_w325_r21": {
+      "label": "Performance road",
+      "family": "road",
+      "width_mm": 325,
+      "size": "325/30 R21",
+      "image": "res://assets/components/tyres/road.png",
+      "rated_speed_kmh": 500
+    },
+    "hyper_rear_road_w335_r21": {
+      "label": "Performance road",
+      "family": "road",
+      "width_mm": 335,
+      "size": "335/29 R21",
+      "image": "res://assets/components/tyres/road.png",
+      "rated_speed_kmh": 500
+    },
+    "hyper_rear_road_w345_r21": {
+      "label": "Performance road",
+      "family": "road",
+      "width_mm": 345,
+      "size": "345/28 R21",
+      "image": "res://assets/components/tyres/road.png",
+      "rated_speed_kmh": 500
+    },
+    "hyper_rear_road_w355_r21": {
+      "label": "Performance road",
+      "family": "road",
+      "width_mm": 355,
+      "size": "355/27 R21",
+      "image": "res://assets/components/tyres/road.png",
+      "rated_speed_kmh": 500
+    },
+    "hyper_rear_road_w365_r21": {
+      "label": "Performance road",
+      "family": "road",
+      "width_mm": 365,
+      "size": "365/27 R21",
+      "image": "res://assets/components/tyres/road.png",
+      "rated_speed_kmh": 500
+    },
+    "hyper_rear_road_w375_r21": {
+      "label": "Performance road",
+      "family": "road",
+      "width_mm": 375,
+      "size": "375/26 R21",
+      "image": "res://assets/components/tyres/road.png",
+      "rated_speed_kmh": 500
+    },
+    "hyper_rear_road_w385_r21": {
+      "label": "Performance road",
+      "family": "road",
+      "width_mm": 385,
+      "size": "385/25 R21",
+      "image": "res://assets/components/tyres/road.png",
+      "rated_speed_kmh": 500
+    },
+    "hyper_rear_road_w395_r21": {
+      "label": "Performance road",
+      "family": "road",
+      "width_mm": 395,
+      "size": "395/25 R21",
+      "image": "res://assets/components/tyres/road.png",
+      "rated_speed_kmh": 500
+    },
+    "hyper_rear_track_w235_r21": {
+      "label": "Track semi-slick",
+      "family": "track",
+      "width_mm": 235,
+      "size": "235/41 R21",
+      "image": "res://assets/components/tyres/track.png",
+      "rated_speed_kmh": 500
+    },
+    "hyper_rear_track_w245_r21": {
+      "label": "Track semi-slick",
+      "family": "track",
+      "width_mm": 245,
+      "size": "245/40 R21",
+      "image": "res://assets/components/tyres/track.png",
+      "rated_speed_kmh": 500
+    },
+    "hyper_rear_track_w255_r21": {
+      "label": "Track semi-slick",
+      "family": "track",
+      "width_mm": 255,
+      "size": "255/38 R21",
+      "image": "res://assets/components/tyres/track.png",
+      "rated_speed_kmh": 500
+    },
+    "hyper_rear_track_w265_r21": {
+      "label": "Track semi-slick",
+      "family": "track",
+      "width_mm": 265,
+      "size": "265/37 R21",
+      "image": "res://assets/components/tyres/track.png",
+      "rated_speed_kmh": 500
+    },
+    "hyper_rear_track_w275_r21": {
+      "label": "Track semi-slick",
+      "family": "track",
+      "width_mm": 275,
+      "size": "275/35 R21",
+      "image": "res://assets/components/tyres/track.png",
+      "rated_speed_kmh": 500
+    },
+    "hyper_rear_track_w285_r21": {
+      "label": "Track semi-slick",
+      "family": "track",
+      "width_mm": 285,
+      "size": "285/34 R21",
+      "image": "res://assets/components/tyres/track.png",
+      "rated_speed_kmh": 500
+    },
+    "hyper_rear_track_w295_r21": {
+      "label": "Track semi-slick",
+      "family": "track",
+      "width_mm": 295,
+      "size": "295/33 R21",
+      "image": "res://assets/components/tyres/track.png",
+      "rated_speed_kmh": 500
+    },
+    "hyper_rear_track_w305_r21": {
+      "label": "Track semi-slick",
+      "family": "track",
+      "width_mm": 305,
+      "size": "305/32 R21",
+      "image": "res://assets/components/tyres/track.png",
+      "rated_speed_kmh": 500
+    },
+    "hyper_rear_track_w315_r21": {
+      "label": "Track semi-slick",
+      "family": "track",
+      "width_mm": 315,
+      "size": "315/31 R21",
+      "image": "res://assets/components/tyres/track.png",
+      "rated_speed_kmh": 500
+    },
+    "hyper_rear_track_w325_r21": {
+      "label": "Track semi-slick",
+      "family": "track",
+      "width_mm": 325,
+      "size": "325/30 R21",
+      "image": "res://assets/components/tyres/track.png",
+      "rated_speed_kmh": 500
+    },
+    "hyper_rear_track_w335_r21": {
+      "label": "Track semi-slick",
+      "family": "track",
+      "width_mm": 335,
+      "size": "335/29 R21",
+      "image": "res://assets/components/tyres/track.png",
+      "rated_speed_kmh": 500
+    },
+    "hyper_rear_track_w345_r21": {
+      "label": "Track semi-slick",
+      "family": "track",
+      "width_mm": 345,
+      "size": "345/28 R21",
+      "image": "res://assets/components/tyres/track.png",
+      "rated_speed_kmh": 500
+    },
+    "hyper_rear_track_w355_r21": {
+      "label": "Track semi-slick",
+      "family": "track",
+      "width_mm": 355,
+      "size": "355/27 R21",
+      "image": "res://assets/components/tyres/track.png",
+      "rated_speed_kmh": 500
+    },
+    "hyper_rear_track_w365_r21": {
+      "label": "Track semi-slick",
+      "family": "track",
+      "width_mm": 365,
+      "size": "365/27 R21",
+      "image": "res://assets/components/tyres/track.png",
+      "rated_speed_kmh": 500
+    },
+    "hyper_rear_track_w375_r21": {
+      "label": "Track semi-slick",
+      "family": "track",
+      "width_mm": 375,
+      "size": "375/26 R21",
+      "image": "res://assets/components/tyres/track.png",
+      "rated_speed_kmh": 500
+    },
+    "hyper_rear_track_w385_r21": {
+      "label": "Track semi-slick",
+      "family": "track",
+      "width_mm": 385,
+      "size": "385/25 R21",
+      "image": "res://assets/components/tyres/track.png",
+      "rated_speed_kmh": 500
+    },
+    "hyper_rear_track_w395_r21": {
+      "label": "Track semi-slick",
+      "family": "track",
+      "width_mm": 395,
+      "size": "395/25 R21",
+      "image": "res://assets/components/tyres/track.png",
+      "rated_speed_kmh": 500
+    },
+    "hyper_rear_slick_w235_r21": {
+      "label": "Racing slick",
+      "family": "slick",
+      "width_mm": 235,
+      "size": "235/41 R21",
+      "image": "res://assets/components/tyres/slick.png",
+      "rated_speed_kmh": 450
+    },
+    "hyper_rear_slick_w245_r21": {
+      "label": "Racing slick",
+      "family": "slick",
+      "width_mm": 245,
+      "size": "245/40 R21",
+      "image": "res://assets/components/tyres/slick.png",
+      "rated_speed_kmh": 450
+    },
+    "hyper_rear_slick_w255_r21": {
+      "label": "Racing slick",
+      "family": "slick",
+      "width_mm": 255,
+      "size": "255/38 R21",
+      "image": "res://assets/components/tyres/slick.png",
+      "rated_speed_kmh": 450
+    },
+    "hyper_rear_slick_w265_r21": {
+      "label": "Racing slick",
+      "family": "slick",
+      "width_mm": 265,
+      "size": "265/37 R21",
+      "image": "res://assets/components/tyres/slick.png",
+      "rated_speed_kmh": 450
+    },
+    "hyper_rear_slick_w275_r21": {
+      "label": "Racing slick",
+      "family": "slick",
+      "width_mm": 275,
+      "size": "275/35 R21",
+      "image": "res://assets/components/tyres/slick.png",
+      "rated_speed_kmh": 450
+    },
+    "hyper_rear_slick_w285_r21": {
+      "label": "Racing slick",
+      "family": "slick",
+      "width_mm": 285,
+      "size": "285/34 R21",
+      "image": "res://assets/components/tyres/slick.png",
+      "rated_speed_kmh": 450
+    },
+    "hyper_rear_slick_w295_r21": {
+      "label": "Racing slick",
+      "family": "slick",
+      "width_mm": 295,
+      "size": "295/33 R21",
+      "image": "res://assets/components/tyres/slick.png",
+      "rated_speed_kmh": 450
+    },
+    "hyper_rear_slick_w305_r21": {
+      "label": "Racing slick",
+      "family": "slick",
+      "width_mm": 305,
+      "size": "305/32 R21",
+      "image": "res://assets/components/tyres/slick.png",
+      "rated_speed_kmh": 450
+    },
+    "hyper_rear_slick_w315_r21": {
+      "label": "Racing slick",
+      "family": "slick",
+      "width_mm": 315,
+      "size": "315/31 R21",
+      "image": "res://assets/components/tyres/slick.png",
+      "rated_speed_kmh": 450
+    },
+    "hyper_rear_slick_w325_r21": {
+      "label": "Racing slick",
+      "family": "slick",
+      "width_mm": 325,
+      "size": "325/30 R21",
+      "image": "res://assets/components/tyres/slick.png",
+      "rated_speed_kmh": 450
+    },
+    "hyper_rear_slick_w335_r21": {
+      "label": "Racing slick",
+      "family": "slick",
+      "width_mm": 335,
+      "size": "335/29 R21",
+      "image": "res://assets/components/tyres/slick.png",
+      "rated_speed_kmh": 450
+    },
+    "hyper_rear_slick_w345_r21": {
+      "label": "Racing slick",
+      "family": "slick",
+      "width_mm": 345,
+      "size": "345/28 R21",
+      "image": "res://assets/components/tyres/slick.png",
+      "rated_speed_kmh": 450
+    },
+    "hyper_rear_slick_w355_r21": {
+      "label": "Racing slick",
+      "family": "slick",
+      "width_mm": 355,
+      "size": "355/27 R21",
+      "image": "res://assets/components/tyres/slick.png",
+      "rated_speed_kmh": 450
+    },
+    "hyper_rear_slick_w365_r21": {
+      "label": "Racing slick",
+      "family": "slick",
+      "width_mm": 365,
+      "size": "365/27 R21",
+      "image": "res://assets/components/tyres/slick.png",
+      "rated_speed_kmh": 450
+    },
+    "hyper_rear_slick_w375_r21": {
+      "label": "Racing slick",
+      "family": "slick",
+      "width_mm": 375,
+      "size": "375/26 R21",
+      "image": "res://assets/components/tyres/slick.png",
+      "rated_speed_kmh": 450
+    },
+    "hyper_rear_slick_w385_r21": {
+      "label": "Racing slick",
+      "family": "slick",
+      "width_mm": 385,
+      "size": "385/25 R21",
+      "image": "res://assets/components/tyres/slick.png",
+      "rated_speed_kmh": 450
+    },
+    "hyper_rear_slick_w395_r21": {
+      "label": "Racing slick",
+      "family": "slick",
+      "width_mm": 395,
+      "size": "395/25 R21",
+      "image": "res://assets/components/tyres/slick.png",
+      "rated_speed_kmh": 450
+    },
+    "hyper_rear_drag_w235_r21": {
+      "label": "Drag",
+      "family": "drag",
+      "width_mm": 235,
+      "size": "235/41 R21",
+      "image": "res://assets/components/tyres/drag.png",
+      "rated_speed_kmh": 350
+    },
+    "hyper_rear_drag_w245_r21": {
+      "label": "Drag",
+      "family": "drag",
+      "width_mm": 245,
+      "size": "245/40 R21",
+      "image": "res://assets/components/tyres/drag.png",
+      "rated_speed_kmh": 350
+    },
+    "hyper_rear_drag_w255_r21": {
+      "label": "Drag",
+      "family": "drag",
+      "width_mm": 255,
+      "size": "255/38 R21",
+      "image": "res://assets/components/tyres/drag.png",
+      "rated_speed_kmh": 350
+    },
+    "hyper_rear_drag_w265_r21": {
+      "label": "Drag",
+      "family": "drag",
+      "width_mm": 265,
+      "size": "265/37 R21",
+      "image": "res://assets/components/tyres/drag.png",
+      "rated_speed_kmh": 350
+    },
+    "hyper_rear_drag_w275_r21": {
+      "label": "Drag",
+      "family": "drag",
+      "width_mm": 275,
+      "size": "275/35 R21",
+      "image": "res://assets/components/tyres/drag.png",
+      "rated_speed_kmh": 350
+    },
+    "hyper_rear_drag_w285_r21": {
+      "label": "Drag",
+      "family": "drag",
+      "width_mm": 285,
+      "size": "285/34 R21",
+      "image": "res://assets/components/tyres/drag.png",
+      "rated_speed_kmh": 350
+    },
+    "hyper_rear_drag_w295_r21": {
+      "label": "Drag",
+      "family": "drag",
+      "width_mm": 295,
+      "size": "295/33 R21",
+      "image": "res://assets/components/tyres/drag.png",
+      "rated_speed_kmh": 350
+    },
+    "hyper_rear_drag_w305_r21": {
+      "label": "Drag",
+      "family": "drag",
+      "width_mm": 305,
+      "size": "305/32 R21",
+      "image": "res://assets/components/tyres/drag.png",
+      "rated_speed_kmh": 350
+    },
+    "hyper_rear_drag_w315_r21": {
+      "label": "Drag",
+      "family": "drag",
+      "width_mm": 315,
+      "size": "315/31 R21",
+      "image": "res://assets/components/tyres/drag.png",
+      "rated_speed_kmh": 350
+    },
+    "hyper_rear_drag_w325_r21": {
+      "label": "Drag",
+      "family": "drag",
+      "width_mm": 325,
+      "size": "325/30 R21",
+      "image": "res://assets/components/tyres/drag.png",
+      "rated_speed_kmh": 350
+    },
+    "hyper_rear_drag_w335_r21": {
+      "label": "Drag",
+      "family": "drag",
+      "width_mm": 335,
+      "size": "335/29 R21",
+      "image": "res://assets/components/tyres/drag.png",
+      "rated_speed_kmh": 350
+    },
+    "hyper_rear_drag_w345_r21": {
+      "label": "Drag",
+      "family": "drag",
+      "width_mm": 345,
+      "size": "345/28 R21",
+      "image": "res://assets/components/tyres/drag.png",
+      "rated_speed_kmh": 350
+    },
+    "hyper_rear_drag_w355_r21": {
+      "label": "Drag",
+      "family": "drag",
+      "width_mm": 355,
+      "size": "355/27 R21",
+      "image": "res://assets/components/tyres/drag.png",
+      "rated_speed_kmh": 350
+    },
+    "hyper_rear_drag_w365_r21": {
+      "label": "Drag",
+      "family": "drag",
+      "width_mm": 365,
+      "size": "365/27 R21",
+      "image": "res://assets/components/tyres/drag.png",
+      "rated_speed_kmh": 350
+    },
+    "hyper_rear_drag_w375_r21": {
+      "label": "Drag",
+      "family": "drag",
+      "width_mm": 375,
+      "size": "375/26 R21",
+      "image": "res://assets/components/tyres/drag.png",
+      "rated_speed_kmh": 350
+    },
+    "hyper_rear_drag_w385_r21": {
+      "label": "Drag",
+      "family": "drag",
+      "width_mm": 385,
+      "size": "385/25 R21",
+      "image": "res://assets/components/tyres/drag.png",
+      "rated_speed_kmh": 350
+    },
+    "hyper_rear_drag_w395_r21": {
+      "label": "Drag",
+      "family": "drag",
+      "width_mm": 395,
+      "size": "395/25 R21",
+      "image": "res://assets/components/tyres/drag.png",
+      "rated_speed_kmh": 350
+    },
+    "passenger_road_w195_r17": {
+      "label": "Performance road",
+      "family": "road",
+      "width_mm": 195,
+      "size": "195/52 R17",
+      "image": "res://assets/components/tyres/road.png",
+      "rated_speed_kmh": 270
+    },
+    "passenger_road_w205_r17": {
+      "label": "Performance road",
+      "family": "road",
+      "width_mm": 205,
+      "size": "205/49 R17",
+      "image": "res://assets/components/tyres/road.png",
+      "rated_speed_kmh": 270
+    },
+    "passenger_road_w215_r17": {
+      "label": "Performance road",
+      "family": "road",
+      "width_mm": 215,
+      "size": "215/47 R17",
+      "image": "res://assets/components/tyres/road.png",
+      "rated_speed_kmh": 270
+    },
+    "passenger_road_w225_r17": {
+      "label": "Performance road",
+      "family": "road",
+      "width_mm": 225,
+      "size": "225/45 R17",
+      "image": "res://assets/components/tyres/road.png",
+      "rated_speed_kmh": 270
+    },
+    "passenger_road_w235_r17": {
+      "label": "Performance road",
+      "family": "road",
+      "width_mm": 235,
+      "size": "235/43 R17",
+      "image": "res://assets/components/tyres/road.png",
+      "rated_speed_kmh": 270
+    },
+    "passenger_road_w245_r17": {
+      "label": "Performance road",
+      "family": "road",
+      "width_mm": 245,
+      "size": "245/41 R17",
+      "image": "res://assets/components/tyres/road.png",
+      "rated_speed_kmh": 270
+    },
+    "passenger_road_w255_r17": {
+      "label": "Performance road",
+      "family": "road",
+      "width_mm": 255,
+      "size": "255/40 R17",
+      "image": "res://assets/components/tyres/road.png",
+      "rated_speed_kmh": 270
+    },
+    "passenger_road_w265_r17": {
+      "label": "Performance road",
+      "family": "road",
+      "width_mm": 265,
+      "size": "265/38 R17",
+      "image": "res://assets/components/tyres/road.png",
+      "rated_speed_kmh": 270
+    },
+    "passenger_road_w275_r17": {
+      "label": "Performance road",
+      "family": "road",
+      "width_mm": 275,
+      "size": "275/37 R17",
+      "image": "res://assets/components/tyres/road.png",
+      "rated_speed_kmh": 270
+    },
+    "passenger_road_w285_r17": {
+      "label": "Performance road",
+      "family": "road",
+      "width_mm": 285,
+      "size": "285/35 R17",
+      "image": "res://assets/components/tyres/road.png",
+      "rated_speed_kmh": 270
+    },
+    "passenger_road_w295_r17": {
+      "label": "Performance road",
+      "family": "road",
+      "width_mm": 295,
+      "size": "295/34 R17",
+      "image": "res://assets/components/tyres/road.png",
+      "rated_speed_kmh": 270
+    },
+    "passenger_road_w305_r17": {
+      "label": "Performance road",
+      "family": "road",
+      "width_mm": 305,
+      "size": "305/33 R17",
+      "image": "res://assets/components/tyres/road.png",
+      "rated_speed_kmh": 270
+    },
+    "passenger_road_w315_r17": {
+      "label": "Performance road",
+      "family": "road",
+      "width_mm": 315,
+      "size": "315/32 R17",
+      "image": "res://assets/components/tyres/road.png",
+      "rated_speed_kmh": 270
+    },
+    "passenger_road_w325_r17": {
+      "label": "Performance road",
+      "family": "road",
+      "width_mm": 325,
+      "size": "325/31 R17",
+      "image": "res://assets/components/tyres/road.png",
+      "rated_speed_kmh": 270
+    },
+    "passenger_road_w335_r17": {
+      "label": "Performance road",
+      "family": "road",
+      "width_mm": 335,
+      "size": "335/30 R17",
+      "image": "res://assets/components/tyres/road.png",
+      "rated_speed_kmh": 270
+    },
+    "passenger_road_w345_r17": {
+      "label": "Performance road",
+      "family": "road",
+      "width_mm": 345,
+      "size": "345/29 R17",
+      "image": "res://assets/components/tyres/road.png",
+      "rated_speed_kmh": 270
+    },
+    "passenger_road_w355_r17": {
+      "label": "Performance road",
+      "family": "road",
+      "width_mm": 355,
+      "size": "355/28 R17",
+      "image": "res://assets/components/tyres/road.png",
+      "rated_speed_kmh": 270
+    },
+    "passenger_track_w195_r17": {
+      "label": "Track semi-slick",
+      "family": "track",
+      "width_mm": 195,
+      "size": "195/52 R17",
+      "image": "res://assets/components/tyres/track.png",
+      "rated_speed_kmh": 270
+    },
+    "passenger_track_w205_r17": {
+      "label": "Track semi-slick",
+      "family": "track",
+      "width_mm": 205,
+      "size": "205/49 R17",
+      "image": "res://assets/components/tyres/track.png",
+      "rated_speed_kmh": 270
+    },
+    "passenger_track_w215_r17": {
+      "label": "Track semi-slick",
+      "family": "track",
+      "width_mm": 215,
+      "size": "215/47 R17",
+      "image": "res://assets/components/tyres/track.png",
+      "rated_speed_kmh": 270
+    },
+    "passenger_track_w225_r17": {
+      "label": "Track semi-slick",
+      "family": "track",
+      "width_mm": 225,
+      "size": "225/45 R17",
+      "image": "res://assets/components/tyres/track.png",
+      "rated_speed_kmh": 270
+    },
+    "passenger_track_w235_r17": {
+      "label": "Track semi-slick",
+      "family": "track",
+      "width_mm": 235,
+      "size": "235/43 R17",
+      "image": "res://assets/components/tyres/track.png",
+      "rated_speed_kmh": 270
+    },
+    "passenger_track_w245_r17": {
+      "label": "Track semi-slick",
+      "family": "track",
+      "width_mm": 245,
+      "size": "245/41 R17",
+      "image": "res://assets/components/tyres/track.png",
+      "rated_speed_kmh": 270
+    },
+    "passenger_track_w255_r17": {
+      "label": "Track semi-slick",
+      "family": "track",
+      "width_mm": 255,
+      "size": "255/40 R17",
+      "image": "res://assets/components/tyres/track.png",
+      "rated_speed_kmh": 270
+    },
+    "passenger_track_w265_r17": {
+      "label": "Track semi-slick",
+      "family": "track",
+      "width_mm": 265,
+      "size": "265/38 R17",
+      "image": "res://assets/components/tyres/track.png",
+      "rated_speed_kmh": 270
+    },
+    "passenger_track_w275_r17": {
+      "label": "Track semi-slick",
+      "family": "track",
+      "width_mm": 275,
+      "size": "275/37 R17",
+      "image": "res://assets/components/tyres/track.png",
+      "rated_speed_kmh": 270
+    },
+    "passenger_track_w285_r17": {
+      "label": "Track semi-slick",
+      "family": "track",
+      "width_mm": 285,
+      "size": "285/35 R17",
+      "image": "res://assets/components/tyres/track.png",
+      "rated_speed_kmh": 270
+    },
+    "passenger_track_w295_r17": {
+      "label": "Track semi-slick",
+      "family": "track",
+      "width_mm": 295,
+      "size": "295/34 R17",
+      "image": "res://assets/components/tyres/track.png",
+      "rated_speed_kmh": 270
+    },
+    "passenger_track_w305_r17": {
+      "label": "Track semi-slick",
+      "family": "track",
+      "width_mm": 305,
+      "size": "305/33 R17",
+      "image": "res://assets/components/tyres/track.png",
+      "rated_speed_kmh": 270
+    },
+    "passenger_track_w315_r17": {
+      "label": "Track semi-slick",
+      "family": "track",
+      "width_mm": 315,
+      "size": "315/32 R17",
+      "image": "res://assets/components/tyres/track.png",
+      "rated_speed_kmh": 270
+    },
+    "passenger_track_w325_r17": {
+      "label": "Track semi-slick",
+      "family": "track",
+      "width_mm": 325,
+      "size": "325/31 R17",
+      "image": "res://assets/components/tyres/track.png",
+      "rated_speed_kmh": 270
+    },
+    "passenger_track_w335_r17": {
+      "label": "Track semi-slick",
+      "family": "track",
+      "width_mm": 335,
+      "size": "335/30 R17",
+      "image": "res://assets/components/tyres/track.png",
+      "rated_speed_kmh": 270
+    },
+    "passenger_track_w345_r17": {
+      "label": "Track semi-slick",
+      "family": "track",
+      "width_mm": 345,
+      "size": "345/29 R17",
+      "image": "res://assets/components/tyres/track.png",
+      "rated_speed_kmh": 270
+    },
+    "passenger_track_w355_r17": {
+      "label": "Track semi-slick",
+      "family": "track",
+      "width_mm": 355,
+      "size": "355/28 R17",
+      "image": "res://assets/components/tyres/track.png",
+      "rated_speed_kmh": 270
+    },
+    "passenger_slick_w195_r17": {
+      "label": "Racing slick",
+      "family": "slick",
+      "width_mm": 195,
+      "size": "195/52 R17",
+      "image": "res://assets/components/tyres/slick.png",
+      "rated_speed_kmh": 270
+    },
+    "passenger_slick_w205_r17": {
+      "label": "Racing slick",
+      "family": "slick",
+      "width_mm": 205,
+      "size": "205/49 R17",
+      "image": "res://assets/components/tyres/slick.png",
+      "rated_speed_kmh": 270
+    },
+    "passenger_slick_w215_r17": {
+      "label": "Racing slick",
+      "family": "slick",
+      "width_mm": 215,
+      "size": "215/47 R17",
+      "image": "res://assets/components/tyres/slick.png",
+      "rated_speed_kmh": 270
+    },
+    "passenger_slick_w225_r17": {
+      "label": "Racing slick",
+      "family": "slick",
+      "width_mm": 225,
+      "size": "225/45 R17",
+      "image": "res://assets/components/tyres/slick.png",
+      "rated_speed_kmh": 270
+    },
+    "passenger_slick_w235_r17": {
+      "label": "Racing slick",
+      "family": "slick",
+      "width_mm": 235,
+      "size": "235/43 R17",
+      "image": "res://assets/components/tyres/slick.png",
+      "rated_speed_kmh": 270
+    },
+    "passenger_slick_w245_r17": {
+      "label": "Racing slick",
+      "family": "slick",
+      "width_mm": 245,
+      "size": "245/41 R17",
+      "image": "res://assets/components/tyres/slick.png",
+      "rated_speed_kmh": 270
+    },
+    "passenger_slick_w255_r17": {
+      "label": "Racing slick",
+      "family": "slick",
+      "width_mm": 255,
+      "size": "255/40 R17",
+      "image": "res://assets/components/tyres/slick.png",
+      "rated_speed_kmh": 270
+    },
+    "passenger_slick_w265_r17": {
+      "label": "Racing slick",
+      "family": "slick",
+      "width_mm": 265,
+      "size": "265/38 R17",
+      "image": "res://assets/components/tyres/slick.png",
+      "rated_speed_kmh": 270
+    },
+    "passenger_slick_w275_r17": {
+      "label": "Racing slick",
+      "family": "slick",
+      "width_mm": 275,
+      "size": "275/37 R17",
+      "image": "res://assets/components/tyres/slick.png",
+      "rated_speed_kmh": 270
+    },
+    "passenger_slick_w285_r17": {
+      "label": "Racing slick",
+      "family": "slick",
+      "width_mm": 285,
+      "size": "285/35 R17",
+      "image": "res://assets/components/tyres/slick.png",
+      "rated_speed_kmh": 270
+    },
+    "passenger_slick_w295_r17": {
+      "label": "Racing slick",
+      "family": "slick",
+      "width_mm": 295,
+      "size": "295/34 R17",
+      "image": "res://assets/components/tyres/slick.png",
+      "rated_speed_kmh": 270
+    },
+    "passenger_slick_w305_r17": {
+      "label": "Racing slick",
+      "family": "slick",
+      "width_mm": 305,
+      "size": "305/33 R17",
+      "image": "res://assets/components/tyres/slick.png",
+      "rated_speed_kmh": 270
+    },
+    "passenger_slick_w315_r17": {
+      "label": "Racing slick",
+      "family": "slick",
+      "width_mm": 315,
+      "size": "315/32 R17",
+      "image": "res://assets/components/tyres/slick.png",
+      "rated_speed_kmh": 270
+    },
+    "passenger_slick_w325_r17": {
+      "label": "Racing slick",
+      "family": "slick",
+      "width_mm": 325,
+      "size": "325/31 R17",
+      "image": "res://assets/components/tyres/slick.png",
+      "rated_speed_kmh": 270
+    },
+    "passenger_slick_w335_r17": {
+      "label": "Racing slick",
+      "family": "slick",
+      "width_mm": 335,
+      "size": "335/30 R17",
+      "image": "res://assets/components/tyres/slick.png",
+      "rated_speed_kmh": 270
+    },
+    "passenger_slick_w345_r17": {
+      "label": "Racing slick",
+      "family": "slick",
+      "width_mm": 345,
+      "size": "345/29 R17",
+      "image": "res://assets/components/tyres/slick.png",
+      "rated_speed_kmh": 270
+    },
+    "passenger_slick_w355_r17": {
+      "label": "Racing slick",
+      "family": "slick",
+      "width_mm": 355,
+      "size": "355/28 R17",
+      "image": "res://assets/components/tyres/slick.png",
+      "rated_speed_kmh": 270
+    },
+    "passenger_drag_w195_r17": {
+      "label": "Drag",
+      "family": "drag",
+      "width_mm": 195,
+      "size": "195/52 R17",
+      "image": "res://assets/components/tyres/drag.png",
+      "rated_speed_kmh": 270
+    },
+    "passenger_drag_w205_r17": {
+      "label": "Drag",
+      "family": "drag",
+      "width_mm": 205,
+      "size": "205/49 R17",
+      "image": "res://assets/components/tyres/drag.png",
+      "rated_speed_kmh": 270
+    },
+    "passenger_drag_w215_r17": {
+      "label": "Drag",
+      "family": "drag",
+      "width_mm": 215,
+      "size": "215/47 R17",
+      "image": "res://assets/components/tyres/drag.png",
+      "rated_speed_kmh": 270
+    },
+    "passenger_drag_w225_r17": {
+      "label": "Drag",
+      "family": "drag",
+      "width_mm": 225,
+      "size": "225/45 R17",
+      "image": "res://assets/components/tyres/drag.png",
+      "rated_speed_kmh": 270
+    },
+    "passenger_drag_w235_r17": {
+      "label": "Drag",
+      "family": "drag",
+      "width_mm": 235,
+      "size": "235/43 R17",
+      "image": "res://assets/components/tyres/drag.png",
+      "rated_speed_kmh": 270
+    },
+    "passenger_drag_w245_r17": {
+      "label": "Drag",
+      "family": "drag",
+      "width_mm": 245,
+      "size": "245/41 R17",
+      "image": "res://assets/components/tyres/drag.png",
+      "rated_speed_kmh": 270
+    },
+    "passenger_drag_w255_r17": {
+      "label": "Drag",
+      "family": "drag",
+      "width_mm": 255,
+      "size": "255/40 R17",
+      "image": "res://assets/components/tyres/drag.png",
+      "rated_speed_kmh": 270
+    },
+    "passenger_drag_w265_r17": {
+      "label": "Drag",
+      "family": "drag",
+      "width_mm": 265,
+      "size": "265/38 R17",
+      "image": "res://assets/components/tyres/drag.png",
+      "rated_speed_kmh": 270
+    },
+    "passenger_drag_w275_r17": {
+      "label": "Drag",
+      "family": "drag",
+      "width_mm": 275,
+      "size": "275/37 R17",
+      "image": "res://assets/components/tyres/drag.png",
+      "rated_speed_kmh": 270
+    },
+    "passenger_drag_w285_r17": {
+      "label": "Drag",
+      "family": "drag",
+      "width_mm": 285,
+      "size": "285/35 R17",
+      "image": "res://assets/components/tyres/drag.png",
+      "rated_speed_kmh": 270
+    },
+    "passenger_drag_w295_r17": {
+      "label": "Drag",
+      "family": "drag",
+      "width_mm": 295,
+      "size": "295/34 R17",
+      "image": "res://assets/components/tyres/drag.png",
+      "rated_speed_kmh": 270
+    },
+    "passenger_drag_w305_r17": {
+      "label": "Drag",
+      "family": "drag",
+      "width_mm": 305,
+      "size": "305/33 R17",
+      "image": "res://assets/components/tyres/drag.png",
+      "rated_speed_kmh": 270
+    },
+    "passenger_drag_w315_r17": {
+      "label": "Drag",
+      "family": "drag",
+      "width_mm": 315,
+      "size": "315/32 R17",
+      "image": "res://assets/components/tyres/drag.png",
+      "rated_speed_kmh": 270
+    },
+    "passenger_drag_w325_r17": {
+      "label": "Drag",
+      "family": "drag",
+      "width_mm": 325,
+      "size": "325/31 R17",
+      "image": "res://assets/components/tyres/drag.png",
+      "rated_speed_kmh": 270
+    },
+    "passenger_drag_w335_r17": {
+      "label": "Drag",
+      "family": "drag",
+      "width_mm": 335,
+      "size": "335/30 R17",
+      "image": "res://assets/components/tyres/drag.png",
+      "rated_speed_kmh": 270
+    },
+    "passenger_drag_w345_r17": {
+      "label": "Drag",
+      "family": "drag",
+      "width_mm": 345,
+      "size": "345/29 R17",
+      "image": "res://assets/components/tyres/drag.png",
+      "rated_speed_kmh": 270
+    },
+    "passenger_drag_w355_r17": {
+      "label": "Drag",
+      "family": "drag",
+      "width_mm": 355,
+      "size": "355/28 R17",
+      "image": "res://assets/components/tyres/drag.png",
       "rated_speed_kmh": 270
     }
   },

@@ -1,6 +1,6 @@
 # Garage tyre component images
 
-Transparent product renders generated for the garage upgrade cards. `catalog.json` explicitly maps selectable definition IDs to image, label and size; it also lists reserved drag/slick styles without adding physical tyre definitions or selectable parts.
+Transparent product renders generated for the garage upgrade cards. `catalog.json` explicitly maps selectable definition IDs to image, label and size; it also lists the four style images. All four families now have generated physical width variants, offered only within the body fitment limits.
 
 - road.png: drainage channels and diagonal tread blocks.
 - track.png: semi-slick with broad contact patches and sparse grooves.

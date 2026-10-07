@@ -337,6 +337,7 @@ public:
     // FrameSnapshot get_wheel_load_n/slip_ratio/slip_angle above already
     // read (rg::Session::capture_frame_snapshot() fills it, on the sim
     // thread, from ps::World::wheel_state - never called live from here). ---
+    [[nodiscard]] float get_wheel_width(const godot::String& vehicle_name, std::int64_t wheel_index) const;
     [[nodiscard]] godot::Vector3 get_wheel_attachment_local(const godot::String& vehicle_name, std::int64_t wheel_index) const;
     [[nodiscard]] bool get_wheel_steered(const godot::String& vehicle_name, std::int64_t wheel_index) const;
     [[nodiscard]] bool get_wheel_is_front(const godot::String& vehicle_name, std::int64_t wheel_index) const;

@@ -2,64 +2,251 @@
   "format": "racing_game.vehicle_setup_options/1",
   "source": "PLAN.md 11.6 v1 option list. This table IS the whitelist: an option may change only the JSON-pointer leaves it lists (`*` = every array element, `[key=value]` = the array elements whose field equals the value). Ranges are authored game limits, not physics data: +-20 % final drive and gear ratios, +-30 % springs/dampers/ARBs/brake force, the brake bias moves the front share by at most max_shift around the stock one (same total torque). ABS/TC/ESC are not options yet (physics has none).",
   "options": [
-    { "id": "final_drive", "label": "Final drive", "group": "Drivetrain", "area": "rear", "unit": "x",
+    {
+      "id": "final_drive",
+      "label": "Final drive",
+      "group": "Drivetrain",
+      "area": "rear",
+      "unit": "x",
       "help": "Scales the final drive ratio. Higher = quicker acceleration, lower top speed.",
-      "kind": "scale", "min": 0.8, "max": 1.2, "step": 0.01, "file": "vehicle",
-      "pointers": ["/powertrain/components/[id=diff]/ratio", "/powertrain/components/[id=front]/ratio", "/powertrain/components/[id=rear]/ratio"] },
-    { "id": "gear_ratios", "label": "Gear ratios", "group": "Drivetrain", "area": "engine", "unit": "x",
+      "kind": "scale",
+      "min": 0.8,
+      "max": 1.2,
+      "step": 0.01,
+      "file": "vehicle",
+      "pointers": [
+        "/powertrain/components/[id=diff]/ratio",
+        "/powertrain/components/[id=front]/ratio",
+        "/powertrain/components/[id=rear]/ratio"
+      ]
+    },
+    {
+      "id": "gear_ratios",
+      "label": "Gear ratios",
+      "group": "Drivetrain",
+      "area": "engine",
+      "unit": "x",
       "help": "One factor per forward gear. Every gear must stay lower than the one before it.",
-      "kind": "scale_list", "min": 0.8, "max": 1.2, "step": 0.01, "file": "gearbox", "monotonic": "decreasing",
-      "pointers": ["/forward_ratios/*"] },
-    { "id": "brake_force", "label": "Brake force", "group": "Brakes", "area": "wheels", "unit": "x",
+      "kind": "scale_list",
+      "min": 0.8,
+      "max": 1.2,
+      "step": 0.01,
+      "file": "gearbox",
+      "monotonic": "decreasing",
+      "pointers": [
+        "/forward_ratios/*"
+      ]
+    },
+    {
+      "id": "brake_force",
+      "label": "Brake force",
+      "group": "Brakes",
+      "area": "wheels",
+      "unit": "x",
       "help": "Scales the torque of all four brakes.",
-      "kind": "scale", "min": 0.7, "max": 1.3, "step": 0.01, "file": "vehicle",
-      "pointers": ["/brake_system/corners/*/max_torque_nm"] },
-    { "id": "brake_bias", "label": "Brake bias", "group": "Brakes", "area": "wheels", "unit": "%",
+      "kind": "scale",
+      "min": 0.7,
+      "max": 1.3,
+      "step": 0.01,
+      "file": "vehicle",
+      "pointers": [
+        "/brake_system/corners/*/max_torque_nm"
+      ]
+    },
+    {
+      "id": "brake_bias",
+      "label": "Brake bias",
+      "group": "Brakes",
+      "area": "wheels",
+      "unit": "%",
       "help": "Front share of the total brake torque; the total stays the same.",
-      "kind": "brake_bias", "max_shift": 0.10, "step": 0.005, "file": "vehicle",
-      "pointers": ["/brake_system/corners/*/max_torque_nm"] },
-    { "id": "spring_front", "label": "Springs front", "group": "Suspension", "area": "wheels", "unit": "x",
+      "kind": "brake_bias",
+      "max_shift": 0.1,
+      "step": 0.005,
+      "file": "vehicle",
+      "pointers": [
+        "/brake_system/corners/*/max_torque_nm"
+      ]
+    },
+    {
+      "id": "spring_front",
+      "label": "Springs front",
+      "group": "Suspension",
+      "area": "wheels",
+      "unit": "x",
       "help": "Scales the front spring rate.",
-      "kind": "scale", "min": 0.7, "max": 1.3, "step": 0.01, "file": "vehicle",
-      "pointers": ["/wheels/[is_front=true]/suspension/spring_rate"] },
-    { "id": "spring_rear", "label": "Springs rear", "group": "Suspension", "area": "wheels", "unit": "x",
+      "kind": "scale",
+      "min": 0.7,
+      "max": 1.3,
+      "step": 0.01,
+      "file": "vehicle",
+      "pointers": [
+        "/wheels/[is_front=true]/suspension/spring_rate"
+      ]
+    },
+    {
+      "id": "spring_rear",
+      "label": "Springs rear",
+      "group": "Suspension",
+      "area": "wheels",
+      "unit": "x",
       "help": "Scales the rear spring rate.",
-      "kind": "scale", "min": 0.7, "max": 1.3, "step": 0.01, "file": "vehicle",
-      "pointers": ["/wheels/[is_front=false]/suspension/spring_rate"] },
-    { "id": "damper_front", "label": "Dampers front", "group": "Suspension", "area": "wheels", "unit": "x",
+      "kind": "scale",
+      "min": 0.7,
+      "max": 1.3,
+      "step": 0.01,
+      "file": "vehicle",
+      "pointers": [
+        "/wheels/[is_front=false]/suspension/spring_rate"
+      ]
+    },
+    {
+      "id": "damper_front",
+      "label": "Dampers front",
+      "group": "Suspension",
+      "area": "wheels",
+      "unit": "x",
       "help": "Scales front bump and rebound damping.",
-      "kind": "scale", "min": 0.7, "max": 1.3, "step": 0.01, "file": "vehicle",
-      "pointers": ["/wheels/[is_front=true]/suspension/damper_bump_rate", "/wheels/[is_front=true]/suspension/damper_rebound_rate"] },
-    { "id": "damper_rear", "label": "Dampers rear", "group": "Suspension", "area": "wheels", "unit": "x",
+      "kind": "scale",
+      "min": 0.7,
+      "max": 1.3,
+      "step": 0.01,
+      "file": "vehicle",
+      "pointers": [
+        "/wheels/[is_front=true]/suspension/damper_bump_rate",
+        "/wheels/[is_front=true]/suspension/damper_rebound_rate"
+      ]
+    },
+    {
+      "id": "damper_rear",
+      "label": "Dampers rear",
+      "group": "Suspension",
+      "area": "wheels",
+      "unit": "x",
       "help": "Scales rear bump and rebound damping.",
-      "kind": "scale", "min": 0.7, "max": 1.3, "step": 0.01, "file": "vehicle",
-      "pointers": ["/wheels/[is_front=false]/suspension/damper_bump_rate", "/wheels/[is_front=false]/suspension/damper_rebound_rate"] },
-    { "id": "arb_front", "label": "Anti-roll bar front", "group": "Suspension", "area": "wheels", "unit": "x",
+      "kind": "scale",
+      "min": 0.7,
+      "max": 1.3,
+      "step": 0.01,
+      "file": "vehicle",
+      "pointers": [
+        "/wheels/[is_front=false]/suspension/damper_bump_rate",
+        "/wheels/[is_front=false]/suspension/damper_rebound_rate"
+      ]
+    },
+    {
+      "id": "arb_front",
+      "label": "Anti-roll bar front",
+      "group": "Suspension",
+      "area": "wheels",
+      "unit": "x",
       "help": "Scales the front anti-roll bar. Stiffer front = more understeer.",
-      "kind": "scale", "min": 0.7, "max": 1.3, "step": 0.01, "file": "vehicle",
-      "pointers": ["/wheels/[is_front=true]/suspension/arb_rate"] },
-    { "id": "arb_rear", "label": "Anti-roll bar rear", "group": "Suspension", "area": "wheels", "unit": "x",
+      "kind": "scale",
+      "min": 0.7,
+      "max": 1.3,
+      "step": 0.01,
+      "file": "vehicle",
+      "pointers": [
+        "/wheels/[is_front=true]/suspension/arb_rate"
+      ]
+    },
+    {
+      "id": "arb_rear",
+      "label": "Anti-roll bar rear",
+      "group": "Suspension",
+      "area": "wheels",
+      "unit": "x",
       "help": "Scales the rear anti-roll bar. Stiffer rear = more oversteer.",
-      "kind": "scale", "min": 0.7, "max": 1.3, "step": 0.01, "file": "vehicle",
-      "pointers": ["/wheels/[is_front=false]/suspension/arb_rate"] },
-    { "id": "tyre_front", "label": "Tyres front", "group": "Tyres", "area": "wheels",
-      "help": "Tyre files that match the front wheel size.",
-      "kind": "tyre_choice", "axle": "front", "file": "vehicle", "pointers": ["/wheels/[is_front=true]/tyre"] },
-    { "id": "tyre_rear", "label": "Tyres rear", "group": "Tyres", "area": "wheels",
-      "help": "Tyre files that match the rear wheel size.",
-      "kind": "tyre_choice", "axle": "rear", "file": "vehicle", "pointers": ["/wheels/[is_front=false]/tyre"] },
-    { "id": "assist_auto_clutch", "label": "Auto clutch", "group": "Assists", "area": "overview",
+      "kind": "scale",
+      "min": 0.7,
+      "max": 1.3,
+      "step": 0.01,
+      "file": "vehicle",
+      "pointers": [
+        "/wheels/[is_front=false]/suspension/arb_rate"
+      ]
+    },
+    {
+      "id": "tyre_front",
+      "label": "Tyres front",
+      "group": "Tyres",
+      "area": "wheels",
+      "help": "Compatible compound/tread and width variants, capped by this body\u2019s axle fitment limits. Width updates wheel geometry and inertia.",
+      "kind": "tyre_choice",
+      "axle": "front",
+      "file": "vehicle",
+      "pointers": [
+        "/wheels/[is_front=true]/tyre",
+        "/wheels/[is_front=true]/wheel_width",
+        "/wheels/[is_front=true]/wheel_inertia"
+      ]
+    },
+    {
+      "id": "tyre_rear",
+      "label": "Tyres rear",
+      "group": "Tyres",
+      "area": "wheels",
+      "help": "Compatible compound/tread and width variants, capped by this body\u2019s axle fitment limits. Width updates wheel geometry and inertia.",
+      "kind": "tyre_choice",
+      "axle": "rear",
+      "file": "vehicle",
+      "pointers": [
+        "/wheels/[is_front=false]/tyre",
+        "/wheels/[is_front=false]/wheel_width",
+        "/wheels/[is_front=false]/wheel_inertia"
+      ]
+    },
+    {
+      "id": "assist_auto_clutch",
+      "label": "Auto clutch",
+      "group": "Assists",
+      "area": "overview",
       "help": "Default state of the assist.auto_clutch channel.",
-      "kind": "bool", "file": "vehicle", "pointers": ["/controllers/[id=tcu]/auto_clutch/enabled"] },
-    { "id": "assist_auto_blip", "label": "Auto blip", "group": "Assists", "area": "overview",
+      "kind": "bool",
+      "file": "vehicle",
+      "pointers": [
+        "/controllers/[id=tcu]/auto_clutch/enabled"
+      ]
+    },
+    {
+      "id": "assist_auto_blip",
+      "label": "Auto blip",
+      "group": "Assists",
+      "area": "overview",
       "help": "Default state of the assist.auto_blip channel (throttle blip on downshifts, upshift cut).",
-      "kind": "bool", "file": "vehicle", "pointers": ["/controllers/[id=tcu]/auto_blip/enabled"] },
-    { "id": "assist_auto_shift", "label": "Automatic gearbox", "group": "Assists", "area": "overview",
+      "kind": "bool",
+      "file": "vehicle",
+      "pointers": [
+        "/controllers/[id=tcu]/auto_blip/enabled"
+      ]
+    },
+    {
+      "id": "assist_auto_shift",
+      "label": "Automatic gearbox",
+      "group": "Assists",
+      "area": "overview",
       "help": "Default state of the assist.auto_shift channel.",
-      "kind": "bool", "file": "vehicle", "pointers": ["/controllers/[id=tcu]/auto_shift/enabled"] },
-    { "id": "paint", "label": "Paint", "group": "Look", "area": "overview",
-      "help": "Body colour. Visual only.", "kind": "colour" },
-    { "id": "rim", "label": "Rims", "group": "Look", "area": "wheels",
-      "help": "Rim colour. Visual only.", "kind": "colour" }
+      "kind": "bool",
+      "file": "vehicle",
+      "pointers": [
+        "/controllers/[id=tcu]/auto_shift/enabled"
+      ]
+    },
+    {
+      "id": "paint",
+      "label": "Paint",
+      "group": "Look",
+      "area": "overview",
+      "help": "Body colour. Visual only.",
+      "kind": "colour"
+    },
+    {
+      "id": "rim",
+      "label": "Rims",
+      "group": "Look",
+      "area": "wheels",
+      "help": "Rim colour. Visual only.",
+      "kind": "colour"
+    }
   ]
 }

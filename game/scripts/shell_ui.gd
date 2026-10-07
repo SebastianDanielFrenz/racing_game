@@ -77,6 +77,9 @@ var _garage_left: PanelContainer
 var _garage_right: PanelContainer
 var _garage_performance: VBoxContainer
 var _garage_category := "tyre_front"
+var _garage_tyre_family := "road"
+var _garage_width_step := 10
+var _garage_width_menu := false
 var _component_textures: Dictionary = {}
 var _component_catalog: Dictionary = {}
 var _garage_categories: OptionButton
@@ -607,6 +610,7 @@ func _build_configurator() -> void:
 		_area_buttons[id] = button
 	_garage_categories = OptionButton.new()
 	_garage_categories.item_selected.connect(func(index: int):
+		_garage_width_menu = false
 		_garage_category = str(_garage_categories.get_item_metadata(index))
 		_draw_garage_options())
 	column.add_child(_garage_categories)
@@ -730,36 +734,65 @@ func _draw_upgrades() -> void:
 			_garage_categories.select(i)
 	_garage_category = str(selected["id"])
 	_option_box.add_child(_label(str(selected["label"]),22,HORIZONTAL_ALIGNMENT_LEFT))
+	var families := ["road", "track", "slick", "drag"]
+	if not _garage_width_menu:
+		var type_grid := GridContainer.new()
+		type_grid.columns = 3
+		type_grid.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		_option_box.add_child(type_grid)
+		for family in families:
+			var representative: Dictionary = {}
+			for candidate in selected["choices"]:
+				var info := _tyre_presentation(str(candidate))
+				if str(info.get("family","road")) == family:
+					representative = info.duplicate()
+					break
+			if representative.is_empty():
+				continue
+			representative.erase("size")
+			var type_card := _make_tyre_card(representative,"Choose width")
+			type_card.pressed.connect(func():
+				_garage_tyre_family = family
+				_garage_width_menu = true
+				_draw_garage_options())
+			type_grid.add_child(type_card)
+			_buttons["tyre:family:" + family] = type_card
+		return
+	_button(_option_box,"tyre:types","‹ Compound / tread",func():
+		_garage_width_menu = false
+		_draw_garage_options(),0)
+	_option_box.add_child(_label("Choose width · " + _garage_tyre_family.capitalize(),17,HORIZONTAL_ALIGNMENT_LEFT))
+	var increments := OptionButton.new()
+	increments.add_item("Widths every 10 mm")
+	increments.add_item("Widths every 20 mm")
+	increments.select(1 if _garage_width_step == 20 else 0)
+	increments.item_selected.connect(func(index: int):
+		_garage_width_step = 20 if index == 1 else 10
+		_draw_garage_options())
+	_option_box.add_child(increments)
+	var by_width: Dictionary = {}
+	for choice in selected["choices"]:
+		var info := _tyre_presentation(str(choice))
+		if str(info.get("family", "road")) != _garage_tyre_family:
+			continue
+		var width := int(info.get("width_mm", 0))
+		if not by_width.has(width) or str(choice) == str(selected["value"]):
+			by_width[width] = str(choice)
+	var widths: Array = by_width.keys()
+	widths.sort()
+	if not widths.is_empty():
+		_option_box.add_child(_label("Body fitment: %d–%d mm" % [int(widths[0]),int(widths[-1])],13,HORIZONTAL_ALIGNMENT_LEFT,true))
 	var grid := GridContainer.new()
 	grid.columns = 3
 	grid.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_option_box.add_child(grid)
-	for choice in selected["choices"]:
+	for width in widths:
+		var choice: String = str(by_width[width])
+		if (int(width)-int(widths[0])) % _garage_width_step != 0 and choice != str(selected["value"]):
+			continue
 		var installed := str(choice) == str(selected["value"])
-		var card := Button.new()
 		var presentation := _tyre_presentation(str(choice))
-		card.custom_minimum_size = Vector2(0,210)
-		var content := VBoxContainer.new()
-		content.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-		content.offset_left = 6
-		content.offset_right = -6
-		content.offset_top = 8
-		content.offset_bottom = -8
-		content.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		card.add_child(content)
-		var picture := TextureRect.new()
-		picture.texture = _component_texture(str(presentation.get("image", "")))
-		picture.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
-		picture.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
-		picture.size_flags_vertical = Control.SIZE_EXPAND_FILL
-		picture.custom_minimum_size.y = 110
-		picture.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		content.add_child(picture)
-		for text in [str(presentation.get("label", choice)), str(presentation.get("size", "")), ("Rated %d km/h" % int(presentation["rated_speed_kmh"])) if presentation.has("rated_speed_kmh") else "", "INSTALLED" if installed else "Install"]:
-			var caption := _label(text, 12, HORIZONTAL_ALIGNMENT_CENTER)
-			caption.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-			caption.mouse_filter = Control.MOUSE_FILTER_IGNORE
-			content.add_child(caption)
+		var card := _make_tyre_card(presentation,"INSTALLED" if installed else "Install")
 		card.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		card.add_theme_font_size_override("font_size",13)
 		card.toggle_mode = true
@@ -771,6 +804,35 @@ func _draw_upgrades() -> void:
 		grid.add_child(card)
 		_buttons["part:" + _garage_category + ":" + str(choice)] = card
 
+func _make_tyre_card(presentation: Dictionary, action: String) -> Button:
+	var card := Button.new()
+	card.custom_minimum_size = Vector2(0,240)
+	var content := VBoxContainer.new()
+	content.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	content.offset_left = 6
+	content.offset_right = -6
+	content.offset_top = 8
+	content.offset_bottom = -8
+	content.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	card.add_child(content)
+	var picture := TextureRect.new()
+	picture.texture = _component_texture(str(presentation.get("image", "")))
+	picture.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	picture.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	picture.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	picture.custom_minimum_size.y = 110
+	picture.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	content.add_child(picture)
+	for text in [str(presentation.get("label", "Tyre")), str(presentation.get("size", "")), ("Rated %d km/h" % int(presentation["rated_speed_kmh"])) if presentation.has("rated_speed_kmh") else "", action]:
+		if text.is_empty():
+			continue
+		var caption := _label(text, 12, HORIZONTAL_ALIGNMENT_CENTER)
+		caption.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		caption.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		content.add_child(caption)
+	card.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	return card
+
 # Presentation is explicitly mapped to a definition ID, never inferred from grip.
 func _tyre_presentation(definition_id: String) -> Dictionary:
 	if _component_catalog.is_empty():
@@ -778,6 +840,17 @@ func _tyre_presentation(definition_id: String) -> Dictionary:
 		if parsed is Dictionary:
 			_component_catalog = parsed
 	return _component_catalog.get("parts", {}).get(definition_id, {"label":definition_id.replace("_", " ")})
+
+func garage_wheel_widths() -> Vector2:
+	var result := Vector2.ZERO
+	if garage == null or screen != "configurator":
+		return result
+	for opt in garage.get_options():
+		if str(opt["id"]) == "tyre_front":
+			result.x = float(_tyre_presentation(str(opt["value"])).get("width_mm",0)) / 1000.0
+		elif str(opt["id"]) == "tyre_rear":
+			result.y = float(_tyre_presentation(str(opt["value"])).get("width_mm",0)) / 1000.0
+	return result
 
 func _component_texture(path: String) -> Texture2D:
 	if path.is_empty():
@@ -790,6 +863,7 @@ func _component_texture(path: String) -> Texture2D:
 
 func _select_area(area_id: String, move_camera: bool) -> void:
 	_active_area = area_id
+	_garage_width_menu = false
 	if _area_buttons.has(area_id):
 		(_area_buttons[area_id] as Button).set_pressed_no_signal(true)
 	_draw_garage_options()
