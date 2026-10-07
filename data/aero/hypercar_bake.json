@@ -12,7 +12,11 @@
   ],
   "scope": "replace_passive_aero",
   "geometry_files": [
-    "../../external/physics_sim/data/models/car_hyper/car_hyper.glb"
+    "../../out/aero_hypercar_cfd_6mm/hypercar_cfd_rest.stl",
+    "../../out/aero_hypercar_cfd_6mm/manifest.json",
+    "../../external/physics_sim/data/models/car_hyper/car_hyper.glb",
+    "../../external/physics_sim/data/models/car_hyper/car_hyper.flow.json",
+    "../../external/physics_sim/data/vehicles/car_hyper.json"
   ],
   "solver": {
     "name": "unselected",

@@ -101,3 +101,40 @@ simpleFoam or surfaceCheck; no Blender executable was found in the normal
 Windows installation path or PATH. Stage 2 has export/audit complete; solid
 repair and CFD solver installation/configuration remain outstanding. There are
 still no measured coefficients and the selection remains disabled.
+## Model preparation status (2026-10-08)
+
+Integrated physics_sim87b0f41be9a872161ad938b84468de552ec506ac from S:.
+Visual source now has stitched inner skins/returns, backed lenses/grilles,
+closed tyre/rim profiles and an exterior-selection sidecar. Independent game
+GLB audit:179324 triangles, zero boundary/nonmanifold/degenerate/duplicate/winding
+errors per assembled node and combined. Godot import finds both doors, frunk,
+engine cover, wing, four wheels and driver eye. Native deterministic rebuild
+and Blender closed/open-pose checks pass. Art shape/joint dimensions preserved.
+
+Game export applies measured wheel-derived chassis alignment [.216,0,-.535]m.
+Hash-bound car_hyper.flow.json selects94204 exterior candidate triangles, omitting
+hidden cabin/engine geometry. Game-owned prepare_solid.py produces a separate
+filled CFD exterior: central body/cabin core filled from body-only floor/roof
+columns within0.55m of the centerline, seam closing, enclosed-volume flood fill,
+Gaussian/Taubin smoothing. Wheel/aero heights cannot fill that core. Backed
+cooling/no duct-flow assumptions and all source hashes/tool versions are explicit.
+Whole-car surface subdivision was replaced with bounded batches to limit memory.
+Watertight but fragmented/thin-shell candidates fail volume/component gates.
+
+Final prepared output: out/aero_hypercar_cfd_6mm/hypercar_cfd_rest.stl (about216MB,
+4317598 triangles), manifest.json and preview.png. Six-millimetre candidate:
+watertight/consistent winding,5 retained components,3.88222m3 solid volume,
+5.34mm maximum overall-bounds drift. Eight-millimetre comparison:3 components,
+3.96505m3,6.58mm drift; volume differs2.13% and nearby parts merge, so6mm is the
+preparation baseline. These are geometry checks, not mesh/force convergence.
+STL remains a derivative approximation: inspect small features and improve
+resolution as the solver requires. cfd_validated=false is deliberate.
+
+17 focused Python tests pass, including open/closed volume filling, small-seam
+closure, preserved open volume with closing disabled, synthetic solid topology,
+exact STL/cache hashes, source-bound selection, mirrored transforms and chassis
+alignment. Default bake config now binds STL+manifest+visualGLB+selection+vehicle;
+195 baseline cases were prepared again using those exact inputs. No solver run,
+CFD coefficients or drag reduction. Stage2 visual repair and preliminary solid
+preparation are complete; stage3 begins with fluid-domain/moving-ground/wheel/
+wing-pose setup and solver/refinement/convergence work. Engine runtime is unchanged.

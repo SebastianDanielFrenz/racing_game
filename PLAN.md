@@ -851,3 +851,5 @@ instanced 22-part rendering replace the main quadratic/spawn/render bottlenecks.
 Full-game performance at high populations remains owner acceptance.
 
 2026-10-07 offline CFD aero-map plan: runtime interpolates offline body-axis force/moment coefficients, with explicit model replacement and provenance. Authored hypercar coefficients remain unchanged until validated results are available. Implementation stages and acceptance: docs/aero_cfd_plan.md; bake configuration: data/aero/hypercar_bake.json.
+
+2026-10-08 hypercar model preparation: integrated source visual closure repairs (physics_sim 87b0f41); independent audit has zero topology defects. Prepared separate 6 mm CFD exterior with source hashes, quality gates and review render; 17 Python tests and Godot asset import pass. 195 cases now bind the prepared STL and provenance. Solver/domain/rotating-wheel/wing sweeps and CFD convergence remain next; no coefficients changed. See docs/aero_cfd_plan.md.
