@@ -77,6 +77,8 @@ var _garage_left: PanelContainer
 var _garage_right: PanelContainer
 var _garage_performance: VBoxContainer
 var _garage_category := "tyre_front"
+var _component_textures: Dictionary = {}
+var _component_catalog: Dictionary = {}
 var _garage_categories: OptionButton
 
 func garage_panel_widths() -> Vector2:
@@ -735,18 +737,56 @@ func _draw_upgrades() -> void:
 	for choice in selected["choices"]:
 		var installed := str(choice) == str(selected["value"])
 		var card := Button.new()
-		card.text = str(choice).replace("hyper_front_", "").replace("hyper_rear_", "").replace("_", "\n") + ("\nINSTALLED" if installed else "\nInstall")
-		card.custom_minimum_size = Vector2(0,160)
+		var presentation := _tyre_presentation(str(choice))
+		card.custom_minimum_size = Vector2(0,210)
+		var content := VBoxContainer.new()
+		content.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+		content.offset_left = 6
+		content.offset_right = -6
+		content.offset_top = 8
+		content.offset_bottom = -8
+		content.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		card.add_child(content)
+		var picture := TextureRect.new()
+		picture.texture = _component_texture(str(presentation.get("image", "")))
+		picture.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+		picture.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+		picture.size_flags_vertical = Control.SIZE_EXPAND_FILL
+		picture.custom_minimum_size.y = 110
+		picture.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		content.add_child(picture)
+		for text in [str(presentation.get("label", choice)), str(presentation.get("size", "")), ("Rated %d km/h" % int(presentation["rated_speed_kmh"])) if presentation.has("rated_speed_kmh") else "", "INSTALLED" if installed else "Install"]:
+			var caption := _label(text, 12, HORIZONTAL_ALIGNMENT_CENTER)
+			caption.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+			caption.mouse_filter = Control.MOUSE_FILTER_IGNORE
+			content.add_child(caption)
 		card.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		card.add_theme_font_size_override("font_size",13)
 		card.toggle_mode = true
 		card.set_pressed_no_signal(installed)
-		card.tooltip_text = str(choice)
+		card.tooltip_text = str(choice) + "\n" + str(presentation.get("label", "")) + "\nAuthored tread preview; speed rating from the physical definition."
 		card.pressed.connect(func():
 			_edit_option(_garage_category,str(choice))
 			_draw_garage_options())
 		grid.add_child(card)
 		_buttons["part:" + _garage_category + ":" + str(choice)] = card
+
+# Presentation is explicitly mapped to a definition ID, never inferred from grip.
+func _tyre_presentation(definition_id: String) -> Dictionary:
+	if _component_catalog.is_empty():
+		var parsed: Variant = JSON.parse_string(FileAccess.get_file_as_string("res://assets/components/tyres/catalog.json"))
+		if parsed is Dictionary:
+			_component_catalog = parsed
+	return _component_catalog.get("parts", {}).get(definition_id, {"label":definition_id.replace("_", " ")})
+
+func _component_texture(path: String) -> Texture2D:
+	if path.is_empty():
+		return null
+	if not _component_textures.has(path):
+		# Read the PNG directly so the first launch does not depend on editor imports.
+		var source := Image.load_from_file(path)
+		_component_textures[path] = ImageTexture.create_from_image(source) if source != null else null
+	return _component_textures[path]
 
 func _select_area(area_id: String, move_camera: bool) -> void:
 	_active_area = area_id

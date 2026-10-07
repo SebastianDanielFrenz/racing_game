@@ -1,0 +1,60 @@
+{
+  "parts": {
+    "hyper_front_265_35r20": {
+      "label": "Performance road",
+      "size": "265/35 R20",
+      "image": "res://assets/components/tyres/road.png",
+      "rated_speed_kmh": 500
+    },
+    "hyper_front_track_265_35r20": {
+      "label": "Track semi-slick",
+      "size": "265/35 R20",
+      "image": "res://assets/components/tyres/track.png",
+      "rated_speed_kmh": 500
+    },
+    "hyper_rear_325_30r21": {
+      "label": "Performance road",
+      "size": "325/30 R21",
+      "image": "res://assets/components/tyres/road.png",
+      "rated_speed_kmh": 500
+    },
+    "hyper_rear_track_325_30r21": {
+      "label": "Track semi-slick",
+      "size": "325/30 R21",
+      "image": "res://assets/components/tyres/track.png",
+      "rated_speed_kmh": 500
+    },
+    "passenger_car_225_45r17": {
+      "label": "Road",
+      "size": "225/45 R17",
+      "image": "res://assets/components/tyres/road.png",
+      "rated_speed_kmh": 270
+    },
+    "passenger_sport_225_45r17": {
+      "label": "Sport road",
+      "size": "225/45 R17",
+      "image": "res://assets/components/tyres/road.png",
+      "rated_speed_kmh": 270
+    },
+    "passenger_comfort_225_45r17": {
+      "label": "Comfort road",
+      "size": "225/45 R17",
+      "image": "res://assets/components/tyres/road.png",
+      "rated_speed_kmh": 270
+    }
+  },
+  "styles": {
+    "road": {
+      "image": "res://assets/components/tyres/road.png"
+    },
+    "track": {
+      "image": "res://assets/components/tyres/track.png"
+    },
+    "drag": {
+      "image": "res://assets/components/tyres/drag.png"
+    },
+    "slick": {
+      "image": "res://assets/components/tyres/slick.png"
+    }
+  }
+}
