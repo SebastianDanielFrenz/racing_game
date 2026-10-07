@@ -29,4 +29,3 @@ Parameters and display order are in data/tyres/families.json. tools/generate_tyr
 
 Every family offers the same compatible width ladder, with the body still enforcing axle limits. Existing saved definition IDs and installation/validation behavior are preserved. New images are consistent transparent component renders with different tread geometry; the mounted car mesh still retains its original tread shape.
 Verification: native tyre suite passed 235 assertions across 3 cases; garage smoke passed 137 checks including all nine type cards, opening the economy width submenu without installation, installing a physical economy variant, reset and the existing save/Drive flow. The 1920x1080 screenshot was reviewed and the scripts/image loads reported no errors. Logs: out/road_families_unit2.log and out/road_families_garage.log; screenshots: out/road_families_shots.
-
