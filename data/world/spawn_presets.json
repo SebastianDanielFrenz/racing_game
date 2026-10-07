@@ -65,6 +65,16 @@
       "yaw_deg": 46.6,
       "measured_max_grade_pct": 6.99,
       "source": "waypoint #2044 of data/routes/home_r1_drive.json (centreline of the OSM road); yaw = direction to waypoint #2056, 60 m ahead"
+    },
+    {
+      "id": "a5_north",
+      "name": "A 5, Rosbach v. d. Hoehe",
+      "description": "The northern end of the A 5 corridor, southbound towards Frankfurt. Only in the rhein_main_corridor world.",
+      "x": 14140.3,
+      "y": 18618.6,
+      "yaw_deg": -88.2,
+      "measured_max_grade_pct": 4.17,
+      "source": "150 m along OSM way 23446704 (A 5 southbound carriageway, centreline) from its northern end; yaw = direction to the point 60 m further; grade from route_check over the next 1.6 km against rhein-main-corridor-r2 (0 NoData samples, 0 tile misses)"
     }
   ]
 }

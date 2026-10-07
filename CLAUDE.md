@@ -107,7 +107,7 @@ racing_game/
       regions.json                    g2m.regions/1 (geo2map_engine G1c I7): region "home" (Main-Taunus-Kreis,
                                        Hochtaunuskreis, Frankfurt-Höchst), halo_m 2000 - consumed by
                                        `g2m_tiler import ...regions.json#home ...` (S:\claude_code\geo2map_engine)
-      spawn_presets.json              rg.spawn_presets/1 (R5): the spawn picker's presets (world_spawn, engelsruhe, b8_trunk, hornau, b8_north, koenigstein) in the session frame
+      spawn_presets.json              rg.spawn_presets/1 (R5): the spawn picker's presets (world_spawn, engelsruhe, b8_trunk, hornau, b8_north, koenigstein, a5_north) in the session frame
     credits.json                      rg.credits/1 (R5): every data source/library with licence and required attribution text; shown on the boot splash, loading screen and credits screen
     controls/
       fixed_keys.json                 rg.fixed_keys/1 (R5b): the keys the controls screen lists but cannot rebind (Esc/P, F6, F7, F10, F9, middle mouse, Shift); described by hand, keep in step with the scripts
