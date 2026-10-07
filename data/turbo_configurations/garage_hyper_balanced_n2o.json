@@ -1,0 +1,16 @@
+{
+  "format": "physics_sim.turbo_configuration/1",
+  "name": "garage_hyper_balanced_n2o",
+  "turbo": "../../external/physics_sim/data/turbos/hyper_turbo_n2o.json",
+  "count": 2,
+  "target_boost_bar": 1.4,
+  "intercooler_effectiveness": 0.95,
+  "boost_control": {
+    "source": "[A] PID on charge pressure (per unit of target_boost_bar, derivative on the measurement) and wastegate actuator lag; gains from a sweep on hyper_v8_one1_audio.json, 2026-10-02",
+    "kp": 1.0,
+    "ki_per_s": 1.0,
+    "kd_s": 0.05,
+    "actuator_tau_s": 0.1
+  },
+  "source": "Authored game garage fitment using the referenced library turbo hardware and controller. Changes turbo count/charge boost target only; no claimed dyno gain, manufacturer fitment or knock validation."
+}

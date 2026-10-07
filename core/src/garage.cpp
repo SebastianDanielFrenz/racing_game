@@ -68,6 +68,7 @@ bool option_value_type_ok(OptionKind kind, const SetupValue& v) {
         case OptionKind::BrakeBias: return std::holds_alternative<double>(v);
         case OptionKind::ScaleList: return std::holds_alternative<std::vector<double>>(v);
         case OptionKind::Bool: return std::holds_alternative<bool>(v);
+        case OptionKind::FileChoice:
         case OptionKind::TyreChoice:
         case OptionKind::Colour: return std::holds_alternative<std::string>(v);
     }
@@ -299,6 +300,8 @@ void Garage::revalidate() {
         validation_.message = "no vehicle is being edited";
         return;
     }
+    SetupModel installed_model = build_setup_model(*e, options_, context_for(*e), &working_);
+    if (installed_model.error.empty()) model_ = std::move(installed_model);
     if (working_.values.empty()) {
         validation_.ok = true;
         return;

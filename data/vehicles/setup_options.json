@@ -279,6 +279,126 @@
       "pointers": [
         "/throttle_actuator_tau_s"
       ]
+    },
+    {
+      "id": "engine_install",
+      "label": "Engine",
+      "group": "Engine",
+      "area": "engine",
+      "kind": "file_choice",
+      "file": "vehicle",
+      "part_format": "physics_sim.engine/1",
+      "compatible_engines": [
+        "i4_2l_na",
+        "n52b30_3l_na"
+      ],
+      "pointers": [
+        "/powertrain/components/[type=engine]/ref"
+      ],
+      "help": "Install an engine from this fictional sedan chassis fitment list. Calibration applies to the installed engine. Chassis mass and visible engine-bay mesh are retained.",
+      "parts": [
+        {
+          "id": "sedan_i4",
+          "label": "Inline-four 2.0",
+          "path": "../../external/physics_sim/data/engines/i4_2l_na.json",
+          "image": "res://assets/components/engines/engine_i4.png",
+          "detail": "Naturally aspirated"
+        },
+        {
+          "id": "sedan_i6",
+          "label": "Inline-six 3.0",
+          "path": "../engines/n52b30_3l_na.json",
+          "image": "res://assets/components/engines/engine_i6.png",
+          "detail": "Naturally aspirated"
+        }
+      ]
+    },
+    {
+      "id": "turbo_install",
+      "label": "Turbo system",
+      "group": "Turbo system",
+      "area": "engine",
+      "kind": "file_choice",
+      "file": "engine",
+      "part_format": "physics_sim.turbo_configuration/1",
+      "compatible_engines": [
+        "hyper_v8_one1_audio"
+      ],
+      "no_turbo_override": true,
+      "pointers": [
+        "/default_turbo_configuration"
+      ],
+      "help": "Install validated turbo hardware and its charge-pressure control configuration. Changes apply on Drive. The nitrous car retains its larger-wastegate hardware.",
+      "parts": [
+        {
+          "id": "original_twin",
+          "label": "Twin turbo · full boost",
+          "path": "../../external/physics_sim/data/turbo_configurations/hyper_twin_default.json",
+          "image": "res://assets/components/engines/turbo_twin.png",
+          "detail": "2 units · 1.8 bar charge target"
+        },
+        {
+          "id": "hyper_single",
+          "label": "Single turbo",
+          "path": "../turbo_configurations/garage_hyper_single.json",
+          "image": "res://assets/components/engines/turbo_single.png",
+          "detail": "1 unit · 1.4 bar charge target"
+        },
+        {
+          "id": "hyper_touring",
+          "label": "Twin turbo · Touring",
+          "path": "../turbo_configurations/garage_hyper_touring.json",
+          "image": "res://assets/components/engines/turbo_twin.png",
+          "detail": "2 units · 1.0 bar charge target"
+        },
+        {
+          "id": "hyper_balanced",
+          "label": "Twin turbo · Balanced",
+          "path": "../turbo_configurations/garage_hyper_balanced.json",
+          "image": "res://assets/components/engines/turbo_twin.png",
+          "detail": "2 units · 1.4 bar charge target"
+        }
+      ]
+    },
+    {
+      "id": "turbo_install_n2o",
+      "label": "Turbo system",
+      "group": "Turbo system",
+      "area": "engine",
+      "kind": "file_choice",
+      "file": "vehicle",
+      "part_format": "physics_sim.turbo_configuration/1",
+      "compatible_engines": [
+        "hyper_v8_one1_audio"
+      ],
+      "no_turbo_override": false,
+      "pointers": [
+        "/powertrain/components/[type=engine]/turbo_configuration"
+      ],
+      "help": "Install validated turbo hardware and its charge-pressure control configuration. Changes apply on Drive. The nitrous car retains its larger-wastegate hardware.",
+      "parts": [
+        {
+          "id": "original_twin_n2o",
+          "label": "Twin turbo · full boost",
+          "path": "../../external/physics_sim/data/turbo_configurations/hyper_twin_n2o.json",
+          "image": "res://assets/components/engines/turbo_twin.png",
+          "detail": "2 units · 1.8 bar charge target"
+        },
+        {
+          "id": "hyper_touring_n2o",
+          "label": "Twin turbo · Touring",
+          "path": "../turbo_configurations/garage_hyper_touring_n2o.json",
+          "image": "res://assets/components/engines/turbo_twin.png",
+          "detail": "2 units · 1.0 bar charge target"
+        },
+        {
+          "id": "hyper_balanced_n2o",
+          "label": "Twin turbo · Balanced",
+          "path": "../turbo_configurations/garage_hyper_balanced_n2o.json",
+          "image": "res://assets/components/engines/turbo_twin.png",
+          "detail": "2 units · 1.4 bar charge target"
+        }
+      ]
     }
   ]
 }

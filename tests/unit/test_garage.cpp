@@ -319,3 +319,34 @@ TEST_CASE("garage camera: the engine bay view follows the engine position", "[ga
     CHECK(p_front.position.x > a_front.x); // looking at a front engine from ahead
     CHECK(p_mid.position.x < a_mid.x);     // looking at a mid engine from behind
 }
+
+
+TEST_CASE("garage engine install persists and reaches the prepared drive", "[engine_parts][garage]") {
+    TempDirs t;
+    std::string err;
+    {
+        auto g = open_garage(t);
+        REQUIRE(g->begin_edit("car_sedan", &err));
+        REQUIRE(g->set_option("engine_install", std::string("sedan_i4")).validation.ok);
+        REQUIRE(g->set_option("engine_rev_limit", 0.9).validation.ok);
+        REQUIRE(g->save(&err));
+    }
+    auto g = open_garage(t);
+    REQUIRE(g->begin_edit("car_sedan", &err));
+    REQUIRE(std::get<std::string>(g->current_value("engine_install")) == "sedan_i4");
+    const auto drive = g->prepare_drive("car_sedan");
+    INFO(drive.error);
+    REQUIRE(drive.ok);
+    const auto d = ps::io::load_vehicle_json(drive.vehicle_path);
+    bool found = false;
+    for (const auto& c : d.powertrain.components) {
+        if (auto e = std::get_if<ps::drivetrain::TorqueMapEngineDesc>(&c.params)) {
+            found = true;
+            CHECK(e->limiter.rpm == Approx(6120.0));
+        }
+    }
+    REQUIRE(found);
+    g->reset_all();
+    REQUIRE(g->validation().ok);
+    REQUIRE(std::get<std::string>(g->current_value("engine_install")) == "stock");
+}

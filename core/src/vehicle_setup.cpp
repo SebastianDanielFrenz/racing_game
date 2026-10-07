@@ -232,6 +232,7 @@ struct Files {
     FileDoc vehicle;
     std::optional<FileDoc> gearbox;
     std::optional<FileDoc> engine;
+    std::string original_engine_path;
     std::map<std::string, FileDoc> tyres; // by path
 };
 
@@ -312,6 +313,7 @@ bool load_files(const CatalogEntry& entry, Files& files, std::string* err) {
     const std::string dir = dir_of(files.vehicle.path);
     if (!load_aux(files.vehicle.base, dir, "gearbox", files.gearbox, err)) return false;
     if (!load_aux(files.vehicle.base, dir, "engine", files.engine, err)) return false;
+    if (files.engine) files.original_engine_path = files.engine->path;
     return load_tyres(files.vehicle, files.tyres, err);
 }
 
@@ -357,6 +359,39 @@ std::vector<Target> targets_of(Files& files, const SetupOptionDef& def, const st
 }
 
 std::string stem_of(const std::string& path) { return fs::path(path).stem().string(); }
+
+// File choices are never a filesystem picker: only declared compatible IDs can resolve a path.
+bool file_choice_fits(Files& files, const SetupOptionDef& def, const CatalogEntry& entry) {
+    if (!entry_offers(entry, def.id)) return false;
+    const std::string engine = stem_of(files.original_engine_path);
+    if (std::find(def.compatible_engines.begin(), def.compatible_engines.end(), engine) == def.compatible_engines.end()) return false;
+    const int idx = component_index(files.vehicle.base, "engine");
+    if (def.no_turbo_override && idx >= 0 && files.vehicle.base["powertrain"]["components"][idx].contains("turbo_configuration")) return false;
+    return !targets_of(files, def, pointers_for(entry, def)).empty();
+}
+
+std::string install_file_part(Files& files, const SetupOptionDef& def, const CatalogEntry& entry, const SetupValue& value) {
+    if (!std::holds_alternative<std::string>(value)) return def.id + ": needs a component ID";
+    if (!file_choice_fits(files, def, entry)) return def.id + ": not compatible with this vehicle";
+    const auto& id = std::get<std::string>(value);
+    if (id == "stock") return {};
+    const auto part = std::find_if(def.parts.begin(), def.parts.end(), [&](const SetupPart& p) { return p.id == id; });
+    if (part == def.parts.end()) return def.id + ": component ID is not in the fitment list";
+    json doc;
+    std::string err, format;
+    if (!read_doc(part->path, doc, &err)) return err;
+    if (!detail::get_string(doc, "format", format) || format != def.part_format) return def.id + ": wrong component file format";
+    for (auto& target : targets_of(files, def, pointers_for(entry, def))) {
+        const json* leaf = at_pointer(target.file->work, target.pointer);
+        if (!leaf || !leaf->is_string()) return def.id + ": reference is not a string";
+        target.file->work[json::json_pointer(target.pointer)] = part->path;
+    }
+    // Reload the installed engine BEFORE calibrating it. Its own relative dependencies keep their directory.
+    if (def.part_format == "physics_sim.engine/1") {
+        if (!load_aux(files.vehicle.work, dir_of(files.vehicle.path), "engine", files.engine, &err)) return err;
+    }
+    return {};
+}
 
 // Wheels of an axle: {name, index, radius, width}.
 struct WheelInfo {
@@ -492,6 +527,7 @@ const char* to_string(OptionKind k) {
         case OptionKind::Scale: return "scale";
         case OptionKind::ScaleList: return "scale_list";
         case OptionKind::BrakeBias: return "brake_bias";
+        case OptionKind::FileChoice: return "file_choice";
         case OptionKind::TyreChoice: return "tyre_choice";
         case OptionKind::Bool: return "bool";
         case OptionKind::Colour: return "colour";
@@ -547,6 +583,7 @@ std::optional<SetupOptionTable> parse_setup_options(const std::string& json_text
         if (kind == "scale") d.kind = OptionKind::Scale;
         else if (kind == "scale_list") d.kind = OptionKind::ScaleList;
         else if (kind == "brake_bias") d.kind = OptionKind::BrakeBias;
+        else if (kind == "file_choice") d.kind = OptionKind::FileChoice;
         else if (kind == "tyre_choice") d.kind = OptionKind::TyreChoice;
         else if (kind == "bool") d.kind = OptionKind::Bool;
         else if (kind == "colour") d.kind = OptionKind::Colour;
@@ -584,6 +621,30 @@ std::optional<SetupOptionTable> parse_setup_options(const std::string& json_text
         }
         if (d.kind == OptionKind::BrakeBias && !(d.max_shift > 0.0 && d.max_shift < 0.5)) {
             return bad(where + ": max_shift must be in (0, 0.5)");
+        }
+        if (d.kind == OptionKind::FileChoice) {
+            if (d.file != "vehicle" && d.file != "engine") return bad(where + ": file choice must edit vehicle or engine");
+            if (!detail::get_string(o, "part_format", d.part_format) || d.part_format.empty()) return bad(where + ": part_format missing");
+            detail::get_bool(o, "no_turbo_override", d.no_turbo_override);
+            if (!o.contains("compatible_engines") || !o["compatible_engines"].is_array() || o["compatible_engines"].empty())
+                return bad(where + ": explicit compatible_engines required");
+            for (const auto& name : o["compatible_engines"]) {
+                if (!name.is_string() || name.get<std::string>().empty()) return bad(where + ": invalid engine fitment");
+                d.compatible_engines.push_back(name.get<std::string>());
+            }
+            if (!o.contains("parts") || !o["parts"].is_array() || o["parts"].empty()) return bad(where + ": parts missing");
+            std::set<std::string> part_ids;
+            for (const auto& part : o["parts"]) {
+                SetupPart p;
+                if (!part.is_object() || !detail::get_string(part, "id", p.id) || p.id.empty() || p.id == "stock" ||
+                    !part_ids.insert(p.id).second || !detail::get_string(part, "path", p.path) || p.path.empty())
+                    return bad(where + ": invalid or duplicate part");
+                detail::get_string(part, "label", p.label);
+                detail::get_string(part, "image", p.image);
+                detail::get_string(part, "detail", p.detail);
+                p.path = resolve_ref(dir_of(origin), p.path);
+                d.parts.push_back(std::move(p));
+            }
         }
         table.options.push_back(std::move(d));
     }
@@ -656,6 +717,7 @@ std::optional<VehicleSetup> parse_setup(const std::string& json_text, const Setu
                 if (!v.is_boolean()) return bad("option \"" + it.key() + "\" must be true or false");
                 out.values[it.key()] = v.get<bool>();
                 break;
+            case OptionKind::FileChoice:
             case OptionKind::TyreChoice:
             case OptionKind::Colour:
                 if (!v.is_string()) return bad("option \"" + it.key() + "\" must be a string");
@@ -695,10 +757,19 @@ std::string whitelist_violation(const std::string& base_json, const std::string&
 
 // ---- the model (option views) ------------------------------------------------------------------
 
-SetupModel build_setup_model(const CatalogEntry& entry, const SetupOptionTable& table, const SetupContext& ctx) {
+SetupModel build_setup_model(const CatalogEntry& entry, const SetupOptionTable& table, const SetupContext& ctx, const VehicleSetup* installed) {
     SetupModel model;
     Files files;
     if (!load_files(entry, files, &model.error)) return model;
+    if (installed) {
+        for (const auto& def : table.options) {
+            if (def.kind != OptionKind::FileChoice) continue;
+            const auto it = installed->values.find(def.id);
+            if (it == installed->values.end()) continue;
+            model.error = install_file_part(files, def, entry, it->second);
+            if (!model.error.empty()) return model;
+        }
+    }
     for (const SetupOptionDef& def : table.options) {
         OptionView v;
         v.def = def;
@@ -710,7 +781,12 @@ SetupModel build_setup_model(const CatalogEntry& entry, const SetupOptionTable& 
         switch (def.kind) {
             case OptionKind::Scale: {
                 v.stock = 1.0;
-                if (v.available && targets_of(files, def, v.def.pointers).empty()) v.available = false;
+                const auto targets = targets_of(files, def, v.def.pointers);
+                for (const auto& target : targets) {
+                    const auto* leaf = at_pointer(target.file->base, target.pointer);
+                    if (leaf && leaf->is_number()) v.stock_numbers.push_back(leaf->get<double>());
+                }
+                if (v.available && targets.empty()) v.available = false;
                 break;
             }
             case OptionKind::ScaleList: {
@@ -741,6 +817,29 @@ SetupModel build_setup_model(const CatalogEntry& entry, const SetupOptionTable& 
                     v.max = std::min(0.85, share + def.max_shift);
                 }
                 if (total <= 0.0) v.available = false;
+                break;
+            }
+            case OptionKind::FileChoice: {
+                v.stock = std::string("stock");
+                v.available = file_choice_fits(files, def, entry);
+                SetupPart stock;
+                stock.id = "stock";
+                stock.label = "Original component";
+                std::string original;
+                const auto targets = targets_of(files, def, v.def.pointers);
+                if (!targets.empty()) {
+                    const auto* leaf = at_pointer(targets.front().file->base, targets.front().pointer);
+                    if (leaf && leaf->is_string()) original = resolve_ref(dir_of(targets.front().file->path), leaf->get<std::string>());
+                }
+                for (const auto& part : def.parts) if (part.path == original) { stock = part; stock.id = "stock"; }
+                v.parts.push_back(stock);
+                v.choices.push_back("stock");
+                for (const auto& part : def.parts) {
+                    if (part.path == original) continue;
+                    v.parts.push_back(part);
+                    v.choices.push_back(part.id);
+                }
+                if (v.choices.size() < 2) v.available = false;
                 break;
             }
             case OptionKind::TyreChoice: {
@@ -829,6 +928,7 @@ std::string apply_option(const CatalogEntry& entry, const SetupOptionDef& def, c
     const auto type_error = [&](const char* expected) { return "option \"" + id + "\" needs " + expected; };
 
     switch (def.kind) {
+        case OptionKind::FileChoice: return install_file_part(files, def, entry, value);
         case OptionKind::Scale: {
             if (!std::holds_alternative<double>(value)) return type_error("a number");
             const double s = std::get<double>(value);
@@ -1019,7 +1119,7 @@ CompiledSetup compile_setup_internal(const CatalogEntry& entry, const SetupOptio
     std::vector<std::pair<const FileDoc*, std::string>> touched; // (file, pointer) per edit
     // Pass 1: tyre choices change which tyre files the wheels use.
     for (const SetupOptionDef& def : table.options) {
-        if (def.kind != OptionKind::TyreChoice) continue;
+        if (def.kind != OptionKind::TyreChoice && def.kind != OptionKind::FileChoice) continue;
         const auto it = setup.values.find(def.id);
         if (it == setup.values.end() || is_stock(def, it->second)) continue;
         const std::string e = apply_option(entry, def, it->second, ctx, files, out, touched);
@@ -1034,7 +1134,7 @@ CompiledSetup compile_setup_internal(const CatalogEntry& entry, const SetupOptio
     }
     // Pass 2: everything else, in table order.
     for (const SetupOptionDef& def : table.options) {
-        if (def.kind == OptionKind::TyreChoice) continue;
+        if (def.kind == OptionKind::TyreChoice || def.kind == OptionKind::FileChoice) continue;
         const auto it = setup.values.find(def.id);
         if (it == setup.values.end()) continue;
         if (def.kind != OptionKind::Colour && is_stock(def, it->second)) continue;

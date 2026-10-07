@@ -33,9 +33,39 @@ Step 1 layout is implemented. Native performance benchmarking/cache is still nee
 
 Step 2 now implements compound/tread and width installation, fitment validation, physical width response and width visuals. Further tyre work includes mesh tread geometry, measured/calibrated fits, pressure/temperature and weather-sensitive behavior.
 
-Step 3 engine customization remains planned, using real compatible definitions and physical parameters.
+Step 3 now supports engine and turbo installation cards plus installed-engine calibration.
+The conventional sedan family can swap the library 2.0 L inline-four and game 3.0 L
+inline-six torque-map engines. This is authored compatibility for fictional chassis;
+chassis mass and the engine-bay mesh stay unchanged, not a measured real-world swap.
+Hypercars retain their V8 and offer turbo configurations: original twin at 1.8 bar,
+touring twin at 1.0 bar, balanced twin at 1.4 bar, and (non-nitrous only) single at
+1.4 bar. Boost values are charge-pressure targets, not guaranteed manifold pressure.
+The nitrous version has its own choices retaining its larger-wastegate hardware.
+Installation uses whitelisted IDs resolved to approved files. Unknown file paths,
+cross-family installs and incompatible overrides are rejected. Engine references
+are loaded before tuning, then Save/Drive use normal native loader validation.
+Changes apply on Drive, not live in an already-running session.
+
+Transparent images distinguish inline-four / inline-six and single / twin hardware.
+They are illustrative component renders, not exact scans. Calibration variants of
+the same hardware share an image. Rev limiter and throttle-response labels show
+RPM and milliseconds from the installed engine's baseline, rather than only factors.
+Stock engine specifications are labeled as stock: tuned dyno/benchmarks remain pending.
+ECU map parts, further engine internals, engine geometry design and engine-bay mesh
+replacement remain future work.
 
 ## Verification
 
 Native setup suite: 193 assertions across 13 existing cases passed after the fitment change. New width tests passed 111 assertions across two cases and check grip, rolling resistance, inertia, unchanged radius/other axle, width caps, catalog-configured expansion and all families' available widths. The garage smoke passed 121 checks, including the two-stage flow and 305 mm installation/restoration, existing tuning rejection/save/reload/Drive and node cleanup. Screenshots of type selection and the width submenu were reviewed at 1920x1080. Logs: out/tyre_custom_final.log and out/tyre_width_final_unit.log; images: out/tyre_custom_shots.
-Engine customization now starts with installed-engine calibration in Tuning / Engine bay: rev limit (75–100% of stock) and electronic throttle response time (50–200% of stock). These whitelist actual engine-file parameters, retain bore/stroke and torque maps, and use the existing materialization and physics-loader validation. Engines lacking the corresponding field do not offer that control. Higher rev limits require a future compatible internals upgrade. Engine swaps, turbo part cards and engine component images remain pending; performance figures are still declared stock figures, not a tuned dyno result.
+Engine customization now starts with installed-engine calibration in Tuning / Engine bay: rev limit (75–100% of stock) and electronic throttle response time (50–200% of stock). These whitelist actual engine-file parameters, retain bore/stroke and torque maps, and use the existing materialization and physics-loader validation. Engines lacking the corresponding field do not offer that control. Higher rev limits require a future compatible internals upgrade. Performance figures remain stock references until the benchmark model supplies setup-specific results.
+
+2026-10-08 engine-parts verification: 81 assertions in four focused native cases
+cover engine swap plus limiter ordering, loader validation, incompatible/path-like
+IDs, Save/restart/Drive, turbo count/flow/inertia, boost targets and the nitrous
+wastegate. Existing setup regression: 463 assertions in 16 cases. Expanded garage
+flow: 150 checks before the final highlight check, then 151 checks including it.
+Component-card screenshots reviewed at 1920x1080 for hyper and sedan. Evidence:
+out/engine_parts_unit3.log, out/engine_parts_setup_regression.log,
+out/engine_parts_garage_final.log, out/engine_parts_shots and
+out/engine_parts_sedan_shots. Dedicated logs/user directories kept normal saves
+and the owner's drive log intact.

@@ -273,6 +273,16 @@ godot::Array RgGarage::get_options() const {
         godot::PackedStringArray choices;
         for (const std::string& c : v.choices) choices.push_back(from_std(c));
         d["choices"] = choices;
+        godot::Array parts;
+        for (const auto& p : v.parts) {
+            godot::Dictionary part;
+            part["id"] = from_std(p.id);
+            part["label"] = from_std(p.label);
+            part["image"] = from_std(p.image);
+            part["size"] = from_std(p.detail);
+            parts.push_back(part);
+        }
+        d["parts"] = parts;
         d["list_size"] = static_cast<int64_t>(v.list_size);
         godot::PackedFloat64Array nums;
         for (const double n : v.stock_numbers) nums.push_back(n);

@@ -472,6 +472,7 @@ S1 open item: the N2O armed-versus-unarmed gain measurement for BOTH N2O cars (c
 
 **R6b: engine selection and tuning (owner 2026-10-05: a separate step after R6).** Model: Opus design with the physics_sim coordinator, then Sonnet. Prerequisite: [R6; physics_sim modular parts system].
 - Scope: engine swap per car (whitelisted engine `ref`, loader-validated), turbo configuration choice (physics_sim `World::replace_turbo_configuration`), engine tuning (rev limiter, throttle response, later ECU calibration as a slot-in part - the owner's 2026-09-29 parts/override model). Engine design (geometry, intake, exhaust; map regeneration in seconds) stays with the engine design GUI.
+- R6b garage slice (2026-10-08): implemented compatible sedan I4/I6 engine reference selection, standard/nitrous hyper turbo configuration cards, illustrative component images, installed-engine limiter/throttle tuning with RPM/ms readouts, and Save/restart/Drive materialization. Unknown/cross-family choices are rejected; nitrous turbo hardware retains its larger wastegate. Native checks: 81 focused engine assertions, 463 existing setup assertions; garage flow: 151 checks. Changes apply on Drive. Live World turbo replacement, ECU map parts, engine design/internals and mesh/mass changes remain pending. The separate Step 1 performance benchmark/cache remains pending. See docs/garage_ui.md.
 
 **G5 + R7: land cover, buildings, water, vegetation, building collision.** Model: Sonnet (Opus for building-collision streaming). Prerequisite: [R2].
 - Acceptance:

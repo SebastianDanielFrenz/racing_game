@@ -47,12 +47,17 @@ enum class OptionKind {
     Scale,      // number: factor applied to every target leaf
     ScaleList,  // number[]: one factor per target leaf (a gear each)
     BrakeBias,  // number: the front share of the total brake torque
+    FileChoice, // string: an explicitly compatible referenced component file
     TyreChoice, // string: a tyre file (by file stem) that matches the axle's wheels
     Bool,       // bool: a target leaf set to it
     Colour,     // string "#rrggbb": visual only, edits no file
 };
 
 const char* to_string(OptionKind k);
+
+struct SetupPart {
+    std::string id, label, path, image, detail;
+};
 
 struct SetupOptionDef {
     std::string id;       // unique, lower_snake
@@ -69,6 +74,10 @@ struct SetupOptionDef {
     std::string file = "vehicle"; // "vehicle" | "gearbox" | "engine" | "tyre"
     std::vector<std::string> pointers; // the whitelist paths (empty for Colour)
     std::string monotonic;             // "decreasing": the resulting list must stay strictly decreasing
+    std::vector<SetupPart> parts; // FileChoice: approved files; paths resolved against option-table directory
+    std::vector<std::string> compatible_engines; // original engine stems, an explicit game fitment list
+    std::string part_format; // required referenced file format
+    bool no_turbo_override = false; // default engine turbo must not shadow a vehicle override
     std::string axle;                  // TyreChoice: "front" | "rear"
 };
 
@@ -112,6 +121,7 @@ struct OptionView {
     double max = 1.0;
     SetupValue stock;                  // the value that changes nothing
     std::vector<std::string> choices;  // TyreChoice: candidate file stems
+    std::vector<SetupPart> parts; // available presentation records, including stock
     int list_size = 0;                 // ScaleList: number of entries
     std::vector<double> stock_numbers; // ScaleList: stock leaf values (gear ratios) for display
 };
@@ -121,7 +131,8 @@ struct SetupModel {
     std::string error; // non-empty: the vehicle's files could not be read
 };
 // Builds the option views of an entry from its files.
-SetupModel build_setup_model(const CatalogEntry& entry, const SetupOptionTable& table, const SetupContext& ctx);
+SetupModel build_setup_model(const CatalogEntry& entry, const SetupOptionTable& table, const SetupContext& ctx,
+                             const VehicleSetup* installed = nullptr);
 
 // The result of applying a setup to the entry's files in memory (no disk write).
 struct CompiledSetup {

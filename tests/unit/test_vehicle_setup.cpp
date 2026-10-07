@@ -345,6 +345,7 @@ TEST_CASE("setup: every catalog entry accepts a setup touching each available op
                     ++touched;
                     break;
                 case rg::OptionKind::BrakeBias: s.values[o.def.id] = std::get<double>(o.stock) + 0.02; ++touched; break;
+                case rg::OptionKind::FileChoice:
                 case rg::OptionKind::TyreChoice: s.values[o.def.id] = o.choices.back(); ++touched; break;
                 case rg::OptionKind::Bool: s.values[o.def.id] = !std::get<bool>(o.stock); ++touched; break;
                 case rg::OptionKind::Colour: s.values[o.def.id] = std::string("#336699"); break;
@@ -455,4 +456,70 @@ TEST_CASE("engine calibration changes real parameters and rejects excessive limi
         setup_of("car_hyper", {{"engine_rev_limit", 1.1}})).ok);
     REQUIRE_FALSE(rg::compile_setup(e, f.table, f.ctx,
         setup_of("car_hyper", {{"engine_throttle_response", 0.0}})).ok);
+}
+
+
+TEST_CASE("engine parts: swaps tune the newly installed engine and keep other references", "[engine_parts][garage]") {
+    Fixture f;
+    for (const auto& selection : {std::pair{"car_sedan", "sedan_i4"}, std::pair{"car_sedan_rwd", "sedan_i6"}}) {
+        const auto& e = f.entry(selection.first);
+        auto setup = setup_of(selection.first, {{"engine_install", std::string(selection.second)}, {"engine_rev_limit", 0.9}});
+        std::string err;
+        const auto d = load_materialised(f, e, setup, &err);
+        INFO(err);
+        const ps::drivetrain::TorqueMapEngineDesc* engine = nullptr;
+        for (const auto& c : d.powertrain.components) if (auto p = std::get_if<ps::drivetrain::TorqueMapEngineDesc>(&c.params)) engine = p;
+        REQUIRE(engine != nullptr);
+        const bool i4 = std::string(selection.second) == "sedan_i4";
+        CHECK(engine->limiter.rpm == Approx((i4 ? 6800.0 : 6900.0) * 0.9));
+        CHECK(d.wheels.size() == 4);
+        REQUIRE(gearbox_of(d) != nullptr);
+        auto roundtrip = rg::parse_setup(rg::setup_to_json(setup), f.table, "roundtrip", &err);
+        REQUIRE(roundtrip.has_value());
+        CHECK(std::get<std::string>(roundtrip->values.at("engine_install")) == selection.second);
+        const auto model = rg::build_setup_model(e, f.table, f.ctx, &setup);
+        CHECK(model.error.empty());
+        bool found = false;
+        for (const auto& opt : model.options) if (opt.def.id == "engine_install") {
+            found = true;
+            REQUIRE(opt.available);
+            REQUIRE(opt.parts.size() == 2);
+            CHECK(opt.parts.front().id == "stock");
+            CHECK(!opt.parts.front().image.empty());
+        }
+        CHECK(found);
+    }
+    CHECK_FALSE(rg::compile_setup(f.entry("car_hyper"), f.table, f.ctx,
+        setup_of("car_hyper", {{"engine_install", std::string("sedan_i6")}})).ok);
+    CHECK_FALSE(rg::compile_setup(f.entry("car_sedan"), f.table, f.ctx,
+        setup_of("car_sedan", {{"engine_install", std::string("../../anything.json")}})).ok);
+}
+
+TEST_CASE("engine parts: turbo count and boost survive materialization, nitrous keeps its gate", "[engine_parts][garage]") {
+    Fixture f;
+    for (const auto& car : {"car_hyper", "car_hyper_n2o"}) {
+        const auto& e = f.entry(car);
+        const bool nitrous = std::string(car) == "car_hyper_n2o";
+        const auto setup = setup_of(car, {{nitrous ? "turbo_install_n2o" : "turbo_install", std::string(nitrous ? "hyper_balanced_n2o" : "hyper_balanced")}});
+        const auto tuned = load_materialised(f, e, setup);
+        const auto stock = load_materialised(f, e, setup_of(car, {}));
+        const ps::drivetrain::SimulatedEngineDesc *a=nullptr, *b=nullptr;
+        for (const auto& c : tuned.powertrain.components) if (auto p=std::get_if<ps::drivetrain::SimulatedEngineDesc>(&c.params)) a=p;
+        for (const auto& c : stock.powertrain.components) if (auto p=std::get_if<ps::drivetrain::SimulatedEngineDesc>(&c.params)) b=p;
+        REQUIRE(a != nullptr);
+        REQUIRE(b != nullptr);
+        REQUIRE(a->turbo_pair.has_value());
+        REQUIRE(b->turbo_pair.has_value());
+        CHECK(a->turbo_pair->target_boost_pa == Approx(140000.0));
+        CHECK(a->turbo_pair->wastegate_area() == Approx(b->turbo_pair->wastegate_area()));
+        CHECK(a->turbo_pair->rotor_inertia_kgm2 == Approx(b->turbo_pair->rotor_inertia_kgm2));
+    }
+    const auto twin = ps::io::load_turbo_configuration_json(kRoot + "/external/physics_sim/data/turbo_configurations/hyper_twin_default.json");
+    const auto single = ps::io::load_turbo_configuration_json(kRoot + "/data/turbo_configurations/garage_hyper_single.json");
+    CHECK(single.rotor_inertia_kgm2 == Approx(twin.rotor_inertia_kgm2 * 0.5));
+    CHECK(single.max_mass_flow_kg_s == Approx(twin.max_mass_flow_kg_s * 0.5));
+    CHECK_FALSE(rg::compile_setup(f.entry("car_hyper_n2o"), f.table, f.ctx,
+        setup_of("car_hyper_n2o", {{"turbo_install", std::string("hyper_single")}})).ok);
+    CHECK_FALSE(rg::compile_setup(f.entry("car_sedan"), f.table, f.ctx,
+        setup_of("car_sedan", {{"turbo_install", std::string("hyper_single")}})).ok);
 }

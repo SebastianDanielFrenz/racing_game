@@ -646,6 +646,10 @@ func _build_configurator() -> void:
 
 func _set_garage_mode(mode: String) -> void:
 	_garage_mode = mode
+	for mode_id in ["upgrades", "tuning"]:
+		var button: Button = _buttons.get("garage:" + mode_id, null)
+		if button != null:
+			button.set_pressed_no_signal(mode_id == mode)
 	_garage_categories.visible = mode == "upgrades"
 	_draw_garage_options()
 
@@ -665,7 +669,7 @@ func _refresh_performance() -> void:
 		_garage_performance.add_child(_label(heading,17,HORIZONTAL_ALIGNMENT_LEFT))
 		_garage_performance.add_child(_label("Not measured",14,HORIZONTAL_ALIGNMENT_LEFT,true))
 	_garage_performance.add_child(HSeparator.new())
-	_garage_performance.add_child(_label("Vehicle specification",19,HORIZONTAL_ALIGNMENT_LEFT))
+	_garage_performance.add_child(_label("Stock vehicle specification",19,HORIZONTAL_ALIGNMENT_LEFT))
 	for text in ["Mass  %.0f kg" % float(stats.get("mass_kg",0)),"Power  %.1f kW" % float(stats.get("peak_power_kw",0)),"Torque  %.0f Nm" % float(stats.get("peak_torque_nm",0)),"%s · %d gears" % [str(stats.get("layout","")),int(stats.get("gear_count",0))]]:
 		_garage_performance.add_child(_label(text,16,HORIZONTAL_ALIGNMENT_LEFT))
 	if bool(stats.get("figures_declared",false)):
@@ -689,9 +693,9 @@ func _draw_garage_options() -> void:
 	for opt in garage.get_options():
 		if str(opt["area"]) != _active_area or not bool(opt["available"]):
 			continue
-		if str(opt["kind"]) == "tyre_choice":
+		if str(opt["kind"]) in ["tyre_choice", "file_choice"]:
 			_option_box.add_child(_label("Installed " + str(opt["label"]).to_lower(),17,HORIZONTAL_ALIGNMENT_LEFT))
-			var installed := _label(_display_value("tyre_choice",opt["value"]),14,HORIZONTAL_ALIGNMENT_LEFT,true)
+			var installed := _label(_part_name(opt) if str(opt["kind"]) == "file_choice" else _display_value("tyre_choice",opt["value"]),14,HORIZONTAL_ALIGNMENT_LEFT,true)
 			installed.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 			_option_box.add_child(installed)
 			count += 1
@@ -708,7 +712,7 @@ func _draw_upgrades() -> void:
 	_garage_categories.clear()
 	var choices: Array = []
 	for opt in garage.get_options():
-		if bool(opt["available"]) and str(opt["area"]) == _active_area and str(opt["kind"]) == "tyre_choice":
+		if bool(opt["available"]) and str(opt["area"]) == _active_area and str(opt["kind"]) in ["tyre_choice", "file_choice"]:
 			choices.append(opt)
 	for opt in choices:
 		_garage_categories.add_item(str(opt["label"]))
@@ -734,6 +738,22 @@ func _draw_upgrades() -> void:
 			_garage_categories.select(i)
 	_garage_category = str(selected["id"])
 	_option_box.add_child(_label(str(selected["label"]),22,HORIZONTAL_ALIGNMENT_LEFT))
+	if str(selected["kind"]) == "file_choice":
+		var parts_grid := GridContainer.new()
+		parts_grid.columns = 2
+		parts_grid.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		_option_box.add_child(parts_grid)
+		for part in selected["parts"]:
+			var part_id: String = str(part["id"])
+			var installed: bool = part_id == str(selected["value"])
+			var card := _make_component_card(part,"INSTALLED" if installed else "Install")
+			card.tooltip_text = str(selected["help"])
+			card.pressed.connect(func():
+				_edit_option(_garage_category,part_id)
+				_draw_garage_options())
+			parts_grid.add_child(card)
+			_buttons["part:" + _garage_category + ":" + part_id] = card
+		return
 	_tyre_presentation(str(selected["value"])) # load presentation metadata
 	var families: Array = _component_catalog.get("family_order", ["road", "track", "slick", "drag"])
 	if not _garage_width_menu:
@@ -751,7 +771,7 @@ func _draw_upgrades() -> void:
 			if representative.is_empty():
 				continue
 			representative.erase("size")
-			var type_card := _make_tyre_card(representative,"")
+			var type_card := _make_component_card(representative,"")
 			type_card.tooltip_text = str(_component_catalog.get("families", {}).get(family, {}).get("description", ""))
 			type_card.pressed.connect(func():
 				_garage_tyre_family = family
@@ -794,7 +814,7 @@ func _draw_upgrades() -> void:
 			continue
 		var installed := str(choice) == str(selected["value"])
 		var presentation := _tyre_presentation(str(choice))
-		var card := _make_tyre_card(presentation,"INSTALLED" if installed else "Install")
+		var card := _make_component_card(presentation,"INSTALLED" if installed else "Install")
 		card.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		card.add_theme_font_size_override("font_size",13)
 		card.toggle_mode = true
@@ -806,7 +826,7 @@ func _draw_upgrades() -> void:
 		grid.add_child(card)
 		_buttons["part:" + _garage_category + ":" + str(choice)] = card
 
-func _make_tyre_card(presentation: Dictionary, action: String) -> Button:
+func _make_component_card(presentation: Dictionary, action: String) -> Button:
 	var card := Button.new()
 	card.custom_minimum_size = Vector2(0,240)
 	var content := VBoxContainer.new()
@@ -834,6 +854,12 @@ func _make_tyre_card(presentation: Dictionary, action: String) -> Button:
 		content.add_child(caption)
 	card.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	return card
+
+func _part_name(opt: Dictionary) -> String:
+	for part in opt.get("parts", []):
+		if str(part["id"]) == str(opt["value"]):
+			return str(part["label"])
+	return str(opt["value"])
 
 # Presentation is explicitly mapped to a definition ID, never inferred from grip.
 func _tyre_presentation(definition_id: String) -> Dictionary:
@@ -890,19 +916,29 @@ func _display_value(kind: String, value: Variant) -> String:
 			return "x" + " / x".join(parts)
 	return str(value)
 
+func _option_display(opt: Dictionary, value: Variant) -> String:
+	var stock: PackedFloat64Array = opt.get("stock_numbers", PackedFloat64Array())
+	if not stock.is_empty():
+		if str(opt["id"]) == "engine_rev_limit":
+			return "%d rpm" % roundi(stock[0] * float(value))
+		if str(opt["id"]) == "engine_throttle_response":
+			return "%.0f ms" % (stock[0] * float(value) * 1000.0)
+	return _display_value(str(opt["kind"]), value)
+
 func _option_row(opt: Dictionary) -> Control:
 	var id: String = str(opt["id"])
 	var kind: String = str(opt["kind"])
 	var holder := VBoxContainer.new()
 	holder.add_theme_constant_override("separation", 1)
 	holder.set_meta("kind", kind)
+	holder.set_meta("option_definition", opt)
 	var head := HBoxContainer.new()
 	head.add_theme_constant_override("separation", 8)
 	holder.add_child(head)
 	var name_label := _label(str(opt["label"]), 16, HORIZONTAL_ALIGNMENT_LEFT)
 	name_label.custom_minimum_size = Vector2(130, 0)
 	head.add_child(name_label)
-	var value_label := _label("" if kind == "scale_list" else _display_value(kind, opt["value"]), 14, HORIZONTAL_ALIGNMENT_LEFT, true)
+	var value_label := _label("" if kind == "scale_list" else _option_display(opt, opt["value"]), 14, HORIZONTAL_ALIGNMENT_LEFT, true)
 	value_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	head.add_child(value_label)
 	_option_values[id] = value_label
@@ -1024,7 +1060,7 @@ func _edit_option(option_id: String, value: Variant) -> void:
 	if label != null and result.has("value"):
 		var row := label.get_parent().get_parent()
 		if str(row.get_meta("kind", "")) != "scale_list":
-			label.text = _display_value(str(row.get_meta("kind", "")), result["value"])
+			label.text = _option_display(row.get_meta("option_definition", {}), result["value"])
 		if row.has_meta("gear_labels"):
 			_refresh_gear_labels(row.get_meta("gear_labels"), row.get_meta("gear_sliders"), row.get_meta("gear_stock"))
 	garage_option_changed.emit(option_id)
