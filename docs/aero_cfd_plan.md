@@ -4,13 +4,36 @@ Owner decision 2026-10-07: lower drag must be earned by a redesigned shape.
 No arbitrary reduction of the hypercar coefficients; keep the authored analytic
 model until a verified map is enabled. CFD runs offline, never inside a frame.
 
+## Current position (2026-10-08)
+
+Stage1 runtime foundation is implemented. We are in stage2: geometry, fluid
+mesh and solver validation. The stage3 baseline sweep has not started.
+Improved body fill reduces >24mm source-sample deviation area from10.49% to
+1.50%, preserves five components and reproduces exactly. The remaining
+intake/wheel-well closure assumptions still require review.
+
+The source-labelled rotating-wheel case completed300 iterations after passing
+topology/configured mesh quality. It achieved zero prism layers; final body
+average yPlus916, tyres593-665. Last50-sample forces:Fx=-1507N,Fz=-968N,
+drag std18N/downforce std54N. This is a pipeline pilot, not production CFD.
+Archive:out/aero_openfoam_wheelclear_rotating. Cell-relative layers were tested on the exact checked surface mesh; geometry quality, wall resolution,
+mesh/domain/iteration convergence and pose sweeps remain. A second rotating
+pilot with cell-relative layers also completed300 iterations:947688cells,
+configured quality/topology pass, no illegal faces; body average0.991layers,
+tyres0.491-0.577. Body mean yPlus368, tyres345-424, still uneven/insufficient
+for production review. Last50 meanFx=-1494N,Fz=-1049N; std7.5N/26N,
+successive-window changes17.5N/41.7N. Archive:out/aero_openfoam_wheelclear_layers.
+34 focused tooling tests pass. The game continues
+using authored aero; runtime_map_eligible=false/validated=false throughout.
+
 ## Implementation stages
 
 1. Runtime foundation: physics_sim owns validated coefficient maps and dense
 interpolation. Game owns selection/provenance and tooling. Body-axis forces
 Cx/Cy/Cz and roll/pitch/yaw moments Cl/Cm/Cn use ISO +x forward,+y left,+z up;
 q=0.5*rho*V², force=q*A*C, moment=q*A*L*C about declared reference point.
-Interpolate signed yaw, pitch and speed; optional ride height/actual wing angle.
+Interpolate signed yaw, pitch and speed; optional ride height/actual wing angle
+and wing lift height.
 Full yaw coverage includes backward/sideways slides. Wind and wakes alter the
 local air-relative velocity BEFORE lookup. Zero speed gives zero q.
 
@@ -136,7 +159,7 @@ exact STL/cache hashes, source-bound selection, mirrored transforms and chassis
 alignment. Default bake config now binds STL+manifest+visualGLB+selection+vehicle;
 195 baseline cases were prepared again using those exact inputs. No solver run,
 CFD coefficients or drag reduction. Stage2 visual repair and preliminary solid
-preparation are complete; stage3 begins with fluid-domain/moving-ground/wheel/
+preparation are complete; stage2 continues with fluid-domain/moving-ground/wheel/
 wing-pose setup and solver/refinement/convergence work. Engine runtime is unchanged.
 ## First solver pilot (2026-10-08)
 
@@ -163,7 +186,7 @@ as vehicle_visual.gd, records the actuator pose and leaves body geometry intact.
 Exported the raised45degree/0.28m airbrake pose for separate solid preparation.
 Tests cover rotation direction, body isolation, finite values and joint limits.
 
-Stage3 has an executable first meshing/solver workflow. Remaining: semantic
+Stage2 now has an executable first meshing/solver workflow. Remaining: semantic
 rotating-tyre patch regions, boundary-layer/y+ assessment, physical ground-contact
 and ride-height treatment, domain/mesh/time convergence, cooling assumptions,
 wing-pose/ride-height/speed sweeps and the final geometry review. The pilots use
@@ -209,7 +232,7 @@ samples, reaching405mm. Far surfaces lie inside the artificial central core's
 exact signed distance. Current pilot forces cannot justify a car drag change.
 An isolated three-voxel seam-closure comparison is being prepared; preserve
 the baseline and all case hashes until local closure geometry is repaired.
-Stage3 is still exploratory meshing and boundary-condition work. Production
+Stage2 is still exploratory meshing and boundary-condition work. Production
 geometry review, layer/yPlus coverage, convergence and pose sweeps remain.
 
 
@@ -234,3 +257,31 @@ body refinement4/wheels5, three requested layers and ten layer iterations:
 `/home/sebas/rg-cfd/hypercar-wheelclear-layers-r4w5`. Layer iteration budget and
 wheel refinement are configurable; case manifests record both. 28 tool tests
 pass. Existing game coefficients remain active; no CFD map enabled.
+
+
+Second retry917875cells failed409 configured face-quality checks and had very
+poor body layering. Started a buffered transition experiment with3 layers,
+2mm first thickness and vehicle-only prisms; moving-ground prisms now opt-in.
+Compared earlier layer-free r4 with extended diagnostics: it fails two
+conservative cell-shape checks (51 small-determinant and19054 concave cells)
+while passing all configured numerical-quality criteria. Therefore Allrun
+keeps the full allGeometry diagnostic log for required production review,
+and gates exploratory solves on allTopology plus configured meshQuality.
+This does not waive the83/409 configured quality violations of rejected runs.
+Reports retain extended diagnostics and remain runtime_map_eligible=false.
+
+
+Cell-relative3-layer experiment completed on a hash-checked copy of the clean
+surface mesh. No layer-eroding growth ring; three transition-buffer cells,
+first thickness0.08 local cell size,20 iteration limit. Extruded38036/61177
+surface faces (62.17%), added48229 cells, averaged0.991 body layers and0.49-0.58
+tyre layers. Zero configured quality violations; allTopology/configured check
+passes. Extended geometry diagnostics still flag3 checks; remain explicit
+production review items. Solver completed300 iterations; wall resolution and
+load statistics recorded above. No coefficient certification or runtime map.
+Added reuse_surface_mesh.py with source/patch/refinement identity, completed
+zero-layer audit, quality gate and full mesh-file hash checks. Cases cannot
+accidentally extrude layers over an already layered mesh. Reports distinguish
+requested and achieved layers, parse actual yPlus and preserve extended-check
+evidence. 34 Python tests pass. Geometry/surface/layer convergence and the
+stage3 baseline sweep are still pending; stage2 progress is documented here.

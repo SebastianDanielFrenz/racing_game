@@ -228,7 +228,38 @@ it was rejected, leaving the original baseline unchanged.
 
 `--wheel-refinement` can raise tyre-region refinement independently (up to6);
 `--layer-iterations` controls mesher layer iterations (default20). Allrun now
-uses `checkMesh -allGeometry -allTopology -meshQuality` and requires Mesh OK
-before solving. The first layer mesh passed the standard check but failed
+writes `checkMesh -allGeometry -allTopology -meshQuality` diagnostics, then
+requires `checkMesh -allTopology -meshQuality` to report Mesh OK before solving.
+Extended cell-shape checks remain a separate required production review: the
+earlier layer-free pilot flags concave/low-determinant cells there while
+passing all configured numerical-quality criteria. Both rejected layer cases
+violate configured limits too; no exception was made for those violations. The first layer mesh passed the standard check but failed
 the extended check; see `out/aero_rotating_layers_failed/assessment.json`.
 Requested layers must not be confused with achieved layer coverage.
+
+
+Ground layers are opt-in (`--ground-layers`). Vehicle layers use zero growth of no-extrusion rings and three transition-buffer cells; first thickness remains explicit.
+Moving ground outside the car has no imposed velocity boundary layer, and
+blanket thin prisms there transition poorly into the large far-field cells.
+Near-ground fluid resolution and wheel contact still require separate review.
+
+
+`--relative-layers --first-layer-fraction 0.08` selects first thickness relative
+to adjacent cell size instead of metres. Reports include achieved per-patch
+average layer counts/thickness and the latest measured yPlus min/max/average.
+These measurements remain unvalidated; requested settings alone are not proof.
+`reuse_surface_mesh.py BASE_CASE NEW_CASE` requires completed meshing, a passed
+topology/configured-quality check, zero achieved layers and matching surface/
+patch/refinement/ground/wing identities. It copies and hashes the complete
+surface mesh, disables casting/snapping and removes blockMesh from the new
+launcher. Reuse cannot layer an already layered mesh. Repeated layer experiments
+then avoid repeating the same surface-snapping work.
+
+
+Completed source-labelled rotating-wheel comparisons are archived at
+`out/aero_openfoam_wheelclear_rotating` (zero achieved prisms) and
+`out/aero_openfoam_wheelclear_layers` (cell-relative prisms). Both300-iteration
+pilots pass configured quality/topology checks; extended cell-shape checks,
+uneven layer coverage and yPlus remain production review items. The latter
+uses947688cells, body0.991 mean layers/mean yPlus368 and wheels0.49-0.58
+layers/yPlus345-424. They demonstrate the pipeline; no runtime map is enabled.

@@ -21,6 +21,35 @@ def read_forces(path):
         raise ValueError('at least two strictly increasing samples required')
     return rows
 
+def read_yplus(path):
+    snapshots={}
+    for line in Path(path).read_text().splitlines():
+        if not line.strip() or line.lstrip().startswith('#'):continue
+        fields=line.split()
+        if len(fields)!=5:raise ValueError('expected yPlus time/patch/min/max/average')
+        time,minimum,maximum,average=map(float,(fields[0],*fields[2:]))
+        if not all(math.isfinite(v) for v in (time,minimum,maximum,average)) or not 0<=minimum<=average<=maximum:
+            raise ValueError('invalid yPlus statistics')
+        patches=snapshots.setdefault(time,{})
+        if fields[1] in patches:raise ValueError('duplicate yPlus patch snapshot')
+        patches[fields[1]]={'minimum':minimum,'maximum':maximum,'average':average}
+    if not snapshots:raise ValueError('empty yPlus report')
+    latest=max(snapshots)
+    return {'time':latest,'patches':snapshots[latest],'validated':False}
+
+def read_layer_summary(path):
+    text=Path(path).read_text()
+    if 'overall thickness' not in text:return None
+    table=text.rsplit('overall thickness',1)[1].split('Layer mesh',1)[0]
+    rows=re.findall(r'^(\w+)\s+(\d+)\s+('+NUMBER+r')\s+('+NUMBER+r')\s+('+NUMBER+r')\s*$',table,re.M)
+    if not rows:raise ValueError('missing achieved layer rows')
+    patches={}
+    for name,faces,layers,thickness,fraction in rows:
+        values=list(map(float,(layers,thickness,fraction)))
+        if not all(math.isfinite(v) and v>=0 for v in values):raise ValueError('invalid achieved layers')
+        patches[name]={'faces':int(faces),'average_layers':values[0],'average_thickness_m':values[1],'requested_thickness_percent':values[2]}
+    return patches
+
 def report(case,output,window=50):
     case=Path(case)
     manifest=json.loads((case/'pilot_manifest.json').read_text())
@@ -47,6 +76,19 @@ def report(case,output,window=50):
             'window_standard_deviation_SI':[statistics.pstdev(r[i] for r in recent) for i in range(1,7)],
             'solver_completed':'End' in solver_log.read_text().splitlines()[-3:],
             'note':'Exploratory '+('rotating-wall' if manifest.get('wheel_regions') else 'fixed-wheel')+'/fixed-wing-pose mesh and solver check; no coefficient certification.'}
+    mesher_log=case/'log.snappyHexMesh'
+    if mesher_log.exists():
+        result['achieved_layers']=read_layer_summary(mesher_log)
+        result['mesher_log_sha256']=hashlib.sha256(mesher_log.read_bytes()).hexdigest()
+    wall_files=sorted((case/'postProcessing/wallResolution').glob('*/yPlus.dat'),key=lambda p:float(p.parent.name))
+    if wall_files:
+        source_wall=wall_files[-1]
+        result['wall_resolution']=read_yplus(source_wall)
+        result['wall_resolution']['source_sha256']=hashlib.sha256(source_wall.read_bytes()).hexdigest()
+    extended=case/'log.checkMesh.extended'
+    if extended.exists():
+        detail=extended.read_text()
+        result['extended_geometry_check']={'sha256':hashlib.sha256(extended.read_bytes()).hexdigest(),'passed':'Mesh OK.' in detail and 'Failed ' not in detail,'review_required':True}
     Path(output).write_text(json.dumps(result,indent=2,allow_nan=False)+'\n')
     return result
 

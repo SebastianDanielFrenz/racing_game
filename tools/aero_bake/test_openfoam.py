@@ -34,4 +34,33 @@ class WheelBoundaryTests(unittest.TestCase):
         result=replace_block(text,'geometry','wheel { file "wheel.stl"; }')
         self.assertNotIn('a.stl',result)
         self.assertIn('controls { limit 4; }',result)
+class WallResolutionTests(unittest.TestCase):
+    def test_latest_snapshot_preserves_patch_statistics(self):
+        from report_openfoam import read_yplus
+        with tempfile.TemporaryDirectory() as folder:
+            p=Path(folder)/'yPlus.dat';p.write_text('# header\n0 body 1 20 10\n100 body 30 90 45\n100 wheel_FL 20 70 40\n')
+            result=read_yplus(p)
+            self.assertEqual(result['time'],100)
+            self.assertEqual(result['patches']['wheel_FL']['average'],40)
+            self.assertFalse(result['validated'])
+    def test_impossible_wall_statistics_are_rejected(self):
+        from report_openfoam import read_yplus
+        with tempfile.TemporaryDirectory() as folder:
+            p=Path(folder)/'yPlus.dat';p.write_text('100 body 10 20 30\n')
+            with self.assertRaises(ValueError):read_yplus(p)
+
+class AchievedLayerTests(unittest.TestCase):
+    def test_achieved_zero_layers_are_not_requested_layers(self):
+        from report_openfoam import read_layer_summary
+        with tempfile.TemporaryDirectory() as folder:
+            p=Path(folder)/'log';p.write_text('overall thickness\nbody 100 0 0 0\nwheel_FL 20 1.5 .002 50\nLayer mesh : cells:500')
+            result=read_layer_summary(p)
+            self.assertEqual(result['body']['average_layers'],0)
+            self.assertEqual(result['wheel_FL']['average_thickness_m'],.002)
+    def test_absent_layer_stage_is_explicit(self):
+        from report_openfoam import read_layer_summary
+        with tempfile.TemporaryDirectory() as folder:
+            p=Path(folder)/'log';p.write_text('no layer stage\nEnd')
+            self.assertIsNone(read_layer_summary(p))
+
 if __name__=='__main__':unittest.main()

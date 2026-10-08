@@ -32,7 +32,7 @@ def wheel_velocity_boundary(region, speed):
     # +Y rotation gives bottom-of-wheel velocity -X, matching moving ground.
     return f"{region['name']}Group {{ type rotatingWallVelocity; origin ({origin}); axis (0 1 0); omega {speed/radius}; value uniform (0 0 0); }}"
 
-def generate(solid, output, tutorial, speed=50.0, refinement=3, workers=6, regions=None, layers=0, first_layer_m=.0006, iterations=300,wheel_refinement=None,layer_iterations=20):
+def generate(solid, output, tutorial, speed=50.0, refinement=3, workers=6, regions=None, layers=0, first_layer_m=.0006, iterations=300,wheel_refinement=None,layer_iterations=20,ground_layers=False,relative_layers=False,first_layer_fraction=.08):
     solid, output, tutorial = map(Path, (solid, output, tutorial))
     if not math.isfinite(speed) or speed <= 0 or refinement not in (2, 3, 4):
         raise ValueError('positive finite speed and refinement 2..4 required')
@@ -43,6 +43,7 @@ def generate(solid, output, tutorial, speed=50.0, refinement=3, workers=6, regio
     if type(iterations)!=int or iterations<100:raise ValueError('at least100 iterations required')
     if wheel_refinement is not None and (type(wheel_refinement)!=int or not refinement<=wheel_refinement<=6):raise ValueError('wheel refinement must be between body level and6')
     if type(layer_iterations)!=int or not 1<=layer_iterations<=100:raise ValueError('layer iterations must be1..100')
+    if not math.isfinite(first_layer_fraction) or not .01<=first_layer_fraction<=.3:raise ValueError('first layer fraction must be0.01..0.3')
     if output.exists():
         raise ValueError('output already exists; use a fresh case directory')
     manifest = json.loads((solid/'manifest.json').read_text())
@@ -114,10 +115,12 @@ def generate(solid, output, tutorial, speed=50.0, refinement=3, workers=6, regio
         text=replace_block(text,'refinementSurfaces',refinements)
     if layers:
         text=text.replace('addLayers       false','addLayers       true')
-        pattern='(lowerWall|body|wheel_.*).*' if region_manifest else '(lowerWall|hypercar).*'
+        pattern=('(lowerWall|body|wheel_.*).*' if ground_layers else '(body|wheel_.*).*') if region_manifest else ('(lowerWall|hypercar).*' if ground_layers else 'hypercar.*')
         text=replace_block(text,'layers',f'"{pattern}" {{ nSurfaceLayers {layers}; }}')
-        text=text.replace('relativeSizes true','relativeSizes false').replace('expansionRatio 1.0','expansionRatio 1.3')
-        text=text.replace('finalLayerThickness 0.3',f'firstLayerThickness {first_layer_m}').replace('minThickness 0.1',f'minThickness {first_layer_m*.2}')
+        text=text.replace('nBufferCellsNoExtrude 0;','nBufferCellsNoExtrude 3;')
+        size=first_layer_fraction if relative_layers else first_layer_m
+        text=text.replace('relativeSizes true',f'relativeSizes {str(relative_layers).lower()}').replace('expansionRatio 1.0','expansionRatio 1.3')
+        text=text.replace('finalLayerThickness 0.3',f'firstLayerThickness {size}').replace('minThickness 0.1',f'minThickness {size*.2}')
     text=re.sub(r'nLayerIter\s+50;',f'nLayerIter {layer_iterations};',text)
     snappy.write_text(text)
     quality=output/'system/meshQualityDict'
@@ -136,13 +139,13 @@ def generate(solid, output, tutorial, speed=50.0, refinement=3, workers=6, regio
     text=text.replace('(3 2 1)',f'({grid[0]} {grid[1]} {grid[2]})')
     decomposition.write_text(text)
     solve='foamRun >log.foamRun 2>&1' if workers==1 else f'decomposePar -force -copyZero >log.decomposePar 2>&1\nmpirun -np {workers} foamRun -parallel >log.foamRun 2>&1'
-    (output/'Allrun').write_text('#!/bin/bash\nset -euo pipefail\ncd '+shlex.quote(str(output))+'\nblockMesh >log.blockMesh 2>&1\nsnappyHexMesh >log.snappyHexMesh 2>&1\ncheckMesh -allGeometry -allTopology -meshQuality >log.checkMesh 2>&1\ngrep -q "Mesh OK" log.checkMesh\n'+solve+'\n')
+    (output/'Allrun').write_text('#!/bin/bash\nset -euo pipefail\ncd '+shlex.quote(str(output))+'\nblockMesh >log.blockMesh 2>&1\nsnappyHexMesh >log.snappyHexMesh 2>&1\ncheckMesh -allGeometry -allTopology -meshQuality >log.checkMesh.extended 2>&1\ncheckMesh -allTopology -meshQuality >log.checkMesh 2>&1\ngrep -q "Mesh OK" log.checkMesh\n'+solve+'\n')
     result={'format':'rg.openfoam-pilot/1','solver':'OpenFOAM Foundation 14/incompressibleFluid',
-            'solver_workers':workers,'iterations':iterations,'layers':layers,'first_layer_m':first_layer_m if layers else None,
-            'wheel_refinement':wheel_refinement,'layer_iterations':layer_iterations,'wheel_regions':region_manifest,'stl_sha256':digest,'speed_m_s':speed,'ground_z_m':ground,'refinement':refinement,
+            'solver_workers':workers,'iterations':iterations,'layers':layers,'first_layer_m':first_layer_m if layers and not relative_layers else None,
+            'relative_layers':relative_layers,'first_layer_fraction':first_layer_fraction if relative_layers else None,'ground_layers':ground_layers,'wheel_refinement':wheel_refinement,'layer_iterations':layer_iterations,'wheel_regions':region_manifest,'stl_sha256':digest,'speed_m_s':speed,'ground_z_m':ground,'refinement':refinement,
             'frame':manifest['frame'],'moment_origin_m':[0,0,0],
             'wing_pose':manifest['source_audit'].get('actuator_pose',{'wing_offset_deg':0,'wing_lift_m':0}),
-            'validated':False,'runtime_map_eligible':False,
+            'extended_geometry_review_required':True,'validated':False,'runtime_map_eligible':False,
             'limitations':(['static wheels'] if not region_manifest else ['rotating-wall approximation; no resolved spoke motion','source-region seams require review'])+['fixed wing pose only','2mm numerical ground gap','no convergence study','sealed cooling paths']+(['no prism layers in mesh pilot'] if not layers else ['layer coverage and yPlus require review'])}
     (output/'pilot_manifest.json').write_text(json.dumps(result,indent=2)+'\n')
     return result
@@ -155,4 +158,6 @@ if __name__=='__main__':
     p.add_argument('--regions');p.add_argument('--layers',type=int,default=0)
     p.add_argument('--first-layer-m',type=float,default=.0006);p.add_argument('--iterations',type=int,default=300)
     p.add_argument('--wheel-refinement',type=int);p.add_argument('--layer-iterations',type=int,default=20)
-    a=p.parse_args();print(json.dumps(generate(a.solid,a.output,a.tutorial,a.speed,a.refinement,a.workers,a.regions,a.layers,a.first_layer_m,a.iterations,a.wheel_refinement,a.layer_iterations),indent=2))
+    p.add_argument('--ground-layers',action='store_true')
+    p.add_argument('--relative-layers',action='store_true');p.add_argument('--first-layer-fraction',type=float,default=.08)
+    a=p.parse_args();print(json.dumps(generate(a.solid,a.output,a.tutorial,a.speed,a.refinement,a.workers,a.regions,a.layers,a.first_layer_m,a.iterations,a.wheel_refinement,a.layer_iterations,a.ground_layers,a.relative_layers,a.first_layer_fraction),indent=2))
