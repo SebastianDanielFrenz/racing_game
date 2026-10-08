@@ -27,6 +27,7 @@
   "palette": "data/world/landclass_palette.json",
   "physics": {
     "engine_map_cache_enabled": true,
+    "rolling_resistance_model": "quadratic",
     "prefetch_margin_tiles": 1,
     "prefetch_max_tiles": 24,
     "road_surfaces": {

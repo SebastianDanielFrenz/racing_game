@@ -54,6 +54,7 @@ class RgSimulation : public godot::Node {
 
 public:
     RgSimulation() = default;
+    void set_rolling_resistance_model(const godot::String& model);
     void set_aero_map_selection_path(const godot::String& path);
     // Engine inputs publish on physics ticks; native output never reads the world.
     godot::Dictionary start_engine_audio();
@@ -456,6 +457,7 @@ private:
     // world never writes this cache. Different paths invalidate its identity.
     void reuse_vehicle_definition(rg::SessionConfig& config) const;
     void remember_vehicle_definition(const rg::SessionConfig& config, const rg::Session& session);
+    std::string rolling_resistance_model_ = "quadratic";
     std::string aero_map_selection_path_;
     std::string cached_vehicle_path_;
     std::shared_ptr<const ps::vehicle::VehicleDesc> cached_vehicle_definition_;

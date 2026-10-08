@@ -115,6 +115,7 @@ public:
 };
 
 struct SessionConfig {
+    std::string rolling_resistance_model = "quadratic";
     std::string aero_map_selection_path; // startup-only game-owned CFD map selection
 
     double tick_rate_hz = 240.0;

@@ -423,6 +423,9 @@ func _build_scene(user_args: PackedStringArray) -> void:
 	# --- simulation node ---
 	_simulation = ClassDB.instantiate("RgSimulation")
 	_simulation.name = "Simulation"
+	var rolling_config = JSON.parse_string(FileAccess.get_file_as_string(_world_config_path()))
+	if rolling_config is Dictionary:
+		_simulation.set_rolling_resistance_model(str(rolling_config.get("physics", {}).get("rolling_resistance_model", "quadratic")))
 	_simulation.set_aero_map_selection_path(ProjectSettings.globalize_path("res://../data/aero/hypercar_map.json"))
 	add_child(_simulation)
 	if fetch_delay_ms > 0:

@@ -253,6 +253,7 @@ void RgSimulation::run_terrain_init_worker(std::string world_config_path, std::s
     config.vehicle_json_path = std::move(vehicle_json_path);
     configure_vehicle_chassis(config, overrides);
     reuse_vehicle_definition(config);
+    config.rolling_resistance_model=rolling_resistance_model_;
     config.aero_map_selection_path=aero_map_selection_path_;
     config.surface_table_path = std::move(surface_table_path);
     config.terrain = rg::make_terrain_mode(*world_config, terrain); // start-up blocks inside make_session below
@@ -274,6 +275,12 @@ void RgSimulation::run_terrain_init_worker(std::string world_config_path, std::s
     init_phase_.store(InitPhase::Ready, std::memory_order_release);
 }
 
+void RgSimulation::set_rolling_resistance_model(const String& model) {
+    if(session_ || init_phase_.load()==InitPhase::Loading) { last_error_="set rolling resistance before initialization";return; }
+    const auto value=to_std_string(model);
+    if(value!="quadratic" && value!="fourth_power") { last_error_="rolling resistance must be quadratic or fourth_power";return; }
+    rolling_resistance_model_=value;
+}
 void RgSimulation::set_aero_map_selection_path(const String& path) {
     if(session_ || init_phase_.load()==InitPhase::Loading) { last_error_="set aero map selection before initialization";return; }
     aero_map_selection_path_=to_std_string(path);
@@ -297,6 +304,7 @@ bool RgSimulation::initialize(const String& vehicle_json_absolute_path, const St
     config.vehicle_json_path = to_std_string(vehicle_json_absolute_path);
     configure_vehicle_chassis(config, vehicle_overrides_);
     reuse_vehicle_definition(config);
+    config.rolling_resistance_model=rolling_resistance_model_;
     config.aero_map_selection_path=aero_map_selection_path_;
     config.surface_table_path = to_std_string(surface_table_absolute_path);
     std::string err;
@@ -1185,6 +1193,7 @@ void RgSimulation::_bind_methods() {
     godot::ClassDB::bind_method(D_METHOD("set_render_interpolation", "enabled"), &RgSimulation::set_render_interpolation);
     godot::ClassDB::bind_method(D_METHOD("get_render_diagnostics"), &RgSimulation::get_render_diagnostics);
     godot::ClassDB::bind_method(D_METHOD("get_camera_ground_height", "position"), &RgSimulation::get_camera_ground_height);
+    godot::ClassDB::bind_method(D_METHOD("set_rolling_resistance_model", "model"), &RgSimulation::set_rolling_resistance_model);
     godot::ClassDB::bind_method(D_METHOD("set_aero_map_selection_path", "path"), &RgSimulation::set_aero_map_selection_path);
     godot::ClassDB::bind_method(D_METHOD("get_aero_state"), &RgSimulation::get_aero_state);
     godot::ClassDB::bind_method(D_METHOD("configure_traffic","density","radius","minimum","grip","maximum"), &RgSimulation::configure_traffic);

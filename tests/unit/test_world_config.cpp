@@ -1024,3 +1024,29 @@ TEST_CASE("apply_store_dir_override: RG_G2M_DERIVED keeps winning for the derive
     CHECK(cfg->source_store.dir == "D:/maps/home");
     CHECK(cfg->derived_store.dir == "S:/scratch/derived");
 }
+
+TEST_CASE("rolling resistance selection defaults, accepts both laws and rejects invalid values", "[world_config][rolling_resistance]") {
+    for (const auto* model : {"quadratic", "fourth_power", "invalid", ""}) {
+        auto j=valid_world_config_json();
+        j["physics"]["rolling_resistance_model"]=model;
+        auto file=TempFile::from_json(j);
+        std::string err;
+        auto cfg=rg::load_world_config(file.path(), &err);
+        if (std::string(model)=="quadratic" || std::string(model)=="fourth_power") {
+            REQUIRE(cfg);
+            CHECK(cfg->physics.rolling_resistance_model==model);
+        } else {
+            CHECK_FALSE(cfg);
+            CHECK(err.find("rolling_resistance_model")!=std::string::npos);
+        }
+    }
+    auto file=TempFile::from_json(valid_world_config_json());
+    std::string err;
+    auto cfg=rg::load_world_config(file.path(), &err);
+    REQUIRE(cfg);
+    CHECK(cfg->physics.rolling_resistance_model=="quadratic");
+    auto j=valid_world_config_json();
+    j["physics"]["rolling_resistance_model"]=2;
+    auto bad=TempFile::from_json(j);
+    CHECK_FALSE(rg::load_world_config(bad.path(), &err));
+}

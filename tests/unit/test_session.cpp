@@ -570,3 +570,23 @@ TEST_CASE("Game aero selection binds reviewed bytes and rejects stale geometry",
     rg::apply_aero_map_selection((dir/"selection.json").string(),vehicle);
     CHECK_FALSE(vehicle.aero.coefficient_map.table);
 }
+
+TEST_CASE("Session rolling resistance selection survives immutable cached reloads", "[session][rolling_resistance]") {
+    auto config=make_test_config();
+    rg::Session quadratic(config);
+    REQUIRE_FALSE(quadratic.vehicle_desc().wheels.empty());
+    for (const auto& wheel : quadratic.vehicle_desc().wheels)
+        CHECK(wheel.tyre.rolling_resistance_speed_law==ps::vehicle::RollingResistanceSpeedLaw::Quadratic);
+    config.vehicle_definition=std::make_shared<const ps::vehicle::VehicleDesc>(quadratic.vehicle_desc());
+    config.vehicle_json_path="missing/cached_vehicle.json";
+    config.rolling_resistance_model="fourth_power";
+    rg::Session legacy(config);
+    for (const auto& wheel : legacy.vehicle_desc().wheels)
+        CHECK(wheel.tyre.rolling_resistance_speed_law==ps::vehicle::RollingResistanceSpeedLaw::FourthPower);
+    for (const auto& wheel : config.vehicle_definition->wheels)
+        CHECK(wheel.tyre.rolling_resistance_speed_law==ps::vehicle::RollingResistanceSpeedLaw::Quadratic);
+    config.rolling_resistance_model="invalid";
+    std::string error;
+    CHECK_FALSE(rg::make_session(config,&error));
+    CHECK(error.find("rolling_resistance_model")!=std::string::npos);
+}

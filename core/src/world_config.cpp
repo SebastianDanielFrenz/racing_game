@@ -476,6 +476,13 @@ std::optional<WorldConfig> load_world_config(const std::string& path, std::strin
         if (!require_object(physics, path, "\"physics\"", err)) {
             return std::nullopt;
         }
+        if (physics.contains("rolling_resistance_model")) {
+            if (!get_string(physics, "rolling_resistance_model", path, "\"physics\"", &cfg.physics.rolling_resistance_model, err)) return std::nullopt;
+            if (cfg.physics.rolling_resistance_model != "quadratic" && cfg.physics.rolling_resistance_model != "fourth_power") {
+                fail(err, path, "physics.rolling_resistance_model must be quadratic or fourth_power");
+                return std::nullopt;
+            }
+        }
         if (physics.contains("engine_map_cache_enabled") &&
             !get_bool(physics, "engine_map_cache_enabled", path, "\"physics\"", &cfg.physics.engine_map_cache_enabled, err)) {
             return std::nullopt;

@@ -12,6 +12,7 @@
 #include "ps/io/vehicle_io.h"
 #include "ps/math/transcendental.h"
 #include "ps/vehicle/vehicle_reset.h"
+#include "ps/vehicle/tyre_model.h"
 
 // ps_godot::FallDetector, reused BY PATH from physics_sim's adapter (see
 // session.h's top comment) - Godot-free.
@@ -261,6 +262,15 @@ void Session::build_world_contents(const SessionConfig& config) {
         std::fprintf(stderr, "RG_ENGINE_MAP_CACHE enabled=%s generated=%zu dir=%s\n",
                      config.engine_map_cache_enabled ? "yes" : "no", generated, options.cache_dir.c_str());
     }
+    if (config.rolling_resistance_model != "quadratic" && config.rolling_resistance_model != "fourth_power")
+        throw std::invalid_argument("Session: rolling_resistance_model must be quadratic or fourth_power");
+    const auto rolling_law = config.rolling_resistance_model == "quadratic"
+        ? ps::vehicle::RollingResistanceSpeedLaw::Quadratic
+        : ps::vehicle::RollingResistanceSpeedLaw::FourthPower;
+    for (auto& wheel : vehicle_desc_.wheels)
+        ps::vehicle::select_rolling_resistance_speed_law(wheel.tyre, rolling_law);
+    std::fprintf(stderr, "RG_ROLLING_RESISTANCE model=%s wheels=%zu\n",
+                 config.rolling_resistance_model.c_str(), vehicle_desc_.wheels.size());
     apply_aero_map_selection(config.aero_map_selection_path,vehicle_desc_);
     vehicle_id_ = world_->create_vehicle(vehicle_desc_, chassis_body_);
     have_vehicle_ = true;
