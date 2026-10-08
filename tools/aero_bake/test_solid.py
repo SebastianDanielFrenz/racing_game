@@ -48,4 +48,19 @@ class SolidFillTests(unittest.TestCase):
             cached=prepare(source,root/'cached',pitch=.02)
             self.assertEqual(cached['stl_sha256'],result['stl_sha256'])
 
+@unittest.skipIf(np is None,'solid preparation development dependencies not installed')
+class WheelClearanceIdentityTests(unittest.TestCase):
+    def test_wrong_vehicle_cannot_define_clearance_geometry(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root=Path(folder);vehicle=root/'vehicle.json';vehicle.write_text('{}')
+            (root/'audit.json').write_text(json.dumps({'vehicle_sha256':'other vehicle'}))
+            with self.assertRaisesRegex(ValueError,'vehicle identity mismatch'):
+                prepare(root,root/'output',vehicle=vehicle,core_mode='wheel_clearance')
+            self.assertFalse((root/'output').exists())
+    def test_clearance_mode_requires_vehicle(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root=Path(folder);(root/'audit.json').write_text('{}')
+            with self.assertRaisesRegex(ValueError,'requires source vehicle'):
+                prepare(root,root/'output',core_mode='wheel_clearance')
+
 if __name__=='__main__':unittest.main()

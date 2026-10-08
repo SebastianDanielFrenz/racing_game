@@ -189,3 +189,48 @@ Aero preparation now has22 focused Python tests (bake, geometry, solid and
 force parsing). The raised-wing solid and refinement studies remain separate
 from the rest baseline provenance and disabled game map. Production high-speed
 cases need compressibility assessment in addition to the listed checks.
+
+
+## Wheel regions and boundary-layer preparation (2026-10-08)
+
+Added source-labelled, hash-checked partitions of the exact baseline STL
+triangle records into body and four wheels. Conservative seam ties remain
+stationary. The case generator accepts rotatingWallVelocity wheel patches,
+absolute first-layer thickness, layer count, yPlus output and iteration budget.
+28 focused Python tests pass, including wheel-ground rotation direction.
+The rotating/layer pilot runs on WSL ext4 at
+`/home/sebas/rg-cfd/hypercar-rotating-layers-r4`; completion and achieved quality
+must be recorded separately from requested settings.
+
+Local geometry audit identified a production blocker missed by bounding-box
+checks:6.667m2/10.49% of the baseline surface is more than24mm from source voxel
+samples, reaching405mm. Far surfaces lie inside the artificial central core's
+|y|<=0.55m envelope. This is an approximate sample-distance measurement, not
+exact signed distance. Current pilot forces cannot justify a car drag change.
+An isolated three-voxel seam-closure comparison is being prepared; preserve
+the baseline and all case hashes until local closure geometry is repaired.
+Stage3 is still exploratory meshing and boundary-condition work. Production
+geometry review, layer/yPlus coverage, convergence and pose sweeps remain.
+
+
+The larger-seam experiment merged wheels/body and retained6.652m2 of distant
+closure surface; rejected. A body-only column fill with explicit source-wheel
+clearance cylinders preserves five components and reduces distant area to
+0.571m2/1.50%, maximum81mm, with6.17078m3 solid volume. Added a source-hash-bound
+`--core-mode wheel_clearance --vehicle ...` preparation option; central mode
+remains available/default to reproduce earlier pilots. Candidate outputs are
+separate (`out/aero_hypercar_cfd_wheelclear_checked`), not substituted into older
+cases. Intake/wheel-well closure and fluid-mesh resolution remain review items.
+
+
+First rotating/layer experiment finished meshing:1021352 cells. Standard
+checkMesh reported Mesh OK, but snappy's final quality pass found83 faces below
+configured interpolation-weight limits. Extended checkMesh
+`-allGeometry -allTopology -meshQuality` failed5 checks. Stopped the task-owned
+solver; no loads accepted. Six requested layers produced only1.16 mean layers
+on body and0.037-0.082 on tyres. Archive:out/aero_rotating_layers_failed.
+Allrun now requires the extended check to pass. Retry uses the improved solid,
+body refinement4/wheels5, three requested layers and ten layer iterations:
+`/home/sebas/rg-cfd/hypercar-wheelclear-layers-r4w5`. Layer iteration budget and
+wheel refinement are configurable; case manifests record both. 28 tool tests
+pass. Existing game coefficients remain active; no CFD map enabled.

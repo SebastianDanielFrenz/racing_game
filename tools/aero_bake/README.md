@@ -177,3 +177,58 @@ height axis varies fastest. Production full-passive maps for lifting wings
 need both pose controls sampled and a wing_surface binding. High-speed cases
 above roughly Mach0.3 also require a compressibility assessment; these initial
 incompressible50m/s pilots do not certify the hypercar's maximum-speed aero.
+
+
+### Rotating-wheel and layer experiments
+
+`prepare_regions.py SOURCE SOLID VEHICLE OUTPUT` partitions the exact prepared
+binary-STL triangle records into body and four wheel files. It uses dense,
+hash-bound source-object samples; near ties and points beyond two voxels from
+a wheel stay stationary. Geometry is unchanged. `regions.json` records wheel
+centres/radii and a local source-distance audit. This remains a review candidate,
+not an assertion that all CFD closure surfaces match the art.
+
+Pass `--regions /path/to/regions --layers 6 --first-layer-m 0.0006` to
+`openfoam_case.py` for a rotating-wall experiment and absolute prism-layer
+thickness. Positive rotation about ISO +Y makes bottom tyre velocity match
+the -X moving ground. This approximates tyre tangential motion; spoke motion
+is not resolved. Forces include body and all four wheel patches through their
+shared hypercarGroup. yPlus is written every field-write interval. Layer
+coverage, achieved thickness, mesh quality and measured yPlus must be inspected;
+requested layer counts alone provide no validation. `--iterations` controls
+the steady iteration budget (minimum100, default300).
+
+The first source-distance audit found 6.667m2 (10.49%) of the baseline surface
+more than24mm from source voxel samples, maximum405mm. These closure surfaces
+are confined to the central-body core envelope. Overall bounding-box drift
+does not capture this local deviation. Repair/review these surfaces before
+using the baseline to produce vehicle coefficients. Reports remain ineligible
+for runtime activation.
+
+
+The improved body-fill candidate is reproducible with:
+
+```powershell
+out/aero_tools_venv/Scripts/python.exe tools/aero_bake/prepare_solid.py `
+  out/aero_hypercar_flow_final out/aero_hypercar_cfd_wheelclear_checked `
+  --core-mode wheel_clearance `
+  --vehicle external/physics_sim/data/vehicles/car_hyper.json
+```
+
+This fills columns bounded only by body panels, excluding source-wheel
+cylinders (radius+25mm; axial half-width240mm). Both clearances are configurable;
+vehicle identity must match the geometry audit and width must exceed tyre
+half-width. Legacy central fill remains the default for provenance/reproduction.
+The comparison preserves five components and reduces far-source surface to
+0.571m2/1.50%, maximum81mm. Intake/wheel-well closures still require review;
+this improvement does not certify geometry or coefficients. A three-voxel
+seam-closing candidate merged wheels/body and failed to reduce core deviation;
+it was rejected, leaving the original baseline unchanged.
+
+
+`--wheel-refinement` can raise tyre-region refinement independently (up to6);
+`--layer-iterations` controls mesher layer iterations (default20). Allrun now
+uses `checkMesh -allGeometry -allTopology -meshQuality` and requires Mesh OK
+before solving. The first layer mesh passed the standard check but failed
+the extended check; see `out/aero_rotating_layers_failed/assessment.json`.
+Requested layers must not be confused with achieved layer coverage.

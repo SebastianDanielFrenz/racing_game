@@ -46,7 +46,7 @@ def report(case,output,window=50):
             'previous_window_delta_SI':delta,
             'window_standard_deviation_SI':[statistics.pstdev(r[i] for r in recent) for i in range(1,7)],
             'solver_completed':'End' in solver_log.read_text().splitlines()[-3:],
-            'note':'Exploratory fixed-wheel/fixed-wing-pose mesh and solver check; no coefficient certification.'}
+            'note':'Exploratory '+('rotating-wall' if manifest.get('wheel_regions') else 'fixed-wheel')+'/fixed-wing-pose mesh and solver check; no coefficient certification.'}
     Path(output).write_text(json.dumps(result,indent=2,allow_nan=False)+'\n')
     return result
 

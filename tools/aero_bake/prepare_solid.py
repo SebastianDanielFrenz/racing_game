@@ -22,10 +22,19 @@ def fill_exterior(surface,closing_voxels=1):
         matrix=ndimage.binary_closing(matrix,structure=np.ones((3,3,3),dtype=bool),iterations=closing_voxels)
     return ndimage.binary_fill_holes(matrix),padding
 
-def prepare(source,output,pitch=.006,closing_voxels=1,min_component_m3=1e-5):
+def prepare(source,output,pitch=.006,closing_voxels=1,min_component_m3=1e-5,vehicle=None,core_mode="central",wheel_radius_margin_m=.025,wheel_clearance_half_width_m=.24):
     if not math.isfinite(pitch) or not .002<=pitch<=.02:raise ValueError('pitch must be 2..20 mm')
     if not math.isfinite(min_component_m3) or min_component_m3<=0:raise ValueError('positive component cutoff required')
+    if core_mode not in ('central','wheel_clearance'):raise ValueError('unknown core mode')
+    if not all(math.isfinite(v) and v>0 for v in (wheel_radius_margin_m,wheel_clearance_half_width_m)):raise ValueError('positive finite wheel clearances required')
     source=Path(source);output=Path(output);audit=json.loads((source/'audit.json').read_text())
+    description=None
+    if core_mode=='wheel_clearance':
+        if vehicle is None:raise ValueError('wheel-clearance fill requires source vehicle')
+        raw=Path(vehicle).read_bytes()
+        if hashlib.sha256(raw).hexdigest()!=audit['vehicle_sha256']:raise ValueError('vehicle identity mismatch')
+        description=json.loads(raw)
+        if len(description['wheels'])!=4:raise ValueError('four source wheels required')
     obj=source/'hypercar_rest_iso.obj'
     if not audit.get('flow_selection_sha256') or 'chassis body origin' not in audit['frame']:
         raise ValueError('requires source-bound exterior selection aligned to chassis')
@@ -69,9 +78,18 @@ def prepare(source,output,pitch=.006,closing_voxels=1,min_component_m3=1e-5):
     lower=body_surface.argmax(axis=2);upper=shape[2]-1-body_surface[:,:,::-1].argmax(axis=2)
     present=body_surface.any(axis=2)
     y=(np.arange(shape[1])+origin_index[1])*pitch
-    central=present & (np.abs(y)[None,:]<=.55)
+    central=present if description else present & (np.abs(y)[None,:]<=.55)
     z=np.arange(shape[2])[None,None,:]
     core=central[:,:,None] & (z>=lower[:,:,None]) & (z<=upper[:,:,None])
+    if description:
+        xx=(np.arange(shape[0])+origin_index[0])*pitch
+        zz=(np.arange(shape[2])+origin_index[2])*pitch
+        for wheel in description['wheels']:
+            cx,cy,cz=wheel['attachment_local'];radius=wheel['wheel_radius']+wheel_radius_margin_m
+            if not all(math.isfinite(v) for v in (cx,cy,cz,radius)) or radius<=0:raise ValueError('invalid wheel clearance')
+            if wheel_clearance_half_width_m<=wheel['wheel_width']*.5:raise ValueError('wheel clearance must exceed tyre half width')
+            cavity=((xx[:,None,None]-cx)**2+(zz[None,None,:]-cz)**2<radius**2)&(np.abs(y[None,:,None]-cy)<wheel_clearance_half_width_m)
+            core &= ~cavity
     surface|=core;core_volume=float(core.sum()*pitch**3)
     filled,padding=fill_exterior(surface,closing_voxels)
     labels,count=ndimage.label(filled);sizes=np.bincount(labels.ravel())
@@ -98,13 +116,13 @@ def prepare(source,output,pitch=.006,closing_voxels=1,min_component_m3=1e-5):
     report={'format':'rg.cfd-solid/1','status':'filled_exterior_approximation_requires_review','cfd_validated':False,
             'source_audit':audit,'versions':{name:importlib.metadata.version(name) for name in ('numpy','scipy','trimesh','scikit-image')},
             'voxel_m':pitch,'seam_closing_voxels':closing_voxels,'padding_voxels':padding,'min_component_m3':min_component_m3,
-            'central_body_core_half_width_m':.55,'central_body_core_volume_m3':core_volume,'surface_smoothing_sigma_voxels':.5,
+            'core_mode':core_mode,'central_body_core_half_width_m':None if description else .55,'wheel_clearance':{'radius_margin_m':wheel_radius_margin_m,'half_width_m':wheel_clearance_half_width_m} if description else None,'central_body_core_volume_m3':core_volume,'surface_smoothing_sigma_voxels':.5,
             'taubin_smoothing':{'lambda':.5,'nu':.53,'iterations':16,'max_displacement_m':smoothing_displacement},
             'discarded_small_components':removed,'component_volumes_m3':volumes,'quality':quality,
             'triangles':len(solid.faces),'frame':audit['frame'],'bounds_iso_m':solid.bounds.tolist(),
             'stl_sha256':hashlib.sha256(stl.read_bytes()).hexdigest(),
             'assumptions':['closed doors, fixed suspension; wing pose recorded in source audit','small panel seams sealed; enclosed volume filled',
-                 'central body core filled only between body floor/roof within 0.55 m of centerline, excluding aero and wheels',
+                 ('body-only floor/roof column fill with explicit wheel cylinders; intake/well closures require review' if description else 'central body core filled only between body floor/roof within 0.55 m of centerline, excluding aero and wheels'),
                  'half-voxel Gaussian surface regularization',
                  '16 Taubin smoothing iterations to suppress artificial voxel roughness',
                  'backed cooling grilles; no resolved radiator/duct airflow','thin details below voxel resolution may be lost'],
@@ -117,4 +135,6 @@ def prepare(source,output,pitch=.006,closing_voxels=1,min_component_m3=1e-5):
 if __name__=='__main__':
     parser=argparse.ArgumentParser(description=__doc__);parser.add_argument('input');parser.add_argument('output')
     parser.add_argument('--voxel-m',type=float,default=.006);parser.add_argument('--seam-closing-voxels',type=int,default=1)
-    args=parser.parse_args();prepare(args.input,args.output,args.voxel_m,args.seam_closing_voxels)
+    parser.add_argument('--core-mode',choices=('central','wheel_clearance'),default='central');parser.add_argument('--vehicle')
+    parser.add_argument('--wheel-radius-margin-m',type=float,default=.025);parser.add_argument('--wheel-clearance-half-width-m',type=float,default=.24)
+    args=parser.parse_args();prepare(args.input,args.output,args.voxel_m,args.seam_closing_voxels,vehicle=args.vehicle,core_mode=args.core_mode,wheel_radius_margin_m=args.wheel_radius_margin_m,wheel_clearance_half_width_m=args.wheel_clearance_half_width_m)
