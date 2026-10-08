@@ -1,22 +1,41 @@
 # Garage UI and tyre customization
 
-## Current state (2026-10-07)
+## Current state (2026-10-08)
 
 Upgrades has vehicle information on the left, the showroom car in the middle and component cards on the right. Tuning adjusts installed parts. Existing validation, reset, save and Drive remain authoritative in the native garage model.
 
-Tyres use two distinct menus:
+Category tiles replace the old camera-area tabs and component dropdown. B/Esc
+returns one level at a time; the root opens the save-and-exit prompt. Upgrades:
 
-1. Choose a compound/tread combination: Cord Touring, Belted Touring, Steel Radial, Eco Touring, Sport Radial, Performance Road, Track Semi-Slick, Racing Slick or Drag. Each has a visibly different product image. This selection only opens a submenu; it does not install anything.
-2. Choose a width and install the corresponding physical definition. Widths can be displayed every 10 or 20 mm. The installed width remains visible even when it falls between the selected 20 mm samples. Return to the compound/tread menu with B on the controller or Esc on the keyboard.
+- Engine → Turbo → upgrades for the installed single/dual setup; Camshaft is unavailable.
+- Swaps → Engine → compatible engine choices.
+- Swaps → Forced induction → Single/Dual → compatible configurations.
+- Swaps → Drivetrain → AWD/RWD/FWD (unavailable until native conversion support).
+- Chassis → Weight reduction (unavailable), Aero → Front diffuser/Rear wing
+  (unavailable), or Suspension & brakes → tuning installed hardware.
+- Wheels → All/Front/Rear → Compounds/Dimensions → installable image cards.
+- Drivetrain and Appearance & assists link to installed-part tuning.
 
-Front/rear axles are selected independently. Rim radius and unloaded tyre radius must remain compatible. Body-specific width envelopes are configured in data/vehicles/catalog.json under setup.ranges.tyre_front and tyre_rear (millimetres), inherited by presets. Initial authored envelopes are hyper front 235–305, hyper rear 275–365, and sedan axles 195–255. These are conservative game limits, not measured fender clearance. The candidate catalog contains wider definitions too, but the native model does not offer or accept them until the body allows them.
+Compound installs preserve each axle's width. Dimension installs preserve each
+axle's compound. All applies the chosen property to both axles, offering only
+choices compatible with both fitments. Different compounds can remain on front
+and rear after a combined width change. No unsupported physical upgrades are
+offered as functional parts. Tuning also uses category tiles.
+
+The installed part receives keyboard/controller focus on opening an install menu;
+the orange focus outline moves with navigation. INSTALLED remains a separate
+caption. Combined wheels with differing configurations have no installed marker
+and start focus on the first valid choice. Grid direction neighbors keep focus
+within the part grid. Category tiles use text; installable components retain images.
+
+Rim radius and unloaded tyre radius must remain compatible. Body-specific width envelopes are configured in data/vehicles/catalog.json under setup.ranges.tyre_front and tyre_rear (millimetres), inherited by presets. Initial authored envelopes are hyper front 235–305, hyper rear 275–365, and sedan axles 195–255. These are conservative game limits, not measured fender clearance. The candidate catalog contains wider definitions too, but the native model does not offer or accept them until the body allows them.
 
 Installation updates the axle's tyre references, actual wheel width and wheel rotational inertia. Showroom and driving wheel meshes scale along their axle to match the installed width. Existing tyre images represent compound/tread style; widths share a style image and have explicit dimensional captions. The car meshes retain their original tread geometry for now.
 
 ## Garage exit flow (2026-10-08)
 
 The configurator footer has Reset all and Save. There are no Back or Drive buttons.
-B/Esc first returns from tyre widths to compound/tread choices. At the top level
+B/Esc first returns through the nested category hierarchy. At the top level
 it opens a modal with exactly two actions: **Save and drive** and **Save and go to
 selection**. B/Esc again cancels that prompt and resumes editing, preserving focus.
 The prompt confines keyboard/controller focus to its choices. Both actions save
@@ -88,3 +107,9 @@ setup blocking, both save-first destinations, respawn and node cleanup. No engin
 script errors. Prompt and footer screenshots reviewed at 1920x1080. Evidence:
 out/garage_exit_accept.log, out/garage_exit_accept_engine.log and
 out/garage_exit_shots (garage_exit.png and upgrade_engine.png).
+
+2026-10-08 tile-hierarchy verification: 188 garage checks passed, including both-axle
+compound and dimension installs, split compound preservation, fitment intersection,
+single/dual filtering, installed focus, submenu back, invalid setups, persistence,
+drive/respawn and cleanup. Evidence: out/garage_tiles_focus.log. Screenshots in
+out/garage_tiles_final_shots reviewed at 1920x1080; root categories and tyre compound cards.

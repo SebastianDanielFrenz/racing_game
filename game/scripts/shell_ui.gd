@@ -76,13 +76,10 @@ var _garage_mode := "upgrades"
 var _garage_left: PanelContainer
 var _garage_right: PanelContainer
 var _garage_performance: VBoxContainer
-var _garage_category := "tyre_front"
-var _garage_tyre_family := "road"
-var _garage_width_step := 10
-var _garage_width_menu := false
+var _garage_path: Array[String] = []
+var _garage_preferred: Button
 var _component_textures: Dictionary = {}
 var _component_catalog: Dictionary = {}
-var _garage_categories: OptionButton
 var _garage_exit: Control
 var _garage_exit_note: Label
 var _garage_exit_focus: Control
@@ -270,6 +267,9 @@ func _button(parent: Control, id: String, text: String, callback: Callable, widt
 	return button
 
 func _focus_first() -> void:
+	if screen == "configurator" and is_instance_valid(_garage_preferred):
+		_focus_garage.call_deferred()
+		return
 	for id in _buttons:
 		var button: Button = _buttons[id]
 		if not button.disabled:
@@ -600,26 +600,6 @@ func _build_configurator() -> void:
 		button.add_theme_font_size_override("font_size",16)
 		button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		button.set_pressed_no_signal(mode == _garage_mode)
-	var tabs := HFlowContainer.new()
-	column.add_child(tabs)
-	var area_group := ButtonGroup.new()
-	for area in garage.get_set().get("areas", []):
-		var id := str(area["id"])
-		var button := Button.new()
-		button.text = str(area["label"])
-		button.toggle_mode = true
-		button.button_group = area_group
-		button.add_theme_font_size_override("font_size",14)
-		button.pressed.connect(func(): _select_area(id,true))
-		tabs.add_child(button)
-		_buttons["area:" + id] = button
-		_area_buttons[id] = button
-	_garage_categories = OptionButton.new()
-	_garage_categories.item_selected.connect(func(index: int):
-		_garage_width_menu = false
-		_garage_category = str(_garage_categories.get_item_metadata(index))
-		_draw_garage_options())
-	column.add_child(_garage_categories)
 	var scroll := ScrollContainer.new()
 	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
@@ -642,8 +622,9 @@ func _build_configurator() -> void:
 	_button(footer,"save","Save",func(): garage_save_requested.emit(),0)
 	for button in footer.get_children():
 		button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	_active_area = "wheels" if _garage_mode == "upgrades" else "overview"
-	_select_area(_active_area,false)
+	_garage_path.clear()
+	_active_area = "overview"
+	_draw_garage_options()
 	_refresh_status()
 	_fit_garage_panels()
 	_focus_first()
@@ -652,10 +633,9 @@ func _build_configurator() -> void:
 func garage_consume_back() -> void:
 	if _garage_exit != null:
 		_close_garage_exit()
-	elif _garage_mode == "upgrades" and _garage_width_menu:
-		_garage_width_menu = false
+	elif not _garage_path.is_empty():
+		_garage_path.pop_back()
 		_draw_garage_options()
-		_focus_first()
 	else:
 		_open_garage_exit()
 
@@ -738,7 +718,7 @@ func _set_garage_mode(mode: String) -> void:
 		var button: Button = _buttons.get("garage:" + mode_id, null)
 		if button != null:
 			button.set_pressed_no_signal(mode_id == mode)
-	_garage_categories.visible = mode == "upgrades"
+	_garage_path.clear()
 	_draw_garage_options()
 
 func _refresh_performance() -> void:
@@ -772,10 +752,17 @@ func _draw_garage_options() -> void:
 	_option_controls.clear()
 	_option_values.clear()
 	_option_notes.clear()
-	_garage_categories.visible = _garage_mode == "upgrades"
+	_garage_preferred = null
+	for key in _buttons.keys():
+		if str(key).begins_with("tile:") or str(key).begins_with("part:") or str(key).begins_with("tyre:"):
+			_buttons.erase(key)
 	if _garage_mode == "upgrades":
 		_draw_upgrades()
 		return
+	if _garage_path.is_empty():
+		_draw_tiles(["Engine", "Wheels", "Chassis", "Drivetrain", "Appearance & assists"])
+		return
+	_option_box.add_child(_label(" / ".join(_garage_path),20,HORIZONTAL_ALIGNMENT_LEFT))
 	var group := ""
 	var count := 0
 	for opt in garage.get_options():
@@ -796,124 +783,208 @@ func _draw_garage_options() -> void:
 	if count == 0:
 		_option_box.add_child(_label("No adjustable installed parts in this area.",14,HORIZONTAL_ALIGNMENT_LEFT,true))
 
-func _draw_upgrades() -> void:
-	_garage_categories.clear()
-	var choices: Array = []
+	_focus_tuning.call_deferred()
+
+func _focus_tuning() -> void:
+	for control in _option_controls.values():
+		if is_instance_valid(control) and control.is_visible_in_tree() and control.focus_mode != Control.FOCUS_NONE:
+			control.grab_focus()
+			return
+
+# Navigation owns focus; installed markers remain separate from the moving cursor.
+func _draw_tiles(names: Array, unavailable: Array = []) -> void:
+	var grid := GridContainer.new()
+	grid.columns = 2
+	grid.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_option_box.add_child(grid)
+	for item in names:
+		var name := str(item)
+		var button := _button(grid,"tile:" + name,name + ("\nNot available yet" if unavailable.has(name) else ""),func(): _enter_garage_tile(name),0)
+		button.custom_minimum_size = Vector2(0,112)
+		button.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		button.add_theme_font_size_override("font_size",16)
+		button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		button.disabled = unavailable.has(name)
+		if _garage_preferred == null and not button.disabled:
+			_garage_preferred = button
+	_focus_garage.call_deferred()
+
+func _focus_garage() -> void:
+	if is_instance_valid(_garage_preferred) and _garage_preferred.is_inside_tree():
+		var parent := _garage_preferred.get_parent()
+		if parent is GridContainer:
+			var cards: Array[Button] = []
+			for child in parent.get_children():
+				if child is Button and not child.disabled: cards.append(child)
+			for i in range(cards.size()):
+				var card := cards[i]
+				var columns: int = parent.columns
+				card.focus_neighbor_left = card.get_path_to(cards[maxi(0,i-1)] if i % columns > 0 else card)
+				card.focus_neighbor_right = card.get_path_to(cards[mini(cards.size()-1,i+1)] if i % columns < columns-1 else card)
+				card.focus_neighbor_top = card.get_path_to(cards[i-columns] if i >= columns else card)
+				card.focus_neighbor_bottom = card.get_path_to(cards[i+columns] if i+columns < cards.size() else card)
+		_garage_preferred.grab_focus()
+
+func _enter_garage_tile(name: String) -> void:
+	_garage_path.append(name)
+	var area := {"Engine":"engine", "Wheels":"wheels", "Chassis":"wheels", "Drivetrain":"rear", "Appearance & assists":"overview", "Swaps":"engine"}
+	_active_area = str(area.get(_garage_path[0],"overview"))
+	garage_area_chosen.emit(_active_area)
+	_draw_garage_options()
+
+func _garage_option(id: String) -> Dictionary:
 	for opt in garage.get_options():
-		if bool(opt["available"]) and str(opt["area"]) == _active_area and str(opt["kind"]) in ["tyre_choice", "file_choice"]:
-			choices.append(opt)
-	for opt in choices:
-		_garage_categories.add_item(str(opt["label"]))
-		_garage_categories.set_item_metadata(_garage_categories.item_count-1,str(opt["id"]))
-	if choices.is_empty():
-		var label := _label("Installed parts",20,HORIZONTAL_ALIGNMENT_LEFT)
-		_option_box.add_child(label)
-		var groups: Array[String] = []
-		for opt in garage.get_options():
-			if bool(opt["available"]) and str(opt["area"]) == _active_area and not groups.has(str(opt["group"])):
-				groups.append(str(opt["group"]))
-		for group in groups:
-			var card := Button.new()
-			card.text = group + "\nInstalled · adjust in Tuning"
-			card.custom_minimum_size.y = 76
-			card.pressed.connect(func(): _set_garage_mode("tuning"))
-			_option_box.add_child(card)
+		if str(opt["id"]) == id and bool(opt["available"]):
+			return opt
+	return {}
+
+func _draw_upgrades() -> void:
+	_option_box.add_child(_label(" / ".join(_garage_path) if not _garage_path.is_empty() else "Upgrade categories",20,HORIZONTAL_ALIGNMENT_LEFT))
+	if _garage_path.is_empty():
+		_draw_tiles(["Engine", "Chassis", "Wheels", "Swaps", "Drivetrain", "Appearance & assists"])
 		return
-	var selected: Dictionary = choices[0]
-	for i in range(choices.size()):
-		if str(choices[i]["id"]) == _garage_category:
-			selected = choices[i]
-			_garage_categories.select(i)
-	_garage_category = str(selected["id"])
-	_option_box.add_child(_label(str(selected["label"]),22,HORIZONTAL_ALIGNMENT_LEFT))
-	if str(selected["kind"]) == "file_choice":
-		var parts_grid := GridContainer.new()
-		parts_grid.columns = 2
-		parts_grid.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		_option_box.add_child(parts_grid)
-		for part in selected["parts"]:
-			var part_id: String = str(part["id"])
-			var installed: bool = part_id == str(selected["value"])
+	var top := _garage_path[0]
+	if top == "Wheels":
+		if _garage_path.size() == 1:
+			_draw_tiles(["All", "Front", "Rear"])
+		elif _garage_path.size() == 2:
+			_draw_tiles(["Compounds", "Dimensions"])
+		else:
+			_draw_wheel_parts()
+		return
+	if top in ["Engine", "Swaps"]:
+		if _garage_path.size() == 1:
+			var disabled: Array = ["Camshaft"]
+			if _garage_option("engine_install").is_empty(): disabled.append("Engine")
+			if _garage_option("turbo_install").is_empty() and _garage_option("turbo_install_n2o").is_empty(): disabled.append("Turbo")
+			if top == "Swaps":
+				_draw_tiles(["Engine", "Forced induction", "Drivetrain"], [] + (["Engine"] if disabled.has("Engine") else []) + (["Forced induction"] if disabled.has("Turbo") else []))
+			else:
+				_draw_tiles(["Turbo", "Camshaft"],disabled)
+			return
+		if top == "Swaps" and _garage_path[1] == "Drivetrain":
+			_draw_tiles(["AWD", "RWD", "FWD"],["AWD", "RWD", "FWD"])
+			return
+		var opt := _garage_option("engine_install") if _garage_path[1] == "Engine" else _garage_option("turbo_install")
+		if opt.is_empty(): opt = _garage_option("turbo_install_n2o")
+		if opt.is_empty(): return
+		if top == "Swaps" and _garage_path[1] == "Forced induction" and _garage_path.size() == 2:
+			var types: Array = []
+			for part in opt["parts"]:
+				var type_name := "Single" if str(part["id"]).contains("single") else "Dual"
+				if not types.has(type_name): types.append(type_name)
+			_draw_tiles(types)
+			for part in opt["parts"]:
+				if str(part["id"]) == str(opt["value"]):
+					_garage_preferred = _buttons.get("tile:" + ("Single" if str(part["id"]).contains("single") else "Dual"))
+			return
+		var grid := GridContainer.new()
+		grid.columns = 2
+		_option_box.add_child(grid)
+		for part in opt["parts"]:
+			if _garage_path[1] != "Engine":
+				var single := false
+				for installed_part in opt["parts"]:
+					if str(installed_part["id"]) == str(opt["value"]): single = str(installed_part["id"]).contains("single")
+				if top == "Swaps": single = _garage_path[2] == "Single"
+				if str(part["id"]).contains("single") != single: continue
+			var installed := str(part["id"]) == str(opt["value"])
 			var card := _make_component_card(part,"INSTALLED" if installed else "Install")
-			card.tooltip_text = str(selected["help"])
-			card.pressed.connect(func():
-				_edit_option(_garage_category,part_id)
-				_draw_garage_options())
-			parts_grid.add_child(card)
-			_buttons["part:" + _garage_category + ":" + part_id] = card
+			grid.add_child(card)
+			_buttons["part:" + str(opt["id"]) + ":" + str(part["id"])] = card
+			card.pressed.connect(func(): _edit_option(str(opt["id"]),str(part["id"])); _draw_garage_options())
+			if installed or _garage_preferred == null: _garage_preferred = card
+		_focus_garage.call_deferred()
 		return
-	_tyre_presentation(str(selected["value"])) # load presentation metadata
-	var families: Array = _component_catalog.get("family_order", ["road", "track", "slick", "drag"])
-	if not _garage_width_menu:
-		var type_grid := GridContainer.new()
-		type_grid.columns = 3
-		type_grid.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		_option_box.add_child(type_grid)
-		for family in families:
-			var representative: Dictionary = {}
-			for candidate in selected["choices"]:
-				var info := _tyre_presentation(str(candidate))
-				if str(info.get("family","road")) == family:
-					representative = info.duplicate()
-					break
-			if representative.is_empty():
-				continue
-			representative.erase("size")
-			var type_card := _make_component_card(representative,"")
-			type_card.tooltip_text = str(_component_catalog.get("families", {}).get(family, {}).get("description", ""))
-			type_card.pressed.connect(func():
-				_garage_tyre_family = family
-				_garage_width_menu = true
-				_draw_garage_options())
-			type_grid.add_child(type_card)
-			_buttons["tyre:family:" + family] = type_card
+	if top == "Chassis":
+		if _garage_path.size() == 1:
+			_draw_tiles(["Weight reduction", "Aero", "Suspension & brakes"],["Weight reduction"])
+		elif _garage_path[1] == "Aero":
+			_draw_tiles(["Front diffuser", "Rear wing"],["Front diffuser", "Rear wing"])
+		else:
+			_draw_tuning_link()
 		return
-	_option_box.add_child(_label(str(_component_catalog.get("families", {}).get(_garage_tyre_family, {}).get("label", _garage_tyre_family.capitalize())) + " · Width",17,HORIZONTAL_ALIGNMENT_LEFT))
-	var increments := OptionButton.new()
-	increments.add_item("Widths every 10 mm")
-	increments.add_item("Widths every 20 mm")
-	increments.select(1 if _garage_width_step == 20 else 0)
-	increments.item_selected.connect(func(index: int):
-		_garage_width_step = 20 if index == 1 else 10
-		_draw_garage_options())
-	_option_box.add_child(increments)
-	var by_width: Dictionary = {}
-	for choice in selected["choices"]:
+	_draw_tuning_link()
+
+func _draw_tuning_link() -> void:
+	_option_box.add_child(_label("Adjust installed parts in Tuning.",16,HORIZONTAL_ALIGNMENT_LEFT,true))
+	var button := _button(_option_box,"tile:tune","Tune installed parts",func():
+		var category := _garage_path[0]
+		_set_garage_mode("tuning")
+		_enter_garage_tile(category))
+	_garage_preferred = button
+	_focus_garage.call_deferred()
+
+func _wheel_options() -> Array:
+	var result: Array = []
+	for axle in ["front", "rear"]:
+		if _garage_path[1] == "All" or _garage_path[1].to_lower() == axle:
+			var opt := _garage_option("tyre_" + axle)
+			if not opt.is_empty(): result.append(opt)
+	return result
+
+func _wheel_choice(opt: Dictionary, family: String, width: int) -> String:
+	if str(_tyre_presentation(str(opt["value"])).get("family")) == family and int(_tyre_presentation(str(opt["value"])).get("width_mm")) == width:
+		return str(opt["value"])
+	for choice in opt["choices"]:
 		var info := _tyre_presentation(str(choice))
-		if str(info.get("family", "road")) != _garage_tyre_family:
-			continue
-		var width := int(info.get("width_mm", 0))
-		if not by_width.has(width) or str(choice) == str(selected["value"]):
-			by_width[width] = str(choice)
-	var widths: Array = by_width.keys()
-	widths.sort()
-	if not widths.is_empty():
-		_option_box.add_child(_label("Body fitment: %d–%d mm" % [int(widths[0]),int(widths[-1])],13,HORIZONTAL_ALIGNMENT_LEFT,true))
+		if str(info.get("family")) == family and int(info.get("width_mm")) == width: return str(choice)
+	return ""
+
+func _draw_wheel_parts() -> void:
+	var options := _wheel_options()
+	if options.is_empty(): return
+	var compounds := _garage_path[2] == "Compounds"
+	var keys: Array = []
+	if compounds:
+		_tyre_presentation(str(options[0]["value"]))
+		keys = _component_catalog.get("family_order",[])
+	else:
+		for choice in options[0]["choices"]:
+			var width := int(_tyre_presentation(str(choice)).get("width_mm"))
+			if not keys.has(width): keys.append(width)
+		keys.sort()
 	var grid := GridContainer.new()
 	grid.columns = 3
 	grid.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_option_box.add_child(grid)
-	for width in widths:
-		var choice: String = str(by_width[width])
-		if (int(width)-int(widths[0])) % _garage_width_step != 0 and choice != str(selected["value"]):
-			continue
-		var installed := str(choice) == str(selected["value"])
-		var presentation := _tyre_presentation(str(choice))
+	for key in keys:
+		var installs: Dictionary = {}
+		var installed := true
+		var presentation: Dictionary = {}
+		for opt in options:
+			var current := _tyre_presentation(str(opt["value"]))
+			var family := str(key) if compounds else str(current.get("family"))
+			var width := int(current.get("width_mm")) if compounds else int(key)
+			var choice := _wheel_choice(opt,family,width)
+			if choice.is_empty(): break
+			installs[str(opt["id"])] = choice
+			installed = installed and choice == str(opt["value"])
+			presentation = _tyre_presentation(choice).duplicate()
+		if installs.size() != options.size(): continue
+		if compounds: presentation.erase("size")
+		else:
+			presentation["label"] = "%d mm" % int(key)
+			if options.size() == 2: presentation["size"] = "Both axles · preserves compounds"
 		var card := _make_component_card(presentation,"INSTALLED" if installed else "Install")
-		card.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		card.add_theme_font_size_override("font_size",13)
-		card.toggle_mode = true
-		card.set_pressed_no_signal(installed)
-		card.tooltip_text = str(choice) + "\n" + str(presentation.get("label", "")) + "\nAuthored tread preview; speed rating from the physical definition."
-		card.pressed.connect(func():
-			_edit_option(_garage_category,str(choice))
-			_draw_garage_options())
 		grid.add_child(card)
-		_buttons["part:" + _garage_category + ":" + str(choice)] = card
+		_buttons["tyre:" + str(key)] = card
+		card.pressed.connect(func():
+			# Resolve both fitments before changing either axle.
+			for id in installs: _edit_option(str(id),installs[id])
+			_draw_garage_options())
+		if installed or _garage_preferred == null: _garage_preferred = card
+	_focus_garage.call_deferred()
 
 func _make_component_card(presentation: Dictionary, action: String) -> Button:
 	var card := Button.new()
 	card.custom_minimum_size = Vector2(0,240)
+	var focus_style := StyleBoxFlat.new()
+	focus_style.bg_color = Color(0,0,0,0)
+	focus_style.border_color = Color(1.0,0.55,0.2)
+	focus_style.set_border_width_all(3)
+	focus_style.set_corner_radius_all(4)
+	card.add_theme_stylebox_override("focus",focus_style)
 	var content := VBoxContainer.new()
 	content.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	content.offset_left = 6
@@ -976,7 +1047,6 @@ func _component_texture(path: String) -> Texture2D:
 
 func _select_area(area_id: String, move_camera: bool) -> void:
 	_active_area = area_id
-	_garage_width_menu = false
 	if _area_buttons.has(area_id):
 		(_area_buttons[area_id] as Button).set_pressed_no_signal(true)
 	_draw_garage_options()
