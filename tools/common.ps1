@@ -31,11 +31,21 @@ function Enter-VsDevShell {
     # this script under $ErrorActionPreference = 'Stop'.
     $previousEap = $ErrorActionPreference
     $ErrorActionPreference = 'Continue'
-    $envLines = cmd.exe /c "`"$vcvars`" && set"
+    $envLines = cmd.exe /d /s /c "call `"$vcvars`" x64 && set"
     $ErrorActionPreference = $previousEap
     foreach ($line in $envLines) {
         if ($line -match '^([^=]+)=(.*)$') {
             [Environment]::SetEnvironmentVariable($Matches[1], $Matches[2], 'Process')
+        }
+    }
+    if (-not (Get-Command clang-cl -ErrorAction SilentlyContinue)) {
+        # vcvars64.bat can exceed cmd.exe's command-line limit when the
+        # inherited PATH is large. clang-cl is installed at a stable path in
+        # the VS Build Tools layout, so recover without relying on vcvars' set
+        # output. This also keeps run.ps1 usable from long-lived terminals.
+        $fallback = Join-Path $vsPath 'VC\Tools\Llvm\x64\bin'
+        if (Test-Path (Join-Path $fallback 'clang-cl.exe')) {
+            $env:Path = "$fallback;$env:Path"
         }
     }
     if (-not (Get-Command clang-cl -ErrorAction SilentlyContinue)) {
