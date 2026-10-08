@@ -367,7 +367,8 @@ bool file_choice_fits(Files& files, const SetupOptionDef& def, const CatalogEntr
     if (std::find(def.compatible_engines.begin(), def.compatible_engines.end(), engine) == def.compatible_engines.end()) return false;
     const int idx = component_index(files.vehicle.base, "engine");
     if (def.no_turbo_override && idx >= 0 && files.vehicle.base["powertrain"]["components"][idx].contains("turbo_configuration")) return false;
-    return !targets_of(files, def, pointers_for(entry, def)).empty();
+    const json* base = def.file == "vehicle" ? &files.vehicle.base : (files.engine ? &files.engine->base : nullptr);
+    return base && !expand_patterns(*base, pointers_for(entry, def)).empty();
 }
 
 std::string install_file_part(Files& files, const SetupOptionDef& def, const CatalogEntry& entry, const SetupValue& value) {
@@ -380,6 +381,20 @@ std::string install_file_part(Files& files, const SetupOptionDef& def, const Cat
     json doc;
     std::string err, format;
     if (!read_doc(part->path, doc, &err)) return err;
+    if (part->naturally_aspirated) {
+        if (def.part_format != "physics_sim.turbo_configuration/1" ||
+            !detail::get_string(doc, "format", format) || format != "rg.induction_removal/1")
+            return def.id + ": invalid naturally aspirated conversion";
+        // Remove both sources: a vehicle override must not fall back to the engine default.
+        if (files.engine) {
+            files.engine->work.erase("default_turbo_configuration");
+            // Boosted map nodes are unreachable without a compressor. Use the authored NA sampling grid.
+            files.engine->work["cycle"]["grid_p_im_kpa"] = doc.at("grid_p_im_kpa");
+        }
+        const int engine_idx = component_index(files.vehicle.work, "engine");
+        if (engine_idx >= 0) files.vehicle.work["powertrain"]["components"][engine_idx].erase("turbo_configuration");
+        return {};
+    }
     if (!detail::get_string(doc, "format", format) || format != def.part_format) return def.id + ": wrong component file format";
     for (auto& target : targets_of(files, def, pointers_for(entry, def))) {
         const json* leaf = at_pointer(target.file->work, target.pointer);
@@ -642,6 +657,7 @@ std::optional<SetupOptionTable> parse_setup_options(const std::string& json_text
                 detail::get_string(part, "label", p.label);
                 detail::get_string(part, "image", p.image);
                 detail::get_string(part, "detail", p.detail);
+                detail::get_bool(part, "naturally_aspirated", p.naturally_aspirated);
                 p.path = resolve_ref(dir_of(origin), p.path);
                 d.parts.push_back(std::move(p));
             }
@@ -826,10 +842,13 @@ SetupModel build_setup_model(const CatalogEntry& entry, const SetupOptionTable& 
                 stock.id = "stock";
                 stock.label = "Original component";
                 std::string original;
-                const auto targets = targets_of(files, def, v.def.pointers);
-                if (!targets.empty()) {
-                    const auto* leaf = at_pointer(targets.front().file->base, targets.front().pointer);
-                    if (leaf && leaf->is_string()) original = resolve_ref(dir_of(targets.front().file->path), leaf->get<std::string>());
+                const FileDoc* original_file = def.file == "vehicle" ? &files.vehicle : (files.engine ? &*files.engine : nullptr);
+                if (original_file) {
+                    const auto pointers = expand_patterns(original_file->base, v.def.pointers);
+                    if (!pointers.empty()) {
+                        const auto* leaf = at_pointer(original_file->base, pointers.front());
+                        if (leaf && leaf->is_string()) original = resolve_ref(dir_of(original_file->path), leaf->get<std::string>());
+                    }
                 }
                 for (const auto& part : def.parts) if (part.path == original) { stock = part; stock.id = "stock"; }
                 v.parts.push_back(stock);
@@ -1166,6 +1185,16 @@ CompiledSetup compile_setup_internal(const CatalogEntry& entry, const SetupOptio
             const std::string want = is_vehicle ? "vehicle" : kind;
             if (def.file != want) continue;
             for (const std::string& p : pointers_for(entry, def)) patterns.push_back(p);
+        }
+        if (std::string(kind) == "engine") {
+            for (const auto& def : table.options) {
+                const auto selected = setup.values.find(def.id);
+                if (!entry_offers(entry, def.id) || selected == setup.values.end() || !std::holds_alternative<std::string>(selected->second)) continue;
+                for (const auto& part : def.parts) if (part.naturally_aspirated && part.id == std::get<std::string>(selected->second)) {
+                    patterns.push_back("/default_turbo_configuration");
+                    patterns.push_back("/cycle/grid_p_im_kpa");
+                }
+            }
         }
         const std::string violation = whitelist_violation(f.base.dump(), patch_text(patch), patterns);
         if (!violation.empty()) {

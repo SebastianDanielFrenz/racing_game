@@ -868,15 +868,11 @@ func _draw_upgrades() -> void:
 		var opt := _garage_option("engine_install") if _garage_path[1] == "Engine" else _garage_option("turbo_install")
 		if opt.is_empty(): opt = _garage_option("turbo_install_n2o")
 		if opt.is_empty(): return
-		if top == "Swaps" and _garage_path[1] == "Forced induction" and _garage_path.size() == 2:
-			var types: Array = []
-			for part in opt["parts"]:
-				var type_name := "Single" if str(part["id"]).contains("single") else "Dual"
-				if not types.has(type_name): types.append(type_name)
-			_draw_tiles(types)
-			for part in opt["parts"]:
-				if str(part["id"]) == str(opt["value"]):
-					_garage_preferred = _buttons.get("tile:" + ("Single" if str(part["id"]).contains("single") else "Dual"))
+		if top == "Swaps" and _garage_path[1] == "Forced induction":
+			_draw_induction_swaps(opt)
+			return
+		if _garage_path[1] == "Turbo" and _induction_type(str(opt["value"])) == "NA":
+			_option_box.add_child(_label("Naturally aspirated engine. Install forced induction in Swaps to upgrade turbo hardware.",16,HORIZONTAL_ALIGNMENT_LEFT,true))
 			return
 		var grid := GridContainer.new()
 		grid.columns = 2
@@ -886,7 +882,7 @@ func _draw_upgrades() -> void:
 				var single := false
 				for installed_part in opt["parts"]:
 					if str(installed_part["id"]) == str(opt["value"]): single = str(installed_part["id"]).contains("single")
-				if top == "Swaps": single = _garage_path[2] == "Single"
+				if str(part["id"]) == "hyper_na": continue
 				if str(part["id"]).contains("single") != single: continue
 			var installed := str(part["id"]) == str(opt["value"])
 			var card := _make_component_card(part,"INSTALLED" if installed else "Install")
@@ -905,6 +901,34 @@ func _draw_upgrades() -> void:
 			_draw_tuning_link()
 		return
 	_draw_tuning_link()
+
+func _induction_type(part_id: String) -> String:
+	if part_id == "hyper_na": return "NA"
+	return "Single turbo" if part_id.contains("single") else "Twin turbo"
+
+func _draw_induction_swaps(opt: Dictionary) -> void:
+	var grid := GridContainer.new()
+	grid.columns = 3
+	_option_box.add_child(grid)
+	var current_type := _induction_type(str(opt["value"]))
+	for type_name in ["NA", "Single turbo", "Twin turbo"]:
+		var target: Dictionary = {}
+		for part in opt["parts"]:
+			if _induction_type(str(part["id"])) == type_name:
+				if target.is_empty() or str(part["id"]) == str(opt["value"]): target = part
+		var installed: bool = current_type == type_name
+		var presentation := target.duplicate()
+		presentation["label"] = type_name
+		presentation["size"] = "Naturally aspirated" if type_name == "NA" else "Select hardware in Engine upgrades"
+		var card := _make_component_card(presentation,"INSTALLED" if installed else "Install")
+		card.disabled = target.is_empty()
+		grid.add_child(card)
+		_buttons["induction:" + type_name] = card
+		card.pressed.connect(func():
+			if not installed: _edit_option(str(opt["id"]),str(target["id"]))
+			_draw_garage_options())
+		if installed or _garage_preferred == null: _garage_preferred = card
+	_focus_garage.call_deferred()
 
 func _draw_tuning_link() -> void:
 	_option_box.add_child(_label("Adjust installed parts in Tuning.",16,HORIZONTAL_ALIGNMENT_LEFT,true))

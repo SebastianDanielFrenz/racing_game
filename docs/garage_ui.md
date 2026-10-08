@@ -9,7 +9,9 @@ returns one level at a time; the root opens the save-and-exit prompt. Upgrades:
 
 - Engine → Turbo → upgrades for the installed single/dual setup; Camshaft is unavailable.
 - Swaps → Engine → compatible engine choices.
-- Swaps → Forced induction → Single/Dual → compatible configurations.
+- Swaps → Forced induction → NA/Single turbo/Twin turbo, installed directly.
+  Exact turbo hardware is chosen separately in Engine → Turbo. NA removes both
+  engine-default and vehicle-override turbo references; it does not disable nitrous.
 - Swaps → Drivetrain → AWD/RWD/FWD (unavailable until native conversion support).
 - Chassis → Weight reduction (unavailable), Aero → Front diffuser/Rear wing
   (unavailable), or Suspension & brakes → tuning installed hardware.
@@ -113,3 +115,13 @@ compound and dimension installs, split compound preservation, fitment intersecti
 single/dual filtering, installed focus, submenu back, invalid setups, persistence,
 drive/respawn and cleanup. Evidence: out/garage_tiles_focus.log. Screenshots in
 out/garage_tiles_final_shots reviewed at 1920x1080; root categories and tyre compound cards.
+
+Direct induction types (2026-10-08): Swaps installs NA, Single turbo or Twin turbo
+without opening hardware submenus. Re-selecting the current type preserves its
+exact hardware. Engine upgrades show only the installed turbo topology. N2O single
+uses the existing per-turbo N2O wastegate hardware. NA changes cycle-map sampling
+to authored reachable pressures of 25/50/75/90 kPa instead of boosted nodes;
+this is an NA conversion approximation and retains the original engine internals.
+Verification: 195 garage checks and 80 native assertions across four engine-part
+cases passed. Logs: out/garage_induction_final.log, out/garage_induction_polish_unit.log.
+N2O swap screen captured in out/garage_induction_ready_shots/induction_types.png.

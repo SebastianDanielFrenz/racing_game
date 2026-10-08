@@ -1,0 +1,5 @@
+{
+  "format": "rg.induction_removal/1",
+  "grid_p_im_kpa": [25, 50, 75, 90],
+  "source": "Game-owned NA conversion: remove engine default and vehicle override turbo references. Retain displacement, combustion maps and nitrous hardware. Physical cycle tables sample reachable subambient manifold pressures up to 90 kPa; extrapolation above the sampled range follows the library table behavior."
+}

@@ -523,3 +523,22 @@ TEST_CASE("engine parts: turbo count and boost survive materialization, nitrous 
     CHECK_FALSE(rg::compile_setup(f.entry("car_sedan"), f.table, f.ctx,
         setup_of("car_sedan", {{"turbo_install", std::string("hyper_single")}})).ok);
 }
+
+TEST_CASE("engine parts: NA removes both turbo sources and single nitrous retains gate", "[engine_parts][induction]") {
+    Fixture f;
+    for (const auto& car : {"car_hyper", "car_hyper_n2o"}) {
+        const bool nitrous = std::string(car) == "car_hyper_n2o";
+        const auto& e = f.entry(car);
+        const auto na = load_materialised(f, e, setup_of(car, {{nitrous ? "turbo_install_n2o" : "turbo_install", std::string("hyper_na")}}));
+        const ps::drivetrain::SimulatedEngineDesc* engine = nullptr;
+        for (const auto& c : na.powertrain.components)
+            if (auto p = std::get_if<ps::drivetrain::SimulatedEngineDesc>(&c.params)) engine = p;
+        REQUIRE(engine != nullptr);
+        CHECK_FALSE(engine->turbo_pair.has_value());
+    }
+    const auto twin = ps::io::load_turbo_configuration_json(kRoot + "/external/physics_sim/data/turbo_configurations/hyper_twin_n2o.json");
+    const auto single = ps::io::load_turbo_configuration_json(kRoot + "/data/turbo_configurations/garage_hyper_single_n2o.json");
+    CHECK(single.wastegate_area() == Approx(twin.wastegate_area() * 0.5));
+    CHECK(single.rotor_inertia_kgm2 == Approx(twin.rotor_inertia_kgm2 * 0.5));
+    CHECK(single.max_mass_flow_kg_s == Approx(twin.max_mass_flow_kg_s * 0.5));
+}

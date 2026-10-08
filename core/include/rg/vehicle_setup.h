@@ -57,6 +57,7 @@ const char* to_string(OptionKind k);
 
 struct SetupPart {
     std::string id, label, path, image, detail;
+    bool naturally_aspirated = false;
 };
 
 struct SetupOptionDef {

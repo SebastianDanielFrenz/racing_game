@@ -357,6 +357,13 @@
           "path": "../turbo_configurations/garage_hyper_balanced.json",
           "image": "res://assets/components/engines/turbo_twin.png",
           "detail": "2 units · 1.4 bar charge target"
+        },
+        {
+          "id": "hyper_na",
+          "label": "Naturally aspirated",
+          "path": "../turbo_configurations/garage_hyper_na.json",
+          "naturally_aspirated": true,
+          "detail": "No turbochargers · ambient induction"
         }
       ]
     },
@@ -397,6 +404,20 @@
           "path": "../turbo_configurations/garage_hyper_balanced_n2o.json",
           "image": "res://assets/components/engines/turbo_twin.png",
           "detail": "2 units · 1.4 bar charge target"
+        },
+        {
+          "id": "hyper_na",
+          "label": "Naturally aspirated",
+          "path": "../turbo_configurations/garage_hyper_na.json",
+          "naturally_aspirated": true,
+          "detail": "No turbochargers · ambient induction"
+        },
+        {
+          "id": "hyper_single_n2o",
+          "label": "Single turbo",
+          "path": "../turbo_configurations/garage_hyper_single_n2o.json",
+          "image": "res://assets/components/engines/turbo_single.png",
+          "detail": "1 unit · 1.4 bar charge target"
         }
       ]
     }
