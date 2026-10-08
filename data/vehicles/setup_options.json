@@ -171,7 +171,7 @@
       "label": "Tyres front",
       "group": "Tyres",
       "area": "wheels",
-      "help": "Compatible compound/tread and width variants, capped by this body’s axle fitment limits. Width updates wheel geometry and inertia.",
+      "help": "Compatible compound/tread and width variants, capped by this body\u2019s axle fitment limits. Width updates wheel geometry and inertia.",
       "kind": "tyre_choice",
       "axle": "front",
       "file": "vehicle",
@@ -186,7 +186,7 @@
       "label": "Tyres rear",
       "group": "Tyres",
       "area": "wheels",
-      "help": "Compatible compound/tread and width variants, capped by this body’s axle fitment limits. Width updates wheel geometry and inertia.",
+      "help": "Compatible compound/tread and width variants, capped by this body\u2019s axle fitment limits. Width updates wheel geometry and inertia.",
       "kind": "tyre_choice",
       "axle": "rear",
       "file": "vehicle",
@@ -328,42 +328,84 @@
       "pointers": [
         "/default_turbo_configuration"
       ],
-      "help": "Install validated turbo hardware and its charge-pressure control configuration. Changes apply on Drive. The nitrous car retains its larger-wastegate hardware.",
+      "help": "Select turbo hardware. Boost pressure is adjusted separately in Tuning.",
       "parts": [
         {
           "id": "original_twin",
-          "label": "Twin turbo · full boost",
+          "label": "Twin turbo \u00b7 66/82 mm",
           "path": "../../external/physics_sim/data/turbo_configurations/hyper_twin_default.json",
           "image": "res://assets/components/engines/turbo_twin.png",
-          "detail": "2 units · 1.8 bar charge target"
+          "detail": "Compressor inducer/exducer \u00b7 2 unit(s) \u00b7 0.60 kg/s per unit \u00b7 I 0.00023 kg m\u00b2"
+        },
+        {
+          "id": "hyper_twin_compact",
+          "label": "Twin turbo \u00b7 52.8/65.6 mm",
+          "path": "../turbo_configurations/hyper_twin_compact.json",
+          "image": "res://assets/components/engines/turbo_twin.png",
+          "detail": "Compressor inducer/exducer \u00b7 2 unit(s) \u00b7 0.38 kg/s per unit \u00b7 I 7.5e-05 kg m\u00b2"
+        },
+        {
+          "id": "hyper_twin_standard",
+          "label": "Twin turbo \u00b7 66/82 mm",
+          "path": "../turbo_configurations/hyper_twin_standard.json",
+          "image": "res://assets/components/engines/turbo_twin.png",
+          "detail": "Compressor inducer/exducer \u00b7 2 unit(s) \u00b7 0.60 kg/s per unit \u00b7 I 0.00023 kg m\u00b2"
+        },
+        {
+          "id": "hyper_twin_large",
+          "label": "Twin turbo \u00b7 79.2/98.4 mm",
+          "path": "../turbo_configurations/hyper_twin_large.json",
+          "image": "res://assets/components/engines/turbo_twin.png",
+          "detail": "Compressor inducer/exducer \u00b7 2 unit(s) \u00b7 0.86 kg/s per unit \u00b7 I 0.00057 kg m\u00b2"
+        },
+        {
+          "id": "hyper_single_compact",
+          "label": "Single turbo \u00b7 52.8/65.6 mm",
+          "path": "../turbo_configurations/hyper_single_compact.json",
+          "image": "res://assets/components/engines/turbo_single.png",
+          "detail": "Compressor inducer/exducer \u00b7 1 unit(s) \u00b7 0.38 kg/s per unit \u00b7 I 7.5e-05 kg m\u00b2"
+        },
+        {
+          "id": "hyper_single_standard",
+          "label": "Single turbo \u00b7 66/82 mm",
+          "path": "../turbo_configurations/hyper_single_standard.json",
+          "image": "res://assets/components/engines/turbo_single.png",
+          "detail": "Compressor inducer/exducer \u00b7 1 unit(s) \u00b7 0.60 kg/s per unit \u00b7 I 0.00023 kg m\u00b2"
+        },
+        {
+          "id": "hyper_single_large",
+          "label": "Single turbo \u00b7 79.2/98.4 mm",
+          "path": "../turbo_configurations/hyper_single_large.json",
+          "image": "res://assets/components/engines/turbo_single.png",
+          "detail": "Compressor inducer/exducer \u00b7 1 unit(s) \u00b7 0.86 kg/s per unit \u00b7 I 0.00057 kg m\u00b2"
         },
         {
           "id": "hyper_single",
-          "label": "Single turbo",
-          "path": "../turbo_configurations/garage_hyper_single.json",
+          "label": "Single turbo \u00b7 66/82 mm",
+          "path": "../turbo_configurations/hyper_single_standard.json",
           "image": "res://assets/components/engines/turbo_single.png",
-          "detail": "1 unit · 1.4 bar charge target"
+          "detail": "Compressor inducer/exducer \u00b7 1 unit(s) \u00b7 0.60 kg/s per unit \u00b7 I 0.00023 kg m\u00b2"
         },
         {
           "id": "hyper_touring",
-          "label": "Twin turbo · Touring",
-          "path": "../turbo_configurations/garage_hyper_touring.json",
+          "label": "Twin turbo \u00b7 52.8/65.6 mm",
+          "path": "../turbo_configurations/hyper_twin_compact.json",
           "image": "res://assets/components/engines/turbo_twin.png",
-          "detail": "2 units · 1.0 bar charge target"
+          "detail": "Compressor inducer/exducer \u00b7 2 unit(s) \u00b7 0.38 kg/s per unit \u00b7 I 7.5e-05 kg m\u00b2"
         },
         {
           "id": "hyper_balanced",
-          "label": "Twin turbo · Balanced",
-          "path": "../turbo_configurations/garage_hyper_balanced.json",
+          "label": "Twin turbo \u00b7 79.2/98.4 mm",
+          "path": "../turbo_configurations/hyper_twin_large.json",
           "image": "res://assets/components/engines/turbo_twin.png",
-          "detail": "2 units · 1.4 bar charge target"
+          "detail": "Compressor inducer/exducer \u00b7 2 unit(s) \u00b7 0.86 kg/s per unit \u00b7 I 0.00057 kg m\u00b2"
         },
         {
           "id": "hyper_na",
           "label": "Naturally aspirated",
           "path": "../turbo_configurations/garage_hyper_na.json",
           "naturally_aspirated": true,
-          "detail": "No turbochargers · ambient induction"
+          "detail": "No turbochargers \u00b7 ambient induction"
         }
       ]
     },
@@ -382,42 +424,164 @@
       "pointers": [
         "/powertrain/components/[type=engine]/turbo_configuration"
       ],
-      "help": "Install validated turbo hardware and its charge-pressure control configuration. Changes apply on Drive. The nitrous car retains its larger-wastegate hardware.",
+      "help": "Select turbo hardware. Boost pressure is adjusted separately in Tuning.",
       "parts": [
         {
           "id": "original_twin_n2o",
-          "label": "Twin turbo · full boost",
+          "label": "Twin turbo \u00b7 66/82 mm",
           "path": "../../external/physics_sim/data/turbo_configurations/hyper_twin_n2o.json",
           "image": "res://assets/components/engines/turbo_twin.png",
-          "detail": "2 units · 1.8 bar charge target"
+          "detail": "Compressor inducer/exducer \u00b7 2 unit(s) \u00b7 0.60 kg/s per unit \u00b7 I 0.00023 kg m\u00b2"
+        },
+        {
+          "id": "hyper_twin_compact_n2o",
+          "label": "Twin turbo \u00b7 52.8/65.6 mm",
+          "path": "../turbo_configurations/hyper_twin_compact_n2o.json",
+          "image": "res://assets/components/engines/turbo_twin.png",
+          "detail": "Compressor inducer/exducer \u00b7 2 unit(s) \u00b7 0.38 kg/s per unit \u00b7 I 7.5e-05 kg m\u00b2"
+        },
+        {
+          "id": "hyper_twin_standard_n2o",
+          "label": "Twin turbo \u00b7 66/82 mm",
+          "path": "../turbo_configurations/hyper_twin_standard_n2o.json",
+          "image": "res://assets/components/engines/turbo_twin.png",
+          "detail": "Compressor inducer/exducer \u00b7 2 unit(s) \u00b7 0.60 kg/s per unit \u00b7 I 0.00023 kg m\u00b2"
+        },
+        {
+          "id": "hyper_twin_large_n2o",
+          "label": "Twin turbo \u00b7 79.2/98.4 mm",
+          "path": "../turbo_configurations/hyper_twin_large_n2o.json",
+          "image": "res://assets/components/engines/turbo_twin.png",
+          "detail": "Compressor inducer/exducer \u00b7 2 unit(s) \u00b7 0.86 kg/s per unit \u00b7 I 0.00057 kg m\u00b2"
+        },
+        {
+          "id": "hyper_single_compact_n2o",
+          "label": "Single turbo \u00b7 52.8/65.6 mm",
+          "path": "../turbo_configurations/hyper_single_compact_n2o.json",
+          "image": "res://assets/components/engines/turbo_single.png",
+          "detail": "Compressor inducer/exducer \u00b7 1 unit(s) \u00b7 0.38 kg/s per unit \u00b7 I 7.5e-05 kg m\u00b2"
+        },
+        {
+          "id": "hyper_single_standard_n2o",
+          "label": "Single turbo \u00b7 66/82 mm",
+          "path": "../turbo_configurations/hyper_single_standard_n2o.json",
+          "image": "res://assets/components/engines/turbo_single.png",
+          "detail": "Compressor inducer/exducer \u00b7 1 unit(s) \u00b7 0.60 kg/s per unit \u00b7 I 0.00023 kg m\u00b2"
+        },
+        {
+          "id": "hyper_single_large_n2o",
+          "label": "Single turbo \u00b7 79.2/98.4 mm",
+          "path": "../turbo_configurations/hyper_single_large_n2o.json",
+          "image": "res://assets/components/engines/turbo_single.png",
+          "detail": "Compressor inducer/exducer \u00b7 1 unit(s) \u00b7 0.86 kg/s per unit \u00b7 I 0.00057 kg m\u00b2"
         },
         {
           "id": "hyper_touring_n2o",
-          "label": "Twin turbo · Touring",
-          "path": "../turbo_configurations/garage_hyper_touring_n2o.json",
+          "label": "Twin turbo \u00b7 52.8/65.6 mm",
+          "path": "../turbo_configurations/hyper_twin_compact_n2o.json",
           "image": "res://assets/components/engines/turbo_twin.png",
-          "detail": "2 units · 1.0 bar charge target"
+          "detail": "Compressor inducer/exducer \u00b7 2 unit(s) \u00b7 0.38 kg/s per unit \u00b7 I 7.5e-05 kg m\u00b2"
         },
         {
           "id": "hyper_balanced_n2o",
-          "label": "Twin turbo · Balanced",
-          "path": "../turbo_configurations/garage_hyper_balanced_n2o.json",
+          "label": "Twin turbo \u00b7 79.2/98.4 mm",
+          "path": "../turbo_configurations/hyper_twin_large_n2o.json",
           "image": "res://assets/components/engines/turbo_twin.png",
-          "detail": "2 units · 1.4 bar charge target"
+          "detail": "Compressor inducer/exducer \u00b7 2 unit(s) \u00b7 0.86 kg/s per unit \u00b7 I 0.00057 kg m\u00b2"
         },
         {
           "id": "hyper_na",
           "label": "Naturally aspirated",
           "path": "../turbo_configurations/garage_hyper_na.json",
           "naturally_aspirated": true,
-          "detail": "No turbochargers · ambient induction"
+          "detail": "No turbochargers \u00b7 ambient induction"
         },
         {
           "id": "hyper_single_n2o",
-          "label": "Single turbo",
-          "path": "../turbo_configurations/garage_hyper_single_n2o.json",
+          "label": "Single turbo \u00b7 66/82 mm",
+          "path": "../turbo_configurations/hyper_single_standard_n2o.json",
           "image": "res://assets/components/engines/turbo_single.png",
-          "detail": "1 unit · 1.4 bar charge target"
+          "detail": "Compressor inducer/exducer \u00b7 1 unit(s) \u00b7 0.60 kg/s per unit \u00b7 I 0.00023 kg m\u00b2"
+        }
+      ]
+    },
+    {
+      "id": "turbo_boost_target",
+      "label": "Boost target",
+      "group": "Turbo calibration",
+      "area": "engine",
+      "kind": "scale",
+      "file": "turbo",
+      "pointers": [
+        "/target_boost_bar"
+      ],
+      "min": 0.0555555556,
+      "max": 16.6666666667,
+      "step": 0.001,
+      "unit": "bar",
+      "help": "Exponential charge-pressure target, 0.1\u201330 bar. Achievable boost depends on installed turbo flow, engine RPM and exhaust energy."
+    },
+    {
+      "id": "nitrous_install_hyper",
+      "label": "N2O kit",
+      "group": "N2O",
+      "area": "engine",
+      "kind": "file_choice",
+      "file": "vehicle",
+      "part_format": "physics_sim.nitrous_kit/1",
+      "compatible_engines": [
+        "hyper_v8_one1_audio"
+      ],
+      "pointers": [
+        "/powertrain/components/[type=nitrous_kit]/ref"
+      ],
+      "help": "Wet injection kit for the existing bottle and nitrous plumbing. Retains the vehicle activation controls and safety interlocks. Dyno chart shows N2O off.",
+      "parts": [
+        {
+          "id": "nitrous_hyper_original",
+          "label": "Full-flow wet kit",
+          "path": "../../external/physics_sim/data/nitrous_kits/custom_wet_plate_800_bigjet.json",
+          "image": "res://assets/components/engines/nitrous_kit.png",
+          "detail": "Nominal 597 kW shot"
+        },
+        {
+          "id": "nitrous_hyper_half",
+          "label": "Half-flow wet kit",
+          "path": "../nitrous_kits/garage_hyper_half.json",
+          "image": "res://assets/components/engines/nitrous_kit.png",
+          "detail": "Nominal 298 kW shot"
+        }
+      ]
+    },
+    {
+      "id": "nitrous_install_sedan",
+      "label": "N2O kit",
+      "group": "N2O",
+      "area": "engine",
+      "kind": "file_choice",
+      "file": "vehicle",
+      "part_format": "physics_sim.nitrous_kit/1",
+      "compatible_engines": [
+        "toyota_a25a_fks_gen"
+      ],
+      "pointers": [
+        "/powertrain/components/[type=nitrous_kit]/ref"
+      ],
+      "help": "Wet injection kit for the existing bottle and nitrous plumbing. Retains the vehicle activation controls and safety interlocks. Dyno chart shows N2O off.",
+      "parts": [
+        {
+          "id": "nitrous_sedan_original",
+          "label": "Full-flow wet kit",
+          "path": "../../external/physics_sim/data/nitrous_kits/edelbrock_70011_square_50.json",
+          "image": "res://assets/components/engines/nitrous_kit.png",
+          "detail": "Nominal 37 kW shot"
+        },
+        {
+          "id": "nitrous_sedan_half",
+          "label": "Half-flow wet kit",
+          "path": "../nitrous_kits/garage_sedan_half.json",
+          "image": "res://assets/components/engines/nitrous_kit.png",
+          "detail": "Nominal 19 kW shot"
         }
       ]
     }

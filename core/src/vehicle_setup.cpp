@@ -232,6 +232,7 @@ struct Files {
     FileDoc vehicle;
     std::optional<FileDoc> gearbox;
     std::optional<FileDoc> engine;
+    std::optional<FileDoc> turbo;
     std::string original_engine_path;
     std::map<std::string, FileDoc> tyres; // by path
 };
@@ -306,6 +307,23 @@ bool load_tyres(const FileDoc& vehicle, std::map<std::string, FileDoc>& out, std
     return true;
 }
 
+bool load_turbo(Files& files, std::string* err) {
+    files.turbo.reset();
+    if (!files.engine) return true;
+    std::string ref, dir = dir_of(files.engine->path);
+    detail::get_string(files.engine->work, "default_turbo_configuration", ref);
+    const int idx = component_index(files.vehicle.work, "engine");
+    if (idx >= 0 && files.vehicle.work["powertrain"]["components"][idx].contains("turbo_configuration")) {
+        detail::get_string(files.vehicle.work["powertrain"]["components"][idx], "turbo_configuration", ref);
+        dir = dir_of(files.vehicle.path);
+    }
+    if (ref.empty()) return true;
+    FileDoc f; f.path = resolve_ref(dir, ref);
+    if (!read_doc(f.path, f.base, err)) return false;
+    f.work = f.base; files.turbo = std::move(f);
+    return true;
+}
+
 bool load_files(const CatalogEntry& entry, Files& files, std::string* err) {
     files.vehicle.path = norm_path(entry.vehicle_path);
     if (!read_doc(files.vehicle.path, files.vehicle.base, err)) return false;
@@ -314,7 +332,7 @@ bool load_files(const CatalogEntry& entry, Files& files, std::string* err) {
     if (!load_aux(files.vehicle.base, dir, "gearbox", files.gearbox, err)) return false;
     if (!load_aux(files.vehicle.base, dir, "engine", files.engine, err)) return false;
     if (files.engine) files.original_engine_path = files.engine->path;
-    return load_tyres(files.vehicle, files.tyres, err);
+    return load_turbo(files, err) && load_tyres(files.vehicle, files.tyres, err);
 }
 
 // ---- options: the entry's view of the table ----------------------------------------
@@ -352,6 +370,8 @@ std::vector<Target> targets_of(Files& files, const SetupOptionDef& def, const st
         if (files.gearbox) add(&*files.gearbox, "gearbox");
     } else if (def.file == "engine") {
         if (files.engine) add(&*files.engine, "engine");
+    } else if (def.file == "turbo") {
+        if (files.turbo) add(&*files.turbo, "turbo");
     } else if (def.file == "tyre") {
         for (auto& kv : files.tyres) add(&kv.second, "tyre");
     }
@@ -608,8 +628,8 @@ std::optional<SetupOptionTable> parse_setup_options(const std::string& json_text
         detail::get_number(o, "step", d.step);
         detail::get_number(o, "max_shift", d.max_shift);
         detail::get_string(o, "file", d.file);
-        if (d.file != "vehicle" && d.file != "gearbox" && d.file != "engine" && d.file != "tyre") {
-            return bad(where + ": \"file\" must be vehicle, gearbox, engine or tyre");
+        if (d.file != "vehicle" && d.file != "gearbox" && d.file != "engine" && d.file != "tyre" && d.file != "turbo") {
+            return bad(where + ": \"file\" must be vehicle, gearbox, engine, turbo or tyre");
         }
         detail::get_string(o, "monotonic", d.monotonic);
         if (!d.monotonic.empty() && d.monotonic != "decreasing") return bad(where + ": \"monotonic\" must be \"decreasing\"");
@@ -630,8 +650,9 @@ std::optional<SetupOptionTable> parse_setup_options(const std::string& json_text
         }
         if (d.kind != OptionKind::Colour && d.pointers.empty()) return bad(where + ": \"pointers\" (the whitelist) is empty");
         if (d.kind == OptionKind::Colour && !d.pointers.empty()) return bad(where + ": a colour edits no file, so it has no pointers");
+        const double scale_max_limit = d.id == "turbo_boost_target" ? 20.0 : 10.0;
         if ((d.kind == OptionKind::Scale || d.kind == OptionKind::ScaleList) &&
-            !(d.min > 0.0 && d.min <= 1.0 && d.max >= 1.0 && d.max < 10.0 && d.step > 0.0)) {
+            !(d.min > 0.0 && d.min <= 1.0 && d.max >= 1.0 && d.max < scale_max_limit && d.step > 0.0)) {
             return bad(where + ": a scale needs 0 < min <= 1 <= max < 10 and step > 0");
         }
         if (d.kind == OptionKind::BrakeBias && !(d.max_shift > 0.0 && d.max_shift < 0.5)) {
@@ -786,6 +807,7 @@ SetupModel build_setup_model(const CatalogEntry& entry, const SetupOptionTable& 
             if (!model.error.empty()) return model;
         }
     }
+    if (!load_turbo(files, &model.error)) return model;
     for (const SetupOptionDef& def : table.options) {
         OptionView v;
         v.def = def;
@@ -942,6 +964,8 @@ std::string apply_option(const CatalogEntry& entry, const SetupOptionDef& def, c
                          std::vector<std::pair<const FileDoc*, std::string>>& touched) {
     const std::string id = def.id;
     if (!entry_offers(entry, id)) return "option \"" + id + "\" is not offered for " + entry.id;
+    // Retain boost calibration as dormant when the player swaps to NA.
+    if (def.file == "turbo" && !files.turbo) return {};
     const std::vector<std::string> patterns = pointers_for(entry, def);
     const auto range = range_for(entry, def);
     const auto type_error = [&](const char* expected) { return "option \"" + id + "\" needs " + expected; };
@@ -1151,6 +1175,7 @@ CompiledSetup compile_setup_internal(const CatalogEntry& entry, const SetupOptio
         out.error = err;
         return out;
     }
+    if (!load_turbo(files, &err)) { out.error = err; return out; }
     // Pass 2: everything else, in table order.
     for (const SetupOptionDef& def : table.options) {
         if (def.kind == OptionKind::TyreChoice || def.kind == OptionKind::FileChoice) continue;
@@ -1169,6 +1194,28 @@ CompiledSetup compile_setup_internal(const CatalogEntry& entry, const SetupOptio
     }
 
     // Merge patches (the mechanism) and the whitelist check on the result.
+    // Engine-affecting garage edits request interpolation-driven maps. Bounds
+    // follow this engine's grid and the selected turbo target, in absolute kPa.
+    bool adaptive_pressure = false;
+    if (files.engine && files.engine->work.contains("cycle")) {
+        for (const auto& def : table.options) {
+            if (setup.values.count(def.id) && (def.file == "engine" || def.file == "turbo" || def.part_format == "physics_sim.engine/1" || def.part_format == "physics_sim.turbo_configuration/1")) adaptive_pressure = true;
+        }
+        if (adaptive_pressure) {
+            auto& cycle = files.engine->work["cycle"];
+            const auto& grid = cycle.at("grid_p_im_kpa");
+            json sampling = cycle.value("pressure_sampling", json::object());
+            double maximum = std::max(grid.back().get<double>(), sampling.value("max_kpa", 0.0));
+            if (files.turbo) maximum = std::max(maximum, 101.325 + files.turbo->work.at("target_boost_bar").get<double>() * 100.0);
+            sampling["enabled"] = true;
+            if (!sampling.contains("min_kpa")) sampling["min_kpa"] = grid.front();
+            sampling["max_kpa"] = maximum;
+            if (!sampling.contains("relative_error")) sampling["relative_error"] = 0.02;
+            if (!sampling.contains("max_points")) sampling["max_points"] = 512;
+            if (!sampling.contains("max_passes")) sampling["max_passes"] = 8;
+            cycle["pressure_sampling"] = std::move(sampling);
+        }
+    }
     auto finish_file = [&](const char* kind, const FileDoc& f, bool is_vehicle) -> bool {
         const json patch = make_merge_patch(f.base, f.work);
         json merged = f.base;
@@ -1187,6 +1234,7 @@ CompiledSetup compile_setup_internal(const CatalogEntry& entry, const SetupOptio
             for (const std::string& p : pointers_for(entry, def)) patterns.push_back(p);
         }
         if (std::string(kind) == "engine") {
+            if (adaptive_pressure) patterns.push_back("/cycle/pressure_sampling");
             for (const auto& def : table.options) {
                 const auto selected = setup.values.find(def.id);
                 if (!entry_offers(entry, def.id) || selected == setup.values.end() || !std::holds_alternative<std::string>(selected->second)) continue;
@@ -1196,7 +1244,11 @@ CompiledSetup compile_setup_internal(const CatalogEntry& entry, const SetupOptio
                 }
             }
         }
-        const std::string violation = whitelist_violation(f.base.dump(), patch_text(patch), patterns);
+        json whitelist_base = f.base;
+        // This generator policy is constructed above, never supplied by a
+        // player option. Check every remaining edit against the normal list.
+        if (adaptive_pressure && std::string(kind) == "engine") whitelist_base["cycle"]["pressure_sampling"] = f.work["cycle"]["pressure_sampling"];
+        const std::string violation = whitelist_violation(whitelist_base.dump(), patch_text(patch), patterns);
         if (!violation.empty()) {
             out.error = "the setup would change " + violation + " in the " + kind + " file, which no option may touch";
             return false;
@@ -1208,6 +1260,7 @@ CompiledSetup compile_setup_internal(const CatalogEntry& entry, const SetupOptio
     if (!finish_file("vehicle", files.vehicle, true)) return out;
     if (files.gearbox && !finish_file("gearbox", *files.gearbox, false)) return out;
     if (files.engine && !finish_file("engine", *files.engine, false)) return out;
+    if (files.turbo && !finish_file("turbo", *files.turbo, false)) return out;
     for (const auto& kv : files.tyres) {
         if (!finish_file("tyre", kv.second, false)) return out;
     }
@@ -1302,16 +1355,19 @@ MaterialisedSetup materialise_setup(const CatalogEntry& entry, const SetupOption
     std::map<std::string, std::string> moved; // original absolute path -> materialised path
     auto write_aux = [&](const char* kind, const FileDoc& f) -> bool {
         const json patch = make_merge_patch(f.base, f.work);
-        if (patch.is_object() && patch.empty()) return true;
         json doc = f.base;
         doc.merge_patch(patch);
         absolutise_refs(doc, dir_of(f.path));
+        const json before_refs = doc;
+        replace_strings(doc, moved);
+        if (patch.is_object() && patch.empty() && doc == before_refs) return true;
         const std::string path = norm_path((fs::path(out_dir) / (std::string(kind) + "_" + stem_of(f.path) + ".json")).generic_string());
         if (!write_text(path, doc.dump(2) + "\n", &out.error)) return false;
         out.files.push_back(path);
         moved[f.path] = path;
         return true;
     };
+    if (files.turbo && !write_aux("turbo", *files.turbo)) return out;
     if (files.gearbox && !write_aux("gearbox", *files.gearbox)) return out;
     if (files.engine && !write_aux("engine", *files.engine)) return out;
     for (const auto& kv : files.tyres) {

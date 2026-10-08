@@ -158,5 +158,32 @@ without throwing away the last successful graph.
 Native evidence: out/garage_dyno_unit.log (99 assertions: WOT magnitude, Nm/kW/RPM
 conversion, NA reduction, latest request wins, deduplication, cancellation and
 failure retention). out/garage_dyno_regression.log (590 garage/setup assertions).
-Chart retention/swap check: out/dyno_chart_check.log. Installation and live garage
-capture require the running game to release its DLL.
+Chart retention/swap check: out/dyno_chart_check.log. The updated DLL is installed;
+out/adaptive_garage_smoke.log records 199 live headless garage checks.
+
+## Adaptive engine pressure maps (2026-10-08)
+
+Engine-affecting garage edits enable physics_sim's `cycle.pressure_sampling`.
+The pressure domain uses the engine's authored lower bound and extends its upper
+bound to the requested absolute pressure (ambient plus gauge boost). The game
+requests a 2% interpolation tolerance, at most 512 pressure probes and eight
+refinement passes. Authored pressure grids provide seeds, not mandatory rows in
+every generated table. The native sampler validates each interval at quarter,
+half and three-quarter pressures and refines according to actual cycle results
+across RPM, including the efficiency map's fresh-air-mass coordinate.
+
+Every computed operating point remains available during generation and is reused
+across passes. Pressure-dependent tables choose their retained axes independently;
+efficiency retains all its air-mass knots. Adaptive settings and generator version
+are included in the map cache identity. Reduction updates the content hash before
+writing the cache, and a disk-cache round trip is covered by the native tests.
+Budget exhaustion reports a convergence error and the dyno keeps its previous
+successful chart. This sampling error control does not extend the ECU's authored
+ignition/fueling calibration or prove the cycle model's physical accuracy at
+extreme pressures.
+
+Native implementation is in the S: physics_sim checkout, imported into the game
+at d2d43f6. Evidence: out/adaptive_pressure_tests.log (65 native assertions),
+out/adaptive_pressure_regression.log (1288 existing control/cache assertions),
+out/adaptive_game_hardware_tests.log (57 hardware/domain assertions) and
+out/adaptive_setup_tests.log (structural checks through 30 bar requested boost).

@@ -1,0 +1,23 @@
+{
+  "format": "physics_sim.nitrous_kit/1",
+  "type": "wet",
+  "injection": "plenum",
+  "nozzle_count": 1,
+  "nitrous_jet_diameter_mm": 2.6940768363207463,
+  "nitrous_jet_cd": 0.66,
+  "flow_model": "hem",
+  "fuel_jet_diameter_mm": 1.0854089091213506,
+  "fuel_jet_cd": 0.7,
+  "fuel_pressure": {
+    "gauge_bar": 4.0,
+    "reference": "manifold"
+  },
+  "rating": {
+    "power_kw": 298.28,
+    "bottle_gauge_bar": 65.5,
+    "basis": "crank",
+    "source": "Nominal half-flow jet-area scaling; actual added power depends on engine operating conditions."
+  },
+  "default_controller": "S:/claude_code/racing_game/external/physics_sim/data/nitrous_controllers/custom_wet_800.json",
+  "source": "Game half-flow wet kit: both jet areas halved while retaining fuel/nitrous balance and the original controller. Nominal rating, not a measured dyno result."
+}

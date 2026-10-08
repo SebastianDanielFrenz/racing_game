@@ -7,12 +7,14 @@
 #include "ps/drivetrain/controller_desc.h"
 #include "ps/drivetrain/powertrain_desc.h"
 #include "ps/io/vehicle_io.h"
+#include "ps/jobs/job_system.h"
 
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/matchers/catch_matchers_string.hpp>
 
 #include <algorithm>
+#include <cmath>
 #include <filesystem>
 #include <initializer_list>
 #include <string>
@@ -67,6 +69,8 @@ ps::vehicle::VehicleDesc load_materialised(const Fixture& f, const rg::CatalogEn
     }
     ps::io::EngineMapOptions options;
     options.cache_dir = f.ctx.engine_map_cache_dir;
+    ps::jobs::JobSystem workers(4);
+    options.pool = &workers;
     return ps::io::load_vehicle_json(m.vehicle_path, options);
 }
 
@@ -510,9 +514,9 @@ TEST_CASE("engine parts: turbo count and boost survive materialization, nitrous 
         REQUIRE(b != nullptr);
         REQUIRE(a->turbo_pair.has_value());
         REQUIRE(b->turbo_pair.has_value());
-        CHECK(a->turbo_pair->target_boost_pa == Approx(140000.0));
-        CHECK(a->turbo_pair->wastegate_area() == Approx(b->turbo_pair->wastegate_area()));
-        CHECK(a->turbo_pair->rotor_inertia_kgm2 == Approx(b->turbo_pair->rotor_inertia_kgm2));
+        CHECK(a->turbo_pair->target_boost_pa == Approx(180000.0));
+        CHECK(a->turbo_pair->wastegate_area() == Approx(b->turbo_pair->wastegate_area() * 1.44));
+        CHECK(a->turbo_pair->rotor_inertia_kgm2 == Approx(b->turbo_pair->rotor_inertia_kgm2 * std::pow(1.2, 5)));
     }
     const auto twin = ps::io::load_turbo_configuration_json(kRoot + "/external/physics_sim/data/turbo_configurations/hyper_twin_default.json");
     const auto single = ps::io::load_turbo_configuration_json(kRoot + "/data/turbo_configurations/garage_hyper_single.json");
@@ -541,4 +545,58 @@ TEST_CASE("engine parts: NA removes both turbo sources and single nitrous retain
     CHECK(single.wastegate_area() == Approx(twin.wastegate_area() * 0.5));
     CHECK(single.rotor_inertia_kgm2 == Approx(twin.rotor_inertia_kgm2 * 0.5));
     CHECK(single.max_mass_flow_kg_s == Approx(twin.max_mass_flow_kg_s * 0.5));
+}
+TEST_CASE("garage turbo size and independent boost calibration reach native physics", "[garage][hardware]") {
+    Fixture f;
+    for (const auto* car : {"car_hyper", "car_hyper_n2o"}) {
+        const bool n2o = std::string(car) == "car_hyper_n2o";
+        const auto setup = setup_of(car, {{n2o ? "turbo_install_n2o" : "turbo_install", std::string(n2o ? "hyper_twin_compact_n2o" : "hyper_twin_compact")}, {"turbo_boost_target", 0.5}});
+        std::string err;
+        const auto d = load_materialised(f, f.entry(car), setup, &err);
+        INFO(err);
+        const ps::drivetrain::SimulatedEngineDesc* engine = nullptr;
+        for (const auto& c : d.powertrain.components) if (auto p=std::get_if<ps::drivetrain::SimulatedEngineDesc>(&c.params)) engine=p;
+        REQUIRE(engine != nullptr);
+        REQUIRE(engine->turbo_pair.has_value());
+        CHECK(engine->turbo_pair->target_boost_pa == Approx(90000.0));
+        CHECK(engine->turbo_pair->rotor_inertia_kgm2 == Approx(2 * 0.00023 * std::pow(0.8,5)));
+        CHECK(engine->turbo_pair->max_mass_flow_kg_s == Approx(2 * 0.6 * 0.64));
+        CHECK(rg::compile_setup(f.entry(car), f.table, f.ctx, setup_of(car, {{n2o ? "turbo_install_n2o" : "turbo_install", std::string("hyper_na")}, {"turbo_boost_target", 0.5}})).ok);
+    }
+    CHECK_FALSE(rg::compile_setup(f.entry("car_hyper"), f.table, f.ctx, setup_of("car_hyper", {{"turbo_boost_target", 20.0}})).ok);
+}
+
+TEST_CASE("N2O upgrades retain existing plumbing and reject unequipped vehicles", "[garage][hardware]") {
+    Fixture f;
+    for (const auto* car : {"car_hyper_n2o", "car_sedan_gen_n2o"}) {
+        const bool hyper = std::string(car) == "car_hyper_n2o";
+        const auto setup = setup_of(car, {{hyper ? "nitrous_install_hyper" : "nitrous_install_sedan", std::string(hyper ? "nitrous_hyper_half" : "nitrous_sedan_half")}});
+        const auto validation = rg::validate_setup(f.entry(car), f.table, f.ctx, setup, false);
+        INFO(validation.message);
+        REQUIRE(validation.ok);
+        const auto patch = rg::compile_setup(f.entry(car), f.table, f.ctx, setup);
+        CHECK_THAT(patch.vehicle_patch, ContainsSubstring("garage_"));
+        CHECK(rg::parse_setup(rg::setup_to_json(setup), f.table, "roundtrip", nullptr).has_value());
+    }
+    CHECK_FALSE(rg::compile_setup(f.entry("car_hyper"), f.table, f.ctx, setup_of("car_hyper", {{"nitrous_install_hyper", std::string("nitrous_hyper_half")}})).ok);
+}
+
+TEST_CASE("garage pressure domain follows the configured engine and absolute boost", "[adaptive_setup]") {
+    Fixture f;
+    for (const double boost : {0.1, 3.36, 30.0}) {
+        auto setup=setup_of("car_hyper", {{"turbo_boost_target", boost/1.8}});
+        const auto compiled=rg::compile_setup(f.entry("car_hyper"),f.table,f.ctx,setup);
+        INFO(compiled.error);
+        REQUIRE(compiled.ok);
+        bool found=false;
+        for(const auto& [name,patch]:compiled.patches) if(name.find("engine:")==0) {
+            found=true;
+            CHECK_THAT(patch,ContainsSubstring("pressure_sampling"));
+            CHECK_THAT(patch,ContainsSubstring("max_kpa"));
+        }
+        CHECK(found);
+        const auto validated=rg::validate_setup(f.entry("car_hyper"),f.table,f.ctx,setup,false);
+        INFO(validated.message);
+        CHECK(validated.ok);
+    }
 }

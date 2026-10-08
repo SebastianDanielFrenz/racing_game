@@ -478,7 +478,7 @@ void RgGarage::refresh_dyno() {
     if(!entry) return;
     rg::VehicleSetup engine_setup; engine_setup.vehicle_id=entry->id;
     for(const auto& option:garage_->options().options) {
-        if(option.file!="engine" && option.part_format!="physics_sim.engine/1" && option.part_format!="physics_sim.turbo_configuration/1") continue;
+        if(option.file!="engine" && option.file!="turbo" && option.part_format!="physics_sim.engine/1" && option.part_format!="physics_sim.turbo_configuration/1") continue;
         auto value=garage_->working().values.find(option.id);
         if(value!=garage_->working().values.end()) engine_setup.values.emplace(*value);
     }

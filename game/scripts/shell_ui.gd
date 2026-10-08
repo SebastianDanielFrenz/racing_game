@@ -882,13 +882,16 @@ func _draw_upgrades() -> void:
 			if top == "Swaps":
 				_draw_tiles(["Engine", "Forced induction", "Drivetrain"], [] + (["Engine"] if disabled.has("Engine") else []) + (["Forced induction"] if disabled.has("Turbo") else []))
 			else:
-				_draw_tiles(["Turbo", "Camshaft"],disabled)
+				_draw_tiles(["Turbo", "N2O", "Camshaft"],disabled + (["N2O"] if _garage_option("nitrous_install_hyper").is_empty() and _garage_option("nitrous_install_sedan").is_empty() else []))
 			return
 		if top == "Swaps" and _garage_path[1] == "Drivetrain":
 			_draw_tiles(["AWD", "RWD", "FWD"],["AWD", "RWD", "FWD"])
 			return
 		var opt := _garage_option("engine_install") if _garage_path[1] == "Engine" else _garage_option("turbo_install")
 		if opt.is_empty(): opt = _garage_option("turbo_install_n2o")
+		if _garage_path[1] == "N2O":
+			opt = _garage_option("nitrous_install_hyper")
+			if opt.is_empty(): opt = _garage_option("nitrous_install_sedan")
 		if opt.is_empty(): return
 		if top == "Swaps" and _garage_path[1] == "Forced induction":
 			_draw_induction_swaps(opt)
@@ -900,7 +903,8 @@ func _draw_upgrades() -> void:
 		grid.columns = 2
 		_option_box.add_child(grid)
 		for part in opt["parts"]:
-			if _garage_path[1] != "Engine":
+			if _garage_path[1] == "Turbo":
+				if str(part["id"]) in ["hyper_touring", "hyper_balanced", "hyper_single", "hyper_touring_n2o", "hyper_balanced_n2o", "hyper_single_n2o"] and str(part["id"]) != str(opt["value"]): continue
 				var single := false
 				for installed_part in opt["parts"]:
 					if str(installed_part["id"]) == str(opt["value"]): single = str(installed_part["id"]).contains("single")
@@ -1120,6 +1124,8 @@ func _display_value(kind: String, value: Variant) -> String:
 func _option_display(opt: Dictionary, value: Variant) -> String:
 	var stock: PackedFloat64Array = opt.get("stock_numbers", PackedFloat64Array())
 	if not stock.is_empty():
+		if str(opt["id"]) == "turbo_boost_target":
+			return "%.2f bar" % (stock[0] * float(value))
 		if str(opt["id"]) == "engine_rev_limit":
 			return "%d rpm" % roundi(stock[0] * float(value))
 		if str(opt["id"]) == "engine_throttle_response":
@@ -1146,13 +1152,26 @@ func _option_row(opt: Dictionary) -> Control:
 	match kind:
 		"scale", "brake_bias":
 			var slider := HSlider.new()
-			slider.min_value = float(opt["min"])
-			slider.max_value = float(opt["max"])
-			slider.step = float(opt["step"])
-			slider.value = float(opt["value"])
+			var exponential_boost := str(opt["id"]) == "turbo_boost_target"
+			if exponential_boost:
+				slider.min_value = 0.0
+				slider.max_value = 1.0
+				slider.step = 0.001
+				var current_bar := float(opt["stock_numbers"][0]) * float(opt["value"])
+				slider.value = clampf(log(current_bar / 0.1) / log(30.0 / 0.1), 0.0, 1.0)
+			else:
+				slider.min_value = float(opt["min"])
+				slider.max_value = float(opt["max"])
+				slider.step = float(opt["step"])
+				slider.value = float(opt["value"])
 			slider.custom_minimum_size = Vector2(0, 22)
 			slider.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-			slider.value_changed.connect(func(x: float): _edit_option(id, x))
+			slider.value_changed.connect(func(x: float):
+				if exponential_boost:
+					var target_bar := 0.1 * pow(30.0 / 0.1, x)
+					_edit_option(id, target_bar / float(opt["stock_numbers"][0]))
+				else:
+					_edit_option(id, x))
 			holder.add_child(slider)
 			_option_controls[id] = slider
 		"scale_list":
