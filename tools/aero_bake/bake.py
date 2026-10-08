@@ -9,7 +9,7 @@ import json
 import math
 from pathlib import Path
 
-AXES = ("yaw_deg", "pitch_deg", "speed_m_s", "ride_height_m", "wing_offset_deg")
+AXES = ("yaw_deg", "pitch_deg", "speed_m_s", "ride_height_m", "wing_offset_deg", "wing_lift_m")
 LOADS = ("fx_n", "fy_n", "fz_n", "mx_nm", "my_nm", "mz_nm")
 
 def finite(value, name):
@@ -24,7 +24,7 @@ def configuration(path):
         raise ValueError("expected rg.aero-bake/1 configuration")
     axes = config.get("axes", {})
     if any(name not in axes for name in AXES[:3]) or any(name not in AXES for name in axes):
-        raise ValueError("axes require yaw_deg,pitch_deg,speed_m_s; optional ride_height_m,wing_offset_deg")
+        raise ValueError("axes require yaw_deg,pitch_deg,speed_m_s; optional ride_height_m,wing_offset_deg,wing_lift_m")
     names = [name for name in AXES if name in axes]
     for name in names:
         values = [finite(v, name) for v in axes[name]]
@@ -39,6 +39,8 @@ def configuration(path):
         raise ValueError("solver speeds must be positive; runtime zero-speed force is zero")
     if "ride_height_m" in axes and axes["ride_height_m"][0] < 0:
         raise ValueError("ride height must be nonnegative")
+    if "wing_lift_m" in axes and axes["wing_lift_m"][0] < 0:
+        raise ValueError("wing lift must be nonnegative")
     for name in ("reference_area_m2", "reference_length_m"):
         config[name] = finite(config[name], name)
         if config[name] <= 0:

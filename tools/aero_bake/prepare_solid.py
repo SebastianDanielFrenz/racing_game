@@ -103,7 +103,7 @@ def prepare(source,output,pitch=.006,closing_voxels=1,min_component_m3=1e-5):
             'discarded_small_components':removed,'component_volumes_m3':volumes,'quality':quality,
             'triangles':len(solid.faces),'frame':audit['frame'],'bounds_iso_m':solid.bounds.tolist(),
             'stl_sha256':hashlib.sha256(stl.read_bytes()).hexdigest(),
-            'assumptions':['closed doors, fixed rest suspension and wing','small panel seams sealed; enclosed volume filled',
+            'assumptions':['closed doors, fixed suspension; wing pose recorded in source audit','small panel seams sealed; enclosed volume filled',
                  'central body core filled only between body floor/roof within 0.55 m of centerline, excluding aero and wheels',
                  'half-voxel Gaussian surface regularization',
                  '16 Taubin smoothing iterations to suppress artificial voxel roughness',

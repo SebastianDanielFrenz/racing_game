@@ -24,6 +24,7 @@ class BakeTests(unittest.TestCase):
    for key in all_cases:
     scale=.5*1.2*key[2]**2*2
     loads=[-0.3*scale,0.1*scale,-0.5*scale,0.02*scale*3,-0.03*scale*3,0.04*scale*3]
+    if "wing_lift_m" in names:loads[0]-=scale*.2*key[names.index("wing_lift_m")]
     if seam and key[0]==180:loads[0]*=2
     if nan:loads[0]=float("nan")
     writer.writerow([*key,1.2,*loads])
@@ -55,4 +56,15 @@ class BakeTests(unittest.TestCase):
  def test_no_solver_fabrication(self):
   self.config["solver"]["name"]="unselected";self.write_config()
   with self.assertRaisesRegex(ValueError,"actual solver"):convert(self.config_path,self.results,self.output)
+ def test_independent_wing_height_axis_and_row_order(self):
+  self.config["axes"]["wing_offset_deg"]=[0,45]
+  self.config["axes"]["wing_lift_m"]=[0,.28]
+  self.write_config();self.write_results()
+  result=convert(self.config_path,self.results,self.output)
+  self.assertEqual(result["axes"]["wing_lift_m"],[0,.28])
+  self.assertEqual(len(result["coefficients"]),72)
+  self.assertAlmostEqual(result["coefficients"][0][0],-.3)
+  self.assertAlmostEqual(result["coefficients"][1][0],-.356)
+  self.config["axes"]["wing_lift_m"]=[-.1,0];self.write_config()
+  with self.assertRaisesRegex(ValueError,"nonnegative"):configuration(self.config_path)
 if __name__=="__main__":unittest.main()

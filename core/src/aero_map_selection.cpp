@@ -37,9 +37,14 @@ void apply_aero_map_selection(const std::string& selection_path,ps::vehicle::Veh
  }
  auto candidate=vehicle.aero;
  ps::io::load_aero_coefficient_map_reference(selection_path,candidate);
- if(candidate.coefficient_map.table && candidate.coefficient_map.scope==ps::aero::MapScope::ReplacePassiveAero && candidate.coefficient_map.table->data().axes[4].empty()) {
-  for(const auto& surface:candidate.surfaces)if(surface.min_offset_rad!=surface.max_offset_rad)
-   throw std::invalid_argument("full passive aero map for an adjustable wing requires wing_offset_deg samples and wing_surface binding");
+ if(candidate.coefficient_map.table && candidate.coefficient_map.scope==ps::aero::MapScope::ReplacePassiveAero) {
+  const auto& axes=candidate.coefficient_map.table->data().axes;
+  for(const auto& surface:candidate.surfaces) {
+   if(surface.min_offset_rad!=surface.max_offset_rad && axes[4].empty())
+    throw std::invalid_argument("full passive aero map for an adjustable wing requires wing_offset_deg samples and wing_surface binding");
+   if(surface.max_lift_m>0 && axes[5].empty())
+    throw std::invalid_argument("full passive aero map for a lifting wing requires wing_lift_m samples and wing_surface binding");
+  }
  }
  vehicle.aero=std::move(candidate);
 }

@@ -122,3 +122,58 @@ The render checks STL hash before import. Visual model is preserved separately.
 Algorithm references: https://trimesh.org/trimesh.voxel.creation.html,
 https://docs.scipy.org/doc/scipy/reference/generated/scipy.ndimage.binary_fill_holes.html,
 https://docs.scipy.org/doc/scipy/reference/generated/scipy.ndimage.binary_closing.html.
+## OpenFOAM 14 exploratory mesh/solver cases
+
+The official Foundation OpenFOAM14 package is installed in the existing Ubuntu
+WSL distribution. Source `/opt/openfoam14/etc/bashrc` explicitly for each run;
+no shell startup files are changed. Installation source:
+https://openfoam.org/download/14-ubuntu/ .
+
+Use the installed `incompressibleFluid/motorBikeSteady` tutorial as a template:
+
+```bash
+source /opt/openfoam14/etc/bashrc
+python3 /mnt/s/claude_code/racing_game/tools/aero_bake/openfoam_case.py \
+  --solid /mnt/s/claude_code/racing_game/out/aero_hypercar_cfd_6mm \
+  --output /home/sebas/rg-cfd/hypercar-pilot-new --refinement 3
+bash /home/sebas/rg-cfd/hypercar-pilot-new/Allrun
+python3 /mnt/s/claude_code/racing_game/tools/aero_bake/report_openfoam.py \
+  /home/sebas/rg-cfd/hypercar-pilot-new \
+  /mnt/s/claude_code/racing_game/out/aero_openfoam_pilot/new_results.json
+```
+
+Output directory must be new. Cases run on WSL's native filesystem, preserving
+S: source assets and archiving compact reports back to S:. ISO-frame flow and
+ground velocity are both (-speed,0,0); inlet is the +X domain boundary. Ground
+is 2mm below the prepared surface's minimum Z. Turbulence model is kOmegaSST,
+1% inlet turbulence intensity and 0.2m turbulence length scale. Loads are
+pressure plus viscous forces/moments about chassis origin, with rho=1.225kg/m3.
+The 37x20x10.54m domain, refinement and tolerances are initial pilot values.
+`Allrun` requires independent `checkMesh` to report `Mesh OK` before solving.
+
+The pilot deliberately has static wheels, a rest wing and no prism layers.
+It tests meshing and signed load extraction; it cannot certify coefficients.
+Both manifests/reports explicitly set `runtime_map_eligible=false` and
+`validated=false`. No runtime map is written. `report_openfoam.py` sums the
+four OpenFOAM pressure/viscous force/moment vectors, rejects malformed samples,
+and reports two-window drift and standard deviation. Iteration counts in the
+steady solve are pseudo-time, not physical seconds. Convergence requires
+stable loads, residual/continuity assessment, mesh/domain studies, boundary
+layers, rotating tyre regions, wing poses and geometry review.
+The geometry exporter also accepts `--wing-offset-deg` and `--wing-lift-m`.
+These move `wing_flap` and `wing_lift` in the same local axes as the visual
+adapter, preserve body geometry, enforce authored joint limits and record
+actuator pose in `audit.json`. For example, export pitch45deg/lift0.28m to a new
+directory, then prepare its own solid. Geometry filenames remain fixed within
+each pose directory; provenance carries the pose. Never reuse a rest-wing
+STL or hash for another pose. A raised airbrake candidate is in
+`out/aero_hypercar_wing45`; its derivative solid is separate from the baseline.
+CFD solver worker count is configurable with --workers (1,2,4,6,8); default6.
+Meshing remains serial. Parallel flow fields can be reconstructed using
+reconstructPar -latestTime. Reports use the newest uninterrupted force segment
+after a restart, recording its start and exact force/log/dictionary hashes.
+The bake CSV accepts independent wing_offset_deg and wing_lift_m axes; the
+height axis varies fastest. Production full-passive maps for lifting wings
+need both pose controls sampled and a wing_surface binding. High-speed cases
+above roughly Mach0.3 also require a compressibility assessment; these initial
+incompressible50m/s pilots do not certify the hypercar's maximum-speed aero.

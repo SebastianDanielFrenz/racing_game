@@ -138,3 +138,54 @@ alignment. Default bake config now binds STL+manifest+visualGLB+selection+vehicl
 CFD coefficients or drag reduction. Stage2 visual repair and preliminary solid
 preparation are complete; stage3 begins with fluid-domain/moving-ground/wheel/
 wing-pose setup and solver/refinement/convergence work. Engine runtime is unchanged.
+## First solver pilot (2026-10-08)
+
+Installed the official OpenFOAM Foundation14 package (20260724) in Ubuntu26.04
+WSL. The game continues to use its existing authored aerodynamic coefficients.
+Added `openfoam_case.py` and `report_openfoam.py`: source-hash-checked case
+preparation from the installed steady motorBike tutorial, ISO-frame moving
+ground/inlet, kOmegaSST, chassis-origin pressure+viscous load extraction, strict
+independent mesh-validation gate and pilot-only reports. Actual cases execute
+on WSL ext4; compact evidence is copied back under `out/aero_openfoam_pilot`.
+
+OpenFOAM surfaceCheck independently confirms a closed surface/five components.
+First175103-cell fluid mesh had two boundary faces above checkMesh's skewness
+limit, despite passing the mesher's looser default. Stopped that solve and
+limited boundary skewness to4; replacement mesh passes checkMesh: max skewness
+3.88822, nonorthogonality below65degrees. Completed300 initial steady iterations
+and a restarted300-iteration load-sampling segment. Last50 samples have about
+3.9N drag standard deviation, but lift/side force still fluctuate substantially.
+This demonstrates meshing/load extraction, not force convergence or certified Cd.
+Finer refinement4 case is a separate sensitivity experiment.
+
+Geometry export now supports joint-limited wing pitch/lift using the same axes
+as vehicle_visual.gd, records the actuator pose and leaves body geometry intact.
+Exported the raised45degree/0.28m airbrake pose for separate solid preparation.
+Tests cover rotation direction, body isolation, finite values and joint limits.
+
+Stage3 has an executable first meshing/solver workflow. Remaining: semantic
+rotating-tyre patch regions, boundary-layer/y+ assessment, physical ground-contact
+and ride-height treatment, domain/mesh/time convergence, cooling assumptions,
+wing-pose/ride-height/speed sweeps and the final geometry review. The pilots use
+static wheels, fixed wing pose, a2mm numerical ground gap and no prism layers.
+Every pilot report has validated=false/runtime_map_eligible=false; no runtime
+coefficient map is produced or enabled. See tools/aero_bake/README.md for commands.
+Refinement4 completed:875527 cells, checkMesh passes (max skewness3.974),
+final flow reconstructed after a six-worker continuation. Final50-sample mean
+drag magnitude rose from1281N to1502N (about17%); downforce rose from108N
+to770N. Different transient averaging segments and missing boundary layers
+preclude a convergence claim. Archive:out/aero_openfoam_pilot_r4. Raised wing
+45deg/lift0.28m solid passes watertight/winding/volume/bounds gates:
+3.88278m3,five components,5.34mm bounds drift; it has not been flow-solved.
+
+Found independent wing-height state missing from the original five-axis map.
+Offline sweeps now accept wing_lift_m; full-passive selection requires height
+samples for lifting wings. Integrated physics_sim45d5ef5a10744da725b0c60de6a707f04b7a4b08: actual wing-height
+interpolation is an optional sixth axis; legacy table behavior/hash are preserved.
+Native27 aero tests pass. Game activation and rolling-selection tests pass
+(39 assertions); Godot startup checks pass and the S: DLL is installed.
+
+Aero preparation now has22 focused Python tests (bake, geometry, solid and
+force parsing). The raised-wing solid and refinement studies remain separate
+from the rest baseline provenance and disabled game map. Production high-speed
+cases need compressibility assessment in addition to the listed checks.

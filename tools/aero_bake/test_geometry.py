@@ -68,4 +68,34 @@ class GeometryTests(unittest.TestCase):
             source.write_bytes(struct.pack('<III',0x46546c67,2,12+len(content))+content)
             self.assertEqual(load_glb(source)[0][1][0],((4,-3,2),(4,-3,3),(4,-4,2)))
 
-if __name__=='__main__':unittest.main()
+
+
+class WingPoseTests(unittest.TestCase):
+    def test_joint_pose_moves_wing_without_moving_body(self):
+        with tempfile.TemporaryDirectory() as folder:
+            p=Path(folder)/'pose.glb'
+            binary=b''.join(struct.pack('<fff',*v) for v in [(0,0,-1),(1,0,-1),(0,1,-1)])
+            doc={'asset':{'version':'2.0'},'buffers':[{'byteLength':len(binary)}],
+                 'bufferViews':[{'buffer':0,'byteLength':len(binary)}],
+                 'accessors':[{'bufferView':0,'componentType':5126,'count':3,'type':'VEC3'}],
+                 'meshes':[{'primitives':[{'attributes':{'POSITION':0}}]}],
+                 'nodes':[{'name':'body','mesh':0},
+                          {'name':'wing_lift','translation':[0,2,3],'children':[2],
+                           'extras':{'joint':{'axis':[0,1,0],'min':0,'max':.28}}},
+                          {'name':'wing_flap','mesh':0,
+                           'extras':{'joint':{'axis':[1,0,0],'min':-1.5708,'max':1.5708}}}],
+                 'scenes':[{'nodes':[0,1]}],'scene':0}
+            encoded=json.dumps(doc).encode();encoded+=b' '*((-len(encoded))%4)
+            chunks=struct.pack('<II',len(encoded),0x4e4f534a)+encoded+struct.pack('<II',len(binary),0x004e4942)+binary
+            p.write_bytes(struct.pack('<III',0x46546c67,2,12+len(chunks))+chunks)
+            rest=load_glb(p)
+            posed=load_glb(p,wing_offset_deg=45,wing_lift_m=.2)
+            self.assertEqual(rest[0],posed[0])
+            wing=posed[1][1][0][0]
+            self.assertAlmostEqual(wing[0],3-2**-.5)
+            self.assertAlmostEqual(wing[2],2.2+2**-.5)
+            with self.assertRaises(ValueError):load_glb(p,wing_offset_deg=120)
+            with self.assertRaises(ValueError):load_glb(p,wing_lift_m=.3)
+            with self.assertRaises(ValueError):load_glb(p,wing_offset_deg=float('nan'))
+if __name__ == '__main__':
+    unittest.main()

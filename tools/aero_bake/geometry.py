@@ -26,7 +26,10 @@ def transform(node):
             [2*(x*y+z*w)*sx,(1-2*(x*x+z*z))*sy,2*(y*z-x*w)*sz,ty],
             [2*(x*z-y*w)*sx,2*(y*z+x*w)*sy,(1-2*(x*x+y*y))*sz,tz], [0,0,0,1]]
 
-def load_glb(path,pivots=None,flow=None):
+def load_glb(path,pivots=None,flow=None,wing_offset_deg=0.0,wing_lift_m=0.0):
+    if not all(math.isfinite(v) for v in (wing_offset_deg,wing_lift_m)):
+        raise ValueError("nonfinite wing pose")
+    posed_nodes=set()
     data=Path(path).read_bytes()
     magic,version,length=struct.unpack_from("<III",data)
     if magic!=0x46546c67 or version!=2 or length!=len(data):
@@ -67,7 +70,23 @@ def load_glb(path,pivots=None,flow=None):
         if not selected:raise ValueError('empty flow selection')
     parts=[]
     def visit(index,parent):
-        node=doc["nodes"][index];world=multiply(parent,transform(node))
+        node=doc["nodes"][index]
+        local_transform=transform(node)
+        name=node.get("name","")
+        if name in ("wing_flap","wing_lift") and (wing_offset_deg != 0 or wing_lift_m != 0):
+            posed_nodes.add(name)
+            joint=node.get("extras",{}).get("joint",{})
+            value=math.radians(wing_offset_deg) if name=="wing_flap" else wing_lift_m
+            if value<joint.get("min",0)-1e-12 or value>joint.get("max",0)+1e-12:
+                raise ValueError("wing pose outside authored joint range")
+            if name=="wing_flap":
+                if joint.get("axis")!=[1,0,0]:raise ValueError("unsupported wing rotation axis")
+                c,t=math.cos(value),math.sin(value)
+                local_transform=multiply(local_transform,[[1,0,0,0],[0,c,-t,0],[0,t,c,0],[0,0,0,1]])
+            else:
+                if joint.get("axis")!=[0,1,0]:raise ValueError("unsupported wing lift axis")
+                local_transform[1][3]+=value
+        world=multiply(parent,local_transform)
         determinant=(world[0][0]*(world[1][1]*world[2][2]-world[1][2]*world[2][1])
                      -world[0][1]*(world[1][0]*world[2][2]-world[1][2]*world[2][0])
                      +world[0][2]*(world[1][0]*world[2][1]-world[1][1]*world[2][0]))
@@ -99,6 +118,8 @@ def load_glb(path,pivots=None,flow=None):
         for child in node.get("children",[]):visit(child,world)
     for root in doc["scenes"][doc.get("scene",0)]["nodes"]:visit(root,IDENTITY)
     if selected is not None and seen!=set(selected):raise ValueError('flow selection references absent node/material')
+    if wing_offset_deg and "wing_flap" not in posed_nodes:raise ValueError("missing wing_flap joint")
+    if wing_lift_m and "wing_lift" not in posed_nodes:raise ValueError("missing wing_lift joint")
     return parts
 
 def cross(a,b):return (a[1]*b[2]-a[2]*b[1],a[2]*b[0]-a[0]*b[2],a[0]*b[1]-a[1]*b[0])
@@ -140,9 +161,9 @@ def audit(triangles,tolerance):
             "closed_edge_topology":not(boundary or nonmanifold or winding or degenerate),
             "cfd_ready":False,"note":"Edge topology cannot certify intersections, enclosed cavities, cooling paths or physical validity."}
 
-def export(source,output,tolerance=1e-6,vehicle=None,flow=None):
+def export(source,output,tolerance=1e-6,vehicle=None,flow=None,wing_offset_deg=0.0,wing_lift_m=0.0):
     if not math.isfinite(tolerance) or tolerance<=0:raise ValueError("positive weld tolerance required")
-    pivots={};parts=load_glb(source,pivots,flow);alignment=[0.0,0.0,0.0]
+    pivots={};parts=load_glb(source,pivots,flow,wing_offset_deg,wing_lift_m);alignment=[0.0,0.0,0.0]
     vehicle_sha=None
     if vehicle is not None:
         vehicle_bytes=Path(vehicle).read_bytes();description=json.loads(vehicle_bytes)
@@ -181,7 +202,8 @@ def export(source,output,tolerance=1e-6,vehicle=None,flow=None):
             "frame":"ISO x forward,y left,z up; "+("chassis body origin" if vehicle else "rig ground origin, not chassis COM"),
             "body_alignment_iso_m":alignment,"vehicle_sha256":vehicle_sha,
             "flow_selection_sha256":hashlib.sha256(Path(flow).read_bytes()).hexdigest() if flow else None,
-            "pose":"visual rest: closed doors, straight wheels, rest wing; no suspension compression or wing actuator offset",
+            "pose":f"closed doors, straight wheels, fixed suspension; wing pitch offset {wing_offset_deg:g} deg, lift {wing_lift_m:g} m",
+            "actuator_pose":{"wing_offset_deg":wing_offset_deg,"wing_lift_m":wing_lift_m},
             "weld_tolerance_m":tolerance,"status":"requires_solid_preparation","parts":reports,
             "nodes":[{"node":name,**audit(triangles,tolerance)} for name,triangles in nodes.items()],
             "combined":audit([tri for _,triangles in parts for tri in triangles],tolerance)}
@@ -192,5 +214,7 @@ if __name__=="__main__":
     parser=argparse.ArgumentParser(description=__doc__);parser.add_argument("source");parser.add_argument("output");parser.add_argument("--weld-tolerance-m",type=float,default=1e-6)
     parser.add_argument('--vehicle',help='vehicle JSON for the same wheel-based chassis alignment as the visual model')
     parser.add_argument('--flow',help='source-bound exterior triangle selection; no hidden cabin/engine geometry')
-    args=parser.parse_args();report=export(args.source,args.output,args.weld_tolerance_m,args.vehicle,args.flow)
+    parser.add_argument("--wing-offset-deg",type=float,default=0.0)
+    parser.add_argument("--wing-lift-m",type=float,default=0.0)
+    args=parser.parse_args();report=export(args.source,args.output,args.weld_tolerance_m,args.vehicle,args.flow,args.wing_offset_deg,args.wing_lift_m)
     print(json.dumps(report["combined"],indent=2))

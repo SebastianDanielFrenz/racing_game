@@ -7,6 +7,7 @@
 #include "rg/drive_script.h"
 #include "rg/session.h"
 #include "rg/aero_map_selection.h"
+#include "ps/aero/coefficient_map.h"
 #include "g2m/core/hash.h"
 #include <nlohmann/json.hpp>
 #include <filesystem>
@@ -16,6 +17,7 @@
 #include "ps/math/transcendental.h"
 
 #include <catch2/catch_test_macros.hpp>
+#include <catch2/matchers/catch_matchers.hpp>
 
 #include <chrono>
 #include <cmath>
@@ -569,6 +571,32 @@ TEST_CASE("Game aero selection binds reviewed bytes and rejects stale geometry",
     selection["enabled"]=false;write("selection.json",selection.dump());
     rg::apply_aero_map_selection((dir/"selection.json").string(),vehicle);
     CHECK_FALSE(vehicle.aero.coefficient_map.table);
+    ps::aero::SurfaceDesc wing;
+    wing.name="test_wing";wing.max_offset_rad=1;wing.max_lift_m=.28;
+    vehicle.aero.surfaces.push_back(wing);
+    selection["enabled"]=true;
+    selection["coefficient_map"]["scope"]="replace_passive_aero";
+    selection["coefficient_map"]["wing_surface"]="test_wing";
+    write("selection.json",selection.dump());
+    map["axes"]["wing_offset_deg"]={0,55};
+    auto publish=[&](int count) {
+        map["coefficients"]=json::array();
+        for(int i=0;i<count;++i)map["coefficients"].push_back({-.3,0,0,0,0,0});
+        const auto bytes=map.dump();write("map.json",bytes);
+        proof["map_sha256"]=digest(bytes);write("map.json.provenance.json",proof.dump());
+    };
+    publish(12);
+    CHECK_THROWS_WITH(rg::apply_aero_map_selection((dir/"selection.json").string(),vehicle),
+        "full passive aero map for a lifting wing requires wing_lift_m samples and wing_surface binding");
+    CHECK_FALSE(vehicle.aero.coefficient_map.table);
+    map["axes"]["wing_lift_m"]={0,.28};publish(24);
+    rg::apply_aero_map_selection((dir/"selection.json").string(),vehicle);
+    REQUIRE(vehicle.aero.coefficient_map.table);
+    CHECK(vehicle.aero.coefficient_map.table->data().axes[5].size()==2);
+    vehicle.aero.surfaces[0].max_lift_m=0;
+    map["axes"].erase("wing_lift_m");publish(12);
+    rg::apply_aero_map_selection((dir/"selection.json").string(),vehicle);
+    CHECK(vehicle.aero.coefficient_map.table->data().axes[5].empty());
 }
 
 TEST_CASE("Session rolling resistance selection survives immutable cached reloads", "[session][rolling_resistance]") {
