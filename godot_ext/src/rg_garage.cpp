@@ -101,6 +101,7 @@ RgGarage::~RgGarage() = default;
 
 godot::Dictionary RgGarage::initialize(const String& repo_root, const String& user_dir, const String& work_root,
                                       const String& catalog_path) {
+    dyno_.cancel();
     garage_.reset();
     camera_.reset();
     rg::GarageConfig c;
@@ -245,6 +246,7 @@ godot::Dictionary RgGarage::begin_edit(const String& id) {
     if (garage_ == nullptr) return fail_reply("garage not initialised");
     std::string err;
     if (!garage_->begin_edit(to_std(id), &err)) return fail_reply(err);
+    refresh_dyno();
     return ok_reply();
 }
 
@@ -322,6 +324,7 @@ godot::Dictionary RgGarage::set_option(const String& option_id, const godot::Var
         return edit_reply(r);
     }
     godot::Dictionary d = edit_reply(garage_->set_option(to_std(option_id), v));
+    refresh_dyno();
     d["value"] = value_to_variant(garage_->current_value(to_std(option_id)));
     return d;
 }
@@ -330,6 +333,7 @@ godot::Dictionary RgGarage::reset_option(const String& option_id) {
     godot::Dictionary d;
     if (garage_ == nullptr || !garage_->editing()) return d;
     garage_->reset_option(to_std(option_id));
+    refresh_dyno();
     rg::EditResult r;
     r.accepted = true;
     r.validation = garage_->validation();
@@ -342,6 +346,7 @@ godot::Dictionary RgGarage::reset_all() {
     godot::Dictionary d;
     if (garage_ == nullptr || !garage_->editing()) return d;
     garage_->reset_all();
+    refresh_dyno();
     rg::EditResult r;
     r.accepted = true;
     r.validation = garage_->validation();
@@ -366,6 +371,7 @@ godot::Dictionary RgGarage::save() {
 }
 
 void RgGarage::discard() {
+    dyno_.cancel();
     if (garage_ != nullptr) garage_->discard();
 }
 
@@ -409,6 +415,7 @@ godot::Dictionary RgGarage::prepare_drive(const String& id) {
 }
 
 void RgGarage::cleanup() {
+    dyno_.cancel();
     if (garage_ != nullptr) garage_->cleanup();
 }
 
@@ -465,10 +472,38 @@ String RgGarage::get_area_for_option(const String& option_id) const {
     return String("overview");
 }
 
+void RgGarage::refresh_dyno() {
+    if(!garage_ || !garage_->editing() || !garage_->validation().ok) { dyno_.cancel(); return; }
+    const auto* entry=garage_->catalog().find(garage_->edit_id());
+    if(!entry) return;
+    rg::VehicleSetup engine_setup; engine_setup.vehicle_id=entry->id;
+    for(const auto& option:garage_->options().options) {
+        if(option.file!="engine" && option.part_format!="physics_sim.engine/1" && option.part_format!="physics_sim.turbo_configuration/1") continue;
+        auto value=garage_->working().values.find(option.id);
+        if(value!=garage_->working().values.end()) engine_setup.values.emplace(*value);
+    }
+    const std::string key=rg::setup_to_json(engine_setup);
+    dyno_.request({*entry,garage_->options(),garage_->context_for(*entry),engine_setup,key});
+}
+godot::Dictionary RgGarage::get_dyno() const {
+    const auto result=dyno_.result();
+    godot::Dictionary out;
+    out["busy"]=result.busy; out["progress"]=result.progress;
+    out["revision"]=int64_t(result.revision);
+    out["vehicle_id"]=from_std(result.vehicle_id); out["error"]=from_std(result.error);
+    godot::Array points;
+    for(const auto& point:result.points) {
+        godot::Dictionary p; p["rpm"]=point.rpm; p["torque_nm"]=point.torque_nm; p["power_kw"]=point.power_kw; points.push_back(p);
+    }
+    out["points"]=points;
+    return out;
+}
+
 void RgGarage::_bind_methods() {
     using godot::ClassDB;
     ClassDB::bind_method(D_METHOD("initialize", "repo_root", "user_dir", "work_root", "catalog_path"), &RgGarage::initialize, DEFVAL(String()));
     bind_browser_methods();
+    ClassDB::bind_method(D_METHOD("get_dyno"), &RgGarage::get_dyno);
     ClassDB::bind_method(D_METHOD("is_ready"), &RgGarage::is_ready);
     ClassDB::bind_method(D_METHOD("get_vehicles"), &RgGarage::get_vehicles);
     ClassDB::bind_method(D_METHOD("get_vehicle", "id"), &RgGarage::get_vehicle);

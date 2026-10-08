@@ -89,12 +89,14 @@ add_library(rg_core STATIC
     src/vehicle_setup.cpp
     src/garage_set.cpp
     src/garage.cpp
+    src/garage_dyno.cpp
     src/road_ahead.cpp
     src/camera_math.cpp
     "${PS_ADAPTER_SRC_DIR}/frame_convert_core.cpp"
 )
 
 target_include_directories(rg_core
+    PRIVATE "${CMAKE_SOURCE_DIR}/external/physics_sim/core/src"
     PUBLIC
         include
         "${PS_ADAPTER_SRC_DIR}"

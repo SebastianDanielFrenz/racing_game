@@ -125,3 +125,38 @@ this is an NA conversion approximation and retains the original engine internals
 Verification: 195 garage checks and 80 native assertions across four engine-part
 cases passed. Logs: out/garage_induction_final.log, out/garage_induction_polish_unit.log.
 N2O swap screen captured in out/garage_induction_ready_shots/induction_types.png.
+
+## Live engine dyno (2026-10-08)
+
+The dyno chart is anchored at the bottom of the left performance panel, outside
+its statistics scroll area. Orange is net crank torque (Nm), blue is power (kW),
+with separate vertical scales and RPM on the horizontal axis. These are native
+engine outputs, not the catalog's declared peak figures.
+
+RgGarage snapshots engine-affecting configuration into a single GarageDyno worker.
+Engine swaps, induction/hardware changes and engine-file calibration options are
+included; tyre, brake, gearbox, assist and paint settings do not change the dyno
+fingerprint. Identical requests are deduplicated. New requests cancel running map
+work and supersede queued snapshots. Only the latest successful complete result
+is published. The previous curve remains visible while updating or on failure;
+changing vehicles clears it. No Godot or live simulation state is read on workers.
+
+The harness reuses the physics library's own SimulatedEngine pre_solve/post_solve,
+holding 33 RPM points from idle to just below the configured limiter at full pedal.
+Each point settles for 15 simulated seconds and averages the final second. Net
+brake torque is tau0 minus kinetic friction capacity; power is torque*omega/1000.
+Conditions: ISA, warm reference friction, N2O disarmed. Torque-map engines use their
+native net WOT curve. This is crank output, not wheel output or an acceleration
+benchmark, and it excludes a nitrous-on curve for now.
+
+Full engine maps use the library cache. Two background-priority generation workers
+and cancellation/progress reuse PHYS-065 (physics_sim engine-garage P1). Editing
+uses generate=false validation, leaving generation-dependent checks to the dyno
+worker and the normal full validation/drive loader. Native dyno errors are shown
+without throwing away the last successful graph.
+
+Native evidence: out/garage_dyno_unit.log (99 assertions: WOT magnitude, Nm/kW/RPM
+conversion, NA reduction, latest request wins, deduplication, cancellation and
+failure retention). out/garage_dyno_regression.log (590 garage/setup assertions).
+Chart retention/swap check: out/dyno_chart_check.log. Installation and live garage
+capture require the running game to release its DLL.

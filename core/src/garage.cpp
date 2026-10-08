@@ -306,7 +306,7 @@ void Garage::revalidate() {
         validation_.ok = true;
         return;
     }
-    validation_ = validate_setup(*e, options_, context_for(*e), working_);
+    validation_ = validate_setup(*e, options_, context_for(*e), working_, false);
 }
 
 EditResult Garage::set_option(const std::string& option_id, const SetupValue& value) {

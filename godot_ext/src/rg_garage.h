@@ -12,6 +12,7 @@
 #pragma once
 
 #include "rg/garage.h"
+#include "rg/garage_dyno.h"
 #include "rg/garage_set.h"
 
 #include <godot_cpp/classes/ref_counted.hpp>
@@ -108,6 +109,7 @@ public:
     // {ok, error}
     godot::Dictionary save();
     void discard();
+    godot::Dictionary get_dyno() const;
     // {paint, rim}: the working colours (visual only)
     [[nodiscard]] godot::Dictionary get_working_colours() const;
 
@@ -143,6 +145,8 @@ private:
     std::unique_ptr<rg::Garage> garage_;
     std::optional<rg::GarageCamera> camera_;
     std::string work_root_;
+    rg::GarageDyno dyno_;
+    void refresh_dyno();
 };
 
 } // namespace rg_godot

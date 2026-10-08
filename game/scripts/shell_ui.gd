@@ -76,6 +76,9 @@ var _garage_mode := "upgrades"
 var _garage_left: PanelContainer
 var _garage_right: PanelContainer
 var _garage_performance: VBoxContainer
+var _garage_dyno: Control
+var _garage_dyno_status: Label
+var _dyno_poll := 0.0
 var _garage_path: Array[String] = []
 var _garage_preferred: Button
 var _component_textures: Dictionary = {}
@@ -179,6 +182,16 @@ func status_text() -> String:
 
 func _process(delta: float) -> void:
 	_fit_garage_panels()
+	_dyno_poll -= delta
+	if screen == "configurator" and is_instance_valid(_garage_dyno) and _dyno_poll <= 0.0:
+		_dyno_poll = 0.15
+		if not garage.has_method("get_dyno"):
+			_garage_dyno_status.text = "Dyno build pending · restart after installation"
+			return
+		var data: Dictionary = garage.get_dyno()
+		_garage_dyno.update_result(data)
+		_garage_dyno_status.text = ("Updating · %d%%" % int(data.get("progress",0))) if bool(data.get("busy",false)) else ("Dyno failed · previous curve retained" if not str(data.get("error","")).is_empty() else "Crank · WOT · ISA · N₂O off")
+		_garage_dyno_status.tooltip_text = str(data.get("error",""))
 	if screen == "boot" and not _boot_done:
 		_boot_elapsed += delta
 		if _boot_elapsed >= BOOT_SECONDS:
@@ -586,6 +599,15 @@ func _build_configurator() -> void:
 	_garage_performance.add_theme_constant_override("separation", 14)
 	perf_scroll.add_child(_garage_performance)
 	_refresh_performance()
+	left.add_child(HSeparator.new())
+	left.add_child(_label("ENGINE DYNO",19,HORIZONTAL_ALIGNMENT_LEFT))
+	_garage_dyno = preload("res://scripts/garage_dyno_chart.gd").new()
+	_garage_dyno.name = "DynoChart"
+	left.add_child(_garage_dyno)
+	_garage_dyno_status = _label("Computing dyno…",12,HORIZONTAL_ALIGNMENT_LEFT,true)
+	_garage_dyno_status.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	left.add_child(_garage_dyno_status)
+	_dyno_poll = 0.0
 	var column := _side_panel(false, 400)
 	_garage_right = column.get_parent()
 	var vehicle: Dictionary = garage.get_vehicle(garage_vehicle)

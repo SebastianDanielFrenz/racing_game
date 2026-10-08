@@ -174,7 +174,7 @@ struct ValidationResult {
 // compile + materialise into a scratch directory + ps::io::load_vehicle_json; the
 // scratch directory is always removed again.
 ValidationResult validate_setup(const CatalogEntry& entry, const SetupOptionTable& table, const SetupContext& ctx,
-                                const VehicleSetup& setup);
+                                const VehicleSetup& setup, bool generate_maps = true);
 
 // A scratch directory under `root` that removes itself.
 class ScopedWorkDir {

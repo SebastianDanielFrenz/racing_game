@@ -1361,7 +1361,7 @@ std::size_t ScopedWorkDir::file_count(const std::string& dir) {
 }
 
 ValidationResult validate_setup(const CatalogEntry& entry, const SetupOptionTable& table, const SetupContext& ctx,
-                                const VehicleSetup& setup) {
+                                const VehicleSetup& setup, bool generate_maps) {
     ValidationResult result;
     ScopedWorkDir scratch(ctx.work_root, "validate_" + entry.id);
     const MaterialisedSetup m = materialise_setup(entry, table, ctx, setup, scratch.path());
@@ -1372,6 +1372,7 @@ ValidationResult validate_setup(const CatalogEntry& entry, const SetupOptionTabl
     try {
         ps::io::EngineMapOptions options;
         options.cache_dir = ctx.engine_map_cache_dir;
+        options.generate = generate_maps;
         (void)ps::io::load_vehicle_json(m.vehicle_path, options);
     } catch (const std::exception& e) {
         result.message = e.what();

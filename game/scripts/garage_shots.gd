@@ -51,6 +51,10 @@ func _run() -> void:
 	await _shot("vehicle_select")
 	_press("choose")
 	await _seconds(2.0)
+	var dyno_deadline := Time.get_ticks_msec() + 120000
+	while main.get_shell_ui().garage.get_dyno().get("busy",false) and Time.get_ticks_msec() < dyno_deadline:
+		await _frames(1)
+	await _seconds(0.25)
 	await _shot("overview")
 	await _seconds(3.0)
 	await _shot("turntable_rotated")
