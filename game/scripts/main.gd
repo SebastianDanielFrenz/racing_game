@@ -1174,6 +1174,10 @@ func _try_start_vr() -> void:
 
 # Owner bookmarks survive normal log rotation in user://drive_marks.jsonl.
 func _input(event: InputEvent) -> void:
+	if _shell != null and _screen == "configurator" and event.is_action_pressed("ui_cancel"):
+		_on_escape()
+		get_viewport().set_input_as_handled()
+		return
 	if event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_MIDDLE and world_state == "running":
 		_log_owner_mark()
 	if _shell != null and event is InputEventKey and event.pressed and not event.echo:
@@ -1337,6 +1341,18 @@ func _on_garage_save() -> void:
 	_shell_ui.refresh_configurator()
 
 # Drive: valid unsaved changes are saved first; an invalid working copy cannot be driven.
+func _on_garage_exit(destination: String) -> void:
+	if destination not in ["drive", "selection"]:
+		return
+	var saved: Dictionary = _garage.save()
+	if not bool(saved.get("ok",false)):
+		_shell_ui.garage_exit_failed(str(saved.get("error","Save failed")))
+		return
+	if destination == "drive":
+		_on_garage_drive()
+	else:
+		_apply_transition(_shell.back())
+
 func _on_garage_drive() -> void:
 	if _garage.is_dirty():
 		var saved: Dictionary = _garage.save()
@@ -1428,7 +1444,7 @@ func _build_shell(user_args: PackedStringArray) -> void:
 	_shell_ui.garage_area_chosen.connect(_on_garage_area_chosen)
 	_shell_ui.garage_option_changed.connect(_on_garage_option_changed)
 	_shell_ui.garage_save_requested.connect(_on_garage_save)
-	_shell_ui.garage_drive_requested.connect(_on_garage_drive)
+	_shell_ui.garage_exit_requested.connect(_on_garage_exit)
 	add_child(_shell_ui)
 	_overlay.attribution_line = str(_shell.get_attribution_line())
 	for section in _shell.get_settings_schema():
@@ -1587,7 +1603,9 @@ func _on_escape() -> void:
 			# a running capture / calibration takes the Esc first
 			if not _shell_ui.controls_consume_back():
 				_apply_transition(_shell.back())
-		"spawn_picker", "credits", "settings", "loading", "configurator":
+		"configurator":
+			_shell_ui.garage_consume_back()
+		"spawn_picker", "credits", "settings", "loading":
 			_apply_transition(_shell.back())
 		"pause":
 			_apply_transition(_shell.pause_toggle())

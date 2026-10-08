@@ -76,6 +76,7 @@ func _press_escape() -> void:
 		ev.physical_keycode = KEY_ESCAPE
 		ev.pressed = pressed
 		Input.parse_input_event(ev)
+	await _wait_seconds(0.1)
 
 func _count_nodes(root: Node) -> int:
 	var n := 1
@@ -121,7 +122,7 @@ func _after_world_load(round_name: String, settle_s: float) -> bool:
 	return true
 
 func _pause_to_main_menu() -> void:
-	_press_escape()
+	await _press_escape()
 	await _wait_until(func(): return _screen() == "pause", 5.0)
 	_press("main_menu")
 	_check(_screen() == "main_menu" and main.world_state == "none", "Main menu from the pause menu: no world (screen '%s', state '%s')" % [_screen(), main.world_state])
@@ -185,6 +186,18 @@ func _run() -> void:
 	_check(not garage.is_dirty(), "a fresh edit session is clean")
 	var save_button: Button = ui.get_button("save")
 	_check(save_button != null and save_button.disabled, "Save is disabled while nothing changed")
+	_check(ui.get_button("back") == null and ui.get_button("drive") == null, "garage has no Back or Drive buttons")
+	await _press_escape()
+	_check(_screen() == "configurator" and ui.get_button("garage_exit:drive") != null, "Esc at top level opens exit choices")
+	var cancel := InputEventJoypadButton.new()
+	cancel.button_index = JOY_BUTTON_B
+	cancel.pressed = true
+	Input.parse_input_event(cancel)
+	cancel = cancel.duplicate()
+	cancel.pressed = false
+	Input.parse_input_event(cancel)
+	await _wait_seconds(0.1)
+	_check(_screen() == "configurator" and ui.get_button("garage_exit:drive") == null, "controller B cancels the exit prompt")
 
 	# All researched road families open their own width menu and remain real parts.
 	for family in ["cord","belted","touring","economy","sport","road","track","slick","drag"]:
@@ -195,7 +208,8 @@ func _run() -> void:
 	_check(garage.is_dirty() and bool(garage.get_validation()["ok"]), "economy tyre width installs a valid physical definition")
 	_press("reset_all")
 	_check(not garage.is_dirty(), "reset restores the original tyres after a family change")
-	_press("tyre:types")
+	await _press_escape()
+	_check(_screen() == "configurator" and ui.get_button("garage_exit:drive") == null, "Esc from tyre widths returns to compounds without leaving")
 	# Upgrades installs real tyre definitions; Tuning owns scalar adjustments.
 	_press("tyre:family:road")
 	_check(not garage.is_dirty(), "choosing compound/tread opens widths without installing a tyre")
@@ -239,7 +253,9 @@ func _run() -> void:
 	var verdict: Dictionary = garage.get_validation()
 	_check(not bool(verdict["ok"]) and str(verdict["message"]) != "", "a non-monotonic gear set is rejected (message: %s)" % verdict["message"])
 	_check(ui.status_text().begins_with("Cannot save"), "the configurator shows the rejection ('%s')" % ui.status_text())
-	_check(ui.get_button("save").disabled and ui.get_button("drive").disabled, "Save and Drive are disabled for an invalid setup")
+	await _press_escape()
+	_check(ui.get_button("save").disabled and ui.get_button("garage_exit:drive").disabled and ui.get_button("garage_exit:selection").disabled, "invalid setup disables both save-and-exit choices")
+	await _press_escape()
 	var saved_bad: Dictionary = garage.save()
 	_check(not bool(saved_bad["ok"]), "saving the invalid setup fails (%s)" % saved_bad.get("error", ""))
 	# an out-of-range value is rejected too (not clamped silently)
@@ -255,6 +271,15 @@ func _run() -> void:
 	# ---- save, persistence ----
 	_check(_press("save"), "Save is pressed")
 	_check(not garage.is_dirty() and bool(garage.get_vehicle(hyper_id)["has_setup"]), "the setup is saved")
+	# Save-and-selection also handles unsaved changes, then preserves them on reopen.
+	garage.set_option("brake_force",1.05)
+	_check(garage.is_dirty(), "setup is dirty before save-and-selection")
+	await _press_escape()
+	_press("garage_exit:selection")
+	_check(_screen() == "vehicle_select", "save-and-selection returns to the car browser")
+	ui.browser().focus_car(hyper_id)
+	_press("choose")
+	_check(not garage.is_dirty(), "reopening the saved car is clean")
 	var reload: Node = ClassDB.instantiate("RgGarage")
 	var repo: String = ProjectSettings.globalize_path("res://").path_join("..").simplify_path()
 	var report: Dictionary = reload.initialize(repo, main._user_dir(), main._user_dir().path_join("garage_work_check"))
@@ -271,7 +296,16 @@ func _run() -> void:
 	reload.free()
 
 	# ---- drive the configured car ----
-	_press("drive")
+	garage.set_option("brake_force",1.1)
+	_check(garage.is_dirty(), "setup is dirty before save-and-drive")
+	await _press_escape()
+	_check(get_viewport().gui_get_focus_owner() == ui.get_button("garage_exit:drive"), "exit prompt focuses save-and-drive")
+	for pressed in [true,false]:
+		var confirm := InputEventJoypadButton.new()
+		confirm.button_index = JOY_BUTTON_A
+		confirm.pressed = pressed
+		Input.parse_input_event(confirm)
+	await _wait_seconds(0.1)
 	_check(_screen() == "spawn_picker", "Drive opens the spawn picker like Free roam (is '%s')" % _screen())
 	_check(main.get_garage_scene() == null, "the garage scene is gone once the drive starts")
 	_press("spawn:flat")
@@ -289,7 +323,7 @@ func _run() -> void:
 		_check(absf(rear_ratio - 1.0) < 0.06, "physics: the rear axle is unchanged (rear %.3f x stock)" % rear_ratio)
 
 		# ---- pause -> Garage (respawn) -> another car ----
-		_press_escape()
+		await _press_escape()
 		_check(await _wait_until(func(): return _screen() == "pause", 5.0), "Esc pauses")
 		_check(ui.button_ids().has("garage"), "the pause menu offers Garage (respawn)")
 		_press("garage")
@@ -305,7 +339,8 @@ func _run() -> void:
 		_check(garage.is_dirty() and bool(garage.get_validation()["ok"]), "sedan engine swap installs and validates")
 		_press("part:engine_install:stock")
 		_check(not garage.is_dirty(), "original sedan engine restores stock")
-		_press("drive")
+		await _press_escape()
+		_press("garage_exit:drive")
 		var respawned: bool = await _wait_until(func(): return _screen() == "drive" and main.world_state == "running", WORLD_LOAD_S)
 		_check(respawned, "the respawn with the sedan reaches drive (screen '%s', state '%s')" % [_screen(), main.world_state])
 		if respawned:
@@ -324,7 +359,8 @@ func _run() -> void:
 	ui.browser().focus_car(hyper_id)
 	_press("choose")
 	_check(str(garage.get_edit_id()) == hyper_id and bool(garage.get_vehicle(hyper_id)["has_setup"]), "the hyper car's saved setup is still there")
-	_press("drive")
+	await _press_escape()
+	_press("garage_exit:drive")
 	_press("spawn:flat")
 	if await _wait_until(func(): return _screen() == "drive", WORLD_LOAD_S):
 		await _after_world_load("hyper again", 1.0)

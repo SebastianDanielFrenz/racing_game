@@ -37,7 +37,7 @@ signal browser_state_changed # group, sort or filter of the car browser changed 
 signal garage_area_chosen(area_id: String)
 signal garage_option_changed(option_id: String)
 signal garage_save_requested
-signal garage_drive_requested
+signal garage_exit_requested(destination: String)
 signal controls_changed # a binding / tuning changed on the controls screen
 
 const BOOT_SECONDS := 1.5
@@ -83,6 +83,9 @@ var _garage_width_menu := false
 var _component_textures: Dictionary = {}
 var _component_catalog: Dictionary = {}
 var _garage_categories: OptionButton
+var _garage_exit: Control
+var _garage_exit_note: Label
+var _garage_exit_focus: Control
 
 func garage_panel_widths() -> Vector2:
 	if screen != "configurator" or _garage_left == null or _garage_right == null:
@@ -125,6 +128,9 @@ func show_screen(screen_name: String) -> void:
 	_garage_left = null
 	_garage_right = null
 	_garage_performance = null
+	_garage_exit = null
+	_garage_exit_note = null
+	_garage_exit_focus = null
 	screen = screen_name
 	match screen_name:
 		"boot":
@@ -628,14 +634,12 @@ func _build_configurator() -> void:
 	var footer := GridContainer.new()
 	footer.columns = 2
 	column.add_child(footer)
-	_button(footer,"back","Back",func(): back_requested.emit(),0)
 	_button(footer,"reset_all","Reset all",func():
 		garage.reset_all()
 		_draw_garage_options()
 		garage_option_changed.emit("")
 		_refresh_status(),0)
 	_button(footer,"save","Save",func(): garage_save_requested.emit(),0)
-	_button(footer,"drive","Drive",func(): garage_drive_requested.emit(),0)
 	for button in footer.get_children():
 		button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_active_area = "wheels" if _garage_mode == "upgrades" else "overview"
@@ -643,6 +647,90 @@ func _build_configurator() -> void:
 	_refresh_status()
 	_fit_garage_panels()
 	_focus_first()
+
+# B/Esc backs out of nested width choices before offering the garage exit.
+func garage_consume_back() -> void:
+	if _garage_exit != null:
+		_close_garage_exit()
+	elif _garage_mode == "upgrades" and _garage_width_menu:
+		_garage_width_menu = false
+		_draw_garage_options()
+		_focus_first()
+	else:
+		_open_garage_exit()
+
+func _open_garage_exit() -> void:
+	if _garage_exit != null:
+		return
+	_garage_exit_focus = get_viewport().gui_get_focus_owner()
+	_garage_left.hide()
+	_garage_right.hide()
+	_garage_exit = Control.new()
+	_garage_exit.set_anchors_preset(Control.PRESET_FULL_RECT)
+	_garage_exit.mouse_filter = Control.MOUSE_FILTER_STOP
+	_root.add_child(_garage_exit)
+	var shade := ColorRect.new()
+	shade.color = Color(0.02,0.025,0.035,0.78)
+	shade.set_anchors_preset(Control.PRESET_FULL_RECT)
+	_garage_exit.add_child(shade)
+	var center := CenterContainer.new()
+	center.set_anchors_preset(Control.PRESET_FULL_RECT)
+	_garage_exit.add_child(center)
+	var panel := PanelContainer.new()
+	panel.custom_minimum_size.x = minf(440.0,_root.size.x-48.0)
+	var style := StyleBoxFlat.new()
+	style.bg_color = Color(0.03,0.04,0.055,0.98)
+	style.border_color = Color(0.91,0.45,0.17)
+	style.set_border_width_all(2)
+	style.set_corner_radius_all(6)
+	style.set_content_margin_all(24)
+	panel.add_theme_stylebox_override("panel",style)
+	center.add_child(panel)
+	var column := VBoxContainer.new()
+	column.add_theme_constant_override("separation",16)
+	panel.add_child(column)
+	column.add_child(_label("Leave garage?",26))
+	_garage_exit_note = _label("Save your setup and choose where to go.",16)
+	column.add_child(_garage_exit_note)
+	var drive := _button(column,"garage_exit:drive","Save and drive",func(): garage_exit_requested.emit("drive"))
+	var selection := _button(column,"garage_exit:selection","Save and go to selection",func(): garage_exit_requested.emit("selection"))
+	var valid := bool(garage.get_validation()["ok"])
+	drive.disabled = not valid
+	selection.disabled = not valid
+	if not valid:
+		_garage_exit_note.text = "Fix the setup before saving. B / Esc returns to editing."
+	else:
+		column.add_child(_label("B / Esc · Keep editing",14,HORIZONTAL_ALIGNMENT_CENTER,true))
+	# Keep directional controller/keyboard focus within the two choices.
+	for button in [drive,selection]:
+		var other: Button = selection if button == drive else drive
+		button.focus_neighbor_top = button.get_path_to(other)
+		button.focus_neighbor_bottom = button.get_path_to(other)
+		button.focus_neighbor_left = button.get_path_to(other)
+		button.focus_neighbor_right = button.get_path_to(other)
+		button.focus_next = button.get_path_to(other)
+		button.focus_previous = button.get_path_to(other)
+	if valid:
+		drive.grab_focus()
+
+func garage_exit_failed(message: String) -> void:
+	if _garage_exit_note != null:
+		_garage_exit_note.text = "Could not save: " + message
+
+func _close_garage_exit() -> void:
+	_root.remove_child(_garage_exit)
+	_garage_exit.queue_free()
+	_garage_exit = null
+	_garage_exit_note = null
+	_buttons.erase("garage_exit:drive")
+	_buttons.erase("garage_exit:selection")
+	_garage_left.show()
+	_garage_right.show()
+	if is_instance_valid(_garage_exit_focus) and _garage_exit_focus.is_visible_in_tree():
+		_garage_exit_focus.grab_focus()
+	else:
+		_focus_first()
+	_garage_exit_focus = null
 
 func _set_garage_mode(mode: String) -> void:
 	_garage_mode = mode
@@ -780,9 +868,6 @@ func _draw_upgrades() -> void:
 			type_grid.add_child(type_card)
 			_buttons["tyre:family:" + family] = type_card
 		return
-	_button(_option_box,"tyre:types","‹ Compound / tread",func():
-		_garage_width_menu = false
-		_draw_garage_options(),0)
 	_option_box.add_child(_label(str(_component_catalog.get("families", {}).get(_garage_tyre_family, {}).get("label", _garage_tyre_family.capitalize())) + " · Width",17,HORIZONTAL_ALIGNMENT_LEFT))
 	var increments := OptionButton.new()
 	increments.add_item("Widths every 10 mm")
@@ -1083,12 +1168,8 @@ func _refresh_status() -> void:
 		_status_label.text = "Saved setup" if _has_changes() else "Stock setup"
 		_status_label.add_theme_color_override("font_color", Color(0.8, 0.8, 0.8))
 	var save_button: Button = _buttons.get("save", null)
-	var drive_button: Button = _buttons.get("drive", null)
 	if save_button != null:
 		save_button.disabled = (not ok) or (not dirty)
-	if drive_button != null:
-		drive_button.disabled = not ok
-		drive_button.text = "Save and Drive" if dirty else "Drive"
 
 func _has_changes() -> bool:
 	for opt in garage.get_options():

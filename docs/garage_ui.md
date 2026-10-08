@@ -7,11 +7,23 @@ Upgrades has vehicle information on the left, the showroom car in the middle and
 Tyres use two distinct menus:
 
 1. Choose a compound/tread combination: Cord Touring, Belted Touring, Steel Radial, Eco Touring, Sport Radial, Performance Road, Track Semi-Slick, Racing Slick or Drag. Each has a visibly different product image. This selection only opens a submenu; it does not install anything.
-2. Choose a width and install the corresponding physical definition. Widths can be displayed every 10 or 20 mm. The installed width remains visible even when it falls between the selected 20 mm samples. Return to the compound/tread menu using its own back button.
+2. Choose a width and install the corresponding physical definition. Widths can be displayed every 10 or 20 mm. The installed width remains visible even when it falls between the selected 20 mm samples. Return to the compound/tread menu with B on the controller or Esc on the keyboard.
 
 Front/rear axles are selected independently. Rim radius and unloaded tyre radius must remain compatible. Body-specific width envelopes are configured in data/vehicles/catalog.json under setup.ranges.tyre_front and tyre_rear (millimetres), inherited by presets. Initial authored envelopes are hyper front 235–305, hyper rear 275–365, and sedan axles 195–255. These are conservative game limits, not measured fender clearance. The candidate catalog contains wider definitions too, but the native model does not offer or accept them until the body allows them.
 
 Installation updates the axle's tyre references, actual wheel width and wheel rotational inertia. Showroom and driving wheel meshes scale along their axle to match the installed width. Existing tyre images represent compound/tread style; widths share a style image and have explicit dimensional captions. The car meshes retain their original tread geometry for now.
+
+## Garage exit flow (2026-10-08)
+
+The configurator footer has Reset all and Save. There are no Back or Drive buttons.
+B/Esc first returns from tyre widths to compound/tread choices. At the top level
+it opens a modal with exactly two actions: **Save and drive** and **Save and go to
+selection**. B/Esc again cancels that prompt and resumes editing, preserving focus.
+The prompt confines keyboard/controller focus to its choices. Both actions save
+before navigating, including clean/stock setups. Invalid setups disable both
+actions; a save failure leaves the prompt open and displays the error. Existing
+main-menu spawn picking and paused-world respawn semantics still apply to driving.
+The vehicle selection browser retains its existing back navigation.
 
 ## Authored physical fits
 
@@ -69,3 +81,10 @@ out/engine_parts_unit3.log, out/engine_parts_setup_regression.log,
 out/engine_parts_garage_final.log, out/engine_parts_shots and
 out/engine_parts_sedan_shots. Dedicated logs/user directories kept normal saves
 and the owner's drive log intact.
+
+2026-10-08 garage-exit verification: 160 garage smoke checks passed, including
+B cancellation, controller A confirmation, tyre-submenu back navigation, invalid
+setup blocking, both save-first destinations, respawn and node cleanup. No engine
+script errors. Prompt and footer screenshots reviewed at 1920x1080. Evidence:
+out/garage_exit_accept.log, out/garage_exit_accept_engine.log and
+out/garage_exit_shots (garage_exit.png and upgrade_engine.png).
