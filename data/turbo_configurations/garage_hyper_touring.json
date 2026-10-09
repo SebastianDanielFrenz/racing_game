@@ -12,5 +12,6 @@
     "kd_s": 0.05,
     "actuator_tau_s": 0.1
   },
-  "source": "Authored game garage fitment using the referenced library turbo hardware and controller. Changes turbo count/charge boost target only; no claimed dyno gain, manufacturer fitment or knock validation."
+  "source": "Authored game garage fitment using the referenced library turbo hardware and controller. Changes turbo count/charge boost target only; no claimed dyno gain, manufacturer fitment or knock validation.",
+  "compressible_exhaust": true
 }

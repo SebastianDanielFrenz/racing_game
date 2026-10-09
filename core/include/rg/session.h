@@ -93,7 +93,7 @@ namespace rg {
 // behaviour); never read by the simulation itself, so it cannot move a
 // state hash.
 struct StartupProgress {
-    enum Stage : int { NotStarted = 0, WaitingForGate = 1, Priming = 2, Spawning = 3, Done = 4 };
+    enum Stage : int { NotStarted = 0, WaitingForGate = 1, Priming = 2, Spawning = 3, EngineMaps = 4, Done = 5 };
     std::atomic<int> stage{NotStarted};
     std::atomic<std::uint32_t> missing_required{0};
     // Largest missing_required seen while waiting for the gate: the gate's
@@ -105,6 +105,8 @@ struct StartupProgress {
     std::atomic<std::uint32_t> failed{0};
     std::atomic<std::uint32_t> prime_done{0};
     std::atomic<std::uint32_t> prime_total{0};
+    std::atomic<std::uint32_t> engine_maps_done{0};
+    std::atomic<std::uint32_t> engine_maps_total{0};
     std::atomic<bool> cancel{false};
 };
 

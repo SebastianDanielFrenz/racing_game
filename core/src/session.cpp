@@ -241,10 +241,20 @@ void Session::build_world_contents(const SessionConfig& config) {
         chassis_body_ = world_->create_body(desc);
     }
 
+    throw_if_cancelled();
+    if(config.startup) config.startup->stage.store(StartupProgress::EngineMaps,std::memory_order_relaxed);
     if (config.vehicle_definition) {
         vehicle_desc_ = *config.vehicle_definition;
     } else {
         ps::io::EngineMapOptions options;
+        options.pool=&world_->job_system();
+        if(config.startup) {
+            options.cancel=&config.startup->cancel;
+            options.on_progress=[progress=config.startup](std::size_t done,std::size_t total) {
+                progress->engine_maps_total.store(static_cast<std::uint32_t>(total),std::memory_order_relaxed);
+                progress->engine_maps_done.store(static_cast<std::uint32_t>(done),std::memory_order_relaxed);
+            };
+        }
         std::size_t generated = 0;
         options.generation_count_out = &generated;
         if (config.engine_map_cache_enabled) {
@@ -282,6 +292,8 @@ void Session::build_world_contents(const SessionConfig& config) {
     if(!vehicle_desc_.aero.fans.empty()&&config_.environment.fan_battery_energy_j>0)
         world_->credit_aero_fan_energy(vehicle_id_,config_.environment.fan_battery_energy_j);
     spawn_tick_ = world_->tick();
+    throw_if_cancelled();
+    if(config.startup) config.startup->stage.store(StartupProgress::Done,std::memory_order_relaxed);
 }
 
 ps::Pose Session::setup_terrain(const TerrainModeConfig& tm) {
@@ -405,7 +417,6 @@ ps::Pose Session::setup_terrain(const TerrainModeConfig& tm) {
         std::snprintf(msg, sizeof msg, "Session: spawn over NoData (no ground under (%.2f, %.2f))", miss_x, miss_y);
         throw std::runtime_error(msg);
     }
-    if (progress) progress->stage.store(StartupProgress::Done, std::memory_order_relaxed);
     return pose;
 }
 

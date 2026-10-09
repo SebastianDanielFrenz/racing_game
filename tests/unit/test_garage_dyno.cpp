@@ -150,8 +150,9 @@ TEST_CASE("diagnose extreme boost target power collapse", "[.extreme_boost_diagn
     for(const auto& component:vehicle.powertrain.components)if(auto original=std::get_if<ps::drivetrain::SimulatedEngineDesc>(&component.params)) {
         REQUIRE(original->turbo_pair.has_value());
         std::map<std::pair<double,double>,double> reference_power;
-        for(double target:{29.49})for(double rpm:{3000.0,4000.0,5000.0,6000.0,7000.0,8249.0})for(int hz:{960,1920}) {
+        for(bool compressible:{false,true})for(double target:{29.49})for(double rpm:{3000.0,4000.0,5000.0,6000.0,7000.0,8249.0})for(int hz:{960,1920}) {
             auto desc=*original;desc.turbo_pair->target_boost_pa=target*100000;
+            desc.turbo_pair->compressible_exhaust=compressible;
             ps::drivetrain::SimulatedEngine engine(desc);engine.reset(ps::drivetrain::EngineState::Running);
             ps::drivetrain::Sensors sensors;sensors.omega=rpm*3.141592653589793/30;sensors.ignition=1;sensors.clutch_engaged_fraction=1;sensors.gearbox_in_neutral=false;
             ps::drivetrain::ThrottleCommand throttle;throttle.command=1;
@@ -165,6 +166,7 @@ TEST_CASE("diagnose extreme boost target power collapse", "[.extreme_boost_diagn
                     std::cout<<"hz="<<hz<<" target="<<target<<" rpm="<<rpm<<" seconds="<<((step+1)/hz)<<" power_kw="<<(torque/hz*rpm*3.141592653589793/30000)<<" boost="<<boost/hz<<" exhaust_bar_abs="<<exhaust/hz/100000<<" charge_k="<<charge/hz<<" turbo_rpm="<<turbo/hz<<" wastegate="<<wastegate/hz<<std::endl;
                     CHECK(std::isfinite(torque));
                     CHECK(std::isfinite(boost));
+                    if(compressible) CHECK(torque>0);
                     CHECK(std::isfinite(turbo));
                     if(step==60*hz-1) {
                         const double power=torque/hz*rpm*3.141592653589793/30000;

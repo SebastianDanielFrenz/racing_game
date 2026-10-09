@@ -395,6 +395,7 @@ godot::Dictionary RgSimulation::get_init_status() {
             case rg::StartupProgress::WaitingForGate: stage = "waiting_for_gate"; break;
             case rg::StartupProgress::Priming: stage = "priming"; break;
             case rg::StartupProgress::Spawning: stage = "spawning"; break;
+            case rg::StartupProgress::EngineMaps: stage = "engine_maps"; break;
             default: stage = "done"; break;
         }
     }
@@ -406,6 +407,8 @@ godot::Dictionary RgSimulation::get_init_status() {
     d["stage"] = String(stage);
     d["prime_done"] = prime_done;
     d["prime_total"] = prime_total;
+    d["engine_maps_done"] = init_progress_ ? static_cast<std::int64_t>(init_progress_->engine_maps_done.load(std::memory_order_relaxed)) : 0;
+    d["engine_maps_total"] = init_progress_ ? static_cast<std::int64_t>(init_progress_->engine_maps_total.load(std::memory_order_relaxed)) : 0;
     return d;
 }
 

@@ -88,12 +88,13 @@ func _ready() -> void:
 	visible = false
 
 # rg::StartupProgress stages, in the order a load goes through them.
-const STAGES := ["opening", "waiting_for_gate", "priming", "spawning"]
+const STAGES := ["opening", "waiting_for_gate", "priming", "spawning", "engine_maps"]
 const STAGE_TEXT := {
 	"opening": "opening the terrain store",
 	"waiting_for_gate": "streaming the terrain around the spawn",
 	"priming": "priming the physics tiles",
 	"spawning": "placing the car",
+	"engine_maps": "preparing the engine maps",
 	"done": "starting the simulation",
 }
 
@@ -118,9 +119,12 @@ func show_loading(world_label: String, st: Dictionary, elapsed_s: float, footer:
 	_steps.text = "\n".join(step_lines)
 	var total: int = int(st.get("prime_total", 0))
 	var gate_total: int = int(st.get("gate_total", 0))
-	_bar.visible = (stage == "priming" and total > 0) or (stage == "waiting_for_gate" and gate_total > 0)
+	var engine_total: int = int(st.get("engine_maps_total", 0))
+	_bar.visible = (stage == "priming" and total > 0) or (stage == "waiting_for_gate" and gate_total > 0) or (stage == "engine_maps" and engine_total > 0)
 	if stage == "priming" and total > 0:
 		_bar.value = clampf(float(st.get("prime_done", 0)) / float(total), 0.0, 1.0)
+	elif stage == "engine_maps" and engine_total > 0:
+		_bar.value = clampf(float(st.get("engine_maps_done", 0)) / float(engine_total), 0.0, 1.0)
 	elif _bar.visible:
 		# Spawn-area tiles resident out of the gate's full key set (gate_total).
 		_bar.value = clampf(float(gate_total - int(st.get("missing_required", 0))) / float(gate_total), 0.0, 1.0)
@@ -132,6 +136,11 @@ func show_loading(world_label: String, st: Dictionary, elapsed_s: float, footer:
 		lines.append("spawn area tiles %d / %d" % [gate_total - int(st.get("missing_required", 0)), gate_total])
 	if total > 0:
 		lines.append("priming ticks %d / %d" % [int(st.get("prime_done", 0)), total])
+	if stage == "engine_maps":
+		if engine_total > 0:
+			lines.append("engine map points %d / %d" % [int(st.get("engine_maps_done", 0)), engine_total])
+		else:
+			lines.append("checking cached engine maps")
 	lines.append("%.1f s" % elapsed_s)
 	_body.text = "\n".join(lines)
 	_footer.text = footer

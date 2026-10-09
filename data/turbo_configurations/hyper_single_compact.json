@@ -12,5 +12,6 @@
     "kd_s": 0.05,
     "actuator_tau_s": 0.1
   },
-  "source": "Game turbo hardware fitment. Common 1.8 bar baseline; player boost calibration is applied independently."
+  "source": "Game turbo hardware fitment. Common 1.8 bar baseline; player boost calibration is applied independently.",
+  "compressible_exhaust": true
 }
