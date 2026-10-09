@@ -27,6 +27,7 @@ func recenter() -> void:
 func activate(from: Transform3D) -> void:
 	if free_flight:
 		global_transform = from * camera.transform.affine_inverse()
+	current = true
 	camera.current = true
 
 func shift_origin(delta: Vector3) -> void:

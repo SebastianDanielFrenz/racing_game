@@ -37,6 +37,7 @@ func run() -> void:
 	await process_frame
 	check(layer.get_viewport()==menu.viewport,"shell canvas uses VR viewport")
 	check(menu.active,"spawn picker is visible")
+	check(menu.origin.current,"menu owns the active XR origin as well as camera")
 	var center: Vector2 = menu.ray_pixel(Vector3.ZERO,Vector3.FORWARD)
 	check(center.distance_to(Vector2(960,540))<0.01,"center ray maps to center pixel")
 	check(menu.ray_pixel(Vector3.ZERO,Vector3.BACK).x<0,"ray pointing away rejected")
@@ -57,6 +58,14 @@ func run() -> void:
 	menu._button("menu_button",true,1)
 	check(host.backs==2,"controller menu can request pause from driving")
 	check(menu.viewport.render_target_update_mode==SubViewport.UPDATE_DISABLED,"driving disables menu rendering")
+	menu.show_screen("spawn_picker")
+	menu.camera.position=Vector3(1,1.7,2)
+	menu.camera.rotation=Vector3(0.35,0.6,0.45)
+	menu._place_panel()
+	check(absf(menu.panel.global_position.y-menu.camera.global_position.y)<0.0001,"panel uses tracked eye height")
+	check(menu.panel.global_basis.y.distance_to(Vector3.UP)<0.0001,"panel upright despite head pitch and roll")
+	var toward: Vector3=(menu.panel.global_position-menu.camera.global_position).normalized()
+	check(menu.ray_pixel(menu.camera.global_position,toward).distance_to(Vector2(960,540))<0.01,"tracked eye ray reaches panel center")
 	host.queue_free()
 	await process_frame
 	print("RG_XR_MENU_TEST failures=%d" % failures)

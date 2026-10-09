@@ -14,6 +14,8 @@ var pointer := Vector2(-1,-1)
 var held := false
 var hand_index := 1
 var scroll_delay := 0.0
+var alignment_pending := false
+var tracking_frames := 0
 
 func _ready() -> void:
 	process_priority = 1000
@@ -69,6 +71,25 @@ func _ready() -> void:
 	panel.hide()
 	cursor.hide()
 	camera.current = false
+	var xr := XRServer.find_interface("OpenXR")
+	if xr != null:
+		xr.pose_recentered.connect(_request_alignment)
+		xr.session_begun.connect(_request_alignment)
+
+func _request_alignment() -> void:
+	if not active: return
+	alignment_pending = true
+	tracking_frames = 0
+	panel.hide()
+	cursor.hide()
+
+func _place_panel() -> void:
+	var forward := -camera.global_basis.z
+	forward.y = 0
+	if forward.length_squared() < 0.01: forward = Vector3.FORWARD
+	forward = forward.normalized()
+	panel.global_position = camera.global_position + forward*2.6
+	panel.global_basis = Basis.looking_at(forward,Vector3.UP)
 
 func attach(layer: CanvasLayer) -> void:
 	if layer.get_parent() != viewport:
@@ -80,22 +101,24 @@ func show_screen(screen: String) -> void:
 		var old := get_viewport().get_camera_3d()
 		if old != null and old.get_parent() is XROrigin3D:
 			origin.global_transform = old.get_parent().global_transform
-		var forward := -camera.global_basis.z
-		forward.y = 0
-		if forward.length_squared() < 0.01: forward = Vector3.FORWARD
-		forward = forward.normalized()
-		panel.global_position = camera.global_position + forward*2.6
-		panel.global_basis = Basis.looking_at(forward,Vector3.UP)
+		origin.current = true
+		var xr := XRServer.find_interface("OpenXR")
+		alignment_pending = xr != null and xr.is_initialized()
+		tracking_frames = 0
+		if not alignment_pending: _place_panel()
 	if not next and held: _click(false)
 	active = next
-	panel.visible = active
+	panel.visible = active and not alignment_pending
 	viewport.render_target_update_mode = SubViewport.UPDATE_ALWAYS if active else SubViewport.UPDATE_DISABLED
 	if active:
+		origin.current = true
 		camera.current = true
 	else:
 		cursor.hide()
 		var world_camera: Camera3D = main._director.active_camera()
-		if world_camera != null: world_camera.current = true
+		if world_camera != null:
+			if world_camera.get_parent() is XROrigin3D: world_camera.get_parent().current = true
+			world_camera.current = true
 
 func ray_pixel(from: Vector3, direction: Vector3) -> Vector2:
 	var local_from := panel.global_transform.affine_inverse()*from
@@ -110,7 +133,14 @@ func ray_pixel(from: Vector3, direction: Vector3) -> Vector2:
 
 func _process(delta: float) -> void:
 	if not active: return
+	origin.current = true
 	camera.current = true
+	if alignment_pending:
+		tracking_frames = tracking_frames+1 if camera.get_is_active() else 0
+		if tracking_frames<3: return
+		_place_panel()
+		alignment_pending = false
+		panel.show()
 	var hand := hands[hand_index]
 	var source: Node3D = hand if hand.get_is_active() else camera
 	var next := ray_pixel(source.global_position,-source.global_basis.z)
@@ -164,6 +194,10 @@ func _button(action: String, pressed: bool, index: int) -> void:
 
 func _input(event: InputEvent) -> void:
 	if not active or event is InputEventMouse: return
+	if event is InputEventKey and event.pressed and event.keycode == KEY_F9:
+		XRServer.center_on_hmd(XRServer.RESET_BUT_KEEP_TILT,false)
+		_request_alignment()
+		return
 	# Back stays with main's existing ESC/B flow; avoid a duplicate transition.
 	if event.is_action("ui_cancel"): return
 	if event is InputEventKey or event is InputEventJoypadButton or event is InputEventJoypadMotion:
