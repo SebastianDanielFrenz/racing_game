@@ -575,6 +575,7 @@ func _build_scene(user_args: PackedStringArray) -> void:
 	_overlay.name = "LoadingOverlay"
 	_overlay.set_script(load("res://scripts/loading_overlay.gd"))
 	add_child(_overlay)
+	if _xr_menu != null: _xr_menu.attach(_overlay)
 
 	_build_shell(user_args)
 	_apply_mode_state()
@@ -1160,6 +1161,7 @@ func _process(delta: float) -> void:
 	_mouse_captured_prev = _input_map.is_mouse_captured()
 
 var _vr_active := false
+var _xr_menu: Node3D
 
 func _try_start_vr() -> void:
 	var xr := XRServer.find_interface("OpenXR")
@@ -1177,11 +1179,14 @@ func _try_start_vr() -> void:
 		add_child(rig)
 		_director.add_rig(rig_name, rig)
 	_vr_active = true
+	_xr_menu = load("res://scripts/xr_menu.gd").new()
+	_xr_menu.main = self
+	add_child(_xr_menu)
 	print("RG_VR active: tracked cockpit, F9 recenter; FreeCam uses tracked free flight")
 
 # Owner bookmarks survive normal log rotation in user://drive_marks.jsonl.
 func _input(event: InputEvent) -> void:
-	if _shell != null and _screen == "configurator" and event.is_action_pressed("ui_cancel"):
+	if _shell != null and (_screen == "configurator" or (_xr_menu != null and _xr_menu.active)) and event.is_action_pressed("ui_cancel"):
 		_on_escape()
 		get_viewport().set_input_as_handled()
 		return
@@ -1253,13 +1258,14 @@ func _open_garage() -> void:
 	_garage_scene.name = "GarageScene"
 	_garage_scene.garage = _garage
 	add_child(_garage_scene)
+	if _xr_menu != null: _xr_menu.attach(_garage_scene)
 
 # Removes the garage scene and every node it created (the acceptance test counts
 # the tree), ends any edit session and removes the scratch files.
 func _close_garage() -> void:
 	_garage.discard()
 	if _garage_scene != null:
-		remove_child(_garage_scene)
+		_garage_scene.get_parent().remove_child(_garage_scene)
 		_garage_scene.queue_free()
 		_garage_scene = null
 
@@ -1453,6 +1459,7 @@ func _build_shell(user_args: PackedStringArray) -> void:
 	_shell_ui.garage_save_requested.connect(_on_garage_save)
 	_shell_ui.garage_exit_requested.connect(_on_garage_exit)
 	add_child(_shell_ui)
+	if _xr_menu != null: _xr_menu.attach(_shell_ui)
 	_overlay.attribution_line = str(_shell.get_attribution_line())
 	for section in _shell.get_settings_schema():
 		for def in section["settings"]:
@@ -1501,6 +1508,7 @@ func _show_screen(screen_name: String) -> void:
 		_free_thumbs()
 	_input_map.suspended = screen_name == "controls" # the controls screen reads devices itself
 	_shell_ui.show_screen(screen_name)
+	if _xr_menu != null: _xr_menu.show_screen(screen_name)
 	_set_world_ui_visible(screen_name == "drive" or screen_name == "pause")
 	if screen_name != "loading":
 		_overlay.hide_overlay()
@@ -1598,7 +1606,8 @@ func _shutdown_audio_and_quit() -> void:
 	get_tree().quit()
 
 func _typing() -> bool:
-	return _panel_open() or get_viewport().gui_get_focus_owner() is LineEdit
+	var ui_viewport: Viewport = _xr_menu.viewport if _xr_menu != null and _xr_menu.active else get_viewport()
+	return _panel_open() or ui_viewport.gui_get_focus_owner() is LineEdit
 
 func _on_escape() -> void:
 	match _screen:

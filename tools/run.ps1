@@ -41,11 +41,10 @@
               game/scripts/main.gd) in Drive mode, i.e. `--drive` is forwarded.
       -Flat   skips the menu and starts straight in the flat test scene (no
               store needed), i.e. `--flat` is forwarded.
-      -VR     also starts straight in the world (the menus are screen UI, not
-              built for a headset yet): the real world unless -Flat is given.
-              Its default start is the A 5 at Rosbach (preset a5_north) in the
-              rhein_main_corridor world; RG_WORLD_CONFIG or a forwarded
-              --spawn=ID (any id in data/world/spawn_presets.json) overrides.
+      -VR     opens the headset-visible menus, including spawn selection and
+              the garage. Add -Drive to skip menus (A 5 at Rosbach), or -Flat
+              for the flat test world. RG_WORLD_CONFIG and --spawn=ID override
+              explicit direct-drive starts.
     Either way the world and the player mode switch at runtime (F8 / V / B) -
     the flags pick only the start. Nothing is added when the forwarded args
     already choose a start (--drive, --flat, --free-cam, --terrain-preview,
@@ -120,13 +119,13 @@ foreach ($a in $args) {
 
 $buildDir = Join-Path $repoRoot "out\build\$Preset"
 
-# R5: the shell (boot splash + main menu) unless -Drive/-Flat (or -VR) or the
+# R5: the shell (boot splash + main menu) unless -Drive/-Flat or the
 # forwarded args already choose a start themselves.
 $choosesStart = @($GodotArgs | Where-Object { $_ -in @('--drive', '--flat', '--free-cam', '--terrain-preview', '--bindings-test', '--shell-test', '--camera-test', '--drive-smoke', '--screenshots', '--road-shots') }).Count -gt 0
 if (-not $choosesStart) {
     if ($Flat) {
         $GodotArgs.Insert(0, '--flat')
-    } elseif ($Drive -or $VR) {
+    } elseif ($Drive) {
         $GodotArgs.Insert(0, '--drive')
     }
 }

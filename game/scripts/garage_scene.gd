@@ -78,7 +78,8 @@ func _ready() -> void:
 
 # Render at physical pixels: the rect's canvas size times the root's content scale.
 func _fit_viewport() -> void:
-	var px := (_container.size * get_tree().root.content_scale_factor).round()
+	var scale_factor := get_tree().root.content_scale_factor if get_viewport() == get_tree().root else 1.0
+	var px := (_container.size * scale_factor).round()
 	_viewport.size = Vector2i(maxi(int(px.x), 1), maxi(int(px.y), 1))
 
 func _exit_tree() -> void:
