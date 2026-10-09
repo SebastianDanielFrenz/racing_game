@@ -80,8 +80,8 @@ func _request_alignment() -> void:
 	if not active: return
 	alignment_pending = true
 	tracking_frames = 0
-	panel.hide()
-	cursor.hide()
+	_place_panel()
+	panel.show()
 
 func _place_panel() -> void:
 	var forward := -camera.global_basis.z
@@ -90,6 +90,7 @@ func _place_panel() -> void:
 	forward = forward.normalized()
 	panel.global_position = camera.global_position + forward*2.6
 	panel.global_basis = Basis.looking_at(forward,Vector3.UP)
+	print("RG_VR_MENU aligned eye=%s panel=%s origin_current=%s" % [camera.global_position,panel.global_position,origin.current])
 
 func attach(layer: CanvasLayer) -> void:
 	if layer.get_parent() != viewport:
@@ -105,10 +106,10 @@ func show_screen(screen: String) -> void:
 		var xr := XRServer.find_interface("OpenXR")
 		alignment_pending = xr != null and xr.is_initialized()
 		tracking_frames = 0
-		if not alignment_pending: _place_panel()
+		_place_panel()
 	if not next and held: _click(false)
 	active = next
-	panel.visible = active and not alignment_pending
+	panel.visible = active
 	viewport.render_target_update_mode = SubViewport.UPDATE_ALWAYS if active else SubViewport.UPDATE_DISABLED
 	if active:
 		origin.current = true
@@ -136,11 +137,12 @@ func _process(delta: float) -> void:
 	origin.current = true
 	camera.current = true
 	if alignment_pending:
-		tracking_frames = tracking_frames+1 if camera.get_is_active() else 0
-		if tracking_frames<3: return
-		_place_panel()
-		alignment_pending = false
-		panel.show()
+		# XRCamera3D is a Camera3D, not an XRNode3D: it has no
+		# get_is_active(). Never hide the menu behind a tracking predicate.
+		tracking_frames += 1
+		if tracking_frames>=3:
+			_place_panel()
+			alignment_pending = false
 	var hand := hands[hand_index]
 	var source: Node3D = hand if hand.get_is_active() else camera
 	var next := ray_pixel(source.global_position,-source.global_basis.z)
