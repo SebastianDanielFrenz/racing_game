@@ -21,6 +21,7 @@ struct DynoResult {
     bool busy=false;
     int progress=0;
     std::vector<DynoPoint> points;
+    std::vector<DynoPoint> provisional_points;
 };
 // Immutable snapshots only; no Garage, Godot or live-world state on the worker.
 class GarageDyno {

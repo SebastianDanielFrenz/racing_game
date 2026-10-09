@@ -1,6 +1,7 @@
 extends Control
 # Native engine output only. Old complete points remain during recalculation.
 var points: Array = []
+var provisional: Array = []
 var revision := -1
 var vehicle_id := ""
 var busy := false
@@ -22,6 +23,7 @@ func update_result(result: Dictionary) -> void:
 	if next_revision != revision and not result.get("points",[]).is_empty():
 		points = result["points"].duplicate(true)
 		revision = next_revision
+	provisional = result.get("provisional_points",[]).duplicate(true)
 	busy = bool(result.get("busy",false))
 	progress = int(result.get("progress",0))
 	error = str(result.get("error",""))
@@ -32,34 +34,44 @@ func _draw() -> void:
 	var torque_color := Color("ef973e")
 	var power_color := Color("66c5ef")
 	var plot := Rect2(34,28,maxf(40,size.x-68),maxf(40,size.y-75))
+	var displayed: Array = provisional if not provisional.is_empty() else points
 	var max_rpm := 1000.0
 	var max_torque := 1.0
 	var max_power := 1.0
-	for point in points:
+	var min_torque := 0.0
+	var min_power := 0.0
+	for point in displayed:
 		max_rpm = maxf(max_rpm,float(point["rpm"]))
 		max_torque = maxf(max_torque,float(point["torque_nm"]))
 		max_power = maxf(max_power,float(point["power_kw"]))
+		min_torque = minf(min_torque,float(point["torque_nm"]))
+		min_power = minf(min_power,float(point["power_kw"]))
+	var lower := minf(min_torque/max_torque,min_power/max_power)
+	var span := 1.0-lower
 	draw_string(font,Vector2(0,16),"Nm",HORIZONTAL_ALIGNMENT_LEFT,-1,12,torque_color)
 	draw_string(font,Vector2(size.x-25,16),"kW",HORIZONTAL_ALIGNMENT_LEFT,-1,12,power_color)
 	for tick in range(5):
 		var fraction := float(tick)/4.0
 		var y := plot.end.y-fraction*plot.size.y
 		draw_line(Vector2(plot.position.x,y),Vector2(plot.end.x,y),Color(0.3,0.33,0.38,0.45))
-		if not points.is_empty():
-			draw_string(font,Vector2(0,y+4),"%.0f" % (max_torque*fraction),HORIZONTAL_ALIGNMENT_LEFT,-1,10,torque_color)
-			draw_string(font,Vector2(plot.end.x+4,y+4),"%.0f" % (max_power*fraction),HORIZONTAL_ALIGNMENT_LEFT,-1,10,power_color)
+		if not displayed.is_empty():
+			draw_string(font,Vector2(0,y+4),"%.0f" % (max_torque*(lower+span*fraction)),HORIZONTAL_ALIGNMENT_LEFT,-1,10,torque_color)
+			draw_string(font,Vector2(plot.end.x+4,y+4),"%.0f" % (max_power*(lower+span*fraction)),HORIZONTAL_ALIGNMENT_LEFT,-1,10,power_color)
 		var x := plot.position.x+fraction*plot.size.x
 		draw_string(font,Vector2(x-13,plot.end.y+15),"%.0f" % (max_rpm*fraction),HORIZONTAL_ALIGNMENT_LEFT,-1,10,Color(0.7,0.73,0.78))
 	draw_string(font,Vector2(plot.end.x-22,plot.end.y+29),"RPM",HORIZONTAL_ALIGNMENT_LEFT,-1,10,Color(0.7,0.73,0.78))
-	if points.is_empty():
+	if lower < 0.0:
+		var zero_y := plot.end.y+lower/span*plot.size.y
+		draw_line(Vector2(plot.position.x,zero_y),Vector2(plot.end.x,zero_y),Color(0.65,0.68,0.72,0.7))
+	if displayed.is_empty():
 		draw_string(font,Vector2(plot.position.x+8,plot.get_center().y),"Computing dyno…" if busy else "No dyno data",HORIZONTAL_ALIGNMENT_LEFT,-1,12,Color(0.7,0.73,0.78))
 	else:
 		var torque_line := PackedVector2Array()
 		var power_line := PackedVector2Array()
-		for point in points:
+		for point in displayed:
 			var x := plot.position.x+float(point["rpm"])/max_rpm*plot.size.x
-			torque_line.append(Vector2(x,plot.end.y-clampf(float(point["torque_nm"])/max_torque,0,1)*plot.size.y))
-			power_line.append(Vector2(x,plot.end.y-clampf(float(point["power_kw"])/max_power,0,1)*plot.size.y))
-		if points.size() > 1:
+			torque_line.append(Vector2(x,plot.end.y-(float(point["torque_nm"])/max_torque-lower)/span*plot.size.y))
+			power_line.append(Vector2(x,plot.end.y-(float(point["power_kw"])/max_power-lower)/span*plot.size.y))
+		if displayed.size() > 1:
 			draw_polyline(torque_line,torque_color,2,true)
 			draw_polyline(power_line,power_color,2,true)

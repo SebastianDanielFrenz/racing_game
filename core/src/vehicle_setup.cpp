@@ -1210,9 +1210,10 @@ CompiledSetup compile_setup_internal(const CatalogEntry& entry, const SetupOptio
             sampling["enabled"] = true;
             if (!sampling.contains("min_kpa")) sampling["min_kpa"] = grid.front();
             sampling["max_kpa"] = maximum;
-            if (!sampling.contains("relative_error")) sampling["relative_error"] = 0.02;
-            if (!sampling.contains("max_points")) sampling["max_points"] = 512;
+            if (!sampling.contains("relative_error")) sampling["relative_error"] = 0.05;
+            if (!sampling.contains("max_points")) sampling["max_points"] = 24;
             if (!sampling.contains("max_passes")) sampling["max_passes"] = 8;
+            sampling["allow_budget_limit"] = true;
             cycle["pressure_sampling"] = std::move(sampling);
         }
     }

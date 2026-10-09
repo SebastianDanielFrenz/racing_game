@@ -496,6 +496,11 @@ godot::Dictionary RgGarage::get_dyno() const {
         godot::Dictionary p; p["rpm"]=point.rpm; p["torque_nm"]=point.torque_nm; p["power_kw"]=point.power_kw; points.push_back(p);
     }
     out["points"]=points;
+    godot::Array provisional;
+    for(const auto& point:result.provisional_points) {
+        godot::Dictionary p;p["rpm"]=point.rpm;p["torque_nm"]=point.torque_nm;p["power_kw"]=point.power_kw;provisional.push_back(p);
+    }
+    out["provisional_points"]=provisional;
     return out;
 }
 

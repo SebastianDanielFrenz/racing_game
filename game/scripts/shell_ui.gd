@@ -190,7 +190,8 @@ func _process(delta: float) -> void:
 			return
 		var data: Dictionary = garage.get_dyno()
 		_garage_dyno.update_result(data)
-		_garage_dyno_status.text = ("Updating · %d%%" % int(data.get("progress",0))) if bool(data.get("busy",false)) else ("Dyno failed · previous curve retained" if not str(data.get("error","")).is_empty() else "Crank · WOT · ISA · N₂O off")
+		var label := "Provisional · refining" if not data.get("provisional_points",[]).is_empty() else "Updating"
+		_garage_dyno_status.text = ("%s · %d%%" % [label,int(data.get("progress",0))]) if bool(data.get("busy",false)) else ("Dyno failed · previous curve retained" if not str(data.get("error","")).is_empty() else "Crank · WOT · ISA · N₂O off")
 		_garage_dyno_status.tooltip_text = str(data.get("error",""))
 	if screen == "boot" and not _boot_done:
 		_boot_elapsed += delta
