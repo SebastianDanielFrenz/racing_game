@@ -14,7 +14,11 @@ struct DynoRequest {
     VehicleSetup setup;
     std::string key;
 };
-struct DynoPoint { double rpm=0, torque_nm=0, power_kw=0; };
+struct DynoPoint {
+    double rpm=0, torque_nm=0, power_kw=0;
+    bool turbo_simulation=false;
+    double compressor_sim_fraction=0, turbine_sim_fraction=0, turbo_fallback_fraction=0;
+};
 struct DynoResult {
     std::string vehicle_id, key, error;
     std::uint64_t revision=0;

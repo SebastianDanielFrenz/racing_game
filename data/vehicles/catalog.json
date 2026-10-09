@@ -9,7 +9,7 @@
       "subtitle": "Twin-turbo V8 hypercar",
       "description": "Mid-engined, rear-wheel-drive hypercar with a Torsen differential, a seven-speed manual and aero. The reference car of the game.",
       "body_type": "hypercar",
-      "vehicle": "external/physics_sim/data/vehicles/car_hyper.json",
+      "vehicle": "data/vehicles/car_hyper.json",
       "model": "external/physics_sim/data/models/car_hyper/car_hyper.glb",
       "engine_bay": "mid",
       "chassis": {
@@ -27,7 +27,7 @@
         "peak_torque_rpm": 6000.0,
         "peak_power_kw": 1000.2,
         "peak_power_rpm": 7500.0,
-        "source": "data/engines/hyper_v8_one1_audio.json is a simulated engine (no torque curve); these are the calibrated net figures its source text and physics_sim data/engines/HYPER_ONE1.md cite"
+        "source": "data/engines/hyper_v8_one1_audio.json is a simulated engine (no torque curve); these are the calibrated net figures its source text and physics_sim data/engines/HYPER_ONE1.md cite Historical reference calibration; use live dyno for current turbo simulation output."
       },
       "visual": {
         "paint": "#9aa0ac",
@@ -202,7 +202,7 @@
       "subtitle": "Nitrous hypercar",
       "description": "The twin-turbo V8 hypercar with a wet nitrous kit: a 6.8 kg bottle and a 600 kW shot. Arm the kit (pad Y, N key), then full throttle in gear 2 or higher between 3000 and 8100 rpm sprays. Unvalidated kit data: with the spray the boost overshoots its target and the turbo can sit on the model's rotor speed cap.",
       "body_type": "hypercar",
-      "vehicle": "external/physics_sim/data/vehicles/car_hyper_n2o.json",
+      "vehicle": "data/vehicles/car_hyper_n2o.json",
       "model": "external/physics_sim/data/models/car_hyper/car_hyper.glb",
       "engine_bay": "mid",
       "chassis": {
@@ -220,7 +220,7 @@
         "peak_torque_rpm": 6000.0,
         "peak_power_kw": 1000.2,
         "peak_power_rpm": 7500.0,
-        "source": "the car_hyper engine's calibrated net figures WITHOUT the nitrous shot (data/engines/HYPER_ONE1.md); the kit adds about 600 kW while it sprays"
+        "source": "the car_hyper engine's calibrated net figures WITHOUT the nitrous shot (data/engines/HYPER_ONE1.md); the kit adds about 600 kW while it sprays Historical reference calibration; use live dyno for current turbo simulation output."
       },
       "visual": {
         "paint": "#5a7bd9",

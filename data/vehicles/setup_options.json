@@ -349,7 +349,7 @@
         {
           "id": "original_twin",
           "label": "Twin turbo \u00b7 66/82 mm",
-          "path": "../../external/physics_sim/data/turbo_configurations/hyper_twin_default.json",
+          "path": "../turbo_configurations/hyper_twin_standard.json",
           "image": "res://assets/components/engines/turbo_twin.png",
           "detail": "Compressor inducer/exducer \u00b7 2 unit(s) \u00b7 0.60 kg/s per unit \u00b7 I 0.00023 kg m\u00b2"
         },
@@ -445,7 +445,7 @@
         {
           "id": "original_twin_n2o",
           "label": "Twin turbo \u00b7 66/82 mm",
-          "path": "../../external/physics_sim/data/turbo_configurations/hyper_twin_n2o.json",
+          "path": "../turbo_configurations/hyper_twin_standard_n2o.json",
           "image": "res://assets/components/engines/turbo_twin.png",
           "detail": "Compressor inducer/exducer \u00b7 2 unit(s) \u00b7 0.60 kg/s per unit \u00b7 I 0.00023 kg m\u00b2"
         },

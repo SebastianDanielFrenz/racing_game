@@ -192,6 +192,14 @@ func _process(delta: float) -> void:
 		_garage_dyno.update_result(data)
 		var label := "Provisional · refining" if not data.get("provisional_points",[]).is_empty() else "Updating"
 		_garage_dyno_status.text = ("%s · %d%%" % [label,int(data.get("progress",0))]) if bool(data.get("busy",false)) else ("Dyno failed · previous curve retained" if not str(data.get("error","")).is_empty() else "Crank · WOT · ISA · N₂O off")
+		if not bool(data.get("busy",false)) and str(data.get("error","")).is_empty():
+			var simulated_turbo := false
+			var mixed_turbo := false
+			for point in data.get("points",[]):
+				simulated_turbo = simulated_turbo or bool(point.get("turbo_simulation",false))
+				mixed_turbo = mixed_turbo or float(point.get("turbo_fallback_fraction",0.0)) > 0.0
+			if simulated_turbo:
+				_garage_dyno_status.text += " · Turbo: sim + fallback" if mixed_turbo else " · Turbo: simulated"
 		_garage_dyno_status.tooltip_text = str(data.get("error",""))
 	if screen == "boot" and not _boot_done:
 		_boot_elapsed += delta

@@ -493,12 +493,22 @@ godot::Dictionary RgGarage::get_dyno() const {
     out["vehicle_id"]=from_std(result.vehicle_id); out["error"]=from_std(result.error);
     godot::Array points;
     for(const auto& point:result.points) {
-        godot::Dictionary p; p["rpm"]=point.rpm; p["torque_nm"]=point.torque_nm; p["power_kw"]=point.power_kw; points.push_back(p);
+        godot::Dictionary p; p["rpm"]=point.rpm; p["torque_nm"]=point.torque_nm; p["power_kw"]=point.power_kw;
+        p["turbo_simulation"]=point.turbo_simulation;
+        p["compressor_sim_fraction"]=point.compressor_sim_fraction;
+        p["turbine_sim_fraction"]=point.turbine_sim_fraction;
+        p["turbo_fallback_fraction"]=point.turbo_fallback_fraction;
+        points.push_back(p);
     }
     out["points"]=points;
     godot::Array provisional;
     for(const auto& point:result.provisional_points) {
-        godot::Dictionary p;p["rpm"]=point.rpm;p["torque_nm"]=point.torque_nm;p["power_kw"]=point.power_kw;provisional.push_back(p);
+        godot::Dictionary p;p["rpm"]=point.rpm;p["torque_nm"]=point.torque_nm;p["power_kw"]=point.power_kw;
+        p["turbo_simulation"]=point.turbo_simulation;
+        p["compressor_sim_fraction"]=point.compressor_sim_fraction;
+        p["turbine_sim_fraction"]=point.turbine_sim_fraction;
+        p["turbo_fallback_fraction"]=point.turbo_fallback_fraction;
+        provisional.push_back(p);
     }
     out["provisional_points"]=provisional;
     return out;

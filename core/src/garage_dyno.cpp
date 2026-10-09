@@ -27,7 +27,8 @@ std::vector<DynoPoint> measure_dyno(const ps::drivetrain::SimulatedEngineDesc* s
         const int point=order[index];
         if(cancel->load()) throw ps::io::GenerationCancelled();
         const double rpm=idle+(limit-1.0-idle)*point/32.0;
-        double torque=0;
+        double torque=0, compressor_samples=0, turbine_samples=0, fallback_samples=0;
+        const bool turbo_simulation=simulated && simulated->turbo_pair && simulated->turbo_pair->maps && simulated->turbo_pair->maps->stages;
         if(engine) {
             engine->reset(ps::drivetrain::EngineState::Running);
             ps::drivetrain::Sensors sensors;
@@ -38,7 +39,12 @@ std::vector<DynoPoint> measure_dyno(const ps::drivetrain::SimulatedEngineDesc* s
                 if((step&255)==0 && cancel->load()) throw ps::io::GenerationCancelled();
                 auto pre=engine->pre_solve(sensors,throttle,ps::drivetrain::TcuRequest{},h);
                 engine->post_solve(sensors.omega,h);
-                if(step>=14400) torque+=pre.tau0-pre.friction_cap_kinetic;
+                if(step>=14400) {
+                    torque+=pre.tau0-pre.friction_cap_kinetic;
+                    compressor_samples+=pre.turbo_compressor_stage_used;
+                    turbine_samples+=pre.turbo_turbine_stage_used;
+                    fallback_samples+=pre.turbo_stage_map_fallback;
+                }
             }
             torque/=960.0;
         } else {
@@ -46,7 +52,8 @@ std::vector<DynoPoint> measure_dyno(const ps::drivetrain::SimulatedEngineDesc* s
             torque=mapped->wot_torque_nm_vs_rpm.evaluate(rpm);
         }
         if(!std::isfinite(torque)) throw std::runtime_error("Non-finite dyno torque");
-        points.push_back({rpm,torque,torque*rpm*pi/30000.0});
+        points.push_back({rpm,torque,torque*rpm*pi/30000.0,turbo_simulation,
+            compressor_samples/960.0,turbine_samples/960.0,fallback_samples/960.0});
         std::sort(points.begin(),points.end(),[](const auto& a,const auto& b){return a.rpm<b.rpm;});
         publish(points,index+1);
     }

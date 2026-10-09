@@ -52,13 +52,25 @@ TEST_CASE("garage dyno: actual WOT output, power units, newest setup wins", "[ga
     dyno.request(request("stock"));
     const auto stock=finished(dyno);
     double peak=0;
+    bool compressor_used=false, turbine_used=false;
     for(const auto& p:stock.points) {
+        CHECK(p.turbo_simulation);
+        CHECK(p.compressor_sim_fraction>=0);
+        CHECK(p.compressor_sim_fraction<=1);
+        CHECK(p.turbine_sim_fraction>=0);
+        CHECK(p.turbine_sim_fraction<=1);
+        CHECK(p.turbo_fallback_fraction>=0);
+        CHECK(p.turbo_fallback_fraction<=1);
+        compressor_used=compressor_used || p.compressor_sim_fraction>.99;
+        turbine_used=turbine_used || p.turbine_sim_fraction>.99;
         CHECK(std::isfinite(p.torque_nm));
         CHECK(p.power_kw==Catch::Approx(p.torque_nm*p.rpm*3.14159265358979323846/30000.0));
         peak=std::max(peak,p.power_kw);
     }
     CHECK(peak>900);
     CHECK(peak<1100);
+    CHECK(compressor_used);
+    CHECK(turbine_used);
     dyno.request(request("stock"));
     CHECK_FALSE(dyno.result().busy);
     CHECK(dyno.result().revision==stock.revision);
@@ -72,7 +84,13 @@ TEST_CASE("garage dyno: actual WOT output, power units, newest setup wins", "[ga
     CHECK(na.key=="NA");
     CHECK(na.revision>stock.revision);
     double na_peak=0;
-    for(const auto& p:na.points) na_peak=std::max(na_peak,p.power_kw);
+    for(const auto& p:na.points) {
+        CHECK_FALSE(p.turbo_simulation);
+        CHECK(p.compressor_sim_fraction==0);
+        CHECK(p.turbine_sim_fraction==0);
+        CHECK(p.turbo_fallback_fraction==0);
+        na_peak=std::max(na_peak,p.power_kw);
+    }
     CHECK(na_peak<peak*0.75);
     dyno.request(request("cancelled"));
     dyno.cancel();
@@ -88,6 +106,40 @@ TEST_CASE("garage dyno: actual WOT output, power units, newest setup wins", "[ga
     CHECK_FALSE(dyno.result().error.empty());
     CHECK(dyno.result().key=="NA");
     CHECK(dyno.result().revision==na.revision);
+}
+
+TEST_CASE("Garage turbo choices load generated maps and settle at both timesteps", "[turbo_runtime]") {
+    auto r=request("turbo_runtime");
+    ps::jobs::JobSystem workers(4);
+    ps::io::EngineMapOptions maps;maps.pool=&workers;maps.cache_dir=r.context.engine_map_cache_dir;
+    auto original=std::get<ps::drivetrain::SimulatedEngineDesc>(ps::io::load_engine_json(
+        std::string(RG_SOURCE_DIR)+"/data/engines/hyper_v8_one1_audio.json",maps));
+    for(const std::string size:{"compact","standard","large"}) for(const std::string layout:{"single","twin"}) {
+        auto config=ps::io::load_turbo_configuration_json(std::string(RG_SOURCE_DIR)+"/data/turbo_configurations/hyper_"+layout+"_"+size+".json");
+        REQUIRE(config.maps->stages);
+        CHECK(config.maps->stages->solver=="meanline-4");
+        for(double target:{1.8,4.3,30.0}) for(double rpm:{4000.0,7500.0}) {
+            double reference=0;
+            for(int hz:{960,1920}) {
+                auto desc=original;desc.turbo_pair=config;desc.turbo_pair->target_boost_pa=target*1e5;
+                ps::drivetrain::SimulatedEngine engine(desc);
+                ps::drivetrain::Sensors sensors;sensors.omega=rpm*3.141592653589793/30;sensors.ignition=1;
+                ps::drivetrain::ThrottleCommand throttle;throttle.command=1;
+                double power=0;
+                for(int i=0;i<16*hz;++i) {
+                    const auto pre=engine.pre_solve(sensors,throttle,{},1.0/hz);
+                    (void)engine.post_solve(sensors.omega,1.0/hz);
+                    if(i>=15*hz) power+=(pre.tau0-pre.friction_cap_kinetic)*sensors.omega/1000/hz;
+                    if(i==16*hz-1) { CHECK(std::isfinite(pre.turbo_rpm));CHECK(std::isfinite(pre.boost_bar)); }
+                }
+                INFO(size<<" "<<layout<<" target="<<target<<" rpm="<<rpm<<" hz="<<hz<<" kW="<<power);
+                CHECK(std::isfinite(power));
+                CHECK(power>0);
+                if(hz==960)reference=power;
+                else CHECK(power==Catch::Approx(reference).epsilon(.02).margin(1));
+            }
+        }
+    }
 }
 
 TEST_CASE("diagnose hyper boost target against actual pressure and losses", "[.boost_diagnostic]") {
