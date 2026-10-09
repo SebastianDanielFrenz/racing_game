@@ -5,7 +5,10 @@
 #include <algorithm>
 #include <cmath>
 #include <chrono>
+#include <charconv>
+#include <cstdlib>
 #include <stdexcept>
+#include <string_view>
 #ifdef _WIN32
 #define NOMINMAX
 #include <windows.h>
@@ -90,7 +93,16 @@ void GarageDyno::run() {
     SetThreadPriority(GetCurrentThread(),THREAD_PRIORITY_BELOW_NORMAL);
 #endif
     ps::jobs::JobSystemOptions pool_options; pool_options.background_priority=true;
-    ps::jobs::JobSystem pool(2,pool_options);
+    // Leave four logical processors for rendering, audio and other work.
+    int workers=static_cast<int>(std::max(1u,std::thread::hardware_concurrency()>4 ? std::thread::hardware_concurrency()-4 : 1u));
+    if(const char* value=std::getenv("RG_ENGINE_MAP_WORKERS")) {
+        const std::string_view text(value);
+        int configured=0;
+        const auto parsed=std::from_chars(text.data(),text.data()+text.size(),configured);
+        if(parsed.ec==std::errc{} && parsed.ptr==text.data()+text.size() && configured>=1 && configured<=64)
+            workers=configured;
+    }
+    ps::jobs::JobSystem pool(workers,pool_options);
     for(;;) {
         DynoRequest request;
         std::uint64_t revision;
