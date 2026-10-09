@@ -763,7 +763,7 @@ imagery-derived appearance remain later work. Both appearance strategies may be
 combined (docs/buildings.md). This feature does not complete the outstanding
 G3-C source acceptance or G3-D/E and G3-F/R3 road work.
 Physics is pinned to requested e3e1e886b23b7db1c06a9cee4eb469c68452483b from S:.
-Reset/start coordinates are configurable and currently target the old spawn point.
+Reset/start coordinates are configurable and currently target the B 8 north-west of Unterliederbach.
 
 2026-10-03 road definition: profile-aligned asphalt overlay, lane/edge paint,
 explicit tagged turn arrows and a configurable gentle shared-heightfield verge

@@ -758,7 +758,7 @@ message.
     (Engelsruhe, as `home_r1_drive`) -> the 12-node junction at OSM node 94147307 -> B8 over the
     north-west carriageway bridge -> the L3014 bridge (both directions) -> the B8 south-east
     carriageway bridge. `tools/route_check` fails only on the pre-existing `world:` spawn
-    mismatch, which `home_r1_drive` shows too (the world config's spawn moved to the old spawn).
+    mismatch, which `home_r1_drive` shows too (the world config's spawn moved away from the route start).
   - **Re-resolving the junctions after the S1 pin bump.** The identity of a junction is its set of
     OSM node ids (`junctions[].node_ids`; OSM ids survive a data pin, positions and geo2map record
     ids may not). With P2 records, for each stored junction find the record whose node set

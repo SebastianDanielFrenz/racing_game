@@ -12,9 +12,9 @@
       "description": "The start point named in the world configuration.",
       "x": 1364.0,
       "y": -6515.0,
-      "yaw_deg": 4.05,
-      "measured_max_grade_pct": 0.73,
-      "source": "data/world/world_config.json spawn (50.12359409 N 8.51546541 E, UTM 32 minus the session origin)"
+      "yaw_deg": 161.9,
+      "measured_max_grade_pct": 1.45,
+      "source": "data/world/world_config.json spawn (50.12359409 N 8.51546541 E, UTM 32 minus the session origin) - the b8_trunk preset's point"
     },
     {
       "id": "engelsruhe",
@@ -35,16 +35,6 @@
       "yaw_deg": 161.9,
       "measured_max_grade_pct": 1.45,
       "source": "waypoint #400 of data/routes/home_r1_drive.json (centreline of the OSM road); yaw = direction to waypoint #412, 60 m ahead"
-    },
-    {
-      "id": "hornau",
-      "name": "Kelkheim-Hornau",
-      "description": "The Hornau trunk link of the B 8, heading west-north-west.",
-      "x": -2449.8,
-      "y": -3306.8,
-      "yaw_deg": 157.3,
-      "measured_max_grade_pct": 4.42,
-      "source": "waypoint #1480 of data/routes/home_r1_drive.json (centreline of the OSM road); yaw = direction to waypoint #1492, 60 m ahead"
     },
     {
       "id": "b8_north",

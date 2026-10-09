@@ -49,8 +49,9 @@ This archive persists across normal Godot log rotation.
 and `spawn.yaw_deg` (degrees counter-clockwise from east in the UTM frame).
 Startup and R reset both use this point; restart or reload the real world
 after editing. Legacy UTM `spawn.e`/`spawn.n` remain supported, but do not
-mix coordinate formats. The configured road-centre point beside the old spawn point is 50.12359409, 8.51546541, with heading 4.05 degrees. It is projected
-from the OSM address onto the street to avoid the building.
+mix coordinate formats. The configured point is on the B 8 north-west of
+Unterliederbach, 50.12359409, 8.51546541, with heading 161.9 degrees (the
+b8_trunk spawn preset).
 
 Manual cars (`manual_tcu`) start with auto-shift disabled. The existing F5 key /
 D-pad-left toggle still enables it on demand and survives world reloads for the
