@@ -13,10 +13,14 @@ var initial_fuel := -1.0
 var distance := 0.0
 var flow_lph := 0.0
 var elapsed := 0.0
+var tc_fitted := false
+var tc_on := false
+var tc_intervening := false
 var font := ThemeDB.fallback_font
 
 func _ready() -> void:
 	var info: Dictionary = simulation.get_vehicle_gauge_info(vehicle_name)
+	tc_fitted = "TC" in info.get("fitted_assists", [])
 	capacity = info.get("fuel_capacity_kg",0.0)
 	density = info.get("fuel_density_kg_m3",0.0)
 
@@ -37,6 +41,8 @@ func _process(delta: float) -> void:
 	var dt := elapsed
 	elapsed = 0.0
 	var pt: Dictionary = simulation.get_vehicle_powertrain(vehicle_name)
+	tc_on = pt.get("assist_traction_control",false)
+	tc_intervening = pt.get("traction_control_intervening",false)
 	speed = ground_speed*3.6
 	rpm = pt.get("rpm",0.0)
 	drive_kw = pt.get("drive_power_kw",0.0)
@@ -96,6 +102,10 @@ func _draw() -> void:
 	text("RPM",Vector2(735,214),22,blue)
 	text("R" if gear<0 else ("N" if gear==0 else str(gear)),Vector2(490,174),90)
 	text("GEAR",Vector2(490,207),18,blue)
+	if tc_fitted:
+		var tc_label := "TC ACTIVE" if tc_intervening else ("TC" if tc_on else "TC OFF")
+		var tc_color := Color(1.0,0.65,0.15) if tc_intervening or not tc_on else Color(0.2,0.95,0.75)
+		text(tc_label,Vector2(490,266),22,tc_color)
 	small_dial(Vector2(935,109),"%.0f" % drive_kw,"DRIVE kW",maxf(drive_kw,0)/650.0)
 	small_dial(Vector2(935,241),"%.1f" % boost_bar if boost_bar>=0 else "--","BOOST bar",boost_bar/3.0 if boost_bar>=0 else -1)
 	# Dynamic information strip, reserved for selectable trip pages later.

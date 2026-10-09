@@ -130,7 +130,7 @@ float value(const Controls& c, const rg::ActionState& s, const std::string& acti
 TEST_CASE("controls: the shipped schema and default profiles load and are consistent", "[controls]") {
     Controls c = make_controls();
     CHECK(c.ready());
-    CHECK(c.schema().size() == 35);
+    CHECK(c.schema().size() == 36);
     // Every action has a label, every signed axis names both directions.
     for (const rg::ActionDef& a : c.schema().actions()) {
         CAPTURE(a.id);
@@ -183,7 +183,7 @@ TEST_CASE("controls: the default profiles equal the bindings the game had before
     // Keyboard: the keys of the old project.godot [input] section and input_map.gd (plus N = nitrous arm, S1 2026-10-06: B is taken by the driving view, N is the drone-follow target key only in another mode).
     const std::map<std::string, std::string> keyboard = {
         {"steer", "key:A:-1, key:D"}, {"throttle", "key:W"}, {"brake", "key:S"}, {"handbrake", "key:Space"}, {"clutch", "key:C"},
-        {"shift_up", "key:E"}, {"shift_down", "key:Q"}, {"ignition", "key:I"}, {"starter", "key:K"}, {"auto_shift", "key:F5"},
+        {"shift_up", "key:E"}, {"shift_down", "key:Q"}, {"ignition", "key:I"}, {"starter", "key:K"}, {"auto_shift", "key:F5"}, {"traction_control", "key:F4"},
         {"toggle_nitrous", "key:N"}, {"flip_upright", "key:F"}, {"npc_truck", "key:T"}, {"get_out", "key:G"}, {"cycle_view", "key:B"},
         {"cycle_camera", "key:Tab"}, {"cycle_drone_target", "key:N"}, {"cam_zoom_in", "key:PageUp"}, {"cam_zoom_out", "key:PageDown"},
         {"cam_move_x", "key:A:-1, key:D"}, {"cam_move_z", "key:S:-1, key:W"},

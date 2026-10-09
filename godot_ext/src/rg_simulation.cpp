@@ -805,7 +805,9 @@ godot::Dictionary RgSimulation::get_vehicle_gauge_info(const String& vehicle_nam
     d["gear_count"] = gear_count;
     d["fuel_capacity_kg"] = fuel_capacity_kg;
     d["fuel_density_kg_m3"] = fuel_density_kg_m3;
-    d["fitted_assists"] = godot::PackedStringArray();
+    godot::PackedStringArray fitted;
+    if(session_->vehicle_desc().traction_control.enabled)fitted.push_back("TC");
+    d["fitted_assists"] = fitted;
     return d;
 }
 
@@ -832,6 +834,11 @@ godot::Dictionary RgSimulation::get_vehicle_powertrain(const String& vehicle_nam
     d["assist_auto_clutch"] = (p.assist_active_bits & 1u) != 0;
     d["assist_auto_blip"] = (p.assist_active_bits & 2u) != 0;
     d["assist_auto_shift"] = (p.assist_active_bits & 4u) != 0;
+    d["assist_traction_control"] = (p.assist_active_bits & 8u) != 0;
+    d["traction_control_intervening"] = p.traction_control_intervening;
+    d["traction_torque_fraction"] = p.traction_torque_fraction;
+    d["traction_estimated_speed_m_s"] = p.traction_estimated_speed_m_s;
+    d["traction_positive_slip"] = p.traction_positive_slip;
     return d;
 }
 

@@ -811,6 +811,9 @@ func _post_load_ready() -> void:
 # work needed to pull away); ignition/auto_shift follow input_map.gd's
 # toggles (ignition starts on; manual cars start with auto-shift off).
 func _apply_start_controls() -> void:
+	var tc_fitted: PackedStringArray = _simulation.get_vehicle_gauge_info(VEHICLE_NAME).get("fitted_assists", PackedStringArray())
+	_input_map.set_traction_control_supported(tc_fitted.has("TC"))
+	_simulation.set_control("assist.traction_control", 1.0 if _input_map.get_traction_control() else 0.0)
 	_simulation.set_control("ignition", 1.0 if _input_map.get_ignition() else 0.0)
 	# the vehicle file's own assist defaults (after the saved setup), read by RgGarage.prepare_drive
 	_simulation.set_control("assist.auto_clutch", 1.0 if bool(_drive_selection.get("assist_auto_clutch", true)) else 0.0)
@@ -1052,6 +1055,7 @@ func _forward_driving(live: bool, delta: float) -> void:
 	_simulation.set_control("ignition", 1.0 if _input_map.get_ignition() else 0.0)
 	_simulation.set_control("starter", 1.0 if _input_map.get_starter() else 0.0)
 	_simulation.set_control("assist.auto_shift", 1.0 if _input_map.get_auto_shift() else 0.0)
+	_simulation.set_control("assist.traction_control", 1.0 if _input_map.get_traction_control() else 0.0)
 	# Nitrous arm switch (gamepad Y, owner 2026-10-05; physics_sim 804137e): each
 	# rising edge flips the plain 0/1 "nitrous_arm" channel. Cars without a nitrous
 	# kit never declare it, so for them it is inert.
@@ -1687,6 +1691,7 @@ func _log_owner_mark() -> void:
 	mark["camera_input"]["traffic_settings_open"] = get_tree().get_nodes_in_group("traffic_settings_open").size() > 0
 	if _vehicle_audio != null:
 		mark["audio"] = _vehicle_audio.get_audio_diagnostics()
+	mark["powertrain"] = _simulation.get_vehicle_powertrain(VEHICLE_NAME)
 	mark["aero"] = _simulation.get_aero_state()
 	mark["npc_truck"] = _simulation.get_npc_truck_state()
 	var traffic: Dictionary = _simulation.get_traffic_state()

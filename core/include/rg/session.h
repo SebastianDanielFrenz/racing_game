@@ -117,6 +117,7 @@ public:
 };
 
 struct SessionConfig {
+    bool traction_control = true; // default on for electronic-throttle vehicles
     std::string rolling_resistance_model = "quadratic";
     std::string aero_map_selection_path; // startup-only game-owned CFD map selection
 

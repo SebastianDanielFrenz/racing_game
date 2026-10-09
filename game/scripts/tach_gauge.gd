@@ -6,11 +6,8 @@ extends Control
 # powertrain/get_vehicle_ground_speed_mps, all implemented with the same
 # names/Dictionary-key contract as physics_sim's own PsSimulation (see
 # godot_ext/src/rg_simulation.cpp), so no logic change was needed beyond
-# this header comment and the five ABS/TC/ESP/LC/HILL system-assist-lamp
-# slots below staying permanently hidden (RgSimulation.get_vehicle_
-# gauge_info's fitted_assists is always empty in R0, same as the
-# reference's own current behaviour - no per-vehicle assist data exists
-# yet on either side).
+# this header comment. Electronic-throttle vehicles expose the live TC lamp;
+# other assist slots remain hidden until their controllers are fitted.
 #
 # All the non-rendering math (tick/label layout, needle angle, max-rpm
 # rounding, lamp state, needle smoothing) lives in gauge_logic.gd (copied
@@ -190,7 +187,7 @@ func _draw() -> void:
 	var fitted_assists: PackedStringArray = _gauge_info.get("fitted_assists", PackedStringArray())
 	for i in range(SYSTEM_LAMP_NAMES.size()):
 		var lamp_name: String = SYSTEM_LAMP_NAMES[i]
-		var state: int = GaugeLogic.lamp_state(fitted_assists.has(lamp_name), false, false)
+		var state: int = GaugeLogic.lamp_state(fitted_assists.has(lamp_name), lamp_name == "TC" and bool(_last_pt.get("assist_traction_control", false)), lamp_name == "TC" and bool(_last_pt.get("traction_control_intervening", false)))
 		if state == GaugeLogic.LampState.HIDDEN:
 			continue
 		_draw_lamp(font, _polar(center, gear_radius * 1.7, SYSTEM_LAMP_SLOTS_CLOCK_DEG[i]), lamp_name, state, 6.0 * scale, font_size_lamp)

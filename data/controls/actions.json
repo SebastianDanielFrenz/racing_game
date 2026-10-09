@@ -11,6 +11,7 @@
     {"id": "shift_down", "label": "Shift down", "group": "driving", "kind": "button", "mode": "edge", "modes": ["drive"]},
     {"id": "ignition", "label": "Ignition on / off", "group": "driving", "kind": "button", "mode": "edge", "modes": ["drive"]},
     {"id": "starter", "label": "Starter (hold)", "group": "driving", "kind": "button", "mode": "held", "modes": ["drive"]},
+    {"id": "traction_control", "label": "Traction control on / off", "group": "driving", "kind": "button", "mode": "edge", "help": "Electronic-throttle cars; TC lamp shows intervention", "modes": ["drive"]},
     {"id": "auto_shift", "label": "Automatic shifting on / off", "group": "driving", "kind": "button", "mode": "edge", "modes": ["drive"]},
     {"id": "toggle_nitrous", "label": "Nitrous arm on / off", "group": "driving", "kind": "button", "mode": "edge", "help": "Cars with a nitrous kit only", "modes": ["drive"]},
     {"id": "flip_upright", "label": "Flip the car upright", "group": "driving", "kind": "button", "mode": "edge", "modes": ["drive"]},

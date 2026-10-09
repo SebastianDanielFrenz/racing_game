@@ -80,6 +80,8 @@ var _clutch: float = 0.0
 var _ignition_on: bool = true # physics_sim's input_map_core default: spawn with the engine running
 var _starter_held: bool = false
 var _auto_shift_on: bool = false
+var _traction_control_on: bool = true
+var _traction_control_supported: bool = false
 var _configured_vehicle_path: String = ""
 
 var _cam_move: Vector3 = Vector3.ZERO
@@ -136,6 +138,7 @@ func configure_vehicle(path: String, auto_shift_default = null) -> void:
 			manual = true
 			break
 	_auto_shift_on = (not manual) if auto_shift_default == null else bool(auto_shift_default)
+	_traction_control_on = true
 	_configured_vehicle_path = key
 
 func _ready() -> void:
@@ -337,6 +340,8 @@ func poll() -> void:
 	_starter_held = held.call("starter")
 	if _edge("auto_shift", held.call("auto_shift")):
 		_auto_shift_on = not _auto_shift_on
+	if _traction_control_supported and _edge("traction_control", held.call("traction_control")):
+		_traction_control_on = not _traction_control_on
 
 	# --- camera group ---
 	_cam_move = Vector3(v.call("cam_move_x"), v.call("cam_move_y"), v.call("cam_move_z"))
@@ -396,6 +401,12 @@ func get_ignition() -> bool:
 
 func get_starter() -> bool:
 	return _starter_held
+
+func set_traction_control_supported(supported: bool) -> void:
+	_traction_control_supported = supported
+
+func get_traction_control() -> bool:
+	return _traction_control_supported and _traction_control_on
 
 func get_auto_shift() -> bool:
 	return _auto_shift_on

@@ -51,6 +51,7 @@ const char* const kControlChannelNames[] = {
     "assist.auto_shift",
     "assist.auto_clutch",
     "assist.auto_blip",
+    "assist.traction_control",
     "nitrous_arm", // N2O arm switch, a plain 0/1 level (owner 2026-10-05; only cars with a nitrous kit declare it)
 };
 const std::size_t kControlChannelCount = sizeof(kControlChannelNames) / sizeof(kControlChannelNames[0]);
@@ -196,6 +197,7 @@ Session::Session(const SessionConfig& config)
     for (std::size_t i = 0; i < kControlChannelCount; ++i) {
         control_channels_[kControlChannelNames[i]].store(0.0, std::memory_order_relaxed);
     }
+    control_channels_["assist.traction_control"].store(vehicle_desc_.traction_control.enabled?1.0:0.0,std::memory_order_relaxed);
 }
 
 Session::~Session() { stop(); truck_cancel_.store(true); traffic_cancel_.store(true); if(truck_worker_.joinable())truck_worker_.join(); if(traffic_worker_.joinable())traffic_worker_.join(); }
@@ -281,6 +283,15 @@ void Session::build_world_contents(const SessionConfig& config) {
         ps::vehicle::select_rolling_resistance_speed_law(wheel.tyre, rolling_law);
     std::fprintf(stderr, "RG_ROLLING_RESISTANCE model=%s wheels=%zu\n",
                  config.rolling_resistance_model.c_str(), vehicle_desc_.wheels.size());
+    bool electronic=false;
+    for(const auto& c:vehicle_desc_.powertrain.components) {
+        if(const auto* e=std::get_if<ps::drivetrain::TorqueMapEngineDesc>(&c.params))electronic=e->throttle_input==ps::drivetrain::ThrottleInput::Electronic;
+        if(const auto* e=std::get_if<ps::drivetrain::SimulatedEngineDesc>(&c.params))electronic=e->throttle_input==ps::drivetrain::ThrottleInput::Electronic;
+    }
+    for(const auto& c:vehicle_desc_.powertrain.components)
+        if(const auto* stage=std::get_if<ps::drivetrain::ThrottleControlDesc>(&c.params))electronic=stage->kind==ps::drivetrain::ThrottleInput::Electronic;
+    vehicle_desc_.traction_control.enabled=config.traction_control&&electronic;
+    std::printf("RG_TRACTION_CONTROL fitted=%s sensors=wheel_speed+imu default=%s\n",electronic?"yes":"no",vehicle_desc_.traction_control.enabled?"on":"off");
     apply_aero_map_selection(config.aero_map_selection_path,vehicle_desc_);
     vehicle_id_ = world_->create_vehicle(vehicle_desc_, chassis_body_);
     have_vehicle_ = true;
