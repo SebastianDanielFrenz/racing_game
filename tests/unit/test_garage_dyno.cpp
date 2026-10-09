@@ -114,7 +114,8 @@ TEST_CASE("Garage turbo choices load generated maps and settle at both timesteps
     ps::io::EngineMapOptions maps;maps.pool=&workers;maps.cache_dir=r.context.engine_map_cache_dir;
     auto original=std::get<ps::drivetrain::SimulatedEngineDesc>(ps::io::load_engine_json(
         std::string(RG_SOURCE_DIR)+"/data/engines/hyper_v8_one1_audio.json",maps));
-    for(const std::string size:{"compact","standard","large"}) for(const std::string layout:{"single","twin"}) {
+    for(const std::string size:{"compact","standard","large","100mm","120mm"}) for(const std::string layout:{"single","twin"}) {
+        if(layout=="twin" && (size=="100mm" || size=="120mm"))continue;
         auto config=ps::io::load_turbo_configuration_json(std::string(RG_SOURCE_DIR)+"/data/turbo_configurations/hyper_"+layout+"_"+size+".json");
         REQUIRE(config.maps->stages);
         CHECK(config.maps->stages->solver=="meanline-4");

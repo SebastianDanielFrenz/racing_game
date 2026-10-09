@@ -422,6 +422,20 @@
           "path": "../turbo_configurations/garage_hyper_na.json",
           "naturally_aspirated": true,
           "detail": "No turbochargers \u00b7 ambient induction"
+        },
+        {
+          "id": "hyper_single_100mm",
+          "label": "Single turbo \u00b7 100/124.2 mm",
+          "path": "../turbo_configurations/hyper_single_100mm.json",
+          "image": "res://assets/components/engines/turbo_single.png",
+          "detail": "Compressor inducer/exducer \u00b7 1 unit \u00b7 1.38 kg/s reference flow \u00b7 I 0.00184 kg m\u00b2"
+        },
+        {
+          "id": "hyper_single_120mm",
+          "label": "Single turbo \u00b7 120/149.1 mm",
+          "path": "../turbo_configurations/hyper_single_120mm.json",
+          "image": "res://assets/components/engines/turbo_single.png",
+          "detail": "Compressor inducer/exducer \u00b7 1 unit \u00b7 1.98 kg/s reference flow \u00b7 I 0.00457 kg m\u00b2"
         }
       ]
     },
@@ -518,6 +532,20 @@
           "path": "../turbo_configurations/hyper_single_standard_n2o.json",
           "image": "res://assets/components/engines/turbo_single.png",
           "detail": "Compressor inducer/exducer \u00b7 1 unit(s) \u00b7 0.60 kg/s per unit \u00b7 I 0.00023 kg m\u00b2"
+        },
+        {
+          "id": "hyper_single_100mm_n2o",
+          "label": "Single turbo \u00b7 100/124.2 mm",
+          "path": "../turbo_configurations/hyper_single_100mm_n2o.json",
+          "image": "res://assets/components/engines/turbo_single.png",
+          "detail": "Compressor inducer/exducer \u00b7 1 unit \u00b7 1.38 kg/s reference flow \u00b7 I 0.00184 kg m\u00b2"
+        },
+        {
+          "id": "hyper_single_120mm_n2o",
+          "label": "Single turbo \u00b7 120/149.1 mm",
+          "path": "../turbo_configurations/hyper_single_120mm_n2o.json",
+          "image": "res://assets/components/engines/turbo_single.png",
+          "detail": "Compressor inducer/exducer \u00b7 1 unit \u00b7 1.98 kg/s reference flow \u00b7 I 0.00457 kg m\u00b2"
         }
       ]
     },
