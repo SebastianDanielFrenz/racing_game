@@ -31,6 +31,7 @@ struct Fixture {
     rg::VehicleCatalog catalog;
     rg::SetupOptionTable table;
     rg::SetupContext ctx;
+    rg::ScopedWorkDir isolated_root{fs::temp_directory_path().generic_string(), "rg_r6_unit_tests"};
     Fixture() {
         std::string err;
         auto c = rg::load_vehicle_catalog(kRoot + "/data/vehicles/catalog.json", kRoot, &err);
@@ -41,7 +42,7 @@ struct Fixture {
         REQUIRE(t.has_value());
         table = *t;
         ctx.tyre_dirs = {kRoot + "/external/physics_sim/data/tyres", kRoot + "/data/tyres"};
-        ctx.work_root = (fs::temp_directory_path() / "rg_r6_unit_tests").generic_string();
+        ctx.work_root = isolated_root.path();
         ctx.engine_map_cache_dir = kRoot + "/out/godot_engine_cache";
     }
     const rg::CatalogEntry& entry(const char* id) const {
