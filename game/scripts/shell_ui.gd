@@ -789,6 +789,7 @@ func _draw_garage_options() -> void:
 	var group := ""
 	var count := 0
 	for opt in garage.get_options():
+		if str(opt["id"]) == "clutch_capacity": continue
 		if str(opt["area"]) != _active_area or not bool(opt["available"]):
 			continue
 		if str(opt["kind"]) in ["tyre_choice", "file_choice"]:
@@ -919,6 +920,15 @@ func _draw_upgrades() -> void:
 			if installed or _garage_preferred == null: _garage_preferred = card
 		_focus_garage.call_deferred()
 		return
+	if top == "Drivetrain":
+		var clutch := _garage_option("clutch_capacity")
+		if _garage_path.size() == 1:
+			_draw_tiles(["Clutch", "Gearing"], ["Clutch"] if clutch.is_empty() else [])
+		elif _garage_path[1] == "Clutch":
+			_draw_clutch_upgrades(clutch)
+		else:
+			_draw_tuning_link()
+		return
 	if top == "Chassis":
 		if _garage_path.size() == 1:
 			_draw_tiles(["Weight reduction", "Aero", "Suspension & brakes"],["Weight reduction"])
@@ -928,6 +938,26 @@ func _draw_upgrades() -> void:
 			_draw_tuning_link()
 		return
 	_draw_tuning_link()
+
+func _draw_clutch_upgrades(opt: Dictionary) -> void:
+	if opt.is_empty(): return
+	var numbers: Array = opt.get("stock_numbers", [])
+	if numbers.is_empty(): return
+	var grid := GridContainer.new()
+	grid.columns = 2
+	_option_box.add_child(grid)
+	var levels := [{"label":"Stock", "factor":1.0}, {"label":"Reinforced", "factor":1.5}, {"label":"Competition", "factor":2.0}, {"label":"Heavy duty", "factor":3.0}, {"label":"Extreme", "factor":5.0}, {"label":"Drag competition", "factor":8.0}]
+	for level in levels:
+		var factor := float(level["factor"])
+		if factor < float(opt["min"]) or factor > float(opt["max"]): continue
+		var installed := is_equal_approx(float(opt["value"]),factor)
+		var presentation := {"label":level["label"], "size":"Torque capacity · %.0f Nm" % (float(numbers[0])*factor), "image":"res://assets/components/drivetrain/clutch.svg"}
+		var card := _make_component_card(presentation,"INSTALLED" if installed else "Install")
+		grid.add_child(card)
+		_buttons["clutch:" + str(factor)] = card
+		card.pressed.connect(func(): _edit_option("clutch_capacity",factor); _draw_garage_options())
+		if installed or _garage_preferred == null: _garage_preferred = card
+	_focus_garage.call_deferred()
 
 func _induction_type(part_id: String) -> String:
 	if part_id == "hyper_na": return "NA"

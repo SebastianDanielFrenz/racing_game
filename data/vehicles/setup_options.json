@@ -38,6 +38,22 @@
       ]
     },
     {
+      "id": "clutch_capacity",
+      "label": "Clutch",
+      "group": "Drivetrain",
+      "area": "rear",
+      "unit": "x",
+      "help": "Installed clutch torque capacity. Higher capacity transmits more engine torque before slipping; changes apply when driving.",
+      "kind": "scale",
+      "min": 1.0,
+      "max": 8.0,
+      "step": 0.5,
+      "file": "vehicle",
+      "pointers": [
+        "/powertrain/components/[id=clutch]/capacity_nm"
+      ]
+    },
+    {
       "id": "brake_force",
       "label": "Brake force",
       "group": "Brakes",

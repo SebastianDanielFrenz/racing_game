@@ -600,3 +600,26 @@ TEST_CASE("garage pressure domain follows the configured engine and absolute boo
         CHECK(validated.ok);
     }
 }
+
+TEST_CASE("setup: clutch upgrade changes transmitted torque capacity and respects limits", "[setup][garage][clutch_upgrade]") {
+    Fixture f;
+    for(const char* id:{"car_hyper","car_hyper_n2o","car_sedan"}) {
+        const auto& entry=f.entry(id);
+        const auto model=rg::build_setup_model(entry,f.table,f.ctx);
+        const auto view=std::find_if(model.options.begin(),model.options.end(),[](const auto& v){return v.def.id=="clutch_capacity";});
+        REQUIRE(view!=model.options.end());REQUIRE(view->available);REQUIRE(view->stock_numbers.size()==1);
+        for(double factor:{1.,1.5,2.,3.,5.,8.}) {
+            auto setup=setup_of(id,{{"clutch_capacity",factor}});
+            const auto desc=load_materialised(f,entry,setup);
+            const auto clutch=std::find_if(desc.powertrain.components.begin(),desc.powertrain.components.end(),[](const auto& c){return c.id=="clutch";});
+            REQUIRE(clutch!=desc.powertrain.components.end());
+            const auto* values=std::get_if<ps::drivetrain::ClutchDesc>(&clutch->params);
+            REQUIRE(values!=nullptr);
+            CHECK(values->capacity_nm==Approx(view->stock_numbers[0]*factor));
+        }
+        for(double invalid:{.5,8.5}) {
+            const auto compiled=rg::compile_setup(entry,f.table,f.ctx,setup_of(id,{{"clutch_capacity",invalid}}));
+            CHECK_FALSE(compiled.ok);
+        }
+    }
+}
