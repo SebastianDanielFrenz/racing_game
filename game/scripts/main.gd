@@ -153,14 +153,14 @@ func _data_path(relative: String) -> String:
 	return (project_root.path_join("../external/physics_sim/data").path_join(relative)).simplify_path()
 
 func _world_config_path() -> String:
-	# racing_game's OWN data/world/world_config.json (PLAN.md R2.0/R2.1).
+	# Default to the largest region, including the corridor to Mannheim.
 	# RG_WORLD_CONFIG (env) picks another world, e.g.
 	# data/world/world_config_rhein_main_hessen.json (relative to the repo root).
 	var project_root: String = ProjectSettings.globalize_path("res://")
 	var override := OS.get_environment("RG_WORLD_CONFIG")
 	if override != "":
 		return override if override.is_absolute_path() else (project_root.path_join("..").path_join(override)).simplify_path()
-	return (project_root.path_join("../data/world/world_config.json")).simplify_path()
+	return (project_root.path_join("../data/world/world_config_rhein_main_corridor.json")).simplify_path()
 
 # racing_game's OWN data/ (data/vehicles/, data/engines/ - carvis brief
 # 2026-09-27, the racing_game-owned 3.0 L sedan variant: physics_sim is
