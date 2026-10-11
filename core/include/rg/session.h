@@ -199,7 +199,7 @@ struct AeroSurfaceSnapshot {
 struct AeroSnapshot {
     bool coefficient_map_active=false,coefficient_map_ground_missing=false;
     std::uint32_t coefficient_map_clamped_axes=0;
-    std::array<double,5> coefficient_map_inputs{};
+    std::array<double,6> coefficient_map_inputs{}; // same length as ps::aero::Telemetry (static_assert in session.cpp)
     std::array<double,6> coefficient_map_coefficients{};
     bool enabled=false;
     double airspeed_m_s=0,drag_n=0,downforce_n=0,side_force_n=0;

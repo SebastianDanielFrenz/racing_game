@@ -11,11 +11,13 @@
 // hang a headless/CI run.
 
 #include "headless_env.h"
+#include "rg/crt_guard.h"
 
 #define CATCH_CONFIG_RUNNER
 #include <catch2/catch_session.hpp>
 
 int main(int argc, char* argv[]) {
     ps_tools::install_headless_crt_handlers();
+    rg::install_crt_guard(); // adds the stack trace of a CRT assertion
     return Catch::Session().run(argc, argv);
 }

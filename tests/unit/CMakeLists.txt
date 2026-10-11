@@ -7,10 +7,12 @@ target_link_libraries(rg_test_catch_main
   PUBLIC
     Catch2::Catch2
     ps_headless_env
+    rg_core
 )
 
 add_executable(rg_unit_tests
   test_environment.cpp
+  test_crt_guard.cpp
   test_npc_truck.cpp
   test_traffic_stuck.cpp
   test_npc_traffic.cpp

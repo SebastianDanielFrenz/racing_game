@@ -89,6 +89,7 @@ add_library(rg_core STATIC
     src/vehicle_setup.cpp
     src/engine_store.cpp
     src/engine_swap.cpp
+    src/crt_guard.cpp
     src/garage_set.cpp
     src/garage.cpp
     src/garage_dyno.cpp

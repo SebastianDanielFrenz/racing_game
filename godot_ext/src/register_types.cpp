@@ -5,6 +5,7 @@
 
 #include "register_types.h"
 
+#include "rg/crt_guard.h"
 #include "rg_camera_math.h"
 #include "rg_controls.h"
 #include "rg_garage.h"
@@ -15,12 +16,25 @@
 
 #include <gdextension_interface.h>
 #include <godot_cpp/core/defs.hpp>
+#include <godot_cpp/classes/os.hpp>
 #include <godot_cpp/godot.hpp>
 
 using namespace godot;
 
 void initialize_rg_godot_module(ModuleInitializationLevel p_level) {
     if (p_level != MODULE_INITIALIZATION_LEVEL_SCENE) return;
+    // A debug-CRT assertion must never open a modal dialog in a headless or test run (--garage-test, CI): in a debug
+    // build always, in a release build whenever Godot runs with --headless. Reports go to stderr with a stack trace.
+#ifdef _DEBUG
+    rg::install_crt_guard();
+#else
+    for (const String& arg : OS::get_singleton()->get_cmdline_args()) {
+        if (arg == "--headless") {
+            rg::install_crt_guard();
+            break;
+        }
+    }
+#endif
     ClassDB::register_class<rg_godot::RgSimulation>();
     ClassDB::register_class<rg_godot::RgShell>();
     ClassDB::register_class<rg_godot::RgControls>();

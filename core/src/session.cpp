@@ -1147,6 +1147,9 @@ FrameSnapshot Session::capture_frame_snapshot() const {
     snap.aero.coefficient_map_active=aero.coefficient_map_active;
     snap.aero.coefficient_map_ground_missing=aero.coefficient_map_ground_missing;
     snap.aero.coefficient_map_clamped_axes=aero.coefficient_map_clamped_axes;
+    static_assert(std::tuple_size_v<decltype(snap.aero.coefficient_map_inputs)> == std::tuple_size_v<decltype(aero.coefficient_map_inputs)>,
+                  "the snapshot copy of the aero map inputs must match the physics telemetry array (a 6-into-5 std::copy asserted in debug)");
+    static_assert(std::tuple_size_v<decltype(snap.aero.coefficient_map_coefficients)> == std::tuple_size_v<decltype(aero.coefficient_map_coefficients)>);
     std::copy(aero.coefficient_map_inputs.begin(),aero.coefficient_map_inputs.end(),snap.aero.coefficient_map_inputs.begin());
     std::copy(aero.coefficient_map_coefficients.begin(),aero.coefficient_map_coefficients.end(),snap.aero.coefficient_map_coefficients.begin());
     snap.aero.downforce_n=aero.downforce_n;snap.aero.front_balance=aero.front_balance;
