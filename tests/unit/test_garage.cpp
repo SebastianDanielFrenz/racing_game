@@ -333,7 +333,7 @@ TEST_CASE("garage engine install persists and reaches the prepared drive", "[eng
     }
     auto g = open_garage(t);
     REQUIRE(g->begin_edit("car_sedan", &err));
-    REQUIRE(std::get<std::string>(g->current_value("engine_install")) == "sedan_i4");
+    REQUIRE(std::get<std::string>(g->current_value("engine_install")) == "default:i4_2l_na"); // the legacy id, stored as a key
     const auto drive = g->prepare_drive("car_sedan");
     INFO(drive.error);
     REQUIRE(drive.ok);

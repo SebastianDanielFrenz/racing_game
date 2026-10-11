@@ -15,6 +15,7 @@
 #pragma once
 
 #include "rg/car_browser.h"
+#include "rg/engine_store.h"
 #include "rg/garage_set.h"
 #include "rg/vehicle_catalog.h"
 #include "rg/vehicle_setup.h"
@@ -32,6 +33,7 @@ struct GarageConfig {
     std::string catalog_path;  // data/vehicles/catalog.json
     std::string options_path;  // data/vehicles/setup_options.json
     std::string set_path;      // data/garage/garage_set.json
+    std::string engine_catalog_path; // data/engines/engine_catalog.json ("" = <repo_root>/data/engines/engine_catalog.json)
     std::vector<std::string> tyre_dirs;
     std::string user_dir;      // selection and setups are saved under <user_dir>/garage/
     std::string work_root;     // scratch and drive materialisations
@@ -55,12 +57,15 @@ struct DriveSelection {
     bool assist_auto_blip = true;
     bool assist_auto_shift = false;
     bool manual_gearbox = true;      // the vehicle has a manual_tcu controller
+    std::string engine_title;        // the installed engine's name when the setup swapped it ("" = the car's own)
+    std::vector<std::string> swap_lines; // what the engine/fuel choice changed (for the wait screen and the garage)
     std::string warning;       // e.g. the saved setup no longer validates and the stock car is used
 };
 
 struct EditResult {
     bool accepted = false;       // the option exists, is offered for this car and the value has the right type
     std::string message;         // why not accepted
+    std::string notice;          // accepted, but other options were reset because the new engine does not offer them
     ValidationResult validation; // the whole working setup after the change
 };
 
@@ -77,6 +82,15 @@ public:
     [[nodiscard]] const GarageSetDesc& set() const { return set_; }
     [[nodiscard]] const GarageConfig& config() const { return config_; }
     [[nodiscard]] const SetupContext& context() const { return ctx_; }
+    // ---- the engine list (defaults + user engines, one list) ----
+    [[nodiscard]] const EngineStore& engines() const { return *store_; }
+    // User engines: the store's validation and file rules; the setup context's snapshot and the edit session follow.
+    std::optional<std::string> create_user_engine(const std::string& base_key, const std::string& name,
+                                                  const std::string& patch_json, std::string* err);
+    bool update_user_engine(const std::string& key, const std::string& patch_json, std::string* err);
+    bool rename_user_engine(const std::string& key, const std::string& name, std::string* err);
+    // Removes the engine; a car whose working or saved setup used it falls back to its own engine (a notice at the drive).
+    bool remove_user_engine(const std::string& key, std::string* err);
     // The setup context for one vehicle (its engine-map cache directory filled in).
     [[nodiscard]] SetupContext context_for(const CatalogEntry& entry) const;
 
@@ -119,6 +133,9 @@ public:
     // The working value of an option, or its stock value when unchanged.
     [[nodiscard]] SetupValue current_value(const std::string& option_id) const;
     EditResult set_option(const std::string& option_id, const SetupValue& value);
+    // What the installed engine/fuel choice changes (the swap package's lines), for the garage screen.
+    [[nodiscard]] const std::vector<std::string>& swap_lines() const { return model_.swap_lines; }
+    [[nodiscard]] double chassis_mass_delta_kg() const { return model_.chassis_mass_delta_kg; }
     void reset_option(const std::string& option_id);
     void reset_all();
     [[nodiscard]] bool dirty() const; // the working copy differs from the saved one
@@ -142,12 +159,18 @@ private:
     bool write_selection(std::string* err) const;
     void revalidate();
     void remove_drive_dir();
+    void engines_changed();
+    std::string drop_unavailable_values();
+    // The overlay with legacy engine ids resolved to keys; an engine that no longer exists is dropped (named in *notices).
+    void normalise_engine_values(VehicleSetup& setup, std::vector<std::string>* notices) const;
+    [[nodiscard]] VehicleSetup effective_setup_with_notices(const std::string& id, std::vector<std::string>* notices) const;
 
     GarageConfig config_;
     VehicleCatalog catalog_;
     SetupOptionTable options_;
     GarageSetDesc set_;
     SetupContext ctx_;
+    std::shared_ptr<EngineStore> store_;
     std::string selected_;
 
     std::string edit_id_;

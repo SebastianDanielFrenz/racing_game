@@ -137,6 +137,17 @@ std::unique_ptr<Garage> Garage::open(const GarageConfig& config, std::string* er
     g->ctx_.tyre_dirs = config.tyre_dirs;
     g->ctx_.work_root = config.work_root;
     g->ctx_.engine_map_cache_dir = config.engine_map_cache_dir;
+    {
+        const std::string cat = config.engine_catalog_path.empty() ? config.repo_root + "/data/engines/engine_catalog.json"
+                                                                    : config.engine_catalog_path;
+        auto store = EngineStore::open(cat, config.repo_root, config.user_dir, &e);
+        if (!store) {
+            if (err != nullptr) *err = e;
+            return nullptr;
+        }
+        g->store_ = std::move(store);
+        g->ctx_.engines = std::make_shared<const EngineStore>(*g->store_);
+    }
 
     // A crashed run can leave its drive materialisation behind: remove it.
     std::error_code ec;
@@ -260,10 +271,63 @@ VehicleSetup Garage::preset_setup(const std::string& id) const {
     return s;
 }
 
-VehicleSetup Garage::effective_setup(const std::string& id) const {
+void Garage::normalise_engine_values(VehicleSetup& setup, std::vector<std::string>* notices) const {
+    const auto it = setup.values.find("engine_install");
+    if (it == setup.values.end() || !std::holds_alternative<std::string>(it->second)) return;
+    const std::string v = std::get<std::string>(it->second);
+    if (v == "stock") return;
+    const EngineEntry* e = store_ ? store_->find(v) : nullptr; // a legacy id (sedan_i6) resolves here
+    if (e == nullptr) {
+        if (notices != nullptr) notices->push_back("The engine \"" + v + "\" is no longer in the garage list: the car keeps its own engine.");
+        setup.values.erase("engine_install");
+        setup.values.erase("fuel"); // a fuel picked for that engine
+        return;
+    }
+    it->second = e->key;
+}
+
+VehicleSetup Garage::effective_setup_with_notices(const std::string& id, std::vector<std::string>* notices) const {
     VehicleSetup s = preset_setup(id);
     for (const auto& [option_id, value] : saved_setup(id).values) s.values[option_id] = value; // the player's own values win
+    normalise_engine_values(s, notices);
     return s;
+}
+
+VehicleSetup Garage::effective_setup(const std::string& id) const { return effective_setup_with_notices(id, nullptr); }
+
+void Garage::engines_changed() {
+    ctx_.engines = std::make_shared<const EngineStore>(*store_);
+    if (editing()) {
+        std::vector<std::string> notices;
+        normalise_engine_values(working_, &notices);
+        revalidate();
+    }
+    refresh_browser();
+}
+
+std::optional<std::string> Garage::create_user_engine(const std::string& base_key, const std::string& name,
+                                                      const std::string& patch_json, std::string* err) {
+    auto key = store_->create_user_engine(base_key, name, patch_json, err);
+    if (key) engines_changed();
+    return key;
+}
+
+bool Garage::update_user_engine(const std::string& key, const std::string& patch_json, std::string* err) {
+    const bool ok = store_->update_user_engine(key, patch_json, err);
+    if (ok) engines_changed();
+    return ok;
+}
+
+bool Garage::rename_user_engine(const std::string& key, const std::string& name, std::string* err) {
+    const bool ok = store_->rename_user_engine(key, name, err);
+    if (ok) engines_changed();
+    return ok;
+}
+
+bool Garage::remove_user_engine(const std::string& key, std::string* err) {
+    const bool ok = store_->remove_user_engine(key, err);
+    if (ok) engines_changed();
+    return ok;
 }
 
 bool Garage::begin_edit(const std::string& id, std::string* err) {
@@ -337,15 +401,60 @@ EditResult Garage::set_option(const std::string& option_id, const SetupValue& va
     }
     const CatalogEntry* entry = catalog_.find(edit_id_);
     const bool preset_has = entry != nullptr && entry->preset_setup.count(option_id) != 0;
-    if (setup_values_equal(value, view->stock) && !preset_has) {
+    SetupValue stored = value;
+    if (option_id == "engine_install") { // a legacy id (sedan_i6) is stored as the engine's key
+        VehicleSetup one;
+        one.values[option_id] = value;
+        normalise_engine_values(one, nullptr);
+        if (const auto it = one.values.find(option_id); it != one.values.end()) stored = it->second;
+    }
+    if (setup_values_equal(stored, view->stock) && !preset_has) {
         working_.values.erase(option_id); // back to stock: not part of the overlay
     } else {
-        working_.values[option_id] = value;
+        working_.values[option_id] = stored;
     }
     r.accepted = true;
     revalidate();
+    if (option_id == "engine_install") r.notice = drop_unavailable_values();
     r.validation = validation_;
     return r;
+}
+
+// After an engine change: values of options the installed engine does not offer (a turbo setting on an engine
+// without a turbo, a fuel it does not list) are no longer meaningful; they return to stock and the player is told.
+// What the new engine offers is read from a probe model with only the engine installed: the working
+// model cannot be built while a now-incompatible value is still in the overlay.
+std::string Garage::drop_unavailable_values() {
+    const CatalogEntry* entry = catalog_.find(edit_id_);
+    if (entry == nullptr) return {};
+    VehicleSetup probe;
+    probe.vehicle_id = edit_id_;
+    if (const auto it = working_.values.find("engine_install"); it != working_.values.end()) probe.values["engine_install"] = it->second;
+    const SetupModel pm = build_setup_model(*entry, options_, context_for(*entry), &probe);
+    if (!pm.error.empty()) return {}; // the engine itself does not install: revalidate() reports it
+    std::string notice;
+    std::vector<std::string> drop;
+    for (const auto& [id, value] : working_.values) {
+        if (id == "engine_install") continue;
+        const OptionView* view = nullptr;
+        for (const OptionView& v : pm.options) if (v.def.id == id) view = &v;
+        if (view == nullptr) continue;
+        bool gone = !view->available;
+        if (!gone && view->def.kind == OptionKind::FileChoice && std::holds_alternative<std::string>(value)) {
+            const std::string& s = std::get<std::string>(value);
+            gone = s != "stock" && std::find(view->choices.begin(), view->choices.end(), s) == view->choices.end();
+        }
+        if (gone) drop.push_back(id);
+    }
+    for (const std::string& id : drop) {
+        working_.values.erase(id);
+        if (const auto it = entry->preset_setup.find(id); it != entry->preset_setup.end()) working_.values[id] = it->second;
+        std::string label = id;
+        for (const OptionView& v : pm.options) if (v.def.id == id && !v.def.label.empty()) label = v.def.label;
+        notice += (notice.empty() ? "" : ", ") + label;
+    }
+    if (!drop.empty()) revalidate();
+    return notice.empty() ? notice : "The engine does not offer: " + notice + " (back to stock).";
 }
 
 void Garage::reset_option(const std::string& option_id) {
@@ -450,16 +559,21 @@ DriveSelection Garage::prepare_drive(const std::string& id) {
     d.engine_map_cache_dir = context_for(*e).engine_map_cache_dir;
 
     remove_drive_dir();
-    const VehicleSetup setup = effective_setup(id);
+    std::vector<std::string> notices;
+    const VehicleSetup setup = effective_setup_with_notices(id, &notices);
+    for (const std::string& n : notices) d.warning += (d.warning.empty() ? "" : " ") + n;
     if (!setup.values.empty()) {
         const std::string dir = config_.work_root + "/drive_" + id + "_" + hex16(fnv1a(setup_to_json(setup)));
         const MaterialisedSetup m = materialise_setup(*e, options_, context_for(*e), setup, dir);
         if (!m.ok) {
             // The saved setup no longer fits the data (a file changed): drive the stock car and say so.
-            d.warning = std::string(e->preset_of.empty() ? "The saved setup for " : "The setup of ") + e->title + " was not applied: " + m.error;
+            d.warning += std::string(d.warning.empty() ? "" : " ") + (e->preset_of.empty() ? "The saved setup for " : "The setup of ") + e->title + " was not applied: " + m.error;
             std::error_code ec;
             fs::remove_all(fs::path(dir), ec);
         } else {
+            d.engine_title = m.compiled.engine_title;
+            d.swap_lines = m.compiled.swap_lines;
+            d.chassis.mass_kg += m.compiled.chassis_mass_delta_kg;
             if (m.compiled.vehicle_patch != "{}" || !m.compiled.patches.empty()) {
                 d.vehicle_path = m.vehicle_path;
                 drive_dir_ = dir;

@@ -1,6 +1,8 @@
 // rg/vehicle_setup.cpp - see vehicle_setup.h.
 #include "rg/vehicle_setup.h"
 
+#include "rg/engine_swap.h"
+
 #include "json_util.h"
 
 #include "ps/io/vehicle_io.h"
@@ -234,6 +236,13 @@ struct Files {
     std::optional<FileDoc> engine;
     std::optional<FileDoc> turbo;
     std::string original_engine_path;
+    // Engine garage G1. The engine whose options (turbo, nitrous) apply is the INSTALLED one: engine_stem is the
+    // catalog stem of the default engine it is (a user engine: its base), the car's own at load.
+    std::string engine_stem;
+    std::optional<EngineEntry> swapped; // set when engine_install put another engine in
+    std::string fuel_choice;            // set when the fuel option picked a fuel
+    // Vehicle-file subtrees the swap package (trusted code, not a player option) edited; exempt from the whitelist.
+    std::vector<std::string> derived_subtrees;
     std::map<std::string, FileDoc> tyres; // by path
 };
 
@@ -253,6 +262,7 @@ bool read_doc(const std::string& path, json& out, std::string* err) {
 }
 
 std::string dir_of(const std::string& path) { return fs::path(path).parent_path().generic_string(); }
+std::string stem_of_path(const std::string& path) { return fs::path(path).stem().string(); }
 
 std::string resolve_ref(const std::string& dir, const std::string& ref) {
     const fs::path p(ref);
@@ -331,7 +341,10 @@ bool load_files(const CatalogEntry& entry, Files& files, std::string* err) {
     const std::string dir = dir_of(files.vehicle.path);
     if (!load_aux(files.vehicle.base, dir, "gearbox", files.gearbox, err)) return false;
     if (!load_aux(files.vehicle.base, dir, "engine", files.engine, err)) return false;
-    if (files.engine) files.original_engine_path = files.engine->path;
+    if (files.engine) {
+        files.original_engine_path = files.engine->path;
+        files.engine_stem = stem_of_path(files.engine->path);
+    }
     return load_turbo(files, err) && load_tyres(files.vehicle, files.tyres, err);
 }
 
@@ -381,21 +394,67 @@ std::vector<Target> targets_of(Files& files, const SetupOptionDef& def, const st
 std::string stem_of(const std::string& path) { return fs::path(path).stem().string(); }
 
 // File choices are never a filesystem picker: only declared compatible IDs can resolve a path.
-bool file_choice_fits(Files& files, const SetupOptionDef& def, const CatalogEntry& entry) {
+bool file_choice_fits(Files& files, const SetupOptionDef& def, const CatalogEntry& entry, const SetupContext& ctx) {
     if (!entry_offers(entry, def.id)) return false;
-    const std::string engine = stem_of(files.original_engine_path);
-    if (std::find(def.compatible_engines.begin(), def.compatible_engines.end(), engine) == def.compatible_engines.end()) return false;
+    if (def.catalog.empty()) {
+        const std::string& engine = files.engine_stem;
+        if (std::find(def.compatible_engines.begin(), def.compatible_engines.end(), engine) == def.compatible_engines.end()) return false;
+    } else if (!ctx.engines) {
+        return false;
+    }
     const int idx = component_index(files.vehicle.base, "engine");
     if (def.no_turbo_override && idx >= 0 && files.vehicle.base["powertrain"]["components"][idx].contains("forced_induction")) return false;
     const json* base = def.file == "vehicle" ? &files.vehicle.base : (files.engine ? &files.engine->base : nullptr);
     return base && !expand_patterns(*base, pointers_for(entry, def)).empty();
 }
 
-std::string install_file_part(Files& files, const SetupOptionDef& def, const CatalogEntry& entry, const SetupValue& value) {
+// Engine garage G1: a choice from the engine store ("engines") or the installed engine's fuels ("fuels").
+std::string install_catalog_part(Files& files, const SetupOptionDef& def, const CatalogEntry& entry, const SetupContext& ctx,
+                                 const std::string& id) {
+    if (def.catalog == "engines") {
+        const EngineEntry* e = ctx.engines->find(id);
+        if (e == nullptr) return def.id + ": \"" + id + "\" is not an engine in the garage list";
+        const FitResult fit = check_fit(entry, *e);
+        if (!fit.allowed) {
+            std::string why;
+            for (const std::string& r : fit.reasons) why += (why.empty() ? "" : "; ") + r;
+            return def.id + ": " + e->name + " does not fit " + entry.title + (why.empty() ? std::string() : " (" + why + ")");
+        }
+        if (norm_path(e->file) == files.original_engine_path) {
+            // The car's own engine, chosen explicitly: nothing changes (also when it was swapped before in this session).
+            return {};
+        }
+        for (auto& target : targets_of(files, def, pointers_for(entry, def))) {
+            const json* leaf = at_pointer(target.file->work, target.pointer);
+            if (!leaf || !leaf->is_string()) return def.id + ": reference is not a string";
+            target.file->work[json::json_pointer(target.pointer)] = norm_path(e->file);
+        }
+        std::string err;
+        if (!load_aux(files.vehicle.work, dir_of(files.vehicle.path), "engine", files.engine, &err)) return err;
+        files.engine_stem = e->base_stem;
+        files.swapped = *e;
+        return {};
+    }
+    if (def.catalog == "fuels") {
+        if (!files.engine) return def.id + ": the car has no engine";
+        std::string err;
+        const auto facts = read_engine_facts(files.engine->path, &err);
+        if (!facts) return err;
+        const bool listed = std::any_of(facts->fuels.begin(), facts->fuels.end(), [&](const FuelFact& f) { return f.name == id; });
+        if (!listed) return def.id + ": \"" + id + "\" is not one of this engine's fuels";
+        files.fuel_choice = id;
+        return {};
+    }
+    return def.id + ": unknown catalog \"" + def.catalog + "\"";
+}
+
+std::string install_file_part(Files& files, const SetupOptionDef& def, const CatalogEntry& entry, const SetupContext& ctx,
+                              const SetupValue& value) {
     if (!std::holds_alternative<std::string>(value)) return def.id + ": needs a component ID";
-    if (!file_choice_fits(files, def, entry)) return def.id + ": not compatible with this vehicle";
+    if (!file_choice_fits(files, def, entry, ctx)) return def.id + ": not compatible with this vehicle";
     const auto& id = std::get<std::string>(value);
     if (id == "stock") return {};
+    if (!def.catalog.empty()) return install_catalog_part(files, def, entry, ctx, id);
     const auto part = std::find_if(def.parts.begin(), def.parts.end(), [&](const SetupPart& p) { return p.id == id; });
     if (part == def.parts.end()) return def.id + ": component ID is not in the fitment list";
     json doc;
@@ -424,6 +483,158 @@ std::string install_file_part(Files& files, const SetupOptionDef& def, const Cat
     // Reload the installed engine BEFORE calibrating it. Its own relative dependencies keep their directory.
     if (def.part_format == "physics_sim.engine/1") {
         if (!load_aux(files.vehicle.work, dir_of(files.vehicle.path), "engine", files.engine, &err)) return err;
+        files.engine_stem = stem_of_path(files.engine->path);
+    }
+    return {};
+}
+
+
+// ---- the swap package (engine garage G1) ---------------------------------------------------------------
+
+int component_of_type(const json& vehicle, const char* type) {
+    const auto pt = vehicle.find("powertrain");
+    if (pt == vehicle.end() || !pt->is_object()) return -1;
+    const auto comps = pt->find("components");
+    if (comps == pt->end() || !comps->is_array()) return -1;
+    for (std::size_t i = 0; i < comps->size(); ++i) {
+        std::string ty;
+        if ((*comps)[i].is_object() && detail::get_string((*comps)[i], "type", ty) && ty == type) return static_cast<int>(i);
+    }
+    return -1;
+}
+
+int controller_of_type(const json& vehicle, const char* type) {
+    const auto cs = vehicle.find("controllers");
+    if (cs == vehicle.end() || !cs->is_array()) return -1;
+    for (std::size_t i = 0; i < cs->size(); ++i) {
+        std::string ty;
+        if ((*cs)[i].is_object() && detail::get_string((*cs)[i], "type", ty) && ty == type) return static_cast<int>(i);
+    }
+    return -1;
+}
+
+const char* const kEngineSlotKeys[] = {"ecu", "cam", "forced_induction", "installation", "thermal"};
+
+// Derives the swap package for the installed engine / chosen fuel and applies it to the working vehicle file.
+// "" when fine (also when nothing was swapped or chosen: `pkg` stays empty), else the broken rule.
+std::string apply_swap(Files& files, const CatalogEntry& entry, const SetupContext& ctx, SwapPackage& pkg) {
+    pkg = SwapPackage{};
+    if (!files.swapped && files.fuel_choice.empty()) return {};
+    if (!ctx.engines || !files.engine) return entry.id + ": no engine list to derive a swap from";
+    json& veh = files.vehicle.work;
+    if (!veh.contains("powertrain") || !veh["powertrain"].contains("components") || !veh["powertrain"]["components"].is_array()) {
+        return entry.id + ": the vehicle has no powertrain components";
+    }
+    json& comps = veh["powertrain"]["components"];
+    const int tank = component_of_type(veh, "fuel_tank");
+    const int clutch = component_of_type(veh, "clutch");
+    const int engine = component_of_type(veh, "engine");
+    SwapCar car;
+    if (tank >= 0) {
+        std::string fuel;
+        if (detail::get_string(comps[tank], "fuel", fuel)) {
+            car.has_tank = true;
+            car.tank_fuel = stem_of_path(fuel);
+        }
+    }
+    if (clutch >= 0) detail::get_number(comps[clutch], "capacity_nm", car.clutch_kinetic_nm);
+    car.has_nitrous = component_of_type(veh, "n2o_bottle") >= 0 || component_of_type(veh, "nitrous_kit") >= 0;
+    if (engine >= 0) {
+        for (const char* key : kEngineSlotKeys) car.has_slot_overrides = car.has_slot_overrides || comps[engine].contains(key);
+    }
+    if (const EngineEntry* stock = ctx.engines->find_by_file(files.original_engine_path)) car.stock_engine_mass_kg = stock->mass_kg;
+
+    std::string err;
+    const auto facts = read_engine_facts(files.engine->path, &err);
+    if (!facts) return err;
+    SwapEngine eng;
+    const EngineEntry* installed = files.swapped ? &*files.swapped : ctx.engines->find_by_file(files.engine->path);
+    eng.name = installed != nullptr ? installed->name : stem_of_path(files.engine->path);
+    eng.mass_kg = installed != nullptr ? installed->mass_kg : facts->mass_kg;
+    eng.peak_torque_nm = installed != nullptr ? ctx.engines->peaks(*installed).torque_nm : facts->curve_peaks.torque_nm;
+    eng.idle_rpm = facts->idle_rpm;
+    eng.limiter_rpm = facts->limiter_rpm;
+    eng.simulated = facts->simulated;
+    eng.mechanical_throttle = facts->mechanical_throttle;
+    for (const FuelFact& f : facts->fuels) eng.fuels.push_back(f.name);
+
+    pkg = derive_swap_package(car, eng, SwapChoices{files.fuel_choice}, files.swapped.has_value());
+    if (!pkg.ok) return entry.id + ": " + pkg.error;
+
+    const std::string comp_path = "/powertrain/components/";
+    if (pkg.set_fuel && tank >= 0) {
+        comps[tank]["fuel"] = ctx.engines->fuel_file(pkg.fuel);
+        files.derived_subtrees.push_back(comp_path + std::to_string(tank) + "/fuel");
+    }
+    if (pkg.set_clutch && clutch >= 0) {
+        comps[clutch]["capacity_nm"] = pkg.clutch_kinetic_nm;
+        files.derived_subtrees.push_back(comp_path + std::to_string(clutch) + "/capacity_nm");
+    }
+    if (pkg.set_tcu) {
+        const int tcu = controller_of_type(veh, "manual_tcu");
+        if (tcu >= 0) {
+            json& c = veh["controllers"][static_cast<std::size_t>(tcu)];
+            const std::string base = "/controllers/" + std::to_string(tcu);
+            json& ac = c["auto_clutch"];
+            ac["bite_rpm"] = pkg.auto_clutch.bite_rpm;
+            ac["full_rpm_min"] = pkg.auto_clutch.full_rpm_min;
+            ac["full_rpm_max"] = pkg.auto_clutch.full_rpm_max;
+            ac["anti_stall_rpm"] = pkg.auto_clutch.anti_stall_rpm;
+            ac["rolling_reengage_rpm"] = pkg.auto_clutch.rolling_reengage_rpm;
+            json& as = c["auto_shift"];
+            as["up_rpm_at_zero_throttle"] = pkg.auto_shift.up_zero;
+            as["up_rpm_at_full_throttle"] = pkg.auto_shift.up_full;
+            as["down_rpm_at_zero_throttle"] = pkg.auto_shift.down_zero;
+            as["down_rpm_at_full_throttle"] = pkg.auto_shift.down_full;
+            files.derived_subtrees.push_back(base + "/auto_clutch");
+            files.derived_subtrees.push_back(base + "/auto_shift");
+            if (pkg.zero_blip) {
+                json& ab = c["auto_blip"];
+                ab["kp_per_rpm"] = 0.0;
+                ab["max_throttle"] = 0.0;
+                ab["upshift_torque_ramp_s"] = 0.0;
+                files.derived_subtrees.push_back(base + "/auto_blip");
+            }
+        }
+    }
+    if (pkg.drop_slot_overrides && engine >= 0) {
+        for (const char* key : kEngineSlotKeys) {
+            if (comps[engine].contains(key)) {
+                comps[engine].erase(key);
+                files.derived_subtrees.push_back(comp_path + std::to_string(engine) + "/" + key);
+            }
+        }
+    }
+    if (pkg.drop_nitrous) {
+        std::set<std::string> gone;
+        json kept = json::array();
+        for (const json& c : comps) {
+            std::string ty, id;
+            detail::get_string(c, "type", ty);
+            detail::get_string(c, "id", id);
+            if (ty == "n2o_bottle" || ty == "nitrous_kit") gone.insert(id);
+            else kept.push_back(c);
+        }
+        comps = std::move(kept);
+        auto& pt = veh["powertrain"];
+        if (pt.contains("fluid") && pt["fluid"].is_array()) {
+            json fluid = json::array();
+            for (const json& link : pt["fluid"]) {
+                bool drop = false;
+                if (link.is_array()) {
+                    for (const json& port : link) {
+                        if (!port.is_string()) continue;
+                        const std::string s = port.get<std::string>();
+                        const std::string owner = s.substr(0, s.find('.'));
+                        if (gone.count(owner) != 0) drop = true;
+                    }
+                }
+                if (!drop) fluid.push_back(link);
+            }
+            pt["fluid"] = std::move(fluid);
+        }
+        files.derived_subtrees.push_back("/powertrain/components");
+        files.derived_subtrees.push_back("/powertrain/fluid");
     }
     return {};
 }
@@ -662,6 +873,17 @@ std::optional<SetupOptionTable> parse_setup_options(const std::string& json_text
             if (d.file != "vehicle" && d.file != "engine") return bad(where + ": file choice must edit vehicle or engine");
             if (!detail::get_string(o, "part_format", d.part_format) || d.part_format.empty()) return bad(where + ": part_format missing");
             detail::get_bool(o, "no_turbo_override", d.no_turbo_override);
+            detail::get_string(o, "catalog", d.catalog);
+            if (!d.catalog.empty() && d.catalog != "engines" && d.catalog != "fuels") {
+                return bad(where + ": \"catalog\" must be \"engines\" or \"fuels\"");
+            }
+            if (!d.catalog.empty()) {
+                if (o.contains("parts") || o.contains("compatible_engines")) {
+                    return bad(where + ": a catalog option takes its parts from the store, not from \"parts\"/\"compatible_engines\"");
+                }
+                table.options.push_back(std::move(d));
+                continue;
+            }
             if (!o.contains("compatible_engines") || !o["compatible_engines"].is_array() || o["compatible_engines"].empty())
                 return bad(where + ": explicit compatible_engines required");
             for (const auto& name : o["compatible_engines"]) {
@@ -775,8 +997,19 @@ std::string apply_merge_patch(const std::string& base_json, const std::string& p
     return base->dump();
 }
 
-std::string whitelist_violation(const std::string& base_json, const std::string& patch_json,
-                                const std::vector<std::string>& pointer_patterns) {
+namespace {
+
+bool under_subtree(const std::string& path, const std::vector<std::string>& subtrees) {
+    for (const std::string& s : subtrees) {
+        if (path == s || (path.size() > s.size() && path.compare(0, s.size(), s) == 0 && path[s.size()] == '/')) return true;
+    }
+    return false;
+}
+
+} // namespace
+
+std::string whitelist_violation_in(const std::string& base_json, const std::string& patch_json,
+                                   const std::vector<std::string>& pointer_patterns, const std::vector<std::string>& derived_subtrees) {
     auto base = detail::parse_json(base_json);
     auto patch = detail::parse_json(patch_json);
     if (!base || !patch) return "(unparsable)";
@@ -787,12 +1020,66 @@ std::string whitelist_violation(const std::string& base_json, const std::string&
     const std::vector<std::string> allowed_list = expand_patterns(*base, pointer_patterns);
     const std::set<std::string> allowed(allowed_list.begin(), allowed_list.end());
     for (const std::string& d : diffs) {
-        if (allowed.count(d) == 0) return d;
+        if (allowed.count(d) == 0 && !under_subtree(d, derived_subtrees)) return d;
     }
     return {};
 }
 
+std::string whitelist_violation(const std::string& base_json, const std::string& patch_json,
+                                const std::vector<std::string>& pointer_patterns) {
+    return whitelist_violation_in(base_json, patch_json, pointer_patterns, {});
+}
+
 // ---- the model (option views) ------------------------------------------------------------------
+
+namespace {
+
+std::string power_text(const EnginePeaks& p) {
+    if (!p.known) return {};
+    char buf[96];
+    std::snprintf(buf, sizeof(buf), "%.0f kW at %.0f rpm · %.0f N*m", p.power_kw, p.power_rpm, p.torque_nm);
+    return buf;
+}
+
+// The approved parts of a file choice: the option table's own list, or - a catalog option - the store's.
+std::vector<SetupPart> parts_of(const SetupOptionDef& def, const SetupContext& ctx, const Files& files) {
+    if (def.catalog.empty()) return def.parts;
+    std::vector<SetupPart> out;
+    if (!ctx.engines) return out;
+    if (def.catalog == "engines") {
+        for (const EngineEntry& e : ctx.engines->list()) {
+            SetupPart p;
+            p.id = e.key;
+            p.label = e.name;
+            p.path = e.file;
+            p.image = e.image;
+            std::string detail = e.family;
+            const std::string power = power_text(ctx.engines->peaks(e));
+            if (!power.empty()) detail += (detail.empty() ? "" : " · ") + power;
+            if (e.user) detail += std::string(detail.empty() ? "" : " · ") + "custom, based on " + e.base_name;
+            p.detail = detail;
+            out.push_back(std::move(p));
+        }
+    } else if (def.catalog == "fuels" && files.engine) {
+        if (const auto facts = read_engine_facts(files.engine->path, nullptr)) {
+            bool first = true;
+            for (const FuelFact& f : facts->fuels) {
+                SetupPart p;
+                p.id = f.name;
+                p.label = fuel_label(f.name) + (first ? " (reference fuel)" : "");
+                p.path = ctx.engines->fuel_file(f.name);
+                char buf[96];
+                std::snprintf(buf, sizeof(buf), "%.1f MJ/kg · %.0f kg/m3", f.lhv_mj_kg, f.density_kg_m3);
+                p.detail = buf;
+                out.push_back(std::move(p));
+                first = false;
+            }
+        }
+    }
+    return out;
+}
+
+} // namespace
 
 SetupModel build_setup_model(const CatalogEntry& entry, const SetupOptionTable& table, const SetupContext& ctx, const VehicleSetup* installed) {
     SetupModel model;
@@ -803,9 +1090,17 @@ SetupModel build_setup_model(const CatalogEntry& entry, const SetupOptionTable& 
             if (def.kind != OptionKind::FileChoice) continue;
             const auto it = installed->values.find(def.id);
             if (it == installed->values.end()) continue;
-            model.error = install_file_part(files, def, entry, it->second);
+            model.error = install_file_part(files, def, entry, ctx, it->second);
             if (!model.error.empty()) return model;
         }
+    }
+    {
+        SwapPackage pkg;
+        model.error = apply_swap(files, entry, ctx, pkg);
+        if (!model.error.empty()) return model;
+        model.swap_lines = pkg.lines;
+        model.chassis_mass_delta_kg = pkg.mass_delta_kg;
+        if (files.swapped) model.engine_title = files.swapped->name;
     }
     if (!load_turbo(files, &model.error)) return model;
     for (const SetupOptionDef& def : table.options) {
@@ -821,7 +1116,8 @@ SetupModel build_setup_model(const CatalogEntry& entry, const SetupOptionTable& 
                 v.stock = 1.0;
                 const auto targets = targets_of(files, def, v.def.pointers);
                 for (const auto& target : targets) {
-                    const auto* leaf = at_pointer(target.file->base, target.pointer);
+                    // The working file: after a swap the derived values (a stronger clutch) are the ones scaled.
+                    const auto* leaf = at_pointer(target.file->work, target.pointer);
                     if (leaf && leaf->is_number()) v.stock_numbers.push_back(leaf->get<double>());
                 }
                 if (v.available && targets.empty()) v.available = false;
@@ -859,7 +1155,7 @@ SetupModel build_setup_model(const CatalogEntry& entry, const SetupOptionTable& 
             }
             case OptionKind::FileChoice: {
                 v.stock = std::string("stock");
-                v.available = file_choice_fits(files, def, entry);
+                v.available = file_choice_fits(files, def, entry, ctx);
                 SetupPart stock;
                 stock.id = "stock";
                 stock.label = "Original component";
@@ -872,11 +1168,12 @@ SetupModel build_setup_model(const CatalogEntry& entry, const SetupOptionTable& 
                         if (leaf && leaf->is_string()) original = resolve_ref(dir_of(original_file->path), leaf->get<std::string>());
                     }
                 }
-                for (const auto& part : def.parts) if (part.path == original) { stock = part; stock.id = "stock"; }
+                const std::vector<SetupPart> candidates = parts_of(def, ctx, files);
+                for (const auto& part : candidates) if (norm_path(part.path) == original) { stock = part; stock.id = "stock"; }
                 v.parts.push_back(stock);
                 v.choices.push_back("stock");
-                for (const auto& part : def.parts) {
-                    if (part.path == original) continue;
+                for (const auto& part : candidates) {
+                    if (norm_path(part.path) == original) continue;
                     v.parts.push_back(part);
                     v.choices.push_back(part.id);
                 }
@@ -971,7 +1268,7 @@ std::string apply_option(const CatalogEntry& entry, const SetupOptionDef& def, c
     const auto type_error = [&](const char* expected) { return "option \"" + id + "\" needs " + expected; };
 
     switch (def.kind) {
-        case OptionKind::FileChoice: return install_file_part(files, def, entry, value);
+        case OptionKind::FileChoice: return install_file_part(files, def, entry, ctx, value);
         case OptionKind::Scale: {
             if (!std::holds_alternative<double>(value)) return type_error("a number");
             const double s = std::get<double>(value);
@@ -1175,6 +1472,18 @@ CompiledSetup compile_setup_internal(const CatalogEntry& entry, const SetupOptio
         out.error = err;
         return out;
     }
+    // The swap package (engine garage G1): fuel, clutch, TCU, parts and mass follow an engine/fuel choice.
+    {
+        SwapPackage pkg;
+        err = apply_swap(files, entry, ctx, pkg);
+        if (!err.empty()) {
+            out.error = err;
+            return out;
+        }
+        out.swap_lines = pkg.lines;
+        out.chassis_mass_delta_kg = pkg.mass_delta_kg;
+        if (files.swapped) out.engine_title = files.swapped->name;
+    }
     if (!load_turbo(files, &err)) { out.error = err; return out; }
     // Pass 2: everything else, in table order.
     for (const SetupOptionDef& def : table.options) {
@@ -1199,7 +1508,7 @@ CompiledSetup compile_setup_internal(const CatalogEntry& entry, const SetupOptio
     bool adaptive_pressure = false;
     if (files.engine && files.engine->work.contains("cycle")) {
         for (const auto& def : table.options) {
-            if (setup.values.count(def.id) && (def.file == "engine" || def.file == "turbo" || def.part_format == "physics_sim.engine/1" || def.part_format == "physics_sim.turbo_configuration/1")) adaptive_pressure = true;
+            if (setup.values.count(def.id) && (def.file == "engine" || def.file == "turbo" || def.part_format == "physics_sim.turbo_configuration/1" || (def.part_format == "physics_sim.engine/1" && def.catalog.empty()))) adaptive_pressure = true;
         }
         if (adaptive_pressure) {
             auto& cycle = files.engine->work["cycle"];
@@ -1249,7 +1558,8 @@ CompiledSetup compile_setup_internal(const CatalogEntry& entry, const SetupOptio
         // This generator policy is constructed above, never supplied by a
         // player option. Check every remaining edit against the normal list.
         if (adaptive_pressure && std::string(kind) == "engine") whitelist_base["cycle"]["pressure_sampling"] = f.work["cycle"]["pressure_sampling"];
-        const std::string violation = whitelist_violation(whitelist_base.dump(), patch_text(patch), patterns);
+        const std::string violation = whitelist_violation_in(whitelist_base.dump(), patch_text(patch), patterns,
+                                                              is_vehicle ? files.derived_subtrees : std::vector<std::string>{});
         if (!violation.empty()) {
             out.error = "the setup would change " + violation + " in the " + kind + " file, which no option may touch";
             return false;

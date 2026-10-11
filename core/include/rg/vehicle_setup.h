@@ -33,9 +33,11 @@
 // (visual only, no file edit). ABS/TC/ESC follow once physics has them.
 #pragma once
 
+#include "rg/engine_store.h"
 #include "rg/vehicle_catalog.h"
 
 #include <map>
+#include <memory>
 #include <optional>
 #include <string>
 #include <variant>
@@ -76,6 +78,11 @@ struct SetupOptionDef {
     std::vector<std::string> pointers; // the whitelist paths (empty for Colour)
     std::string monotonic;             // "decreasing": the resulting list must stay strictly decreasing
     std::vector<SetupPart> parts; // FileChoice: approved files; paths resolved against option-table directory
+    // FileChoice whose parts are not listed in the option table but come from a store at run time (engine garage G1):
+    // "engines" = every engine of rg::EngineStore (defaults and user engines; ids "default:<id>" / "user:<uid>", a
+    // legacy table id such as "sedan_i6" still resolves), "fuels" = the fuels of the installed engine (ids = fuel stems).
+    // An engine choice also derives the swap package (engine_swap.h); both ignore compatible_engines.
+    std::string catalog;
     std::vector<std::string> compatible_engines; // original engine stems, an explicit game fitment list
     std::string part_format; // required referenced file format
     bool no_turbo_override = false; // default engine turbo must not shadow a vehicle override
@@ -112,6 +119,9 @@ struct SetupContext {
     std::vector<std::string> tyre_dirs; // directories scanned for *.json tyre files (TyreChoice)
     std::string work_root;              // materialisations and validation temp dirs go under here
     std::string engine_map_cache_dir;   // .psmaps cache for load_vehicle_json ("" = no disk cache)
+    // The engine list the "engines"/"fuels" catalog options read (a snapshot: a worker thread may hold a copy of this
+    // context while the garage edits user engines). nullptr = those options are unavailable.
+    std::shared_ptr<const EngineStore> engines;
 };
 
 // One option as the configurator shows it, for one vehicle.
@@ -130,6 +140,10 @@ struct OptionView {
 struct SetupModel {
     std::vector<OptionView> options;
     std::string error; // non-empty: the vehicle's files could not be read
+    // With an installed engine/fuel choice (the `installed` setup): what the swap changes, for the player.
+    std::vector<std::string> swap_lines;
+    double chassis_mass_delta_kg = 0.0;
+    std::string engine_title;    // the installed engine's display name ("" = the car's own)
 };
 // Builds the option views of an entry from its files.
 SetupModel build_setup_model(const CatalogEntry& entry, const SetupOptionTable& table, const SetupContext& ctx,
@@ -143,6 +157,10 @@ struct CompiledSetup {
     std::map<std::string, std::string> patches;  // "gearbox"/"engine"/"tyre:<stem>" -> merge patch text
     std::string paint;                           // visual: "" = the catalog default
     std::string rim;
+    // Engine garage G1: what an engine/fuel choice changed besides the choice itself.
+    std::vector<std::string> swap_lines;         // one line each, for the player (fuel kept/changed, clutch, mass ...)
+    double chassis_mass_delta_kg = 0.0;          // added to the catalog chassis mass for the drive
+    std::string engine_title;                    // the installed engine's display name ("" = the car's own)
 };
 CompiledSetup compile_setup(const CatalogEntry& entry, const SetupOptionTable& table, const SetupContext& ctx,
                             const VehicleSetup& setup);
@@ -152,6 +170,11 @@ CompiledSetup compile_setup(const CatalogEntry& entry, const SetupOptionTable& t
 // of the patterns. "" when fine, else the offending path. Exposed for tests.
 std::string whitelist_violation(const std::string& base_json, const std::string& patch_json,
                                 const std::vector<std::string>& pointer_patterns);
+// The same with subtrees (concrete JSON pointers, e.g. "/controllers/0/auto_clutch") that trusted code - the swap
+// package - may change without an option naming each leaf.
+std::string whitelist_violation_in(const std::string& base_json, const std::string& patch_json,
+                                   const std::vector<std::string>& pointer_patterns,
+                                   const std::vector<std::string>& derived_subtrees);
 // RFC 7396: applies `patch` to `base`; "" on a syntax error. Exposed for tests.
 std::string apply_merge_patch(const std::string& base_json, const std::string& patch_json);
 

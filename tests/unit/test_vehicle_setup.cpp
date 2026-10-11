@@ -44,6 +44,10 @@ struct Fixture {
         ctx.tyre_dirs = {kRoot + "/external/physics_sim/data/tyres", kRoot + "/data/tyres"};
         ctx.work_root = isolated_root.path();
         ctx.engine_map_cache_dir = kRoot + "/out/godot_engine_cache";
+        auto store = rg::EngineStore::open(kRoot + "/data/engines/engine_catalog.json", kRoot, "", &err);
+        INFO(err);
+        REQUIRE(store != nullptr);
+        ctx.engines = std::shared_ptr<const rg::EngineStore>(std::move(store));
     }
     const rg::CatalogEntry& entry(const char* id) const {
         const rg::CatalogEntry* e = catalog.find(id);
@@ -343,6 +347,9 @@ TEST_CASE("setup: every catalog entry accepts a setup touching each available op
         int touched = 0;
         for (const auto& o : model.options) {
             if (!o.available) continue;
+            // The catalog choices (engine, fuel) change which other options exist; they are tested on their own
+            // (test_engine_swap.cpp: every engine on every car, fuel kept or changed).
+            if (!o.def.catalog.empty()) continue;
             switch (o.def.kind) {
                 case rg::OptionKind::Scale: s.values[o.def.id] = o.max; ++touched; break;
                 case rg::OptionKind::ScaleList:
@@ -488,14 +495,19 @@ TEST_CASE("engine parts: swaps tune the newly installed engine and keep other re
         for (const auto& opt : model.options) if (opt.def.id == "engine_install") {
             found = true;
             REQUIRE(opt.available);
-            REQUIRE(opt.parts.size() == 2);
+            REQUIRE(opt.parts.size() == f.ctx.engines->list().size()); // the car's own engine is the stock part
+            CHECK(opt.parts.size() >= 6);
             CHECK(opt.parts.front().id == "stock");
             CHECK(!opt.parts.front().image.empty());
         }
         CHECK(found);
     }
-    CHECK_FALSE(rg::compile_setup(f.entry("car_hyper"), f.table, f.ctx,
-        setup_of("car_hyper", {{"engine_install", std::string("sedan_i6")}})).ok);
+    {   // G1: any catalog engine fits any catalog car (the old per-car compatible_engines list is gone)
+        const auto hyper = rg::compile_setup(f.entry("car_hyper"), f.table, f.ctx,
+            setup_of("car_hyper", {{"engine_install", std::string("sedan_i6")}}));
+        INFO(hyper.error);
+        CHECK(hyper.ok);
+    }
     CHECK_FALSE(rg::compile_setup(f.entry("car_sedan"), f.table, f.ctx,
         setup_of("car_sedan", {{"engine_install", std::string("../../anything.json")}})).ok);
 }

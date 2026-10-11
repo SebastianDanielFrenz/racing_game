@@ -302,32 +302,27 @@
       "group": "Engine",
       "area": "engine",
       "kind": "file_choice",
+      "catalog": "engines",
       "file": "vehicle",
       "part_format": "physics_sim.engine/1",
-      "compatible_engines": [
-        "i4_2l_na",
-        "n52b30_3l_na"
-      ],
       "pointers": [
         "/powertrain/components/[type=engine]/ref"
       ],
-      "help": "Install an engine from this fictional sedan chassis fitment list. Calibration applies to the installed engine. Chassis mass and visible engine-bay mesh are retained.",
-      "parts": [
-        {
-          "id": "sedan_i4",
-          "label": "Inline-four 2.0",
-          "path": "../../external/physics_sim/data/engines/i4_2l_na.json",
-          "image": "res://assets/components/engines/engine_i4.png",
-          "detail": "Naturally aspirated"
-        },
-        {
-          "id": "sedan_i6",
-          "label": "Inline-six 3.0",
-          "path": "../engines/n52b30_3l_na.json",
-          "image": "res://assets/components/engines/engine_i6.png",
-          "detail": "Naturally aspirated"
-        }
-      ]
+      "help": "Install any engine of the garage list (the shipped engines and your own). The swap derives the fuel, clutch capacity, clutch and shift points and the car's weight from the new engine; the lines under the list say what changed. The ids of the first version of this option (sedan_i4, sedan_i6) still resolve."
+    },
+    {
+      "id": "fuel",
+      "label": "Fuel",
+      "group": "Engine",
+      "area": "engine",
+      "kind": "file_choice",
+      "catalog": "fuels",
+      "file": "vehicle",
+      "part_format": "physics_sim.fuel/1",
+      "pointers": [
+        "/powertrain/components/[type=fuel_tank]/fuel"
+      ],
+      "help": "The fuel in the tank, limited to the fuels the installed engine lists; the first is its reference fuel. A swap keeps the current fuel if the new engine lists it."
     },
     {
       "id": "turbo_install",

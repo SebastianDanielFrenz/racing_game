@@ -1,0 +1,79 @@
+{
+  "format": "rg.engine_catalog/1",
+  "source": "The default engines of the garage (engine garage G1, out/engine_garage_design.md 4.1). One row per engine file the garage offers; rg::EngineStore reads this table and lists the player's user engines (extends one of these) directly after their default. Everything an engine says about itself (idle, limiter, fuels, a curve engine's peak figures) is read from its own file through the physics loader and is NOT typed here. What a file cannot say is here: the display name, the class (curve = a WOT torque curve, mapped = a simulated engine with measured maps, cycle = a simulated engine whose maps are generated from its cycle model), the family text, the card image, the mass (the swap's chassis-mass delta) and, for the simulated engines that have no curve, their peak figures measured with the engine dyno (ps::drivetrain::run_dyno_sweep, ISA sea level, wide open; tests/unit/test_engine_catalog.cpp re-measures them in a hidden [long] case). Paths are relative to the repository root. Card images are shared placeholders until engine art exists (only the inline-four and the inline-six have pictures). Masses are ASSUMED [AS] from published figures of comparable engines: no citation was fetched.",
+  "fuel_dir": "external/physics_sim/data/fuels",
+  "engines": [
+    {
+      "id": "hyper_v8_one1_audio",
+      "name": "Twin-turbo V8 5.1",
+      "file": "data/engines/hyper_v8_one1_audio.json",
+      "class": "cycle",
+      "family": "V8 twin turbo",
+      "image": "res://assets/components/engines/engine_i6.png",
+      "detail": "Simulated from its cycle model",
+      "mass_kg": 230.0,
+      "mass_source": "ASSUMED [AS]: a 5.1 L aluminium twin-turbo V8 with its turbochargers, comparable engines weigh 200-250 kg; 230 kg used, no citation fetched.",
+      "peaks": { "torque_nm": 1387.3, "torque_rpm": 5450.0, "power_kw": 1011.1, "power_rpm": 7450.0 }
+    },
+    {
+      "id": "demo_i4_pipes",
+      "name": "Inline-four 2.0 pipe model",
+      "file": "external/physics_sim/data/engines/demo_i4_pipes.json",
+      "class": "cycle",
+      "family": "I4",
+      "image": "res://assets/components/engines/engine_i4.png",
+      "detail": "Simulated, with intake and exhaust pipes",
+      "mass_kg": 110.0,
+      "mass_source": "ASSUMED [AS]: a 2.0 L aluminium inline-four weighs about 100-120 kg; 110 kg used, no citation fetched.",
+      "peaks": { "torque_nm": 212.5, "torque_rpm": 4050.0, "power_kw": 118.7, "power_rpm": 6800.0 }
+    },
+    {
+      "id": "toyota_a25a_fks_gen",
+      "name": "Inline-four 2.5 direct injection",
+      "file": "external/physics_sim/data/engines/toyota_a25a_fks_gen.json",
+      "class": "cycle",
+      "family": "I4",
+      "image": "res://assets/components/engines/engine_i4.png",
+      "detail": "Simulated from its cycle model",
+      "mass_kg": 125.0,
+      "mass_source": "ASSUMED [AS]: a 2.5 L aluminium direct-injection inline-four weighs about 115-135 kg; 125 kg used, no citation fetched.",
+      "peaks": { "torque_nm": 290.2, "torque_rpm": 3800.0, "power_kw": 136.0, "power_rpm": 5300.0 }
+    },
+    {
+      "id": "i4_2l_na",
+      "name": "Inline-four 2.0",
+      "file": "external/physics_sim/data/engines/i4_2l_na.json",
+      "class": "curve",
+      "family": "I4",
+      "image": "res://assets/components/engines/engine_i4.png",
+      "detail": "Naturally aspirated",
+      "mass_kg": 105.0,
+      "mass_source": "ASSUMED [AS]: a 2.0 L aluminium inline-four weighs about 100-120 kg; 105 kg used, no citation fetched.",
+      "aliases": ["sedan_i4"]
+    },
+    {
+      "id": "n52b30_3l_na",
+      "name": "Inline-six 3.0",
+      "file": "data/engines/n52b30_3l_na.json",
+      "class": "curve",
+      "family": "I6",
+      "image": "res://assets/components/engines/engine_i6.png",
+      "detail": "Naturally aspirated",
+      "mass_kg": 165.0,
+      "mass_source": "The same figure as the engine file's own mass_kg (ASSUMED [AS], BMW N52B30 published weights are 160-170 kg).",
+      "aliases": ["sedan_i6"]
+    },
+    {
+      "id": "r26b_4rotor",
+      "name": "Four-rotor rotary 2.6",
+      "file": "external/physics_sim/data/engines/r26b_4rotor.json",
+      "class": "curve",
+      "family": "Rotary",
+      "image": "res://assets/components/engines/engine_i4.png",
+      "detail": "Naturally aspirated",
+      "mass_kg": 190.0,
+      "mass_source": "ASSUMED [AS]: twice a two-rotor 13B (about 100-145 kg depending on the source) plus the longer housing; 190 kg used, no citation fetched.",
+      "crank_axis_local": [0.0, 1.0, 0.0]
+    }
+  ]
+}
