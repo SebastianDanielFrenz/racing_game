@@ -277,7 +277,7 @@
         "id": "engine",
         "type": "engine",
         "ref": "../engines/hyper_v8_one1_audio.json",
-        "turbo_configuration": "../turbo_configurations/hyper_twin_standard_n2o.json"
+        "forced_induction": "../turbo_configurations/hyper_twin_standard_n2o.json"
       },
       {
         "id": "clutch",

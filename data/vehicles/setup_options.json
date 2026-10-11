@@ -342,7 +342,7 @@
       ],
       "no_turbo_override": true,
       "pointers": [
-        "/default_turbo_configuration"
+        "/default_forced_induction"
       ],
       "help": "Select turbo hardware. Boost pressure is adjusted separately in Tuning.",
       "parts": [
@@ -452,7 +452,7 @@
       ],
       "no_turbo_override": false,
       "pointers": [
-        "/powertrain/components/[type=engine]/turbo_configuration"
+        "/powertrain/components/[type=engine]/forced_induction"
       ],
       "help": "Select turbo hardware. Boost pressure is adjusted separately in Tuning.",
       "parts": [
