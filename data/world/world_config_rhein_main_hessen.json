@@ -7,12 +7,12 @@
     "n0": 5559000
   },
   "source_store": {
-    "dir": "S:/claude_code/geo2map_cache/rhein-main-hessen-r1",
+    "dir": "${RG_G2M_CACHE}/rhein-main-hessen-r1",
     "scope": "rhein-main-hessen-2026-10r1",
     "read_only": true
   },
   "derived_store": {
-    "dir": "S:/claude_code/geo2map_cache/rhein-main-hessen-r1/baked",
+    "dir": "${RG_G2M_CACHE}/rhein-main-hessen-r1/baked",
     "name": "tiles"
   },
   "spawn": {

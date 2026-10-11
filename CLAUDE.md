@@ -10,10 +10,11 @@ report for the full decision/pitfall list). Design/phase plan: `PLAN.md`.
 ```
 racing_game/
   CMakeLists.txt, CMakePresets.json   top-level build config
-  README.md                           setup pointer
+  README.md                           new-machine setup (clone, setup.cmd, map data)
+  setup.cmd                           one-step machine setup: wraps tools/setup_dev_env.ps1 (winget toolchain install, submodules, map-data report; -CheckOnly/-WithSiblings/-SkipPython)
   CLAUDE.md                           this file
   PLAN.md                             design and phase plan
-  .gitmodules                         external/physics_sim + external/geo2map_engine submodule pins
+  .gitmodules                         external/physics_sim + external/geo2map_engine submodule pins; URLs are the GitHub repos (this machine's .git/config keeps the local S:\claude_code\<repo> URLs - never `git submodule sync` here)
   external/
     physics_sim/                      git submodule, READ-ONLY from this repo (another session owns it), pinned by commit - see "physics_sim submodule" below
     geo2map_engine/                    git submodule, READ-ONLY from this repo (another session owns it), pinned by commit - see "geo2map_engine submodule" below
@@ -140,7 +141,7 @@ racing_game/
       CMakeLists.txt                  rg_test_catch_main + rg_unit_tests targets, CTest registration
   tools/
     common.ps1                        shared PowerShell helpers (VS dev-shell entry, Godot exe lookup, cmake wrappers, submodule update) - dot-sourced by run.ps1/smoke_test.ps1/ci.ps1
-    setup_dev_env.ps1                 -CheckOnly only (installs nothing - see its own header)
+    setup_dev_env.ps1                 installs the toolchain via winget (VS 2022 Build Tools + clang-cl, CMake, Ninja, Godot 4.7.2, Python 3.13), checks out the submodules, optionally clones the sibling repos (-WithSiblings), reports which worlds have map data; -CheckOnly installs nothing
     run.ps1, run.cmd                  incremental build + launch Godot on game/ - opens the game SHELL (boot splash, main menu) by default (R5); `-Drive` skips it and starts the real world in Drive mode (`--drive`), `-Flat` the flat scene (`--flat`), `-VR` starts in the world too, by default at preset a5_north in the rhein_main_corridor world (sets RG_WORLD_CONFIG for the child only unless already set; main.gd `--spawn=ID` picks any data/world/spawn_presets.json preset on a `--drive` start); pass `-- --terrain-preview` (see run.ps1's own pass-through-args comment) to launch the R2.1 terrain preview instead
     smoke_test.ps1                    headless Godot smoke test (build, ctest, headless run, assert no errors + sim thread ticking); `-TerrainPreview` runs the R2.1 headless check instead (asserts >= 150 chunks selected and a completed upload, see its own header comment); `-TerrainStream` (implies -TerrainPreview, R8) adds `--stream-test` and asserts `steps=5 diffs=5 ... missing_removals=0` - with the 0-ERROR-lines check this is the RID-leak check after streamed add/remove diffs; `-Drive` (R9) runs `--drive --drive-smoke` and asserts `RG_DRIVE ready`, falls=0 misses=0 on every RG_DRIVE numbers line, ticks > 0 and result=ok; `-DriveDelayMs N` adds `--g2m-fetch-delay-ms N` and asserts relocate_freezes >= 1 and advanced_after_relocate > 0; both SKIP (exit 0) without a geo2map store; R5: the plain run passes `--flat`, `-Shell` runs the headless UI flow test, `-Cameras` the PHYS-008 camera-switch test; R6: `-Garage` runs the headless garage acceptance flow (`garage_test.gd`)
     make_synthetic_catalog.ps1        (R6c) writes a synthetic vehicle catalog (the real base cars + generated presets, default 200 entries) for the car browser tests and screenshots; `car_browser_shots.ps1` takes the browser screenshots into out/car_browser_screens/ (needs a real window)
@@ -155,10 +156,11 @@ racing_game/
 
 ## physics_sim submodule
 
-`external/physics_sim` is a git submodule of `S:\claude_code\physics_sim`,
-added as a local absolute `file://`-style path (`.gitmodules`'s `url`) per
-decision D9. **Every command that clones or updates it must pass
-`-c protocol.file.allow=always`**, or git >= 2.38 refuses it with
+`external/physics_sim` is a git submodule. `.gitmodules` names the GitHub
+repo (a fresh clone fetches from there); this machine's own `.git/config`
+keeps `S:\claude_code\physics_sim` as a local absolute path (decision D9), so
+a pin bump here needs no push first. **Every command that updates it on this
+machine must pass `-c protocol.file.allow=always`**, or git >= 2.38 refuses it with
 `fatal: transport 'file' not allowed` (confirmed empirically on git
 2.54.0.windows.1) - `tools/common.ps1`'s `Update-PhysicsSimSubmodule`
 always does this; a manual clone must do the same by hand:
@@ -266,10 +268,12 @@ Two distinct path-resolution rules, per field:
   reason.
 
 `${VAR}` placeholder expansion applies only to the two `dir` fields above.
-`${RG_G2M_HOME}` is special-cased: if the env var is unset it defaults to
-`S:\claude_code\geo2map_cache\home-r1` (`kDefaultRgG2mHome`,
-`world_config.cpp`) instead of erroring; every other unset/unknown
-`${NAME}` is a validation error.
+`${RG_G2M_HOME}` and `${RG_G2M_CACHE}` are special-cased: unset, they
+default to `<repo root>/cache/g2m/home-r1` and `<repo root>/../geo2map_cache`
+(`kDefaultRgG2mHomeRelative`/`kDefaultRgG2mCacheRelative`, `world_config.cpp`)
+instead of erroring; the rhein_main configs name their stores as
+`${RG_G2M_CACHE}/<store>`. Every other unset/unknown `${NAME}` is a
+validation error.
 
 ## Terrain preview (R2.1)
 
@@ -1158,6 +1162,7 @@ timing; per-tick hashes remain equal to synchronous terrain across worker counts
 ## Building, testing, running
 
 ```powershell
+setup.cmd                            # new machine: install toolchain, submodules, report map data
 tools\setup_dev_env.ps1 -CheckOnly   # verify toolchain (installs nothing)
 
 # from a VS 2022 developer shell (tools\run.ps1/ci.ps1/smoke_test.ps1 enter one automatically)

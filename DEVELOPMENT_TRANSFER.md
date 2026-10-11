@@ -1,8 +1,11 @@
 # Continue development on another machine
 
-The checked-in submodule URLs refer to the original machine's local repositories.
+The normal route is now GitHub: clone `racing_game` with `--recursive` and run
+`setup.cmd` - see README.md. The submodule URLs in `.gitmodules` are the GitHub
+repositories. The bundles below remain an offline alternative.
+
 Use the three Git bundles produced by `tools/export_dev_bundle.ps1` to transfer
-the game and the exact physics/geo2map revisions without needing those S: paths.
+the game and the exact physics/geo2map revisions without network access.
 Bundles include Git history, tracked source, models, generated turbo maps and
 custom nitrous parts. `manifest.json` records revisions and SHA-256 checksums.
 
@@ -24,16 +27,13 @@ git -C $checkout submodule status
 ```
 
 These local configuration overrides preserve the original machine's setup.
-Keep the bundle folder accessible while using the bundle URLs. Do not run
-`git submodule sync`, which would restore the original S: URLs. Replace the
-local URLs with shared repository URLs when hosting is established. A bundle
+Keep the bundle folder accessible while using the bundle URLs. Running
+`git submodule sync` switches them to the GitHub URLs in `.gitmodules`. A bundle
 is a transfer snapshot, not a server to push future development to.
 
 ## Build and run
 
-Install Git, CMake, Ninja, Visual Studio 2022 Build Tools with the C++ toolchain
-and clang-cl, and Godot. See `tools/setup_dev_env.ps1` and `tools/common.ps1` for
-the existing setup/lookup helpers. Python 3.10+ is needed to regenerate turbo
+Run `setup.cmd` (installs the toolchain via winget - see README.md). Python 3.10+ is needed to regenerate turbo
 maps; the generated maps already ship in the repository.
 
 ```powershell
@@ -51,11 +51,10 @@ existing geo2map dependency checkout can be supplied with
 The terrain stores are large external datasets and are not in these bundles.
 For the corridor world, copy
 `S:\claude_code\geo2map_cache\rhein-main-corridor-r2`, including its `baked`
-directory, to the new machine. For the Hessen world, copy
-`S:\claude_code\geo2map_cache\rhein-main-hessen-r1` similarly.
-Edit `source_store.dir` and `derived_store.dir` in the corresponding world configuration to
-match the destination paths, or make a local
-copy of the configuration and select it with `RG_WORLD_CONFIG`.
+directory, into a `geo2map_cache` folder next to `racing_game` on the new
+machine, or anywhere with `RG_G2M_CACHE` set to the folder holding it. For the
+Hessen world, copy `rhein-main-hessen-r1` the same way. The home world's store
+goes to `racing_game\cache\g2m\home-r1` (or set `RG_G2M_HOME`).
 Flat mode works without those datasets. The bundles do not transfer saved
 garage setups, control bindings, logs, the knowledge vault or other personal
 application data; copy those separately if wanted.

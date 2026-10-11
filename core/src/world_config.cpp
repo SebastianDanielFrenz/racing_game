@@ -41,9 +41,17 @@ using json = nlohmann::json;
 // "Repo root" is the same nearest-ancestor-with-CMakeLists.txt search
 // find_repo_root() below already does for surface_map/palette resolution -
 // computed once per load_world_config() call and threaded through to
-// expand_placeholders(). Only RG_G2M_HOME gets a default; every other
-// "${NAME}" placeholder is an error if the environment variable is not set.
+// expand_placeholders(). Only RG_G2M_HOME and RG_G2M_CACHE (below) get a
+// default; every other "${NAME}" placeholder is an error if the environment
+// variable is not set.
 constexpr const char* kDefaultRgG2mHomeRelative = "cache/g2m/home-r1";
+
+// RG_G2M_CACHE's default, when unset: the shared geo2map store folder next to
+// the repo, "<repo root>/../geo2map_cache" - the layout every dev machine uses
+// (tools/setup_dev_env.ps1 and README.md describe it). The rhein_main world
+// configs name their stores as "${RG_G2M_CACHE}/<store>", so no config holds a
+// machine-specific absolute path.
+constexpr const char* kDefaultRgG2mCacheRelative = "../geo2map_cache";
 
 // RG_G2M_DERIVED (checked directly, not a "${NAME}" placeholder): when set,
 // overrides derived_store.dir entirely (used as-is, no further expansion)
@@ -121,8 +129,8 @@ std::optional<fs::path> find_repo_root(fs::path dir) {
 
 // Expands every "${NAME}" placeholder in `in`. Returns nullopt (with *err
 // set) on an unterminated placeholder, an unknown/unset variable other than
-// RG_G2M_HOME, or (RG_G2M_HOME specifically, env var unset) no repo_root to
-// build its default from.
+// RG_G2M_HOME/RG_G2M_CACHE, or (those two, env var unset) no repo_root to
+// build their default from.
 std::optional<std::string> expand_placeholders(const std::string& in, const std::string& path,
                                                const std::optional<fs::path>& repo_root, std::string* err) {
     std::string out;
@@ -141,17 +149,20 @@ std::optional<std::string> expand_placeholders(const std::string& in, const std:
                 return std::nullopt;
             }
             std::string value;
-            if (name == "RG_G2M_HOME") {
+            const char* default_relative = name == "RG_G2M_HOME"    ? kDefaultRgG2mHomeRelative
+                                           : name == "RG_G2M_CACHE" ? kDefaultRgG2mCacheRelative
+                                                                    : nullptr;
+            if (default_relative != nullptr) {
                 std::optional<std::string> env = safe_getenv(name);
                 if (env.has_value()) {
                     value = *env;
                 } else if (repo_root.has_value()) {
-                    value = (*repo_root / fs::path(kDefaultRgG2mHomeRelative)).lexically_normal().string();
+                    value = (*repo_root / fs::path(default_relative)).lexically_normal().string();
                 } else {
                     fail(err, path,
-                         "RG_G2M_HOME is not set and no repo root (nearest ancestor with a CMakeLists.txt) "
-                         "was found to build its default (\"" +
-                             std::string(kDefaultRgG2mHomeRelative) + "\") from");
+                         name + " is not set and no repo root (nearest ancestor with a CMakeLists.txt) "
+                                "was found to build its default (\"" +
+                             std::string(default_relative) + "\") from");
                     return std::nullopt;
                 }
             } else {

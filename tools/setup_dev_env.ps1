@@ -1,62 +1,66 @@
 #Requires -Version 5.1
 <#
 .SYNOPSIS
-    Verifies the racing_game development toolchain on Windows.
+    Sets up (or verifies) a Windows machine for racing_game development.
 
 .DESCRIPTION
-    -CheckOnly ONLY (there is no install mode in this repo, unlike
-    physics_sim's own tools/setup_dev_env.ps1 - R0's dev machine already has
-    everything this repo needs: VS 2022 Build Tools/clang-cl and Godot were
-    installed for physics_sim's own development, CMake/Ninja/Git likewise).
-    Prints each tool's version and exits non-zero if anything required is
-    missing, so CI/onboarding has one command to run first.
+    New machine, from a fresh clone:
+
+        git clone --recursive https://github.com/SebastianDanielFrenz/racing_game.git
+        racing_game\setup.cmd
+
+    Install mode (default) installs via winget whatever is missing: VS 2022
+    Build Tools (C++ workload + clang-cl), CMake, Ninja, Godot 4.7.2 and
+    Python 3.13 (Python only regenerates data; the game does not need it).
+    It then checks out both submodules (external/physics_sim,
+    external/geo2map_engine) and reports which worlds have their map data.
+    Re-running is safe: installed tools are skipped.
+
+    Map data is not in Git (large, partly licence-bound). Copy it from an
+    existing machine:
+      - home world:        <repo>\cache\g2m\home-r1          (RG_G2M_HOME)
+      - rhein_main worlds: <repo>\..\geo2map_cache\<store>   (RG_G2M_CACHE)
+    The flat test scene needs no map data.
+
+    -CheckOnly installs nothing and exits non-zero if a tool is missing.
 
 .PARAMETER CheckOnly
-    Accepted for interface parity with physics_sim's own script (which has
-    an install mode); this script always behaves as -CheckOnly and ignores
-    the switch's value - present so a caller can pass it unconditionally.
+    Verify only; install nothing.
+
+.PARAMETER WithSiblings
+    Also clone physics_sim and geo2map_engine next to this repo
+    (<repo>\..\physics_sim, <repo>\..\geo2map_engine) for working on them
+    directly. The game itself only needs the submodules.
+
+.PARAMETER SkipPython
+    Do not install Python.
 #>
 [CmdletBinding()]
 param(
-    [switch]$CheckOnly
+    [switch]$CheckOnly,
+    [switch]$WithSiblings,
+    [switch]$SkipPython
 )
 
 $ErrorActionPreference = 'Stop'
 $script:AllOk = $true
+$RepoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
+$ParentDir = Split-Path $RepoRoot -Parent
+$GodotVersion = '4.7.2'
+$GitHubOwner = 'https://github.com/SebastianDanielFrenz'
 
-function Write-Section($title) {
-    Write-Host ""
-    Write-Host "=== $title ===" -ForegroundColor Cyan
+function Write-Section($title) { Write-Host ""; Write-Host "=== $title ===" -ForegroundColor Cyan }
+function Write-Ok($msg) { Write-Host "  [OK]   $msg" -ForegroundColor Green }
+function Write-Info($msg) { Write-Host "  [--]   $msg" -ForegroundColor Yellow }
+function Write-Missing($msg) { Write-Host "  [MISS] $msg" -ForegroundColor Red; $script:AllOk = $false }
+
+function Update-SessionPath {
+    $env:Path = [Environment]::GetEnvironmentVariable('Path', 'Machine') + ';' +
+                [Environment]::GetEnvironmentVariable('Path', 'User')
 }
 
-function Write-Ok($msg) {
-    Write-Host "  [OK]   $msg" -ForegroundColor Green
-}
-
-function Write-Missing($msg) {
-    Write-Host "  [MISS] $msg" -ForegroundColor Red
-    $script:AllOk = $false
-}
-
-function Test-CommandVersion {
-    param(
-        [string]$Name,
-        [string]$Command,
-        [string[]]$ArgumentList = @('--version')
-    )
-    try {
-        $out = & $Command @ArgumentList 2>&1 | Select-Object -First 1
-        if ($out) {
-            Write-Ok "$Name -> $out"
-            return $true
-        } else {
-            Write-Missing "$Name (no output from '$Command $ArgumentList')"
-            return $false
-        }
-    } catch {
-        Write-Missing "$Name (command '$Command' not found or failed: $($_.Exception.Message))"
-        return $false
-    }
+function Get-ToolVersion([string]$Command) {
+    try { return (& $Command --version 2>&1 | Select-Object -First 1) } catch { return $null }
 }
 
 function Get-VsInstallPath {
@@ -73,65 +77,129 @@ function Get-ClangClPath {
     return $null
 }
 
-# Same winget-package-directory probe as physics_sim's own
-# tools/setup_dev_env.ps1's Godot check.
+# Same lookup as tools/common.ps1 (winget's portable-package folder).
 function Find-GodotConsoleExe {
-    $godotDir = Get-ChildItem "$env:LOCALAPPDATA\Microsoft\WinGet\Packages" -Directory -Filter 'GodotEngine.GodotEngine*' -ErrorAction SilentlyContinue
-    return $godotDir | Get-ChildItem -Filter '*_console.exe' -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
+    Get-ChildItem -Path "$env:LOCALAPPDATA\Microsoft\WinGet\Packages" -Recurse -Filter 'Godot_v*_console.exe' -ErrorAction SilentlyContinue |
+        Select-Object -First 1
 }
 
-Write-Section "Windows toolchain"
-Test-CommandVersion -Name 'git'   -Command 'git'   -ArgumentList @('--version') | Out-Null
-Test-CommandVersion -Name 'cmake' -Command 'cmake' -ArgumentList @('--version') | Out-Null
-Test-CommandVersion -Name 'ninja' -Command 'ninja' -ArgumentList @('--version') | Out-Null
-
-$vsPath = Get-VsInstallPath
-if ($vsPath) {
-    Write-Ok "VS 2022 Build Tools -> $vsPath"
-} else {
-    Write-Missing "VS 2022 Build Tools (VC.Tools.x86.x64 workload) not found via vswhere"
-}
-
-$clangCl = Get-ClangClPath
-if ($clangCl) {
-    $ver = & $clangCl --version | Select-Object -First 1
-    Write-Ok "clang-cl -> $clangCl ($ver)"
-} else {
-    Write-Missing "clang-cl not found under VC\Tools\Llvm\x64\bin (VC.Llvm.Clang / VC.Llvm.ClangToolset components)"
-}
-
-$godotExe = Find-GodotConsoleExe
-if ($godotExe) {
-    Write-Ok "Godot -> $($godotExe.FullName)"
-} else {
-    Write-Missing "Godot (GodotEngine.GodotEngine winget package) not found"
-}
-
-# git ≥2.38's file-transport protocol guard: this repo's external/physics_sim
-# submodule uses a local absolute file:// URL (decision D9), which every
-# submodule update MUST pass -c protocol.file.allow=always for, or it fails
-# with "fatal: transport 'file' not allowed" - checked here so a missing/old
-# git that predates the guard, or one some other config has locked down
-# further, is caught before the first clone rather than mid-CI.
-try {
-    $gitVerRaw = & git --version
-    $gitVerMatch = [regex]::Match($gitVerRaw, '(\d+)\.(\d+)\.(\d+)')
-    if (-not $gitVerMatch.Success) { throw "could not parse '$gitVerRaw'" }
-    $gitVer = [version]("{0}.{1}.{2}" -f $gitVerMatch.Groups[1].Value, $gitVerMatch.Groups[2].Value, $gitVerMatch.Groups[3].Value)
-    if ($gitVer -ge [version]'2.38.0') {
-        Write-Ok "git submodule file-transport guard applies (git $gitVer >= 2.38) - run.ps1/ci.ps1 always pass -c protocol.file.allow=always"
-    } else {
-        Write-Ok "git $gitVer predates the file-transport guard (< 2.38) - -c protocol.file.allow=always is harmless but unnecessary"
+function Install-WingetPackage {
+    param([string]$Id, [string[]]$ExtraArgs = @())
+    if (-not (Get-Command winget -ErrorAction SilentlyContinue)) {
+        throw "winget not found - install 'App Installer' from the Microsoft Store, then re-run"
     }
-} catch {
-    Write-Missing "could not determine git version to check the submodule file-transport guard"
+    Write-Host "  installing $Id via winget..."
+    $wingetArgs = @('install', '--id', $Id, '-e', '--accept-package-agreements',
+                    '--accept-source-agreements', '--disable-interactivity') + $ExtraArgs
+    & winget @wingetArgs
+    # -1978335189 = APPINSTALLER_CLI_ERROR_UPDATE_NOT_APPLICABLE (already installed, no newer version)
+    if ($LASTEXITCODE -ne 0 -and $LASTEXITCODE -ne -1978335189) {
+        throw "winget install of $Id failed with exit code $LASTEXITCODE"
+    }
 }
 
+# ---------------------------------------------------------------------------
+# Toolchain
+# ---------------------------------------------------------------------------
+Update-SessionPath
+
+if (-not $CheckOnly) {
+    Write-Section "Installing missing tools"
+    if (-not (Get-ClangClPath)) {
+        # clang-cl comes from the Build Tools' own LLVM components (same as
+        # physics_sim/tools/setup_dev_env.ps1). Expect a UAC prompt.
+        Install-WingetPackage -Id 'Microsoft.VisualStudio.2022.BuildTools' -ExtraArgs @(
+            '--override', '"--wait --quiet --norestart --nocache --add Microsoft.VisualStudio.Workload.VCTools --includeRecommended --add Microsoft.VisualStudio.Component.VC.Llvm.Clang --add Microsoft.VisualStudio.Component.VC.Llvm.ClangToolset"')
+    }
+    if (-not (Get-ToolVersion 'cmake')) { Install-WingetPackage -Id 'Kitware.CMake' }
+    if (-not (Get-ToolVersion 'ninja')) { Install-WingetPackage -Id 'Ninja-build.Ninja' }
+    if (-not (Find-GodotConsoleExe)) {
+        try {
+            Install-WingetPackage -Id 'GodotEngine.GodotEngine' -ExtraArgs @('--version', $GodotVersion)
+        } catch {
+            Write-Info "Godot $GodotVersion not available from winget ($($_.Exception.Message)); installing the latest"
+            Install-WingetPackage -Id 'GodotEngine.GodotEngine'
+        }
+    }
+    if (-not $SkipPython -and -not (Get-Command py -ErrorAction SilentlyContinue) -and -not (Get-Command python -ErrorAction SilentlyContinue)) {
+        Install-WingetPackage -Id 'Python.Python.3.13'
+    }
+    Update-SessionPath
+}
+
+Write-Section "Toolchain"
+foreach ($tool in 'git', 'cmake', 'ninja') {
+    $v = Get-ToolVersion $tool
+    if ($v) { Write-Ok "$tool -> $v" } else { Write-Missing $tool }
+}
+$vsPath = Get-VsInstallPath
+if ($vsPath) { Write-Ok "VS 2022 Build Tools -> $vsPath" } else { Write-Missing "VS 2022 Build Tools (C++ workload)" }
+$clangCl = Get-ClangClPath
+if ($clangCl) { Write-Ok "clang-cl -> $clangCl" } else { Write-Missing "clang-cl (VS components VC.Llvm.Clang / VC.Llvm.ClangToolset)" }
+$godot = Find-GodotConsoleExe
+if ($godot) {
+    if ($godot.Name -notlike "Godot_v$GodotVersion-*") { Write-Info "Godot $($godot.Name) is not the tested $GodotVersion" }
+    Write-Ok "Godot -> $($godot.FullName)"
+} else {
+    Write-Missing "Godot (winget GodotEngine.GodotEngine)"
+}
+if (Get-Command py -ErrorAction SilentlyContinue) { Write-Ok "python -> $(& py --version 2>&1)" }
+elseif (Get-Command python -ErrorAction SilentlyContinue) { Write-Ok "python -> $(& python --version 2>&1)" }
+else { Write-Info "python not found (optional: only data generators need it)" }
+
+# ---------------------------------------------------------------------------
+# Source: submodules (and optional sibling clones)
+# ---------------------------------------------------------------------------
+Write-Section "Source"
+if (-not $CheckOnly) {
+    # protocol.file.allow: harmless for the GitHub URLs, needed where a
+    # machine's local config points the submodules at local repositories.
+    & git -C $RepoRoot -c protocol.file.allow=always submodule update --init --recursive
+    if ($LASTEXITCODE -ne 0) { throw "git submodule update failed (exit $LASTEXITCODE)" }
+}
+foreach ($sub in 'external/physics_sim', 'external/geo2map_engine') {
+    if (Test-Path (Join-Path $RepoRoot "$sub\CMakeLists.txt")) { Write-Ok "$sub checked out" }
+    else { Write-Missing "$sub not checked out (git submodule update --init --recursive)" }
+}
+foreach ($repo in 'physics_sim', 'geo2map_engine') {
+    $dir = Join-Path $ParentDir $repo
+    if (Test-Path (Join-Path $dir '.git')) {
+        Write-Ok "sibling $dir"
+    } elseif ($WithSiblings -and -not $CheckOnly) {
+        & git clone "$GitHubOwner/$repo.git" $dir
+        if ($LASTEXITCODE -ne 0) { throw "git clone of $repo failed (exit $LASTEXITCODE)" }
+        Write-Ok "cloned $dir"
+    } else {
+        Write-Info "no sibling $dir (only needed to work on $repo directly; -WithSiblings clones it)"
+    }
+}
+
+# ---------------------------------------------------------------------------
+# Map data (copied by hand; never in Git)
+# ---------------------------------------------------------------------------
+Write-Section "Map data"
+Write-Ok "flat test scene: needs no map data (tools\run.cmd -Flat)"
+$homeStore = if ($env:RG_G2M_HOME) { $env:RG_G2M_HOME } else { Join-Path $RepoRoot 'cache\g2m\home-r1' }
+$cacheRoot = if ($env:RG_G2M_CACHE) { $env:RG_G2M_CACHE } else { Join-Path $ParentDir 'geo2map_cache' }
+$worlds = @(
+    @{ Name = 'home (default world)'; Dir = $homeStore },
+    @{ Name = 'rhein_main_corridor (VR default)'; Dir = (Join-Path $cacheRoot 'rhein-main-corridor-r2') },
+    @{ Name = 'rhein_main_hessen'; Dir = (Join-Path $cacheRoot 'rhein-main-hessen-r1') }
+)
+foreach ($w in $worlds) {
+    if (Test-Path (Join-Path $w.Dir 'baked\tiles.sqlite3')) { Write-Ok "$($w.Name): $($w.Dir)" }
+    else { Write-Info "$($w.Name): no baked store at $($w.Dir) - copy it from a machine that has it" }
+}
+
+# ---------------------------------------------------------------------------
 Write-Section "Result"
 if ($script:AllOk) {
-    Write-Host "All tools present." -ForegroundColor Green
+    Write-Host "Ready. First build and run (builds everything, fetches CMake dependencies):" -ForegroundColor Green
+    Write-Host "  tools\run.cmd -Flat        flat test scene"
+    Write-Host "  tools\run.cmd              real world (needs the home map data)"
     exit 0
 } else {
-    Write-Host "One or more tools are missing. This script installs nothing - see physics_sim/tools/setup_dev_env.ps1 for the install-mode pattern if a fresh machine ever needs it." -ForegroundColor Red
+    $hint = if ($CheckOnly) { 'Re-run without -CheckOnly to install.' } else { 'See the [MISS] lines above.' }
+    Write-Host "Something is missing. $hint" -ForegroundColor Red
     exit 1
 }

@@ -250,6 +250,30 @@ TEST_CASE("load_world_config: RG_G2M_HOME defaults to <repo root>/cache/g2m/home
     CHECK(fs::path(cfg->derived_store.dir).lexically_normal() == (expected / "baked").lexically_normal());
 }
 
+TEST_CASE("load_world_config: RG_G2M_CACHE defaults to <repo root>/../geo2map_cache, env overrides", "[world_config]") {
+    ScopedEnvVar derived_env("RG_G2M_DERIVED");
+    json j = valid_world_config_json();
+    j["source_store"]["dir"] = "${RG_G2M_CACHE}/store-a";
+    j["derived_store"]["dir"] = "${RG_G2M_CACHE}/store-a/baked";
+    TempFile file = TempFile::from_json(j);
+    std::string err;
+    {
+        ScopedEnvVar env("RG_G2M_CACHE"); // unset
+        auto cfg = rg::load_world_config(file.path(), &err);
+        REQUIRE(cfg.has_value());
+        const fs::path expected =
+            (fs::path(std::string(RG_SOURCE_DIR)) / ".." / "geo2map_cache" / "store-a").lexically_normal();
+        CHECK(fs::path(cfg->source_store.dir).lexically_normal() == expected);
+        CHECK(fs::path(cfg->derived_store.dir).lexically_normal() == (expected / "baked").lexically_normal());
+    }
+    {
+        ScopedEnvVar env("RG_G2M_CACHE", "D:/data/g2m");
+        auto cfg = rg::load_world_config(file.path(), &err);
+        REQUIRE(cfg.has_value());
+        CHECK(cfg->source_store.dir == "D:/data/g2m/store-a");
+    }
+}
+
 TEST_CASE("load_world_config: RG_G2M_DERIVED overrides derived_store.dir entirely", "[world_config]") {
     ScopedEnvVar env("RG_G2M_HOME", "S:/some/test/g2m/home");
     ScopedEnvVar derived_env("RG_G2M_DERIVED", "S:/some/other/scratch/derived");

@@ -148,10 +148,11 @@ set(RG_G2M_DEPS_DIR "${RG_G2M_DEPS_DIR_DEFAULT}" CACHE PATH
     "Directory holding an already-populated geo2map_engine build's FetchContent _deps (avoids a network fetch for g2m_zstd/g2m_sqlite/g2m_json etc.)")
 
 if(NOT EXISTS "${RG_G2M_DEPS_DIR}")
-  message(WARNING "RG_G2M_DEPS_DIR (${RG_G2M_DEPS_DIR}) does not exist - "
-                  "geo2map_engine's FetchContent deps (g2m_zstd/g2m_sqlite/g2m_json) "
-                  "will try to reach the network. Build geo2map_engine's own "
-                  "release/consumer-check preset first, or pass -DRG_G2M_DEPS_DIR=...")
+  # Normal on a fresh machine (tools/setup_dev_env.ps1): the deps are fetched.
+  message(STATUS "RG_G2M_DEPS_DIR (${RG_G2M_DEPS_DIR}) does not exist - "
+                 "geo2map_engine's FetchContent deps (g2m_zstd/g2m_sqlite/g2m_json) "
+                 "are fetched from the network. Pass -DRG_G2M_DEPS_DIR=... to reuse "
+                 "an existing geo2map_engine build's _deps instead.")
 else()
   # Defensive: also cover the decoder-only deps (libdeflate/zlib-ng/protozero/
   # libosmium) and catch2, in case a future increment turns G2M_BUILD_IMPORT

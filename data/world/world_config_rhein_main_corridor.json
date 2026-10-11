@@ -7,12 +7,12 @@
     "n0": 5559000
   },
   "source_store": {
-    "dir": "S:/claude_code/geo2map_cache/rhein-main-corridor-r2",
+    "dir": "${RG_G2M_CACHE}/rhein-main-corridor-r2",
     "scope": "rhein-main-corridor-2026-10r2",
     "read_only": true
   },
   "derived_store": {
-    "dir": "S:/claude_code/geo2map_cache/rhein-main-corridor-r2/baked",
+    "dir": "${RG_G2M_CACHE}/rhein-main-corridor-r2/baked",
     "name": "tiles"
   },
   "spawn": {

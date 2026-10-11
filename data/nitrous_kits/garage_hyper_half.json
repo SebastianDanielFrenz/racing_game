@@ -18,6 +18,6 @@
     "basis": "crank",
     "source": "Nominal half-flow jet-area scaling; actual added power depends on engine operating conditions."
   },
-  "default_controller": "S:/claude_code/racing_game/external/physics_sim/data/nitrous_controllers/custom_wet_800.json",
+  "default_controller": "../../external/physics_sim/data/nitrous_controllers/custom_wet_800.json",
   "source": "Game half-flow wet kit: both jet areas halved while retaining fuel/nitrous balance and the original controller. Nominal rating, not a measured dyno result."
 }
