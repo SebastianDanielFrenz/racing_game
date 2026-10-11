@@ -448,6 +448,17 @@ TEST_CASE("engine swap: engine-bound options follow the installed engine", "[eng
     CHECK(swapped.chassis_mass_delta_kg == Approx(165.0 - 230.0));
     CHECK_FALSE(swapped.swap_lines.empty());
     CHECK(swapped.engine_title == "Inline-six 3.0");
+
+    // Availability reads the INSTALLED engine, not the car's own: the A25A car offers its sedan nitrous kit, an I4 swapped in
+    // (torque map) loses the kit and a simulated V8 keeps it, but the kit is not on the V8's engine list.
+    const auto& n2o_car = f.entry("car_sedan_gen_n2o");
+    const auto n2o_model = [&](const rg::VehicleSetup& s) { return rg::build_setup_model(n2o_car, f.table, f.ctx, &s); };
+    const auto n2o_stock = n2o_model(setup_of("car_sedan_gen_n2o", {}));
+    REQUIRE(n2o_stock.error.empty());
+    CHECK(availability(n2o_stock, "nitrous_install_sedan"));
+    const auto n2o_v8 = n2o_model(setup_of("car_sedan_gen_n2o", {{"engine_install", std::string("default:hyper_v8_one1_audio")}}));
+    REQUIRE(n2o_v8.error.empty());
+    CHECK_FALSE(availability(n2o_v8, "nitrous_install_sedan"));
 }
 
 TEST_CASE("engine swap: the chassis-mass delta is the catalog figure difference", "[engine_garage][engine_swap][mass]") {

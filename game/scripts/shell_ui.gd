@@ -81,6 +81,7 @@ var _garage_dyno_status: Label
 var _dyno_poll := 0.0
 var _garage_path: Array[String] = []
 var _garage_preferred: Button
+var _engine_notice := ""                        # G1: options an engine change reset (shown under the engine cards)
 var _component_textures: Dictionary = {}
 var _component_catalog: Dictionary = {}
 var _garage_exit: Control
@@ -890,7 +891,8 @@ func _draw_upgrades() -> void:
 			if _garage_option("engine_install").is_empty(): disabled.append("Engine")
 			if _garage_option("turbo_install").is_empty() and _garage_option("turbo_install_n2o").is_empty(): disabled.append("Turbo")
 			if top == "Swaps":
-				_draw_tiles(["Engine", "Forced induction", "Drivetrain"], [] + (["Engine"] if disabled.has("Engine") else []) + (["Forced induction"] if disabled.has("Turbo") else []))
+				var no_fuel: bool = _garage_option("fuel").is_empty()
+				_draw_tiles(["Engine", "Fuel", "Forced induction", "Drivetrain"], [] + (["Engine"] if disabled.has("Engine") else []) + (["Fuel"] if no_fuel else []) + (["Forced induction"] if disabled.has("Turbo") else []))
 			else:
 				_draw_tiles(["Turbo", "N2O", "Camshaft"],disabled + (["N2O"] if _garage_option("nitrous_install_hyper").is_empty() and _garage_option("nitrous_install_sedan").is_empty() else []))
 			return
@@ -898,7 +900,8 @@ func _draw_upgrades() -> void:
 			_draw_tiles(["AWD", "RWD", "FWD"],["AWD", "RWD", "FWD"])
 			return
 		var opt := _garage_option("engine_install") if _garage_path[1] == "Engine" else _garage_option("turbo_install")
-		if opt.is_empty(): opt = _garage_option("turbo_install_n2o")
+		if _garage_path[1] == "Fuel": opt = _garage_option("fuel")
+		if opt.is_empty() and _garage_path[1] != "Fuel": opt = _garage_option("turbo_install_n2o")
 		if _garage_path[1] == "N2O":
 			opt = _garage_option("nitrous_install_hyper")
 			if opt.is_empty(): opt = _garage_option("nitrous_install_sedan")
@@ -926,6 +929,8 @@ func _draw_upgrades() -> void:
 			_buttons["part:" + str(opt["id"]) + ":" + str(part["id"])] = card
 			card.pressed.connect(func(): _edit_option(str(opt["id"]),str(part["id"])); _draw_garage_options())
 			if installed or _garage_preferred == null: _garage_preferred = card
+		if top == "Swaps" and _garage_path[1] in ["Engine", "Fuel"]:
+			_draw_swap_summary()
 		_focus_garage.call_deferred()
 		return
 	if top == "Drivetrain":
@@ -946,6 +951,23 @@ func _draw_upgrades() -> void:
 			_draw_tuning_link()
 		return
 	_draw_tuning_link()
+
+# G1: what the engine/fuel choice changed (fuel, clutch, shift points, weight) and what an engine change reset.
+func _draw_swap_summary() -> void:
+	var info: Dictionary = garage.get_swap_info()
+	var lines: Array = []
+	for line in info.get("lines", []):
+		lines.append(str(line))
+	if not _engine_notice.is_empty():
+		lines.append(_engine_notice)
+	if lines.is_empty():
+		return
+	var box := VBoxContainer.new()
+	box.name = "SwapSummary"
+	_option_box.add_child(box)
+	box.add_child(_label("This swap changes", 16, HORIZONTAL_ALIGNMENT_LEFT))
+	for line in lines:
+		box.add_child(_label("- " + str(line), 14, HORIZONTAL_ALIGNMENT_LEFT, true))
 
 func _draw_clutch_upgrades(opt: Dictionary) -> void:
 	if opt.is_empty(): return
@@ -1314,6 +1336,8 @@ func _refresh_gear_labels(labels: Array, sliders: Array, stock: PackedFloat64Arr
 # The player changed an option: RgGarage decides (type, range, the loader's verdict).
 func _edit_option(option_id: String, value: Variant) -> void:
 	var result: Dictionary = garage.set_option(option_id, value)
+	if option_id == "engine_install":
+		_engine_notice = str(result.get("notice", ""))
 	var note: Label = _option_notes.get(option_id, null)
 	if note != null:
 		note.visible = not bool(result["accepted"])

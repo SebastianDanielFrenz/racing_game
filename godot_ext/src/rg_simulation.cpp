@@ -784,7 +784,7 @@ godot::Dictionary RgSimulation::get_vehicle_gauge_info(const String& vehicle_nam
     if (!has_vehicle(vehicle_name)) return d;
 
     ps::real idle_rpm = 0.0, limiter_rpm = 0.0;
-    double fuel_capacity_kg=0, fuel_density_kg_m3=0;
+    double fuel_capacity_kg=0, fuel_density_kg_m3=0, clutch_capacity_nm=0;
     std::int64_t gear_count = 0;
     for (const auto& c : session_->vehicle_desc().powertrain.components) {
         if (const auto* engine = std::get_if<ps::drivetrain::TorqueMapEngineDesc>(&c.params)) {
@@ -798,11 +798,14 @@ godot::Dictionary RgSimulation::get_vehicle_gauge_info(const String& vehicle_nam
             fuel_density_kg_m3 = tank->fuel.density_kg_m3;
         } else if (const auto* gearbox = std::get_if<ps::drivetrain::GearboxDesc>(&c.params)) {
             gear_count = static_cast<std::int64_t>(gearbox->forward_ratios.size());
+        } else if (const auto* clutch = std::get_if<ps::drivetrain::ClutchDesc>(&c.params)) {
+            clutch_capacity_nm = clutch->capacity_nm;
         }
     }
     d["idle_rpm"] = static_cast<float>(idle_rpm);
     d["limiter_rpm"] = static_cast<float>(limiter_rpm);
     d["gear_count"] = gear_count;
+    d["clutch_capacity_nm"] = clutch_capacity_nm; // kinetic capacity of the (first) clutch
     d["fuel_capacity_kg"] = fuel_capacity_kg;
     d["fuel_density_kg_m3"] = fuel_density_kg_m3;
     godot::PackedStringArray fitted;

@@ -87,6 +87,8 @@ func _ready() -> void:
 	_panel.add_child(_attribution)
 	visible = false
 
+var _engine_stage_started_s := -1.0 # when the engine-map stage began (time-left estimate)
+
 # rg::StartupProgress stages, in the order a load goes through them.
 const STAGES := ["opening", "waiting_for_gate", "priming", "spawning", "engine_maps"]
 const STAGE_TEXT := {
@@ -137,10 +139,26 @@ func show_loading(world_label: String, st: Dictionary, elapsed_s: float, footer:
 	if total > 0:
 		lines.append("priming ticks %d / %d" % [int(st.get("prime_done", 0)), total])
 	if stage == "engine_maps":
+		# A map-cache miss builds the engine's maps from its cycle model: say which engine, how far, how long is left.
+		var engine_title: String = str(st.get("engine_title", ""))
+		if engine_title != "":
+			lines.append("building engine: %s" % engine_title)
+		if _engine_stage_started_s < 0.0:
+			_engine_stage_started_s = elapsed_s
 		if engine_total > 0:
-			lines.append("engine map points %d / %d" % [int(st.get("engine_maps_done", 0)), engine_total])
+			var done: int = int(st.get("engine_maps_done", 0))
+			var line := "engine map points %d / %d" % [done, engine_total]
+			if done > 0 and done < engine_total:
+				var left_s: float = (elapsed_s - _engine_stage_started_s) * float(engine_total - done) / float(done)
+				line += "   about %d s left" % int(ceil(left_s))
+			lines.append(line)
+			lines.append("Esc cancels the load")
 		else:
 			lines.append("checking cached engine maps")
+		for swap_line in st.get("swap_lines", PackedStringArray()):
+			lines.append(str(swap_line))
+	else:
+		_engine_stage_started_s = -1.0
 	lines.append("%.1f s" % elapsed_s)
 	_body.text = "\n".join(lines)
 	_footer.text = footer

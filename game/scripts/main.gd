@@ -823,6 +823,8 @@ func _apply_start_controls() -> void:
 
 func _poll_loading() -> void:
 	var st: Dictionary = _simulation.get_init_status()
+	st["engine_title"] = str(_drive_selection.get("engine_title", ""))
+	st["swap_lines"] = _drive_selection.get("swap_lines", PackedStringArray())
 	var elapsed := (Time.get_ticks_msec() - _load_started_ms) / 1000.0
 	match str(st.get("state", "")):
 		"loading":

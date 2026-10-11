@@ -383,11 +383,28 @@ func _run() -> void:
 		_press("garage:upgrades")
 		_press("tile:Swaps")
 		_press("tile:Engine")
-		_check(ui.get_button("part:engine_install:sedan_i4") != null, "sedan inline-four engine card exists")
-		_press("part:engine_install:sedan_i4")
+		var i4_key := "default:i4_2l_na"
+		var v8_key := "default:hyper_v8_one1_audio"
+		_check(ui.get_button("part:engine_install:" + i4_key) != null, "sedan inline-four engine card exists")
+		_press("part:engine_install:" + i4_key)
 		_check(garage.is_dirty() and bool(garage.get_validation()["ok"]), "sedan engine swap installs and validates")
 		_press("part:engine_install:stock")
 		_check(not garage.is_dirty(), "original sedan engine restores stock")
+		# G1: the engine list is one list (defaults + user engines) and a legacy id of the first version still works
+		var engine_keys: Array = []
+		for engine in garage.get_engines():
+			engine_keys.append(str(engine["key"]))
+		_check(engine_keys.size() >= 6 and engine_keys.has(v8_key), "the garage lists the catalog engines (%d)" % engine_keys.size())
+		_check(bool(garage.set_option("engine_install", "sedan_i4")["accepted"]) and str(garage.get_options().filter(func(o): return str(o["id"]) == "engine_install")[0]["value"]) == i4_key, "a legacy engine id is accepted and stored as a key")
+		garage.reset_option("engine_install")
+		# the hyper V8 into the sedan: the swap package derives fuel, clutch, shift points and weight
+		_check(ui.get_button("part:engine_install:" + v8_key) != null, "the twin-turbo V8 card exists on the sedan")
+		_press("part:engine_install:" + v8_key)
+		_check(garage.is_dirty() and bool(garage.get_validation()["ok"]), "the V8 swap into the sedan installs and validates")
+		var swap_info: Dictionary = garage.get_swap_info()
+		_check(PackedStringArray(swap_info["lines"]).size() > 0, "the swap lists what it changed: %s" % [swap_info["lines"]])
+		_check(is_equal_approx(float(swap_info["mass_delta_kg"]), 65.0), "the chassis-mass delta is the catalog difference (%s kg)" % swap_info["mass_delta_kg"])
+		_check(ui.find_child("SwapSummary", true, false) != null, "the engine page shows the swap summary")
 		await _back_to_root()
 		await _press_escape()
 		_press("garage_exit:drive")
@@ -396,12 +413,30 @@ func _run() -> void:
 		if respawned:
 			var sedan_sim: String = str(garage.get_vehicle(sedan_id)["sim_name"])
 			_check(main.VEHICLE_NAME == sedan_sim and sim.is_running(), "the sedan drives now (%s)" % main.VEHICLE_NAME)
-			_check(not bool(main.get_drive_selection()["modified"]), "the sedan runs stock (no setup saved for it)")
+			var sedan_sel: Dictionary = main.get_drive_selection()
+			_check(bool(sedan_sel["modified"]), "the sedan carries the V8 swap")
+			_check(str(sedan_sel["engine_title"]) == "Twin-turbo V8 5.1", "the drive names the installed engine ('%s')" % sedan_sel["engine_title"])
+			_check(float(sedan_sel["chassis"]["mass_kg"]) == 1500.0 + 65.0, "the drive's chassis mass is the catalog 1500 kg plus the engine delta (%s kg)" % sedan_sel["chassis"]["mass_kg"])
 			_check(main.get_garage_scene() == null, "no garage scene while driving")
 			await _wait_seconds(1.0)
 			var steps0: int = sim.get_step_count()
 			await _wait_seconds(0.5)
 			_check(sim.get_step_count() > steps0, "the respawned car's sim ticks")
+			# readbacks of the swapped car: limiter of the new engine, clutch capacity as derived, rpm reaches the limiter in 2nd
+			var v8_info: Dictionary = {}
+			for engine in garage.get_engines():
+				if str(engine["key"]) == v8_key:
+					v8_info = engine
+			var gauge: Dictionary = sim.get_vehicle_gauge_info(main.VEHICLE_NAME)
+			_check(is_equal_approx(float(gauge["limiter_rpm"]), float(v8_info["limiter_rpm"])), "physics: the sedan's limiter is the V8's (%s rpm)" % gauge["limiter_rpm"])
+			var derived_clutch: float = ceilf(1.5 * float(v8_info["torque_nm"]) / 10.0) * 10.0
+			_check(is_equal_approx(float(gauge["clutch_capacity_nm"]), derived_clutch), "physics: the clutch capacity is the derived 1.5 x peak torque (%s, derived %s N*m)" % [gauge["clutch_capacity_nm"], derived_clutch])
+			await _rev_in_second_gear(float(gauge["limiter_rpm"]))
+			# put the sedan back to stock for the persistence checks below
+			garage.begin_edit(sedan_id)
+			garage.reset_all()
+			garage.save()
+			garage.discard()
 			await _pause_to_main_menu()
 
 	# ---- back to the hyper car through the garage: the same node count as after the stock drive ----
@@ -432,6 +467,35 @@ func _run() -> void:
 	_check(_count_nodes(main) == nodes_before, "no garage node is left after Back (%d before, %d after)" % [nodes_before, _count_nodes(main)])
 	_press("quit")
 	_finish()
+
+# Full throttle in manual 1st then 2nd (assist auto-shift off): the engine reaches the limiter of the installed engine.
+func _rev_in_second_gear(limiter_rpm: float) -> void:
+	var sim: Node = main._simulation
+	main.scripted_controls = {"throttle": 1.0, "brake": 0.0, "handbrake": 0.0, "steer": 0.0, "clutch": 0.0, "ignition": 1.0,
+		"starter": 0.0, "assist.auto_shift": 0.0, "assist.auto_clutch": 1.0, "assist.auto_blip": 1.0}
+	# start the engine (it begins Stalled/Off in neutral): starter on, throttle off, until it runs
+	main.scripted_controls["throttle"] = 0.0
+	main.scripted_controls["starter"] = 1.0
+	var running: bool = await _wait_until(func(): return str(sim.get_vehicle_powertrain(main.VEHICLE_NAME)["engine_state"]) == "Running", 15.0)
+	main.scripted_controls["starter"] = 0.0
+	_check(running, "the V8 in the sedan starts (%s)" % sim.get_vehicle_powertrain(main.VEHICLE_NAME)["engine_state"])
+	await _wait_seconds(1.0)
+	main.scripted_controls["throttle"] = 1.0
+	sim.set_control("shift_up_count", sim.get_control("shift_up_count") + 1)
+	_check(await _wait_until(func(): return int(sim.get_vehicle_powertrain(main.VEHICLE_NAME)["gear"]) == 1, 10.0), "the sedan with the V8 selects 1st")
+	await _wait_seconds(1.5)
+	sim.set_control("shift_up_count", sim.get_control("shift_up_count") + 1)
+	_check(await _wait_until(func(): return int(sim.get_vehicle_powertrain(main.VEHICLE_NAME)["gear"]) == 2, 10.0), "... and 2nd")
+	var peak_holder: Array = [0.0] # a lambda captures plain floats by value; an Array is shared
+	var reached: bool = await _wait_until(func():
+		var pt: Dictionary = sim.get_vehicle_powertrain(main.VEHICLE_NAME)
+		peak_holder[0] = maxf(float(peak_holder[0]), float(pt["rpm"]))
+		return int(pt["gear"]) == 2 and (float(peak_holder[0]) >= limiter_rpm - 200.0 or bool(pt["limiter"])), 25.0)
+	var peak: float = float(peak_holder[0])
+	var last: Dictionary = sim.get_vehicle_powertrain(main.VEHICLE_NAME)
+	_check(reached, "physics: the rpm reaches the new limiter in 2nd gear (peak %.0f of %.0f rpm; now gear %s, %s, clutch %s, throttle %s)" % [peak, limiter_rpm, last.get("gear"), last.get("engine_state"), last.get("clutch_engagement"), sim.get_control("throttle")])
+	_check(peak <= limiter_rpm + 400.0, "... and does not pass it by much (peak %.0f rpm)" % peak)
+	main.scripted_controls = {}
 
 func _back_to_root() -> void:
 	var ui: CanvasLayer = main.get_shell_ui()

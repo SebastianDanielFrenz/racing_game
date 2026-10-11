@@ -99,11 +99,22 @@ public:
     // [{id, label, group, area, help, unit, kind, min, max, step, available, stock, value,
     //   modified, choices, list_size, stock_numbers}]
     [[nodiscard]] godot::Array get_options() const;
-    // {accepted, message, ok, validation_message, value, dirty}
+    // {accepted, message, notice, ok, validation_message, value, dirty}; notice: options an engine change reset
     godot::Dictionary set_option(const godot::String& option_id, const godot::Variant& value);
     godot::Dictionary reset_option(const godot::String& option_id);
     godot::Dictionary reset_all();
     [[nodiscard]] bool is_dirty() const;
+    // Engine garage G1: {lines: [String], mass_delta_kg, engine_title} - what the engine/fuel choice changes
+    [[nodiscard]] godot::Dictionary get_swap_info() const;
+    // The engine list (defaults, each followed by its user engines):
+    // [{key, name, family, class, image, detail, user, base_key, base_name, mass_kg, idle_rpm, limiter_rpm,
+    //   torque_nm, torque_rpm, power_kw, power_rpm, fuels: [String]}]
+    [[nodiscard]] godot::Array get_engines() const;
+    // {ok, error, key}: user engines (a merge patch over a default, validated by the physics loader first)
+    godot::Dictionary create_user_engine(const godot::String& base_key, const godot::String& name, const godot::String& patch_json);
+    godot::Dictionary update_user_engine(const godot::String& key, const godot::String& patch_json);
+    godot::Dictionary rename_user_engine(const godot::String& key, const godot::String& name);
+    godot::Dictionary remove_user_engine(const godot::String& key);
     // {ok, message}: the loader's verdict on the working copy
     [[nodiscard]] godot::Dictionary get_validation() const;
     // {ok, error}
@@ -116,7 +127,8 @@ public:
     // ---- hand-over to the drive ----
     // {ok, error, warning, vehicle_id, sim_name, vehicle_path, model_path, paint, rim,
     //  engine_map_cache_dir, modified, chassis: {mass_kg, half_extents, z_m},
-    //  assist_auto_clutch, assist_auto_blip, assist_auto_shift, manual_gearbox}
+    //  assist_auto_clutch, assist_auto_blip, assist_auto_shift, manual_gearbox,
+    //  engine_title ("" = the car's own engine), swap_lines: [String]}
     godot::Dictionary prepare_drive(const godot::String& id);
     void cleanup();
     // Number of regular files below the garage's work root (tests: nothing is left behind).

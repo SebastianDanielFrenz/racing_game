@@ -298,6 +298,7 @@ godot::Dictionary RgGarage::edit_reply(const rg::EditResult& r) const {
     godot::Dictionary d;
     d["accepted"] = r.accepted;
     d["message"] = from_std(r.message);
+    d["notice"] = from_std(r.notice);
     d["ok"] = r.validation.ok;
     d["validation_message"] = from_std(r.validation.message);
     d["dirty"] = garage_ != nullptr && garage_->dirty();
@@ -411,7 +412,90 @@ godot::Dictionary RgGarage::prepare_drive(const String& id) {
     d["assist_auto_blip"] = s.assist_auto_blip;
     d["assist_auto_shift"] = s.assist_auto_shift;
     d["manual_gearbox"] = s.manual_gearbox;
+    d["engine_title"] = from_std(s.engine_title);
+    godot::PackedStringArray lines;
+    for (const std::string& l : s.swap_lines) lines.push_back(from_std(l));
+    d["swap_lines"] = lines;
     return d;
+}
+
+godot::Dictionary RgGarage::get_swap_info() const {
+    godot::Dictionary d;
+    godot::PackedStringArray lines;
+    d["mass_delta_kg"] = 0.0;
+    d["engine_title"] = String();
+    if (garage_ != nullptr && garage_->editing()) {
+        for (const std::string& l : garage_->swap_lines()) lines.push_back(from_std(l));
+        d["mass_delta_kg"] = garage_->chassis_mass_delta_kg();
+        d["engine_title"] = from_std(garage_->model().engine_title);
+    }
+    d["lines"] = lines;
+    return d;
+}
+
+godot::Array RgGarage::get_engines() const {
+    godot::Array out;
+    if (garage_ == nullptr) return out;
+    const rg::EngineStore& store = garage_->engines();
+    for (const rg::EngineEntry& e : store.list()) {
+        godot::Dictionary d;
+        d["key"] = from_std(e.key);
+        d["name"] = from_std(e.name);
+        d["family"] = from_std(e.family);
+        d["class"] = String(rg::to_string(e.cls));
+        d["image"] = from_std(e.image);
+        d["detail"] = from_std(e.detail);
+        d["user"] = e.user;
+        d["base_key"] = from_std(e.base_key);
+        d["base_name"] = from_std(e.base_name);
+        d["mass_kg"] = e.mass_kg;
+        std::string err;
+        godot::PackedStringArray fuels;
+        if (const auto facts = rg::read_engine_facts(e.file, &err)) {
+            d["idle_rpm"] = facts->idle_rpm;
+            d["limiter_rpm"] = facts->limiter_rpm;
+            for (const auto& f : facts->fuels) fuels.push_back(from_std(f.name));
+        }
+        d["fuels"] = fuels;
+        const rg::EnginePeaks p = store.peaks(e);
+        d["torque_nm"] = p.torque_nm;
+        d["torque_rpm"] = p.torque_rpm;
+        d["power_kw"] = p.power_kw;
+        d["power_rpm"] = p.power_rpm;
+        out.push_back(d);
+    }
+    return out;
+}
+
+godot::Dictionary RgGarage::create_user_engine(const String& base_key, const String& name, const String& patch_json) {
+    if (garage_ == nullptr) return fail_reply("garage not initialised");
+    std::string err;
+    const auto key = garage_->create_user_engine(to_std(base_key), to_std(name), to_std(patch_json), &err);
+    if (!key) return fail_reply(err);
+    godot::Dictionary d = ok_reply();
+    d["key"] = from_std(*key);
+    return d;
+}
+
+godot::Dictionary RgGarage::update_user_engine(const String& key, const String& patch_json) {
+    if (garage_ == nullptr) return fail_reply("garage not initialised");
+    std::string err;
+    if (!garage_->update_user_engine(to_std(key), to_std(patch_json), &err)) return fail_reply(err);
+    return ok_reply();
+}
+
+godot::Dictionary RgGarage::rename_user_engine(const String& key, const String& name) {
+    if (garage_ == nullptr) return fail_reply("garage not initialised");
+    std::string err;
+    if (!garage_->rename_user_engine(to_std(key), to_std(name), &err)) return fail_reply(err);
+    return ok_reply();
+}
+
+godot::Dictionary RgGarage::remove_user_engine(const String& key) {
+    if (garage_ == nullptr) return fail_reply("garage not initialised");
+    std::string err;
+    if (!garage_->remove_user_engine(to_std(key), &err)) return fail_reply(err);
+    return ok_reply();
 }
 
 void RgGarage::cleanup() {
@@ -533,6 +617,12 @@ void RgGarage::_bind_methods() {
     ClassDB::bind_method(D_METHOD("reset_all"), &RgGarage::reset_all);
     ClassDB::bind_method(D_METHOD("is_dirty"), &RgGarage::is_dirty);
     ClassDB::bind_method(D_METHOD("get_validation"), &RgGarage::get_validation);
+    ClassDB::bind_method(D_METHOD("get_swap_info"), &RgGarage::get_swap_info);
+    ClassDB::bind_method(D_METHOD("get_engines"), &RgGarage::get_engines);
+    ClassDB::bind_method(D_METHOD("create_user_engine", "base_key", "name", "patch_json"), &RgGarage::create_user_engine);
+    ClassDB::bind_method(D_METHOD("update_user_engine", "key", "patch_json"), &RgGarage::update_user_engine);
+    ClassDB::bind_method(D_METHOD("rename_user_engine", "key", "name"), &RgGarage::rename_user_engine);
+    ClassDB::bind_method(D_METHOD("remove_user_engine", "key"), &RgGarage::remove_user_engine);
     ClassDB::bind_method(D_METHOD("save"), &RgGarage::save);
     ClassDB::bind_method(D_METHOD("discard"), &RgGarage::discard);
     ClassDB::bind_method(D_METHOD("get_working_colours"), &RgGarage::get_working_colours);
