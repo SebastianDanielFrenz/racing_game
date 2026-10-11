@@ -92,7 +92,7 @@
       "body_type": "sedan",
       "displacement_l": 2.0,
       "displacement_source": "physics_sim data/engines/i4_2l_na.json is a torque-map engine described as a 2.0 L I4 and carries no cylinder geometry",
-      "vehicle": "external/physics_sim/data/vehicles/car_sedan_rwd.json",
+      "vehicle": "data/vehicles/car_sedan_rwd.json",
       "model": "external/physics_sim/data/models/car_sedan/car_sedan.glb",
       "engine_bay": "front",
       "chassis": {
@@ -130,7 +130,7 @@
       "body_type": "sedan",
       "displacement_l": 2.0,
       "displacement_source": "physics_sim data/engines/i4_2l_na.json is a torque-map engine described as a 2.0 L I4 and carries no cylinder geometry",
-      "vehicle": "external/physics_sim/data/vehicles/car_sedan_awd.json",
+      "vehicle": "data/vehicles/car_sedan_awd.json",
       "model": "external/physics_sim/data/models/car_sedan/car_sedan.glb",
       "engine_bay": "front",
       "chassis": {
@@ -166,7 +166,7 @@
       "subtitle": "Nitrous test sedan",
       "description": "The 2.5 litre simulated four-cylinder sedan with a wet nitrous kit: a 4.5 kg bottle and a 37 kW shot. Arm the kit (pad Y, N key), then full throttle in gear 1 or higher inside the controller's rpm window sprays. Unvalidated kit data (physics_sim N2O plan N5 pending).",
       "body_type": "sedan",
-      "vehicle": "external/physics_sim/data/vehicles/car_sedan_gen_n2o.json",
+      "vehicle": "data/vehicles/car_sedan_gen_n2o.json",
       "model": "external/physics_sim/data/models/car_sedan/car_sedan.glb",
       "engine_bay": "front",
       "chassis": {
