@@ -16,6 +16,10 @@ var elapsed := 0.0
 var tc_fitted := false
 var tc_on := false
 var tc_intervening := false
+var tc_mode_name := "Off"
+var aero_fitted := false
+var aero_active := false
+var aero_target_deg := 0.0
 var font := ThemeDB.fallback_font
 var thermal: Dictionary = {}
 const ThermalReadout := preload("res://scripts/thermal_readout.gd")
@@ -46,6 +50,10 @@ func _process(delta: float) -> void:
 	thermal = simulation.get_vehicle_thermal(vehicle_name)
 	tc_on = pt.get("assist_traction_control",false)
 	tc_intervening = pt.get("traction_control_intervening",false)
+	tc_mode_name = str(pt.get("traction_mode_name","Off"))
+	aero_fitted = bool(pt.get("aero_control_fitted",false))
+	aero_active = bool(pt.get("aero_control_active",false))
+	aero_target_deg = float(pt.get("aero_control_target_deg",0.0))
 	speed = ground_speed*3.6
 	rpm = pt.get("rpm",0.0)
 	drive_kw = pt.get("drive_power_kw",0.0)
@@ -106,9 +114,15 @@ func _draw() -> void:
 	text("R" if gear<0 else ("N" if gear==0 else str(gear)),Vector2(490,174),90)
 	text("GEAR",Vector2(490,207),18,blue)
 	if tc_fitted:
-		var tc_label := "TC ACTIVE" if tc_intervening else ("TC" if tc_on else "TC OFF")
+		# The mode that actually runs (physics_sim's assist unit: Off / On / Relaxed / Sport / Drift).
+		var tc_label := "TC OFF" if not tc_on else "TC " + tc_mode_name.to_upper()
+		if tc_intervening:
+			tc_label += " ACTIVE"
 		var tc_color := Color(1.0,0.65,0.15) if tc_intervening or not tc_on else Color(0.2,0.95,0.75)
-		text(tc_label,Vector2(490,266),22,tc_color)
+		text(tc_label,Vector2(490,266),20,tc_color)
+	if aero_fitted:
+		var aero_label := "AERO AUTO %+.0f DEG" % aero_target_deg if aero_active else "AERO OFF"
+		text(aero_label,Vector2(490,292),16,Color(0.2,0.95,0.75) if aero_active else Color(1.0,0.65,0.15))
 	# Engine temperature, above the gear: only for a car with a thermal model (the hypercar has none yet), else nothing is drawn.
 	ThermalReadout.draw_bar(self,font,Vector2(490,66),1.0,thermal,fmod(Time.get_ticks_msec()/1000.0,0.5)<0.25)
 	small_dial(Vector2(935,109),"%.0f" % drive_kw,"DRIVE kW",maxf(drive_kw,0)/650.0)

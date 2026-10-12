@@ -24,10 +24,12 @@ controls are separate features, not introduced by aerodynamic integration.
 
 ## Controls and telemetry
 
-The game stepping thread drives the `rear_wing` actuator automatically. At normal
-forward driving speeds it ramps toward the configured cruise offset; braking
-above the configured threshold and minimum speed requests an airbrake offset.
-The engine rate-limits the actuator, so target changes do not instantly rotate
+The rear wing is automated by physics_sim's assist unit (`aero_control`, channel
+`assist.aero_control`, fitted by the Racing assist unit on the hypercars; the game no
+longer drives the wing itself). At normal forward driving speeds it ramps toward the
+cruise offset; braking above the threshold and minimum speed requests an airbrake
+offset. Its parameters live in the unit's data file
+(`external/physics_sim/data/electronics/assist_unit_racing.json`). The engine rate-limits the actuator, so target changes do not instantly rotate
 the aerodynamic surface. The supplied art wing rotates from the ACTUAL simulated
 offset, read from the same latched frame snapshot as chassis and wheel poses.
 Wing-lift struts follow the actual simulated actuator lift, including its changing pressure-point height.
@@ -92,11 +94,6 @@ and default automatic wing policy.
 | wind_world_m_s | [0,0,0] | Mean east/north/up wind velocity |
 | gust_amplitude_m_s | [0,0,0] | Bounded smooth gust amplitudes |
 | gust_period_s | 12 | Base gust period |
-| automatic_rear_wing | true | Drive the named rear_wing actuator |
-| cruise_wing_offset_deg | 4 | Additional pitch relative to art/physics rest angle |
-| airbrake_wing_offset_deg | 45 | Maximum requested braking offset |
-| airbrake_min_speed_m_s | 20 | Minimum forward airspeed for airbrake |
-| airbrake_threshold | 0.45 | Brake pedal threshold; progressively increases command |
 | fan_command | 0 | Command for fitted suction fans, 0..1 |
 | fan_battery_energy_j | 0 | Initial finite auxiliary energy, debited by native fan model |
 

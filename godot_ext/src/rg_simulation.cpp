@@ -2,6 +2,7 @@
 
 #include "frame_convert.h"
 #include "rg/route_check.h"
+#include "rg/assist_info.h"
 #include "rg/nitrous_info.h"
 #include "rg/engine_thermal_info.h"
 
@@ -811,7 +812,7 @@ godot::Dictionary RgSimulation::get_vehicle_gauge_info(const String& vehicle_nam
     d["fuel_capacity_kg"] = fuel_capacity_kg;
     d["fuel_density_kg_m3"] = fuel_density_kg_m3;
     godot::PackedStringArray fitted;
-    if(session_->vehicle_desc().traction_control.enabled)fitted.push_back("TC");
+    if(session_->vehicle_desc().traction_control.fitted)fitted.push_back("TC"); // physics_sim: the car's own fitment (assist unit / traction_control block)
     d["fitted_assists"] = fitted;
     return d;
 }
@@ -844,6 +845,18 @@ godot::Dictionary RgSimulation::get_vehicle_powertrain(const String& vehicle_nam
     d["traction_torque_fraction"] = p.traction_torque_fraction;
     d["traction_estimated_speed_m_s"] = p.traction_estimated_speed_m_s;
     d["traction_positive_slip"] = p.traction_positive_slip;
+    // Assist unit (physics_sim assists I1/I5, rg/assist_info.h): modes the car offers (bit n = code n: 0 Off, 1 On,
+    // 2 Relaxed, 3 Sport, 4 Drift), the requested and the effective mode, and the rear-wing automation.
+    const rg::AssistHud a = rg::assist_hud(p);
+    d["assist_fitted_bits"] = static_cast<int>(p.assist_fitted_bits);
+    d["traction_control_fitted"] = a.tc_fitted;
+    d["traction_modes_available_bits"] = static_cast<int>(a.tc_available_bits);
+    d["traction_mode_requested"] = a.tc_requested;
+    d["traction_mode_effective"] = a.tc_effective;
+    d["traction_mode_name"] = String(rg::traction_mode_name(a.tc_effective));
+    d["aero_control_fitted"] = a.aero_fitted;
+    d["aero_control_active"] = a.aero_active;
+    d["aero_control_target_deg"] = a.aero_target_deg;
     return d;
 }
 

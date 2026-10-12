@@ -53,6 +53,7 @@ const char* const kControlChannelNames[] = {
     "assist.auto_clutch",
     "assist.auto_blip",
     "assist.traction_control",
+    "assist.aero_control", // physics_sim assist unit (assists I5): rear-wing automation; only a car whose unit carries aero_control registers it in the World
     "nitrous_arm", // N2O arm switch, a plain 0/1 level (owner 2026-10-05; only cars with a nitrous kit declare it)
 };
 const std::size_t kControlChannelCount = sizeof(kControlChannelNames) / sizeof(kControlChannelNames[0]);
@@ -198,7 +199,12 @@ Session::Session(const SessionConfig& config)
     for (std::size_t i = 0; i < kControlChannelCount; ++i) {
         control_channels_[kControlChannelNames[i]].store(0.0, std::memory_order_relaxed);
     }
-    control_channels_["assist.traction_control"].store(vehicle_desc_.traction_control.enabled?1.0:0.0,std::memory_order_relaxed);
+    // The assist channels start at the car's own defaults (physics_sim: the assist unit's default TC mode, else the
+    // traction_control block's `enabled`; aero automation: the unit's default_enabled). The game sets no default of its own.
+    if(have_vehicle_) {
+        for(const char* name:{"assist.traction_control","assist.aero_control"})
+            control_channels_[name].store(world_->get_control(name),std::memory_order_relaxed);
+    }
 }
 
 Session::~Session() { stop(); truck_cancel_.store(true); traffic_cancel_.store(true); if(truck_worker_.joinable())truck_worker_.join(); if(traffic_worker_.joinable())traffic_worker_.join(); }
@@ -294,15 +300,11 @@ void Session::build_world_contents(const SessionConfig& config) {
         ps::vehicle::select_rolling_resistance_speed_law(wheel.tyre, rolling_law);
     std::fprintf(stderr, "RG_ROLLING_RESISTANCE model=%s wheels=%zu\n",
                  config.rolling_resistance_model.c_str(), vehicle_desc_.wheels.size());
-    bool electronic=false;
-    for(const auto& c:vehicle_desc_.powertrain.components) {
-        if(const auto* e=std::get_if<ps::drivetrain::TorqueMapEngineDesc>(&c.params))electronic=e->throttle_input==ps::drivetrain::ThrottleInput::Electronic;
-        if(const auto* e=std::get_if<ps::drivetrain::SimulatedEngineDesc>(&c.params))electronic=e->throttle_input==ps::drivetrain::ThrottleInput::Electronic;
-    }
-    for(const auto& c:vehicle_desc_.powertrain.components)
-        if(const auto* stage=std::get_if<ps::drivetrain::ThrottleControlDesc>(&c.params))electronic=stage->kind==ps::drivetrain::ThrottleInput::Electronic;
-    vehicle_desc_.traction_control.enabled=config.traction_control&&electronic;
-    std::printf("RG_TRACTION_CONTROL fitted=%s sensors=wheel_speed+imu default=%s\n",electronic?"yes":"no",vehicle_desc_.traction_control.enabled?"on":"off");
+    std::printf("RG_ASSISTS unit=%s tc_fitted=%s tc_default_code=%d aero_control=%s\n",
+                vehicle_desc_.assist_unit?ps::vehicle::kAssistGrades[static_cast<int>(vehicle_desc_.assist_unit->grade)].id.data():"none",
+                vehicle_desc_.traction_control.fitted?"yes":"no",
+                static_cast<int>(ps::vehicle::traction_default_channel_value(vehicle_desc_.traction_control,vehicle_desc_.assist_unit)),
+                ps::vehicle::find_aero_control_surface(vehicle_desc_.aero,vehicle_desc_.assist_unit)?"fitted":"no");
     apply_aero_map_selection(config.aero_map_selection_path,vehicle_desc_);
     vehicle_id_ = world_->create_vehicle(vehicle_desc_, chassis_body_);
     have_vehicle_ = true;
@@ -820,23 +822,7 @@ bool Session::step_once(bool from_loop) {
         environment_sample_=sample_environment(config_.environment,world_->get_pose(chassis_body_).position.z,world_->sim_time());
         if(config_.environment.enabled)world_->set_ambient({environment_sample_.pressure_pa,environment_sample_.temperature_k});
         world_->set_aero_environment({environment_sample_.air_density,environment_sample_.wind_world_m_s});
-        const auto motion=world_->get_motion(chassis_body_);
-        const auto rotation=world_->get_pose(chassis_body_).orientation;
-        const double forward_speed=rotation.inverse().rotate(motion.linear-environment_sample_.wind_world_m_s).x;
-        const double brake=std::clamp(static_cast<double>(world_->get_control("brake")),0.0,1.0);
-        for(std::size_t i=0;i<vehicle_desc_.aero.surfaces.size();++i) {
-            const auto& surface=vehicle_desc_.aero.surfaces[i];
-            if(surface.name!="rear_wing"||!config_.environment.automatic_rear_wing)continue;
-            const auto& c=config_.environment;
-            double target=c.cruise_wing_offset_deg*std::clamp((forward_speed-10)/20,0.0,1.0);
-            if(forward_speed>=c.airbrake_min_speed_m_s) {
-                const double demand=std::clamp((brake-c.airbrake_threshold)/(1-c.airbrake_threshold),0.0,1.0);
-                target+=(c.airbrake_wing_offset_deg-target)*demand;
-            }
-            const double radians=target*3.141592653589793/180;
-            const double limit=radians>=0?surface.max_offset_rad:-surface.min_offset_rad;
-            world_->set_aero_surface_command(vehicle_id_,i,limit>0?std::clamp(radians/limit,-1.0,1.0):0.0);
-        }
+        // The rear wing is physics_sim's: the assist unit's aero_control (channel assist.aero_control) owns the surface.
         for(std::size_t i=0;i<vehicle_desc_.aero.fans.size();++i)
             world_->set_aero_fan_command(vehicle_id_,i,config_.environment.fan_command);
     }

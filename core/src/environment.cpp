@@ -28,11 +28,6 @@ std::optional<EnvironmentConfig> load_environment_config(const std::string& path
   c.sea_level_temperature_k=number("sea_level_temperature_k",288.15,240,330);
   c.lapse_k_per_m=number("lapse_k_per_m",.0065,0,.009);
   c.gust_period_s=number("gust_period_s",12,1,600);
-  c.automatic_rear_wing=j.value("automatic_rear_wing",true);
-  c.cruise_wing_offset_deg=number("cruise_wing_offset_deg",4,-8,55);
-  c.airbrake_wing_offset_deg=number("airbrake_wing_offset_deg",45,0,55);
-  c.airbrake_min_speed_m_s=number("airbrake_min_speed_m_s",20,0,150);
-  c.airbrake_threshold=number("airbrake_threshold",.45,0,.99);
   c.fan_command=number("fan_command",0,0,1);
   c.fan_battery_energy_j=number("fan_battery_energy_j",0,0,1e9);
   const auto vector=[&](const char* key,bool positive){ps::Vec3 v{};if(!j.contains(key))return v;const auto& a=j.at(key);if(!a.is_array()||a.size()!=3)throw std::runtime_error(std::string(key)+" must contain east, north, up");double values[3];for(int i=0;i<3;++i){values[i]=a[i].get<double>();if(!std::isfinite(values[i])||std::abs(values[i])>100||(positive&&values[i]<0))throw std::runtime_error(std::string(key)+" invalid component");}return ps::Vec3{values[0],values[1],values[2]};};

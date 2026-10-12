@@ -812,9 +812,6 @@ func _post_load_ready() -> void:
 # work needed to pull away); ignition/auto_shift follow input_map.gd's
 # toggles (ignition starts on; manual cars start with auto-shift off).
 func _apply_start_controls() -> void:
-	var tc_fitted: PackedStringArray = _simulation.get_vehicle_gauge_info(VEHICLE_NAME).get("fitted_assists", PackedStringArray())
-	_input_map.set_traction_control_supported(tc_fitted.has("TC"))
-	_simulation.set_control("assist.traction_control", 1.0 if _input_map.get_traction_control() else 0.0)
 	_simulation.set_control("ignition", 1.0 if _input_map.get_ignition() else 0.0)
 	# the vehicle file's own assist defaults (after the saved setup), read by RgGarage.prepare_drive
 	_simulation.set_control("assist.auto_clutch", 1.0 if bool(_drive_selection.get("assist_auto_clutch", true)) else 0.0)
@@ -1037,6 +1034,8 @@ func _forward_driving(live: bool, delta: float) -> void:
 	var up: int = _input_map.consume_shift_up_count()
 	var down: int = _input_map.consume_shift_down_count()
 	var nitrous_toggles: int = _input_map.consume_nitrous_toggle()
+	var traction_cycles: int = _input_map.consume_traction_cycle()
+	var aero_toggles: int = _input_map.consume_aero_toggle()
 	if not live or not bool(_simulation.is_running()):
 		_steering.reset()
 		return
@@ -1058,7 +1057,21 @@ func _forward_driving(live: bool, delta: float) -> void:
 	_simulation.set_control("ignition", 1.0 if _input_map.get_ignition() else 0.0)
 	_simulation.set_control("starter", 1.0 if _input_map.get_starter() else 0.0)
 	_simulation.set_control("assist.auto_shift", 1.0 if _input_map.get_auto_shift() else 0.0)
-	_simulation.set_control("assist.traction_control", 1.0 if _input_map.get_traction_control() else 0.0)
+	# Assist unit (physics_sim): the channel defaults are the car's own (the Racing unit: TC On, aero automation on);
+	# a key press only moves them. F4 steps the requested TC mode through the modes the unit OFFERS (rg_core decides
+	# which, RgAssists); H flips the wing automation, and only on a car that has it.
+	if traction_cycles > 0 or aero_toggles > 0:
+		var pt: Dictionary = _simulation.get_vehicle_powertrain(VEHICLE_NAME)
+		var bits: int = int(pt.get("traction_modes_available_bits", 0))
+		var mode: int = int(pt.get("traction_mode_effective", 0))
+		for _i in range(traction_cycles):
+			mode = RgAssists.next_traction_mode(bits, mode)
+			if mode < 0:
+				break
+			_simulation.set_control("assist.traction_control", float(mode))
+		var fitted_bits: int = int(pt.get("assist_fitted_bits", 0))
+		for _i in range(aero_toggles):
+			_simulation.set_control("assist.aero_control", RgAssists.toggled_aero_control(fitted_bits, _simulation.get_control("assist.aero_control")))
 	# Nitrous arm switch (gamepad Y, owner 2026-10-05; physics_sim 804137e): each
 	# rising edge flips the plain 0/1 "nitrous_arm" channel. Cars without a nitrous
 	# kit never declare it, so for them it is inert.

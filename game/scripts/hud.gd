@@ -212,6 +212,18 @@ func _process(_delta: float) -> void:
 		var aero: Dictionary = _simulation.get_aero_state()
 		if bool(aero.get("enabled",false)):
 			lines.append("aero: air %.0f km/h | drag %.0f N | downforce %.0f N | front %.0f%% | wing %+.1f deg | fan %.1f kW" % [float(aero.airspeed_m_s)*3.6,float(aero.drag_n),float(aero.downforce_n),float(aero.front_balance)*100.0,float(aero.wing_pitch_offset_deg),float(aero.fan_power_w)/1000.0])
+		# Driver assists (physics_sim assist unit): the traction-control mode that runs (F4 cycles the offered modes) and
+		# the rear-wing automation (H toggles it); a line only appears for a car that has the part.
+		var assist_pt: Dictionary = _simulation.get_vehicle_powertrain(vehicle_name)
+		if bool(assist_pt.get("traction_control_fitted", false)) or bool(assist_pt.get("aero_control_fitted", false)):
+			var assist_line := ""
+			if bool(assist_pt.get("traction_control_fitted", false)):
+				assist_line += "traction control %s%s (F4)" % [str(assist_pt.get("traction_mode_name", "Off")), " - intervening" if bool(assist_pt.get("traction_control_intervening", false)) else ""]
+			if bool(assist_pt.get("aero_control_fitted", false)):
+				if assist_line != "":
+					assist_line += "   "
+				assist_line += "aero automation %s (H)" % (("on, wing target %+.0f deg" % float(assist_pt.get("aero_control_target_deg", 0.0))) if bool(assist_pt.get("aero_control_active", false)) else "off")
+			lines.append(assist_line)
 		# Nitrous (physics_sim N2O): only a car with a kit (car_sedan_gen_n2o, car_hyper_n2o) has this line.
 		var n2o: Dictionary = _simulation.get_vehicle_nitrous(vehicle_name)
 		if bool(n2o.get("present", false)):

@@ -80,8 +80,8 @@ var _clutch: float = 0.0
 var _ignition_on: bool = true # physics_sim's input_map_core default: spawn with the engine running
 var _starter_held: bool = false
 var _auto_shift_on: bool = false
-var _traction_control_on: bool = true
-var _traction_control_supported: bool = false
+var _traction_cycle_count: int = 0
+var _aero_toggle_count: int = 0
 var _configured_vehicle_path: String = ""
 
 var _cam_move: Vector3 = Vector3.ZERO
@@ -138,7 +138,6 @@ func configure_vehicle(path: String, auto_shift_default = null) -> void:
 			manual = true
 			break
 	_auto_shift_on = (not manual) if auto_shift_default == null else bool(auto_shift_default)
-	_traction_control_on = true
 	_configured_vehicle_path = key
 
 func _ready() -> void:
@@ -295,6 +294,8 @@ func _clear_edges() -> void:
 	_switch_world_count = 0
 	_reset_car_count = 0
 	_nitrous_toggle_count = 0
+	_traction_cycle_count = 0
+	_aero_toggle_count = 0
 	_flip_upright_count = 0
 	_cycle_drone_count = 0
 	_jump_count = 0
@@ -340,8 +341,12 @@ func poll() -> void:
 	_starter_held = held.call("starter")
 	if _edge("auto_shift", held.call("auto_shift")):
 		_auto_shift_on = not _auto_shift_on
-	if _traction_control_supported and _edge("traction_control", held.call("traction_control")):
-		_traction_control_on = not _traction_control_on
+	# Assist unit (physics_sim): rising edges only - which mode comes next and whether the car has the aero
+	# automation is decided in rg_core (RgAssists), main.gd applies it.
+	if _edge("traction_control", held.call("traction_control")):
+		_traction_cycle_count += 1
+	if _edge("toggle_aero", held.call("toggle_aero")):
+		_aero_toggle_count += 1
 
 	# --- camera group ---
 	_cam_move = Vector3(v.call("cam_move_x"), v.call("cam_move_y"), v.call("cam_move_z"))
@@ -402,11 +407,17 @@ func get_ignition() -> bool:
 func get_starter() -> bool:
 	return _starter_held
 
-func set_traction_control_supported(supported: bool) -> void:
-	_traction_control_supported = supported
+# Rising edges of the traction-control key (F4) since last consumed: each one asks for the next offered TC mode.
+func consume_traction_cycle() -> int:
+	var n := _traction_cycle_count
+	_traction_cycle_count = 0
+	return n
 
-func get_traction_control() -> bool:
-	return _traction_control_supported and _traction_control_on
+# Rising edges of the aero-automation key (H) since last consumed.
+func consume_aero_toggle() -> int:
+	var n := _aero_toggle_count
+	_aero_toggle_count = 0
+	return n
 
 func get_auto_shift() -> bool:
 	return _auto_shift_on

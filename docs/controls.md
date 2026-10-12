@@ -43,6 +43,8 @@ choosing the half; a pedal resting at +-1 is bound calibrated (rest -> opposite 
 
 Nitrous (S1): the action `toggle_nitrous` (driving group, edge) toggles the plain 0/1 control channel `nitrous_arm`; default pad Y, key N. A car without a nitrous kit ignores it.
 
+Assists (physics_sim assist unit): the action `traction_control` (key F4) steps the requested traction-control mode through the modes the car's assist unit offers (Off, On, Relaxed, Sport, Drift; a car without a unit offers Off and On; a mode the car does not offer is never selected - `rg::next_traction_mode`). The action `toggle_aero` (key H) toggles `assist.aero_control`, the rear-wing automation of a Racing unit; a car without it ignores the key. Neither channel has a game-side default: they start at the car's own (the hypercars carry the Racing unit: TC On, aero automation on).
+
 A binding: `{type: key|joy_button|joy_axis|mouse_button|mouse_motion, key|button|axis, span:
 full|positive|negative, sign, deadzone, saturation, curve, sensitivity, invert, calibrated, cal_min,
 cal_max}`. Axis pipeline in order: calibration -> invert -> span -> deadzone/saturation -> curve ->

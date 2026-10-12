@@ -618,17 +618,34 @@ TEST_CASE("Session rolling resistance selection survives immutable cached reload
     CHECK_FALSE(rg::make_session(config,&error));
     CHECK(error.find("rolling_resistance_model")!=std::string::npos);
 }
-TEST_CASE("Session sensor traction control defaults on and toggles through the live loop", "[session][traction_control]") {
+TEST_CASE("Session traction control starts at the car's own default and toggles through the live loop", "[session][traction_control]") {
     rg::Session session(make_test_config());
-    REQUIRE(session.vehicle_desc().traction_control.enabled);
-    CHECK(session.get_control("assist.traction_control") == 1.0);
-    session.set_control("assist.traction_control",0.0);
+    // physics_sim's car_sedan has no assist unit and an `enabled: false` traction_control block: the game sets no
+    // default of its own, so the channel starts Off. TC is still fitted and offers Off/On (bits 0b00011).
+    REQUIRE_FALSE(session.vehicle_desc().assist_unit.has_value());
+    CHECK_FALSE(session.vehicle_desc().traction_control.enabled);
+    CHECK(session.get_control("assist.traction_control") == 0.0);
+    CHECK(session.get_control("assist.aero_control") == 0.0); // no aero automation on this car
+    session.set_control("assist.traction_control",1.0);
     session.start();
     const auto deadline=std::chrono::steady_clock::now()+std::chrono::seconds(5);
-    while(session.snapshot().tick<30 && std::chrono::steady_clock::now()<deadline)
+    while(session.snapshot().tick<60 && std::chrono::steady_clock::now()<deadline)
+        std::this_thread::sleep_for(std::chrono::milliseconds(2));
+    REQUIRE(session.snapshot().tick>=60);
+    CHECK(session.world().get_control("assist.traction_control")==1.0);
+    {
+        const auto pt=session.snapshot().powertrain;
+        CHECK((pt.assist_fitted_bits&8u)!=0);
+        CHECK(pt.traction_modes_available_bits==0b00011);
+        CHECK(pt.traction_mode_effective==1);
+        CHECK((pt.assist_fitted_bits&64u)==0); // no aero automation
+    }
+    session.set_control("assist.traction_control",0.0);
+    const auto after=session.snapshot().tick;
+    while(session.snapshot().tick<after+30 && std::chrono::steady_clock::now()<deadline+std::chrono::seconds(5))
         std::this_thread::sleep_for(std::chrono::milliseconds(2));
     session.stop();
-    REQUIRE(session.snapshot().tick>=30);
     CHECK(session.world().get_control("assist.traction_control")==0.0);
+    CHECK(session.snapshot().powertrain.traction_mode_effective==0);
     CHECK(session.world().powertrain_state(session.vehicle_id()).traction_torque_fraction==1.0);
 }

@@ -63,6 +63,7 @@ add_executable(rg_unit_tests
   test_nitrous_spawn.cpp
   test_engine_thermal_info.cpp
   test_game_car_thermal.cpp
+  test_assist_info.cpp
   test_hyper_rear_travel.cpp
   test_flat_ground.cpp
   test_surface_kinds.cpp
