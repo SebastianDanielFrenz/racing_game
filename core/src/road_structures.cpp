@@ -198,7 +198,10 @@ void complete_road_profiles(g2m::RoadGeomTile& geometry,const g2m::RoadDemSample
         const auto* w=way(graph,entry.way_id);if(!w) continue;
         auto attrs=g2m::resolve_road_attributes(*w);if(!attrs||attrs->bridge||attrs->tunnel) continue;
         const auto first_id=w->node_ids[entry.stretch.start_ref],last_id=w->node_ids[entry.stretch.end_ref];
-        if(entry.profile&&!anchors.contains(first_id)&&!anchors.contains(last_id)) continue;
+        // A ground stretch geo2map already profiled (Strict, Retry or GroundCompleted) is final. Re-fitting it because an
+        // end node holds a bridge anchor moved served heights by up to 4 m and fitted the DEM worse (terrain migration plan
+        // O6). Only stretches the server declined are completed here.
+        if(entry.profile) continue;
         g2m::ReferenceFitLimits limits;limits.allow_curvature_exceptions=true;
         auto ref=builder->fit_stretch(entry.way_id,entry.stretch,limits);if(!ref||ref->length_m<.5) continue;
         auto a=dem.junction_plane(zone,node(graph,first_id)),b=dem.junction_plane(zone,node(graph,last_id));

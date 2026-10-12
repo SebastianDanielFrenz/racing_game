@@ -23,6 +23,7 @@ add_executable(rg_unit_tests
   test_world_terrain.cpp
   test_road_classes.cpp
   test_road_surface.cpp
+  test_road_structures.cpp
   test_terrain_smoothing.cpp
   test_route_road_coverage.cpp
   test_route_road_render_path.cpp
