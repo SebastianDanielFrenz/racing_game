@@ -1,10 +1,10 @@
 # Grass traction
 
 The game loads data/surfaces/surfaces.json rather than modifying the read-only
-physics_sim surface table. Grass lambda_mu is 0.63. It was doubled from 0.42 to 0.84 (RACE-002) and
-reduced to 0.63 on 2026-10-05 after the owner found it "a bit too grippy now"
-(halfway back; dirt is 0.6, so grass is still marginally above dirt - the owner
-judges the value by driving, and wet grass will multiply the dry value later). This scales longitudinal and lateral tyre friction; rolling resistance
+physics_sim surface table. Grass lambda_mu is 0.6. It was doubled from 0.42 to 0.84 (RACE-002),
+reduced to 0.63 on 2026-10-05 after the owner found it "a bit too grippy now", and set to 0.6 on
+2026-10-12 (owner decision: one uniform grass value for now; equal to dirt 0.6, the owner judges the
+value by driving, and wet grass will multiply the dry value later). This scales longitudinal and lateral tyre friction; rolling resistance
 stays 0.08. lambda_mu is relative to the tyre model's dry-asphalt friction, not
 an absolute coefficient or guaranteed chassis acceleration.
 
