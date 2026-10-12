@@ -83,7 +83,7 @@ struct SetupOptionDef {
     // legacy table id such as "sedan_i6" still resolves), "fuels" = the fuels of the installed engine (ids = fuel stems).
     // An engine choice also derives the swap package (engine_swap.h); both ignore compatible_engines.
     std::string catalog;
-    std::vector<std::string> compatible_engines; // original engine stems, an explicit game fitment list
+    std::vector<std::string> compatible_engines; // original engine stems, an explicit game fitment list; "*" = any engine
     std::string part_format; // required referenced file format
     bool no_turbo_override = false; // default engine turbo must not shadow a vehicle override
     std::string axle;                  // TyreChoice: "front" | "rear"

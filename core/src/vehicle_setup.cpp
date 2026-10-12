@@ -397,8 +397,10 @@ std::string stem_of(const std::string& path) { return fs::path(path).stem().stri
 bool file_choice_fits(Files& files, const SetupOptionDef& def, const CatalogEntry& entry, const SetupContext& ctx) {
     if (!entry_offers(entry, def.id)) return false;
     if (def.catalog.empty()) {
+        // "*" in compatible_engines: the part does not depend on the engine (e.g. the assist electronics).
         const std::string& engine = files.engine_stem;
-        if (std::find(def.compatible_engines.begin(), def.compatible_engines.end(), engine) == def.compatible_engines.end()) return false;
+        const bool any_engine = std::find(def.compatible_engines.begin(), def.compatible_engines.end(), "*") != def.compatible_engines.end();
+        if (!any_engine && std::find(def.compatible_engines.begin(), def.compatible_engines.end(), engine) == def.compatible_engines.end()) return false;
     } else if (!ctx.engines) {
         return false;
     }

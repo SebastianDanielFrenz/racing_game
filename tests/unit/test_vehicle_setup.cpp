@@ -7,6 +7,7 @@
 #include "ps/drivetrain/controller_desc.h"
 #include "ps/drivetrain/powertrain_desc.h"
 #include "ps/io/vehicle_io.h"
+#include "ps/vehicle/assist_unit_desc.h"
 #include "ps/jobs/job_system.h"
 
 #include <catch2/catch_approx.hpp>
@@ -15,6 +16,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdint>
 #include <filesystem>
 #include <initializer_list>
 #include <string>
@@ -592,6 +594,48 @@ TEST_CASE("N2O upgrades retain existing plumbing and reject unequipped vehicles"
         CHECK(rg::parse_setup(rg::setup_to_json(setup), f.table, "roundtrip", nullptr).has_value());
     }
     CHECK_FALSE(rg::compile_setup(f.entry("car_hyper"), f.table, f.ctx, setup_of("car_hyper", {{"nitrous_install_hyper", std::string("nitrous_hyper_half")}})).ok);
+}
+
+TEST_CASE("garage: the assist unit is a selectable part on the hypercars", "[garage][assist]") {
+    Fixture f;
+    // part id -> traction_modes_available_bits of the unit (Racing is the stock part of both hypers)
+    const std::pair<const char*, std::uint32_t> grades[] = {{"assists_street", 0b00011}, {"assists_sport", 0b01111}, {"stock", 0b11111}};
+    for (const char* car : {"car_hyper", "car_hyper_n2o"}) {
+        INFO(car);
+        const auto& e = f.entry(car);
+        const rg::SetupModel model = rg::build_setup_model(e, f.table, f.ctx);
+        REQUIRE(model.error.empty());
+        const rg::OptionView* view = nullptr;
+        for (const auto& o : model.options) if (o.def.id == "assist_unit") view = &o;
+        REQUIRE(view != nullptr);
+        CHECK(view->available);
+        REQUIRE(view->choices.size() == 3);
+        CHECK(view->choices.front() == "stock");
+        for (const auto& [part, bits] : grades) {
+            INFO(part);
+            const auto setup = setup_of(car, {{"assist_unit", std::string(part)}});
+            const auto v = rg::validate_setup(e, f.table, f.ctx, setup, false);
+            INFO(v.message);
+            REQUIRE(v.ok);
+            // Materialise and load validate-only (no engine-map generation): the unit, not the maps, is under test.
+            rg::ScopedWorkDir dir(f.ctx.work_root, std::string("t_assist_") + car);
+            const rg::MaterialisedSetup m = rg::materialise_setup(e, f.table, f.ctx, setup, dir.path());
+            INFO(m.error);
+            REQUIRE(m.ok);
+            ps::io::EngineMapOptions options;
+            options.generate = false;
+            const ps::vehicle::VehicleDesc desc = ps::io::load_vehicle_json(m.vehicle_path, options);
+            REQUIRE(desc.assist_unit.has_value());
+            CHECK(ps::vehicle::traction_modes_available_bits(desc.assist_unit, desc.traction_control.fitted) == bits);
+            // Only the Racing unit carries the wing automation.
+            CHECK(ps::vehicle::find_aero_control_surface(desc.aero, desc.assist_unit).has_value() == (std::string(part) == "stock"));
+        }
+    }
+    // A car without an assist unit does not offer the option (nothing to replace), and a setup naming it is refused.
+    const auto& sedan = f.entry("car_sedan");
+    const rg::SetupModel sedan_model = rg::build_setup_model(sedan, f.table, f.ctx);
+    for (const auto& o : sedan_model.options) if (o.def.id == "assist_unit") CHECK_FALSE(o.available);
+    CHECK_FALSE(rg::compile_setup(sedan, f.table, f.ctx, setup_of("car_sedan", {{"assist_unit", std::string("assists_sport")}})).ok);
 }
 
 TEST_CASE("garage pressure domain follows the configured engine and absolute boost", "[adaptive_setup]") {
