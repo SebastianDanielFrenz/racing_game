@@ -104,6 +104,18 @@
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Release"
       }
+    },
+    {
+      "name": "linux-arm64-release",
+      "displayName": "Linux / clang cross / aarch64 Release (Steam Frame: librg_godot.arm64.so against the Steam Runtime 3c ARM64 SDK sysroot, GCC cross libstdc++ linked statically)",
+      "inherits": "linux-base",
+      "toolchainFile": "${sourceDir}/cmake/toolchains/aarch64-linux-gnu-clang.cmake",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "RG_BUILD_GODOT_EXTENSION": "ON",
+        "RG_BUILD_TESTS": "OFF",
+        "RG_GODOT_OUTPUT_NAME": "librg_godot.arm64"
+      }
     }
   ],
   "buildPresets": [
@@ -112,7 +124,8 @@
     { "name": "relwithdebinfo", "configurePreset": "relwithdebinfo" },
     { "name": "asan", "configurePreset": "asan" },
     { "name": "msvc-release", "configurePreset": "msvc-release" },
-    { "name": "linux-release", "configurePreset": "linux-release" }
+    { "name": "linux-release", "configurePreset": "linux-release" },
+    { "name": "linux-arm64-release", "configurePreset": "linux-arm64-release", "targets": ["rg_godot"] }
   ],
   "testPresets": [
     { "name": "debug", "configurePreset": "debug", "output": { "outputOnFailure": true } },

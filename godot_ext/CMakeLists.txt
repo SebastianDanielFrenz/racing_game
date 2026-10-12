@@ -25,6 +25,12 @@ add_library(rg_godot SHARED
   ${CMAKE_SOURCE_DIR}/external/physics_sim/adapters/godot/src/spatial_audio.cpp
 )
 
+# Steam Frame (linux-arm64-release): glibc 2.32+ symbols the static libstdc++
+# pulls in, defined locally (see the toolchain file's library policy).
+if(RG_GLIBC_COMPAT_SOURCE)
+  target_sources(rg_godot PRIVATE "${RG_GLIBC_COMPAT_SOURCE}")
+endif()
+
 target_include_directories(rg_godot PRIVATE src
   ${CMAKE_SOURCE_DIR}/external/physics_sim/adapters/godot/src
   ${CMAKE_SOURCE_DIR}/external/physics_sim/tools/common)
@@ -63,8 +69,14 @@ target_link_libraries(rg_godot
     rg_options
 )
 
+# Library file name. Windows: librg_godot.dll. Linux has no "lib" prefix added
+# (PREFIX "") so the file is exactly what game/rg_godot.gdextension names:
+# x86-64 librg_godot.so, and for the Steam Frame (linux-arm64-release preset
+# sets RG_GODOT_OUTPUT_NAME) librg_godot.arm64.so, so both can sit in game/bin.
+set(RG_GODOT_OUTPUT_NAME "librg_godot" CACHE STRING "Output name of the rg_godot GDExtension library")
 set_target_properties(rg_godot PROPERTIES
-  OUTPUT_NAME "librg_godot"
+  OUTPUT_NAME "${RG_GODOT_OUTPUT_NAME}"
+  PREFIX ""
   RUNTIME_OUTPUT_DIRECTORY "${RG_GODOT_BIN_DIR}"
   RUNTIME_OUTPUT_DIRECTORY_DEBUG "${RG_GODOT_BIN_DIR}"
   RUNTIME_OUTPUT_DIRECTORY_RELEASE "${RG_GODOT_BIN_DIR}"

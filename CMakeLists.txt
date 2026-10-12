@@ -59,20 +59,56 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 option(RG_BUILD_TESTS "Build the Catch2 unit test suite for rg_core" ON)
 option(RG_BUILD_GODOT_EXTENSION "Build the rg_godot GDExtension" ON)
 
+# Target architecture, same rule as physics_sim's PS_TARGET_X86 (Steam Frame:
+# native Linux ARM64). The TARGET decides, not the host: MSVC/clang-cl report
+# it in CMAKE_CXX_COMPILER_ARCHITECTURE_ID, a toolchain file sets
+# CMAKE_CXX_COMPILER_TARGET / CMAKE_SYSTEM_PROCESSOR. Undetectable counts as
+# x86, so every x86 compile line is unchanged.
+set(RG_TARGET_ARCH "")
+if(CMAKE_CXX_COMPILER_ARCHITECTURE_ID)
+  set(RG_TARGET_ARCH "${CMAKE_CXX_COMPILER_ARCHITECTURE_ID}")
+elseif(CMAKE_CXX_COMPILER_TARGET)
+  string(REGEX MATCH "^[^-]+" RG_TARGET_ARCH "${CMAKE_CXX_COMPILER_TARGET}")
+elseif(CMAKE_CXX_FLAGS MATCHES "--target=([A-Za-z0-9_]+)")
+  set(RG_TARGET_ARCH "${CMAKE_MATCH_1}")
+elseif(CMAKE_SYSTEM_PROCESSOR)
+  set(RG_TARGET_ARCH "${CMAKE_SYSTEM_PROCESSOR}")
+endif()
+string(TOLOWER "${RG_TARGET_ARCH}" RG_TARGET_ARCH)
+if(RG_TARGET_ARCH STREQUAL "" OR RG_TARGET_ARCH MATCHES "^(x86_64|amd64|x64|x86|i[3-6]86)$")
+  set(RG_TARGET_X86 TRUE)
+else()
+  set(RG_TARGET_X86 FALSE)
+endif()
+message(STATUS "racing_game target architecture: '${RG_TARGET_ARCH}' (x86: ${RG_TARGET_X86})")
+
 # Same /arch:AVX2 (or -mavx2 -mfma) requirement as physics_sim, for the same
 # reason (Jolt's DVec3Arg ABI, vault PHYS-003) - every target here that
 # touches ps_core (directly or indirectly) must agree with how physics_sim
 # itself was compiled. Applied project-wide (not just our own targets) so
 # any third-party target we fetch here (godot-cpp, Catch2) inherits it too,
-# matching physics_sim's own top-level CMakeLists.txt approach.
+# matching physics_sim's own top-level CMakeLists.txt approach. x86 targets
+# only: an aarch64 target gets neither flag (-ffp-contract=off stays, clang
+# contracts FMA by default on aarch64).
 if(MSVC)
   if(CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
-    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /clang:-ffp-contract=off /arch:AVX2")
-  else()
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /clang:-ffp-contract=off")
+  endif()
+  if(RG_TARGET_X86)
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /arch:AVX2")
   endif()
 else()
-  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -ffp-contract=off -mavx2 -mfma")
+  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -ffp-contract=off")
+  if(RG_TARGET_X86)
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -mavx2 -mfma")
+  endif()
+endif()
+
+# The GDExtension is a shared library that links rg_core, ps_core, geo2map and
+# every third-party static library: on Linux they must all be position
+# independent (a Windows DLL needs nothing).
+if(UNIX AND RG_BUILD_GODOT_EXTENSION)
+  set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 endif()
 
 include(FetchContent)
@@ -216,8 +252,11 @@ endif()
 
 add_library(rg_options INTERFACE)
 if(MSVC)
-  target_compile_options(rg_options INTERFACE /arch:AVX2 /fp:precise /EHsc)
-else()
+  if(RG_TARGET_X86)
+    target_compile_options(rg_options INTERFACE /arch:AVX2)
+  endif()
+  target_compile_options(rg_options INTERFACE /fp:precise /EHsc)
+elseif(RG_TARGET_X86)
   target_compile_options(rg_options INTERFACE -mavx2 -mfma)
 endif()
 
