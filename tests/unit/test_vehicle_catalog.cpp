@@ -10,6 +10,7 @@
 
 #include <cmath>
 #include <string>
+#include <utility>
 
 namespace {
 const std::string kRoot = RG_SOURCE_DIR;
@@ -95,4 +96,21 @@ TEST_CASE("catalog: malformed catalogs are rejected with a reason", "[catalog][v
         {"id":"a","title":"A","vehicle":"data/vehicles/none.json","model":"x.glb",
          "chassis":{"mass_kg":1000,"half_extents":[2,0.4,0.15],"spawn_z_m":0.6}}]})";
     CHECK(!rg::parse_vehicle_catalog(missing_file, kRoot, "t", &err).has_value());
+}
+
+TEST_CASE("catalog: the hypercar N2O variant offers the same tyre width ranges as the hypercar", "[catalog][setup][tyre_width]") {
+    // 6dfab34 copied the sedan's 195-255 mm ranges onto car_hyper_n2o; it is the hypercar's wheel layout and tyre families.
+    const rg::VehicleCatalog c = load_catalog();
+    const rg::CatalogEntry* base = c.find("car_hyper");
+    const rg::CatalogEntry* n2o = c.find("car_hyper_n2o");
+    REQUIRE(base != nullptr);
+    REQUIRE(n2o != nullptr);
+    for (const char* axle : {"tyre_front", "tyre_rear"}) {
+        INFO(axle);
+        REQUIRE(base->setup_ranges.count(axle) == 1);
+        REQUIRE(n2o->setup_ranges.count(axle) == 1);
+        CHECK(n2o->setup_ranges.at(axle) == base->setup_ranges.at(axle));
+    }
+    CHECK(base->setup_ranges.at("tyre_front") == std::make_pair(235.0, 305.0));
+    CHECK(base->setup_ranges.at("tyre_rear") == std::make_pair(275.0, 365.0));
 }

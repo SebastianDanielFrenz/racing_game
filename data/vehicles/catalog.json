@@ -229,12 +229,12 @@
       "setup": {
         "ranges": {
           "tyre_front": {
-            "min": 195,
-            "max": 255
+            "min": 235,
+            "max": 305
           },
           "tyre_rear": {
-            "min": 195,
-            "max": 255
+            "min": 275,
+            "max": 365
           }
         }
       }
