@@ -34,12 +34,27 @@
 
 .PARAMETER SkipPython
     Do not install Python.
+
+.PARAMETER Frame
+    Also install / verify the Steam Frame (Linux ARM64) toolchain, used by
+    tools\frame_install.ps1 (all from official sources: Valve, godotengine,
+    Ubuntu):
+      - WSL packages: clang lld cmake ninja-build rsync python3 curl qemu-user
+      - Valve's Steam Runtime 3c ARM64 SDK sysroot (~/sdk/steamrt3c-arm64-sdk in
+        WSL; glibc 2.31, the oldest runtime a Frame devkit title runs in), SHA256
+        checked against Valve's SHA256SUMS, absolute symlinks made relative
+        (tools/frame/install_sysroot.sh)
+      - the official Godot 4.7.2 linux.arm64 binary (godotengine/godot release,
+        SHA512 checked) under <repo>\out\frame
+        With -CheckOnly nothing is installed. Without -Frame the Frame toolchain is
+    only reported (as info, never as missing).
 #>
 [CmdletBinding()]
 param(
     [switch]$CheckOnly,
     [switch]$WithSiblings,
-    [switch]$SkipPython
+    [switch]$SkipPython,
+    [switch]$Frame
 )
 
 $ErrorActionPreference = 'Stop'
@@ -190,6 +205,98 @@ foreach ($w in $worlds) {
     if (Test-Path (Join-Path $w.Dir 'baked\tiles.sqlite3')) { Write-Ok "$($w.Name): $($w.Dir)" }
     else { Write-Info "$($w.Name): no baked store at $($w.Dir) - copy it from a machine that has it" }
 }
+
+# ---------------------------------------------------------------------------
+# Steam Frame (Linux ARM64) toolchain: tools\frame_install.ps1
+# ---------------------------------------------------------------------------
+$FrameDir = Join-Path $RepoRoot 'out\frame'   # under the repo (gitignored out/), so WSL and Windows both see it
+$FrameGodotName = "Godot_v$GodotVersion-stable_linux.arm64"
+$FrameGodotZipUrl = "https://github.com/godotengine/godot/releases/download/$GodotVersion-stable/$FrameGodotName.zip"
+$FrameGodotShaUrl = "https://github.com/godotengine/godot/releases/download/$GodotVersion-stable/SHA512-SUMS.txt"
+$FrameWslPackages = @('clang', 'lld', 'cmake', 'ninja-build', 'rsync', 'python3', 'curl', 'qemu-user')
+
+function Invoke-FrameWsl([string]$Script, [switch]$Root) {
+    # bash script text -> a temp file WSL can read (avoids quoting through wsl -e).
+    $tmp = Join-Path $env:TEMP ("rg_frame_" + [guid]::NewGuid().ToString('N') + '.sh')
+    [System.IO.File]::WriteAllText($tmp, $Script.Replace("`r`n", "`n"), (New-Object System.Text.UTF8Encoding($false)))
+    try {
+        $wslPath = (& wsl wslpath -a $tmp.Replace('\', '/')) | Select-Object -First 1
+        if ($Root) { $out = & wsl -u root -- bash $wslPath 2>&1 } else { $out = & wsl -- bash $wslPath 2>&1 }
+        $global:FrameWslExit = $LASTEXITCODE
+        return $out
+    } finally { Remove-Item -Force $tmp -ErrorAction SilentlyContinue }
+}
+
+Write-Section "Steam Frame (Linux ARM64) toolchain$(if (-not $Frame) { ' (info only; -Frame installs)' })"
+$frameOk = $true
+function Write-FrameMissing($msg) { if ($Frame) { Write-Missing $msg } else { Write-Info "$msg (install: tools\setup_dev_env.ps1 -Frame)" }; $script:frameOk = $false }
+
+$haveWsl = $false
+try { $haveWsl = [bool]((wsl -l -q 2>$null) -replace "`0", "" | Select-String 'Ubuntu') } catch {}
+if (-not $haveWsl) {
+    Write-FrameMissing "WSL Ubuntu distro"
+} else {
+    # 1. WSL packages
+    $pkgList = $FrameWslPackages -join ' '
+    $check = "for p in $pkgList; do dpkg -s `$p >/dev/null 2>&1 || echo `$p; done"
+    $missing = @(Invoke-FrameWsl $check | Where-Object { $_ })
+    if ($missing.Count -gt 0 -and $Frame -and -not $CheckOnly) {
+        Write-Host "apt-get install (as root in WSL): $($missing -join ' ')"
+        Invoke-FrameWsl "apt-get install -y $($missing -join ' ')" -Root | Out-Host
+        $missing = @(Invoke-FrameWsl $check | Where-Object { $_ })
+    }
+    if ($missing.Count -eq 0) { Write-Ok "WSL packages: $pkgList" } else { Write-FrameMissing "WSL packages: $($missing -join ' ')" }
+
+    # 1b. the newest GCC cross libstdc++ (headers + libstdc++.a, Ubuntu package
+    # libstdc++-N-dev-arm64-cross): the sniper SDK's own GCC 10 libstdc++ is too
+    # old for the C++20 library features the code base uses; it is linked statically.
+    $cxLs = 'ls -d /usr/lib/gcc-cross/aarch64-linux-gnu/*/ 2>/dev/null | while read d; do [ -f "$d/libstdc++.a" ] && echo "$d"; done | sort -V | tail -1'
+    $cxHave = @(Invoke-FrameWsl $cxLs | Where-Object { $_ }) | Select-Object -First 1
+    if (-not $cxHave -and $Frame -and -not $CheckOnly) {
+        $cxPkg = @(Invoke-FrameWsl 'apt-cache pkgnames libstdc++- 2>/dev/null | grep -E "^libstdc\+\+-[0-9]+-dev-arm64-cross$" | sort -V | tail -1' | Where-Object { $_ }) | Select-Object -First 1
+        if ($cxPkg) {
+            Write-Host "apt-get install (as root in WSL): $cxPkg"
+            Invoke-FrameWsl "apt-get install -y $cxPkg" -Root | Out-Host
+            $cxHave = @(Invoke-FrameWsl $cxLs | Where-Object { $_ }) | Select-Object -First 1
+        }
+    }
+    if ($cxHave) { Write-Ok "aarch64 cross libstdc++ (static) -> $cxHave" } else { Write-FrameMissing "aarch64 cross libstdc++ (apt package libstdc++-N-dev-arm64-cross in WSL)" }
+
+    # 2. Steam Runtime 3c ARM64 SDK sysroot
+    $sysrootScript = "/mnt/" + (($RepoRoot.Substring(0,1).ToLower())) + $RepoRoot.Substring(2).Replace('\', '/') + "/tools/frame/install_sysroot.sh"
+    $chk = Invoke-FrameWsl "bash '$sysrootScript' --check"
+    if ($FrameWslExit -ne 0 -and $Frame -and -not $CheckOnly) {
+        Write-Host "installing Valve's Steam Runtime 3c ARM64 SDK sysroot (about 730 MB download, 2.5 GB on disk)..."
+        Invoke-FrameWsl "bash '$sysrootScript'" | Out-Host
+        if ($FrameWslExit -ne 0) { throw "sysroot install failed (exit $FrameWslExit)" }
+        $chk = Invoke-FrameWsl "bash '$sysrootScript' --check"
+    }
+    if ($FrameWslExit -eq 0) { Write-Ok "ARM64 sysroot (WSL) -> $($chk | Select-Object -Last 1)" } else { Write-FrameMissing "Steam Runtime 3c ARM64 SDK sysroot (WSL ~/sdk/steamrt3c-arm64-sdk)" }
+}
+
+# 3. Godot linux.arm64
+$frameGodot = Join-Path $FrameDir "godot-$GodotVersion-linux.arm64\$FrameGodotName"
+if (-not (Test-Path $frameGodot) -and $Frame -and -not $CheckOnly) {
+    New-Item -ItemType Directory -Force -Path (Join-Path $FrameDir 'dl') | Out-Null
+    $zip = Join-Path $FrameDir "dl\$FrameGodotName.zip"
+    $sums = Join-Path $FrameDir 'dl\SHA512-SUMS.txt'
+    Write-Host "downloading $FrameGodotName.zip from godotengine/godot..."
+    & curl.exe -fsSL -o $zip $FrameGodotZipUrl
+    if ($LASTEXITCODE -ne 0) { throw "download of $FrameGodotZipUrl failed" }
+    & curl.exe -fsSL -o $sums $FrameGodotShaUrl
+    if ($LASTEXITCODE -ne 0) { throw "download of $FrameGodotShaUrl failed" }
+    $want = ((Get-Content $sums | Where-Object { $_ -match [regex]::Escape("$FrameGodotName.zip") + '$' }) -split '\s+')[0].ToLower()
+    $got = (Get-FileHash -Algorithm SHA512 $zip).Hash.ToLower()
+    if (-not $want -or $want -ne $got) { throw "SHA512 mismatch for $FrameGodotName.zip (want '$want', got '$got')" }
+    $dest = Join-Path $FrameDir "godot-$GodotVersion-linux.arm64"
+    New-Item -ItemType Directory -Force -Path $dest | Out-Null
+    Expand-Archive -Path $zip -DestinationPath $dest -Force
+}
+if (Test-Path $frameGodot) { Write-Ok "Godot $GodotVersion linux.arm64 -> $frameGodot" } else { Write-FrameMissing "Godot $GodotVersion linux.arm64 binary ($FrameGodotZipUrl)" }
+
+$sshExe = Get-Command ssh.exe -ErrorAction SilentlyContinue
+if ($sshExe) { Write-Ok "ssh.exe -> $($sshExe.Source) (frame_install.ps1 also needs `ssh steamos@frame` to work without a password)" } else { Write-FrameMissing "OpenSSH client (ssh.exe)" }
+if ($Frame -and -not $frameOk) { $script:AllOk = $false }
 
 # ---------------------------------------------------------------------------
 Write-Section "Result"
