@@ -64,6 +64,7 @@ $dllPath  = Join-Path $gameDir 'bin\librg_godot.dll'
 $buildDir = Join-Path $repoRoot "out\build\$Preset"
 
 . (Join-Path $PSScriptRoot 'common.ps1')
+. (Join-Path $PSScriptRoot 'release_common.ps1')
 
 if ($Keep -lt 1) { throw "-Keep must be at least 1" }
 
@@ -72,16 +73,6 @@ function Invoke-Git {
     $out = & git -C $repoRoot @GitArgs
     if ($LASTEXITCODE -ne 0) { throw "git $($GitArgs -join ' ') failed (exit $LASTEXITCODE)" }
     return $out
-}
-
-function Copy-Tree {
-    param([string]$Source, [string]$Destination, [string[]]$ExcludeDirs = @())
-    if (-not (Test-Path $Source)) { return $false }
-    $a = @($Source, $Destination, '/E', '/MT:8', '/R:2', '/W:1', '/NFL', '/NDL', '/NJH', '/NJS', '/NP')
-    if ($ExcludeDirs.Count -gt 0) { $a += '/XD'; $a += $ExcludeDirs }
-    & robocopy @a | Out-Null
-    if ($LASTEXITCODE -ge 8) { throw "robocopy $Source -> $Destination failed (exit $LASTEXITCODE)" }
-    return $true
 }
 
 Write-Host "=== make_release: snapshot of racing_game ===" -ForegroundColor Cyan
@@ -154,30 +145,7 @@ Get-ChildItem -Path $OutRoot -Directory -Filter '*.partial' -ErrorAction Silentl
 # --- 4. copy -----------------------------------------------------------------
 Write-Host "`n-- copy -> $final --" -ForegroundColor Cyan
 New-Item -ItemType Directory -Force -Path $partial | Out-Null
-$copied = New-Object System.Collections.Generic.List[string]
-$plan = @(
-    @{ rel = 'game';                                              xd = @('__pycache__') },
-    @{ rel = 'data';                                              xd = @('__pycache__') },
-    @{ rel = 'external\physics_sim\data';                         xd = @() },
-    @{ rel = 'external\physics_sim\adapters\godot\demo\audio';    xd = @() },
-    @{ rel = 'external\physics_sim\out\godot_engine_cache';       xd = @() },
-    @{ rel = 'out\godot_engine_cache';                            xd = @() },
-    @{ rel = 'external\geo2map_engine\data';                      xd = @() }
-)
-foreach ($p in $plan) {
-    if (Copy-Tree -Source (Join-Path $repoRoot $p.rel) -Destination (Join-Path $partial $p.rel) -ExcludeDirs $p.xd) {
-        $copied.Add($p.rel.Replace('\', '/'))
-    } else {
-        Write-Host "  (skipped, not present: $($p.rel))" -ForegroundColor DarkGray
-    }
-}
-# rg::load_world_config's repo-root marker (see .SYNOPSIS).
-Set-Content -Path (Join-Path $partial 'CMakeLists.txt') -Encoding ASCII -Value @(
-    '# STUB. Not a buildable project: a racing_game release snapshot.',
-    '# rg::load_world_config (core/src/world_config.cpp find_repo_root) takes the nearest',
-    '# ancestor of a world config holding a CMakeLists.txt as the repo root; this file is that marker.'
-)
-$copied.Add('CMakeLists.txt (stub marker)')
+$copied = Copy-RgReleaseTrees -RepoRoot $repoRoot -Destination $partial
 
 # --- 5. launchers + RELEASE.txt ----------------------------------------------
 $g2mCache = if ($env:RG_G2M_CACHE) { $env:RG_G2M_CACHE } else { [System.IO.Path]::GetFullPath((Join-Path $repoRoot '..\geo2map_cache')) }
