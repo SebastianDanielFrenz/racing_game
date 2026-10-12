@@ -21,7 +21,6 @@ add_executable(rg_unit_tests
   test_g2m_link_smoke.cpp
   test_g2m_ps_bridge_link_smoke.cpp
   test_world_terrain.cpp
-  test_road_classes.cpp
   test_road_surface.cpp
   test_road_structures.cpp
   test_terrain_smoothing.cpp

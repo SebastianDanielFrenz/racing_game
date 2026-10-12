@@ -27,6 +27,8 @@
 #include "g2m/server/tile_store.h"
 #include "g2m/server/upstream.h"
 #include "g2m/client/in_process_transport.h"
+#include "g2m/world/chunk_road_classes.h"
+#include "g2m/world/tile_fetch.h"
 
 #include <atomic>
 #include <cstdint>
@@ -59,9 +61,9 @@ namespace rg {
 // assigned index, so the result is byte-identical for any thread_count >= 1
 // (PLAN.md R2.1 acceptance: "same output for 1 vs N threads") - select_chunks'
 // own sort order is therefore also `out`'s final order.
-// `class_lookup` (R-2, roads_plan.md): a null (default) ClassLookup builds
+// `class_lookup` (R-2, roads_plan.md): a null (default) g2m::world::ClassLookup builds
 // every chunk exactly as before this parameter existed (byte-identical
-// output - see rg/road_classes.h's own ClassLookup comment); a real one
+// output - see g2m/world/chunk_road_classes.h's ClassLookup comment); a real one
 // rasterises OSM road classes onto each chunk's vertices.
 // `surfaces` (G2.5a-grip R-b): resolves a rasterised LandClass to a surface
 // NAME for chunk_vertex_colors - a default-constructed RoadSurfaceMap
@@ -69,7 +71,7 @@ namespace rg {
 // (byte-identical output to before this parameter existed).
 void build_static_view_from_lookup(double cam_x, double cam_y, const g2m::mesh::LodParams& params, double e0,
                                    double n0, g2m::mesh::TileLookup lookup, void* ctx, unsigned thread_count,
-                                   std::vector<RenderChunk>& out, const ClassLookup& class_lookup = {},
+                                   std::vector<RenderChunk>& out, const g2m::world::ClassLookup& class_lookup = {},
                                    const RoadSurfaceMap& surfaces = {});
 
 // The two halves build_static_view_from_lookup is made of (R2.2 R8 split
@@ -94,7 +96,7 @@ void select_view_keys(double cam_x, double cam_y, const g2m::mesh::LodParams& pa
 // own comment.
 bool build_render_chunks(const std::vector<g2m::mesh::ChunkKey>& keys, g2m::mesh::TileLookup lookup, void* ctx,
                          double e0, double n0, unsigned thread_count, std::vector<RenderChunk>& out,
-                         const std::atomic<bool>* cancel = nullptr, const ClassLookup& class_lookup = {},
+                         const std::atomic<bool>* cancel = nullptr, const g2m::world::ClassLookup& class_lookup = {},
                          const RoadSurfaceMap& surfaces = {});
 
 // Everything a chunk selection + build needs, bundled: the LOD params, the
@@ -111,127 +113,13 @@ struct TerrainViewSource {
     // R-2 (roads_plan.md): null = every chunk built exactly as before this
     // field existed (byte-identical output). WorldTerrain::view_source()
     // populates a real one over the same WorldTerrain.
-    ClassLookup class_lookup{};
+    g2m::world::ClassLookup class_lookup{};
     // G2.5a-grip R-b: default-constructed = byte-identical to before this
     // field existed. WorldTerrain::view_source() populates this from the
     // WorldConfig::PhysicsTerrainConfig::road_surfaces this WorldTerrain was
     // opened with.
     RoadSurfaceMap surfaces{};
 };
-
-// R2.2 plan section 3 / [AMEND] "R3 decoupling": racing_game's own small
-// result struct for a cached height-tile lookup, built from EXISTING g2m
-// types only (g2m::phys::IHeightTileFetch does not exist yet in the pinned
-// geo2map_engine submodule - R4 will add the adapter to it once it lands).
-// `tile` is non-null iff `status == g2m::Status::Ok`.
-struct HeightTileFetchResult {
-    g2m::Status status = g2m::Status::Internal;
-    std::shared_ptr<const g2m::HeightTile> tile;
-};
-
-// Decodes one height-tile container (HEADER || BODY, as a g2m::TileResponse
-// carries it) exactly the way geo2map_engine's own
-// g2m::phys::TransportHeightTileFetch does (geo2map 5d6d29b,
-// src/phys/height_tile_loader.cpp - not in the pinned submodule yet, so the
-// logic is mirrored here): g2m::parse_container (body size + SHA-256), the
-// header's layer and key must equal `expect_layer`/`expect_key`,
-// decode_body, decode_height_tile into a HEAP tile (vault TOOL-039: 256 KiB),
-// then the header's height_offset (1/256 m) is added to every sample that is
-// not g2m::kHeightNoData, in int64; a result <= kHeightNoData or above
-// INT32_MAX fails the whole tile. NoData samples and has_nodata are left as
-// decoded. Any failure returns Status::Internal with a null tile.
-// WorldTerrain::fetch_and_decode calls this; tests call it directly with
-// synthetic containers.
-HeightTileFetchResult decode_height_tile_container(std::span<const std::uint8_t> container,
-                                                   std::string_view expect_layer, const g2m::TileKey& expect_key);
-
-// Performs the actual (uncached) fetch + decode for one tile - called by
-// fetch_height_tile_cached OUTSIDE any lock. WorldTerrain::height_tile_shared
-// wraps its own private fetch_and_decode() into one of these;
-// tests/unit/test_world_terrain.cpp's concurrency test instead supplies a
-// synthetic lambda, with no Server/TileStore involved at all (same
-// "testable seam" precedent as build_static_view_from_lookup's own
-// TileLookup above).
-using HeightTileFetchFn = std::function<HeightTileFetchResult(const g2m::TileKey&)>;
-
-// Double-checked-insert cache: WorldTerrain::height_tile_shared's own
-// implementation, factored out so it can be exercised directly (a synthetic
-// fetch_fn, no real store) by the concurrency test. Locking scheme (see also
-// the header's file-level comment): `cache_mutex` guards ONLY the `cache`
-// map itself (the find and the eventual emplace), never `fetch_fn`'s own
-// call, which always runs unlocked; two threads racing on the same missing
-// key therefore both call `fetch_fn` concurrently (redundant but safe - the
-// underlying store/decode work is independently idempotent, "both write
-// identical bytes" per g2m::Server's own documented contract), and whichever
-// thread's `cache.emplace` runs first wins the map slot - std::map::emplace
-// never overwrites an existing key, so every later racer's own freshly
-// fetched tile is simply discarded and every caller (winner and losers
-// alike) returns the SAME shared_ptr, read back from the map after the
-// emplace. A failed fetch (status != Ok) is never inserted, so a transient
-// failure can be retried on the next call rather than being pinned forever.
-// `was_cache_hit`, if non-null, is set to whether this call's initial lookup
-// already found the key (WorldTerrain uses this for FetchStats::cache_hits;
-// a fetch that then fails is not counted as a hit).
-HeightTileFetchResult fetch_height_tile_cached(std::mutex& cache_mutex,
-                                               std::map<g2m::TileKey, std::shared_ptr<const g2m::HeightTile>>& cache,
-                                               const g2m::TileKey& key, const HeightTileFetchFn& fetch_fn,
-                                               bool* was_cache_hit = nullptr);
-
-// Tri-state result of a g2m.src.osm tile fetch (G2.5a-grip R-b, roads_plan.md
-// section 7 R-b): distinguishes a tile genuinely outside this release's
-// g2m.src.osm coverage from an actual fetch/decode failure from an ordinary
-// decode (possibly of an empty tile - a covered tile simply having no
-// drivable ways is not the same thing as "outside coverage" at all).
-enum class RoadFetchStatus : std::uint8_t {
-    Ok,     // decoded, possibly empty; cached
-    Absent, // server NotFound "outside coverage" (server.cpp's check_tile,
-            // distinct from "unknown layer"/"level not in layer" - see
-            // WorldTerrain::has_road_layer for that case); cached,
-            // `segments` is the shared empty list
-    Failed, // 5xx/transport/parse/decode/header-mismatch; NOT cached (a
-            // transient problem can be retried on the next call),
-            // `segments` is null
-};
-
-struct RoadSegmentsResult {
-    RoadFetchStatus status = RoadFetchStatus::Failed;
-    std::shared_ptr<const std::vector<g2m::RoadSegment>> segments; // non-null iff status != Failed
-};
-
-// Decodes one already-received g2m.src.osm tile Response into a
-// RoadSegmentsResult, mirroring decode_height_tile_container's own
-// "pure decode, no I/O, no cache" seam: a null/non-TileResponse variant, any
-// non-Ok/NotFound status, or a parse_container/header-mismatch/decode_body/
-// decode_src_osm failure all collapse to {Failed, nullptr} (same generic
-// granularity as decode_height_tile_container - the caller logs a message,
-// this function does not need to say which stage failed). NotFound with
-// meta.message == "outside coverage" (server.cpp's check_tile - see
-// RoadFetchStatus's own doc comment) is {Absent, an empty shared list}. Only
-// on the success path does it call g2m::extract_road_segments.
-// WorldTerrain::road_segments_shared calls this after transport_->send();
-// tests call it directly with a synthetic g2m::Response, no Server/
-// TileStore/transport involved at all.
-RoadSegmentsResult decode_road_segments_response(const g2m::Response& response, const g2m::TileKey& expect_key,
-                                                 g2m::geo::UtmZone zone);
-
-// Performs the actual (uncached) fetch + decode for one g2m.src.osm tile -
-// called by fetch_road_segments_cached OUTSIDE any lock. Mirrors
-// HeightTileFetchFn exactly.
-using RoadSegmentsFetchFn = std::function<RoadSegmentsResult(const g2m::TileKey&)>;
-
-// Double-checked-insert cache: WorldTerrain::road_segments_shared's own
-// implementation, factored out (same locking scheme, same "first emplace
-// wins" policy, same fetch_fn-runs-unlocked rationale) as
-// fetch_height_tile_cached, so it can be exercised directly with a synthetic
-// fetch_fn - a fake 503 or a fake malformed tile resolves Failed and is NOT
-// inserted (retried on the next call), a fake "outside coverage" NotFound
-// resolves Absent and IS inserted, exactly like the production path.
-// `was_cache_hit`, if non-null, is set to whether this call's initial lookup
-// already found the key.
-RoadSegmentsResult fetch_road_segments_cached(std::mutex& cache_mutex,
-                                              std::map<g2m::TileKey, RoadSegmentsResult>& cache,
-                                              const g2m::TileKey& key, const RoadSegmentsFetchFn& fetch_fn,
-                                              bool* was_cache_hit = nullptr);
 
 class WorldTerrain {
 public:
@@ -278,7 +166,7 @@ public:
     std::shared_ptr<const g2m::OsmTile> source_osm_tile(const g2m::TileKey& key); // background consumers only
     RoadVisualMesh road_visual_tile(const g2m::TileKey& key,double lift_m);
     std::vector<Building> buildings_tile(const g2m::TileKey& key,double min_height,double fallback_height,double storey_height);
-    HeightTileFetchResult height_tile_shared(const g2m::TileKey& key);
+    g2m::world::HeightTileFetchResult height_tile_shared(const g2m::TileKey& key);
     // Presentation-only lookup: never fetches or waits for derivation.
     const g2m::HeightTile* cached_height_tile(const g2m::TileKey& key);
     std::vector<std::shared_ptr<const RoadDeck>> road_decks();
@@ -334,7 +222,7 @@ public:
     // manifest_rid_/transport_ the height-tile path uses. Only a genuine
     // failure (RoadFetchStatus::Failed) is reported to stderr - Absent is
     // the release's own coverage edge, not a problem, and is never logged.
-    RoadSegmentsResult road_segments_shared(const g2m::TileKey& key);
+    g2m::world::RoadSegmentsResult road_segments_shared(const g2m::TileKey& key);
 
     // Whether this release's manifest lists the g2m.src.osm layer at all
     // (G2.5a-grip R-b plan section 7 R-b) - read once, at open(), from
@@ -380,7 +268,7 @@ private:
     };
     FetchDecodeResult fetch_and_decode(const g2m::TileKey& key);
     FetchDecodeResult fetch_raw_decode(const g2m::TileKey& key);
-    HeightTileFetchResult raw_height_tile_shared(const g2m::TileKey& key);
+    g2m::world::HeightTileFetchResult raw_height_tile_shared(const g2m::TileKey& key);
     TerrainSmoothing smoothing_;
     double verge_drop_m_=0.06;
     std::mutex raw_cache_mutex_;
@@ -417,7 +305,7 @@ private:
     FetchStats stats_;
 
     std::mutex osm_cache_mutex_;
-    std::map<g2m::TileKey, RoadSegmentsResult> osm_cache_; // only Ok/Absent are ever inserted
+    std::map<g2m::TileKey, g2m::world::RoadSegmentsResult> osm_cache_; // only Ok/Absent are ever inserted
     std::atomic<std::uint64_t> osm_ok_{0};
     std::atomic<std::uint64_t> osm_fail_{0};
     std::atomic<std::uint64_t> osm_cache_hits_{0};

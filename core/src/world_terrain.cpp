@@ -13,6 +13,9 @@
 #include "g2m/layer/layer_id.h"
 #include "g2m/layer/src_osm.h"
 #include "g2m/layer/road_dem_dependencies.h"
+#include "g2m/world/chunk_road_classes.h"
+#include "g2m/world/height_sampler.h"
+#include "g2m/world/tile_fetch.h"
 
 #include <algorithm>
 #include <cmath>
@@ -114,7 +117,7 @@ void chunk_vertex_colors(const g2m::mesh::TerrainChunkMesh& mesh, const RoadSurf
 }
 
 void build_one_chunk(const g2m::mesh::ChunkKey& key, g2m::mesh::TileLookup lookup, void* ctx, double e0, double n0,
-                     const ClassLookup& class_lookup, const RoadSurfaceMap& surfaces, RenderChunk& out_chunk) {
+                     const g2m::world::ClassLookup& class_lookup, const RoadSurfaceMap& surfaces, RenderChunk& out_chunk) {
     g2m::mesh::HeightWindow window;
     g2m::mesh::gather_window(key, lookup, ctx, window);
     if (class_lookup.fn == nullptr) {
@@ -124,7 +127,7 @@ void build_one_chunk(const g2m::mesh::ChunkKey& key, g2m::mesh::TileLookup looku
         g2m::mesh::build_chunk(key, window, /*classes=*/nullptr, out_chunk.mesh);
     } else {
         g2m::mesh::ClassWindow classes;
-        rasterize_chunk_road_classes(key, class_lookup, classes);
+        g2m::world::rasterize_chunk_road_classes(key, class_lookup, classes);
         g2m::mesh::build_chunk(key, window, &classes, out_chunk.mesh);
     }
     out_chunk.key = key;
@@ -152,7 +155,7 @@ void select_view_keys(double cam_x, double cam_y, const g2m::mesh::LodParams& pa
 
 bool build_render_chunks(const std::vector<g2m::mesh::ChunkKey>& keys, g2m::mesh::TileLookup lookup, void* ctx,
                          double e0, double n0, unsigned thread_count, std::vector<RenderChunk>& out,
-                         const std::atomic<bool>* cancel, const ClassLookup& class_lookup,
+                         const std::atomic<bool>* cancel, const g2m::world::ClassLookup& class_lookup,
                          const RoadSurfaceMap& surfaces) {
     out.clear();
     out.resize(keys.size());
@@ -199,7 +202,7 @@ bool build_render_chunks(const std::vector<g2m::mesh::ChunkKey>& keys, g2m::mesh
 
 void build_static_view_from_lookup(double cam_x, double cam_y, const g2m::mesh::LodParams& params, double e0,
                                    double n0, g2m::mesh::TileLookup lookup, void* ctx, unsigned thread_count,
-                                   std::vector<RenderChunk>& out, const ClassLookup& class_lookup,
+                                   std::vector<RenderChunk>& out, const g2m::world::ClassLookup& class_lookup,
                                    const RoadSurfaceMap& surfaces) {
     std::vector<g2m::mesh::ChunkKey> keys;
     select_view_keys(cam_x, cam_y, params, e0, n0, keys);
@@ -340,14 +343,14 @@ WorldTerrain::FetchDecodeResult WorldTerrain::fetch_raw_decode(const g2m::TileKe
         return FetchDecodeResult{response_status, nullptr};
     }
 
-    HeightTileFetchResult decoded = decode_height_tile_container(tile_response->container, terrain_height_layer_, key);
+    g2m::world::HeightTileFetchResult decoded = g2m::world::decode_height_tile_container(tile_response->container, terrain_height_layer_, key);
     if(decoded.status != g2m::Status::Ok) std::fprintf(stderr,"RG_TERRAIN_FETCH decode key=%s\n",g2m::to_string(key).c_str());
     return FetchDecodeResult{decoded.status,std::move(decoded.tile)};
 }
 
-HeightTileFetchResult WorldTerrain::raw_height_tile_shared(const g2m::TileKey& key) {
-    return fetch_height_tile_cached(raw_cache_mutex_,raw_height_cache_,key,[this](const auto& k){
-        auto result=fetch_raw_decode(k);return HeightTileFetchResult{result.status,std::move(result.tile)};
+g2m::world::HeightTileFetchResult WorldTerrain::raw_height_tile_shared(const g2m::TileKey& key) {
+    return g2m::world::fetch_height_tile_cached(raw_cache_mutex_,raw_height_cache_,key,[this](const auto& k){
+        auto result=fetch_raw_decode(k);return g2m::world::HeightTileFetchResult{result.status,std::move(result.tile)};
     });
 }
 
@@ -417,7 +420,7 @@ std::shared_ptr<const RoadSurfacePatch> WorldTerrain::road_surface_patch(const g
             auto res=transport_->send(g2m::Request{g2m::TileRequest{manifest_rid_,dependency.layer,dependency.key,std::nullopt}});
             const auto* tr=std::get_if<g2m::TileResponse>(&res);
             if(!tr || tr->meta.status!=g2m::Status::Ok) {complete=false;break;}
-            auto decoded=decode_height_tile_container(tr->container,dependency.layer,dependency.key);
+            auto decoded=g2m::world::decode_height_tile_container(tr->container,dependency.layer,dependency.key);
             if(!decoded.tile) {complete=false;break;}
             dem_tiles.push_back(decoded.tile.get()); dem_storage.push_back(std::move(decoded.tile));
         }
@@ -508,82 +511,10 @@ std::shared_ptr<const g2m::RoadGeomTile> WorldTerrain::road_geometry_at(double e
     auto it=road_geometry_cache_.find(*key);return it==road_geometry_cache_.end()?nullptr:it->second;
 }
 
-HeightTileFetchResult decode_height_tile_container(std::span<const std::uint8_t> container,
-                                                   std::string_view expect_layer, const g2m::TileKey& expect_key) {
-    const g2m::Result<g2m::ContainerView> view = g2m::parse_container(container);
-    if (!view.ok()) {
-        return HeightTileFetchResult{g2m::Status::Internal, nullptr};
-    }
-    if (view.value().header.layer != expect_layer || !(view.value().header.key == expect_key)) {
-        return HeightTileFetchResult{g2m::Status::Internal, nullptr};
-    }
-    const g2m::Result<g2m::TileBody> body = g2m::decode_body(view.value().body);
-    if (!body.ok()) {
-        return HeightTileFetchResult{g2m::Status::Internal, nullptr};
-    }
-
-    // Heap, never the stack (vault TOOL-039: g2m::HeightTile is 256 KiB).
-    auto tile = std::make_shared<g2m::HeightTile>();
-    if (!g2m::decode_height_tile(body.value(), expect_key, *tile).ok()) {
-        return HeightTileFetchResult{g2m::Status::Internal, nullptr};
-    }
-
-    // Same arithmetic as geo2map's TransportHeightTileFetch: NoData stays
-    // NoData, everything else gets the offset in int64, and a sum that would
-    // collide with NoData or overflow int32 rejects the tile.
-    const std::int32_t offset = view.value().header.height_offset;
-    if (offset != 0) {
-        for (std::int32_t& h : tile->h) {
-            if (h == g2m::kHeightNoData) {
-                continue;
-            }
-            const std::int64_t v = static_cast<std::int64_t>(h) + offset;
-            if (v <= static_cast<std::int64_t>(g2m::kHeightNoData) ||
-                v > static_cast<std::int64_t>(std::numeric_limits<std::int32_t>::max())) {
-                return HeightTileFetchResult{g2m::Status::Internal, nullptr};
-            }
-            h = static_cast<std::int32_t>(v);
-        }
-    }
-    return HeightTileFetchResult{g2m::Status::Ok, std::move(tile)};
-}
-
-HeightTileFetchResult fetch_height_tile_cached(std::mutex& cache_mutex,
-                                               std::map<g2m::TileKey, std::shared_ptr<const g2m::HeightTile>>& cache,
-                                               const g2m::TileKey& key, const HeightTileFetchFn& fetch_fn,
-                                               bool* was_cache_hit) {
-    if (was_cache_hit != nullptr) {
-        *was_cache_hit = false;
-    }
-    {
-        std::lock_guard<std::mutex> lk(cache_mutex);
-        auto it = cache.find(key);
-        if (it != cache.end()) {
-            if (was_cache_hit != nullptr) {
-                *was_cache_hit = true;
-            }
-            return HeightTileFetchResult{g2m::Status::Ok, it->second};
-        }
-    }
-
-    // Deliberately outside the lock: two threads racing to fetch the same
-    // missing tile just both call fetch_fn (see this function's own doc
-    // comment in world_terrain.h for why that is safe/bounded).
-    HeightTileFetchResult fetched = fetch_fn(key);
-    if (fetched.status != g2m::Status::Ok || !fetched.tile) {
-        return fetched; // not cached: let a transient failure be retried later
-    }
-
-    std::lock_guard<std::mutex> lk(cache_mutex);
-    auto [it, inserted] = cache.emplace(key, std::move(fetched.tile));
-    (void)inserted; // first inserted value wins; a later racer's own fetch is discarded here
-    return HeightTileFetchResult{g2m::Status::Ok, it->second};
-}
-
 RoadVisualMesh WorldTerrain::road_visual_tile(const g2m::TileKey& key,double lift) {
     const auto geometry=road_geometry_at(key.min_easting()+512,key.min_northing()+512);
     if(!geometry)return {};
-    return build_road_visual(*geometry,key,[this,key](double e,double n){return sample_l0_height([this](const auto& k){return height_tile_shared(k).tile.get();},key.zone,0,0,e,n);},lift);
+    return build_road_visual(*geometry,key,[this,key](double e,double n){return g2m::world::sample_height_bilinear([this](const auto& k){return height_tile_shared(k).tile.get();},key.zone,0,0,e,n);},lift);
 }
 
 std::shared_ptr<const g2m::OsmTile> WorldTerrain::source_osm_tile(const g2m::TileKey& key) {
@@ -600,7 +531,7 @@ std::vector<Building> WorldTerrain::buildings_tile(const g2m::TileKey& key,doubl
     auto container=g2m::parse_container(tile->container);if(!container||container->header.key!=key||container->header.layer!=g2m::kSrcOsmLayer)return {};
     auto body=g2m::decode_body(container->body);if(!body)return {};auto osm=g2m::decode_src_osm(*body);if(!osm)return {};
     return extract_buildings(*osm,key,min_height,fallback,storey,[this,key](double e,double n){
-        return sample_l0_height([this](const auto& k){return raw_height_tile_shared(k).tile.get();},key.zone,0,0,e,n);
+        return g2m::world::sample_height_bilinear([this](const auto& k){return raw_height_tile_shared(k).tile.get();},key.zone,0,0,e,n);
     });
 }
 
@@ -610,8 +541,8 @@ const g2m::HeightTile* WorldTerrain::cached_height_tile(const g2m::TileKey& key)
     return it==height_cache_.end()?nullptr:it->second.get();
 }
 
-HeightTileFetchResult WorldTerrain::height_tile_shared(const g2m::TileKey& key) {
-    HeightTileFetchFn fetch_fn = [this](const g2m::TileKey& k) -> HeightTileFetchResult {
+g2m::world::HeightTileFetchResult WorldTerrain::height_tile_shared(const g2m::TileKey& key) {
+    g2m::world::HeightTileFetchFn fetch_fn = [this](const g2m::TileKey& k) -> g2m::world::HeightTileFetchResult {
         FetchDecodeResult result;
         try {
             result = fetch_and_decode(k);
@@ -623,13 +554,13 @@ HeightTileFetchResult WorldTerrain::height_tile_shared(const g2m::TileKey& key) 
             std::fprintf(stderr,"RG_TERRAIN_FETCH failed key=%s status=%d\n",g2m::to_string(k).c_str(),static_cast<int>(result.status));
         }
         if (!result.tile) {
-            return HeightTileFetchResult{result.status, nullptr};
+            return g2m::world::HeightTileFetchResult{result.status, nullptr};
         }
-        return HeightTileFetchResult{g2m::Status::Ok, std::move(result.tile)};
+        return g2m::world::HeightTileFetchResult{g2m::Status::Ok, std::move(result.tile)};
     };
 
     bool was_cache_hit = false;
-    HeightTileFetchResult out = fetch_height_tile_cached(cache_mutex_, height_cache_, key, fetch_fn, &was_cache_hit);
+    g2m::world::HeightTileFetchResult out = g2m::world::fetch_height_tile_cached(cache_mutex_, height_cache_, key, fetch_fn, &was_cache_hit);
     if (was_cache_hit) {
         std::lock_guard<std::mutex> lk(stats_mutex_);
         ++stats_.cache_hits;
@@ -638,7 +569,7 @@ HeightTileFetchResult WorldTerrain::height_tile_shared(const g2m::TileKey& key) 
 }
 
 const g2m::HeightTile* WorldTerrain::height_tile(const g2m::TileKey& key) {
-    HeightTileFetchResult result = height_tile_shared(key);
+    g2m::world::HeightTileFetchResult result = height_tile_shared(key);
     return result.tile.get();
 }
 
@@ -647,7 +578,7 @@ void WorldTerrain::build_static_view(double cam_x, double cam_y, std::vector<Ren
     const unsigned threads = hw == 0 ? 4u : std::min(hw, 8u);
     build_static_view_from_lookup(cam_x, cam_y, lod_params_, static_cast<double>(frame_->e0_m()),
                                   static_cast<double>(frame_->n0_m()), &world_terrain_lookup, this, threads, out,
-                                  ClassLookup{&world_terrain_road_class_lookup, this}, road_surfaces_);
+                                  g2m::world::ClassLookup{&world_terrain_road_class_lookup, this}, road_surfaces_);
 }
 
 TerrainViewSource WorldTerrain::view_source() {
@@ -657,96 +588,17 @@ TerrainViewSource WorldTerrain::view_source() {
     source.n0 = static_cast<double>(frame_->n0_m());
     source.lookup = &world_terrain_lookup;
     source.ctx = this;
-    source.class_lookup = ClassLookup{&world_terrain_road_class_lookup, this};
+    source.class_lookup = g2m::world::ClassLookup{&world_terrain_road_class_lookup, this};
     source.surfaces = road_surfaces_;
     return source;
 }
 
-namespace {
-const std::shared_ptr<const std::vector<g2m::RoadSegment>>& empty_road_segments() {
-    static const auto kEmpty = std::make_shared<const std::vector<g2m::RoadSegment>>();
-    return kEmpty;
-}
-} // namespace
-
-RoadSegmentsResult decode_road_segments_response(const g2m::Response& response, const g2m::TileKey& expect_key,
-                                                 g2m::geo::UtmZone zone) {
-    const auto* tile_response = std::get_if<g2m::TileResponse>(&response);
-    if (tile_response == nullptr) {
-        return RoadSegmentsResult{RoadFetchStatus::Failed, nullptr};
-    }
-    if (tile_response->meta.status == g2m::Status::NotFound && tile_response->meta.message == "outside coverage") {
-        // Absent: a definitive, cacheable "not in this release" answer, not
-        // a failure - server.cpp's check_tile() gives this exact message
-        // only for "outside coverage", never for "unknown layer"/"level not
-        // in layer" (both of those mean this release has no g2m.src.osm
-        // layer at all, and fall through to the generic NotFound Failed
-        // case below - has_road_layer() is the caller's own guard for that).
-        return RoadSegmentsResult{RoadFetchStatus::Absent, empty_road_segments()};
-    }
-    if (tile_response->meta.status != g2m::Status::Ok) {
-        return RoadSegmentsResult{RoadFetchStatus::Failed, nullptr};
-    }
-
-    const g2m::Result<g2m::ContainerView> view = g2m::parse_container(tile_response->container);
-    if (!view.ok()) {
-        return RoadSegmentsResult{RoadFetchStatus::Failed, nullptr};
-    }
-    if (view.value().header.layer != g2m::kSrcOsmLayer || !(view.value().header.key == expect_key)) {
-        return RoadSegmentsResult{RoadFetchStatus::Failed, nullptr};
-    }
-    const g2m::Result<g2m::TileBody> body = g2m::decode_body(view.value().body);
-    if (!body.ok()) {
-        return RoadSegmentsResult{RoadFetchStatus::Failed, nullptr};
-    }
-    const g2m::Result<g2m::OsmTile> osm_tile = g2m::decode_src_osm(body.value());
-    if (!osm_tile.ok()) {
-        return RoadSegmentsResult{RoadFetchStatus::Failed, nullptr};
-    }
-
-    std::vector<g2m::RoadSegment> segments =
-        g2m::extract_road_segments(osm_tile.value().data, zone, g2m::RoadStyle::default_style());
-    return RoadSegmentsResult{RoadFetchStatus::Ok,
-                              std::make_shared<const std::vector<g2m::RoadSegment>>(std::move(segments))};
-}
-
-RoadSegmentsResult fetch_road_segments_cached(std::mutex& cache_mutex,
-                                              std::map<g2m::TileKey, RoadSegmentsResult>& cache,
-                                              const g2m::TileKey& key, const RoadSegmentsFetchFn& fetch_fn,
-                                              bool* was_cache_hit) {
-    if (was_cache_hit != nullptr) {
-        *was_cache_hit = false;
-    }
-    {
-        std::lock_guard<std::mutex> lk(cache_mutex);
-        auto it = cache.find(key);
-        if (it != cache.end()) {
-            if (was_cache_hit != nullptr) {
-                *was_cache_hit = true;
-            }
-            return it->second;
-        }
-    }
-
-    // Deliberately outside the lock - same rationale as
-    // fetch_height_tile_cached's own comment.
-    RoadSegmentsResult fetched = fetch_fn(key);
-    if (fetched.status == RoadFetchStatus::Failed) {
-        return fetched; // not cached: let a transient failure be retried later
-    }
-
-    std::lock_guard<std::mutex> lk(cache_mutex);
-    auto [it, inserted] = cache.emplace(key, std::move(fetched));
-    (void)inserted; // first inserted value wins, same policy as height_cache_
-    return it->second;
-}
-
-RoadSegmentsResult WorldTerrain::road_segments_shared(const g2m::TileKey& key) {
-    RoadSegmentsFetchFn fetch_fn = [this](const g2m::TileKey& k) -> RoadSegmentsResult {
+g2m::world::RoadSegmentsResult WorldTerrain::road_segments_shared(const g2m::TileKey& key) {
+    g2m::world::RoadSegmentsFetchFn fetch_fn = [this](const g2m::TileKey& k) -> g2m::world::RoadSegmentsResult {
         g2m::TileRequest request{manifest_rid_, std::string(g2m::kSrcOsmLayer), k, std::nullopt};
         g2m::Response response = transport_->send(g2m::Request{request});
-        RoadSegmentsResult result = decode_road_segments_response(response, k, frame_->zone());
-        if (result.status == RoadFetchStatus::Failed) {
+        g2m::world::RoadSegmentsResult result = g2m::world::decode_road_segments_response(response, k, frame_->zone());
+        if (result.status == g2m::world::RoadFetchStatus::Failed) {
             std::fprintf(stderr,
                          "WorldTerrain::road_segments_shared: g2m.src.osm fetch/decode failed (tile %s) - "
                          "reporting no roads for this tile\n",
@@ -756,10 +608,10 @@ RoadSegmentsResult WorldTerrain::road_segments_shared(const g2m::TileKey& key) {
     };
 
     bool was_cache_hit = false;
-    RoadSegmentsResult out = fetch_road_segments_cached(osm_cache_mutex_, osm_cache_, key, fetch_fn, &was_cache_hit);
+    g2m::world::RoadSegmentsResult out = g2m::world::fetch_road_segments_cached(osm_cache_mutex_, osm_cache_, key, fetch_fn, &was_cache_hit);
     if (was_cache_hit) {
         osm_cache_hits_.fetch_add(1, std::memory_order_relaxed);
-    } else if (out.status == RoadFetchStatus::Failed) {
+    } else if (out.status == g2m::world::RoadFetchStatus::Failed) {
         osm_fail_.fetch_add(1, std::memory_order_relaxed);
     } else {
         osm_ok_.fetch_add(1, std::memory_order_relaxed);
@@ -768,8 +620,10 @@ RoadSegmentsResult WorldTerrain::road_segments_shared(const g2m::TileKey& key) {
 }
 
 std::shared_ptr<const std::vector<g2m::RoadSegment>> WorldTerrain::road_segments(const g2m::TileKey& key) {
-    RoadSegmentsResult result = road_segments_shared(key);
-    return result.segments ? result.segments : empty_road_segments();
+    g2m::world::RoadSegmentsResult result = road_segments_shared(key);
+    if (result.segments) return result.segments;
+    static const auto kNoRoads = std::make_shared<const std::vector<g2m::RoadSegment>>();
+    return kNoRoads; // Failed: "no roads" is a valid, non-fatal answer for the render path
 }
 
 WorldTerrain::FetchStats WorldTerrain::fetch_stats() const {

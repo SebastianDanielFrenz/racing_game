@@ -65,7 +65,6 @@ add_library(rg_core STATIC
     src/terrain_mode.cpp
     src/world_config.cpp
     src/world_terrain.cpp
-    src/road_classes.cpp
     src/buildings.cpp
     src/road_visual.cpp
     src/road_surface.cpp
@@ -122,6 +121,7 @@ target_link_libraries(rg_core
         g2m_layers
         g2m_mesh
         g2m_phys
+        g2m_world
         g2m_ps_bridge
     PRIVATE
         rg_options

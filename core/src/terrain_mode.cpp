@@ -5,18 +5,18 @@
 
 namespace rg {
 
-HeightTileSharedFetch::HeightTileSharedFetch(HeightTileFetchFn fn) : fn_(std::move(fn)) {
+HeightTileSharedFetch::HeightTileSharedFetch(g2m::world::HeightTileFetchFn fn) : fn_(std::move(fn)) {
     if (!fn_) throw std::invalid_argument("HeightTileSharedFetch: empty fetch function");
 }
 
-HeightTileSharedFetch::HeightTileSharedFetch(HeightTileFetchFn fn, RoadSegmentsFetchFn road_fn)
+HeightTileSharedFetch::HeightTileSharedFetch(g2m::world::HeightTileFetchFn fn, g2m::world::RoadSegmentsFetchFn road_fn)
     : fn_(std::move(fn)), road_fn_(std::move(road_fn)) {
     if (!fn_) throw std::invalid_argument("HeightTileSharedFetch: empty fetch function");
     if (!road_fn_) throw std::invalid_argument("HeightTileSharedFetch: empty road fetch function");
 }
 
 g2m::phys::FetchResult HeightTileSharedFetch::fetch(const g2m::TileKey& key) {
-    HeightTileFetchResult r = fn_(key);
+    g2m::world::HeightTileFetchResult r = fn_(key);
     // Keep the contract "tile non-null iff Ok" on the physics side too.
     if (r.status != g2m::Status::Ok) return g2m::phys::FetchResult{r.status, nullptr, nullptr};
     if (r.tile == nullptr) return g2m::phys::FetchResult{g2m::Status::Internal, nullptr, nullptr};
@@ -29,8 +29,8 @@ g2m::phys::FetchResult HeightTileSharedFetch::fetch(const g2m::TileKey& key) {
         // (with LoaderConfig::require_roads) makes the whole tile retry/
         // fail exactly like a height-side 500 - never silently missing.
         const g2m::TileKey l2 = key.parent().parent();
-        const RoadSegmentsResult rr = road_fn_(l2);
-        if (rr.status != RoadFetchStatus::Failed) roads = rr.segments;
+        const g2m::world::RoadSegmentsResult rr = road_fn_(l2);
+        if (rr.status != g2m::world::RoadFetchStatus::Failed) roads = rr.segments;
     }
     return g2m::phys::FetchResult{r.status, std::move(r.tile), std::move(roads)};
 }

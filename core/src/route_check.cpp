@@ -9,6 +9,7 @@
 
 #include "g2m/core/raster.h"
 #include "g2m/layer/terrain_layers.h"
+#include "g2m/world/height_sampler.h"
 
 #include <nlohmann/json.hpp>
 
@@ -441,55 +442,6 @@ int count_seam_crossings(const std::vector<RoutePoint>& polyline, double tile_si
     return static_cast<int>(total);
 }
 
-std::optional<double> sample_l0_height(const L0TileLookupFn& lookup, g2m::geo::UtmZone zone, std::int64_t e0,
-                                       std::int64_t n0, double x, double y) {
-    // Global cell-centre lattice: column c's centre is at easting c + 0.5.
-    const double u = static_cast<double>(e0) + x - 0.5;
-    const double v = static_cast<double>(n0) + y - 0.5;
-    if (!std::isfinite(u) || !std::isfinite(v)) {
-        return std::nullopt;
-    }
-    const double fu = std::floor(u);
-    const double fv = std::floor(v);
-    const auto c0 = static_cast<std::int64_t>(fu);
-    const auto r0 = static_cast<std::int64_t>(fv);
-    const double tx = u - fu;
-    const double ty = v - fv;
-
-    constexpr std::int64_t kN = g2m::kTerrainTileSamples;
-    const g2m::HeightTile* cached = nullptr; // the 4 corners usually share one tile
-    double h[2][2] = {};
-    for (int dj = 0; dj < 2; ++dj) {
-        for (int di = 0; di < 2; ++di) {
-            const std::int64_t c = c0 + di;
-            const std::int64_t r = r0 + dj;
-            g2m::TileKey key;
-            key.zone = zone;
-            key.level = 0;
-            key.x = static_cast<std::int32_t>(g2m::floor_div(c, kN));
-            key.y = static_cast<std::int32_t>(g2m::floor_div(r, kN));
-            if (!key.valid()) {
-                return std::nullopt;
-            }
-            const g2m::HeightTile* tile = (cached != nullptr && cached->key == key) ? cached : lookup(key);
-            if (tile == nullptr) {
-                return std::nullopt;
-            }
-            cached = tile;
-            const std::int64_t i = c - static_cast<std::int64_t>(key.x) * kN;
-            const std::int64_t j = r - static_cast<std::int64_t>(key.y) * kN;
-            const std::int32_t raw = tile->h[static_cast<std::size_t>(j * kN + i)];
-            if (raw == g2m::kHeightNoData) {
-                return std::nullopt;
-            }
-            h[dj][di] = static_cast<double>(raw) / 256.0;
-        }
-    }
-    const double south = h[0][0] + tx * (h[0][1] - h[0][0]);
-    const double north = h[1][0] + tx * (h[1][1] - h[1][0]);
-    return south + ty * (north - south);
-}
-
 RouteCheckReport check_route(const std::vector<RoutePoint>& waypoints, const RoutePoint& expected_start,
                              const HeightAtFn& height_at, const RouteCheckParams& params) {
     RouteCheckReport rep;
@@ -778,17 +730,17 @@ RouteCheckReport check_route_on_world(const Route& route, const WorldConfig& wor
     const auto e0 = static_cast<std::int64_t>(std::llround(world.session_origin_utm.e0));
     const auto n0 = static_cast<std::int64_t>(std::llround(world.session_origin_utm.n0));
     // height_tile_shared() hands out shared_ptrs; the lookup keeps the most
-    // recent one alive for the duration of the sample_l0_height call.
+    // recent one alive for the duration of the sample_height_bilinear call.
     std::shared_ptr<const g2m::HeightTile> hold;
-    const L0TileLookupFn lookup = [&terrain, &hold](const g2m::TileKey& key) -> const g2m::HeightTile* {
-        HeightTileFetchResult r = terrain.height_tile_shared(key);
+    const g2m::world::L0TileLookupFn lookup = [&terrain, &hold](const g2m::TileKey& key) -> const g2m::HeightTile* {
+        g2m::world::HeightTileFetchResult r = terrain.height_tile_shared(key);
         if (r.status != g2m::Status::Ok || r.tile == nullptr) {
             return nullptr;
         }
         hold = std::move(r.tile);
         return hold.get();
     };
-    const HeightAtFn height_at = [&](double x, double y) { return sample_l0_height(lookup, zone, e0, n0, x, y); };
+    const HeightAtFn height_at = [&](double x, double y) { return g2m::world::sample_height_bilinear(lookup, zone, e0, n0, x, y); };
 
     // A bridge crosses a gap the L0 terrain heights do not bridge (the deck is not in them), so
     // grade windows touching a listed bridge are exempt from the grade criterion; they are counted

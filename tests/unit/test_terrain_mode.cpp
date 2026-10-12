@@ -102,14 +102,14 @@ struct ContainerStore {
     std::mutex cache_mutex;
     std::map<g2m::TileKey, std::shared_ptr<const g2m::HeightTile>> cache;
 
-    rg::HeightTileFetchResult decode(const g2m::TileKey& key) {
+    g2m::world::HeightTileFetchResult decode(const g2m::TileKey& key) {
         const auto it = containers.find(key.packed());
-        if (it == containers.end()) return rg::HeightTileFetchResult{g2m::Status::NotFound, nullptr};
+        if (it == containers.end()) return g2m::world::HeightTileFetchResult{g2m::Status::NotFound, nullptr};
         ++decode_calls;
-        return rg::decode_height_tile_container(it->second, g2m::kTerrainHeightLayer, key);
+        return g2m::world::decode_height_tile_container(it->second, g2m::kTerrainHeightLayer, key);
     }
-    rg::HeightTileFetchResult shared(const g2m::TileKey& key) {
-        return rg::fetch_height_tile_cached(cache_mutex, cache, key,
+    g2m::world::HeightTileFetchResult shared(const g2m::TileKey& key) {
+        return g2m::world::fetch_height_tile_cached(cache_mutex, cache, key,
                                             [this](const g2m::TileKey& k) { return decode(k); });
     }
     static const g2m::HeightTile* lookup(void* ctx, const g2m::TileKey& key) {
@@ -285,7 +285,7 @@ TEST_CASE("terrain mode: racing_game's container decode equals geo2map's Transpo
     g2m::phys::TransportHeightTileFetch g2m_fetch(transport, g2m::ReleaseId{});
     for (const g2m::TileKey& key : fx.keys) {
         const g2m::phys::FetchResult theirs = g2m_fetch.fetch(key);
-        const rg::HeightTileFetchResult ours = fx.store.decode(key);
+        const g2m::world::HeightTileFetchResult ours = fx.store.decode(key);
         REQUIRE(theirs.status == g2m::Status::Ok);
         REQUIRE(ours.status == g2m::Status::Ok);
         CHECK(theirs.tile->key == ours.tile->key);
@@ -302,7 +302,7 @@ TEST_CASE("terrain mode: HeightTileSharedFetch passes status and tile through", 
     auto tile = std::make_shared<g2m::HeightTile>();
     g2m::Status next = g2m::Status::Ok;
     std::shared_ptr<const g2m::HeightTile> next_tile = tile;
-    rg::HeightTileSharedFetch fetch([&](const g2m::TileKey&) { return rg::HeightTileFetchResult{next, next_tile}; });
+    rg::HeightTileSharedFetch fetch([&](const g2m::TileKey&) { return g2m::world::HeightTileFetchResult{next, next_tile}; });
     const g2m::TileKey key{k32N, 0, 1851, 21718};
 
     g2m::phys::FetchResult r = fetch.fetch(key);
@@ -321,7 +321,7 @@ TEST_CASE("terrain mode: HeightTileSharedFetch passes status and tile through", 
     next_tile = nullptr;
     CHECK(fetch.fetch(key).status == g2m::Status::Internal);
 
-    CHECK_THROWS_AS(rg::HeightTileSharedFetch(rg::HeightTileFetchFn{}), std::invalid_argument);
+    CHECK_THROWS_AS(rg::HeightTileSharedFetch(g2m::world::HeightTileFetchFn{}), std::invalid_argument);
 }
 
 TEST_CASE("terrain mode: make_terrain_mode converts the spawn into the session frame", "[terrain_mode]") {
@@ -333,7 +333,7 @@ TEST_CASE("terrain mode: make_terrain_mode converts the spawn into the session f
     wc.physics.terrain_surface = "dirt";
     wc.physics.loader_workers = 3;
     auto fetch = std::make_shared<rg::HeightTileSharedFetch>(
-        [](const g2m::TileKey&) { return rg::HeightTileFetchResult{g2m::Status::NotFound, nullptr}; });
+        [](const g2m::TileKey&) { return g2m::world::HeightTileFetchResult{g2m::Status::NotFound, nullptr}; });
 
     const rg::TerrainModeConfig tm = rg::make_terrain_mode(wc, test_frame(), fetch);
     CHECK(tm.frame.e0_m() == kE0);

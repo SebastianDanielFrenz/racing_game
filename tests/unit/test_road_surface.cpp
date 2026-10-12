@@ -3,6 +3,7 @@
 #include "ps/world/world.h"
 #include "rg/world_terrain.h"
 #include "rg/route_check.h"
+#include "g2m/world/height_sampler.h"
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/catch_approx.hpp>
 #include <cmath>
@@ -79,8 +80,8 @@ TEST_CASE("B8 real-data road-profile roughness comparison", "[.][realdata][road_
         const double e=point.x+config->session_origin_utm.e0,n=point.y+config->session_origin_utm.n0;
         auto lookup_raw=[&](const g2m::TileKey& key){return raw->height_tile(key);};
         auto lookup_paved=[&](const g2m::TileKey& key){return paved->height_tile(key);};
-        auto a=rg::sample_l0_height(lookup_raw,{32},0,0,e,n);
-        auto b=rg::sample_l0_height(lookup_paved,{32},0,0,e,n);
+        auto a=g2m::world::sample_height_bilinear(lookup_raw,{32},0,0,e,n);
+        auto b=g2m::world::sample_height_bilinear(lookup_paved,{32},0,0,e,n);
         REQUIRE(a.has_value()); REQUIRE(b.has_value());
         // Ground remains underneath a bridge. Follow only decks aligned with
         // this road, so an overhead crossing does not become the route height.
@@ -181,7 +182,7 @@ TEST_CASE("Owner B8 crossing has no terrain protruding through its roof", "[.][r
  auto geometry=terrain->road_geometry_at(463270.877,5553889.740);REQUIRE(geometry);
  const auto decks=terrain->road_decks();auto found=std::find_if(decks.begin(),decks.end(),[](const auto& d){return d->way_id==5217272&&d->inferred;});REQUIRE(found!=decks.end());
  const auto& deck=**found;const auto& mesh=deck.mesh;const auto rows=mesh.positions.size()/30;
- const auto sample=[&](double e,double n){return rg::sample_l0_height([&](const auto& k){return terrain->height_tile_shared(k).tile.get();},{32},0,0,e,n);};
+ const auto sample=[&](double e,double n){return g2m::world::sample_height_bilinear([&](const auto& k){return terrain->height_tile_shared(k).tile.get();},{32},0,0,e,n);};
  for(std::size_t i=6;i+6<rows;++i) {
   const auto a=i*15+6,b=(i+1)*15+6;const double dx=mesh.positions[b]-mesh.positions[a],dy=mesh.positions[b+1]-mesh.positions[a+1],length=std::hypot(dx,dy);
   const double station=deck.start_station+(deck.end_station-deck.start_station)*i/(rows-1);

@@ -13,13 +13,14 @@
 #include "g2m/core/geo/session_frame.h"
 #include "g2m/core/tile_key.h"
 #include "g2m/phys/height_tile_loader.h"
+#include "g2m/world/tile_fetch.h"
 
 #include <memory>
 
 namespace rg {
 
-// g2m::phys::IHeightTileFetch over a racing_game HeightTileFetchFn. The
-// function's HeightTileFetchResult is passed through unchanged (status and
+// g2m::phys::IHeightTileFetch over a racing_game g2m::world::HeightTileFetchFn. The
+// function's g2m::world::HeightTileFetchResult is passed through unchanged (status and
 // the SAME shared_ptr - no copy, no second decode), so:
 //  - 404 (NotFound) reaches the HeightTileLoader as 404 -> Absent (holes);
 //  - 5xx and a decode failure (Status::Internal) are retried by the loader,
@@ -27,16 +28,16 @@ namespace rg {
 //  - the physics path holds the very tile object the render path's
 //    TileLookup returns (WorldTerrain's height cache).
 // Thread-safe iff `fn` is (HeightTileLoader calls fetch() from its workers);
-// WorldTerrain::height_tile_shared and fetch_height_tile_cached are.
+// WorldTerrain::height_tile_shared and g2m::world::fetch_height_tile_cached are.
 //
 // Road mode (G2.5a-grip R-c, plan section 7): the two-argument constructor
-// additionally takes a RoadSegmentsFetchFn (rg::WorldTerrain::
+// additionally takes a g2m::world::RoadSegmentsFetchFn (rg::WorldTerrain::
 // road_segments_shared's own signature, roads ride on the SAME residency
 // entry as heights) - fetch() then also resolves the owning L2
 // g2m.src.osm tile (key.parent().parent(), a height fetch's L0 key ->
 // its L2 road tile) and calls it, ONLY when the height side itself
 // succeeded (Ok with a tile) - a failed height fetch is retried on its own
-// terms and never needs roads. RoadFetchStatus::Failed becomes a null
+// terms and never needs roads. g2m::world::RoadFetchStatus::Failed becomes a null
 // FetchResult::roads (so LoaderConfig::require_roads retries/fails the
 // whole tile exactly like a height-side 500); Ok or Absent passes the
 // (possibly empty) segment list straight through - "no roads here" is a
@@ -45,15 +46,15 @@ namespace rg {
 class HeightTileSharedFetch final : public g2m::phys::IHeightTileFetch {
 public:
     // Throws std::invalid_argument on an empty `fn`.
-    explicit HeightTileSharedFetch(HeightTileFetchFn fn);
+    explicit HeightTileSharedFetch(g2m::world::HeightTileFetchFn fn);
     // Throws std::invalid_argument on an empty `fn` or `road_fn`.
-    HeightTileSharedFetch(HeightTileFetchFn fn, RoadSegmentsFetchFn road_fn);
+    HeightTileSharedFetch(g2m::world::HeightTileFetchFn fn, g2m::world::RoadSegmentsFetchFn road_fn);
     g2m::phys::FetchResult fetch(const g2m::TileKey& key) override;
     bool provides_roads() const override { return static_cast<bool>(road_fn_); }
 
 private:
-    HeightTileFetchFn fn_;
-    RoadSegmentsFetchFn road_fn_; // empty = heights-only (provides_roads() false)
+    g2m::world::HeightTileFetchFn fn_;
+    g2m::world::RoadSegmentsFetchFn road_fn_; // empty = heights-only (provides_roads() false)
 };
 
 // SessionConfig::terrain. Positions are session-local metres (x east of the

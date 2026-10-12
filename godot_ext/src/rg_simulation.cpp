@@ -5,6 +5,7 @@
 #include "rg/nitrous_info.h"
 
 #include "g2m/phys/height_tile_loader.h"
+#include "g2m/world/height_sampler.h"
 
 #include "ps/drivetrain/powertrain_desc.h"
 
@@ -634,7 +635,7 @@ godot::Variant RgSimulation::get_camera_ground_height(godot::Vector3 position) c
     const auto terrain=session_->world_terrain();
     if (!terrain) return -origin.z;
     const auto p=godot_to_iso(position,origin);
-    const auto height=rg::sample_l0_height([&terrain](const auto& key){return terrain->cached_height_tile(key);},terrain->frame().zone(),terrain->frame().e0_m(),terrain->frame().n0_m(),p.x,p.y);
+    const auto height=g2m::world::sample_height_bilinear([&terrain](const auto& key){return terrain->cached_height_tile(key);},terrain->frame().zone(),terrain->frame().e0_m(),terrain->frame().n0_m(),p.x,p.y);
     return height?godot::Variant(*height-origin.z):godot::Variant{};
 }
 

@@ -11,10 +11,9 @@
 // Three layers, each usable on its own:
 //  - load_route(): strict, exception-free JSON loader (same TOOL-019
 //    allow_exceptions=false contract as load_world_config).
-//  - sample_l0_height(): bilinear height at a session-local point from
-//    g2m L0 HeightTiles (cell-registered, row 0 = south, 1/256 m units),
-//    through any tile lookup - WorldTerrain::height_tile_shared on real data,
-//    an in-memory map in tests.
+//  - heights: g2m::world::sample_height_bilinear (g2m/world/height_sampler.h)
+//    over g2m L0 HeightTiles, through any tile lookup -
+//    WorldTerrain::height_tile_shared on real data, an in-memory map in tests.
 //  - check_route(): the criteria over a waypoint polyline and any height
 //    function (a plain lambda in tests), returning every measured number plus
 //    the list of failed criteria.
@@ -133,21 +132,6 @@ bool route_crosses_bridge(const std::vector<RoutePoint>& waypoints, const RouteB
 int count_seam_crossings(const std::vector<RoutePoint>& polyline, double tile_size_m = 255.0,
                          double origin_m = 0.5);
 
-// Returns the L0 tile for `key`, or nullptr when it is missing/out of
-// coverage (treated as NoData). The pointer must stay valid until the call
-// that received it returns.
-using L0TileLookupFn = std::function<const g2m::HeightTile*(const g2m::TileKey&)>;
-
-// Bilinear height (metres) at session-local (x, y) from the four L0 cell
-// centres around it (sample (i, j) of tile key sits at
-// (min_easting + i + 0.5, min_northing + j + 0.5)); the four may come from up
-// to four different tiles. nullopt when any of the four is NoData or its
-// tile is missing. (Jolt triangulates the same cell-centre lattice; bilinear
-// and the triangle split differ by far less than the grade/elevation
-// resolution this is used for.)
-std::optional<double> sample_l0_height(const L0TileLookupFn& lookup, g2m::geo::UtmZone zone, std::int64_t e0,
-                                       std::int64_t n0, double x, double y);
-
 struct RouteCheckParams {
     double sample_step_m = 1.0;   // arc-length sampling step for heights and corners
     double grade_window_m = 10.0; // grade = |dh| over this much arc length (rounded to whole steps)
@@ -264,7 +248,7 @@ class WorldTerrain;
 // The whole check on real terrain, as tools/route_check and the [realdata]
 // drive test run it: route_matches_world() against `world` (a mismatch is
 // reported as a failure), then check_route() with expected_start =
-// route.spawn and heights from sample_l0_height() over
+// route.spawn and heights from g2m::world::sample_height_bilinear() over
 // terrain.height_tile_shared() (level-0 tiles only).
 RouteCheckReport check_route_on_world(const Route& route, const WorldConfig& world, WorldTerrain& terrain,
                                       const RouteCheckParams& params = {});

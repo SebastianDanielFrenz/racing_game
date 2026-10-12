@@ -2,7 +2,7 @@
 // criteria): physics-tile seam counting (incl. negative indices and corner
 // crossings), the 10 m grade window (max, nearest-rank p99, the steep-stretch
 // list), NoData detection, the +-10 m corner radius and its tight-corner
-// list, the start/length criteria, sample_l0_height's bilinear read across
+// list, the start/length criteria, sample_height_bilinear's bilinear read across
 // L0 tile borders, load_route (incl. the optional "criteria" object) and its
 // error paths, apply_route_criteria and route_matches_world. Everything runs on synthetic terrain - CI never reads
 // cache/. The one real-data case is hidden ([.][realdata]) and SKIPs unless
@@ -15,6 +15,7 @@
 #include "rg/world_terrain.h"
 
 #include "g2m/core/raster.h"
+#include "g2m/world/height_sampler.h"
 
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
@@ -372,7 +373,7 @@ TEST_CASE("route_check: the corner radius is the circle through s - 10 m, s, s +
     CHECK_FALSE(rg::check_route({{0.0, 0.0}, {0.0, 0.0}}, {0.0, 0.0}, flat).ok());
 }
 
-TEST_CASE("route_check: sample_l0_height is bilinear on the cell-centre lattice across L0 tile borders",
+TEST_CASE("route_check: heights through g2m::world::sample_height_bilinear across L0 tile borders and missing tiles",
           "[route_check]") {
     // Session origin on a tile corner; tiles for x/y indices (e0/256 - 1 ..
     // e0/256 + 1), synthesized from a linear field h(c, r) = 0.25*(c - E0) +
@@ -402,7 +403,7 @@ TEST_CASE("route_check: sample_l0_height is bilinear on the cell-centre lattice 
     }
     int lookups = 0;
     std::pair<std::int32_t, std::int32_t> missing{-1, -1};
-    const rg::L0TileLookupFn lookup = [&](const g2m::TileKey& k) -> const g2m::HeightTile* {
+    const g2m::world::L0TileLookupFn lookup = [&](const g2m::TileKey& k) -> const g2m::HeightTile* {
         ++lookups;
         const auto key = std::make_pair(k.x, k.y);
         if (k.level != 0 || key == missing) {
@@ -417,33 +418,33 @@ TEST_CASE("route_check: sample_l0_height is bilinear on the cell-centre lattice 
     // and at negative session coordinates.
     for (const auto& p : std::vector<RoutePoint>{{100.25, 37.75}, {0.0, 0.0}, {0.3, 128.0}, {-0.2, -0.4},
                                                  {-100.9, -3.3}, {255.9, 256.2}, {511.4, 300.0}}) {
-        const std::optional<double> h = rg::sample_l0_height(lookup, zone, kE0, kN0, p.x, p.y);
+        const std::optional<double> h = g2m::world::sample_height_bilinear(lookup, zone, kE0, kN0, p.x, p.y);
         INFO("x=" << p.x << " y=" << p.y);
         REQUIRE(h.has_value());
         CHECK(*h == Approx(expected(p.x, p.y)).margin(1e-9));
     }
 
     // Exactly on a cell centre: that sample, no interpolation.
-    const std::optional<double> centre = rg::sample_l0_height(lookup, zone, kE0, kN0, 10.5, 20.5);
+    const std::optional<double> centre = g2m::world::sample_height_bilinear(lookup, zone, kE0, kN0, 10.5, 20.5);
     REQUIRE(centre.has_value());
     CHECK(*centre == Approx(0.25 * 10 + 0.5 * 20));
 
     // A NoData sample poisons exactly the four cells around it.
     tiles.at({1000, 20000})->h[static_cast<std::size_t>(5 * 256 + 5)] = g2m::kHeightNoData;
-    CHECK_FALSE(rg::sample_l0_height(lookup, zone, kE0, kN0, 5.6, 5.6).has_value());
-    CHECK_FALSE(rg::sample_l0_height(lookup, zone, kE0, kN0, 5.4, 5.4).has_value());
-    CHECK(rg::sample_l0_height(lookup, zone, kE0, kN0, 6.6, 6.6).has_value());
+    CHECK_FALSE(g2m::world::sample_height_bilinear(lookup, zone, kE0, kN0, 5.6, 5.6).has_value());
+    CHECK_FALSE(g2m::world::sample_height_bilinear(lookup, zone, kE0, kN0, 5.4, 5.4).has_value());
+    CHECK(g2m::world::sample_height_bilinear(lookup, zone, kE0, kN0, 6.6, 6.6).has_value());
 
     // A missing tile (lookup returns nullptr) is NoData too - also for a
     // point whose other three corners are fine.
     missing = {999, 20000};
-    CHECK_FALSE(rg::sample_l0_height(lookup, zone, kE0, kN0, -50.0, 50.0).has_value());
-    CHECK_FALSE(rg::sample_l0_height(lookup, zone, kE0, kN0, 0.2, 50.0).has_value());
-    CHECK(rg::sample_l0_height(lookup, zone, kE0, kN0, 0.6, 50.0).has_value());
+    CHECK_FALSE(g2m::world::sample_height_bilinear(lookup, zone, kE0, kN0, -50.0, 50.0).has_value());
+    CHECK_FALSE(g2m::world::sample_height_bilinear(lookup, zone, kE0, kN0, 0.2, 50.0).has_value());
+    CHECK(g2m::world::sample_height_bilinear(lookup, zone, kE0, kN0, 0.6, 50.0).has_value());
 
     // And the whole check through it: a route across the missing tile.
     const rg::HeightAtFn height_at = [&](double x, double y) {
-        return rg::sample_l0_height(lookup, zone, kE0, kN0, x, y);
+        return g2m::world::sample_height_bilinear(lookup, zone, kE0, kN0, x, y);
     };
     const rg::RouteCheckReport r =
         rg::check_route({{-200.0, 50.0}, {200.0, 50.0}}, {-200.0, 50.0}, height_at, loose());

@@ -13,6 +13,8 @@
 
 #include "rg/route_check.h"
 
+#include "g2m/world/height_sampler.h"
+
 #include <godot_cpp/variant/dictionary.hpp>
 #include <godot_cpp/variant/string.hpp>
 #include <godot_cpp/variant/vector3.hpp>
@@ -166,7 +168,7 @@ void RgSimulation::sync_cinematic_obstacles(double car_x, double car_y) {
                 e0, n0,
                 [t, zone](int tx, int ty) { return t->buildings_tile(g2m::TileKey{zone, 2, tx, ty}, 0.0, 8.0, 3.0); },
                 [t, zone, e0, n0](double x, double y) {
-                    return rg::sample_l0_height([t](const auto& key) { return t->cached_height_tile(key); }, zone, e0, n0,
+                    return g2m::world::sample_height_bilinear([t](const auto& key) { return t->cached_height_tile(key); }, zone, e0, n0,
                                                 x, y);
                 });
         }

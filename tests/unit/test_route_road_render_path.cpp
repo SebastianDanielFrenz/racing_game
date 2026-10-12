@@ -239,7 +239,7 @@ TEST_CASE("route road render path: the four road_shots.gd targets keep road land
                 std::vector<rg::RenderChunk> chunks_no_class;
                 const auto t_without_start = std::chrono::steady_clock::now();
                 REQUIRE(rg::build_render_chunks(keys, source.lookup, source.ctx, source.e0, source.n0, threads,
-                                                chunks_no_class, nullptr, rg::ClassLookup{}));
+                                                chunks_no_class, nullptr, g2m::world::ClassLookup{}));
                 without_class_ms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() -
                                                                               t_without_start)
                                         .count();
