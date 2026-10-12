@@ -2,6 +2,8 @@
 // every whitelisted change round-trips through ps::io::load_vehicle_json, an
 // out-of-range or invalid overlay is rejected with the loader's/rule's message,
 // the whitelist is enforced on the merge patch, temp files are removed.
+#include "rg/tyre_spec.h"
+#include "rg/vehicle_load.h"
 #include "rg/vehicle_setup.h"
 
 #include "ps/drivetrain/controller_desc.h"
@@ -19,6 +21,7 @@
 #include <cstdint>
 #include <filesystem>
 #include <initializer_list>
+#include <set>
 #include <string>
 #include <utility>
 #include <variant>
@@ -43,7 +46,7 @@ struct Fixture {
         INFO(err);
         REQUIRE(t.has_value());
         table = *t;
-        ctx.tyre_dirs = {kRoot + "/external/physics_sim/data/tyres", kRoot + "/data/tyres"};
+        ctx.tyre_families_path = kRoot + "/data/tyres/families.json";
         ctx.work_root = isolated_root.path();
         ctx.engine_map_cache_dir = kRoot + "/out/godot_engine_cache";
         auto store = rg::EngineStore::open(kRoot + "/data/engines/engine_catalog.json", kRoot, "", &err);
@@ -78,7 +81,7 @@ ps::vehicle::VehicleDesc load_materialised(const Fixture& f, const rg::CatalogEn
     options.cache_dir = f.ctx.engine_map_cache_dir;
     ps::jobs::JobSystem workers(4);
     options.pool = &workers;
-    return ps::io::load_vehicle_json(m.vehicle_path, options);
+    return rg::load_vehicle(m.vehicle_path, options);
 }
 
 const ps::drivetrain::GearboxDesc* gearbox_of(const ps::vehicle::VehicleDesc& d) {
@@ -136,7 +139,7 @@ TEST_CASE("setup: an empty setup changes nothing and writes no file", "[setup][g
 TEST_CASE("setup: final drive, brakes, suspension round-trip through load_vehicle_json", "[setup][garage]") {
     Fixture f;
     const auto& e = f.entry("car_sedan");
-    const ps::vehicle::VehicleDesc stock = ps::io::load_vehicle_json(e.vehicle_path);
+    const ps::vehicle::VehicleDesc stock = rg::load_vehicle(e.vehicle_path);
     const auto s = setup_of("car_sedan", {{"final_drive", 1.15}, {"spring_front", 0.8}, {"damper_rear", 1.25},
                                           {"arb_front", 1.3}, {"brake_force", 0.9}});
     const ps::vehicle::VehicleDesc d = load_materialised(f, e, s);
@@ -155,7 +158,7 @@ TEST_CASE("setup: final drive, brakes, suspension round-trip through load_vehicl
 TEST_CASE("setup: gear ratios are scaled per gear and must stay decreasing", "[setup][garage]") {
     Fixture f;
     const auto& e = f.entry("car_sedan");
-    const ps::vehicle::VehicleDesc stock = ps::io::load_vehicle_json(e.vehicle_path);
+    const ps::vehicle::VehicleDesc stock = rg::load_vehicle(e.vehicle_path);
     const auto* sg = gearbox_of(stock);
     REQUIRE(sg != nullptr);
     const auto ok = setup_of("car_sedan", {{"gear_ratios", std::vector<double>{1.1, 1.0, 1.0, 0.95, 1.0, 0.9}}});
@@ -179,7 +182,7 @@ TEST_CASE("setup: gear ratios are scaled per gear and must stay decreasing", "[s
 TEST_CASE("setup: brake bias moves the front share and keeps the total", "[setup][garage]") {
     Fixture f;
     const auto& e = f.entry("car_sedan");
-    const ps::vehicle::VehicleDesc stock = ps::io::load_vehicle_json(e.vehicle_path);
+    const ps::vehicle::VehicleDesc stock = rg::load_vehicle(e.vehicle_path);
     double total = 0.0, front = 0.0;
     for (const auto& c : stock.brake_system.corners) {
         total += c.max_torque_nm;
@@ -213,7 +216,7 @@ TEST_CASE("setup: brake bias moves the front share and keeps the total", "[setup
 TEST_CASE("setup: the AWD final drive scales both axle differentials, not the centre", "[setup][garage]") {
     Fixture f;
     const auto& e = f.entry("car_sedan_awd");
-    const ps::vehicle::VehicleDesc stock = ps::io::load_vehicle_json(e.vehicle_path);
+    const ps::vehicle::VehicleDesc stock = rg::load_vehicle(e.vehicle_path);
     const ps::vehicle::VehicleDesc d = load_materialised(f, e, setup_of("car_sedan_awd", {{"final_drive", 0.9}}));
     const auto ds = diffs_of(stock);
     const auto dd = diffs_of(d);
@@ -228,9 +231,28 @@ TEST_CASE("setup: the AWD final drive scales both axle differentials, not the ce
     CHECK(same == 1);
 }
 
-TEST_CASE("setup: tyre choice offers files that match the wheel size", "[setup][garage]") {
+std::shared_ptr<const rg::TyreFamilies> families_for(const Fixture& f) {
+    std::string err;
+    auto fam = rg::TyreFamilies::load(f.ctx.tyre_families_path, &err);
+    INFO(err);
+    REQUIRE(fam != nullptr);
+    return fam;
+}
+
+// The id the garage uses for `compound` at `width` on a wheel of `diameter_mm` (the aspect keeps the diameter).
+std::string size_id(const char* compound, int width, int rim, double diameter_mm) {
+    rg::TyreSpec s;
+    s.compound = compound;
+    s.width_mm = width;
+    s.rim_in = rim;
+    s.aspect = rg::tyre_aspect_for(rim, width, diameter_mm);
+    return rg::tyre_id(s);
+}
+
+TEST_CASE("setup: tyre choice offers every compound at every size the axle fitment allows", "[setup][garage][tyre_spec]") {
     Fixture f;
     const auto& e = f.entry("car_sedan");
+    const auto families = families_for(f);
     const rg::SetupModel model = rg::build_setup_model(e, f.table, f.ctx);
     REQUIRE(model.error.empty());
     const rg::OptionView* tf = nullptr;
@@ -239,19 +261,28 @@ TEST_CASE("setup: tyre choice offers files that match the wheel size", "[setup][
     }
     REQUIRE(tf != nullptr);
     CHECK(tf->available);
-    CHECK(std::get<std::string>(tf->stock) == "passenger_car_225_45r17");
-    CHECK(tf->choices.size() >= 3);
-    for (const auto& c : tf->choices) CHECK(c.find("hyper") == std::string::npos); // wrong size never offered
+    CHECK(std::get<std::string>(tf->stock) == "road_225_45r17");
+    CHECK(tf->choices.size() == families->compounds().size() * 7); // 195..255 mm in 10 mm steps
+    for (const auto& c : tf->choices) CHECK(c.find("r20") == std::string::npos); // another rim is never offered
 
     const ps::vehicle::VehicleDesc d =
-        load_materialised(f, e, setup_of("car_sedan", {{"tyre_front", std::string("passenger_sport_225_45r17")}}));
-    const ps::vehicle::VehicleDesc stock = ps::io::load_vehicle_json(e.vehicle_path);
-    CHECK(d.wheels[0].tyre.lambda_mux == Approx(stock.wheels[0].tyre.lambda_mux * 1.08));
-    CHECK(d.wheels[2].tyre.lambda_mux == Approx(stock.wheels[2].tyre.lambda_mux)); // rear untouched
+        load_materialised(f, e, setup_of("car_sedan", {{"tyre_front", std::string("track_225_45r17")}}));
+    const ps::vehicle::VehicleDesc stock = rg::load_vehicle(e.vehicle_path);
+    const rg::TyreSpec track{"track", 225, 45, 17};
+    CHECK(d.wheels[0].tyre.name == "track_225_45r17");
+    CHECK(d.wheels[0].tyre.lambda_mux == families->make(track).lambda_mux);
+    CHECK(d.wheels[0].tyre.lambda_mux > stock.wheels[0].tyre.lambda_mux);
+    CHECK(d.wheels[2].tyre.lambda_mux == stock.wheels[2].tyre.lambda_mux); // rear untouched
 
     std::string err;
-    load_materialised(f, e, setup_of("car_sedan", {{"tyre_front", std::string("hyper_front_265_35r20")}}), &err);
-    CHECK_THAT(err, ContainsSubstring("not a tyre that fits"));
+    load_materialised(f, e, setup_of("car_sedan", {{"tyre_front", std::string("road_265_35r20")}}), &err);
+    CHECK_THAT(err, ContainsSubstring("tyre_front: rim R20 does not fit this axle's R17 wheels"));
+    err.clear();
+    load_materialised(f, e, setup_of("car_sedan", {{"tyre_front", std::string("not_a_tyre")}}), &err);
+    CHECK_THAT(err, ContainsSubstring("unknown tyre \"not_a_tyre\""));
+    err.clear();
+    load_materialised(f, e, setup_of("car_sedan", {{"tyre_front", std::string("mud_225_45r17")}}), &err);
+    CHECK_THAT(err, ContainsSubstring("unknown tyre compound \"mud\""));
 }
 
 TEST_CASE("setup: assists change the controller defaults", "[setup][garage]") {
@@ -321,7 +352,7 @@ TEST_CASE("setup: the whitelist is enforced on a merge patch", "[setup][garage]"
 TEST_CASE("setup: the saved document round-trips", "[setup][garage]") {
     Fixture f;
     rg::VehicleSetup s = setup_of("car_sedan", {{"final_drive", 1.1}, {"assist_auto_shift", true},
-                                                  {"tyre_front", std::string("passenger_sport_225_45r17")},
+                                                  {"tyre_front", std::string("sport_225_45r17")},
                                                   {"gear_ratios", std::vector<double>{1, 1, 1, 1, 1, 0.9}},
                                                   {"paint", std::string("#112233")}});
     const std::string text = rg::setup_to_json(s);
@@ -372,12 +403,14 @@ TEST_CASE("setup: every catalog entry accepts a setup touching each available op
     }
 }
 
-TEST_CASE("setup: tyre width changes geometry, grip and resistance together", "[setup][tyre_width]") {
+TEST_CASE("setup: tyre width changes geometry, grip and resistance together", "[setup][tyre_width][tyre_spec]") {
     Fixture f;
     const auto& e = f.entry("car_sedan");
-    const auto narrow = load_materialised(f, e, setup_of("car_sedan", {{"tyre_front", std::string("passenger_road_w195_r17")}}));
-    const auto wide = load_materialised(f, e, setup_of("car_sedan", {{"tyre_front", std::string("passenger_road_w255_r17")}}));
-    const auto stock = ps::io::load_vehicle_json(e.vehicle_path);
+    const double diameter = 634.0; // car_sedan's wheels
+    const std::string narrow_id = size_id("road", 195, 17, diameter), wide_id = size_id("road", 255, 17, diameter);
+    const auto narrow = load_materialised(f, e, setup_of("car_sedan", {{"tyre_front", narrow_id}}));
+    const auto wide = load_materialised(f, e, setup_of("car_sedan", {{"tyre_front", wide_id}}));
+    const auto stock = rg::load_vehicle(e.vehicle_path);
     REQUIRE(narrow.wheels.size() == 4);
     REQUIRE(wide.wheels.size() == 4);
     for (int i : {0, 1}) {
@@ -390,53 +423,84 @@ TEST_CASE("setup: tyre width changes geometry, grip and resistance together", "[
         CHECK(wide.wheels[i].wheel_radius == Approx(stock.wheels[i].wheel_radius));
     }
     std::string saved_error;
-    const auto saved = rg::parse_setup(rg::setup_to_json(setup_of("car_sedan", {{"tyre_front", std::string("passenger_road_w255_r17")}})), f.table, "width save test", &saved_error);
+    const auto saved = rg::parse_setup(rg::setup_to_json(setup_of("car_sedan", {{"tyre_front", wide_id}})), f.table, "width save test", &saved_error);
     REQUIRE(saved.has_value());
     const auto reloaded = load_materialised(f, e, *saved);
     CHECK(reloaded.wheels[0].wheel_width == Approx(.255));
-    CHECK(reloaded.wheels[0].tyre.lambda_mux == Approx(wide.wheels[0].tyre.lambda_mux));
+    CHECK(reloaded.wheels[0].tyre.lambda_mux == wide.wheels[0].tyre.lambda_mux);
     CHECK(wide.wheels[2].wheel_width == Approx(stock.wheels[2].wheel_width));
-    CHECK(wide.wheels[2].tyre.lambda_mux == Approx(stock.wheels[2].tyre.lambda_mux));
+    CHECK(wide.wheels[2].tyre.lambda_mux == stock.wheels[2].tyre.lambda_mux);
+    // Too wide / too narrow: the message names the real reason, with the axle's limit.
     std::string error;
-    load_materialised(f, e, setup_of("car_sedan", {{"tyre_front", std::string("passenger_road_w265_r17")}}), &error);
-    CHECK_THAT(error, ContainsSubstring("not a tyre that fits"));
-    // Catalog range changes the limit without changing compiler code.
+    load_materialised(f, e, setup_of("car_sedan", {{"tyre_front", size_id("road", 265, 17, diameter)}}), &error);
+    CHECK_THAT(error, ContainsSubstring("tyre_front: 265 mm is wider than this axle's 255 mm maximum"));
+    error.clear();
+    load_materialised(f, e, setup_of("car_sedan", {{"tyre_rear", size_id("road", 185, 17, diameter)}}), &error);
+    CHECK_THAT(error, ContainsSubstring("tyre_rear: 185 mm is narrower than this axle's 195 mm minimum"));
+    error.clear();
+    load_materialised(f, e, setup_of("car_sedan", {{"tyre_front", "road_225_30r17"}}), &error);
+    CHECK_THAT(error, ContainsSubstring("tyre_front: overall diameter 567 mm differs from this axle's 634 mm by more than 12 mm"));
+    error.clear();
+    load_materialised(f, e, setup_of("car_sedan", {{"tyre_front", "road_231_44r17"}}), &error);
+    CHECK_THAT(error, ContainsSubstring("231 mm is not a standard width for this axle (steps of 10 mm from 195 mm)"));
+    // The catalog's fitment changes the limit without changing compiler code.
     auto enlarged = e;
-    enlarged.setup_ranges["tyre_front"] = {195, 275};
-    const auto expanded = load_materialised(f, enlarged, setup_of("car_sedan", {{"tyre_front", std::string("passenger_road_w275_r17")}}));
+    enlarged.tyre_fitment["front"].max_width_mm = 275;
+    const auto expanded = load_materialised(f, enlarged, setup_of("car_sedan", {{"tyre_front", size_id("road", 275, 17, diameter)}}));
     REQUIRE(expanded.wheels.size() == 4);
     CHECK(expanded.wheels[0].wheel_width == Approx(.275));
 }
 
-TEST_CASE("setup: each tyre family offers width variants within its axle body envelope", "[setup][tyre_width]") {
+TEST_CASE("setup: the garage lists exactly the sizes the fitment allows", "[setup][tyre_width][tyre_spec]") {
     Fixture f;
-    const auto& e = f.entry("car_hyper");
-    const auto model = rg::build_setup_model(e, f.table, f.ctx);
-    REQUIRE(model.error.empty());
-    for (const auto& opt : model.options) {
-        if (opt.def.id != "tyre_front" && opt.def.id != "tyre_rear") continue;
-        const bool front = opt.def.id == "tyre_front";
-        const std::string prefix = front ? "hyper_front_" : "hyper_rear_";
-        const std::string rim = front ? "_r20" : "_r21";
-        const int minimum = front ? 235 : 275;
-        const int maximum = front ? 305 : 365;
-        for (const char* family : {"cord", "belted", "touring", "economy", "sport", "road", "track", "slick", "drag"}) {
-            for (int width = minimum; width <= maximum; width += 10) {
-                const auto key = prefix + family + "_w" + std::to_string(width) + rim;
-                CHECK(std::find(opt.choices.begin(), opt.choices.end(), key) != opt.choices.end());
+    const auto families = families_for(f);
+    for (const char* car : {"car_hyper", "car_hyper_n2o", "car_sedan", "car_sedan_awd"}) {
+        const auto& e = f.entry(car);
+        const auto stock = rg::load_vehicle(e.vehicle_path);
+        const auto model = rg::build_setup_model(e, f.table, f.ctx);
+        REQUIRE(model.error.empty());
+        for (const auto& opt : model.options) {
+            if (opt.def.id != "tyre_front" && opt.def.id != "tyre_rear") continue;
+            const bool front = opt.def.id == "tyre_front";
+            INFO(car << " " << opt.def.id);
+            const rg::TyreAxleFitment& fit = e.tyre_fitment.at(front ? "front" : "rear");
+            const double diameter = 2000.0 * stock.wheels[front ? 0 : 2].wheel_radius;
+            // Independent brute force over a much wider range than any fitment: every compound x rim x width x aspect.
+            std::set<std::string> expected;
+            for (const auto& compound : families->compounds()) {
+                for (int rim = 12; rim <= 26; ++rim) {
+                    for (int width = 100; width <= 500; ++width) {
+                        for (int aspect = 10; aspect <= 90; ++aspect) {
+                            const rg::TyreSpec s{compound.id, width, aspect, rim};
+                            if (rg::tyre_fit_error(s, fit, diameter).empty() && aspect == rg::tyre_aspect_for(rim, width, diameter)) expected.insert(rg::tyre_id(s));
+                        }
+                    }
+                }
             }
-            const auto too_wide = prefix + family + "_w" + std::to_string(maximum + 10) + rim;
-            CHECK(std::find(opt.choices.begin(), opt.choices.end(), too_wide) == opt.choices.end());
+            expected.insert(std::get<std::string>(opt.stock));
+            const std::set<std::string> offered(opt.choices.begin(), opt.choices.end());
+            CHECK(offered.size() == opt.choices.size()); // no duplicates
+            CHECK(offered == expected);
+            const int widths = (fit.max_width_mm - fit.min_width_mm) / fit.width_step_mm + 1;
+            CHECK(opt.choices.size() == families->compounds().size() * static_cast<std::size_t>(widths) * fit.rims_in.size());
+            // Each width sits on the fitment's step grid, between the declared limits.
+            for (const auto& id : opt.choices) {
+                const auto spec = rg::parse_tyre_id(id);
+                REQUIRE(spec.has_value());
+                CHECK(spec->width_mm >= fit.min_width_mm);
+                CHECK(spec->width_mm <= fit.max_width_mm);
+                CHECK((spec->width_mm - fit.min_width_mm) % fit.width_step_mm == 0);
+            }
         }
     }
 }
 
-TEST_CASE("setup: road tyre technology levels retain their physical tradeoffs", "[setup][tyre_width]") {
+TEST_CASE("setup: road tyre technology levels retain their physical tradeoffs", "[setup][tyre_width][tyre_spec]") {
     Fixture f;
     const auto& e = f.entry("car_sedan");
     std::vector<ps::vehicle::VehicleDesc> levels;
     for (const char* family : {"cord", "belted", "touring", "economy", "sport"}) {
-        const std::string key = std::string("passenger_") + family + "_w225_r17";
+        const std::string key = std::string(family) + "_225_45r17";
         levels.push_back(load_materialised(f, e, setup_of("car_sedan", {{"tyre_front", key}})));
         REQUIRE(levels.back().wheels.size() == 4);
         CHECK(levels.back().wheels[0].wheel_width == Approx(.225));
@@ -624,7 +688,7 @@ TEST_CASE("garage: the assist unit is a selectable part on the hypercars", "[gar
             REQUIRE(m.ok);
             ps::io::EngineMapOptions options;
             options.generate = false;
-            const ps::vehicle::VehicleDesc desc = ps::io::load_vehicle_json(m.vehicle_path, options);
+            const ps::vehicle::VehicleDesc desc = rg::load_vehicle(m.vehicle_path, options);
             REQUIRE(desc.assist_unit.has_value());
             CHECK(ps::vehicle::traction_modes_available_bits(desc.assist_unit, desc.traction_control.fitted) == bits);
             // Only the Racing unit carries the wing automation.

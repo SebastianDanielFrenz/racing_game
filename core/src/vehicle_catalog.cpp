@@ -367,6 +367,42 @@ std::optional<VehicleCatalog> parse_vehicle_catalog(const std::string& json_text
                     e.setup_pointers[it.key()] = std::move(list);
                 }
             }
+            const auto fitment = setup->find("tyre_fitment");
+            if (fitment != setup->end()) {
+                if (!fitment->is_object()) {
+                    fail(err, where, "setup.tyre_fitment must be an object");
+                    return std::nullopt;
+                }
+                for (auto it = fitment->begin(); it != fitment->end(); ++it) {
+                    TyreAxleFitment f;
+                    double min_w = 0.0, max_w = 0.0, step = static_cast<double>(f.width_step_mm);
+                    bool ok = (it.key() == "front" || it.key() == "rear") && it.value().is_object() &&
+                              detail::get_number(it.value(), "min_width_mm", min_w) && detail::get_number(it.value(), "max_width_mm", max_w);
+                    const bool tol_given = ok && detail::get_number(it.value(), "diameter_tolerance_mm", f.diameter_tolerance_mm);
+                    const bool step_given = ok && detail::get_number(it.value(), "width_step_mm", step);
+                    if (ok) {
+                        const auto rims = it.value().find("rims_in");
+                        ok = rims != it.value().end() && rims->is_array() && !rims->empty();
+                        if (ok) {
+                            for (const auto& r : *rims) {
+                                if (!r.is_number() || r.get<double>() < 1.0 || r.get<double>() != std::floor(r.get<double>())) ok = false;
+                                else f.rims_in.push_back(static_cast<int>(r.get<double>()));
+                            }
+                        }
+                    }
+                    ok = ok && min_w >= 1.0 && min_w <= max_w && min_w == std::floor(min_w) && max_w == std::floor(max_w) && step >= 1.0 &&
+                         step == std::floor(step) && (!tol_given || f.diameter_tolerance_mm > 0.0);
+                    (void)step_given;
+                    if (!ok) {
+                        fail(err, where, "setup.tyre_fitment." + it.key() + " needs front/rear with rims_in (non-empty list of whole inches), whole 1 <= min_width_mm <= max_width_mm, an optional whole width_step_mm >= 1 and an optional diameter_tolerance_mm > 0");
+                        return std::nullopt;
+                    }
+                    f.min_width_mm = static_cast<int>(min_w);
+                    f.max_width_mm = static_cast<int>(max_w);
+                    f.width_step_mm = static_cast<int>(step);
+                    e.tyre_fitment[it.key()] = f;
+                }
+            }
             const auto ranges = setup->find("ranges");
             if (ranges != setup->end()) {
                 if (!ranges->is_object()) {

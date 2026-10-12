@@ -11,7 +11,7 @@
 //
 // Applying a setup:
 //   1. each option edits a working copy of the file its pointers name (the
-//      vehicle file, or the gearbox/engine/tyre file it references);
+//      vehicle file, or the gearbox/engine/turbo file it references); a tyre choice edits the wheels' tyre_spec;
 //   2. the difference to the original file is written as an RFC 7396 JSON merge
 //      patch (arrays replace whole, as that RFC defines) and applied to the
 //      original - the merge patch is the mechanism, the edit step only builds it;
@@ -20,7 +20,7 @@
 //   4. the patched files are materialised into a work directory (a patched file
 //      is written there, every relative file reference in it rewritten to an
 //      absolute path; an untouched referenced file is referenced in place) and
-//      loaded with ps::io::load_vehicle_json. Whatever the loader says is the
+//      loaded with rg::load_vehicle (ps::io::load_vehicle_json + the tyre injection). Whatever the loader says is the
 //      verdict: a setup the loader rejects is shown with the loader's message and
 //      cannot be saved.
 // The work directory's files are removed again (ScopedWorkDir) - except the one
@@ -28,7 +28,7 @@
 //
 // v1 options: final drive, per-gear ratios (kept strictly decreasing), brake
 // bias (same total) and brake force, spring/damper/anti-roll bar per axle,
-// tyre choice per axle (tyre files that match the wheel size), the three
+// tyre choice per axle (every compound at every size the car's axle fitment allows), the three
 // assists (their defaults in the controller block), paint and rim colour
 // (visual only, no file edit). ABS/TC/ESC follow once physics has them.
 #pragma once
@@ -50,7 +50,7 @@ enum class OptionKind {
     ScaleList,  // number[]: one factor per target leaf (a gear each)
     BrakeBias,  // number: the front share of the total brake torque
     FileChoice, // string: an explicitly compatible referenced component file
-    TyreChoice, // string: a tyre file (by file stem) that matches the axle's wheels
+    TyreChoice, // string: a tyre id (compound_width_aspectrRim) whose size the axle's fitment allows
     Bool,       // bool: a target leaf set to it
     Colour,     // string "#rrggbb": visual only, edits no file
 };
@@ -74,7 +74,7 @@ struct SetupOptionDef {
     double max = 1.0;
     double step = 0.01;
     double max_shift = 0.1; // BrakeBias: allowed shift of the front share around the stock one
-    std::string file = "vehicle"; // "vehicle" | "gearbox" | "engine" | "tyre"
+    std::string file = "vehicle"; // "vehicle" | "gearbox" | "engine" | "turbo"
     std::vector<std::string> pointers; // the whitelist paths (empty for Colour)
     std::string monotonic;             // "decreasing": the resulting list must stay strictly decreasing
     std::vector<SetupPart> parts; // FileChoice: approved files; paths resolved against option-table directory
@@ -108,6 +108,12 @@ struct VehicleSetup {
 };
 
 std::string setup_to_json(const VehicleSetup& setup);
+// Replaces every pre-universal tyre name (hyper_rear_track_w255_r21, passenger_sport_225_45r17, the physics_sim
+// stock files ...) of a tyre_choice value by its tyre id (rg::migrate_tyre_id). Names it does not know stay as
+// they are (and then fail with a message naming the reason). Applied when a saved setup is loaded (Garage) and again
+// when a setup is compiled.
+struct SetupContext;
+void migrate_setup_tyres(VehicleSetup& setup, const SetupOptionTable& table, const SetupContext& ctx);
 // Parses a saved setup; every option id must exist in `table` and carry the
 // value type its kind needs (nullopt + *err otherwise). Range checks happen when
 // the setup is applied, not here.
@@ -116,7 +122,7 @@ std::optional<VehicleSetup> parse_setup(const std::string& json_text, const Setu
 
 // Where the files an option may edit are found.
 struct SetupContext {
-    std::vector<std::string> tyre_dirs; // directories scanned for *.json tyre files (TyreChoice)
+    std::string tyre_families_path;     // data/tyres/families.json (rg/tyre_spec.h): the compounds TyreChoice offers; "" = no tyre choice
     std::string work_root;              // materialisations and validation temp dirs go under here
     std::string engine_map_cache_dir;   // .psmaps cache for load_vehicle_json ("" = no disk cache)
     // The engine list the "engines"/"fuels" catalog options read (a snapshot: a worker thread may hold a copy of this
@@ -131,7 +137,7 @@ struct OptionView {
     double min = 1.0;                  // effective range (Scale/ScaleList: factor; BrakeBias: front share)
     double max = 1.0;
     SetupValue stock;                  // the value that changes nothing
-    std::vector<std::string> choices;  // TyreChoice: candidate file stems
+    std::vector<std::string> choices;  // TyreChoice: candidate tyre ids (compound x allowed sizes)
     std::vector<SetupPart> parts; // available presentation records, including stock
     int list_size = 0;                 // ScaleList: number of entries
     std::vector<double> stock_numbers; // ScaleList: stock leaf values (gear ratios) for display

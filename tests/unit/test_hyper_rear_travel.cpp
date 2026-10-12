@@ -90,7 +90,7 @@ TEST_CASE("diag: hypercar rear suspension travel vs speed", "[.][diag][hyper_tra
     const rg::CatalogEntry* entry = &entry_copy;
 
     rg::SetupContext ctx;
-    ctx.tyre_dirs = {kRepo + "/external/physics_sim/data/tyres", kRepo + "/data/tyres"};
+    ctx.tyre_families_path = kRepo + "/data/tyres/families.json";
     rg::ScopedWorkDir root(fs::temp_directory_path().generic_string(), "rg_hyper_travel");
     ctx.work_root = root.path();
     ctx.engine_map_cache_dir = kRepo + "/out/godot_engine_cache";

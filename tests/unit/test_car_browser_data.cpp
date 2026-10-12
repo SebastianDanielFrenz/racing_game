@@ -1,6 +1,7 @@
 // test_car_browser_data.cpp - R6c data side of the car browser: body types, displacement
 // and presets in the vehicle catalog, preset overlays in rg::Garage, and the browser model
 // the garage builds from the catalog. Each test names its sabotage ("sabotage:").
+#include "rg/vehicle_load.h"
 #include "rg/garage.h"
 #include "rg/vehicle_catalog.h"
 
@@ -50,7 +51,7 @@ std::unique_ptr<rg::Garage> open_garage(const TempDirs& t) {
     c.catalog_path = kRoot + "/data/vehicles/catalog.json";
     c.options_path = kRoot + "/data/vehicles/setup_options.json";
     c.set_path = kRoot + "/data/garage/garage_set.json";
-    c.tyre_dirs = {kRoot + "/external/physics_sim/data/tyres", kRoot + "/data/tyres"};
+    c.tyre_families_path = kRoot + "/data/tyres/families.json";
     c.user_dir = t.base + "/user";
     c.work_root = t.base + "/work";
     c.engine_map_cache_dir = kRoot + "/out/godot_engine_cache";
@@ -174,8 +175,8 @@ TEST_CASE("garage: a preset is a car whose setup starts from its overlay", "[gar
     CHECK(d.modified); // the overlay is applied although the player saved nothing
     CHECK(!g->has_saved_setup("car_sedan_sport"));
 
-    const double stock = final_drive_of(ps::io::load_vehicle_json(g->catalog().find("car_sedan")->vehicle_path));
-    CHECK(final_drive_of(ps::io::load_vehicle_json(d.vehicle_path)) == Approx(stock * 1.08));
+    const double stock = final_drive_of(rg::load_vehicle(g->catalog().find("car_sedan")->vehicle_path));
+    CHECK(final_drive_of(rg::load_vehicle(d.vehicle_path)) == Approx(stock * 1.08));
     // a base car of the same family stays stock (this drive materialisation replaces the previous one)
     const rg::DriveSelection base = g->prepare_drive("car_sedan");
     REQUIRE(base.ok);

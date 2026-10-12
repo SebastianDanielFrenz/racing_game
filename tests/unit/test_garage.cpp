@@ -1,5 +1,6 @@
 // test_garage.cpp - rg::Garage (selection, saved setups, edit session, drive
 // hand-over, cleanup) and the garage set / camera (rg/garage_set.h).
+#include "rg/vehicle_load.h"
 #include "rg/garage.h"
 #include "rg/garage_set.h"
 
@@ -42,7 +43,7 @@ rg::GarageConfig config_for(const TempDirs& t) {
     c.catalog_path = kRoot + "/data/vehicles/catalog.json";
     c.options_path = kRoot + "/data/vehicles/setup_options.json";
     c.set_path = kRoot + "/data/garage/garage_set.json";
-    c.tyre_dirs = {kRoot + "/external/physics_sim/data/tyres", kRoot + "/data/tyres"};
+    c.tyre_families_path = kRoot + "/data/tyres/families.json";
     c.user_dir = t.base + "/user";
     c.work_root = t.base + "/work";
     c.engine_map_cache_dir = kRoot + "/out/godot_engine_cache";
@@ -100,8 +101,8 @@ TEST_CASE("garage: an edit is validated, saved, persisted and applied to the dri
     REQUIRE(d.ok);
     CHECK(d.modified);
     CHECK(d.vehicle_path.find("/work/drive_car_sedan_") != std::string::npos);
-    const ps::vehicle::VehicleDesc driven = ps::io::load_vehicle_json(d.vehicle_path);
-    const ps::vehicle::VehicleDesc stock = ps::io::load_vehicle_json(g2->catalog().find("car_sedan")->vehicle_path);
+    const ps::vehicle::VehicleDesc driven = rg::load_vehicle(d.vehicle_path);
+    const ps::vehicle::VehicleDesc stock = rg::load_vehicle(g2->catalog().find("car_sedan")->vehicle_path);
     double driven_ratio = 0.0, stock_ratio = 0.0;
     for (const auto& c : driven.powertrain.components) {
         if (const auto* diff = std::get_if<ps::drivetrain::DifferentialDesc>(&c.params)) driven_ratio = diff->ratio;
@@ -337,7 +338,7 @@ TEST_CASE("garage engine install persists and reaches the prepared drive", "[eng
     const auto drive = g->prepare_drive("car_sedan");
     INFO(drive.error);
     REQUIRE(drive.ok);
-    const auto d = ps::io::load_vehicle_json(drive.vehicle_path);
+    const auto d = rg::load_vehicle(drive.vehicle_path);
     bool found = false;
     for (const auto& c : d.powertrain.components) {
         if (auto e = std::get_if<ps::drivetrain::TorqueMapEngineDesc>(&c.params)) {

@@ -134,7 +134,7 @@ std::unique_ptr<Garage> Garage::open(const GarageConfig& config, std::string* er
             }
         }
     }
-    g->ctx_.tyre_dirs = config.tyre_dirs;
+    g->ctx_.tyre_families_path = config.tyre_families_path;
     g->ctx_.work_root = config.work_root;
     g->ctx_.engine_map_cache_dir = config.engine_map_cache_dir;
     {
@@ -259,6 +259,7 @@ VehicleSetup Garage::saved_setup(const std::string& id) const {
     std::string err;
     auto parsed = parse_setup(*text, options_, setup_path(id), &err);
     if (!parsed || parsed->vehicle_id != id) return s; // a corrupt/foreign file is ignored, never fatal
+    migrate_setup_tyres(*parsed, options_, ctx_); // pre-catalogue tyre names (saved before the universal tyres)
     return *parsed;
 }
 

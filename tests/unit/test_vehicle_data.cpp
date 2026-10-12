@@ -11,6 +11,7 @@
 // JSON's own "source" commentary, which is documentation, not a checked
 // value).
 
+#include "rg/vehicle_load.h"
 #include "ps/io/vehicle_io.h"
 #include "ps/drivetrain/powertrain_desc.h"
 
@@ -22,7 +23,7 @@
 TEST_CASE("racing_game's 3.0 L sedan: clutch static capacity clears the engine's peak WOT torque",
           "[vehicle_data]") {
     const std::string path = std::string(RG_SOURCE_DIR) + "/data/vehicles/car_sedan.json";
-    const ps::vehicle::VehicleDesc desc = ps::io::load_vehicle_json(path);
+    const ps::vehicle::VehicleDesc desc = rg::load_vehicle(path);
 
     const ps::drivetrain::TorqueMapEngineDesc* engine = nullptr;
     const ps::drivetrain::ClutchDesc* clutch = nullptr;

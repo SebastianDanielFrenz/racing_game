@@ -1,4 +1,5 @@
 #include "rg/garage_dyno.h"
+#include "rg/vehicle_load.h"
 #include "drivetrain/engine_simulated.h"
 #include "ps/io/vehicle_io.h"
 #include "ps/jobs/job_system.h"
@@ -143,7 +144,7 @@ void GarageDyno::run() {
                     if(revision==revision_ && !cancel->load())result_.provisional_points=partial;
                 });
             };
-            const auto desc=ps::io::load_vehicle_json(material.vehicle_path,maps);
+            const auto desc=rg::load_vehicle(material.vehicle_path,maps);
             const ps::drivetrain::SimulatedEngineDesc* simulated=nullptr;
             const ps::drivetrain::TorqueMapEngineDesc* mapped=nullptr;
             for(const auto& component:desc.powertrain.components) {

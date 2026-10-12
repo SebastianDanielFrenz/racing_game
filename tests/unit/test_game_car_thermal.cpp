@@ -8,6 +8,7 @@
 // oil temperature over time: RG_DIAG_CAR (default car_hyper), RG_DIAG_AMBIENT_C (default 15 = ISA), RG_DIAG_MODE =
 // "wot" (full throttle until the speed plateau, then RG_DIAG_HOLD_S more seconds, default 90) or "cruise"
 // (RG_DIAG_CRUISE_KMH, default 130, held RG_DIAG_HOLD_S seconds, default 600). Output: one DIAG line per 5 s.
+#include "rg/vehicle_load.h"
 #include "rg/engine_swap.h"
 #include "rg/engine_thermal_info.h"
 #include "rg/session.h"
@@ -59,7 +60,7 @@ TEST_CASE("game cars: every shipped car has the engine thermal model with sane t
         INFO(path);
         ps::io::EngineMapOptions options;
         options.generate = false; // validate-only: the thermal block is resolved, no engine maps are generated
-        const ps::vehicle::VehicleDesc desc = ps::io::load_vehicle_json(path, options);
+        const ps::vehicle::VehicleDesc desc = rg::load_vehicle(path, options);
         const rg::EngineThermalInfo info = rg::engine_thermal_info(desc);
         REQUIRE(info.present);
         REQUIRE(desc.powertrain.thermal.has_value());

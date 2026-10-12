@@ -1,3 +1,4 @@
+#include "rg/vehicle_load.h"
 #include "rg/garage_dyno.h"
 #include "../../external/physics_sim/core/src/drivetrain/engine_simulated.h"
 #include "ps/io/vehicle_io.h"
@@ -155,7 +156,7 @@ TEST_CASE("diagnose hyper boost target against actual pressure and losses", "[.b
     INFO(material.error);REQUIRE(material.ok);
     ps::jobs::JobSystem workers(4);
     ps::io::EngineMapOptions maps;maps.pool=&workers;maps.cache_dir=r.context.engine_map_cache_dir;
-    auto vehicle=ps::io::load_vehicle_json(material.vehicle_path,maps);
+    auto vehicle=rg::load_vehicle(material.vehicle_path,maps);
     for(const auto& component:vehicle.powertrain.components)if(auto original=std::get_if<ps::drivetrain::SimulatedEngineDesc>(&component.params)) {
         REQUIRE(original->turbo_pair.has_value());
         std::map<std::pair<double,double>,double> reference_power;
@@ -199,7 +200,7 @@ TEST_CASE("diagnose extreme boost target power collapse", "[.extreme_boost_diagn
     INFO(material.error);REQUIRE(material.ok);
     ps::jobs::JobSystem workers(4);
     ps::io::EngineMapOptions maps;maps.pool=&workers;maps.cache_dir=r.context.engine_map_cache_dir;
-    auto vehicle=ps::io::load_vehicle_json(material.vehicle_path,maps);
+    auto vehicle=rg::load_vehicle(material.vehicle_path,maps);
     for(const auto& component:vehicle.powertrain.components)if(auto original=std::get_if<ps::drivetrain::SimulatedEngineDesc>(&component.params)) {
         REQUIRE(original->turbo_pair.has_value());
         std::map<std::pair<double,double>,double> reference_power;

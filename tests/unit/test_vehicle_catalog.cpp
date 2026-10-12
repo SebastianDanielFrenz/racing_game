@@ -1,6 +1,7 @@
 // test_vehicle_catalog.cpp - the R6 vehicle catalog (data/vehicles/catalog.json):
 // every entry's files exist, the stats vehicle select shows come from data, and
 // every entry loads with ps::io::load_vehicle_json.
+#include "rg/vehicle_load.h"
 #include "rg/vehicle_catalog.h"
 
 #include "ps/io/vehicle_io.h"
@@ -76,7 +77,7 @@ TEST_CASE("catalog: every entry loads with the physics vehicle loader", "[catalo
     options.cache_dir = kRoot + "/out/godot_engine_cache";
     for (const auto& e : c.entries) {
         INFO(e.id);
-        const ps::vehicle::VehicleDesc desc = ps::io::load_vehicle_json(e.vehicle_path, options);
+        const ps::vehicle::VehicleDesc desc = rg::load_vehicle(e.vehicle_path, options);
         CHECK(desc.name == e.sim_name);
         CHECK(desc.wheels.size() == 4);
     }
@@ -98,19 +99,29 @@ TEST_CASE("catalog: malformed catalogs are rejected with a reason", "[catalog][v
     CHECK(!rg::parse_vehicle_catalog(missing_file, kRoot, "t", &err).has_value());
 }
 
-TEST_CASE("catalog: the hypercar N2O variant offers the same tyre width ranges as the hypercar", "[catalog][setup][tyre_width]") {
-    // 6dfab34 copied the sedan's 195-255 mm ranges onto car_hyper_n2o; it is the hypercar's wheel layout and tyre families.
+TEST_CASE("catalog: the hypercar N2O variant has the same tyre fitment as the hypercar", "[catalog][setup][tyre_width]") {
+    // 6dfab34 copied the sedan's 195-255 mm ranges onto car_hyper_n2o; it is the hypercar's wheel layout.
     const rg::VehicleCatalog c = load_catalog();
     const rg::CatalogEntry* base = c.find("car_hyper");
     const rg::CatalogEntry* n2o = c.find("car_hyper_n2o");
     REQUIRE(base != nullptr);
     REQUIRE(n2o != nullptr);
-    for (const char* axle : {"tyre_front", "tyre_rear"}) {
+    for (const char* axle : {"front", "rear"}) {
         INFO(axle);
-        REQUIRE(base->setup_ranges.count(axle) == 1);
-        REQUIRE(n2o->setup_ranges.count(axle) == 1);
-        CHECK(n2o->setup_ranges.at(axle) == base->setup_ranges.at(axle));
+        REQUIRE(base->tyre_fitment.count(axle) == 1);
+        REQUIRE(n2o->tyre_fitment.count(axle) == 1);
+        const rg::TyreAxleFitment& a = base->tyre_fitment.at(axle);
+        const rg::TyreAxleFitment& b = n2o->tyre_fitment.at(axle);
+        CHECK(a.rims_in == b.rims_in);
+        CHECK(a.min_width_mm == b.min_width_mm);
+        CHECK(a.max_width_mm == b.max_width_mm);
+        CHECK(a.width_step_mm == b.width_step_mm);
+        CHECK(a.diameter_tolerance_mm == b.diameter_tolerance_mm);
     }
-    CHECK(base->setup_ranges.at("tyre_front") == std::make_pair(235.0, 305.0));
-    CHECK(base->setup_ranges.at("tyre_rear") == std::make_pair(275.0, 365.0));
+    CHECK(base->tyre_fitment.at("front").rims_in == std::vector<int>{20});
+    CHECK(base->tyre_fitment.at("front").min_width_mm == 235);
+    CHECK(base->tyre_fitment.at("front").max_width_mm == 305);
+    CHECK(base->tyre_fitment.at("rear").rims_in == std::vector<int>{21});
+    CHECK(base->tyre_fitment.at("rear").min_width_mm == 275);
+    CHECK(base->tyre_fitment.at("rear").max_width_mm == 365);
 }

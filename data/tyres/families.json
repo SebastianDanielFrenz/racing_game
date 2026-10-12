@@ -1,8 +1,112 @@
 {
-  "format": "racing_game.tyre_families/1",
-  "source": "Qualitative construction/compound inspiration researched from manufacturer sources in docs/tyre_families.md. All force coefficients and speed assignments are authored game fits, not historical measurements or product certifications. Fixed modern compatible dimensions are retained.",
-  "grip_width_exponent": 0.35,
-  "rolling_resistance_width_exponent": 0.65,
+  "format": "racing_game.tyre_families/4",
+  "source": "Compound (family) parameters for the on-the-fly tyre builder (core/src/tyre_spec.cpp). Qualitative construction/compound inspiration researched from manufacturer sources in docs/tyre_families.md. All force coefficients and speed assignments are authored game fits, not historical measurements or product certifications. There are NO tyre files per size: a tyre is a compound plus a size (width / aspect R rim), built in memory as a ps::vehicle::TyreDesc by one rule from this file; vehicle files carry a tyre spec, cars declare per-axle fitment (rims, width range, diameter tolerance).",
+  "rule": {
+    "reference_width_mm": 225,
+    "lambda_mu_ref": 1.0,
+    "crr_base_ref": 0.01,
+    "grip_width_exponent": 0.35,
+    "rolling_resistance_width_exponent": 0.65,
+    "fz0_n_per_m3": 85000.0,
+    "vertical_stiffness_n_per_m_per_m3": 4400000.0,
+    "note": "lambda_mu = lambda_mu_ref * compound grip * (width / reference_width)^grip_width_exponent (longitudinal and lateral with their own compound factor); crr_base = crr_ref * compound resistance * (width / reference_width)^resistance_width_exponent, with the compound's rated speed and the base tyre's rise anchors deriving qsy1/qsy3/qsy4; pkx1/pky1 = base * compound stiffness; fz0 and vertical stiffness scale with the section volume V = width * (D^2 - rim_d^2) (m^3, D the overall diameter = rim diameter + 2 * aspect/100 * width); unloaded radius = D/2, rim radius = rim_in*0.0127 m. Everything else is the base tyre. The compound's rated speed is capped at 270 km/h for rims up to 17 in (passenger-tyre regime).",
+    "rated_speed_cap_kmh_up_to_rim_in": {
+      "max_rim_in": 17,
+      "cap_kmh": 270
+    }
+  },
+  "base_tyre": {
+    "v0": 16.7,
+    "qsy2": 0.0,
+    "relaxation_length_x": 0.1,
+    "relaxation_length_y": 0.15,
+    "low_speed_damping_ratio": 1.5,
+    "low_speed_damping_vx": 2.0,
+    "rolling_resistance": {
+      "rise_at_fraction": {
+        "fraction": 0.8,
+        "factor": 1.5
+      },
+      "factor_at_rated": 2.0
+    },
+    "longitudinal": {
+      "pcx1": 1.42,
+      "pdx1": 1.05,
+      "pdx2": -0.1,
+      "pdx3": 0.0,
+      "pex1": -0.45,
+      "pex2": 0.0,
+      "pex3": 0.0,
+      "pex4": 0.0,
+      "pkx1": 18.0,
+      "pkx2": 0.0,
+      "pkx3": 0.05,
+      "phx1": 0.0,
+      "phx2": 0.0,
+      "pvx1": 0.0,
+      "pvx2": 0.0
+    },
+    "lateral": {
+      "pcy1": 1.35,
+      "pdy1": 1.0,
+      "pdy2": -0.12,
+      "pdy3": -2.0,
+      "pey1": -0.6,
+      "pey2": -0.1,
+      "pey3": 0.0,
+      "pey4": 0.0,
+      "pky1": 16.0,
+      "pky2": 0.0,
+      "phy1": 0.0,
+      "phy2": 0.0,
+      "phy3": 0.0,
+      "pvy1": 0.0,
+      "pvy2": 0.0,
+      "pvy3": -0.3,
+      "pvy4": 0.0
+    },
+    "combined": {
+      "rbx1": 12.0,
+      "rbx2": -8.0,
+      "rcx1": 1.0,
+      "rhx1": 0.0,
+      "rby1": 9.0,
+      "rby2": 5.0,
+      "rby3": 0.0,
+      "rcy1": 1.0,
+      "rhy1": 0.0,
+      "rhy2": 0.0,
+      "rvy1": 0.0,
+      "rvy2": 0.0,
+      "rvy3": 0.0,
+      "rvy4": 20.0,
+      "rvy5": 2.0,
+      "rvy6": 0.0
+    },
+    "aligning": {
+      "qbz1": 43.4,
+      "qbz2": 0.0,
+      "qbz3": 0.0,
+      "qcz1": 1.15,
+      "qdz1": -0.1,
+      "qdz2": 0.02,
+      "qez1": -1.0,
+      "qez2": 0.0,
+      "qhz1": 0.0,
+      "qhz2": 0.0,
+      "qhz3": 0.0
+    },
+    "overturning": {
+      "qsx1": 0.0,
+      "qsx2": 0.05,
+      "qsx3": 0.02
+    }
+  },
+  "legacy_reference_diameters_mm": {
+    "17": 634,
+    "20": 694,
+    "21": 728
+  },
   "families": [
     {
       "id": "cord",

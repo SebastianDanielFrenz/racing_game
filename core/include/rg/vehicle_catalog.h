@@ -16,6 +16,8 @@
 // load time, so the file works from any checkout location.
 #pragma once
 
+#include "rg/tyre_spec.h"
+
 #include <array>
 #include <map>
 #include <optional>
@@ -78,6 +80,10 @@ struct CatalogEntry {
     std::vector<std::string> setup_options;
     std::map<std::string, std::vector<std::string>> setup_pointers;
     std::map<std::string, std::pair<double, double>> setup_ranges;
+    // Tyre fitment per axle ("front"/"rear"): rims, width range in standard steps and overall-diameter tolerance
+    // (rg/tyre_spec.h). Every compound is offered at every size the fitment allows. An axle without one accepts
+    // only the stock tyre's own size.
+    std::map<std::string, TyreAxleFitment> tyre_fitment;
 };
 
 struct VehicleCatalog {

@@ -34,14 +34,24 @@
         "rim": "#2b2d31"
       },
       "setup": {
-        "ranges": {
-          "tyre_front": {
-            "min": 235,
-            "max": 305
+        "tyre_fitment": {
+          "front": {
+            "rims_in": [
+              20
+            ],
+            "min_width_mm": 235,
+            "max_width_mm": 305,
+            "width_step_mm": 10,
+            "diameter_tolerance_mm": 12
           },
-          "tyre_rear": {
-            "min": 275,
-            "max": 365
+          "rear": {
+            "rims_in": [
+              21
+            ],
+            "min_width_mm": 275,
+            "max_width_mm": 365,
+            "width_step_mm": 10,
+            "diameter_tolerance_mm": 12
           }
         }
       }
@@ -72,14 +82,24 @@
         "rim": "#c4c8cf"
       },
       "setup": {
-        "ranges": {
-          "tyre_front": {
-            "min": 195,
-            "max": 255
+        "tyre_fitment": {
+          "front": {
+            "rims_in": [
+              17
+            ],
+            "min_width_mm": 195,
+            "max_width_mm": 255,
+            "width_step_mm": 10,
+            "diameter_tolerance_mm": 12
           },
-          "tyre_rear": {
-            "min": 195,
-            "max": 255
+          "rear": {
+            "rims_in": [
+              17
+            ],
+            "min_width_mm": 195,
+            "max_width_mm": 255,
+            "width_step_mm": 10,
+            "diameter_tolerance_mm": 12
           }
         }
       }
@@ -110,14 +130,24 @@
         "rim": "#c4c8cf"
       },
       "setup": {
-        "ranges": {
-          "tyre_front": {
-            "min": 195,
-            "max": 255
+        "tyre_fitment": {
+          "front": {
+            "rims_in": [
+              17
+            ],
+            "min_width_mm": 195,
+            "max_width_mm": 255,
+            "width_step_mm": 10,
+            "diameter_tolerance_mm": 12
           },
-          "tyre_rear": {
-            "min": 195,
-            "max": 255
+          "rear": {
+            "rims_in": [
+              17
+            ],
+            "min_width_mm": 195,
+            "max_width_mm": 255,
+            "width_step_mm": 10,
+            "diameter_tolerance_mm": 12
           }
         }
       }
@@ -148,14 +178,24 @@
         "rim": "#c4c8cf"
       },
       "setup": {
-        "ranges": {
-          "tyre_front": {
-            "min": 195,
-            "max": 255
+        "tyre_fitment": {
+          "front": {
+            "rims_in": [
+              17
+            ],
+            "min_width_mm": 195,
+            "max_width_mm": 255,
+            "width_step_mm": 10,
+            "diameter_tolerance_mm": 12
           },
-          "tyre_rear": {
-            "min": 195,
-            "max": 255
+          "rear": {
+            "rims_in": [
+              17
+            ],
+            "min_width_mm": 195,
+            "max_width_mm": 255,
+            "width_step_mm": 10,
+            "diameter_tolerance_mm": 12
           }
         }
       }
@@ -184,14 +224,24 @@
         "rim": "#2b2d31"
       },
       "setup": {
-        "ranges": {
-          "tyre_front": {
-            "min": 195,
-            "max": 255
+        "tyre_fitment": {
+          "front": {
+            "rims_in": [
+              17
+            ],
+            "min_width_mm": 195,
+            "max_width_mm": 255,
+            "width_step_mm": 10,
+            "diameter_tolerance_mm": 12
           },
-          "tyre_rear": {
-            "min": 195,
-            "max": 255
+          "rear": {
+            "rims_in": [
+              17
+            ],
+            "min_width_mm": 195,
+            "max_width_mm": 255,
+            "width_step_mm": 10,
+            "diameter_tolerance_mm": 12
           }
         }
       }
@@ -227,14 +277,24 @@
         "rim": "#2b2d31"
       },
       "setup": {
-        "ranges": {
-          "tyre_front": {
-            "min": 235,
-            "max": 305
+        "tyre_fitment": {
+          "front": {
+            "rims_in": [
+              20
+            ],
+            "min_width_mm": 235,
+            "max_width_mm": 305,
+            "width_step_mm": 10,
+            "diameter_tolerance_mm": 12
           },
-          "tyre_rear": {
-            "min": 275,
-            "max": 365
+          "rear": {
+            "rims_in": [
+              21
+            ],
+            "min_width_mm": 275,
+            "max_width_mm": 365,
+            "width_step_mm": 10,
+            "diameter_tolerance_mm": 12
           }
         }
       }
@@ -251,8 +311,8 @@
         "spring_rear": 0.85,
         "damper_front": 0.9,
         "damper_rear": 0.9,
-        "tyre_front": "passenger_comfort_225_45r17",
-        "tyre_rear": "passenger_comfort_225_45r17",
+        "tyre_front": "economy_225_45r17",
+        "tyre_rear": "economy_225_45r17",
         "paint": "#c4c8cf"
       }
     },
@@ -268,8 +328,8 @@
         "spring_rear": 1.15,
         "arb_front": 1.2,
         "arb_rear": 1.1,
-        "tyre_front": "passenger_sport_225_45r17",
-        "tyre_rear": "passenger_sport_225_45r17",
+        "tyre_front": "track_225_45r17",
+        "tyre_rear": "track_225_45r17",
         "final_drive": 1.08,
         "gear_ratios": [
           1.0,
@@ -292,8 +352,8 @@
       "preset_setup": {
         "arb_rear": 0.7,
         "arb_front": 1.2,
-        "tyre_rear": "passenger_comfort_225_45r17",
-        "tyre_front": "passenger_sport_225_45r17",
+        "tyre_rear": "economy_225_45r17",
+        "tyre_front": "track_225_45r17",
         "paint": "#e8742a"
       }
     },
@@ -312,8 +372,8 @@
         "arb_front": 1.25,
         "arb_rear": 1.25,
         "brake_force": 1.2,
-        "tyre_front": "passenger_sport_225_45r17",
-        "tyre_rear": "passenger_sport_225_45r17",
+        "tyre_front": "track_225_45r17",
+        "tyre_rear": "track_225_45r17",
         "paint": "#1b1d22"
       }
     },
@@ -344,8 +404,8 @@
         "spring_front": 0.9,
         "spring_rear": 0.9,
         "arb_front": 0.9,
-        "tyre_front": "passenger_comfort_225_45r17",
-        "tyre_rear": "passenger_comfort_225_45r17",
+        "tyre_front": "economy_225_45r17",
+        "tyre_rear": "economy_225_45r17",
         "paint": "#e8e8ea"
       }
     },
@@ -360,8 +420,8 @@
         "spring_front": 1.15,
         "spring_rear": 1.15,
         "brake_force": 1.15,
-        "tyre_front": "hyper_front_track_265_35r20",
-        "tyre_rear": "hyper_rear_track_325_30r21",
+        "tyre_front": "track_265_35r20",
+        "tyre_rear": "track_325_30r21",
         "paint": "#e8742a"
       }
     },
@@ -382,5 +442,5 @@
       }
     }
   ],
-  "tyre_fitment_source": "Initial conservative authored body-specific axle width envelopes in mm; stock fits, +40 mm over hyper stock and +30 mm over sedan stock. Not measured fender clearance; tune against body geometry. Rim diameter and unloaded radius remain compatible."
+  "tyre_fitment_source": "Initial conservative authored body-specific axle fitment, by dimensions only: the rim of the stock wheel, a width range in 10 mm steps (stock fits; +40 mm over hyper stock, +30 mm over sedan stock) and an overall-diameter tolerance of 12 mm around the axle's own wheel. Every tyre compound (data/tyres/families.json) is offered at every size this allows. Not measured fender clearance; tune against body geometry."
 }

@@ -49,6 +49,7 @@ add_executable(rg_unit_tests
   test_control_capture.cpp
   test_vehicle_catalog.cpp
   test_vehicle_setup.cpp
+  test_tyre_spec.cpp
   test_garage_dyno.cpp
   test_engine_garage.cpp
   test_garage.cpp

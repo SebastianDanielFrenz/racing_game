@@ -187,12 +187,15 @@
       "label": "Tyres front",
       "group": "Tyres",
       "area": "wheels",
-      "help": "Compatible compound/tread and width variants, capped by this body\u2019s axle fitment limits. Width updates wheel geometry and inertia.",
+      "help": "Any compound at any size this body's axle fitment allows (rim, width in standard steps, overall diameter). Width updates wheel geometry and inertia.",
       "kind": "tyre_choice",
       "axle": "front",
       "file": "vehicle",
       "pointers": [
-        "/wheels/[is_front=true]/tyre",
+        "/wheels/[is_front=true]/tyre_spec/compound",
+        "/wheels/[is_front=true]/tyre_spec/width_mm",
+        "/wheels/[is_front=true]/tyre_spec/aspect",
+        "/wheels/[is_front=true]/tyre_spec/rim_in",
         "/wheels/[is_front=true]/wheel_width",
         "/wheels/[is_front=true]/wheel_inertia"
       ]
@@ -202,12 +205,15 @@
       "label": "Tyres rear",
       "group": "Tyres",
       "area": "wheels",
-      "help": "Compatible compound/tread and width variants, capped by this body\u2019s axle fitment limits. Width updates wheel geometry and inertia.",
+      "help": "Any compound at any size this body's axle fitment allows (rim, width in standard steps, overall diameter). Width updates wheel geometry and inertia.",
       "kind": "tyre_choice",
       "axle": "rear",
       "file": "vehicle",
       "pointers": [
-        "/wheels/[is_front=false]/tyre",
+        "/wheels/[is_front=false]/tyre_spec/compound",
+        "/wheels/[is_front=false]/tyre_spec/width_mm",
+        "/wheels/[is_front=false]/tyre_spec/aspect",
+        "/wheels/[is_front=false]/tyre_spec/rim_in",
         "/wheels/[is_front=false]/wheel_width",
         "/wheels/[is_front=false]/wheel_inertia"
       ]

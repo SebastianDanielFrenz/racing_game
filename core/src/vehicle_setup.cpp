@@ -2,6 +2,8 @@
 #include "rg/vehicle_setup.h"
 
 #include "rg/engine_swap.h"
+#include "rg/tyre_spec.h"
+#include "rg/vehicle_load.h"
 
 #include "json_util.h"
 
@@ -243,7 +245,6 @@ struct Files {
     std::string fuel_choice;            // set when the fuel option picked a fuel
     // Vehicle-file subtrees the swap package (trusted code, not a player option) edited; exempt from the whitelist.
     std::vector<std::string> derived_subtrees;
-    std::map<std::string, FileDoc> tyres; // by path
 };
 
 bool read_doc(const std::string& path, json& out, std::string* err) {
@@ -297,26 +298,6 @@ bool load_aux(const json& vehicle, const std::string& vehicle_dir, const char* t
     return true;
 }
 
-// Re-reads the tyre files the (work) vehicle's wheels reference.
-bool load_tyres(const FileDoc& vehicle, std::map<std::string, FileDoc>& out, std::string* err) {
-    out.clear();
-    const auto wheels = vehicle.work.find("wheels");
-    if (wheels == vehicle.work.end() || !wheels->is_array()) return true;
-    const std::string dir = dir_of(vehicle.path);
-    for (const json& w : *wheels) {
-        std::string tyre;
-        if (!w.is_object() || !detail::get_string(w, "tyre", tyre)) continue;
-        const std::string path = resolve_ref(dir, tyre);
-        if (out.count(path) != 0) continue;
-        FileDoc f;
-        f.path = path;
-        if (!read_doc(path, f.base, err)) return false;
-        f.work = f.base;
-        out[path] = std::move(f);
-    }
-    return true;
-}
-
 bool load_turbo(Files& files, std::string* err) {
     files.turbo.reset();
     if (!files.engine) return true;
@@ -345,7 +326,7 @@ bool load_files(const CatalogEntry& entry, Files& files, std::string* err) {
         files.original_engine_path = files.engine->path;
         files.engine_stem = stem_of_path(files.engine->path);
     }
-    return load_turbo(files, err) && load_tyres(files.vehicle, files.tyres, err);
+    return load_turbo(files, err);
 }
 
 // ---- options: the entry's view of the table ----------------------------------------
@@ -369,7 +350,7 @@ std::pair<double, double> range_for(const CatalogEntry& entry, const SetupOption
 struct Target {
     FileDoc* file = nullptr;
     std::string pointer; // concrete JSON pointer in file->work
-    std::string kind;    // "vehicle" | "gearbox" | "engine" | "tyre"
+    std::string kind;    // "vehicle" | "gearbox" | "engine" | "turbo"
 };
 
 std::vector<Target> targets_of(Files& files, const SetupOptionDef& def, const std::vector<std::string>& patterns) {
@@ -385,8 +366,6 @@ std::vector<Target> targets_of(Files& files, const SetupOptionDef& def, const st
         if (files.engine) add(&*files.engine, "engine");
     } else if (def.file == "turbo") {
         if (files.turbo) add(&*files.turbo, "turbo");
-    } else if (def.file == "tyre") {
-        for (auto& kv : files.tyres) add(&kv.second, "tyre");
     }
     return out;
 }
@@ -660,8 +639,33 @@ struct WheelInfo {
     double radius = 0.0;
     double width = 0.0;
     bool is_front = false;
-    std::string tyre;
+    std::optional<TyreSpec> tyre; // the wheel's "tyre_spec"
 };
+
+// The wheel's "tyre_spec" object, if it is a well-formed one.
+std::optional<TyreSpec> tyre_spec_of(const json& wheel) {
+    const auto it = wheel.find("tyre_spec");
+    if (it == wheel.end() || !it->is_object()) return std::nullopt;
+    TyreSpec s;
+    double w = 0.0, a = 0.0, r = 0.0;
+    if (!detail::get_string(*it, "compound", s.compound) || !detail::get_number(*it, "width_mm", w) || !detail::get_number(*it, "aspect", a) ||
+        !detail::get_number(*it, "rim_in", r)) {
+        return std::nullopt;
+    }
+    s.width_mm = static_cast<int>(w);
+    s.aspect = static_cast<int>(a);
+    s.rim_in = static_cast<int>(r);
+    return s;
+}
+
+json tyre_spec_json(const TyreSpec& s) {
+    json j = json::object();
+    j["compound"] = s.compound;
+    j["width_mm"] = s.width_mm;
+    j["aspect"] = s.aspect;
+    j["rim_in"] = s.rim_in;
+    return j;
+}
 
 std::vector<WheelInfo> wheels_of(const json& vehicle, bool front) {
     std::vector<WheelInfo> out;
@@ -678,51 +682,57 @@ std::vector<WheelInfo> wheels_of(const json& vehicle, bool front) {
         detail::get_string(w, "name", info.name);
         detail::get_number(w, "wheel_radius", info.radius);
         detail::get_number(w, "wheel_width", info.width);
-        detail::get_string(w, "tyre", info.tyre);
+        info.tyre = tyre_spec_of(w);
         out.push_back(info);
     }
     return out;
 }
 
-// Tyre files (by stem -> absolute path) whose size matches every wheel of `axle`.
-std::map<std::string, std::string> tyre_candidates(const SetupContext& ctx, const std::vector<WheelInfo>& axle,
-                                                    const std::string& stock_path,
-                                                    const std::pair<double, double>* width_limits = nullptr) {
-    std::map<std::string, std::string> out;
-    if (axle.empty()) return out;
-    constexpr double kTolM = 0.006;
-    json stock_doc;
-    double stock_rim = 0.0;
-    if (read_doc(stock_path, stock_doc, nullptr)) detail::get_number(stock_doc, "rim_radius", stock_rim);
-    std::error_code ec;
-    for (const std::string& dir : ctx.tyre_dirs) {
-        if (!fs::is_directory(fs::path(dir), ec)) continue;
-        std::vector<fs::path> files;
-        for (const auto& de : fs::directory_iterator(fs::path(dir), ec)) {
-            if (de.is_regular_file() && de.path().extension() == ".json") files.push_back(de.path());
+// The fitment of an axle: the catalog entry's declaration, else only the stock tyre's own size.
+TyreAxleFitment axle_fitment(const CatalogEntry& entry, const std::string& axle_name, const std::vector<WheelInfo>& axle) {
+    const auto declared = entry.tyre_fitment.find(axle_name);
+    if (declared != entry.tyre_fitment.end()) return declared->second;
+    TyreAxleFitment f;
+    if (!axle.empty() && axle.front().tyre) {
+        f.rims_in = {axle.front().tyre->rim_in};
+        f.min_width_mm = f.max_width_mm = axle.front().tyre->width_mm;
+    }
+    return f;
+}
+
+// The reason `tyre` does not fit a wheel of `axle`, or "".
+std::string axle_fit_error(const TyreSpec& tyre, const TyreAxleFitment& fitment, const std::vector<WheelInfo>& axle) {
+    for (const WheelInfo& w : axle) {
+        const std::string e = tyre_fit_error(tyre, fitment, w.radius * 2000.0);
+        if (!e.empty()) return e;
+    }
+    return {};
+}
+
+std::shared_ptr<const TyreFamilies> families_of(const SetupContext& ctx) {
+    if (ctx.tyre_families_path.empty()) return nullptr;
+    std::string err;
+    return TyreFamilies::load(ctx.tyre_families_path, &err);
+}
+
+// Every tyre id the axle accepts: each compound at each size the fitment allows, plus the car's own tyre whatever it is.
+std::vector<std::string> tyre_candidates(const SetupContext& ctx, const CatalogEntry& entry, const std::string& axle_name,
+                                         const std::vector<WheelInfo>& axle) {
+    std::vector<std::string> out;
+    const auto families = families_of(ctx);
+    if (axle.empty() || !families) return out;
+    const TyreAxleFitment fitment = axle_fitment(entry, axle_name, axle);
+    for (const TyreSpec& size : tyre_sizes_for(fitment, axle.front().radius * 2000.0)) {
+        if (!axle_fit_error(size, fitment, axle).empty()) continue;
+        for (const TyreCompound& c : families->compounds()) {
+            TyreSpec s = size;
+            s.compound = c.id;
+            out.push_back(tyre_id(s));
         }
-        std::sort(files.begin(), files.end());
-        for (const fs::path& f : files) {
-            json doc;
-            if (!read_doc(f.generic_string(), doc, nullptr)) continue;
-            std::string format;
-            if (!detail::get_string(doc, "format", format) || format.rfind("physics_sim.tyre", 0) != 0) continue;
-            double radius = 0.0, width = 0.0;
-            if (!detail::get_number(doc, "unloaded_radius", radius) || !detail::get_number(doc, "width", width)) continue;
-            double rim = 0.0;
-            detail::get_number(doc, "rim_radius", rim);
-            bool fits = stock_rim <= 0.0 || std::abs(rim - stock_rim) < 0.001;
-            for (const WheelInfo& w : axle) {
-                if (std::abs(w.radius - radius) > kTolM) fits = false;
-                if (width_limits != nullptr) {
-                    const double mm = width * 1000.0;
-                    if (mm < width_limits->first - 1e-6 || mm > width_limits->second + 1e-6) fits = false;
-                } else if (std::abs(w.width - width) > kTolM) fits = false;
-            }
-            const std::string path = norm_path(f.generic_string());
-            if (!fits && path != stock_path) continue;
-            out.emplace(f.stem().string(), path); // first directory wins on a repeated stem
-        }
+    }
+    if (axle.front().tyre) {
+        const std::string own = tyre_id(*axle.front().tyre);
+        if (std::find(out.begin(), out.end(), own) == out.end()) out.push_back(own);
     }
     return out;
 }
@@ -853,8 +863,8 @@ std::optional<SetupOptionTable> parse_setup_options(const std::string& json_text
         detail::get_number(o, "step", d.step);
         detail::get_number(o, "max_shift", d.max_shift);
         detail::get_string(o, "file", d.file);
-        if (d.file != "vehicle" && d.file != "gearbox" && d.file != "engine" && d.file != "tyre" && d.file != "turbo") {
-            return bad(where + ": \"file\" must be vehicle, gearbox, engine, turbo or tyre");
+        if (d.file != "vehicle" && d.file != "gearbox" && d.file != "engine" && d.file != "turbo") {
+            return bad(where + ": \"file\" must be vehicle, gearbox, engine or turbo");
         }
         detail::get_string(o, "monotonic", d.monotonic);
         if (!d.monotonic.empty() && d.monotonic != "decreasing") return bad(where + ": \"monotonic\" must be \"decreasing\"");
@@ -934,6 +944,17 @@ std::optional<SetupOptionTable> load_setup_options(const std::string& path, std:
 }
 
 // ---- setup documents -----------------------------------------------------------------------
+
+void migrate_setup_tyres(VehicleSetup& setup, const SetupOptionTable& table, const SetupContext& ctx) {
+    const auto families = families_of(ctx);
+    if (!families) return;
+    for (auto& kv : setup.values) {
+        const SetupOptionDef* def = table.find(kv.first);
+        if (def == nullptr || def->kind != OptionKind::TyreChoice || !std::holds_alternative<std::string>(kv.second)) continue;
+        const std::string mapped = migrate_tyre_id(*families, std::get<std::string>(kv.second));
+        if (!mapped.empty()) kv.second = mapped;
+    }
+}
 
 std::string setup_to_json(const VehicleSetup& setup) {
     json root = json::object();
@@ -1196,14 +1217,9 @@ SetupModel build_setup_model(const CatalogEntry& entry, const SetupOptionTable& 
             }
             case OptionKind::TyreChoice: {
                 const std::vector<WheelInfo> axle = wheels_of(files.vehicle.work, def.axle == "front");
-                std::string stock_path;
-                if (!axle.empty() && !axle.front().tyre.empty()) {
-                    stock_path = resolve_ref(dir_of(files.vehicle.path), axle.front().tyre);
-                }
-                v.stock = stem_of(stock_path);
-                const auto limits = entry.setup_ranges.find(def.id);
-                for (const auto& kv : tyre_candidates(ctx, axle, stock_path, limits == entry.setup_ranges.end() ? nullptr : &limits->second)) v.choices.push_back(kv.first);
-                if (axle.empty() || stock_path.empty() || v.choices.size() < 2) v.available = false;
+                if (!axle.empty() && axle.front().tyre) v.stock = tyre_id(*axle.front().tyre);
+                v.choices = tyre_candidates(ctx, entry, def.axle, axle);
+                if (axle.empty() || !axle.front().tyre || v.choices.size() < 2) v.available = false;
                 break;
             }
             case OptionKind::Bool: {
@@ -1248,7 +1264,6 @@ struct CompileState {
     Files files;
     CompiledSetup out;
     std::set<std::string> allowed_vehicle, allowed_gearbox, allowed_engine;
-    std::map<std::string, std::set<std::string>> allowed_tyre; // by path
 };
 
 bool set_number(Target& t, double value) {
@@ -1364,34 +1379,24 @@ std::string apply_option(const CatalogEntry& entry, const SetupOptionDef& def, c
         }
         case OptionKind::TyreChoice: {
             if (!std::holds_alternative<std::string>(value)) return type_error("a tyre name");
-            const std::string& stem = std::get<std::string>(value);
+            const std::string& name = std::get<std::string>(value);
             const std::vector<WheelInfo> axle = wheels_of(files.vehicle.work, def.axle == "front");
-            std::string stock_path;
-            if (!axle.empty() && !axle.front().tyre.empty()) stock_path = resolve_ref(dir_of(files.vehicle.path), axle.front().tyre);
-            const auto limits = entry.setup_ranges.find(def.id);
-            const auto candidates = tyre_candidates(ctx, axle, stock_path, limits == entry.setup_ranges.end() ? nullptr : &limits->second);
-            const auto it = candidates.find(stem);
-            if (it == candidates.end()) {
-                return id + ": \"" + stem + "\" is not a tyre that fits the " + def.axle + " wheels";
+            if (axle.empty() || !axle.front().tyre) return "option \"" + id + "\" matches nothing in " + entry.id + "'s files";
+            const auto families = families_of(ctx);
+            if (!families) return id + ": the tyre families file is unavailable";
+            const std::optional<TyreSpec> spec = parse_tyre_id(name);
+            if (!spec) return id + ": unknown tyre \"" + name + "\" (a tyre is named like road_265_35r20: compound, width, aspect and rim)";
+            if (families->find(spec->compound) == nullptr) return id + ": unknown tyre compound \"" + spec->compound + "\"";
+            // The car's own tyre is always allowed; anything else must fit the axle by its dimensions.
+            if (!(*spec == *axle.front().tyre)) {
+                const std::string reason = axle_fit_error(*spec, axle_fitment(entry, def.axle, axle), axle);
+                if (!reason.empty()) return id + ": " + reason;
             }
-            std::vector<std::string> ref_patterns;
-            for (const auto& pattern : patterns) if (pattern.size() >= 5 && pattern.substr(pattern.size()-5) == "/tyre") ref_patterns.push_back(pattern);
-            std::vector<Target> targets = targets_of(files, def, ref_patterns);
-            if (targets.empty()) return "option \"" + id + "\" matches nothing in " + entry.id + "'s files";
-            for (Target& t : targets) {
-                try {
-                    t.file->work[json::json_pointer(t.pointer)] = it->second;
-                } catch (...) {
-                    return "option \"" + id + "\": cannot edit " + t.pointer;
-                }
-                touched.emplace_back(t.file, t.pointer);
-            }
-            json selected_doc;
-            double selected_width = 0.0;
-            if (!read_doc(it->second, selected_doc, nullptr) || !detail::get_number(selected_doc, "width", selected_width)) return id + ": tyre width unavailable";
+            const double selected_width = spec->width_mm / 1000.0;
             for (const auto& wheel : axle) {
                 auto& target = files.vehicle.work["wheels"][wheel.index];
                 if (wheel.width <= 0.0) return id + ": invalid original wheel width";
+                target["tyre_spec"] = tyre_spec_json(*spec);
                 target["wheel_width"] = selected_width;
                 if (target.contains("wheel_inertia") && target["wheel_inertia"].is_number())
                     target["wheel_inertia"] = target["wheel_inertia"].get<double>() * selected_width / wheel.width;
@@ -1438,8 +1443,10 @@ CompiledSetup compile_setup(const CatalogEntry& entry, const SetupOptionTable& t
 }
 
 CompiledSetup compile_setup_internal(const CatalogEntry& entry, const SetupOptionTable& table, const SetupContext& ctx,
-                                     const VehicleSetup& setup, Files& files) {
+                                     const VehicleSetup& setup_in, Files& files) {
     CompiledSetup out;
+    VehicleSetup setup = setup_in;
+    migrate_setup_tyres(setup, table, ctx); // pre-catalogue tyre names -> catalogue ids
     out.vehicle_patch = "{}";
     if (setup.vehicle_id != entry.id) {
         out.error = "the setup is for \"" + setup.vehicle_id + "\", not " + entry.id;
@@ -1471,7 +1478,7 @@ CompiledSetup compile_setup_internal(const CatalogEntry& entry, const SetupOptio
     };
 
     std::vector<std::pair<const FileDoc*, std::string>> touched; // (file, pointer) per edit
-    // Pass 1: tyre choices change which tyre files the wheels use.
+    // Pass 1: tyre and part choices first (they decide which files the other options edit).
     for (const SetupOptionDef& def : table.options) {
         if (def.kind != OptionKind::TyreChoice && def.kind != OptionKind::FileChoice) continue;
         const auto it = setup.values.find(def.id);
@@ -1481,10 +1488,6 @@ CompiledSetup compile_setup_internal(const CatalogEntry& entry, const SetupOptio
             out.error = e;
             return out;
         }
-    }
-    if (!load_tyres(files.vehicle, files.tyres, &err)) {
-        out.error = err;
-        return out;
     }
     // The swap package (engine garage G1): fuel, clutch, TCU, parts and mass follow an engine/fuel choice.
     {
@@ -1586,9 +1589,6 @@ CompiledSetup compile_setup_internal(const CatalogEntry& entry, const SetupOptio
     if (files.gearbox && !finish_file("gearbox", *files.gearbox, false)) return out;
     if (files.engine && !finish_file("engine", *files.engine, false)) return out;
     if (files.turbo && !finish_file("turbo", *files.turbo, false)) return out;
-    for (const auto& kv : files.tyres) {
-        if (!finish_file("tyre", kv.second, false)) return out;
-    }
     out.ok = true;
     return out;
 }
@@ -1695,9 +1695,6 @@ MaterialisedSetup materialise_setup(const CatalogEntry& entry, const SetupOption
     if (files.turbo && !write_aux("turbo", *files.turbo)) return out;
     if (files.gearbox && !write_aux("gearbox", *files.gearbox)) return out;
     if (files.engine && !write_aux("engine", *files.engine)) return out;
-    for (const auto& kv : files.tyres) {
-        if (!write_aux("tyre", kv.second)) return out;
-    }
     json vehicle = files.vehicle.base;
     vehicle.merge_patch(*detail::parse_json(out.compiled.vehicle_patch));
     absolutise_refs(vehicle, dir_of(files.vehicle.path));
@@ -1754,7 +1751,7 @@ ValidationResult validate_setup(const CatalogEntry& entry, const SetupOptionTabl
         ps::io::EngineMapOptions options;
         options.cache_dir = ctx.engine_map_cache_dir;
         options.generate = generate_maps;
-        (void)ps::io::load_vehicle_json(m.vehicle_path, options);
+        (void)rg::load_vehicle(m.vehicle_path, options);
     } catch (const std::exception& e) {
         result.message = e.what();
         return result;

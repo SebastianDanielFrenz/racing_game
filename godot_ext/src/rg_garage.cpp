@@ -109,7 +109,7 @@ godot::Dictionary RgGarage::initialize(const String& repo_root, const String& us
     c.catalog_path = catalog_path.is_empty() ? c.repo_root + "/data/vehicles/catalog.json" : to_std(catalog_path);
     c.options_path = c.repo_root + "/data/vehicles/setup_options.json";
     c.set_path = c.repo_root + "/data/garage/garage_set.json";
-    c.tyre_dirs = {c.repo_root + "/external/physics_sim/data/tyres", c.repo_root + "/data/tyres"};
+    c.tyre_families_path = c.repo_root + "/data/tyres/families.json";
     c.user_dir = to_std(user_dir);
     c.work_root = to_std(work_root);
     work_root_ = c.work_root;

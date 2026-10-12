@@ -1128,13 +1128,35 @@ func _part_name(opt: Dictionary) -> String:
 			return str(part["label"])
 	return str(opt["value"])
 
-# Presentation is explicitly mapped to a definition ID, never inferred from grip.
+# A tyre id is compound_width_aspectrRim (e.g. road_265_35r20). The compound's label/image/rated speed come from the
+# manifest generated from data/tyres/families.json; the size is read from the id itself. Never inferred from grip.
 func _tyre_presentation(definition_id: String) -> Dictionary:
 	if _component_catalog.is_empty():
 		var parsed: Variant = JSON.parse_string(FileAccess.get_file_as_string("res://assets/components/tyres/catalog.json"))
 		if parsed is Dictionary:
 			_component_catalog = parsed
-	return _component_catalog.get("parts", {}).get(definition_id, {"label":definition_id.replace("_", " ")})
+	var fallback := {"label":definition_id.replace("_", " ")}
+	var parts := definition_id.split("_")
+	if parts.size() != 3 or not parts[1].is_valid_int():
+		return fallback
+	var tail := parts[2].split("r")
+	if tail.size() != 2 or not tail[0].is_valid_int() or not tail[1].is_valid_int():
+		return fallback
+	var family: Dictionary = _component_catalog.get("families", {}).get(parts[0], {})
+	if family.is_empty():
+		return fallback
+	var rated := float(family.get("rated_speed_kmh", 0.0))
+	var cap: Dictionary = _component_catalog.get("rated_speed_cap", {})
+	if not cap.is_empty() and int(tail[1]) <= int(cap.get("max_rim_in", 0)):
+		rated = minf(rated, float(cap.get("cap_kmh", rated)))
+	return {
+		"label": str(family.get("label", parts[0])),
+		"family": parts[0],
+		"width_mm": int(parts[1]),
+		"size": "%d/%d R%d" % [int(parts[1]), int(tail[0]), int(tail[1])],
+		"image": str(family.get("image", "")),
+		"rated_speed_kmh": rated,
+	}
 
 func garage_wheel_widths() -> Vector2:
 	var result := Vector2.ZERO

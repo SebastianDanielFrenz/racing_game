@@ -1,6 +1,7 @@
 #include "rg/session.h"
 #include "rg/aero_map_selection.h"
 #include "rg/flat_ground.h"
+#include "rg/vehicle_load.h"
 
 #include "g2m/phys/height_tile_loader.h"
 #include "g2m/phys/physics_grid.h"
@@ -287,7 +288,7 @@ void Session::build_world_contents(const SessionConfig& config) {
                 options.cache_dir = (library_root / "out" / "godot_engine_cache").string();
             }
         }
-        vehicle_desc_ = ps::io::load_vehicle_json(config.vehicle_json_path, options);
+        vehicle_desc_ = rg::load_vehicle(config.vehicle_json_path, options);
         std::fprintf(stderr, "RG_ENGINE_MAP_CACHE enabled=%s generated=%zu dir=%s\n",
                      config.engine_map_cache_enabled ? "yes" : "no", generated, options.cache_dir.c_str());
     }

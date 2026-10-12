@@ -1,5 +1,6 @@
 // test_engine_garage.cpp - engine garage G1 (out/engine_garage_design.md 4, 15.2): the engine catalog and store,
 // the swap derivation, the fit seam, the fuel choice and the chassis-mass delta, all through the real physics loader.
+#include "rg/vehicle_load.h"
 #include "rg/engine_store.h"
 #include "rg/engine_swap.h"
 #include "rg/garage.h"
@@ -48,7 +49,7 @@ struct Fixture {
         INFO(err);
         REQUIRE(t.has_value());
         table = *t;
-        ctx.tyre_dirs = {kRoot + "/external/physics_sim/data/tyres", kRoot + "/data/tyres"};
+        ctx.tyre_families_path = kRoot + "/data/tyres/families.json";
         ctx.work_root = isolated_root.path();
         ctx.engine_map_cache_dir = kRoot + "/out/godot_engine_cache";
         store = rg::EngineStore::open(kRoot + "/data/engines/engine_catalog.json", kRoot, user_dir, &err);
@@ -95,7 +96,7 @@ Loaded load_setup(const Fixture& f, const rg::CatalogEntry& e, const rg::Vehicle
     ps::io::VehicleLoadOptions options;
     options.maps.generate = false;
     try {
-        out.desc = ps::io::load_vehicle_json(m.vehicle_path, options);
+        out.desc = rg::load_vehicle(m.vehicle_path, options);
         out.ok = true;
     } catch (const std::exception& ex) {
         out.error = ex.what();
@@ -607,7 +608,7 @@ TEST_CASE("garage: an engine swap reaches the prepared drive, the legacy id is s
     cfg.catalog_path = kRoot + "/data/vehicles/catalog.json";
     cfg.options_path = kRoot + "/data/vehicles/setup_options.json";
     cfg.set_path = kRoot + "/data/garage/garage_set.json";
-    cfg.tyre_dirs = {kRoot + "/external/physics_sim/data/tyres", kRoot + "/data/tyres"};
+    cfg.tyre_families_path = kRoot + "/data/tyres/families.json";
     cfg.user_dir = user.path;
     cfg.work_root = work.path;
     cfg.engine_map_cache_dir = kRoot + "/out/godot_engine_cache";
@@ -649,7 +650,7 @@ TEST_CASE("garage: changing the engine resets options the new engine does not of
     cfg.catalog_path = kRoot + "/data/vehicles/catalog.json";
     cfg.options_path = kRoot + "/data/vehicles/setup_options.json";
     cfg.set_path = kRoot + "/data/garage/garage_set.json";
-    cfg.tyre_dirs = {kRoot + "/external/physics_sim/data/tyres", kRoot + "/data/tyres"};
+    cfg.tyre_families_path = kRoot + "/data/tyres/families.json";
     cfg.user_dir = user.path;
     cfg.work_root = work.path;
     cfg.engine_map_cache_dir = kRoot + "/out/godot_engine_cache";

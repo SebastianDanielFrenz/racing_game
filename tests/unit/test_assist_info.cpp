@@ -6,6 +6,7 @@
 // - The H toggle flips assist.aero_control only on a car that has the automation (assist_fitted_bits bit 6).
 // - The game's car_hyper.json and car_hyper_n2o.json carry the Racing assist unit (as physics_sim's own hyper files do),
 //   every other game car has none; the files are loaded validate-only (no engine-map generation).
+#include "rg/vehicle_load.h"
 #include "rg/assist_info.h"
 #include "rg/session.h"
 
@@ -41,7 +42,7 @@ std::vector<int> presses(std::uint32_t bits, int start, int n) {
 ps::vehicle::VehicleDesc load_game_car(const std::string& file) {
     ps::io::EngineMapOptions options;
     options.generate = false; // validate-only: every loader check runs, no maps are generated
-    return ps::io::load_vehicle_json(kRepo + "/data/vehicles/" + file, options);
+    return rg::load_vehicle(kRepo + "/data/vehicles/" + file, options);
 }
 
 } // namespace
