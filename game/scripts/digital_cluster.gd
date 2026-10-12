@@ -17,6 +17,8 @@ var tc_fitted := false
 var tc_on := false
 var tc_intervening := false
 var font := ThemeDB.fallback_font
+var thermal: Dictionary = {}
+const ThermalReadout := preload("res://scripts/thermal_readout.gd")
 
 func _ready() -> void:
 	var info: Dictionary = simulation.get_vehicle_gauge_info(vehicle_name)
@@ -41,6 +43,7 @@ func _process(delta: float) -> void:
 	var dt := elapsed
 	elapsed = 0.0
 	var pt: Dictionary = simulation.get_vehicle_powertrain(vehicle_name)
+	thermal = simulation.get_vehicle_thermal(vehicle_name)
 	tc_on = pt.get("assist_traction_control",false)
 	tc_intervening = pt.get("traction_control_intervening",false)
 	speed = ground_speed*3.6
@@ -106,6 +109,8 @@ func _draw() -> void:
 		var tc_label := "TC ACTIVE" if tc_intervening else ("TC" if tc_on else "TC OFF")
 		var tc_color := Color(1.0,0.65,0.15) if tc_intervening or not tc_on else Color(0.2,0.95,0.75)
 		text(tc_label,Vector2(490,266),22,tc_color)
+	# Engine temperature, above the gear: only for a car with a thermal model (the hypercar has none yet), else nothing is drawn.
+	ThermalReadout.draw_bar(self,font,Vector2(490,66),1.0,thermal,fmod(Time.get_ticks_msec()/1000.0,0.5)<0.25)
 	small_dial(Vector2(935,109),"%.0f" % drive_kw,"DRIVE kW",maxf(drive_kw,0)/650.0)
 	small_dial(Vector2(935,241),"%.1f" % boost_bar if boost_bar>=0 else "--","BOOST bar",boost_bar/3.0 if boost_bar>=0 else -1)
 	# Dynamic information strip, reserved for selectable trip pages later.

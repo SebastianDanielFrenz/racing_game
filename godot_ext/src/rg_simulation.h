@@ -351,6 +351,8 @@ public:
     [[nodiscard]] godot::Dictionary get_vehicle_powertrain(const godot::String& vehicle_name) const;
     // Nitrous kit state for the HUD; {present: false} for a car without a kit (see the .cpp).
     [[nodiscard]] godot::Dictionary get_vehicle_nitrous(const godot::String& vehicle_name) const;
+    // Engine temperature for dashboards (rg::engine_thermal_hud); {present: false} for a car without a thermal model.
+    [[nodiscard]] godot::Dictionary get_vehicle_thermal(const godot::String& vehicle_name) const;
     [[nodiscard]] float get_vehicle_ground_speed_mps(const godot::String& vehicle_name) const;
 
 protected:

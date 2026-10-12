@@ -3,6 +3,7 @@
 #include "frame_convert.h"
 #include "rg/route_check.h"
 #include "rg/nitrous_info.h"
+#include "rg/engine_thermal_info.h"
 
 #include "g2m/phys/height_tile_loader.h"
 #include "g2m/world/height_sampler.h"
@@ -874,6 +875,30 @@ godot::Dictionary RgSimulation::get_vehicle_nitrous(const String& vehicle_name) 
     return d;
 }
 
+// Engine temperature for the dashboards (rg::engine_thermal_hud): {present, coolant_c, oil_c, gauge, level, level_code,
+// fan_on, thermostat_opening, cold_c, hot_c, overheat_c}. "present" is false (and nothing else is set) for a car
+// without a thermal model: the dashboard hides the gauge.
+godot::Dictionary RgSimulation::get_vehicle_thermal(const String& vehicle_name) const {
+    godot::Dictionary d;
+    d["present"] = false;
+    if (!has_vehicle(vehicle_name)) return d;
+    const rg::EngineThermalInfo info = rg::engine_thermal_info(session_->vehicle_desc());
+    const rg::EngineThermalHud h = rg::engine_thermal_hud(info, frame_snapshot().powertrain);
+    if (!h.present) return d;
+    d["present"] = true;
+    d["coolant_c"] = h.coolant_c;
+    d["oil_c"] = h.oil_c;
+    d["gauge"] = h.gauge;
+    d["level"] = String(std::string(rg::thermal_level_name(h.level)).c_str());
+    d["level_code"] = static_cast<int>(h.level);
+    d["fan_on"] = h.fan_on;
+    d["thermostat_opening"] = h.thermostat_opening;
+    d["cold_c"] = info.cold_c;
+    d["hot_c"] = info.hot_c;
+    d["overheat_c"] = info.overheat_c;
+    return d;
+}
+
 godot::Dictionary RgSimulation::get_vehicle_speed_limit(const String& vehicle_name) const {
     godot::Dictionary d;
     if (!has_vehicle(vehicle_name)) return d;
@@ -1242,6 +1267,7 @@ void RgSimulation::_bind_methods() {
     godot::ClassDB::bind_method(D_METHOD("get_vehicle_speed_limit", "vehicle_name"), &RgSimulation::get_vehicle_speed_limit);
     godot::ClassDB::bind_method(D_METHOD("get_vehicle_powertrain", "vehicle_name"), &RgSimulation::get_vehicle_powertrain);
     godot::ClassDB::bind_method(D_METHOD("get_vehicle_nitrous", "vehicle_name"), &RgSimulation::get_vehicle_nitrous);
+    godot::ClassDB::bind_method(D_METHOD("get_vehicle_thermal", "vehicle_name"), &RgSimulation::get_vehicle_thermal);
     godot::ClassDB::bind_method(D_METHOD("get_vehicle_ground_speed_mps", "vehicle_name"), &RgSimulation::get_vehicle_ground_speed_mps);
 }
 

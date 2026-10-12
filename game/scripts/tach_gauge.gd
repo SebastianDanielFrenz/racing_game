@@ -25,6 +25,9 @@ extends Control
 # runtime, before Godot has necessarily rescanned res:// for global
 # class_name declarations.
 const GaugeLogic := preload("res://scripts/gauge_logic.gd")
+# Engine temperature readout (coolant bar + oil), shared with the cockpit cluster; shown only for a car that has a
+# thermal model (RgSimulation.get_vehicle_thermal -> rg::engine_thermal_hud).
+const ThermalReadout := preload("res://scripts/thermal_readout.gd")
 
 var _simulation: Node
 # True speed over ground (|linear velocity|, world frame), drawn small above
@@ -36,6 +39,7 @@ var _input_map: Node
 var _gauge_info: Dictionary = {}
 var _last_pt: Dictionary = {}
 var _speed_limit: Dictionary = {}
+var _thermal: Dictionary = {}
 
 var _display_rpm: float = 0.0
 const NEEDLE_SMOOTH_RATE_PER_S := 10.0
@@ -75,12 +79,14 @@ func _process(delta: float) -> void:
 			_gauge_info = _simulation.get_vehicle_gauge_info(vehicle_name)
 		_last_pt = _simulation.get_vehicle_powertrain(vehicle_name)
 		_speed_limit = _simulation.get_vehicle_speed_limit(vehicle_name)
+		_thermal = _simulation.get_vehicle_thermal(vehicle_name)
 		_gps_kmh = _simulation.get_vehicle_ground_speed_mps(vehicle_name) * 3.6
 		var target_rpm: float = _last_pt.get("rpm", 0.0)
 		_display_rpm = GaugeLogic.smooth_towards(_display_rpm, target_rpm, NEEDLE_SMOOTH_RATE_PER_S, delta)
 	else:
 		_last_pt = {}
 		_speed_limit = {}
+		_thermal = {}
 	queue_redraw()
 
 func _clock_rad(clock_deg: float) -> float:
@@ -218,6 +224,9 @@ func _draw() -> void:
 	_draw_centered_text(font, limit_pos, limit_text, int(round(19.0 * scale)), Color(0.1, 0.1, 0.1))
 	if _speed_limit.get("conditional", false):
 		_draw_centered_text(font, limit_pos + Vector2(limit_radius * 1.5, 0), "?", font_size_speed_unit, COLOR_SPEED_TEXT)
+
+	# Left of the lamp row, under the speed readout; nothing for a car without a thermal model.
+	ThermalReadout.draw_bar(self, font, Vector2(center.x - radius * 1.55, center.y + radius * 1.28), scale, _thermal, blink_on)
 
 	var warning: String = ""
 	if engine_state == "stalled":
