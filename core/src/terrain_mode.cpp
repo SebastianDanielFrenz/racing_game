@@ -52,11 +52,11 @@ TerrainModeConfig make_terrain_mode(const WorldConfig& config, std::shared_ptr<W
     std::shared_ptr<HeightTileSharedFetch> fetch;
     if (config.physics.road_surfaces.enabled) {
         fetch = std::make_shared<HeightTileSharedFetch>(
-            [terrain](const g2m::TileKey& key) { return terrain->height_tile_shared(key); },
-            [terrain](const g2m::TileKey& l2) { return terrain->road_segments_shared(l2); });
+            [terrain](const g2m::TileKey& key) { return terrain->height_tile_shared(key, terrain->physics_priority()); },
+            [terrain](const g2m::TileKey& l2) { return terrain->road_segments_shared(l2, terrain->physics_priority()); });
     } else {
         fetch = std::make_shared<HeightTileSharedFetch>(
-            [terrain](const g2m::TileKey& key) { return terrain->height_tile_shared(key); });
+            [terrain](const g2m::TileKey& key) { return terrain->height_tile_shared(key, terrain->physics_priority()); });
     }
     const bool road_layer_available = terrain->has_road_layer();
     TerrainModeConfig out = make_terrain_mode(config, frame, std::move(fetch));

@@ -22,12 +22,8 @@
 #include "g2m/layer/osm_roads.h"
 #include "g2m/mesh/lod_select.h"
 #include "g2m/mesh/terrain_chunk.h"
-#include "g2m/server/builtin_release.h"
-#include "g2m/server/server.h"
-#include "g2m/server/tile_store.h"
-#include "g2m/server/upstream.h"
-#include "g2m/client/in_process_transport.h"
 #include "g2m/world/chunk_road_classes.h"
+#include "g2m/world/terrain_service.h"
 #include "g2m/world/tile_fetch.h"
 
 #include <atomic>
@@ -166,7 +162,20 @@ public:
     std::shared_ptr<const g2m::OsmTile> source_osm_tile(const g2m::TileKey& key); // background consumers only
     RoadVisualMesh road_visual_tile(const g2m::TileKey& key,double lift_m);
     std::vector<Building> buildings_tile(const g2m::TileKey& key,double min_height,double fallback_height,double storey_height);
-    g2m::world::HeightTileFetchResult height_tile_shared(const g2m::TileKey& key);
+    // `priority` is what a still-missing tile is requested at (a tile already cached returns at once):
+    // Render for presentation callers, the physics priority (physics_priority()) for the physics fetch.
+    g2m::world::HeightTileFetchResult height_tile_shared(const g2m::TileKey& key,
+                                                         g2m::world::Priority priority = g2m::world::Priority::Render);
+    // The priority the physics fetch asks at: Gate until the start-up gate has opened, then Physics
+    // (Session::setup_terrain flips it). Any thread.
+    void set_physics_priority(g2m::world::Priority priority) noexcept {
+        physics_priority_.store(static_cast<std::uint8_t>(priority), std::memory_order_relaxed);
+    }
+    [[nodiscard]] g2m::world::Priority physics_priority() const noexcept {
+        return static_cast<g2m::world::Priority>(physics_priority_.load(std::memory_order_relaxed));
+    }
+    // The geo2map terrain service this WorldTerrain runs on (one worker pool, priorities, dedup).
+    [[nodiscard]] g2m::world::TerrainService& service() { return *service_; }
     // Presentation-only lookup: never fetches or waits for derivation.
     const g2m::HeightTile* cached_height_tile(const g2m::TileKey& key);
     std::vector<std::shared_ptr<const RoadDeck>> road_decks();
@@ -222,7 +231,8 @@ public:
     // manifest_rid_/transport_ the height-tile path uses. Only a genuine
     // failure (RoadFetchStatus::Failed) is reported to stderr - Absent is
     // the release's own coverage edge, not a problem, and is never logged.
-    g2m::world::RoadSegmentsResult road_segments_shared(const g2m::TileKey& key);
+    g2m::world::RoadSegmentsResult road_segments_shared(const g2m::TileKey& key,
+                                                        g2m::world::Priority priority = g2m::world::Priority::Render);
 
     // Whether this release's manifest lists the g2m.src.osm layer at all
     // (G2.5a-grip R-b plan section 7 R-b) - read once, at open(), from
@@ -253,46 +263,36 @@ public:
 private:
     WorldTerrain() = default;
 
-    // Server::tile() + container decode (decode_height_tile_container, so
-    // the header's height_offset is applied) for one terrain.height tile
-    // (any level); status/tile are as they sound (tile is null on any
-    // failure: out of coverage, a non-Ok status, a decode error). The tile is
-    // heap-allocated (vault TOOL-039: g2m::HeightTile is 256 KiB, never by
-    // value or on the stack, std::optional included). Updates
-    // fetch_stats_ (server_ok/server_miss). Does NOT touch height_cache_ -
-    // height_tile_shared() (the cached, public entry point) does that, via
-    // fetch_height_tile_cached.
-    struct FetchDecodeResult {
-        g2m::Status status = g2m::Status::Internal;
-        std::shared_ptr<const g2m::HeightTile> tile;
+    // The game's height products, run on the service's pool (terrain migration phase 2). The carved
+    // L0 tile (raw DEM -> smoothing -> road patch) and the road surface of one L2 tile are caller-defined
+    // products of g2m::world::TerrainService; until phase 7 the carve stays here.
+    struct RoadSurface {
+        std::shared_ptr<const g2m::RoadGeomTile> geometry; // completed profiles, what road_geometry_at serves
+        std::shared_ptr<const RoadSurfacePatch> patch;
     };
-    FetchDecodeResult fetch_and_decode(const g2m::TileKey& key);
-    FetchDecodeResult fetch_raw_decode(const g2m::TileKey& key);
-    g2m::world::HeightTileFetchResult raw_height_tile_shared(const g2m::TileKey& key);
+    g2m::world::Outcome<g2m::HeightTile> produce_height(g2m::world::ProductContext& ctx, const g2m::TileKey& key);
+    g2m::world::Outcome<RoadSurface> produce_road_surface(g2m::world::ProductContext& ctx, const g2m::TileKey& l2);
+    // Joins (or runs) the road-surface product of the L2 tile owning `key` from inside a producer.
+    g2m::world::Outcome<RoadSurface> join_road_surface(g2m::world::ProductContext& ctx, const g2m::TileKey& l2);
+    // Blocking wait on a ticket from a non-pool thread; false on cancellation (service shutdown).
+    template <class T>
+    bool wait_ticket(g2m::world::Ticket<T>& ticket);
+    // Blocks for the road surface of the L2 tile owning `key`; null when the fetch failed. Empty
+    // geometry/patch for a tile the release does not cover.
+    std::shared_ptr<const RoadSurface> road_surface(const g2m::TileKey& key, g2m::world::Priority priority);
     TerrainSmoothing smoothing_;
     double verge_drop_m_=0.06;
-    std::mutex raw_cache_mutex_;
-    std::map<g2m::TileKey,std::shared_ptr<const g2m::HeightTile>> raw_height_cache_;
-    std::shared_ptr<const RoadSurfacePatch> road_surface_patch(const g2m::TileKey& key);
     std::mutex decks_mutex_;
     std::map<std::tuple<std::int64_t,int,int>,std::shared_ptr<const RoadDeck>> published_decks_;
     std::mutex graph_mutex_;
     std::map<g2m::TileKey, std::shared_ptr<const g2m::RoadGraphTile>> graph_cache_;
-    std::mutex geometry_mutex_;
+    // Brief lock around the two maps only (the old geometry_mutex_ also serialised the derivation, which
+    // the service's per-key dedup now does). The maps keep every published surface alive for the process,
+    // like before, so an LRU eviction in the service can never make a 16 s derivation run twice.
+    std::mutex geometry_cache_mutex_;
     std::map<g2m::TileKey,std::shared_ptr<const g2m::RoadGeomTile>> road_geometry_cache_;
-    std::map<g2m::TileKey, std::shared_ptr<const RoadSurfacePatch>> geometry_cache_;
+    std::map<g2m::TileKey, std::shared_ptr<const RoadSurface>> geometry_cache_;
 
-    // Declaration order is the destruction-order contract this class relies
-    // on (members destruct in REVERSE declaration order): local_upstream_
-    // and transport_ both hold references into earlier members and must be
-    // torn down first; server_'s ServerConfig holds pointers into derivers_
-    // and local_upstream_, so it must go before them but after transport_.
-    std::unique_ptr<g2m::TileStore> source_store_;
-    std::unique_ptr<g2m::TileStore> derived_store_;
-    g2m::BuiltinTerrainDerivers derivers_;
-    std::optional<g2m::LocalSourceUpstream> local_upstream_;
-    std::unique_ptr<g2m::Server> server_;
-    std::optional<g2m::InProcessTransport> transport_;
     std::unique_ptr<g2m::geo::SessionFrame> frame_;
 
     g2m::ReleaseId manifest_rid_{};
@@ -312,6 +312,13 @@ private:
     bool road_profiles_enabled_ = true;
     bool has_road_layer_ = false; // set once, at open(), from the manifest
     RoadSurfaceMap road_surfaces_; // from config.physics.road_surfaces (G2.5a-grip R-b)
+    std::atomic<std::uint8_t> physics_priority_{static_cast<std::uint8_t>(g2m::world::Priority::Physics)};
+    g2m::world::ProductKind height_kind_ = 0;  // rg.height.carved
+    g2m::world::ProductKind surface_kind_ = 0; // rg.road.surface
+
+    // Declared LAST: members destruct in reverse order, and the service's pool runs producers that use
+    // every member above, so it must be joined first.
+    std::unique_ptr<g2m::world::TerrainService> service_;
 };
 
 } // namespace rg

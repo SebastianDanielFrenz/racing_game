@@ -320,6 +320,11 @@ ps::Pose Session::setup_terrain(const TerrainModeConfig& tm) {
     // slow, uncancellable) TileManager pool construction, not only in the
     // gate and priming loops below.
     throw_if_cancelled();
+    // The loaders start inside Terrain's constructor: until the start-up gate has opened every tile they
+    // ask the terrain service for is a gate tile (Priority::Gate), afterwards the ring and its prefetch
+    // (Priority::Physics). The fetch interface carries no per-tile hint, so ring and prefetch share one
+    // priority.
+    if (tm.world_terrain) tm.world_terrain->set_physics_priority(g2m::world::Priority::Gate);
     if (phys.road_surfaces.enabled) {
         // G2.5a-grip R-c: grip comes from per-cell OSM road classes instead
         // of one uniform terrain_surface. Both hard errors below fail fast
@@ -382,6 +387,7 @@ ps::Pose Session::setup_terrain(const TerrainModeConfig& tm) {
         std::this_thread::sleep_for(std::chrono::milliseconds(1));
     }
     status_.startup_ms.store(ms_since(t0), std::memory_order_relaxed);
+    if (tm.world_terrain) tm.world_terrain->set_physics_priority(g2m::world::Priority::Physics);
 
     sync_road_decks();
 

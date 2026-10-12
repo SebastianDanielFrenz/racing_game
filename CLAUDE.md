@@ -28,7 +28,7 @@ racing_game/
       fixed_rate_loop.h               rg::FixedRateLoop: fixed-rate wall-clock loop around a bool try_step() (frozen tick resyncs the deadline - no catch-up burst), LoopStats; runs Session::start()'s ticks
       world_config.h                  rg::WorldConfig, rg::load_world_config() - see "World config" below
       terrain_view_streamer.h         rg::TerrainViewStreamer (R2.2 R8): render LOD follows a focus point - background reselect + build, key diff {added, removed}, adapter ordering contract in the header; see "Render LOD streaming (R8)" below
-      road_classes.h                  rg::ClassLookup/RoadSegmentsFn, road_raster_params_for_level() (roads_plan.md R-2 level policy), road_class_lattice(), src_osm_tiles_for_chunk(), rasterize_chunk_road_classes() - OSM road classes (paved/unpaved) rasterised onto a render chunk's L0 cell-centre vertex lattice; render path only, no cell_surface_ids/grip - see "Visible roads (R-2)" below
+      road_classes.h                  rg::RoadSurfaceMap only (physics.road_surfaces names -> render colours; leaves in phase 7). The rest (ClassLookup/RoadSegmentsFn, road_raster_params_for_level, road_class_lattice, src_osm_tiles_for_chunk, rasterize_chunk_road_classes) lives in geo2map g2m::world (chunk_road_classes.h) since terrain migration phase 1 - see "Visible roads (R-2)" below
       route_check.h                   rg::Route + load_route() ("rg.route/1", exception-free, optional "criteria" object -> RouteCriteria), apply_route_criteria() (RouteCheckParams defaults < route file < CLI, field by field), phys_tile_index()/count_seam_crossings() (255 m physics grid, origin 0.5), sample_l0_height() (bilinear on the L0 cell-centre lattice through any tile lookup), check_route() (length, 10 m-window max/p99 grade plus a steep_stretches list above grade_report_threshold, seam crossings, elevation range, NoData, corner radius = circle through the points +-corner_window_m (10 m) along the route at every 1 m sample (waypoint-density independent) plus a tight_corners list below corner_report_radius_m, start offset vs RouteCheckParams' R5 criteria), route_matches_world(), check_route_on_world() (the same over WorldTerrain::height_tile_shared) - used by tools/route_check and the [realdata] test
       credits.h                       (R5) rg::Credits: data/credits.json (rg.credits/1) loaded exception-free, entries (name, licence, required attribution text, where shown), `attribution_line()` (the one line shown on the boot splash, the loading screen and the credits screen), sections for the credits screen; test_credits checks every data source of the geo2map README table is covered (reads the sibling geo2map_engine README when the submodule pin predates it, SKIP when absent)
       settings.h                      (R5) rg::Settings: `settings_schema()` (graphics.window_mode/vsync/max_fps, camera.fov_deg, audio.master/engine/tyre_volume, map_data.store_dir; each with type, range, default, applies_live), versioned `rg.settings/1` JSON file (settings.json in the user dir), load report (missing/parse error/migrated/unknown + invalid keys), set/get/reset with validation + clamping, atomic save; only settings that really apply are in the schema
@@ -52,7 +52,6 @@ racing_game/
       fixed_rate_loop.cpp             FixedRateLoop implementation
       world_config.cpp                load_world_config() implementation - strict, exception-free JSON validation (see "World config" below)
       terrain_view_streamer.cpp       TerrainViewStreamer implementation (one worker thread, one diff in flight, coalescing)
-      road_classes.cpp                road_classes.h implementation
       route_check.cpp                 route_check.h implementation
       credits.cpp, settings.cpp, spawn_presets.cpp, shell_flow.cpp, camera_math.cpp, road_ahead.cpp, json_util.h   (R5) implementations of the six headers above (json_util.h: shared exception-free JSON helpers)
     CMakeLists.txt                    rg_core STATIC target
@@ -137,10 +136,9 @@ racing_game/
       test_terrain_mode.cpp           rg/terrain_mode.h (R4, tag [terrain_mode]): physics heights (HeightTileSharedFetch -> ResidentHeightSet -> G2mTerrainSource::fill_tile) == render heights (same cache -> build_render_chunks L0 meshes) == (raw + height_offset)/256 for containers with non-zero offsets, one decode per tile; racing_game's container decode == geo2map's TransportHeightTileFetch; status pass-through; make_terrain_mode conversion
       test_fixed_rate_loop.cpp        rg::FixedRateLoop tests: no catch-up burst after a freeze, prompt stop(), stats
       test_terrain_view_streamer.cpp  rg::TerrainViewStreamer tests (R8) over a synthetic, optionally gated tile store: exact key diff, hole-free adds-then-removals at every step (plus a wrong-order negative control), no work while stationary, 1-vs-8 build-thread identical diffs, coalescing while busy, cancel+join on destruction
-      test_route_check.cpp            rg::route_check tests on synthetic terrain (seam counting incl. negative indices/corners, grade window max/p99, NoData, corner radius, start/length criteria, sample_l0_height across tile borders, load_route errors, steep-stretch and tight-corner lists, corner radius on arcs/kinks and its density independence, "criteria" loading + apply_route_criteria precedence); one hidden `[.][realdata]` case runs the committed route on the real store under its own "criteria", SKIP unless RG_G2M_HOME is set
+      test_route_check.cpp            rg::route_check tests on synthetic terrain (seam counting incl. negative indices/corners, grade window max/p99, NoData, corner radius, start/length criteria, g2m::world::sample_height_bilinear across tile borders, load_route errors, steep-stretch and tight-corner lists, corner radius on arcs/kinks and its density independence, "criteria" loading + apply_route_criteria precedence); one hidden `[.][realdata]` case runs the committed route on the real store under its own "criteria", SKIP unless RG_G2M_HOME is set
       test_credits.cpp, test_settings.cpp, test_spawn_presets.cpp, test_shell_flow.cpp, test_camera_math.cpp, test_road_ahead.cpp   (R5) one per new core header; test_player_mode.cpp gained the unload_world case, test_session.cpp the pause/road_ahead cases, test_world_config.cpp the store_dir override
-      test_world_terrain.cpp          rg::WorldTerrain / build_static_view_from_lookup tests (PLAN.md R2.1) over a synthetic in-memory TileKey->HeightTile map - no TileStore/Server needed; chunk selection, session-local origin math, 1-vs-N-thread byte-identical output; fetch_height_tile_cached concurrency; decode_height_tile_container on synthetic containers (height_offset of both signs with NoData kept, int32 overflow / NoData-collision rejection, layer/key mismatch, truncation)
-      test_road_classes.cpp           rg::road_classes tests (roads_plan.md R-2) over synthetic RoadSegment lists - no TileStore/Server/OSM-decode needed: the level policy's min_rank/min_half_width_mm against RoadStyle::default_style()'s own tertiary/primary ranks, road_class_lattice()/src_osm_tiles_for_chunk() against terrain_chunk.h's vertex-placement formula, a road segment appearing at L0 and being filtered out level-by-level (residential/tertiary/primary ranks), a null ClassLookup leaving the ClassWindow all-Unknown
+      test_world_terrain.cpp          rg::WorldTerrain / build_static_view_from_lookup tests (PLAN.md R2.1) over a synthetic in-memory TileKey->HeightTile map - no TileStore/Server needed; chunk selection, session-local origin math, 1-vs-N-thread byte-identical output (the decode/cache cases moved to geo2map tests/world with the code, phase 1)
       test_route_road_coverage.cpp    (roads_plan.md R-3) hidden `[.][realdata]` case, SKIP unless RG_G2M_HOME is set: point_is_road() classifies one absolute UTM point via WorldTerrain::road_segments + a 1x1 g2m::Lattice fed to rasterize_road_segments at the L0 level policy (every road, min_rank=0/min_half_width_mm=0); measured on the real home-r1 store against the committed data/routes/home_r1_drive.json (2103 waypoints): 100.00% road coverage (2103/2103, spawn included), forest-stretch control (84 points 30 m off-route at s=[5800,6200], the s~6000 m stretch roads_plan.md names) 0.00% road - see "Visible roads (R-2)" below
       test_vehicle_data.cpp           (engine30, 2026-09-27, tag [vehicle_data]) loads data/vehicles/car_sedan.json via ps::io::load_vehicle_json and asserts the ONLY number that data file is held to: the clutch's static torque capacity (capacity_nm * static_factor) >= 1.2x the engine's peak WOT torque (max of TorqueMapEngineDesc::wot_torque_nm_vs_rpm.y) - both read back from the loaded VehicleDesc's PowertrainDesc::components, nothing hand-copied from the JSON's own "source" commentary. No launch/stall/top-speed/wheelspin test (owner ruling: wheelspin is allowed and not to be gated or tested on)
       CMakeLists.txt                  rg_test_catch_main + rg_unit_tests targets, CTest registration
@@ -288,13 +286,25 @@ First visible, static-LOD terrain plus a fly camera - no vehicle, no
 
 `rg::WorldTerrain` (`core/include/rg/world_terrain.h` + `core/src/
 world_terrain.cpp`): the engine-neutral seam onto geo2map_engine's offline
-in-process server/mesh stack. `WorldTerrain::open(config, err)` opens
-`config.source_store`/`derived_store`, builds one local geo2map_engine
-release (`g2m::builtin_local_release_params` + `g2m::make_local_release` -
-the same wiring `g2m_tiler bake` and geo2map_engine's own golden tests use)
-and adds it to an offline `g2m::Server` (`offline = true`: its only
-`IUpstream` is a `g2m::LocalSourceUpstream`, so it never touches the
-network). `build_static_view(cam_x, cam_y, out)` (session-local metres)
+in-process server/mesh stack. `WorldTerrain::open(config, err)` opens a
+`g2m::world::TerrainService` (terrain migration phase 2, geo2map `g2m_world`):
+it owns `config.source_store`/`derived_store`, the local release (same layer
+opt-ins as before, release id unchanged), an offline in-process server and ONE
+worker pool; every fetch is a ticket with a priority (Gate > Physics >
+Prefetch > Render > Warm) and per-tile dedup. The game's own work runs on that
+pool as two caller-defined products (`register_product_kind`): `rg.height.carved`
+(raw DEM -> `smooth_terrain` -> road patch, any level; carve only at L0) and
+`rg.road.surface` (roads.geom + DEM dependencies -> `complete_road_profiles` ->
+20 m retry -> `RoadSurfacePatch`, one per L2 tile, joined by the ~25 L0 tiles of
+that L2 tile with `TerrainService::join_erased`, so the 16-20 s cold derivation
+runs once and on a worker; the old `geometry_mutex_` is gone, only a brief
+`geometry_cache_mutex_` guards the two published-geometry maps). Callers on
+non-pool threads (physics loaders, render workers, background builders) wait on
+tickets; `height_tile_shared(key, priority)` / `road_segments_shared(key,
+priority)` take the priority, `set_physics_priority` is what the physics fetch
+asks at (Session::setup_terrain: Gate until the start-up gate opens, then
+Physics). `physics_fetch()` of g2m_world is NOT used: it serves the uncarved
+`g2m.terrain.height`, the game still carves (until phase 7). `build_static_view(cam_x, cam_y, out)` (session-local metres)
 runs `g2m::mesh::select_chunks` against `lod_params()` and builds every
 selected chunk (`gather_window` + `build_chunk`) into `out` as
 `rg::RenderChunk`s, threaded (`build_static_view_from_lookup`'s
@@ -381,7 +391,7 @@ At the previous spawn (-1500, 500), three clean runs gave
 386/433/488 chunks, 1.73M/1.94M/2.19M vertices, warm 23.5/28.7/32.7 ms.
 
 Re-measured 2026-09-27 after roads_plan.md R-2's road-class rasterisation
-(`rasterize_chunk_road_classes`, wired into `build_render_chunks` - see
+(`g2m::world::rasterize_chunk_road_classes`, wired into `build_render_chunks` - see
 "Visible roads (R-2)" below): warm_ms at the default 20000 m rose from the
 32.44 ms above to **36.89 ms** (+13.7%, one run, same empty-`RG_G2M_DERIVED`/
 real-home-r1-store method) - within R-3's own +50% budget (48.66 ms). Full
