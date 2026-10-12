@@ -11,6 +11,9 @@
 //   * Auto-shift: up at full throttle = limiter - 300, at zero throttle 0.45 x limiter, down 0.19 / 0.41 x limiter
 //     (never below idle + 300 / 500 above that) [AS].
 //   * Auto-blip: zeroed on a mechanical-throttle engine.
+//   * Engine thermal model: a car with a cooling_system keeps it only if the new engine has thermal data (default_thermal);
+//     the physics loader throws otherwise, so without it the cooling_system (and engine_thermal_start) is dropped and the
+//     car runs without a thermal model (the dashboard gauge hides).
 //   * Slot overrides on the engine component (forced induction, installation, thermal, ecu, cam) belong to the old
 //     engine and are dropped; a nitrous kit stays on a simulated engine and is removed (with a notice) on a torque map.
 //   * Chassis mass: + (new engine mass - the car's own engine mass), the catalog figures (until physics models the
@@ -32,6 +35,7 @@ struct SwapCar {
     double clutch_kinetic_nm = 0.0;      // 0 = no clutch component
     bool has_nitrous = false;            // an n2o_bottle / nitrous_kit component is fitted
     bool has_slot_overrides = false;     // the engine component carries forced_induction / installation / thermal / ecu / cam
+    bool has_cooling_system = false;     // the vehicle file names a cooling_system (the car has the engine thermal model)
     double stock_engine_mass_kg = 0.0;   // the car's own engine (catalog figure; 0 = unknown)
 };
 
@@ -44,6 +48,7 @@ struct SwapEngine {
     double limiter_rpm = 0.0;
     bool simulated = false;
     bool mechanical_throttle = false;
+    bool has_thermal = true;             // the engine file (with its extends chain) names a default_thermal
     std::vector<std::string> fuels;      // fuel stems in the engine's list order; [0] = reference fuel
 };
 
@@ -77,6 +82,7 @@ struct SwapPackage {
     // Parts
     bool drop_nitrous = false;
     bool drop_slot_overrides = false;
+    bool drop_cooling_system = false;   // the new engine has no thermal data: the car loses cooling_system + engine_thermal_start
     // Mass
     double mass_delta_kg = 0.0;
     // For the player, one line per item that changes (and notices).

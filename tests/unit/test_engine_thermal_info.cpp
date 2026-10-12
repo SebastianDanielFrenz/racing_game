@@ -1,6 +1,6 @@
 // test_engine_thermal_info.cpp - the engine temperature dashboard state (rg::engine_thermal_info / engine_thermal_hud,
 // what RgSimulation.get_vehicle_thermal forwards). A thermal car (physics_sim's car_sedan_thermal.json, the only
-// shipped thermal vehicle; no game car has a cooling system yet) reports present with coolant/oil/gauge and the
+// reference thermal vehicle; the game cars are covered by test_game_car_thermal.cpp) reports present with coolant/oil/gauge and the
 // normal / hot / overheat / cold level; a car without a thermal model reports present = false and no value.
 #include "rg/engine_thermal_info.h"
 #include "rg/session.h"

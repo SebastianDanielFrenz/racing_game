@@ -4,6 +4,7 @@
 #include "json_util.h"
 
 #include "ps/drivetrain/powertrain_desc.h"
+#include "ps/io/engine_thermal_io.h"
 #include "ps/io/vehicle_io.h"
 
 #include <algorithm>
@@ -175,6 +176,14 @@ std::optional<EngineFacts> read_engine_facts(const std::string& engine_file, std
         const ps::drivetrain::ComponentParams params = ps::io::load_engine_json(path, options);
         bool ok = true;
         EngineFacts f = facts_of(params, &ok);
+        if (ok) {
+            // The engine thermal model needs the engine file to name a default_thermal (extends chain resolved).
+            try {
+                f.has_thermal = !ps::io::engine_default_thermal_path(path).empty();
+            } catch (...) {
+                f.has_thermal = false;
+            }
+        }
         if (!ok) {
             if (err != nullptr) *err = path + ": not an engine";
             return std::nullopt;

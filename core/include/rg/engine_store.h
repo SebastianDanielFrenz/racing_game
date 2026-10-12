@@ -69,6 +69,7 @@ struct EngineFacts {
     double idle_rpm = 0.0;
     double limiter_rpm = 0.0;
     double mass_kg = 0.0;             // the file's own mass_kg (0 = none)
+    bool has_thermal = false;         // the file (with its extends chain) names a default_thermal (the engine thermal model)
     std::vector<FuelFact> fuels;      // in the engine's list order; [0] is the reference fuel
     EnginePeaks curve_peaks;          // torque map: from the WOT curve; else known = false
 };

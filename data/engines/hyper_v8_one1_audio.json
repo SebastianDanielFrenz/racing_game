@@ -2,6 +2,7 @@
   "format": "physics_sim.engine/1",
   "name": "hyper_v8_one1_audio",
   "kind": "simulated",
+  "default_thermal": "../engine_thermal/hyper_v8_one1.json",
   "source": "One:1-inspired simulated V8. Published fixed geometry: eight cylinders, 92 mm bore, 95.25 mm stroke, 9:1 compression, 8250 rpm limiter; https://www.koenigsegg.com/technical-specifications-one1 . Remaining internals and turbo hardware are authored assumptions. No maps block: physical cycle generation supplies VE, efficiency, spark response, pumping and friction for both mean-value engine physics and live pipe-network audio. 2026-10-03 E5 calibration at ISA, 15 s held WOT, final 1 s mean NET crank torque after smooth friction and 26.854 Nm Coulomb friction: 1230 Nm at 3000 rpm, 1371 Nm at 6000, 1273.5 Nm / 1000.2 kW at 7500, 1184 Nm at 8000. Charge boost target remains 1.8 bar; manifold boost is lower because of throttle pressure drop. See HYPER_ONE1.md for assumptions, diagnostics, fuel flow and model limitations. No knock-limit map is generated; this fit does not validate actual E5 detonation safety. Game variant: generated preliminary turbo stage maps with explicit fallback.",
   "architecture": "piston_4stroke",
   "bore_mm": 92.0,

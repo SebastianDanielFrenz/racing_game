@@ -112,6 +112,10 @@ SwapPackage derive_swap_package(const SwapCar& car, const SwapEngine& engine, co
     // ---- parts that belong to the old engine ----
     p.drop_slot_overrides = car.has_slot_overrides;
     if (car.has_slot_overrides) p.lines.push_back("The old engine's turbo and exhaust choices were removed with it");
+    if (car.has_cooling_system && !engine.has_thermal) {
+        p.drop_cooling_system = true;
+        p.lines.push_back("Engine temperature gauge removed: this engine has no thermal data");
+    }
     if (car.has_nitrous && !engine.simulated) {
         p.drop_nitrous = true;
         p.lines.push_back("Nitrous kit removed: this engine has no air path model for it");

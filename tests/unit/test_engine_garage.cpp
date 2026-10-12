@@ -293,6 +293,36 @@ TEST_CASE("engine swap: the car's own engine changes nothing", "[engine_garage][
     CHECK(legacy.compiled.vehicle_patch == "{}");
 }
 
+TEST_CASE("engine swap: the engine thermal model follows the engine (a thermal car loses its cooling system with a no-thermal engine)",
+          "[engine_garage][engine_swap][thermal]") {
+    Fixture f;
+    int with_thermal = 0, without_thermal = 0;
+    for (const rg::CatalogEntry* car : f.base_cars()) {
+        const Loaded stock = load_setup(f, *car, setup_of(car->id, {}));
+        REQUIRE(stock.ok);
+        REQUIRE(stock.desc.powertrain.thermal.has_value()); // every game car ships with the thermal model
+        for (const rg::EngineEntry& engine : f.store->list()) {
+            INFO(car->id << " + " << engine.key);
+            std::string err;
+            const auto facts = rg::read_engine_facts(engine.file, &err);
+            INFO(err);
+            REQUIRE(facts.has_value());
+            const Loaded l = load_setup(f, *car, setup_of(car->id, {{"engine_install", engine.key}}));
+            INFO(l.error);
+            REQUIRE(l.ok); // without the drop the loader throws: a cooling_system needs the engine's default_thermal
+            CHECK(l.desc.powertrain.thermal.has_value() == facts->has_thermal);
+            const bool noted = std::any_of(l.compiled.swap_lines.begin(), l.compiled.swap_lines.end(),
+                                           [](const std::string& s) { return s.find("temperature gauge") != std::string::npos; });
+            const bool own = l.compiled.swap_lines.empty(); // the car's own engine changes nothing
+            CHECK(noted == (!facts->has_thermal && !own));
+            (facts->has_thermal ? with_thermal : without_thermal) += 1;
+        }
+    }
+    // The catalog holds engines on both sides (demo_i4_pipes and r26b_4rotor have no thermal data at the time of writing).
+    CHECK(with_thermal > 0);
+    CHECK(without_thermal > 0);
+}
+
 TEST_CASE("engine swap: the fuel is kept when the new engine lists it, else it changes with a notice (D1)", "[engine_garage][engine_swap][fuel]") {
     Fixture f;
     const auto& sedan = f.entry("car_sedan");

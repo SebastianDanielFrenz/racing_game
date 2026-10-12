@@ -542,6 +542,7 @@ std::string apply_swap(Files& files, const CatalogEntry& entry, const SetupConte
     if (engine >= 0) {
         for (const char* key : kEngineSlotKeys) car.has_slot_overrides = car.has_slot_overrides || comps[engine].contains(key);
     }
+    car.has_cooling_system = veh.contains("cooling_system");
     if (const EngineEntry* stock = ctx.engines->find_by_file(files.original_engine_path)) car.stock_engine_mass_kg = stock->mass_kg;
 
     std::string err;
@@ -556,6 +557,7 @@ std::string apply_swap(Files& files, const CatalogEntry& entry, const SetupConte
     eng.limiter_rpm = facts->limiter_rpm;
     eng.simulated = facts->simulated;
     eng.mechanical_throttle = facts->mechanical_throttle;
+    eng.has_thermal = facts->has_thermal;
     for (const FuelFact& f : facts->fuels) eng.fuels.push_back(f.name);
 
     pkg = derive_swap_package(car, eng, SwapChoices{files.fuel_choice}, files.swapped.has_value());
@@ -602,6 +604,16 @@ std::string apply_swap(Files& files, const CatalogEntry& entry, const SetupConte
             if (comps[engine].contains(key)) {
                 comps[engine].erase(key);
                 files.derived_subtrees.push_back(comp_path + std::to_string(engine) + "/" + key);
+            }
+        }
+    }
+    if (pkg.drop_cooling_system) {
+        // The new engine has no thermal data and the loader rejects a cooling_system without it: the car runs without
+        // the thermal model (engine_thermal_start needs a cooling_system too).
+        for (const char* key : {"cooling_system", "engine_thermal_start"}) {
+            if (veh.contains(key)) {
+                veh.erase(key);
+                files.derived_subtrees.push_back(std::string("/") + key);
             }
         }
     }
