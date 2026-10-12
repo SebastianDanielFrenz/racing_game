@@ -135,7 +135,13 @@ struct SessionConfig {
     // external/physics_sim/data/scenarios/vehicle_step_steer.json's own
     // "ground" body (half_extents [1000,1000,0.5], position z=-0.5, so its
     // top face sits at world z=0) - see CLAUDE.md's hash-check section.
+    // A box above flat_ground.h's kMaxFlatGroundBoxHalfExtentM (1000 m) gives phantom wheel-cast hits (vault PHYS-047), so
+    // build() rejects it: set ground_tessellated instead, which builds rg::flat_ground_mesh(half_x, half_y) (cells <= 20 m;
+    // ground_half_extent_y_m <= 0 = same as x). The mesh is untagged like the box; the default box keeps tools/hash_check
+    // equal to ps_run's vehicle_step_steer.
     ps::real ground_half_extent_m = 1000.0;
+    ps::real ground_half_extent_y_m = 0.0;
+    bool ground_tessellated = false;
     ps::real ground_friction = 1.0;
 
     // Chassis: mirrors the same scenario's "chassis" body exactly (same

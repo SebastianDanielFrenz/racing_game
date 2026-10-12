@@ -59,6 +59,7 @@ add_library(rg_core STATIC
     src/traffic_stuck.cpp
     src/building_footprints.cpp
     src/deck_installer.cpp
+    src/flat_ground.cpp
     src/session.cpp
     src/aero_map_selection.cpp
     src/player_mode.cpp

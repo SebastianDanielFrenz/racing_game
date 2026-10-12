@@ -1,5 +1,6 @@
 #include "rg/session.h"
 #include "rg/aero_map_selection.h"
+#include "rg/flat_ground.h"
 
 #include "g2m/phys/height_tile_loader.h"
 #include "g2m/phys/physics_grid.h"
@@ -220,9 +221,19 @@ void Session::build_world_contents(const SessionConfig& config) {
         // external/physics_sim/data/scenarios/vehicle_step_steer.json's own
         // "ground" body exactly (see session.h's SessionConfig comment).
         ps::BodyDesc desc;
-        desc.shape = ps::BoxShape{ps::Vec3{config.ground_half_extent_m, config.ground_half_extent_m, 0.5}};
+        if (config.ground_tessellated) {
+            // PHYS-047: a huge ground must be a mesh with small triangles, not one big box.
+            const double half_y = config.ground_half_extent_y_m > 0.0 ? config.ground_half_extent_y_m : config.ground_half_extent_m;
+            desc.shape = flat_ground_mesh(config.ground_half_extent_m, half_y);
+            desc.pose.position = ps::Vec3{0.0, 0.0, 0.0};
+        } else {
+            if (config.ground_half_extent_m > kMaxFlatGroundBoxHalfExtentM) {
+                throw std::invalid_argument("Session: a flat ground box above 1000 m half-extent gives phantom wheel-cast hits (PHYS-047); set ground_tessellated");
+            }
+            desc.shape = ps::BoxShape{ps::Vec3{config.ground_half_extent_m, config.ground_half_extent_m, 0.5}};
+            desc.pose.position = ps::Vec3{0.0, 0.0, -0.5};
+        }
         desc.motion = ps::BodyMotionType::Static;
-        desc.pose.position = ps::Vec3{0.0, 0.0, -0.5};
         desc.friction = config.ground_friction;
         ground_body_ = world_->create_body(desc);
     }

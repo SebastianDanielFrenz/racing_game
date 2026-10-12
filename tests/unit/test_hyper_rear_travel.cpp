@@ -2,8 +2,8 @@
 // bump stop at speed? (owner report 2026-10-12: the Hyper One N2O gets bouncy and light at the front above 390 km/h.)
 //
 // Builds car_hyper_n2o (or RG_DIAG_CAR) with a saved garage setup (RG_DIAG_SETUP = a racing_game.vehicle_setup/1 file,
-// default = the owner's saved one under %APPDATA%), accelerates in a flat Session (ground box half-extent 20 km, so no
-// wheel-cast seam artefacts), ignition + starter, assist.auto_shift 1, throttle 1, and bins per 20 km/h: rear max
+// default = the owner's saved one under %APPDATA%), accelerates in a flat Session (tessellated mesh ground, 40 km x 1 km, cells <= 20 m: a big box or
+// big triangles give phantom wheel-cast hits, PHYS-047 / rg::flat_ground_mesh), ignition + starter, assist.auto_shift 1, throttle 1, and bins per 20 km/h: rear max
 // compression, RL/RR fz high-pass amplitude, front fz minimum, traction-control activity. The table goes to stdout; the
 // per-tick CSV to RG_DIAG_CSV when set. Other env switches: RG_DIAG_STOP_KMH (default 480), RG_DIAG_NITROUS=1 (arm the kit),
 // RG_DIAG_TC=0 (assist.traction_control off), RG_DIAG_LAUNCH_THROTTLE / RG_DIAG_LAUNCH_KMH (throttle below that speed; the
@@ -120,7 +120,9 @@ TEST_CASE("diag: hypercar rear suspension travel vs speed", "[.][diag][hyper_tra
     config.chassis_mass_kg = entry->chassis.mass_kg;
     config.chassis_half_extents = ps::Vec3{entry->chassis.half_extents[0], entry->chassis.half_extents[1], entry->chassis.half_extents[2]};
     config.chassis_z_m = entry->chassis.spawn_z_m;
-    config.ground_half_extent_m = 20000.0;
+    config.ground_half_extent_m = 20000.0; // 40 km long strip, tessellated (a 20 km box gives the PHYS-047 launch hop)
+    config.ground_half_extent_y_m = 500.0;
+    config.ground_tessellated = true;
     config.engine_map_cache_dir = ctx.engine_map_cache_dir;
     rg::Session session(config);
     auto& world = session.world();
