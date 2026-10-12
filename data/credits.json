@@ -17,17 +17,31 @@
       "note": "Attribution is optional under dl-de/zero-2.0; it is kept anyway."
     },
     {
+      "id": "dgm1_bw",
+      "kind": "data",
+      "name": "DGM1 terrain heights (1 m), Mannheim/Viernheim strip",
+      "provider": "Landesamt für Geoinformation und Landentwicklung Baden-Württemberg (LGL)",
+      "licence": "Datenlizenz Deutschland – Namensnennung – Version 2.0 (dl-de/by-2.0)",
+      "licence_url": "https://www.govdata.de/dl-de/by-2-0",
+      "attribution_text": "Datenquelle: LGL, www.lgl-bw.de",
+      "attribution_required": true,
+      "in_game": true,
+      "on_attribution_line": true,
+      "geo2map_datasets": ["DGM1, 1 m terrain heights (Mannheim/Viernheim strip)"],
+      "note": "Corridor region; merged with the Hessen DGM1 at the state border."
+    },
+    {
       "id": "osm",
       "kind": "data",
       "name": "OpenStreetMap (roads, speed limits, buildings, destinations)",
-      "provider": "OpenStreetMap contributors, via the Geofabrik Hessen extract",
+      "provider": "OpenStreetMap contributors, via the Geofabrik Hessen and Regierungsbezirk Karlsruhe extracts",
       "licence": "Open Database License (ODbL) 1.0",
       "licence_url": "https://opendatacommons.org/licenses/odbl/1-0/",
       "attribution_text": "© OpenStreetMap contributors",
       "attribution_required": true,
       "in_game": true,
       "on_attribution_line": true,
-      "geo2map_datasets": ["OSM Hessen extract"],
+      "geo2map_datasets": ["OSM Hessen extract", "OSM Regierungsbezirk Karlsruhe extract"],
       "note": "Share-alike applies to derived databases (served packs)."
     },
     {
