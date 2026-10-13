@@ -1,0 +1,333 @@
+{
+  "format": "physics_sim.vehicle/2",
+  "tyre_families": "../tyres/families.json",
+  "name": "car_gt70",
+  "cooling_system": "../../external/physics_sim/data/cooling_systems/sedan.json",
+  "engine_thermal_start": "warm",
+  "source": "Ventura GT (data/models/ventura_gt): a 1970s long-hood two-door coupe (docs/new_cars_plan.md 3.2, owner answers Q3/Q4/Q6/Q7). Front-mid-engined (engine behind the front axle line), rear-wheel drive with a clutch-type limited-slip differential, the 5.0 L V8 (data/engines/ventura_v8_5l0_na.json) and the close-ratio six-speed (a normal manual, Q3). 1350 kg, 52 % front, CoG z 0.48 m [AS]. Belted touring tyres of the period, 215/60 R15 front and 225/60 R15 rear. Limited-slip differential: 60 N*m preload, ramp factors 0.35 drive / 0.20 coast [AS, a mild 1970s road LSD]. Layout copied from data/vehicles/car_sedan.json (controllers, clutch engagement curve, shafts, fuel tank, fluid link); geometry from the model's rig (wheel centres, radii, widths, travel = the rig's joint range). Vehicle frame origin = the centre of gravity, so attachment_local = wheel centre minus CoG, lowered by the static spring compression. Springs from the corner sprung mass at 1.60 / 1.70 Hz ride frequency, dampers 0.30 / 0.45 of critical (bump / rebound), wheel inertia 0.6 m r^2: all [D] from the [AS] masses and frequencies. Fuel tank 70 L of E5 at 0.745 kg/L, 80 % full. Clutch static capacity >= 1.2x the engine's peak torque.",
+  "wheels": [
+    {
+      "name": "FL",
+      "attachment_local": [
+        1.224,
+        0.74,
+        -0.2575
+      ],
+      "wheel_radius": 0.3195,
+      "wheel_width": 0.215,
+      "wheel_mass": 17.0,
+      "wheel_inertia": 1.041,
+      "suspension": {
+        "axis": [
+          0,
+          0,
+          1
+        ],
+        "travel_max": 0.18,
+        "spring_rate": 33700.0,
+        "damper_bump_rate": 2010.0,
+        "damper_rebound_rate": 3020.0,
+        "bump_stop_rate": 400000.0,
+        "arb_rate": 18000.0
+      },
+      "arb_partner": 1,
+      "tyre_spec": {
+        "compound": "belted",
+        "width_mm": 215,
+        "aspect": 60,
+        "rim_in": 15
+      },
+      "steered": true,
+      "is_front": true
+    },
+    {
+      "name": "FR",
+      "attachment_local": [
+        1.224,
+        -0.74,
+        -0.2575
+      ],
+      "wheel_radius": 0.3195,
+      "wheel_width": 0.215,
+      "wheel_mass": 17.0,
+      "wheel_inertia": 1.041,
+      "suspension": {
+        "axis": [
+          0,
+          0,
+          1
+        ],
+        "travel_max": 0.18,
+        "spring_rate": 33700.0,
+        "damper_bump_rate": 2010.0,
+        "damper_rebound_rate": 3020.0,
+        "bump_stop_rate": 400000.0,
+        "arb_rate": 18000.0
+      },
+      "arb_partner": 0,
+      "tyre_spec": {
+        "compound": "belted",
+        "width_mm": 215,
+        "aspect": 60,
+        "rim_in": 15
+      },
+      "steered": true,
+      "is_front": true
+    },
+    {
+      "name": "RL",
+      "attachment_local": [
+        -1.326,
+        0.74,
+        -0.2405
+      ],
+      "wheel_radius": 0.3255,
+      "wheel_width": 0.225,
+      "wheel_mass": 17.0,
+      "wheel_inertia": 1.081,
+      "suspension": {
+        "axis": [
+          0,
+          0,
+          1
+        ],
+        "travel_max": 0.18,
+        "spring_rate": 35100.0,
+        "damper_bump_rate": 1970.0,
+        "damper_rebound_rate": 2960.0,
+        "bump_stop_rate": 400000.0,
+        "arb_rate": 6000.0
+      },
+      "arb_partner": 3,
+      "tyre_spec": {
+        "compound": "belted",
+        "width_mm": 225,
+        "aspect": 60,
+        "rim_in": 15
+      },
+      "steered": false,
+      "is_front": false
+    },
+    {
+      "name": "RR",
+      "attachment_local": [
+        -1.326,
+        -0.74,
+        -0.2405
+      ],
+      "wheel_radius": 0.3255,
+      "wheel_width": 0.225,
+      "wheel_mass": 17.0,
+      "wheel_inertia": 1.081,
+      "suspension": {
+        "axis": [
+          0,
+          0,
+          1
+        ],
+        "travel_max": 0.18,
+        "spring_rate": 35100.0,
+        "damper_bump_rate": 1970.0,
+        "damper_rebound_rate": 2960.0,
+        "bump_stop_rate": 400000.0,
+        "arb_rate": 6000.0
+      },
+      "arb_partner": 2,
+      "tyre_spec": {
+        "compound": "belted",
+        "width_mm": 225,
+        "aspect": 60,
+        "rim_in": 15
+      },
+      "steered": false,
+      "is_front": false
+    }
+  ],
+  "steering": {
+    "max_wheel_angle": 0.55,
+    "ackermann_fraction": 1.0,
+    "rear_steer_fraction": 0.0,
+    "steer_rate_limit": 0.0
+  },
+  "brake_system": {
+    "type": "direct_torque",
+    "corners": [
+      {
+        "wheel": "FL",
+        "max_torque_nm": 2200.0
+      },
+      {
+        "wheel": "FR",
+        "max_torque_nm": 2200.0
+      },
+      {
+        "wheel": "RL",
+        "max_torque_nm": 1200.0
+      },
+      {
+        "wheel": "RR",
+        "max_torque_nm": 1200.0
+      }
+    ],
+    "handbrake": {
+      "wheels": [
+        "RL",
+        "RR"
+      ],
+      "max_torque_nm": 1200.0
+    }
+  },
+  "aero": {
+    "drag_area_m2": 0.78
+  },
+  "powertrain": {
+    "components": [
+      {
+        "id": "engine",
+        "type": "engine",
+        "ref": "../engines/ventura_v8_5l0_na.json"
+      },
+      {
+        "id": "clutch",
+        "type": "clutch",
+        "capacity_nm": 540.0,
+        "static_factor": 1.15,
+        "engagement_vs_pedal": {
+          "x": [
+            0.0,
+            0.3,
+            0.45,
+            0.6,
+            0.75,
+            1.0
+          ],
+          "y": [
+            1.0,
+            1.0,
+            0.55,
+            0.15,
+            0.0,
+            0.0
+          ]
+        },
+        "out_inertia_kgm2": 0.004,
+        "axis_local": [
+          0,
+          1,
+          0
+        ]
+      },
+      {
+        "id": "gearbox",
+        "type": "gearbox",
+        "ref": "../gearboxes/close_ratio_6mt.json"
+      },
+      {
+        "id": "diff",
+        "type": "differential",
+        "kind": "clutch_lsd",
+        "ratio": 3.55,
+        "efficiency": 0.97,
+        "carrier_inertia_kgm2": 0.02,
+        "carrier_axis_local": [
+          0,
+          1,
+          0
+        ],
+        "preload_nm": 60.0,
+        "ramp": {
+          "drive_factor": 0.35,
+          "coast_factor": 0.2
+        }
+      },
+      {
+        "id": "tank",
+        "type": "fuel_tank",
+        "fuel": "../../external/physics_sim/data/fuels/e5.json",
+        "capacity_kg": 52.15,
+        "initial_kg": 41.72
+      }
+    ],
+    "shafts": [
+      {
+        "ports": [
+          "engine.crank",
+          "clutch.in"
+        ]
+      },
+      {
+        "ports": [
+          "clutch.out",
+          "gearbox.in"
+        ]
+      },
+      {
+        "ports": [
+          "gearbox.out",
+          "diff.carrier"
+        ]
+      },
+      {
+        "ports": [
+          "diff.left",
+          "wheel:RL"
+        ]
+      },
+      {
+        "ports": [
+          "diff.right",
+          "wheel:RR"
+        ]
+      }
+    ],
+    "compliance": "rigid",
+    "rotor_reaction": true,
+    "fluid": [
+      [
+        "tank.out",
+        "engine.fuel"
+      ]
+    ]
+  },
+  "controllers": [
+    {
+      "id": "tcu",
+      "type": "manual_tcu",
+      "gearbox": "gearbox",
+      "clutch": "clutch",
+      "engine": "engine",
+      "auto_clutch": {
+        "enabled": true,
+        "bite_rpm": 1000,
+        "full_rpm_min": 1500,
+        "full_rpm_max": 3000,
+        "lock_slip_rpm": 80,
+        "anti_stall_rpm": 650,
+        "engage_rate_per_s": 4.0,
+        "release_rate_per_s": 12.0,
+        "open_time_s": 0.08,
+        "close_time_s": 0.1,
+        "sync_time_s": 0.3,
+        "max_sync_torque_nm": 50.0
+      },
+      "auto_blip": {
+        "enabled": true,
+        "kp_per_rpm": 0.002,
+        "max_throttle": 1.0,
+        "upshift_cut": true,
+        "upshift_cut_release_slip_rpm": 300,
+        "upshift_cut_max_hold_s": 0.6,
+        "upshift_torque_ramp_s": 0.1
+      },
+      "auto_shift": {
+        "enabled": false,
+        "up_rpm_at_zero_throttle": 2400,
+        "up_rpm_at_full_throttle": 6000,
+        "down_rpm_at_zero_throttle": 1200,
+        "down_rpm_at_full_throttle": 3000,
+        "min_time_in_gear_s": 1.0
+      },
+      "max_pending_steps": 2
+    }
+  ]
+}

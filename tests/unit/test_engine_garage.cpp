@@ -12,6 +12,8 @@
 #include "ps/io/vehicle_io.h"
 #include "ps/jobs/job_system.h"
 
+#include <nlohmann/json.hpp>
+
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/matchers/catch_matchers_string.hpp>
@@ -242,15 +244,21 @@ TEST_CASE("engine swap: every catalog engine loads on every base car", "[engine_
     Fixture f;
     const auto cars = f.base_cars();
     REQUIRE(cars.size() >= 6);
-    int combinations = 0;
+    int combinations = 0, turned_away = 0;
     for (const rg::CatalogEntry* car : cars) {
         for (const rg::EngineEntry& engine : f.store->list()) {
             INFO(car->id << " + " << engine.key);
             const auto setup = setup_of(car->id, {{"engine_install", engine.key}});
             const Loaded l = load_setup(f, *car, setup);
             INFO(l.error);
-            REQUIRE(l.ok);
             ++combinations;
+            if (!rg::check_fit(*car, engine).allowed) { // the engine is too big for this bay: refused with the reason
+                CHECK_FALSE(l.ok);
+                CHECK_THAT(l.error, ContainsSubstring("does not fit"));
+                ++turned_away;
+                continue;
+            }
+            REQUIRE(l.ok);
             const EngineView v = engine_of(l.desc);
             REQUIRE(v.found);
             std::string err;
@@ -275,6 +283,60 @@ TEST_CASE("engine swap: every catalog engine loads on every base car", "[engine_
         }
     }
     CHECK(combinations == static_cast<int>(cars.size() * f.store->list().size()));
+    CHECK(turned_away > 0); // the small cars' bays turn the big engines away
+}
+
+TEST_CASE("engine fit: the generated envelopes against the measured bays", "[engine_garage][engine_swap][fit]") {
+    Fixture f;
+    const auto find = [&](const char* id) {
+        for (const rg::EngineEntry& e : f.store->list()) {
+            if (e.id == id) return &e;
+        }
+        return static_cast<const rg::EngineEntry*>(nullptr);
+    };
+    // every default engine carries the envelope of its generated mesh
+    for (const rg::EngineEntry& e : f.store->list()) {
+        INFO(e.key);
+        REQUIRE(e.envelope_mm.has_value());
+        for (double v : *e.envelope_mm) CHECK(v > 100.0);
+        CHECK_FALSE(e.model_path.empty());
+    }
+    // every car with a measured bay takes its own engine
+    for (const rg::CatalogEntry* car : f.base_cars()) {
+        if (!car->engine_bay_envelope) continue;
+        INFO(car->id);
+        std::ifstream in(car->vehicle_path);
+        const nlohmann::json j = nlohmann::json::parse(in);
+        std::string own;
+        for (const auto& c : j.at("powertrain").at("components")) {
+            if (c.value("type", "") == "engine") {
+                own = (fs::path(car->vehicle_path).parent_path() / c.at("ref").get<std::string>()).lexically_normal().generic_string();
+            }
+        }
+        const rg::EngineEntry* e = f.store->find_by_file(own);
+        REQUIRE(e != nullptr);
+        CHECK(rg::check_fit(*car, *e).allowed);
+    }
+    const rg::CatalogEntry* city = f.catalog.find("car_city");
+    const rg::CatalogEntry* gt = f.catalog.find("car_gt70");
+    const rg::CatalogEntry* runabout = f.catalog.find("car_runabout");
+    const rg::EngineEntry* v8 = find("ventura_v8_5l0_na");
+    const rg::EngineEntry* i6 = find("n52b30_3l_na");
+    REQUIRE(city);
+    REQUIRE(gt);
+    REQUIRE(runabout);
+    REQUIRE(v8);
+    REQUIRE(i6);
+    // the V8 is too long for the city car's transverse bay and too wide for the Runabout's; the GT takes it
+    const rg::FitResult in_city = rg::check_fit(*city, *v8);
+    CHECK_FALSE(in_city.allowed);
+    REQUIRE_FALSE(in_city.reasons.empty());
+    CHECK_THAT(in_city.reasons[0], ContainsSubstring("the bay takes"));
+    CHECK_FALSE(rg::check_fit(*runabout, *v8).allowed);
+    CHECK(rg::check_fit(*gt, *v8).allowed);
+    CHECK(rg::check_fit(*gt, *i6).allowed);
+    // a car without a measured bay takes everything
+    CHECK(rg::check_fit(f.entry("car_sedan"), *v8).allowed);
 }
 
 TEST_CASE("engine swap: the car's own engine changes nothing", "[engine_garage][engine_swap]") {
@@ -304,6 +366,7 @@ TEST_CASE("engine swap: the engine thermal model follows the engine (a thermal c
         REQUIRE(stock.desc.powertrain.thermal.has_value()); // every game car ships with the thermal model
         for (const rg::EngineEntry& engine : f.store->list()) {
             INFO(car->id << " + " << engine.key);
+            if (!rg::check_fit(*car, engine).allowed) continue; // too big for this bay (the combination test covers it)
             std::string err;
             const auto facts = rg::read_engine_facts(engine.file, &err);
             INFO(err);
@@ -506,15 +569,19 @@ TEST_CASE("engine swap: the chassis-mass delta is the catalog figure difference"
     CHECK(delta("car_sedan_rwd", "default:i4_2l_na") == 0.0);
 }
 
-TEST_CASE("engine swap: the fit seam allows every engine on every car today", "[engine_garage][engine_swap]") {
+TEST_CASE("engine swap: a car without a measured bay takes every engine", "[engine_garage][engine_swap]") {
     Fixture f;
+    int bayless = 0;
     for (const rg::CatalogEntry* car : f.base_cars()) {
+        if (car->engine_bay_envelope) continue; // the measured bays are the [fit] case's
+        ++bayless;
         for (const rg::EngineEntry& e : f.store->list()) {
             const rg::FitResult r = rg::check_fit(*car, e);
             CHECK(r.allowed);
             CHECK(r.reasons.empty());
         }
     }
+    CHECK(bayless > 0); // the sedans and the hypercar have no measured bay yet
 }
 
 TEST_CASE("engine setup: a /1 setup with the first version's engine ids reads unchanged and resolves", "[engine_garage][setup]") {

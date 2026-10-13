@@ -1,0 +1,217 @@
+{
+  "format": "physics_sim.engine/1",
+  "name": "pico_i3_1l0_na",
+  "kind": "simulated",
+  "source": "Game engine for the Pico city car (racing_game, docs/new_cars_plan.md Q9: 'a 1.0 l 3 cylinder N/A engine with sound'). Not a real engine: an [AS] generic 2018-2022 A-segment 1.0 L naturally aspirated DOHC 12-valve inline-three, sized after the class (Toyota 1KR-FE / VW EA211 1.0 MPI, recalled: about 50-55 kW at 6000 rpm and 90-95 N*m at about 4300 rpm). Bore 71 x stroke 84 mm x 3 = 997.6 cm3 [AS, 1KR-like]; every other number is [AS] and the generated maps are the cycle model's, nothing is fitted to a dyno sheet. Firing 1-2-3 every 240 deg (an even-firing three; no balance shaft is modelled). ECU: MBT tracking limited by the generated knock limit on E5 with a 2 deg margin (ignition_strategy knock_limited), stoichiometric part load, lambda 0.90 at full load. Measured with ps::drivetrain::run_dyno_sweep (wide-open throttle, warm, default installation, 2026-10-13): peak torque 102.8 N*m at 4300 rpm, peak power 54.1 kW at 5800 rpm.",
+  "default_thermal": "../engine_thermal/pico_i3_1l0_na.json",
+  "architecture": "piston_4stroke",
+  "bore_mm": 71.0,
+  "stroke_mm": 84.0,
+  "cylinders": 3,
+  "intake_manifold_volume_l": 1.5,
+  "throttle_body": {
+    "diameter_mm": 42.0,
+    "count": 1,
+    "discharge_coefficient": 0.8,
+    "area_fraction_vs_position": {
+      "x": [
+        0.0,
+        0.05,
+        0.1,
+        0.25,
+        0.5,
+        0.75,
+        1.0
+      ],
+      "y": [
+        0.002,
+        0.012,
+        0.03,
+        0.12,
+        0.4,
+        0.75,
+        1.0
+      ]
+    }
+  },
+  "throttle_input": "electronic",
+  "throttle_actuator_tau_s": 0.04,
+  "idle_control": {
+    "kp_per_rpm": 3e-05,
+    "ki_per_rpm_s": 6e-05,
+    "max_throttle": 0.1,
+    "max_torque_nm": 10.0
+  },
+  "ecu": {
+    "lambda_target": {
+      "rpm": [
+        0.0,
+        6500.0
+      ],
+      "p_im_kpa": [
+        20.0,
+        90.0,
+        100.0
+      ],
+      "values": [
+        [
+          1.0,
+          1.0,
+          0.9
+        ],
+        [
+          1.0,
+          1.0,
+          0.9
+        ]
+      ],
+      "source": "[AS] stoichiometric part load, power enrichment at wide-open throttle (lambda 0.90)"
+    },
+    "ignition_strategy": "knock_limited",
+    "knock_margin_deg": 2.0
+  },
+  "cycle": {
+    "source": "[AS] 12-valve DOHC breathing: 2 x 24.5 mm intake / 2 x 21 mm exhaust valves, 232 / 228 deg duration, 7.0 / 7.3 mm lift, IVO 8 BTDC / EVC 4 BTDC (4 deg of overlap, no cam phaser modelled); 420 mm runners into a 1.5 L plenum, 280 mm primaries into one 3-into-1 collector. Assumed, not measured.",
+    "rod_mm": 117.0,
+    "compression_ratio": 10.5,
+    "intake_valves": 2,
+    "exhaust_valves": 2,
+    "intake_valve_d_mm": 24.5,
+    "exhaust_valve_d_mm": 21.0,
+    "intake_lift": {
+      "lift_mm_vs_deg": {
+        "x": [
+          0.0,
+          58.0,
+          116.0,
+          174.0,
+          232.0
+        ],
+        "y": [
+          0.0,
+          4.34,
+          7.0,
+          4.34,
+          0.0
+        ]
+      },
+      "phase_ref_deg": -8.0
+    },
+    "exhaust_lift": {
+      "lift_mm_vs_deg": {
+        "x": [
+          0.0,
+          57.0,
+          114.0,
+          171.0,
+          228.0
+        ],
+        "y": [
+          0.0,
+          4.526,
+          7.3,
+          4.526,
+          0.0
+        ]
+      },
+      "phase_ref_deg": 488.0
+    },
+    "intake_port_cc": 60.0,
+    "exhaust_port_cc": 80.0,
+    "cd_vs_l_over_d": {
+      "x": [
+        0.0,
+        0.1,
+        0.2,
+        0.3
+      ],
+      "y": [
+        0.65,
+        0.62,
+        0.55,
+        0.45
+      ]
+    },
+    "friction": {
+      "model": "polynomial_piston_speed",
+      "a_kpa": 66.62,
+      "b_kpa": 0.091,
+      "c_kpa": 0.347
+    },
+    "grid_rpm": [
+      800.0,
+      1000.0,
+      1500.0,
+      2000.0,
+      3000.0,
+      4000.0,
+      5000.0,
+      6000.0,
+      6500.0
+    ],
+    "grid_p_im_kpa": [
+      25.0,
+      30.0,
+      50.0,
+      70.0,
+      90.0,
+      100.0
+    ],
+    "intake": {
+      "source": "[AS] 46 mm throttle, 1.5 L plenum, 420 mm runners 36 -> 32 mm.",
+      "throttle_bore_m": 0.046,
+      "plenum_m3": 0.0015,
+      "runners": [
+        {
+          "cylinders": "all",
+          "length_m": 0.42,
+          "d_in_m": 0.036,
+          "d_out_m": 0.032
+        }
+      ],
+      "interface": "throttle_inlet"
+    },
+    "exhaust": {
+      "source": "[AS] cast 3-into-1 manifold: 280 mm x 32 mm primaries, 250 mm x 40 mm collector to the flange.",
+      "primaries": [
+        {
+          "cylinders": "all",
+          "length_m": 0.28,
+          "d_m": 0.032
+        }
+      ],
+      "merges": [
+        {
+          "from": [
+            1,
+            2,
+            3
+          ],
+          "into": "flange",
+          "length_m": 0.25,
+          "d_m": 0.04
+        }
+      ],
+      "interface": "flange"
+    },
+    "firing_order": [
+      1,
+      2,
+      3
+    ],
+    "default_installation": "../installations/pico_i3_1l0_na.json"
+  },
+  "inertia_kgm2": 0.07,
+  "breakaway_torque_nm": 12.0,
+  "fuel": "../../external/physics_sim/data/fuels/e5.json",
+  "ignition": "spark",
+  "idle_rpm": 800.0,
+  "initial_state": "running",
+  "limiter": {
+    "type": "fuel_cut",
+    "rpm": 6300.0,
+    "hysteresis_rpm": 150.0
+  },
+  "mass_kg": 72.0,
+  "mass_source": "ASSUMED [AS]: an aluminium 1.0 L three-cylinder with its manifolds weighs 65-75 kg (city-car class, recalled, no citation fetched)."
+}

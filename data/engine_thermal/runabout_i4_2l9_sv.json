@@ -1,0 +1,10 @@
+{
+  "format": "physics_sim.engine_thermal/1",
+  "extends": "../../external/physics_sim/data/engine_thermal/class_si_passenger.json",
+  "source": "runabout_i4_2l9_sv (data/engines/runabout_i4_2l9_sv.json). displacement_l 2.896 [D: bore x stroke x cylinders of the engine file]. all-iron block and head, thermosiphon cooling in the real car (a pump is modelled): 30 kg/L participating metal x 500 J/(kg K) [AS] + coolant. Every other number is the class default [AS] (class_si_passenger.json carries the derivations).",
+  "displacement_l": 2.896,
+  "capacity_per_l": {
+    "engine_j_k": 42000.0,
+    "oil_j_k": 7600.0
+  }
+}

@@ -200,6 +200,14 @@ bool Garage::select(const std::string& id, std::string* err) {
     return write_selection(err);
 }
 
+const EngineEntry* Garage::bay_engine(const std::string& id) const {
+    if (editing() && edit_id_ == id && !model_.engine_key.empty()) return store_->find(model_.engine_key);
+    std::string err;
+    const auto st = stats(id, &err);
+    if (!st || st->engine_path.empty()) return nullptr;
+    return store_->find_by_file(st->engine_path);
+}
+
 std::optional<VehicleStats> Garage::stats(const std::string& id, std::string* err) const {
     const CatalogEntry* e = catalog_.find(id);
     if (e == nullptr) {

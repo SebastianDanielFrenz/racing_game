@@ -104,6 +104,14 @@ SwapPackage derive_swap_package(const SwapCar& car, const SwapEngine& engine, co
         s.up_zero = round_to(0.45 * engine.limiter_rpm, 50.0);
         s.down_zero = std::max(engine.idle_rpm + 300.0, round_to(0.19 * engine.limiter_rpm, 50.0));
         s.down_full = std::max(s.down_zero + 500.0, round_to(0.41 * engine.limiter_rpm, 50.0));
+        if (s.down_full >= s.up_zero) {
+            // A narrow band (a vintage engine: idle 550, limiter 2200) leaves no room for the fixed offsets: place the
+            // points in the band instead, keeping each up/down pair a factor of about 2 apart for a wide-step gearbox.
+            const double span = engine.limiter_rpm - engine.idle_rpm;
+            s.up_zero = round_to(engine.idle_rpm + 0.5 * span, 50.0);
+            s.down_zero = round_to(engine.idle_rpm + 0.1 * span, 50.0);
+            s.down_full = round_to(engine.idle_rpm + 0.25 * span, 50.0);
+        }
         p.zero_blip = engine.mechanical_throttle;
         p.lines.push_back("Clutch assist: bites at " + num0(c.bite_rpm) + " rpm, anti-stall at " + num0(c.anti_stall_rpm) + " rpm");
         p.lines.push_back("Auto shift: up at " + num0(s.up_full) + " rpm at full throttle (limiter " + num0(engine.limiter_rpm) + " rpm)");
@@ -135,10 +143,23 @@ SwapPackage derive_swap_package(const SwapCar& car, const SwapEngine& engine, co
 }
 
 FitResult check_fit(const CatalogEntry& car, const EngineEntry& engine) {
-    // Reserved: car engine_bay_envelope_mm vs engine envelope_mm, mount pattern, driveline. Every engine fits today.
-    (void)car;
-    (void)engine;
-    return FitResult{};
+    FitResult r;
+    if (!car.engine_bay_envelope || !engine.envelope_mm) return r;
+    const EngineBayEnvelope& bay = *car.engine_bay_envelope;
+    const std::array<double, 3>& env = *engine.envelope_mm;
+    const bool transverse = bay.crank_axis == 'y';
+    const double room[3] = {transverse ? bay.size_mm[1] : bay.size_mm[0], transverse ? bay.size_mm[0] : bay.size_mm[1],
+                            bay.size_mm[2]};
+    const char* what[3] = {"long", "wide", "tall"};
+    for (int i = 0; i < 3; ++i) {
+        if (env[i] > room[i]) {
+            char buf[160];
+            std::snprintf(buf, sizeof(buf), "%.0f mm %s, the bay takes %.0f mm", env[i], what[i], room[i]);
+            r.reasons.emplace_back(buf);
+        }
+    }
+    r.allowed = r.reasons.empty();
+    return r;
 }
 
 } // namespace rg

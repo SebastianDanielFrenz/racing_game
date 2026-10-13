@@ -159,6 +159,7 @@ struct SetupModel {
     std::vector<std::string> swap_lines;
     double chassis_mass_delta_kg = 0.0;
     std::string engine_title;    // the installed engine's display name ("" = the car's own)
+    std::string engine_key;      // the installed engine's EngineStore key (the car's own too); "" = not in the store
 };
 // Builds the option views of an entry from its files.
 SetupModel build_setup_model(const CatalogEntry& entry, const SetupOptionTable& table, const SetupContext& ctx,

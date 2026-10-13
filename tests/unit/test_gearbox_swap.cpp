@@ -172,13 +172,13 @@ double max_step(const ps::drivetrain::GearboxDesc& g) {
 TEST_CASE("gearbox catalogue: the shipped rows load with their kinds, ratings and sections", "[gearbox_swap][garage]") {
     Fixture f;
     const auto& list = f.boxes->list();
-    CHECK(list.size() == 7);
+    CHECK(list.size() == 8);
     std::set<std::string> ids;
     for (const auto& g : list) {
         INFO(g.id);
         ids.insert(g.id);
         CHECK(g.rating_nm > 0.0);
-        CHECK(g.gears >= 5);
+        CHECK(g.gears >= 3);
         CHECK(g.first_ratio > g.top_ratio);
         CHECK(g.first_ratio > 1.0);
         CHECK(fs::exists(g.file));

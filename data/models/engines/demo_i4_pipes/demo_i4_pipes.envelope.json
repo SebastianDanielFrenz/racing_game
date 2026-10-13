@@ -1,0 +1,52 @@
+{
+  "format": "rg.engine_envelope/1",
+  "engine": "demo_i4_pipes",
+  "file": "external/physics_sim/data/engines/demo_i4_pipes.json",
+  "layout": "inline",
+  "frame": "x along the crank toward the timing end, y left, z up (an inline engine's cylinder axis); origin on the crank axis at the flywheel face of the block",
+  "bounds_m": {
+    "min": [
+      -0.0483,
+      -0.1886,
+      -0.198
+    ],
+    "max": [
+      0.5453,
+      0.3433,
+      0.3964
+    ]
+  },
+  "size_mm": [
+    594,
+    532,
+    594
+  ],
+  "mounts": {
+    "flywheel_face": [
+      0.0,
+      0.0,
+      0.0
+    ],
+    "crank_axis": [
+      1.0,
+      0.0,
+      0.0
+    ]
+  },
+  "class_rule": false,
+  "derived": {
+    "per_bank": 4,
+    "pitch": 0.1063,
+    "deck": 0.2164,
+    "below": 0.083,
+    "sump": 0.12,
+    "head_h": 0.13,
+    "cover_h": 0.05,
+    "head_w": 0.206,
+    "front": 0.06,
+    "length": 0.4553,
+    "block_w": 0.146,
+    "case_w": 0.216
+  },
+  "source": "tools/cargen/engine_mesh.py from the engine file's own geometry (external/physics_sim/data/engines/demo_i4_pipes.json). Proportions are [AS] rules of thumb (bore pitch 1.12 x bore + 10 mm, deck = stroke / 2 + rod + 0.33 x bore, head and cover heights by valve count, manifolds drawn compact); the bounding box is the generated mesh's own."
+}

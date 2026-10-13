@@ -51,6 +51,11 @@ struct EngineEntry {
     double mass_kg = 0.0;    // catalog figure (the swap's chassis-mass delta); 0 = unknown
     std::string mass_source;
     std::array<double, 3> crank_axis_local{0.0, 1.0, 0.0};
+    // The generated engine mesh's bounding box, mm (x along the crank, y, z up), from the row's "envelope" file
+    // (rg.engine_envelope/1, tools/cargen/engine_mesh.py); a user engine takes its default's. None = unknown size.
+    std::optional<std::array<double, 3>> envelope_mm;
+    std::string envelope_path; // absolute; "" without one
+    std::string model_path;    // absolute .glb of the generated mesh (next to the envelope); "" without one
     EnginePeaks catalog_peaks; // measured once for cycle engines (a curve engine's are read from the file)
     std::vector<std::string> aliases; // legacy ids, defaults only
     std::string created, modified;    // user engines (ISO-like text)

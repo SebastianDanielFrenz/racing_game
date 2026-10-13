@@ -1,0 +1,39 @@
+{
+  "format": "physics_sim.installation/1",
+  "source": "[AS] Runabout T installation: the carburettor breathes straight from the engine compartment (small airbox stands in for the intake horn); one long pipe to a cast-end-plate silencer under the rear seat and a short tail at the rear left.",
+  "intake": {
+    "airbox_m3": 0.002,
+    "inlet_position_m": [
+      1.03,
+      -0.2,
+      0.0
+    ]
+  },
+  "exhaust": {
+    "elements": [
+      {
+        "type": "pipe",
+        "length_m": 1.6,
+        "d_m": 0.045
+      },
+      {
+        "type": "expansion_chamber",
+        "length_m": 0.45,
+        "d_m": 0.13
+      },
+      {
+        "type": "pipe",
+        "length_m": 0.3,
+        "d_m": 0.045
+      },
+      {
+        "type": "outlet",
+        "position_m": [
+          -1.44,
+          -0.3,
+          -0.33
+        ]
+      }
+    ]
+  }
+}

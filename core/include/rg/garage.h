@@ -100,6 +100,9 @@ public:
     bool select(const std::string& id, std::string* err); // persists
     // ---- per-vehicle data ----
     [[nodiscard]] std::optional<VehicleStats> stats(const std::string& id, std::string* err) const;
+    // The engine the garage's bay view shows for this car: the edit session's installed engine while that car is
+    // edited, else the car's own. nullptr when the engine is not in the store.
+    [[nodiscard]] const EngineEntry* bay_engine(const std::string& id) const;
     // The car's geometry for the garage camera; `model_min/max` (car frame, from the
     // loaded model's bounds) override the chassis-box based estimate when given.
     [[nodiscard]] std::optional<GarageSubject> subject(const std::string& id, const GVec3* model_min,
