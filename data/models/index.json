@@ -1,0 +1,10 @@
+[
+  {
+    "id": "pico",
+    "title": "Pico (city car)",
+    "glb": "pico/pico.glb",
+    "rig": "pico/pico.rig.json",
+    "flow": "pico/pico.flow.json",
+    "cockpit": "pico/pico.cockpit.json"
+  }
+]
