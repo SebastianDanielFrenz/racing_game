@@ -219,8 +219,14 @@ func _process(_delta: float) -> void:
 			lines.append("steer     %+.2f %s" % [steer, _bar((steer + 1.0) * 0.5)])
 			lines.append("throttle  %5.2f %s" % [throttle, _bar(throttle)])
 			lines.append("brake     %5.2f %s" % [brake, _bar(brake)])
-			lines.append("handbrake %5.2f  clutch %5.2f   ignition %s  auto-shift %s" % [
-				handbrake, clutch,
+			# The clutch channel is the driver's pedal only; the auto-clutch opens the clutch without touching it, so
+			# the effective engagement (min of pedal curve and auto-clutch, from the powertrain snapshot) is shown too.
+			var hud_pt: Dictionary = _simulation.get_vehicle_powertrain(vehicle_name)
+			var engagement: float = float(hud_pt.get("clutch_engagement", 1.0))
+			var auto_tag: String = " (auto)" if bool(hud_pt.get("assist_auto_clutch", false)) and 1.0 - engagement > clutch + 0.01 else ""
+			lines.append("clutch    %5.2f %s  engaged %4.2f%s" % [clutch, _bar(clutch), engagement, auto_tag])
+			lines.append("handbrake %5.2f   ignition %s  auto-shift %s" % [
+				handbrake,
 				"on" if _input_map.get_ignition() else "off", "on" if _input_map.get_auto_shift() else "off"])
 		else:
 			lines.append("car unattended: brakes held, clutch pressed")
