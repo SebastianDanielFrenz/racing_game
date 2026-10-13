@@ -20,7 +20,9 @@
 #include <cstdio>
 #include <cstring>
 #include <filesystem>
+#include <functional>
 #include <fstream>
+#include <iterator>
 #include <set>
 #include <string>
 #include <vector>
@@ -355,9 +357,108 @@ TEST_CASE("tyre spec: every racing_game vehicle file loads with spec-built tyres
             CHECK(desc.wheels[i].wheel_width == Approx(specs.wheels[i].width_mm / 1000.0));
             CHECK(std::abs(rg::tyre_diameter_mm(specs.wheels[i]) - 2000.0 * desc.wheels[i].wheel_radius) <= 12.0);
         }
-        // The raw physics loader leaves the default tyre: only rg::load_vehicle gives the real one.
-        const ps::vehicle::VehicleDesc raw = ps::io::load_vehicle_json(file.generic_string(), options);
-        CHECK(raw.wheels[0].tyre.name.empty());
+        // The raw physics loader no longer defaults a tyre (physics_sim 6c5bb87: a wheel without one is a load error):
+        // only rg::load_vehicle, which injects the spec-built descs, loads a game vehicle file.
+        CHECK_THROWS_WITH(ps::io::load_vehicle_json(file.generic_string(), options), ContainsSubstring("no tyre"));
+    }
+}
+
+TEST_CASE("tyre injection: two loads of a game car give bit-identical tyres, per wheel name", "[tyre_spec][tyre][vehicle_data]") {
+    ps::io::EngineMapOptions options;
+    options.cache_dir = kRoot + "/out/godot_engine_cache";
+    options.generate = false;
+    const std::string path = kRoot + "/data/vehicles/car_hyper_n2o.json";
+    const ps::vehicle::VehicleDesc a = rg::load_vehicle(path, options);
+    const ps::vehicle::VehicleDesc b = rg::load_vehicle(path, options);
+    REQUIRE(a.wheels.size() == b.wheels.size());
+    for (std::size_t i = 0; i < a.wheels.size(); ++i) CHECK(bit_identical(a.wheels[i].tyre, b.wheels[i].tyre));
+    // The injected descs are what physics_sim's validate_tyre_desc accepts (a load that got this far passed it), and
+    // they carry the tyre id as name and a non-empty source.
+    for (const auto& w : a.wheels) {
+        CHECK_FALSE(w.tyre.name.empty());
+        CHECK_FALSE(w.tyre.source.empty());
+        CHECK(w.tyre.rolling_resistance_v_eps > 0.0);
+        CHECK(w.tyre.low_speed_damping_ratio >= 0.0);
+        CHECK(w.tyre.low_speed_damping_ratio <= 2.0);
+        CHECK(w.tyre.low_speed_damping_vx > 0.0);
+    }
+    // A caller-supplied injected tyre for a wheel wins over the file's spec.
+    ps::io::VehicleLoadOptions lo;
+    lo.maps = options;
+    ps::vehicle::TyreDesc mine = a.wheels[0].tyre;
+    mine.name = "caller_tyre";
+    lo.tyres[a.wheels[0].name] = mine;
+    const ps::vehicle::VehicleDesc c = rg::load_vehicle(path, lo);
+    CHECK(c.wheels[0].tyre.name == "caller_tyre");
+    CHECK(c.wheels[1].tyre.name == a.wheels[1].tyre.name);
+}
+
+namespace {
+// car_sedan.json as a temp file with every relative reference made absolute (so it loads from anywhere), after
+// `mutate` edited the text. A game vehicle with a bad tyre spec is built this way.
+std::string car_variant(const TempDirs& dirs, const std::function<void(std::string&)>& mutate) {
+    std::ifstream in(kRoot + "/data/vehicles/car_sedan.json", std::ios::binary);
+    std::string text((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+    mutate(text);
+    const std::string prefix = "\"" + kRoot + "/data/vehicles/../";
+    for (std::size_t p = text.find("\"../"); p != std::string::npos; p = text.find("\"../", p + prefix.size())) text.replace(p, 4, prefix);
+    const std::string path = dirs.base + "/car_variant.json";
+    std::ofstream(path, std::ios::binary) << text;
+    return path;
+}
+void replace_first(std::string& text, const std::string& from, const std::string& to) {
+    const std::size_t p = text.find(from);
+    REQUIRE(p != std::string::npos);
+    text.replace(p, from.size(), to);
+}
+} // namespace
+
+TEST_CASE("tyre injection: a game vehicle with a bad tyre spec reports a clear error", "[tyre_spec][tyre][vehicle_data]") {
+    ps::io::EngineMapOptions options;
+    options.generate = false;
+    TempDirs dirs;
+
+    // The unmodified variant loads (the harness itself is sound).
+    CHECK_NOTHROW(rg::load_vehicle(car_variant(dirs, [](std::string&) {}), options));
+
+    // An unknown compound names the file, the wheel and the compound.
+    try {
+        rg::load_vehicle(car_variant(dirs, [](std::string& t) { replace_first(t, "\"compound\": \"road\"", "\"compound\": \"mud_pie\""); }), options);
+        FAIL("an unknown compound must not load");
+    } catch (const std::exception& e) {
+        const std::string m = e.what();
+        CHECK_THAT(m, ContainsSubstring("car_variant.json"));
+        CHECK_THAT(m, ContainsSubstring("wheel 'FL'"));
+        CHECK_THAT(m, ContainsSubstring("unknown tyre compound \"mud_pie\""));
+    }
+
+    // A size the rule cannot build (aspect 0 is rejected by the spec reader) names the problem.
+    CHECK_THROWS_WITH(rg::load_vehicle(car_variant(dirs, [](std::string& t) { replace_first(t, "\"aspect\": 45", "\"aspect\": 0"); }), options),
+                      ContainsSubstring("tyre_spec"));
+
+    // A wheel without any tyre: physics_sim's own message, naming the wheel.
+    CHECK_THROWS_WITH(rg::load_vehicle(car_variant(dirs, [](std::string& t) {
+                          replace_first(t, "\"arb_partner\": 1, \"tyre_spec\": { \"compound\": \"road\", \"width_mm\": 225, \"aspect\": 45, \"rim_in\": 17 }, ", "\"arb_partner\": 1, ");
+                      }), options),
+                      ContainsSubstring("wheel 'FL': no tyre"));
+
+    // Two wheels with one name but different specs cannot share one injected tyre.
+    CHECK_THROWS_WITH(rg::load_vehicle(car_variant(dirs, [](std::string& t) {
+                          replace_first(t, "\"name\": \"RR\"", "\"name\": \"FL\"");
+                          replace_first(t, "\"arb_partner\": 2, \"tyre_spec\": { \"compound\": \"road\", \"width_mm\": 225", "\"arb_partner\": 2, \"tyre_spec\": { \"compound\": \"road\", \"width_mm\": 235");
+                      }), options),
+                      ContainsSubstring("unique \"name\""));
+
+    // A families file whose base tyre damping is out of physics_sim's range fails at the families file, not deep inside
+    // the physics loader.
+    {
+        std::ifstream in(kRoot + "/data/tyres/families.json", std::ios::binary);
+        std::string fam((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+        replace_first(fam, "\"low_speed_damping_ratio\": 1.5", "\"low_speed_damping_ratio\": 3.5");
+        const std::string fam_path = dirs.base + "/bad_families.json";
+        std::ofstream(fam_path, std::ios::binary) << fam;
+        CHECK_THROWS_WITH(rg::load_vehicle(car_variant(dirs, [&](std::string& t) { replace_first(t, "\"../tyres/families.json\"", "\"" + fam_path + "\""); }), options),
+                          ContainsSubstring("low_speed_damping_ratio"));
     }
 }
 

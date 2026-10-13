@@ -215,6 +215,11 @@ std::shared_ptr<const TyreFamilies> TyreFamilies::load(const std::string& path, 
         const auto it = base->find(k);
         if (it != base->end() && !it->is_number()) return fail(std::string("base_tyre.") + k + " must be a number");
     }
+    // The built tyres go through physics_sim's validate_tyre_desc (VehicleLoadOptions::tyres): fail here, with this
+    // file's path, instead of at every vehicle load. (The TyreDesc defaults 1.5 / 2.0 apply when a key is absent.)
+    const double damping_ratio = num(*base, "low_speed_damping_ratio", 1.5);
+    if (damping_ratio < 0.0 || damping_ratio > 2.0) return fail("base_tyre.low_speed_damping_ratio must be in [0, 2]");
+    if (!(num(*base, "low_speed_damping_vx", 2.0) > 0.0)) return fail("base_tyre.low_speed_damping_vx must be > 0");
     const json& rr = base->at("rolling_resistance");
     const auto rise = rr.is_object() ? rr.find("rise_at_fraction") : rr.end();
     if (!rr.is_object() || rise == rr.end() || !rise->is_object() || !rise->contains("fraction") || !rise->contains("factor") ||
