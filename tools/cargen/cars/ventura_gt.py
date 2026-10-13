@@ -400,11 +400,11 @@ def build_cabin(m, ck, body):
                   source="control:ignition")
     # ---- deep-dish wood-rim three-spoke steering wheel with a horn button
     sw_c = (-0.05, EYE_Y, 0.80)
-    col = (0.89, 0.0, 0.45)
+    col = (0.89, 0.0, -0.45)   # forward and down into the dash
     node, f = C.steering_wheel(m, ck, sw_c, col, 0.19, 3, "wood", "chrome", "dash_hard", rim_r=0.014,
                                spoke_angles=[-math.pi / 2, math.pi / 6 - math.pi / 6, math.pi], dish=0.05,
                                column_len=0.42)
-    axis = norm((-0.89, 0.0, -0.45))
+    axis = norm((-0.89, 0.0, 0.45))
     C.push_button(m, ck, "horn", xform_point(f, (0, 0, -0.05 + 0.006)), axis, (0.05, 0.05, 0.008), "horn",
                   mat="trim_black", part=node, momentary=True, round_r=0.026, label="horn")
     # stalks from the column

@@ -274,11 +274,11 @@ def build_cabin(m, ck, body):
                   mat="button_red", label="hazard lights", symbol_mat="gauge_tick")
     # ---- steering wheel with audio/phone buttons
     sw_c = (0.36, eye_y, 0.84)
-    col = (0.88, 0.0, 0.47)
+    col = (0.88, 0.0, -0.47)   # forward and down into the dash
     node, f = C.steering_wheel(m, ck, sw_c, col, 0.18, 3, "wheel_rim", "dash_hard", "dash_hard", rim_r=0.016,
                                spoke_angles=[-math.pi / 2, 0.0, math.pi])
     from assetgen.vec import xform_point
-    axis = norm((-0.88, 0.0, -0.47))
+    axis = norm((-0.88, 0.0, 0.47))
     for k, (ch, lab) in enumerate((("audio_vol_up", "volume +"), ("audio_vol_down", "volume -"),
                                    ("phone", "phone"), ("audio_source", "source"))):
         side = 1 if k < 2 else -1
@@ -287,7 +287,7 @@ def build_cabin(m, ck, body):
         C.push_button(m, ck, f"wheel_{ch}", c, axis, (0.016, 0.014, 0.005), ch, mat="button",
                       part=node, momentary=True, label=lab, up_hint=(0, 0, 1))
     # stalks (indicators left, wipers right) from the column top
-    piv = (0.48, eye_y, 0.80)
+    piv = (0.48, eye_y, 0.776)
     C.stalk(m, ck, "indicator", (piv[0], piv[1] + 0.035, piv[2]), (-0.25, 1.0, -0.1), 0.13, "indicator",
             ["right", "off", "left"], label="indicator stalk", axis=(1, 0, 0))
     C.stalk(m, ck, "wiper", (piv[0], piv[1] - 0.035, piv[2]), (-0.25, -1.0, -0.1), 0.13, "wipers",

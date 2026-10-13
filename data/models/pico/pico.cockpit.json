@@ -227,7 +227,7 @@
         "center": [
           -0.0022,
           0.0,
-          -0.0012
+          0.0012
         ],
         "half_extents": [
           0.011,
@@ -253,7 +253,7 @@
         "center": [
           -0.0022,
           0.0,
-          -0.0012
+          0.0012
         ],
         "half_extents": [
           0.011,
@@ -279,7 +279,7 @@
         "center": [
           -0.0022,
           0.0,
-          -0.0012
+          0.0012
         ],
         "half_extents": [
           0.011,
@@ -305,7 +305,7 @@
         "center": [
           -0.0022,
           0.0,
-          -0.0012
+          0.0012
         ],
         "half_extents": [
           0.011,
@@ -774,5 +774,5 @@
   "notes": [
     "Pedals and the handbrake follow the applied control channels; the gear lever follows the selected gear through its gate; the speedometer follows the snapshot speed."
   ],
-  "source_glb_sha256": "84bf227d01dccb574f790bb9459cc861590b8ccf83bffbfa042dbb568a5cbbf5"
+  "source_glb_sha256": "af8b948c68b6544844b8c8a5fc759e98dbc02136aa7f4bcfdf38f56554e602e1"
 }
