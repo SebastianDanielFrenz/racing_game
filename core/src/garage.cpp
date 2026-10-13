@@ -202,6 +202,14 @@ bool Garage::select(const std::string& id, std::string* err) {
 
 const EngineEntry* Garage::bay_engine(const std::string& id) const {
     if (editing() && edit_id_ == id && !model_.engine_key.empty()) return store_->find(model_.engine_key);
+    // Not editing: the engine the saved setup (or the preset) installs, else the car's own.
+    if (const CatalogEntry* e = catalog_.find(id)) {
+        const VehicleSetup setup = effective_setup(id);
+        if (!setup.values.empty()) {
+            const SetupModel m = build_setup_model(*e, options_, context_for(*e), &setup);
+            if (m.error.empty() && !m.engine_key.empty()) return store_->find(m.engine_key);
+        }
+    }
     std::string err;
     const auto st = stats(id, &err);
     if (!st || st->engine_path.empty()) return nullptr;
@@ -527,6 +535,18 @@ std::string Garage::working_rim() const {
     return e != nullptr ? e->default_rim : std::string("#c4c8cf");
 }
 
+std::vector<std::string> Garage::working_model_options() const {
+    std::vector<std::string> out;
+    for (const SetupOptionDef& def : options_.options) {
+        if (def.model_option.empty()) continue;
+        const auto it = working_.values.find(def.id);
+        if (it != working_.values.end() && std::holds_alternative<bool>(it->second) && std::get<bool>(it->second)) {
+            out.push_back(def.model_option);
+        }
+    }
+    return out;
+}
+
 bool Garage::save(std::string* err) {
     if (!editing()) {
         if (err != nullptr) *err = "no vehicle is being edited";
@@ -614,6 +634,10 @@ DriveSelection Garage::prepare_drive(const std::string& id) {
             }
             if (!m.compiled.rim.empty()) {
                 d.rim = m.compiled.rim;
+                d.modified = true;
+            }
+            if (!m.compiled.model_options.empty()) {
+                d.model_options = m.compiled.model_options;
                 d.modified = true;
             }
         }

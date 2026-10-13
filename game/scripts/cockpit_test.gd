@@ -178,6 +178,21 @@ func _test_model(path: String) -> void:
 	check(not pedal.transform.basis.is_equal_approx(Basis.IDENTITY), name + ": brake pedal moved under full brake")
 	var lever: Node3D = root.find_child("lever_gear", true, false)
 	check(not lever.transform.basis.is_equal_approx(Basis.IDENTITY), name + ": gear lever left neutral in first gear")
+	# optional model parts (model_options.gd): the Runabout's folding top, the Ventura's raised hoods
+	var parts := preload("res://scripts/model_options.gd")
+	var rig_file := path.get_basename() + ".rig.json"
+	if name == "runabout_t":
+		var top: Node3D = root.find_child("top", true, false)
+		parts.apply(root, rig_file, [])
+		check(not top.visible, "runabout_t: the top is off as delivered")
+		parts.apply(root, rig_file, PackedStringArray(["roof"]))
+		check(top.visible, "runabout_t: the folding top option shows it")
+	if name == "ventura_gt":
+		check(parts.hood_variant(rig_file, 577.0) == "", "ventura_gt: its own V8 fits under the flat hood")
+		check(parts.hood_variant(rig_file, 760.0) == "hood_bulge", "ventura_gt: a 760 mm engine gets the bulge")
+		check(parts.hood_variant(rig_file, 820.0) == "hood_scoop", "ventura_gt: an 820 mm engine gets the scoop")
+		parts.apply(root, rig_file, ["hood_scoop"])
+		check(root.find_child("hood_scoop", true, false).visible and not root.find_child("hood_bulge", true, false).visible, "ventura_gt: only the picked hood shows")
 	holder.queue_free()
 	sim.queue_free()
 	await process_frame

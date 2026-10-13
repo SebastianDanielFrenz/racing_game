@@ -1355,7 +1355,14 @@ func _apply_vehicle(sel: Dictionary) -> void:
 		"z_m": float(chassis["z_m"]),
 		"engine_map_cache_dir": str(sel["engine_map_cache_dir"]),
 	})
-	_visuals.set_vehicle(VEHICLE_NAME, str(sel["model_path"]), str(sel["paint"]), str(sel["rim"]))
+	# optional model parts: the setup's (a folding top) plus the raised hood a tall swapped-in engine needs
+	var parts: Array = Array(sel.get("model_options", []))
+	var bay: Dictionary = _garage.get_bay_engine(str(sel.get("vehicle_id", ""))) if _garage.has_method("get_bay_engine") else {}
+	if not bay.is_empty():
+		var hood: String = preload("res://scripts/model_options.gd").hood_variant(str(sel["model_path"]).get_basename() + ".rig.json", float((bay.get("envelope_mm", Vector3.ZERO) as Vector3).z))
+		if hood != "":
+			parts.append(hood)
+	_visuals.set_vehicle(VEHICLE_NAME, str(sel["model_path"]), str(sel["paint"]), str(sel["rim"]), parts)
 	_hud.vehicle_name = VEHICLE_NAME
 	_gauge.set_vehicle_name(VEHICLE_NAME)
 	_seat_ui.vehicle_name = VEHICLE_NAME
@@ -1449,6 +1456,7 @@ func _enter_configurator() -> void:
 	_garage_scene.show_vehicle(_garage.get_vehicle(id))
 	var colours: Dictionary = _garage.get_working_colours()
 	_garage_scene.set_colours(str(colours.get("paint", "")), str(colours.get("rim", "")))
+	_garage_scene.set_model_options(Array(colours.get("model_options", [])))
 	_garage_scene.panel_side = "right"
 	_garage_scene.panel_px = 528.0
 	_garage_scene.go_to_area("overview", false)
@@ -1468,6 +1476,8 @@ func _on_garage_option_changed(option_id: String) -> void:
 	if option_id == "paint" or option_id == "rim" or option_id == "":
 		var colours: Dictionary = _garage.get_working_colours()
 		_garage_scene.set_colours(str(colours.get("paint", "")), str(colours.get("rim", "")))
+	# optional model parts (the Runabout's folding top): shown as soon as the option changes
+	_garage_scene.set_model_options(Array(_garage.get_working_colours().get("model_options", [])))
 
 func _on_garage_save() -> void:
 	var saved: Dictionary = _garage.save()

@@ -421,6 +421,7 @@
       "body_type": "tourer",
       "vehicle": "data/vehicles/car_runabout.json",
       "model": "data/models/runabout_t/runabout_t.glb",
+      "model_options": ["roof"],
       "engine_bay": "front",
       "engine_bay_envelope": {
         "size_mm": [
@@ -447,7 +448,7 @@
       },
       "setup": {
         "options_note": "every option but brake_bias: the car has rear brakes only (no front corner to bias towards)",
-        "options": ["final_drive", "gear_ratios", "clutch_capacity", "brake_force", "spring_front", "spring_rear", "damper_front", "damper_rear", "arb_front", "arb_rear", "tyre_front", "tyre_rear", "assist_auto_clutch", "assist_auto_blip", "assist_auto_shift", "assist_unit", "paint", "rim", "engine_rev_limit", "engine_throttle_response", "engine_install", "fuel", "gearbox_install", "turbo_install", "turbo_install_n2o", "turbo_boost_target", "nitrous_install_hyper", "nitrous_install_sedan"],
+        "options": ["final_drive", "gear_ratios", "clutch_capacity", "brake_force", "spring_front", "spring_rear", "damper_front", "damper_rear", "arb_front", "arb_rear", "tyre_front", "tyre_rear", "assist_auto_clutch", "assist_auto_blip", "assist_auto_shift", "assist_unit", "paint", "rim", "folding_top", "engine_rev_limit", "engine_throttle_response", "engine_install", "fuel", "gearbox_install", "turbo_install", "turbo_install_n2o", "turbo_boost_target", "nitrous_install_hyper", "nitrous_install_sedan"],
         "tyre_fitment": {
           "front": {
             "rims_in": [

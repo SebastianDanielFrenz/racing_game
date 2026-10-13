@@ -52,6 +52,7 @@ struct DriveSelection {
     VehicleChassis chassis;
     std::string paint;         // "#rrggbb", the setup's or the catalog default
     std::string rim;
+    std::vector<std::string> model_options; // visual model parts switched on by the setup (e.g. "roof")
     std::string engine_map_cache_dir; // the .psmaps cache the world load should use (the vehicle's own default)
     bool modified = false;     // a saved setup is applied
     bool assist_auto_clutch = true;  // the vehicle file's controller defaults (after the setup)
@@ -151,6 +152,8 @@ public:
     // Paint/rim of the working copy (visual only).
     [[nodiscard]] std::string working_paint() const;
     [[nodiscard]] std::string working_rim() const;
+    // The model parts the working setup switches on (setup options with a model_option, e.g. "roof").
+    [[nodiscard]] std::vector<std::string> working_model_options() const;
 
     // ---- hand-over to the drive ----
     DriveSelection prepare_drive(const std::string& id);

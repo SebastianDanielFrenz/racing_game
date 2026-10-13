@@ -81,6 +81,9 @@ struct CatalogEntry {
     VehicleChassis chassis;
     std::string engine_bay = "front"; // "front" | "mid" | "rear": where the garage camera looks for the engine
     std::optional<EngineBayEnvelope> engine_bay_envelope; // none = not measured: every engine fits
+    // Optional model parts the car's art carries (rig.json nodes with an "option", e.g. "roof" = the Runabout's
+    // folding top). A setup option with the same model_option shows or hides them; the physics never sees them.
+    std::vector<std::string> model_options;
     std::optional<DeclaredEngineStats> declared_engine;
     std::string default_paint = "#8a8f98"; // visual only
     std::string default_rim = "#c4c8cf";

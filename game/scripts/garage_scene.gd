@@ -47,6 +47,7 @@ var _models_loaded: int = 0
 # Engine bay view: vehicle id -> {engine_path, engines: [Node3D], hoods: [{node, axis, max}], variants, open}
 var _bay: Dictionary = {}
 var _bay_poll: float = 0.0
+var _model_options: Array = [] # optional parts the working setup switches on (model_options.gd)
 # The shell panel covers one side of the screen: the camera shifts sideways so the car
 # sits in the free part ("left" / "right" / "" and the panel's width in pixels).
 var panel_side: String = ""
@@ -118,6 +119,7 @@ func _count_nodes(n: Node) -> int:
 func show_vehicle(info: Dictionary) -> bool:
 	vehicle_info = info
 	vehicle_id = str(info.get("id", ""))
+	_model_options = [] # the configurator sets the working setup's parts after this
 	for id in _cars:
 		_cars[id]["real"].visible = (id == vehicle_id)
 		_cars[id]["mirror"].visible = (id == vehicle_id)
@@ -127,6 +129,7 @@ func show_vehicle(info: Dictionary) -> bool:
 	_paint = Color.html(str(info.get("paint", "#8a8f98")))
 	_rim = Color.html(str(info.get("rim", "#c4c8cf")))
 	_apply_colours()
+	_apply_parts()
 	var car: Dictionary = _cars[vehicle_id]
 	garage.setup_camera(vehicle_id, car["bounds_min"], car["bounds_max"], true)
 	return true
@@ -139,6 +142,23 @@ func set_colours(paint_hex: String, rim_hex: String) -> void:
 		_rim = Color.html(rim_hex)
 	_apply_colours()
 	_apply_tyre_widths()
+
+# Optional model parts the working setup switches on (model_options.gd), on the car and its mirror twin.
+func set_model_options(on: Array) -> void:
+	_model_options = on
+	_apply_parts()
+
+# The setup's parts plus the hood the bay engine needs.
+func _apply_parts() -> void:
+	if not _cars.has(vehicle_id):
+		return
+	var on := _model_options.duplicate()
+	var hood := str(_bay.get(vehicle_id, {}).get("hood", ""))
+	if hood != "":
+		on.append(hood)
+	var rig := str(vehicle_info.get("model_path", "")).get_basename() + ".rig.json"
+	for instance in [_cars[vehicle_id]["real"], _cars[vehicle_id]["mirror"]]:
+		preload("res://scripts/model_options.gd").apply(instance, rig, on)
 
 func _apply_tyre_widths() -> void:
 	var owner := get_parent()
@@ -245,9 +265,9 @@ func _update_bay(delta: float, area: String) -> void:
 		var n: Node3D = h["node"]
 		n.transform.basis = Basis(h["axis"], float(h["max"]) * t)
 
-# Hood joints (ISO axis -> glTF axis (y, z, x)) and hood variants of the shown car, from its rig.json.
+# Hood joints of the shown car (ISO axis -> glTF axis (y, z, x)), from its rig.json.
 func _read_bay_rig(car: Dictionary) -> Dictionary:
-	var bay := {"engine_path": "", "engines": [], "hoods": [], "variants": {}, "open": 0.0}
+	var bay := {"engine_path": "", "engines": [], "hoods": [], "hood": "", "open": 0.0}
 	var model_path := str(vehicle_info.get("model_path", ""))
 	var rig_path := model_path.get_basename() + ".rig.json"
 	if not FileAccess.file_exists(rig_path):
@@ -265,13 +285,6 @@ func _read_bay_rig(car: Dictionary) -> Dictionary:
 				var n: Node3D = instance.find_child(node_name, true, false)
 				if n != null:
 					bay["hoods"].append({"node": n, "axis": axis, "max": float(joint.get("max", 0.0))})
-		if bool(node.get("default_hidden", false)):
-			for instance in [car["real"], car["mirror"]]:
-				var hidden: Node3D = instance.find_child(node_name, true, false)
-				if hidden != null:
-					hidden.visible = false
-	var eb: Dictionary = rig.get("engine_bay", {})
-	bay["variants"] = eb.get("hood_variants", {})
 	return bay
 
 func _set_bay_engine(car: Dictionary, bay: Dictionary, info: Dictionary) -> void:
@@ -307,22 +320,11 @@ func _set_bay_engine(car: Dictionary, bay: Dictionary, info: Dictionary) -> void
 		bay["engines"].append(e)
 	if bay["engines"].is_empty():
 		model.free()
-	# a tall engine needs a raised hood variant: the lowest one whose clearance takes it
-	var tall := float((info.get("envelope_mm", Vector3.ZERO) as Vector3).z)
-	var pick := ""
-	var best := INF
-	for v in bay["variants"]:
-		var c := float(bay["variants"][v].get("clearance_mm", 0.0))
-		if c >= tall and c < best:
-			best = c
-			pick = str(v)
-	for v in bay["variants"]:
-		if str(v) == "flat":
-			continue
-		for instance in [car["real"], car["mirror"]]:
-			var n: Node3D = instance.find_child(str(v), true, false)
-			if n != null:
-				n.visible = str(v) == pick
+	# a tall engine needs a raised hood variant (model_options.gd); the setup's own parts stay as they are
+	var rig := str(vehicle_info.get("model_path", "")).get_basename() + ".rig.json"
+	var pick: String = preload("res://scripts/model_options.gd").hood_variant(rig, float((info.get("envelope_mm", Vector3.ZERO) as Vector3).z))
+	bay["hood"] = pick
+	_apply_parts()
 	print("RG_GARAGE bay engine id=%s engine=%s fits=%s hood=%s" % [vehicle_id, str(info.get("name", "")), str(info.get("fits", true)), pick if pick != "" else "flat"])
 
 # ---- set ---------------------------------------------------------------------
@@ -715,6 +717,8 @@ func _load_car(info: Dictionary) -> bool:
 	holder.rotation.y = PI
 	holder.add_child(model)
 	_unique_materials(model)
+	# optional parts (a folding top) start hidden; set_model_options shows what the setup switches on
+	preload("res://scripts/model_options.gd").apply(model, path.get_basename() + ".rig.json", [])
 	var bounds := _model_bounds_iso(model)
 	_car_pivot.add_child(holder)
 	for mi in _mesh_instances(holder):

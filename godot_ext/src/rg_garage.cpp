@@ -398,6 +398,9 @@ godot::Dictionary RgGarage::get_working_colours() const {
     if (garage_ == nullptr || !garage_->editing()) return d;
     d["paint"] = from_std(garage_->working_paint());
     d["rim"] = from_std(garage_->working_rim());
+    godot::PackedStringArray parts;
+    for (const std::string& o : garage_->working_model_options()) parts.push_back(from_std(o));
+    d["model_options"] = parts;
     return d;
 }
 
@@ -416,6 +419,9 @@ godot::Dictionary RgGarage::prepare_drive(const String& id) {
     d["model_path"] = from_std(s.model_path);
     d["paint"] = from_std(s.paint);
     d["rim"] = from_std(s.rim);
+    godot::PackedStringArray model_options;
+    for (const std::string& o : s.model_options) model_options.push_back(from_std(o));
+    d["model_options"] = model_options;
     d["engine_map_cache_dir"] = from_std(s.engine_map_cache_dir);
     d["modified"] = s.modified;
     godot::Dictionary chassis;

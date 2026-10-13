@@ -47,6 +47,7 @@ var rim_colour: Color = Color(0, 0, 0, 0)
 
 var _wheel_nodes: Array = []
 var _model_root: Node3D
+var model_options: Array = [] # optional model parts switched on (model_options.gd), applied with the colours
 var _cockpit: Node3D # cockpit_controls.gd, for a model with a <model>.cockpit.json next to it
 var _load_ok: bool = false
 var _wing_flap: Node3D
@@ -144,6 +145,8 @@ func _load_model() -> void:
 # the physics never sees them). Every surface gets its own material copy first so a colour
 # never leaks into another car loaded from the same file.
 func apply_colours() -> void:
+	if _model_root != null:
+		preload("res://scripts/model_options.gd").apply(_model_root, model_absolute_path.get_basename() + ".rig.json", model_options)
 	if _model_root == null or (paint_colour.a == 0.0 and rim_colour.a == 0.0):
 		return
 	var stack: Array = [_model_root]

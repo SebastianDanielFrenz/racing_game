@@ -170,7 +170,7 @@ std::optional<VehicleCatalog> parse_vehicle_catalog(const std::string& json_text
                 fail(err, where, "\"preset_of\" \"" + preset_of + "\" names no base vehicle listed before this entry");
                 return std::nullopt;
             }
-            for (const char* inherited : {"vehicle", "model", "chassis", "engine_bay", "engine_bay_envelope", "declared_engine", "setup"}) {
+            for (const char* inherited : {"vehicle", "model", "chassis", "engine_bay", "engine_bay_envelope", "model_options", "declared_engine", "setup"}) {
                 if (v.contains(inherited)) {
                     fail(err, where, std::string("a preset takes \"") + inherited + "\" from its base (\"" + preset_of + "\")");
                     return std::nullopt;
@@ -279,6 +279,17 @@ std::optional<VehicleCatalog> parse_vehicle_catalog(const std::string& json_text
                 }
                 b.crank_axis = axis[0];
                 e.engine_bay_envelope = b;
+            }
+            if (const auto mo = v.find("model_options"); mo != v.end()) {
+                bool ok = mo->is_array();
+                for (const json& o : ok ? *mo : json::array()) {
+                    ok = ok && o.is_string() && !o.get<std::string>().empty();
+                    if (ok) e.model_options.push_back(o.get<std::string>());
+                }
+                if (!ok) {
+                    fail(err, where, "\"model_options\" must be a list of model option names");
+                    return std::nullopt;
+                }
             }
             const auto declared = v.find("declared_engine");
             if (declared != v.end()) {

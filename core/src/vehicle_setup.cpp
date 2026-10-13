@@ -952,6 +952,7 @@ std::optional<SetupOptionTable> parse_setup_options(const std::string& json_text
         detail::get_number(o, "step", d.step);
         detail::get_number(o, "max_shift", d.max_shift);
         detail::get_string(o, "file", d.file);
+        detail::get_string(o, "model_option", d.model_option);
         if (d.file != "vehicle" && d.file != "gearbox" && d.file != "engine" && d.file != "turbo") {
             return bad(where + ": \"file\" must be vehicle, gearbox, engine or turbo");
         }
@@ -972,7 +973,10 @@ std::optional<SetupOptionTable> parse_setup_options(const std::string& json_text
                 d.pointers.push_back(p.get<std::string>());
             }
         }
-        if (d.kind != OptionKind::Colour && d.pointers.empty()) return bad(where + ": \"pointers\" (the whitelist) is empty");
+        if (!d.model_option.empty() && (d.kind != OptionKind::Bool || !d.pointers.empty())) {
+            return bad(where + ": a model_option is a bool that edits no file, so it has no pointers");
+        }
+        if (d.kind != OptionKind::Colour && d.model_option.empty() && d.pointers.empty()) return bad(where + ": \"pointers\" (the whitelist) is empty");
         if (d.kind == OptionKind::Colour && !d.pointers.empty()) return bad(where + ": a colour edits no file, so it has no pointers");
         const double scale_max_limit = d.id == "turbo_boost_target" ? 20.0 : 10.0;
         if ((d.kind == OptionKind::Scale || d.kind == OptionKind::ScaleList) &&
@@ -1340,6 +1344,13 @@ SetupModel build_setup_model(const CatalogEntry& entry, const SetupOptionTable& 
                 break;
             }
             case OptionKind::Bool: {
+                if (!def.model_option.empty()) { // a visual part: off as delivered, offered where the model has it
+                    v.stock = false;
+                    if (std::find(entry.model_options.begin(), entry.model_options.end(), def.model_option) == entry.model_options.end()) {
+                        v.available = false;
+                    }
+                    break;
+                }
                 const std::vector<Target> t = targets_of(files, def, v.def.pointers);
                 bool value = false;
                 if (!t.empty()) {
@@ -1522,6 +1533,13 @@ std::string apply_option(const CatalogEntry& entry, const SetupOptionDef& def, c
         }
         case OptionKind::Bool: {
             if (!std::holds_alternative<bool>(value)) return type_error("true or false");
+            if (!def.model_option.empty()) {
+                if (std::find(entry.model_options.begin(), entry.model_options.end(), def.model_option) == entry.model_options.end()) {
+                    return id + ": " + entry.id + "'s model has no " + def.model_option;
+                }
+                if (std::get<bool>(value)) out.model_options.push_back(def.model_option);
+                return {};
+            }
             std::vector<Target> targets = targets_of(files, def, patterns);
             if (targets.empty()) return "option \"" + id + "\" matches nothing in " + entry.id + "'s files";
             for (Target& t : targets) {
