@@ -57,6 +57,10 @@ const char* const kControlChannelNames[] = {
     "assist.aero_control", // physics_sim assist unit (assists I5): rear-wing automation; only a car whose unit carries aero_control registers it in the World
     "assist.drive_mode", // physics_sim assists I7: 0 eco, 1 normal, 2 sport; only a car with a drive_modes part registers it in the World
     "assist.launch_control", // physics_sim assists I4: launch control on/off (1/0); only a car with the part registers it; a drive-mode change writes it (I7c)
+    "park_lock",
+    "gear_request", // -100 means no absolute request; zero is neutral
+    "transmission.selector", // reserved until automatic transmission support
+    "epb", // physics owns edge detection and the parking latch
     "nitrous_arm", // N2O arm switch, a plain 0/1 level (owner 2026-10-05; only cars with a nitrous kit declare it)
 };
 const std::size_t kControlChannelCount = sizeof(kControlChannelNames) / sizeof(kControlChannelNames[0]);
@@ -202,6 +206,7 @@ Session::Session(const SessionConfig& config)
     for (std::size_t i = 0; i < kControlChannelCount; ++i) {
         control_channels_[kControlChannelNames[i]].store(0.0, std::memory_order_relaxed);
     }
+    control_channels_["gear_request"].store(-100.0, std::memory_order_relaxed);
     // The assist channels start at the car's own defaults (physics_sim: the assist unit's default TC mode, else the
     // traction_control block's `enabled`; aero automation: the unit's default_enabled). The game sets no default of its own.
     if(have_vehicle_) {

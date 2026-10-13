@@ -20,6 +20,11 @@ rg::DriverSnapshot convert(const godot::Dictionary& d) {
     s.aero_active = static_cast<bool>(d.get("aero_control_active", false));
     s.aero_target_deg = static_cast<double>(d.get("aero_control_target_deg", 0.0));
     s.nitrous_fitted = static_cast<bool>(d.get("nitrous_fitted", false));
+    s.park_fitted = static_cast<bool>(d.get("park_lock_fitted", false));
+    s.park_engaged = static_cast<bool>(d.get("park_lock_engaged", false));
+    s.epb_fitted = static_cast<bool>(d.get("epb_fitted", false));
+    s.epb_state = static_cast<int>(d.get("epb_state", 0));
+    s.epb_refused = static_cast<bool>(d.get("epb_refused", false));
     return s;
 }
 class Sink final : public rg::ChannelSink {

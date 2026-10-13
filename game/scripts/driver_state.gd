@@ -1,7 +1,7 @@
 extends RefCounted
 # Adapter-only conversion: every display consumes rg::DriverActions::state.
-const CHANNELS := ["assist.auto_shift","assist.traction_control","assist.aero_control","assist.launch_control","assist.drive_mode","nitrous_arm"]
-const ACTIONS := {"tc":"traction_control","lc":"toggle_launch_control","dm":"drive_mode","aero":"toggle_aero","auto_shift":"auto_shift","nitrous":"toggle_nitrous"}
+const CHANNELS := ["assist.auto_shift","assist.traction_control","assist.aero_control","assist.launch_control","assist.drive_mode","nitrous_arm","park_lock","gear_request","transmission.selector","epb"]
+const ACTIONS := {"tc":"traction_control","lc":"toggle_launch_control","dm":"drive_mode","aero":"toggle_aero","auto_shift":"auto_shift","nitrous":"toggle_nitrous","park":"park","epb":"epb"}
 
 static func channels(simulation: Node) -> Dictionary:
 	var values: Dictionary = {}

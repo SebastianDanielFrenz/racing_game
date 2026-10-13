@@ -11,6 +11,7 @@
     "clutch": [{"type": "key", "key": "C"}],
     "shift_up": [{"type": "key", "key": "E"}],
     "shift_down": [{"type": "key", "key": "Q"}],
+    "park": [{"type": "key", "key": "P"}],
     "ignition": [{"type": "key", "key": "I"}],
     "starter": [{"type": "key", "key": "K"}],
     "traction_control": [{"type": "key", "key": "F4"}],

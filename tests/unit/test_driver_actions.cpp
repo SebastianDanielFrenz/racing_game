@@ -117,3 +117,38 @@ TEST_CASE("driver actions: one control-state projection reports effective state,
     CHECK_FALSE(rg::DriverActions::state("drive_mode",{},sink).fitted);
     CHECK_FALSE(rg::DriverActions::state("toggle_aero",{},sink).fitted);
 }
+
+TEST_CASE("driver actions: park requests and physics EPB state", "[driver_actions]") {
+    rg::DriverActions actions;
+    Sink sink;
+    auto s = fitted();
+    CHECK(actions.submit({"park"}));
+    actions.apply({s,true},sink);
+    CHECK(sink.values.count("park_lock") == 0);
+    s.park_fitted = true;
+    CHECK(actions.submit({"park"}));
+    actions.apply({s,true},sink);
+    CHECK(sink.get("park_lock") == 1);
+    CHECK_FALSE(rg::DriverActions::state("park",s,sink).active);
+    s.park_engaged = true;
+    CHECK(rg::DriverActions::state("park",s,sink).label == "P");
+    CHECK(actions.submit({"epb"}));
+    actions.apply({s,true},sink);
+    CHECK(sink.values.count("epb") == 0);
+    s.epb_fitted = true;
+    CHECK(actions.submit({"epb"}));
+    actions.apply({s,true},sink);
+    CHECK(sink.get("epb") == 1);
+    s.epb_refused = true;
+    auto state = rg::DriverActions::state("epb",s,sink);
+    CHECK(state.blink);
+    CHECK_FALSE(state.active);
+    CHECK(state.label == "EPB REFUSED");
+    actions.apply({s,true},sink); // refusal never retries automatically
+    CHECK(sink.get("epb") == 1);
+    CHECK(actions.submit({"epb",rg::DriverActionKind::Set,0}));
+    actions.apply({s,true},sink);
+    CHECK(sink.get("epb") == 0);
+    s.epb_refused = false; s.epb_state = 1;
+    CHECK(rg::DriverActions::state("epb",s,sink).active);
+}

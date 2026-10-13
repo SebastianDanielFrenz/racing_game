@@ -45,6 +45,11 @@ struct DriverSnapshot {
     bool aero_active = false;
     double aero_target_deg = 0;
     bool nitrous_fitted = false;
+    bool park_fitted = false;
+    bool park_engaged = false;
+    bool epb_fitted = false;
+    int epb_state = 0; // released / latched / handbrake
+    bool epb_refused = false;
 };
 
 struct VehicleContext {
@@ -88,7 +93,7 @@ public:
 
 private:
     CabinState cabin_;
-    std::array<bool, 6> held_{};
+    std::array<bool, 8> held_{};
     std::vector<ActionEvent> pending_;
 };
 

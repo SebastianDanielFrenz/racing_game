@@ -7,11 +7,11 @@ namespace rg {
 namespace {
 // Preserve the original forwarding order; per-action events chain through the
 // last value written, irrespective of which device submitted them.
-constexpr std::array<std::string_view, 6> ids = {
-    "auto_shift", "traction_control", "toggle_aero", "toggle_launch_control", "drive_mode", "toggle_nitrous"
+constexpr std::array<std::string_view, 8> ids = {
+    "auto_shift", "traction_control", "toggle_aero", "toggle_launch_control", "drive_mode", "toggle_nitrous", "park", "epb"
 };
-constexpr std::array<std::string_view, 6> channels = {
-    "assist.auto_shift", "assist.traction_control", "assist.aero_control", "assist.launch_control", "assist.drive_mode", "nitrous_arm"
+constexpr std::array<std::string_view, 8> channels = {
+    "assist.auto_shift", "assist.traction_control", "assist.aero_control", "assist.launch_control", "assist.drive_mode", "nitrous_arm", "park_lock", "epb"
 };
 int slot(std::string_view id) {
     for (std::size_t i = 0; i < ids.size(); ++i) if (ids[i] == id) return static_cast<int>(i);
@@ -98,6 +98,14 @@ void DriverActions::apply(const VehicleContext& context, ChannelSink& sink) {
                 // Keep the existing inert channel write on cars without a kit.
                 next = event.kind == DriverActionKind::Set ? event.value : 1 - current;
             }
+            if (index == 6) {
+                if (!snapshot.park_fitted) continue;
+                next = event.kind == DriverActionKind::Set ? (event.value != 0 ? 1 : 0) : 1;
+            } else if (index == 7) {
+                if (!snapshot.epb_fitted) continue;
+                // Switch LEVEL only; never reconstruct or retry the physics latch.
+                next = event.kind == DriverActionKind::Set ? (event.value != 0 ? 1 : 0) : 1 - current;
+            }
             sink.set(channels[index], next);
         }
     }
@@ -106,7 +114,24 @@ void DriverActions::apply(const VehicleContext& context, ChannelSink& sink) {
 
 ControlState DriverActions::state(std::string_view id, const DriverSnapshot& snapshot, const ChannelSink& sink) {
     ControlState out;
-    if (id == "traction_control") {
+    if (id == "park") {
+        out.fitted = snapshot.park_fitted;
+        out.enabled = out.fitted;
+        out.active = out.fitted && snapshot.park_engaged;
+        out.value = out.active ? 1 : 0;
+        out.lamp_segments = out.active ? 1 : 0;
+        out.label = out.active ? "P" : "";
+        out.colour_role = out.active ? "warning" : "off";
+    } else if (id == "epb") {
+        out.fitted = snapshot.epb_fitted;
+        out.enabled = out.fitted;
+        out.active = out.fitted && snapshot.epb_state != 0;
+        out.value = snapshot.epb_state;
+        out.blink = out.fitted && snapshot.epb_refused;
+        out.lamp_segments = out.active || out.blink ? 1 : 0;
+        out.label = !out.fitted ? "" : out.blink ? "EPB REFUSED" : out.active ? "EPB" : "";
+        out.colour_role = out.lamp_segments ? "warning" : "off";
+    } else if (id == "traction_control") {
         out.fitted = (snapshot.fitted_bits & kAssistBitTractionControl) != 0;
         out.enabled = out.fitted && snapshot.traction_modes != 0;
         out.value = snapshot.traction_effective;

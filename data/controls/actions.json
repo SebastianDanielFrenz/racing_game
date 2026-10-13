@@ -9,6 +9,8 @@
     {"id": "clutch", "label": "Clutch", "group": "driving", "kind": "axis", "range": "unit", "modes": ["drive"]},
     {"id": "shift_up", "label": "Shift up", "group": "driving", "kind": "button", "mode": "edge", "modes": ["drive"]},
     {"id": "shift_down", "label": "Shift down", "group": "driving", "kind": "button", "mode": "edge", "modes": ["drive"]},
+    {"id": "park", "label": "Park lock", "group": "driving", "kind": "button", "mode": "edge", "help": "Requests the fitted park pawl; shifting releases it", "modes": ["drive"]},
+    {"id": "epb", "label": "Electric parking brake", "group": "driving", "kind": "button", "mode": "edge", "help": "Unavailable until fitted physics EPB support is installed", "modes": ["drive"]},
     {"id": "ignition", "label": "Ignition on / off", "group": "driving", "kind": "button", "mode": "edge", "modes": ["drive"]},
     {"id": "starter", "label": "Starter (hold)", "group": "driving", "kind": "button", "mode": "held", "modes": ["drive"]},
     {"id": "traction_control", "label": "Traction control mode (cycle)", "group": "driving", "kind": "button", "mode": "edge", "help": "Cycles through the modes the car's assist unit offers (Off, On, Relaxed, Sport, Drift); the TC lamp shows intervention", "modes": ["drive"]},

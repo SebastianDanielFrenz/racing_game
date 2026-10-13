@@ -59,7 +59,7 @@ extends Node3D
 # the car, save settings, quit); _apply_transition() carries them out. The
 # screens are shell_ui.gd (boot, main menu, spawn picker, pause, settings,
 # credits) and loading_overlay.gd (loading); the Drive screen is the world
-# itself with the HUD. Esc/P pause, Esc backs out of every other screen.
+# itself with the HUD. Esc pauses, Esc backs out of every other screen.
 #
 # World load flow: flat = RgSimulation.initialize() + start() at once. Real
 # world = initialize_terrain() (start-up runs on a worker thread) -> poll
@@ -1140,6 +1140,8 @@ func _forward_driving(live: bool, delta: float) -> void:
 		_hud.show_message("Drive mode: " + str(state["label"]),2.0,DriveModeTheme.color_for_mode(drive_mode_change))
 	# shift_up_count/shift_down_count are running edge counters on the sim
 	# side (session.cpp's kControlChannelNames): add this frame's edges.
+	if up > 0 or down > 0:
+		_simulation.set_control("park_lock",0.0)
 	if up > 0:
 		_simulation.set_control("shift_up_count", _simulation.get_control("shift_up_count") + up)
 	if down > 0:
@@ -1273,8 +1275,6 @@ func _input(event: InputEvent) -> void:
 	if _shell != null and event is InputEventKey and event.pressed and not event.echo:
 		if event.keycode == KEY_ESCAPE:
 			_on_escape()
-		elif event.keycode == KEY_P and (_screen == "drive" or _screen == "pause") and not _typing():
-			_toggle_pause()
 	# Pad Menu/Start opens and closes the pause menu like Esc (owner 2026-10-06).
 	if _shell != null and event is InputEventJoypadButton and event.pressed and event.button_index == JOY_BUTTON_START:
 		_on_escape()
