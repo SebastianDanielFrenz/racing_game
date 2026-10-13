@@ -200,6 +200,14 @@ public:
     // streamer holding it must be destroyed before this WorldTerrain.
     [[nodiscard]] TerrainViewSource view_source();
 
+    // The coarsest pyramid level whose height tiles get the road bed carved in (default 2). Level 0 is what
+    // physics collides with; L1 (2 m) and L2 (4 m) are carved with the SAME L2 road surface so the visible
+    // ground within ~1 km matches the road bed instead of hiding it (owner 2026-10-13: "I drove through the
+    // visible ground" - uncarved L1+ DEM sits above the carved road). Changing it only affects tiles produced
+    // afterwards (call it right after open(), before any render chunk is built).
+    [[nodiscard]] int carve_max_level() const { return carve_max_level_; }
+    void set_carve_max_level(int level) { carve_max_level_ = level < 0 ? 0 : (level > 2 ? 2 : level); }
+
     [[nodiscard]] const g2m::mesh::LodParams& lod_params() const { return lod_params_; }
     void set_lod_params(const g2m::mesh::LodParams& params) { lod_params_ = params; }
 
@@ -310,6 +318,7 @@ private:
     std::atomic<std::uint64_t> osm_fail_{0};
     std::atomic<std::uint64_t> osm_cache_hits_{0};
     bool road_profiles_enabled_ = true;
+    int carve_max_level_ = 2;
     bool has_road_layer_ = false; // set once, at open(), from the manifest
     RoadSurfaceMap road_surfaces_; // from config.physics.road_surfaces (G2.5a-grip R-b)
     std::atomic<std::uint8_t> physics_priority_{static_cast<std::uint8_t>(g2m::world::Priority::Physics)};

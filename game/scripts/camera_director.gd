@@ -17,7 +17,12 @@ extends Node
 #  4. the same frame, if the session-frame render origin changed,
 #     RgTerrainView.set_render_origin(sim.get_render_origin_session());
 #  5. render streaming follows the ACTIVE camera (rg/player_mode.h's rule):
-#     RgTerrainView.update_focus(active camera position in session XY).
+#     RgTerrainView.update_focus(active camera position in session XY) -
+#     VELOCITY-LED while the active rig follows the player car (chase, bumper,
+#     cockpit, orbit): focus = p + v_hat * min(|v| * 1 s, 150 m), the chassis
+#     velocity in the session frame (rg/render_focus.h). Free cam, drone and
+#     on foot get no lead. road_stream.gd / building_stream.gd read the same
+#     focus through render_focus_session() / render_velocity_session().
 # Which rig is active is decided by the mode framework (rg_core,
 # get_mode_state().camera_rig); main.gd calls set_active().
 
@@ -31,6 +36,12 @@ var rebase_count: int = 0
 
 var _last_origin_godot: Vector3 = Vector3.ZERO
 var _pushed_render_origin: Variant = null
+var _focus_tracker: RgRenderFocus = RgRenderFocus.new()
+var _focus_session: Vector2 = Vector2.ZERO # the (led) render focus, session XY
+var _camera_session: Vector2 = Vector2.ZERO # the active camera, session XY
+var _velocity_session: Vector2 = Vector2.ZERO # the chassis velocity, session XY (0 when the rig does not lead)
+var _focus_valid: bool = false
+var lead_enabled: bool = true # --no-render-lead switches the velocity lead off (A/B measurements)
 
 func _ready() -> void:
 	set_process_priority(-1000)
@@ -51,6 +62,24 @@ func set_base_fov(base_fov_deg: float) -> void:
 	for r in rigs.values():
 		if r.has_method("set_base_fov"):
 			r.set_base_fov(base_fov_deg)
+
+# The render focus the streamers use (session XY), led by the car's velocity
+# when the active rig follows the car. Valid after the first _process frame.
+func render_focus_session() -> Vector2:
+	return _focus_session
+
+func render_camera_session() -> Vector2:
+	return _camera_session
+
+# The chassis velocity (session XY) while the active rig leads, else zero.
+func render_velocity_session() -> Vector2:
+	return _velocity_session
+
+func render_focus_lead_m() -> float:
+	return _focus_tracker.get_lead_length_m()
+
+func render_focus_valid() -> bool:
+	return _focus_valid
 
 func set_active(rig_name: String) -> void:
 	if rig_name == active_name or not rigs.has(rig_name):
@@ -100,6 +129,18 @@ func _process(delta: float) -> void:
 			terrain_view.set_render_origin(render_origin)
 			_pushed_render_origin = render_origin
 		var focus: Vector3 = terrain_view.godot_to_session(rig.camera.global_position)
-		terrain_view.update_focus(focus.x, focus.y)
+		var pose: Dictionary = simulation.get_chassis_session_pose()
+		var leads: bool = lead_enabled and RgRenderFocus.rig_leads_focus(active_name) and not pose.is_empty()
+		var vx: float = pose.get("vx", 0.0) if leads else 0.0
+		var vy: float = pose.get("vy", 0.0) if leads else 0.0
+		var f: Dictionary = _focus_tracker.update(focus.x, focus.y, vx, vy, delta, leads)
+		_camera_session = Vector2(focus.x, focus.y)
+		_focus_session = Vector2(f["x"], f["y"])
+		_velocity_session = Vector2(vx, vy)
+		_focus_valid = true
+		if leads:
+			terrain_view.update_focus_moving(f["x"], f["y"], vx, vy, focus.x, focus.y)
+		else:
+			terrain_view.update_focus(f["x"], f["y"])
 
 	simulation.add_adapter_time_us(Time.get_ticks_usec() - t0)

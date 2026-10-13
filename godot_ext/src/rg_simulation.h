@@ -204,8 +204,8 @@ public:
     // The cinematic camera wants the road ahead of the car
     // (FrameSnapshot::road_ahead); off costs nothing.
     void set_road_ahead_wanted(bool wanted);
-    // {x, y, z, yaw_deg, speed_mps}: the chassis in the SESSION frame (metres
-    // east/north/up, yaw 0 = east, counter-clockwise); {} without a Session.
+    // {x, y, z, yaw_deg, speed_mps, vx, vy, vz}: the chassis in the SESSION frame (metres
+    // east/north/up, yaw 0 = east, counter-clockwise, velocity m/s); {} without a Session.
     [[nodiscard]] godot::Dictionary get_chassis_session_pose() const;
     // The session frame -> the Godot frame the rigs live in (origin-relative,
     // like get_body_transform). Without a Session the input is returned as is.

@@ -15,6 +15,12 @@ var _known: Dictionary = {}
 var _tiles: Dictionary = {}
 var _center := Vector2i(2147483647,2147483647)
 var _material := ShaderMaterial.new()
+# Streaming statistics (RG_ROAD_STREAM): when each ribbon tile was first wanted
+# (msec), and the focus/velocity of the last frame.
+var _wanted_since: Dictionary = {}
+var _velocity := Vector2.ZERO
+var _camera_abs := Vector2.ZERO
+var _tiles_built_total := 0
 func _ready() -> void:
 	process_priority = 101
 	settings["distance_m"] = clampf(float(settings.get("distance_m",2500.0)),512.0,6000.0)
@@ -37,7 +43,14 @@ func _process(_delta: float) -> void:
 	var rig: Node = director.active_rig()
 	if rig==null:
 		return
-	var focus: Vector3 = view.godot_to_session(rig.camera.global_position)
+	# The streaming focus is led by the car's velocity while the rig follows the
+	# car (camera_director.gd, rg/render_focus.h); the drop-off distances below
+	# stay relative to it.
+	var cam: Vector3 = view.godot_to_session(rig.camera.global_position)
+	var led: Vector2 = director.render_focus_session() if director.render_focus_valid() else Vector2(cam.x,cam.y)
+	var focus := Vector3(led.x,led.y,cam.z)
+	_velocity = director.render_velocity_session() if director.render_focus_valid() else Vector2.ZERO
+	_camera_abs = Vector2(cam.x,cam.y)+utm_origin
 	var absolute := Vector2(focus.x,focus.y)+utm_origin
 	var center := Vector2i(floori(absolute.x/1024.0),floori(absolute.y/1024.0))
 	if center!=_center:
@@ -68,9 +81,17 @@ func _schedule(center: Vector2i,focus: Vector2) -> void:
 	for y in range(center.y-radius,center.y+radius+1):
 		for x in range(center.x-radius,center.x+radius+1):
 			var key := Vector2i(x,y)
-			var distance := (Vector2(x*1024+512,y*1024+512)-focus).length()
+			var delta := Vector2(x*1024+512,y*1024+512)-focus
+			var distance := delta.length()
 			if distance<=float(settings.distance_m)+725.0 and not _known.has(key):
-				jobs.append({"key":key,"distance":distance})
+				# Nearest first, but a tile behind a fast car is built after
+				# everything ahead (the car outruns the ribbon otherwise).
+				var order := distance
+				if _velocity.length()>=2.0 and delta.dot(_velocity.normalized())<-1024.0:
+					order += 5000.0
+				jobs.append({"key":key,"distance":order})
+				if not _wanted_since.has(key):
+					_wanted_since[key] = Time.get_ticks_msec()
 	jobs.sort_custom(func(a: Dictionary,b: Dictionary) -> bool: return a.distance>b.distance)
 	_mutex.lock()
 	_jobs = jobs
@@ -97,6 +118,8 @@ func _worker() -> void:
 func _upload(data: Dictionary) -> void:
 	var key: Vector2i = data.key
 	_known[key] = true
+	_wanted_since.erase(key)
+	_tiles_built_total += 1
 	if data.get("vertices",PackedVector3Array()).is_empty():
 		return
 	if _tiles.has(key):
@@ -117,3 +140,23 @@ func _upload(data: Dictionary) -> void:
 	node.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	add_child(node)
 	_tiles[key] = {"node":node,"origin":data.origin_session}
+
+# {pending (queued + built but not yet uploaded), oldest_age_s (longest a wanted
+# tile has waited), ribbon_ahead_m (distance along `direction` - session XY, any
+# length - from the car until the first ribbon tile that is neither built nor
+# known empty), tiles (resident), built_total}. Meant for a 1 Hz log line.
+func get_stats(car_session: Vector2,direction: Vector2) -> Dictionary:
+	_mutex.lock()
+	var pending := _jobs.size()+_results.size()
+	_mutex.unlock()
+	var now := Time.get_ticks_msec()
+	var oldest := 0.0
+	for key in _wanted_since:
+		oldest = maxf(oldest,float(now-int(_wanted_since[key]))/1000.0)
+	var known := PackedInt32Array()
+	for key in _known:
+		known.append(key.x)
+		known.append(key.y)
+	var absolute := car_session+utm_origin
+	var ahead := RgRenderFocus.grid_coverage_ahead(known,1024.0,absolute.x,absolute.y,direction.x,direction.y,float(settings.distance_m),64.0)
+	return {"pending":pending,"oldest_age_s":oldest,"ribbon_ahead_m":ahead,"tiles":_tiles.size(),"built_total":_tiles_built_total}

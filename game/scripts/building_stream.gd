@@ -41,11 +41,14 @@ func _process(_delta: float) -> void:
 	var rig: Node = director.active_rig()
 	if rig == null:
 		return
-	var focus: Vector3 = view.godot_to_session(rig.camera.global_position)
+	var cam: Vector3 = view.godot_to_session(rig.camera.global_position)
+	var led: Vector2 = director.render_focus_session() if director.render_focus_valid() else Vector2(cam.x, cam.y)
+	var focus := Vector3(led.x, led.y, cam.z)
+	var velocity: Vector2 = director.render_velocity_session() if director.render_focus_valid() else Vector2.ZERO
 	var absolute := Vector2(focus.x, focus.y) + utm_origin
 	var center := Vector2i(floori(absolute.x/1024.0), floori(absolute.y/1024.0))
 	if center != _center:
-		_schedule(center, absolute)
+		_schedule(center, absolute, velocity)
 		_center = center
 	var skyline := float(settings.get("skyline_distance_m", 40000.0))
 	rig.camera.far = maxf(rig.camera.far, skyline + 3000.0)
@@ -74,7 +77,7 @@ func _process(_delta: float) -> void:
 			tile.near.mesh = null
 			tile.full = false
 			_known[key] = false
-func _schedule(center: Vector2i, focus: Vector2) -> void:
+func _schedule(center: Vector2i, focus: Vector2, velocity: Vector2 = Vector2.ZERO) -> void:
 	var ordinary := float(settings.get("ordinary_distance_m", 2200.0))
 	var skyline := float(settings.get("skyline_distance_m", 40000.0))
 	var radius := ceili(skyline/1024.0)+1
@@ -82,13 +85,17 @@ func _schedule(center: Vector2i, focus: Vector2) -> void:
 	for y in range(center.y-radius, center.y+radius+1):
 		for x in range(center.x-radius, center.x+radius+1):
 			var key := Vector2i(x,y)
-			var distance := (Vector2(x*1024+512,y*1024+512)-focus).length()
+			var delta := Vector2(x*1024+512,y*1024+512)-focus
+			var distance := delta.length()
 			if distance > skyline+725:
 				continue
 			var full := distance <= ordinary+725
 			if _known.has(key) and (not full or bool(_known[key])):
 				continue
-			jobs.append({"key":key,"full":full,"distance":distance})
+			var order := distance
+			if velocity.length() >= 2.0 and delta.dot(velocity.normalized()) < -1024.0:
+				order += 5000.0 # behind a fast car: after everything ahead
+			jobs.append({"key":key,"full":full,"distance":order})
 	jobs.sort_custom(func(a: Dictionary,b: Dictionary) -> bool: return a.distance>b.distance)
 	_mutex.lock()
 	_jobs = jobs

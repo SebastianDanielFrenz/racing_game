@@ -66,6 +66,8 @@
 #include "g2m/mesh/terrain_chunk.h"
 
 #include <atomic>
+#include <chrono>
+#include <cmath>
 #include <condition_variable>
 #include <cstddef>
 #include <cstdint>
@@ -79,7 +81,15 @@ struct TerrainViewDiff {
     std::uint64_t serial = 0;           // pass to commit(); 1, 2, 3, ... per streamer
     double focus_x = 0.0;               // the session-local focus this diff selects for
     double focus_y = 0.0;
-    std::vector<RenderChunk> added;     // new-set minus resident-set, built, sorted by key ascending
+    double velocity_x = 0.0;            // the focus velocity the selection was made with (0 = none)
+    double velocity_y = 0.0;
+    // When the selection job started (steady clock): the adapter measures how long a chunk took from
+    // "needed" to "visible" against it.
+    std::chrono::steady_clock::time_point selected_at{};
+    // new-set minus resident-set, built. Sorted by key ascending - unless the focus came with a velocity
+    // (update_focus' vx/vy, speed >= 2 m/s): then in upload-urgency order (rg::sort_adds_by_urgency: what the car
+    // reaches first, finest level first), so an adapter that uploads in order under a budget fills the road ahead first.
+    std::vector<RenderChunk> added;
     std::vector<g2m::mesh::ChunkKey> removed; // resident-set minus new-set, sorted ascending
 };
 
@@ -136,8 +146,14 @@ public:
     // Records the latest focus; starts a background selection for it iff the
     // streamer is Idle and (no selection has happened yet, or the focus is
     // more than reselect_distance_m from the last selection's focus). Never
-    // blocks on the worker.
-    void update_focus(double x, double y);
+    // blocks on the worker. (vx, vy): the car's velocity in the same frame
+    // (0 = unknown); a job started with a speed >= 2 m/s orders its diff's
+    // adds by urgency instead of by key (see TerrainViewDiff::added).
+    // (ref_x, ref_y): where the car actually is, for that urgency (the focus
+    // leads the car by up to 150 m; chunks around the car must not count as
+    // "behind"); NaN = the focus itself.
+    void update_focus(double x, double y, double vx = 0.0, double vy = 0.0, double ref_x = std::nan(""),
+                      double ref_y = std::nan(""));
 
     // Non-blocking. If a diff is Ready, moves it into `out`, switches to
     // Applying and returns true; otherwise returns false and leaves `out`
@@ -174,12 +190,20 @@ private:
     double selection_y_ = 0.0;
     double latest_x_ = 0.0;           // latest update_focus() point
     double latest_y_ = 0.0;
+    double latest_vx_ = 0.0;
+    double latest_vy_ = 0.0;
+    double latest_rx_ = 0.0;
+    double latest_ry_ = 0.0;
     bool has_latest_ = false;
 
     std::uint64_t next_serial_ = 1;
     std::uint64_t job_serial_ = 0;
     double job_x_ = 0.0;
     double job_y_ = 0.0;
+    double job_vx_ = 0.0;
+    double job_vy_ = 0.0;
+    double job_rx_ = 0.0;
+    double job_ry_ = 0.0;
 
     std::vector<g2m::mesh::ChunkKey> resident_;   // sorted; changed only by build_initial/commit (worker idle)
     std::vector<g2m::mesh::ChunkKey> target_;     // the Ready/Applying diff's full new key set (sorted)

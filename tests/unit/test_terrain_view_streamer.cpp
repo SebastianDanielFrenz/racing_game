@@ -7,6 +7,7 @@
 // worker and build threads only call SyntheticStore's plain C++ methods; the
 // test thread polls, sleeps and asserts.
 #include "rg/terrain_view_streamer.h"
+#include "rg/terrain_stream.h"
 #include "rg/world_terrain.h"
 
 #include <catch2/catch_test_macros.hpp>
@@ -543,4 +544,54 @@ TEST_CASE("TerrainViewStreamer: destruction mid-build cancels and joins the work
     CHECK(calls_at_destroy <= 9);
     CHECK(full.size() > 9);
     CHECK(store.calls() == calls_at_destroy); // nothing runs after the join
+}
+
+TEST_CASE("TerrainViewStreamer: a focus with a velocity orders the adds by urgency, same set as without",
+          "[terrain_view_streamer]") {
+    const double fx = 300.0, fy = -170.0;
+    const double vx = 160.0, vy = 0.0;
+    std::vector<ChunkKey> plain_keys;
+    {
+        SyntheticStore store;
+        const rg::TerrainViewSource source = make_source(store);
+        rg::TerrainViewStreamer streamer(source, make_options(2));
+        std::vector<rg::RenderChunk> initial;
+        REQUIRE(streamer.build_initial(0.0, 0.0, initial));
+        streamer.update_focus(fx, fy);
+        rg::TerrainViewDiff diff;
+        REQUIRE(wait_for_diff(streamer, diff));
+        plain_keys = keys_of(diff.added);
+        CHECK(diff.velocity_x == 0.0);
+    }
+    SyntheticStore store;
+    const rg::TerrainViewSource source = make_source(store);
+    rg::TerrainViewStreamer streamer(source, make_options(2));
+    std::vector<rg::RenderChunk> initial;
+    REQUIRE(streamer.build_initial(0.0, 0.0, initial));
+    // The car is 100 m west of the (led) focus.
+    streamer.update_focus(fx, fy, vx, vy, fx - 100.0, fy);
+    rg::TerrainViewDiff diff;
+    REQUIRE(wait_for_diff(streamer, diff));
+    CHECK(diff.velocity_x == vx);
+    CHECK(diff.selected_at != std::chrono::steady_clock::time_point{});
+    std::vector<ChunkKey> keys = keys_of(diff.added);
+    REQUIRE(keys.size() == plain_keys.size());
+    std::vector<ChunkKey> sorted = keys;
+    std::sort(sorted.begin(), sorted.end());
+    CHECK(sorted == plain_keys); // the same chunks, only the order differs
+    // Time bins (0.25 s) are non-decreasing along the diff, measured from the car.
+    long long last_bin = -1;
+    for (const ChunkKey& k : keys) {
+        const double t = rg::chunk_time_to_reach_s(k, kE0, kN0, fx - 100.0, fy, vx, vy);
+        const long long bin = static_cast<long long>(std::floor(t / 0.25));
+        CHECK(bin >= last_bin);
+        last_bin = std::max(last_bin, bin);
+    }
+    // Within a bin the finer level goes first.
+    for (std::size_t i = 1; i < keys.size(); ++i) {
+        const long long b0 = static_cast<long long>(std::floor(rg::chunk_time_to_reach_s(keys[i - 1], kE0, kN0, fx - 100.0, fy, vx, vy) / 0.25));
+        const long long b1 = static_cast<long long>(std::floor(rg::chunk_time_to_reach_s(keys[i], kE0, kN0, fx - 100.0, fy, vx, vy) / 0.25));
+        if (b0 == b1) CHECK(keys[i - 1].level <= keys[i].level);
+    }
+    CHECK(streamer.commit(diff.serial));
 }

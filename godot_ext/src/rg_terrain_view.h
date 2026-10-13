@@ -43,6 +43,7 @@
 #include <tuple>
 
 #include "rg/terrain_render.h"
+#include "rg/terrain_stream.h"
 #include "rg/terrain_view_streamer.h"
 #include "rg/world_terrain.h"
 
@@ -172,6 +173,39 @@ public:
     // camera via godot_to_session). Call every frame; cheap and non-blocking
     // (rg::TerrainViewStreamer::update_focus). No-op before load_preview().
     void update_focus(double session_x, double session_y);
+    // The same with the car's velocity (session frame, m/s) and its actual
+    // position (ref_x, ref_y; the focus leads it, see rg/render_focus.h): the
+    // streamer orders each diff's adds by what the car reaches first, and the
+    // upload budget grows with the speed. Call instead of update_focus.
+    void update_focus_moving(double session_x, double session_y, double vx, double vy, double ref_x, double ref_y);
+    // Adaptive upload budget (default on): base upload_budget_ms (0.8) with
+    // nothing pending, rising to upload_budget_max_ms (3.0) with the backlog
+    // and the speed (rg::adaptive_upload_budget_ms). Off = the fixed budget.
+    void set_upload_adaptive(bool enabled) { upload_adaptive_ = enabled; }
+    [[nodiscard]] bool get_upload_adaptive() const { return upload_adaptive_; }
+    void set_upload_budget_max_ms(double budget_ms);
+    // The highest LOD level whose heights are carved with the road surface
+    // (0..2, default 2; 0 = the old behaviour: only L0 is carved). Call right
+    // after initialize()/initialize_shared(), BEFORE load_preview - chunks
+    // already built keep the carve they were built with. A/B measurement.
+    void set_carve_max_level(std::int64_t level);
+    [[nodiscard]] std::int64_t get_carve_max_level() const;
+    [[nodiscard]] double get_upload_budget_max_ms() const { return upload_budget_max_ms_; }
+    // {l0_ahead_m, l1_ahead_m, l2_ahead_m, l3_ahead_m}: how far from
+    // (px, py) (session-local) along (dx, dy) the UPLOADED ground is covered
+    // by chunks of level <= k (rg::lod_coverage_ahead, 4 m steps, 3 km).
+    [[nodiscard]] godot::Dictionary get_lod_coverage(double px, double py, double dx, double dy) const;
+    // The visible surface (highest uploaded chunk surface) against the physics
+    // surface (the carved L0 height tiles) at the car and 5/20/60 m along
+    // (dx, dy): {visible_above_m (the largest visible - physics there), at_offset_m,
+    // visible_level, samples, max_since_reset_m} plus far_above_m / far_samples
+    // for the points 150 and 300 m ahead (physics tiles only where resident).
+    // -1000 when nothing could be compared.
+    [[nodiscard]] godot::Dictionary get_ground_check(double px, double py, double dx, double dy);
+    // Window statistics since the last call, then cleared: {upload_ms_avg,
+    // upload_ms_max, frames, chunks_uploaded, chunk_latency_p95_ms,
+    // chunk_latency_max_ms, budget_ms_avg}. Meant for a 1 Hz log line.
+    [[nodiscard]] godot::Dictionary take_report_stats();
     // A Godot-space position (this node's parent frame = render frame) back
     // to raw session-local (east, north, up) - the inverse of
     // chunk_instance_transform's mapping, using the current render origin.
@@ -240,6 +274,18 @@ private:
     std::size_t next_upload_index_ = 0;
     std::int64_t upload_budget_per_frame_ = 8;
     double upload_budget_ms_ = 0.8;
+    double upload_budget_max_ms_ = 3.0;
+    bool upload_adaptive_ = true;
+    double focus_vx_ = 0.0; // the car's velocity as of the last update_focus_moving (session frame)
+    double focus_vy_ = 0.0;
+    double current_budget_ms_ = 0.8; // this frame's budget (stats)
+    std::chrono::steady_clock::time_point diff_selected_at_{};
+    rg::SampleWindow upload_ms_window_;
+    rg::SampleWindow latency_ms_window_;
+    rg::SampleWindow budget_ms_window_;
+    std::int64_t chunks_uploaded_window_ = 0;
+    std::int64_t chunks_uploaded_total_ = 0;
+    double ground_check_max_m_ = -1000.0;
     bool bulk_loading_ = false; // the initial preview set is still uploading (count budget)
 
     bool diff_in_progress_ = false;

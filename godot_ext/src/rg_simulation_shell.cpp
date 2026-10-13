@@ -94,6 +94,9 @@ Dictionary RgSimulation::get_chassis_session_pose() const {
     d["z"] = f.chassis_pose.position.z;
     d["yaw_deg"] = deg_from_rad(std::atan2(forward.y, forward.x));
     d["speed_mps"] = f.chassis_motion.linear.length();
+    d["vx"] = f.chassis_motion.linear.x;
+    d["vy"] = f.chassis_motion.linear.y;
+    d["vz"] = f.chassis_motion.linear.z;
     return d;
 }
 

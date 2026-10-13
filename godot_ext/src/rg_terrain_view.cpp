@@ -8,6 +8,8 @@
 #include "ps/math/vec3.h"
 #include "ps/types.h"
 
+#include "g2m/world/height_sampler.h"
+
 #include <godot_cpp/classes/rendering_server.hpp>
 #include <godot_cpp/classes/world3d.hpp>
 #include <godot_cpp/core/class_db.hpp>
@@ -20,6 +22,7 @@
 
 #include <algorithm>
 #include <chrono>
+#include <cmath>
 #include <string>
 
 using godot::D_METHOD;
@@ -220,9 +223,129 @@ void RgTerrainView::set_upload_budget_per_frame(std::int64_t chunks_per_frame) {
 void RgTerrainView::set_upload_budget_ms(double budget_ms) { upload_budget_ms_ = budget_ms > 0.0 ? budget_ms : 0.0; }
 
 void RgTerrainView::update_focus(double session_x, double session_y) {
+    focus_vx_ = 0.0;
+    focus_vy_ = 0.0;
     if (streamer_ != nullptr) {
         streamer_->update_focus(session_x, session_y);
     }
+}
+
+void RgTerrainView::update_focus_moving(double session_x, double session_y, double vx, double vy, double ref_x,
+                                        double ref_y) {
+    focus_vx_ = vx;
+    focus_vy_ = vy;
+    if (streamer_ != nullptr) {
+        streamer_->update_focus(session_x, session_y, vx, vy, ref_x, ref_y);
+    }
+}
+
+void RgTerrainView::set_carve_max_level(std::int64_t level) {
+    if (terrain_) terrain_->set_carve_max_level(static_cast<int>(level));
+}
+
+std::int64_t RgTerrainView::get_carve_max_level() const { return terrain_ ? terrain_->carve_max_level() : 0; }
+
+void RgTerrainView::set_upload_budget_max_ms(double budget_ms) {
+    upload_budget_max_ms_ = budget_ms > 0.0 ? budget_ms : 0.0;
+}
+
+godot::Dictionary RgTerrainView::get_lod_coverage(double px, double py, double dx, double dy) const {
+    godot::Dictionary d;
+    if (!terrain_) return d;
+    std::vector<g2m::mesh::ChunkKey> visible;
+    visible.reserve(next_upload_index_);
+    for (std::size_t i = 0; i < next_upload_index_ && i < chunks_.size(); ++i) visible.push_back(chunks_[i].key);
+    const rg::LodCoverage c = rg::lod_coverage_ahead(visible, static_cast<double>(terrain_->frame().e0_m()),
+                                                     static_cast<double>(terrain_->frame().n0_m()), px, py, dx, dy);
+    for (int k = 0; k < 4; ++k) {
+        d[godot::String("l") + godot::String::num_int64(k) + "_ahead_m"] = c.ahead_m[static_cast<std::size_t>(k)];
+    }
+    return d;
+}
+
+godot::Dictionary RgTerrainView::get_ground_check(double px, double py, double dx, double dy) {
+    godot::Dictionary d;
+    d["visible_above_m"] = -1000.0;
+    d["at_offset_m"] = 0.0;
+    d["visible_level"] = static_cast<std::int64_t>(-1);
+    d["samples"] = static_cast<std::int64_t>(0);
+    d["far_above_m"] = -1000.0;
+    d["far_samples"] = static_cast<std::int64_t>(0);
+    d["max_since_reset_m"] = ground_check_max_m_;
+    if (!terrain_) return d;
+    const double e0 = static_cast<double>(terrain_->frame().e0_m());
+    const double n0 = static_cast<double>(terrain_->frame().n0_m());
+    const double len = std::hypot(dx, dy);
+    const double ux = len > 1e-9 ? dx / len : 0.0;
+    const double uy = len > 1e-9 ? dy / len : 0.0;
+    const auto zone = terrain_->frame().zone();
+    const auto lookup = [this](const g2m::TileKey& key) { return terrain_->cached_height_tile(key); };
+    double best = -1000.0;
+    double best_offset = 0.0;
+    int best_level = -1;
+    std::int64_t samples = 0;
+    double far_best = -1000.0;
+    std::int64_t far_samples = 0;
+    // 0/5/20/60 m: where the wheels are now and in the next ~1 s at 60 m/s; 150/300 m: the ground the car reaches
+    // in ~1-2 s at 160 m/s (physics resident only as far as the sim's interest set reaches - missing tiles skip).
+    for (const double offset : {0.0, 5.0, 20.0, 60.0, 150.0, 300.0}) {
+        if (offset > 0.0 && len <= 1e-9) break;
+        const double x = px + ux * offset;
+        const double y = py + uy * offset;
+        double visible = -1.0e9;
+        int level = -1;
+        for (std::size_t i = 0; i < next_upload_index_ && i < chunks_.size(); ++i) {
+            double z = 0.0;
+            if (rg::chunk_surface_height(chunks_[i], x + e0, y + n0, z) && z > visible) {
+                visible = z;
+                level = chunks_[i].key.level;
+            }
+        }
+        if (level < 0) continue;
+        const auto physics = g2m::world::sample_height_exact(lookup, zone, terrain_->frame().e0_m(),
+                                                              terrain_->frame().n0_m(), x, y);
+        if (!physics) continue;
+        const double above = visible - *physics;
+        if (offset >= 100.0) {
+            ++far_samples;
+            far_best = std::max(far_best, above);
+            continue;
+        }
+        ++samples;
+        if (above > best) {
+            best = above;
+            best_offset = offset;
+            best_level = level;
+        }
+    }
+    if (samples > 0) {
+        ground_check_max_m_ = std::max(ground_check_max_m_, best);
+        d["visible_above_m"] = best;
+        d["at_offset_m"] = best_offset;
+        d["visible_level"] = static_cast<std::int64_t>(best_level);
+        d["samples"] = samples;
+        d["max_since_reset_m"] = ground_check_max_m_;
+    }
+    d["far_above_m"] = far_best;
+    d["far_samples"] = far_samples;
+    return d;
+}
+
+godot::Dictionary RgTerrainView::take_report_stats() {
+    godot::Dictionary d;
+    d["upload_ms_avg"] = upload_ms_window_.mean();
+    d["upload_ms_max"] = upload_ms_window_.max();
+    d["frames"] = static_cast<std::int64_t>(upload_ms_window_.count());
+    d["chunks_uploaded"] = chunks_uploaded_window_;
+    d["chunks_uploaded_total"] = chunks_uploaded_total_;
+    d["chunk_latency_p95_ms"] = latency_ms_window_.percentile(0.95);
+    d["chunk_latency_max_ms"] = latency_ms_window_.max();
+    d["budget_ms_avg"] = budget_ms_window_.mean();
+    upload_ms_window_.clear();
+    latency_ms_window_.clear();
+    budget_ms_window_.clear();
+    chunks_uploaded_window_ = 0;
+    return d;
 }
 
 godot::Vector3 RgTerrainView::godot_to_session(godot::Vector3 godot_pos) const {
@@ -249,6 +372,8 @@ godot::Dictionary RgTerrainView::get_stream_stats() const {
     d["diffs_applied"] = diffs_applied_;
     d["diff_errors"] = diff_errors_;
     d["resident_chunks"] = static_cast<std::int64_t>(chunks_.size());
+    d["upload_budget_ms"] = current_budget_ms_;
+    d["focus_speed_mps"] = std::hypot(focus_vx_, focus_vy_);
     if (streamer_ != nullptr) {
         const rg::TerrainViewStreamer::Stats st = streamer_->stats();
         d["selections_started"] = static_cast<std::int64_t>(st.selections_started);
@@ -425,6 +550,7 @@ void RgTerrainView::apply_diff(std::chrono::steady_clock::time_point frame_start
         if (streamer_->poll(diff)) {
             diff_in_progress_ = true;
             diff_serial_ = diff.serial;
+            diff_selected_at_ = diff.selected_at;
             diff_removed_ = std::move(diff.removed);
             diff_remove_next_ = 0;
             last_remove_ms_ = 0.0;
@@ -443,10 +569,19 @@ void RgTerrainView::apply_diff(std::chrono::steady_clock::time_point frame_start
     //    frame's uploads + removals: the first one always runs, so a diff
     //    always makes progress.
     int work = 0;
+    const std::size_t pending_work = (chunks_.size() - next_upload_index_) + (diff_removed_.size() - diff_remove_next_);
+    double budget_ms = upload_budget_ms_;
+    if (upload_adaptive_ && !bulk_loading_) {
+        rg::UploadBudgetParams budget_params;
+        budget_params.base_ms = upload_budget_ms_;
+        budget_params.max_ms = std::max(upload_budget_ms_, upload_budget_max_ms_);
+        budget_ms = rg::adaptive_upload_budget_ms(pending_work, std::hypot(focus_vx_, focus_vy_), budget_params);
+    }
+    current_budget_ms_ = budget_ms;
     const auto over_budget = [&]() {
         return work > 0 &&
                std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - frame_start).count() >=
-                   upload_budget_ms_;
+                   budget_ms;
     };
     if (bulk_loading_) {
         const std::size_t end_index =
@@ -463,6 +598,12 @@ void RgTerrainView::apply_diff(std::chrono::steady_clock::time_point frame_start
             upload_one_chunk(chunks_[next_upload_index_]);
             ++next_upload_index_;
             ++work;
+            ++chunks_uploaded_window_;
+            ++chunks_uploaded_total_;
+            if (diff_in_progress_) {
+                latency_ms_window_.add(
+                    std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - diff_selected_at_).count());
+            }
         }
     }
 
@@ -502,6 +643,8 @@ void RgTerrainView::_process(double /*delta*/) {
     apply_diff(frame_start);
     upload_ms_this_frame_ =
         std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - frame_start).count();
+    upload_ms_window_.add(upload_ms_this_frame_);
+    budget_ms_window_.add(current_budget_ms_);
 }
 
 void RgTerrainView::_bind_methods() {
@@ -528,6 +671,17 @@ void RgTerrainView::_bind_methods() {
     godot::ClassDB::bind_method(D_METHOD("set_upload_budget_ms", "budget_ms"), &RgTerrainView::set_upload_budget_ms);
     godot::ClassDB::bind_method(D_METHOD("get_upload_budget_ms"), &RgTerrainView::get_upload_budget_ms);
     godot::ClassDB::bind_method(D_METHOD("update_focus", "session_x", "session_y"), &RgTerrainView::update_focus);
+    godot::ClassDB::bind_method(D_METHOD("update_focus_moving", "session_x", "session_y", "vx", "vy", "ref_x", "ref_y"),
+                                &RgTerrainView::update_focus_moving);
+    godot::ClassDB::bind_method(D_METHOD("set_upload_adaptive", "enabled"), &RgTerrainView::set_upload_adaptive);
+    godot::ClassDB::bind_method(D_METHOD("get_upload_adaptive"), &RgTerrainView::get_upload_adaptive);
+    godot::ClassDB::bind_method(D_METHOD("set_upload_budget_max_ms", "budget_ms"), &RgTerrainView::set_upload_budget_max_ms);
+    godot::ClassDB::bind_method(D_METHOD("get_upload_budget_max_ms"), &RgTerrainView::get_upload_budget_max_ms);
+    godot::ClassDB::bind_method(D_METHOD("set_carve_max_level", "level"), &RgTerrainView::set_carve_max_level);
+    godot::ClassDB::bind_method(D_METHOD("get_carve_max_level"), &RgTerrainView::get_carve_max_level);
+    godot::ClassDB::bind_method(D_METHOD("get_lod_coverage", "px", "py", "dx", "dy"), &RgTerrainView::get_lod_coverage);
+    godot::ClassDB::bind_method(D_METHOD("get_ground_check", "px", "py", "dx", "dy"), &RgTerrainView::get_ground_check);
+    godot::ClassDB::bind_method(D_METHOD("take_report_stats"), &RgTerrainView::take_report_stats);
     godot::ClassDB::bind_method(D_METHOD("godot_to_session", "godot_pos"), &RgTerrainView::godot_to_session);
     godot::ClassDB::bind_method(D_METHOD("is_stream_idle"), &RgTerrainView::is_stream_idle);
     godot::ClassDB::bind_method(D_METHOD("get_stream_stats"), &RgTerrainView::get_stream_stats);

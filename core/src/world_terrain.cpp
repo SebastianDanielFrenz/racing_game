@@ -342,11 +342,16 @@ Outcome<g2m::HeightTile> WorldTerrain::produce_height(ProductContext& ctx, const
     if (smoothing_.enabled) {
         tile = smooth_terrain(*tile, smoothing_, [&ctx](const g2m::TileKey& k) { return ctx.height(k).value; });
     }
-    if (tile && road_profiles_enabled_ && has_road_layer_ && key.level == 0) {
+    if (tile && road_profiles_enabled_ && has_road_layer_ && key.level <= carve_max_level_) {
         g2m::TileKey l2 = key;
         while (l2.level < 2) l2 = l2.parent();
         const Outcome<RoadSurface> surface = join_road_surface(ctx, l2);
         if (surface.state != TileState::Ready || !surface.value) {
+            if (key.level > 0) {
+                // Render-only coarse level: a road surface that cannot be derived leaves the smoothed DEM (the
+                // pre-2026-10-13 behaviour) instead of a hole in the view; physics (L0) still fails loudly.
+                return Outcome<g2m::HeightTile>::ready(std::move(tile), sizeof(g2m::HeightTile));
+            }
             return Outcome<g2m::HeightTile>::failed("road surface " + g2m::to_string(l2) + ": " + surface.message);
         }
         auto carved = std::make_shared<g2m::HeightTile>(*tile);

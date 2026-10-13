@@ -73,6 +73,8 @@ add_library(rg_core STATIC
     src/road_structures.cpp
     src/fixed_rate_loop.cpp
     src/terrain_view_streamer.cpp
+    src/terrain_stream.cpp
+    src/render_focus.cpp
     src/route_check.cpp
     src/route_follower.cpp
     src/road_network.cpp

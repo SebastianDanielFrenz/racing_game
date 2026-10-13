@@ -295,6 +295,12 @@ func _build_terrain_preview_scene() -> void:
 		push_error("RgTerrainView.initialize failed: %s" % terrain_view.get_last_error())
 		return
 
+	# A/B measurement: --carve-max-level=N (0 = only L0 is carved with the road, the
+	# pre-2026-10-13 behaviour; default 2).
+	for a in OS.get_cmdline_user_args():
+		if a.begins_with("--carve-max-level="):
+			terrain_view.set_carve_max_level(int(a.get_slice("=", 1)))
+
 	# game/shaders/terrain.gdshader: vertex colour (the hypsometric ramp
 	# RgTerrainView uploads as ARRAY_COLOR) + Lambert - see set_material's
 	# own doc comment for why this call is required for the colours to be
@@ -382,6 +388,14 @@ func _build_terrain_preview_scene() -> void:
 		stream_test.terrain_view = terrain_view
 		stream_test.spawn = Vector2(spawn_x, spawn_y)
 		add_child(stream_test)
+	elif "--stream-fly" in user_args:
+		# Windowed high-speed stream measurement (terrain_fly_test.gd).
+		var fly_test := Node.new()
+		fly_test.name = "TerrainFlyTest"
+		fly_test.set_script(load("res://scripts/terrain_fly_test.gd"))
+		fly_test.terrain_view = terrain_view
+		fly_test.spawn = Vector2(spawn_x, spawn_y)
+		add_child(fly_test)
 	else:
 		# R2.2 R8: the fly camera drives the render LOD focus (_process). Not
 		# in --screenshots mode, so the tour keeps its fixed spawn chunk set
@@ -912,6 +926,51 @@ func _report() -> void:
 	print(status_line("RG_DRIVE t=%.1f" % (sim_t - ready_sim_time)))
 	_save_drive_location()
 	_report_tick_spikes()
+	_report_streams()
+
+# Render-stream health at speed (owner complaint 2026-10-13: at 400-580 km/h the
+# terrain does not resolve in time, the road is not visible far ahead). One line
+# each per second:
+#  RG_TERRAIN_STREAM  l0_ahead_m / l1_ahead_m = how far along the direction of
+#     travel the UPLOADED ground is finest-level-covered (L0 = 1 m grid, L1 =
+#     2 m); pending_adds/removals of the diff in progress; adds_s = chunks
+#     uploaded in the last second; upload_ms avg/max per frame; chunk_lat_p95_ms
+#     = selection -> upload of a chunk; budget_ms = the adaptive upload budget;
+#     lead_m = the render-focus lead; ground_above_m = the highest visible
+#     surface above the physics surface (carved L0 height tiles) at the car and
+#     5/20/60 m ahead (max_ground_above_m since the start; far_ground_above_m =
+#     the same 150/300 m ahead); fps.
+#  RG_ROAD_STREAM  ribbon tiles pending, the oldest wait, ribbon_ahead_m.
+func _report_streams() -> void:
+	if _world_view == null or _simulation == null:
+		return
+	var pose: Dictionary = _simulation.get_chassis_session_pose()
+	if pose.is_empty():
+		return
+	var px: float = pose.get("x", 0.0)
+	var py: float = pose.get("y", 0.0)
+	var vx: float = pose.get("vx", 0.0)
+	var vy: float = pose.get("vy", 0.0)
+	var speed := Vector2(vx, vy).length()
+	var dir := Vector2(vx, vy) / speed if speed >= 2.0 else Vector2.from_angle(deg_to_rad(float(pose.get("yaw_deg", 0.0))))
+	var cov: Dictionary = _world_view.get_lod_coverage(px, py, dir.x, dir.y)
+	var st: Dictionary = _world_view.get_stream_stats()
+	var rs: Dictionary = _world_view.take_report_stats()
+	var gc: Dictionary = _world_view.get_ground_check(px, py, dir.x, dir.y)
+	var lead_m: float = _director.render_focus_lead_m() if _director != null else 0.0
+	print("RG_TERRAIN_STREAM speed_mps=%.1f l0_ahead_m=%.0f l1_ahead_m=%.0f l2_ahead_m=%.0f pending_adds=%d pending_removals=%d adds_s=%d upload_ms_avg=%.2f upload_ms_max=%.2f chunk_lat_p95_ms=%.0f budget_ms=%.2f lead_m=%.0f ground_above_m=%.3f max_ground_above_m=%.3f ground_level=%d far_ground_above_m=%.3f fps=%d resident=%d" % [
+		speed, float(cov.get("l0_ahead_m", 0.0)), float(cov.get("l1_ahead_m", 0.0)), float(cov.get("l2_ahead_m", 0.0)),
+		int(st.get("pending_adds", 0)), int(st.get("pending_removals", 0)), int(rs.get("chunks_uploaded", 0)),
+		float(rs.get("upload_ms_avg", 0.0)), float(rs.get("upload_ms_max", 0.0)), float(rs.get("chunk_latency_p95_ms", 0.0)),
+		float(rs.get("budget_ms_avg", 0.0)), lead_m, float(gc.get("visible_above_m", -1000.0)),
+		float(gc.get("max_since_reset_m", -1000.0)), int(gc.get("visible_level", -1)), float(gc.get("far_above_m", -1000.0)),
+		int(Engine.get_frames_per_second()),
+		int(st.get("resident_chunks", 0))])
+	if _roads != null and _roads.has_method("get_stats"):
+		var rd: Dictionary = _roads.get_stats(Vector2(px, py), dir)
+		print("RG_ROAD_STREAM pending=%d oldest_age_s=%.1f ribbon_ahead_m=%.0f tiles=%d built_total=%d" % [
+			int(rd.get("pending", 0)), float(rd.get("oldest_age_s", 0.0)), float(rd.get("ribbon_ahead_m", 0.0)),
+			int(rd.get("tiles", 0)), int(rd.get("built_total", 0))])
 
 # Tick-spike diagnostics (owner drive 2026-09-27, ~170 ms sim stalls): the
 # sim thread's slow or late tick attempts, per phase (rg::Session's

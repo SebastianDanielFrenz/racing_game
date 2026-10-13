@@ -31,8 +31,11 @@
 // Exception-free (vault TOOL-019): nothing here throws or catches.
 #include "rg/terrain_view_streamer.h"
 
+#include "rg/terrain_stream.h"
+
 #include <algorithm>
 #include <chrono>
+#include <cmath>
 #include <iterator>
 #include <utility>
 
@@ -90,10 +93,14 @@ bool TerrainViewStreamer::build_initial(double x, double y, std::vector<RenderCh
     return true;
 }
 
-void TerrainViewStreamer::update_focus(double x, double y) {
+void TerrainViewStreamer::update_focus(double x, double y, double vx, double vy, double ref_x, double ref_y) {
     std::lock_guard<std::mutex> lk(mutex_);
     latest_x_ = x;
     latest_y_ = y;
+    latest_vx_ = vx;
+    latest_vy_ = vy;
+    latest_rx_ = std::isnan(ref_x) ? x : ref_x;
+    latest_ry_ = std::isnan(ref_y) ? y : ref_y;
     has_latest_ = true;
     maybe_start_locked();
 }
@@ -105,7 +112,7 @@ void TerrainViewStreamer::maybe_start_locked() {
     if (has_selection_) {
         const double dx = latest_x_ - selection_x_;
         const double dy = latest_y_ - selection_y_;
-        const double r = options_.reselect_distance_m;
+        const double r = reselect_distance_for_speed(options_.reselect_distance_m, std::hypot(latest_vx_, latest_vy_));
         if (dx * dx + dy * dy <= r * r) {
             return;
         }
@@ -115,6 +122,10 @@ void TerrainViewStreamer::maybe_start_locked() {
     selection_y_ = latest_y_;
     job_x_ = latest_x_;
     job_y_ = latest_y_;
+    job_vx_ = latest_vx_;
+    job_vy_ = latest_vy_;
+    job_rx_ = latest_rx_;
+    job_ry_ = latest_ry_;
     job_serial_ = next_serial_++;
     job_pending_ = true;
     phase_ = Phase::Building;
@@ -168,6 +179,10 @@ void TerrainViewStreamer::worker_main() {
         std::vector<g2m::mesh::ChunkKey> resident;
         double x = 0.0;
         double y = 0.0;
+        double vx = 0.0;
+        double vy = 0.0;
+        double rx = 0.0;
+        double ry = 0.0;
         std::uint64_t serial = 0;
         {
             std::unique_lock<std::mutex> lk(mutex_);
@@ -182,6 +197,10 @@ void TerrainViewStreamer::worker_main() {
             resident = resident_;
             x = job_x_;
             y = job_y_;
+            vx = job_vx_;
+            vy = job_vy_;
+            rx = job_rx_;
+            ry = job_ry_;
             serial = job_serial_;
         }
 
@@ -197,6 +216,9 @@ void TerrainViewStreamer::worker_main() {
         diff.serial = serial;
         diff.focus_x = x;
         diff.focus_y = y;
+        diff.velocity_x = vx;
+        diff.velocity_y = vy;
+        diff.selected_at = start;
         std::set_difference(selected.begin(), selected.end(), resident.begin(), resident.end(),
                             std::back_inserter(to_build));
         std::set_difference(resident.begin(), resident.end(), selected.begin(), selected.end(),
@@ -206,6 +228,9 @@ void TerrainViewStreamer::worker_main() {
                                  std::max(1u, options_.build_threads), diff.added, &cancel_,
                                  source_.class_lookup, source_.surfaces)) {
             return; // cancelled: only the destructor raises cancel_
+        }
+        if (std::hypot(vx, vy) >= 2.0) {
+            sort_adds_by_urgency(diff.added, source_.e0, source_.n0, rx, ry, vx, vy);
         }
         const double ms =
             std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start).count();

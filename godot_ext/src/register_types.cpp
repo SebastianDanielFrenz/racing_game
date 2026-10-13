@@ -10,6 +10,7 @@
 #include "rg_camera_math.h"
 #include "rg_controls.h"
 #include "rg_garage.h"
+#include "rg_render_focus.h"
 #include "rg_shell.h"
 #include "rg_simulation.h"
 #include "rg_terrain_view.h"
@@ -43,6 +44,7 @@ void initialize_rg_godot_module(ModuleInitializationLevel p_level) {
     ClassDB::register_class<rg_godot::RgCameraMath>();
     ClassDB::register_class<rg_godot::RgAssists>();
     ClassDB::register_class<rg_godot::RgTerrainView>();
+    ClassDB::register_class<rg_godot::RgRenderFocus>();
     ClassDB::register_class<ps_godot::PsSpatialAudio>();
 }
 

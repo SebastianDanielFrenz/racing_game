@@ -1,6 +1,26 @@
 shader_type spatial;
 render_mode cull_disabled, diffuse_lambert, specular_disabled;
 uniform float line_width_m = 0.15;
+// Distance-growing depth pull toward the camera along the view ray (the
+// screen position is unchanged, only the depth moves): the terrain far away is
+// a coarse chunk (L2+: 4 m grid and up) whose triangles cut the road by metres,
+// and a fixed 1.8 cm lift cannot win the depth test there. pull = max(near_pull,
+// depth_pull_per_m * distance), capped, so the road does not show through hills
+// that really stand in front of it (the cap keeps it below a typical rise).
+uniform float depth_pull_per_m = 0.002;
+uniform float depth_pull_near_m = 0.0;
+uniform float depth_pull_max_m = 12.0;
+void vertex() {
+	// VERTEX is MODEL space here (no skip_vertex_transform): measure the distance
+	// in view space, pull along the view ray there and bring the offset back to
+	// model space (a pull taken in model space would move the ribbon toward the
+	// tile origin - metres sideways and into the ground).
+	vec3 view_pos = (MODELVIEW_MATRIX * vec4(VERTEX, 1.0)).xyz;
+	float d = length(view_pos);
+	float pull = min(max(depth_pull_near_m, depth_pull_per_m * d), depth_pull_max_m);
+	vec3 pull_view = -(view_pos / max(d, 0.001)) * pull;
+	VERTEX += inverse(mat3(MODELVIEW_MATRIX)) * pull_view;
+}
 float stripe(float distance_m, float width_m) {
 	float aa = max(fwidth(distance_m),0.008);
 	return 1.0-smoothstep(width_m*0.5-aa,width_m*0.5+aa,abs(distance_m));
