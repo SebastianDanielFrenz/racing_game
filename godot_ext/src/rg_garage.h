@@ -98,8 +98,17 @@ public:
     godot::Dictionary begin_edit(const godot::String& id);
     [[nodiscard]] godot::String get_edit_id() const;
     // [{id, label, group, area, help, unit, kind, min, max, step, available, stock, value,
-    //   modified, choices, list_size, stock_numbers}]
+    //   modified, choices, list_size, stock_numbers, entry, entries}]; entry (Scale / BrakeBias) and entries (one per
+    //   gear of a ScaleList) are the number's absolute display: {multiplier, unit, decimals, lo, hi, positional, mapping}
     [[nodiscard]] godot::Array get_options() const;
+    // Garage numeric inputs (rg::NumberEntry): `index` is the gear of a ScaleList (else 0). Pure maths in rg core.
+    // The slider position in [0, 1] of a stored value (positional entries) / the stored value at a position.
+    [[nodiscard]] double option_entry_position(const godot::String& option_id, int index, double value) const;
+    [[nodiscard]] double option_entry_value(const godot::String& option_id, int index, double position) const;
+    // The stored value as the player reads it ("8250 rpm", "x1.05").
+    [[nodiscard]] godot::String option_entry_text(const godot::String& option_id, int index, double value) const;
+    // {ok, value, message}: a typed displayed number as the stored value; !ok = outside the allowed range / not a number.
+    [[nodiscard]] godot::Dictionary option_entry_parse(const godot::String& option_id, int index, double displayed) const;
     // {accepted, message, notice, ok, validation_message, value, dirty}; notice: options an engine change reset
     godot::Dictionary set_option(const godot::String& option_id, const godot::Variant& value);
     godot::Dictionary reset_option(const godot::String& option_id);

@@ -35,6 +35,7 @@
 
 #include "rg/engine_store.h"
 #include "rg/gearbox_catalog.h"
+#include "rg/slider_map.h"
 #include "rg/vehicle_catalog.h"
 
 #include <map>
@@ -93,6 +94,10 @@ struct SetupOptionDef {
     std::string part_format; // required referenced file format
     bool no_turbo_override = false; // default engine turbo must not shadow a vehicle override
     std::string axle;                  // TyreChoice: "front" | "rear"
+    // Scale only (garage numeric inputs): the option is shown and typed in ABSOLUTE units (rpm, bar, ms) on a linear or
+    // logarithmic slider, derived from the stock value of its first target leaf; min/max/step are then not authored and the
+    // allowed factor range is abs_min/stock .. abs_max/stock (widened to contain 1). See rg/slider_map.h.
+    std::optional<SliderSpec> slider;
 };
 
 struct SetupOptionTable {
@@ -151,6 +156,34 @@ struct OptionView {
     int list_size = 0;                 // ScaleList: number of entries
     std::vector<double> stock_numbers; // ScaleList: stock leaf values (gear ratios) for display
 };
+
+// How the garage shows and types ONE number of an option (a Scale, a BrakeBias, one gear of a ScaleList) in the units the
+// player thinks in. displayed = stored x multiplier; every field comes from the data and the car's stock values.
+struct NumberEntry {
+    double multiplier = 1.0;
+    std::string unit;                    // "rpm", "bar", "ms", "%", "x", "" (a gear ratio)
+    int decimals = 2;
+    double lo = 0.0, hi = 0.0;           // the allowed range, displayed units
+    bool positional = false;             // true: the slider runs over [0, 1] along `mapping`; false: over the stored value
+    SliderMapping mapping = SliderMapping::Linear;
+};
+// Scale / ScaleList (entry `index`) / BrakeBias; every other kind returns the default (multiplier 1, empty range).
+NumberEntry number_entry(const OptionView& view, int index = 0);
+// The stored value as the player reads it ("8250 rpm", "x1.05", "52.5 %").
+std::string format_entry(const NumberEntry& entry, double stored);
+double entry_to_displayed(const NumberEntry& entry, double stored);
+// Slider position in [0, 1] of a stored value (positional entries) and the stored value at a position (rounded to the
+// entry's decimals in displayed units so a slider lands on readable numbers).
+double entry_slider_position(const NumberEntry& entry, double stored);
+double entry_value_at_position(const NumberEntry& entry, double position);
+// A typed displayed number converted to the stored value; !ok + message ("outside the allowed range 2000 to 20000 rpm")
+// when it is not finite or outside [lo, hi].
+struct EntryConversion {
+    bool ok = false;
+    double value = 0.0;
+    std::string message;
+};
+EntryConversion entry_from_displayed(const NumberEntry& entry, double displayed);
 
 struct SetupModel {
     std::vector<OptionView> options;

@@ -311,6 +311,12 @@ func _clear_edges() -> void:
 
 func poll() -> void:
 	if controls == null:
+	if get_viewport().gui_get_focus_owner() is LineEdit:
+		_cam_stick = Vector2.ZERO # a typed value (garage value boxes, settings text) is not a key binding
+		_cam_look_rate = Vector2.ZERO
+		_gather_snapshot() # drain the wheel / motion accumulators like the suspended path
+		_clear_edges()
+		return
 		return
 	if suspended:
 		_gather_snapshot() # drain the wheel / motion accumulators

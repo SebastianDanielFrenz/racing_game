@@ -40,6 +40,7 @@ signal garage_save_requested
 signal garage_exit_requested(destination: String)
 signal controls_changed # a binding / tuning changed on the controls screen
 
+const SliderBox := preload("res://scripts/slider_box.gd")
 const BOOT_SECONDS := 1.5
 const TITLE := "racing_game"
 
@@ -63,6 +64,7 @@ var _browser: Control                          # car_browser_ui.gd on the vehicl
 var _controls_ui: Control                      # controls_ui.gd on the controls screen
 var _option_controls: Dictionary = {}          # configurator: option id -> control
 var _option_values: Dictionary = {}            # configurator: option id -> Label with the shown value
+var _option_entries: Dictionary = {}           # configurator: option id -> Array of LineEdit (typed value; one per gear of a list)
 var _option_notes: Dictionary = {}             # configurator: option id -> Label with a rejection
 var _option_box: VBoxContainer                 # configurator: the rows of the active tab
 var _area_buttons: Dictionary = {}             # configurator: area id -> Button
@@ -129,6 +131,7 @@ func show_screen(screen_name: String) -> void:
 	_setting_notes.clear()
 	_option_controls.clear()
 	_option_values.clear()
+	_option_entries.clear()
 	_option_notes.clear()
 	_area_buttons.clear()
 	_browser = null
@@ -180,6 +183,11 @@ func get_setting_control(key: String) -> Control:
 # Configurator test hooks: the control of an option row (only the active tab's rows exist).
 func get_option_control(option_id: String) -> Control:
 	return _option_controls.get(option_id, null)
+
+# The typed-value box of an option (the gear `index` of a list), null when the row has none.
+func get_option_entry(option_id: String, index: int = 0) -> LineEdit:
+	var boxes: Array = _option_entries.get(option_id, [])
+	return boxes[index] if index >= 0 and index < boxes.size() else null
 
 func option_control_ids() -> PackedStringArray:
 	return PackedStringArray(_option_controls.keys())
@@ -480,6 +488,9 @@ func _setting_row(def: Dictionary) -> Control:
 			control = edit
 	row.add_child(control)
 	_setting_controls[key] = control
+	if control is HSlider:
+		# the slider's number can be typed too (garage numeric inputs); the slider stays the one source of truth
+		SliderBox.attach(row, control as HSlider, _step_decimals(float(def["step"])))
 	if show_value:
 		var value_label := _label(str(shell.get_setting_display(key)), 16, HORIZONTAL_ALIGNMENT_LEFT)
 		value_label.custom_minimum_size = Vector2(110, 0)
@@ -678,6 +689,12 @@ func _build_configurator() -> void:
 
 # B/Esc backs out of nested width choices before offering the garage exit.
 func garage_consume_back() -> void:
+	var focus := get_viewport().gui_get_focus_owner()
+	if focus is LineEdit and focus.has_meta("entry"):
+		# Esc in a value box takes the typing back (and leaves the box) before it leaves the page.
+		(focus as LineEdit).text = str(focus.get_meta("shown", ""))
+		focus.release_focus()
+		return
 	if _garage_exit != null:
 		_close_garage_exit()
 	elif not _garage_path.is_empty():
@@ -798,6 +815,7 @@ func _draw_garage_options() -> void:
 		child.queue_free()
 	_option_controls.clear()
 	_option_values.clear()
+	_option_entries.clear()
 	_option_notes.clear()
 	_garage_preferred = null
 	for key in _buttons.keys():
@@ -1394,15 +1412,11 @@ func _display_value(kind: String, value: Variant) -> String:
 			return "x" + " / x".join(parts)
 	return str(value)
 
+# An option with an absolute slider (rpm, bar, ms) is shown in its own unit by rg core; the rest as a factor.
 func _option_display(opt: Dictionary, value: Variant) -> String:
-	var stock: PackedFloat64Array = opt.get("stock_numbers", PackedFloat64Array())
-	if not stock.is_empty():
-		if str(opt["id"]) == "turbo_boost_target":
-			return "%.2f bar" % (stock[0] * float(value))
-		if str(opt["id"]) == "engine_rev_limit":
-			return "%d rpm" % roundi(stock[0] * float(value))
-		if str(opt["id"]) == "engine_throttle_response":
-			return "%.0f ms" % (stock[0] * float(value) * 1000.0)
+	var entry: Dictionary = opt.get("entry", {})
+	if bool(entry.get("positional", false)) and garage != null:
+		return str(garage.option_entry_text(str(opt["id"]), 0, float(value)))
 	return _display_value(str(opt["kind"]), value)
 
 func _option_row(opt: Dictionary) -> Control:
@@ -1424,14 +1438,18 @@ func _option_row(opt: Dictionary) -> Control:
 	_option_values[id] = value_label
 	match kind:
 		"scale", "brake_bias":
+			var entry: Dictionary = opt.get("entry", {})
+			var positional := bool(entry.get("positional", false))
+			var line := HBoxContainer.new()
+			line.add_theme_constant_override("separation", 8)
+			holder.add_child(line)
 			var slider := HSlider.new()
-			var exponential_boost := str(opt["id"]) == "turbo_boost_target"
-			if exponential_boost:
+			if positional:
+				# an absolute (rpm, bar ...) slider: position 0..1 along the mapping the option table names
 				slider.min_value = 0.0
 				slider.max_value = 1.0
 				slider.step = 0.001
-				var current_bar := float(opt["stock_numbers"][0]) * float(opt["value"])
-				slider.value = clampf(log(current_bar / 0.1) / log(30.0 / 0.1), 0.0, 1.0)
+				slider.value = garage.option_entry_position(id, 0, float(opt["value"]))
 			else:
 				slider.min_value = float(opt["min"])
 				slider.max_value = float(opt["max"])
@@ -1439,22 +1457,28 @@ func _option_row(opt: Dictionary) -> Control:
 				slider.value = float(opt["value"])
 			slider.custom_minimum_size = Vector2(0, 22)
 			slider.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+			slider.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 			slider.value_changed.connect(func(x: float):
-				if exponential_boost:
-					var target_bar := 0.1 * pow(30.0 / 0.1, x)
-					_edit_option(id, target_bar / float(opt["stock_numbers"][0]))
-				else:
-					_edit_option(id, x))
-			holder.add_child(slider)
+				_edit_option(id, garage.option_entry_value(id, 0, x) if positional else x))
+			line.add_child(slider)
+			var box := _entry_box(id, 0, entry, float(opt["value"]))
+			_enter_focuses_box(slider, box)
+			line.add_child(box)
+			var unit_label := _label(str(entry.get("unit", "")), 13, HORIZONTAL_ALIGNMENT_LEFT, true)
+			unit_label.custom_minimum_size = Vector2(34, 0)
+			line.add_child(unit_label)
+			_option_entries[id] = [box]
+			holder.set_meta("main_slider", slider)
+			holder.set_meta("positional", positional)
 			_option_controls[id] = slider
 		"scale_list":
 			var grid := VBoxContainer.new()
 			grid.add_theme_constant_override("separation", 0)
 			holder.add_child(grid)
 			var values: PackedFloat64Array = opt["value"]
-			var stock: PackedFloat64Array = opt["stock_numbers"]
+			var entries: Array = opt.get("entries", [])
 			var sliders: Array = []
-			var labels: Array = []
+			var boxes: Array = []
 			for i in range(int(opt["list_size"])):
 				var line := HBoxContainer.new()
 				line.add_theme_constant_override("separation", 6)
@@ -1470,11 +1494,12 @@ func _option_row(opt: Dictionary) -> Control:
 				slider.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 				slider.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 				line.add_child(slider)
-				var ratio_label := _label("", 13, HORIZONTAL_ALIGNMENT_RIGHT)
-				ratio_label.custom_minimum_size = Vector2(70, 0)
-				line.add_child(ratio_label)
+				var box := _entry_box(id, i, entries[i] if i < entries.size() else {}, values[i])
+				box.custom_minimum_size = Vector2(70, 0)
+				_enter_focuses_box(slider, box)
+				line.add_child(box)
 				sliders.append(slider)
-				labels.append(ratio_label)
+				boxes.append(box)
 				_option_controls["%s:%d" % [id, i]] = slider
 			var push := func():
 				var list := PackedFloat64Array()
@@ -1484,10 +1509,8 @@ func _option_row(opt: Dictionary) -> Control:
 			for sl in sliders:
 				(sl as HSlider).value_changed.connect(func(_x: float): push.call())
 			_option_controls[id] = grid
-			holder.set_meta("gear_labels", labels)
+			_option_entries[id] = boxes
 			holder.set_meta("gear_sliders", sliders)
-			holder.set_meta("gear_stock", stock)
-			_refresh_gear_labels(labels, sliders, stock)
 		"tyre_choice":
 			var picker := OptionButton.new()
 			var choices: PackedStringArray = opt["choices"]
@@ -1537,13 +1560,139 @@ func _option_row(opt: Dictionary) -> Control:
 	_option_notes[id] = note
 	return holder
 
-func _refresh_gear_labels(labels: Array, sliders: Array, stock: PackedFloat64Array) -> void:
-	for i in range(labels.size()):
-		var factor := (sliders[i] as HSlider).value
-		(labels[i] as Label).text = "%.2f" % (stock[i] * factor if i < stock.size() else factor)
+const ENTRY_BOX_WIDTH := 84.0
+
+# Decimals that show a slider step exactly (1 -> 0, 0.05 -> 2, 0.001 -> 3).
+func _step_decimals(step: float) -> int:
+	var decimals := 0
+	while decimals < 4 and absf(step * pow(10.0, decimals) - round(step * pow(10.0, decimals))) > 1e-6:
+		decimals += 1
+	return decimals
+
+# A compact box next to a slider: the number in the option's absolute display unit (rpm, bar, ratio, % ...). Enter or
+# leaving the box commits it through _edit_option; a refused value is taken back with the reason. Click-focus only, so
+# the gamepad (and Tab) skip it; the keyboard reaches it with Enter on the slider.
+func _entry_box(id: String, index: int, entry: Dictionary, stored: float) -> LineEdit:
+	var box := LineEdit.new()
+	box.name = "Entry_%s_%d" % [id, index]
+	box.custom_minimum_size = Vector2(ENTRY_BOX_WIDTH, 0)
+	box.alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	box.focus_mode = Control.FOCUS_CLICK
+	box.select_all_on_focus = true
+	box.context_menu_enabled = false
+	box.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	box.add_theme_font_size_override("font_size", 14)
+	var unit := str(entry.get("unit", ""))
+	box.tooltip_text = "Type a value%s and press Enter. Allowed: %s to %s%s." % [
+		" in " + unit if not unit.is_empty() else "",
+		_entry_number(entry, float(entry.get("lo", 0.0)), true), _entry_number(entry, float(entry.get("hi", 0.0)), true),
+		" " + unit if not unit.is_empty() else ""]
+	box.set_meta("entry", {"id": id, "index": index, "unit": unit})
+	_set_entry_text(box, entry, stored)
+	box.text_submitted.connect(func(t: String): _commit_entry(box, t))
+	box.focus_exited.connect(func(): _commit_entry(box, box.text))
+	return box
+
+# `value` is already in display units when `displayed`, else a stored value (multiplied by the entry's multiplier).
+func _entry_number(entry: Dictionary, value: float, displayed: bool = false) -> String:
+	var shown := value if displayed else value * float(entry.get("multiplier", 1.0))
+	return ("%." + str(int(entry.get("decimals", 2))) + "f") % shown
+
+func _set_entry_text(box: LineEdit, entry: Dictionary, stored: float) -> void:
+	var text := _entry_number(entry, stored)
+	box.text = text
+	box.set_meta("shown", text)
+
+# Keyboard users: Enter on a slider jumps to its value box (a pad's A button must not, it would trap the focus).
+func _enter_focuses_box(slider: HSlider, box: LineEdit) -> void:
+	slider.gui_input.connect(func(event: InputEvent):
+		if event is InputEventKey and event.pressed and not event.echo and (event.keycode == KEY_ENTER or event.keycode == KEY_KP_ENTER):
+			box.grab_focus()
+			slider.accept_event())
+
+# The number a player typed ("8000", "8 000", "52,5", "8000 rpm", "x1.05"); NAN when it is none.
+func _parse_typed_number(text: String, unit: String) -> float:
+	var t := text.strip_edges().replace(",", ".").replace(" ", "")
+	if not unit.is_empty() and t.to_lower().ends_with(unit.to_lower()):
+		t = t.substr(0, t.length() - unit.length())
+	if t.begins_with("x") or t.begins_with("X"):
+		t = t.substr(1)
+	if t.is_empty() or not t.is_valid_float():
+		return NAN
+	return t.to_float()
+
+func _commit_entry(box: LineEdit, text: String) -> void:
+	if garage == null or not is_instance_valid(box) or not box.has_meta("entry"):
+		return
+	var typed := text.strip_edges()
+	if typed == str(box.get_meta("shown", "")):
+		return
+	var meta: Dictionary = box.get_meta("entry")
+	var id := str(meta["id"])
+	var index := int(meta["index"])
+	var number := _parse_typed_number(typed, str(meta["unit"]))
+	if is_nan(number):
+		_reject_entry(id, "\"%s\" is not a number." % typed)
+		return
+	var parsed: Dictionary = garage.option_entry_parse(id, index, number)
+	if not bool(parsed["ok"]):
+		_reject_entry(id, str(parsed["message"]))
+		return
+	var opt := _garage_option(id)
+	if opt.is_empty():
+		return
+	var before: Variant = opt["value"]
+	var value: Variant = float(parsed["value"])
+	if str(opt["kind"]) == "scale_list":
+		var list := PackedFloat64Array(before)
+		list[index] = float(parsed["value"])
+		value = list
+	var was_valid := bool(garage.get_validation()["ok"])
+	var result: Dictionary = _edit_option(id, value)
+	if not bool(result.get("accepted", false)):
+		_reject_entry(id, str(result.get("message", "not accepted")))
+	elif was_valid and not bool(result["ok"]):
+		# the physics loader (or a rule such as gears that must keep getting lower) refuses this combination
+		var reason := str(result["validation_message"])
+		_edit_option(id, before)
+		_reject_entry(id, reason)
+
+# Takes a refused typed value back (the boxes show the working value again) and says why.
+func _reject_entry(id: String, reason: String) -> void:
+	var opt := _garage_option(id)
+	if not opt.is_empty():
+		_sync_row(id, opt["value"])
+	var note: Label = _option_notes.get(id, null)
+	if note != null:
+		note.text = reason
+		note.visible = true
+
+# The slider(s), value box(es) and summary of an option row follow `value` (no signals: nothing is edited again).
+func _sync_row(id: String, value: Variant) -> void:
+	var label: Label = _option_values.get(id, null)
+	if label == null or not is_instance_valid(label):
+		return
+	var row := label.get_parent().get_parent()
+	var opt: Dictionary = row.get_meta("option_definition", {})
+	var boxes: Array = _option_entries.get(id, [])
+	if str(row.get_meta("kind", "")) == "scale_list":
+		var sliders: Array = row.get_meta("gear_sliders", [])
+		var values := PackedFloat64Array(value)
+		var entries: Array = opt.get("entries", [])
+		for i in range(mini(sliders.size(), values.size())):
+			(sliders[i] as HSlider).set_value_no_signal(values[i])
+			if i < boxes.size():
+				_set_entry_text(boxes[i], entries[i] if i < entries.size() else {}, values[i])
+		return
+	label.text = _option_display(opt, value)
+	var slider: HSlider = row.get_meta("main_slider", null)
+	if slider != null:
+		slider.set_value_no_signal(garage.option_entry_position(id, 0, float(value)) if bool(row.get_meta("positional", false)) else float(value))
+	if not boxes.is_empty():
+		_set_entry_text(boxes[0], opt.get("entry", {}), float(value))
 
 # The player changed an option: RgGarage decides (type, range, the loader's verdict).
-func _edit_option(option_id: String, value: Variant) -> void:
+func _edit_option(option_id: String, value: Variant) -> Dictionary:
 	var result: Dictionary = garage.set_option(option_id, value)
 	if option_id == "engine_install":
 		_engine_notice = str(result.get("notice", ""))
@@ -1553,15 +1702,11 @@ func _edit_option(option_id: String, value: Variant) -> void:
 	if note != null:
 		note.visible = not bool(result["accepted"])
 		note.text = str(result["message"])
-	var label: Label = _option_values.get(option_id, null)
-	if label != null and result.has("value"):
-		var row := label.get_parent().get_parent()
-		if str(row.get_meta("kind", "")) != "scale_list":
-			label.text = _option_display(row.get_meta("option_definition", {}), result["value"])
-		if row.has_meta("gear_labels"):
-			_refresh_gear_labels(row.get_meta("gear_labels"), row.get_meta("gear_sliders"), row.get_meta("gear_stock"))
+	if result.has("value"):
+		_sync_row(option_id, result["value"])
 	garage_option_changed.emit(option_id)
 	_refresh_status()
+	return result
 
 # The loader's verdict on the working copy and what Save/Drive may do.
 func _refresh_status() -> void:

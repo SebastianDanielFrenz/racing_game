@@ -1293,7 +1293,9 @@ func _try_start_vr() -> void:
 
 # Owner bookmarks survive normal log rotation in user://drive_marks.jsonl.
 func _input(event: InputEvent) -> void:
-	if _shell != null and (_screen == "configurator" or (_xr_menu != null and _xr_menu.active)) and event.is_action_pressed("ui_cancel"):
+	# A value box has the keyboard: a menu_back binding on a letter or digit is text there, only Esc leaves.
+	var typing_in_box: bool = event is InputEventKey and event.keycode != KEY_ESCAPE and _typing()
+	if _shell != null and (_screen == "configurator" or (_xr_menu != null and _xr_menu.active)) and event.is_action_pressed("ui_cancel") and not typing_in_box:
 		_on_escape()
 		get_viewport().set_input_as_handled()
 		return

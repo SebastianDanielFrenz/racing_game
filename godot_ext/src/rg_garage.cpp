@@ -261,6 +261,62 @@ godot::Dictionary RgGarage::begin_edit(const String& id) {
 
 String RgGarage::get_edit_id() const { return garage_ ? from_std(garage_->edit_id()) : String(); }
 
+namespace {
+
+godot::Dictionary entry_to_dictionary(const rg::NumberEntry& e) {
+    godot::Dictionary d;
+    d["multiplier"] = e.multiplier;
+    d["unit"] = from_std(e.unit);
+    d["decimals"] = static_cast<int64_t>(e.decimals);
+    d["lo"] = e.lo;
+    d["hi"] = e.hi;
+    d["positional"] = e.positional;
+    d["mapping"] = String(rg::to_string(e.mapping));
+    return d;
+}
+
+const rg::OptionView* find_view(const rg::Garage* garage, const String& option_id) {
+    if (garage == nullptr || !garage->editing()) return nullptr;
+    const std::string id = to_std(option_id);
+    for (const rg::OptionView& v : garage->model().options) {
+        if (v.def.id == id) return &v;
+    }
+    return nullptr;
+}
+
+} // namespace
+
+double RgGarage::option_entry_position(const String& option_id, int index, double value) const {
+    const rg::OptionView* v = find_view(garage_.get(), option_id);
+    return v != nullptr ? rg::entry_slider_position(rg::number_entry(*v, index), value) : 0.0;
+}
+
+double RgGarage::option_entry_value(const String& option_id, int index, double position) const {
+    const rg::OptionView* v = find_view(garage_.get(), option_id);
+    return v != nullptr ? rg::entry_value_at_position(rg::number_entry(*v, index), position) : 1.0;
+}
+
+String RgGarage::option_entry_text(const String& option_id, int index, double value) const {
+    const rg::OptionView* v = find_view(garage_.get(), option_id);
+    return v != nullptr ? from_std(rg::format_entry(rg::number_entry(*v, index), value)) : String();
+}
+
+godot::Dictionary RgGarage::option_entry_parse(const String& option_id, int index, double displayed) const {
+    godot::Dictionary d;
+    const rg::OptionView* v = find_view(garage_.get(), option_id);
+    if (v == nullptr) {
+        d["ok"] = false;
+        d["value"] = 0.0;
+        d["message"] = String("no such option");
+        return d;
+    }
+    const rg::EntryConversion c = rg::entry_from_displayed(rg::number_entry(*v, index), displayed);
+    d["ok"] = c.ok;
+    d["value"] = c.value;
+    d["message"] = from_std(c.message);
+    return d;
+}
+
 godot::Array RgGarage::get_options() const {
     godot::Array out;
     if (garage_ == nullptr || !garage_->editing()) return out;
@@ -303,6 +359,12 @@ godot::Array RgGarage::get_options() const {
         godot::PackedFloat64Array nums;
         for (const double n : v.stock_numbers) nums.push_back(n);
         d["stock_numbers"] = nums;
+        if (v.def.kind == rg::OptionKind::Scale || v.def.kind == rg::OptionKind::BrakeBias) d["entry"] = entry_to_dictionary(rg::number_entry(v));
+        if (v.def.kind == rg::OptionKind::ScaleList) {
+            godot::Array entries;
+            for (int i = 0; i < v.list_size; ++i) entries.push_back(entry_to_dictionary(rg::number_entry(v, i)));
+            d["entries"] = entries;
+        }
         out.push_back(d);
     }
     return out;
@@ -667,6 +729,10 @@ void RgGarage::_bind_methods() {
     ClassDB::bind_method(D_METHOD("begin_edit", "id"), &RgGarage::begin_edit);
     ClassDB::bind_method(D_METHOD("get_edit_id"), &RgGarage::get_edit_id);
     ClassDB::bind_method(D_METHOD("get_options"), &RgGarage::get_options);
+    ClassDB::bind_method(D_METHOD("option_entry_position", "option_id", "index", "value"), &RgGarage::option_entry_position);
+    ClassDB::bind_method(D_METHOD("option_entry_value", "option_id", "index", "position"), &RgGarage::option_entry_value);
+    ClassDB::bind_method(D_METHOD("option_entry_text", "option_id", "index", "value"), &RgGarage::option_entry_text);
+    ClassDB::bind_method(D_METHOD("option_entry_parse", "option_id", "index", "displayed"), &RgGarage::option_entry_parse);
     ClassDB::bind_method(D_METHOD("set_option", "option_id", "value"), &RgGarage::set_option);
     ClassDB::bind_method(D_METHOD("reset_option", "option_id"), &RgGarage::reset_option);
     ClassDB::bind_method(D_METHOD("reset_all"), &RgGarage::reset_all);

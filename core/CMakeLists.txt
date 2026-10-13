@@ -89,6 +89,7 @@ add_library(rg_core STATIC
     src/car_browser.cpp
     src/vehicle_catalog.cpp
     src/vehicle_setup.cpp
+    src/slider_map.cpp
     src/tyre_spec.cpp
     src/vehicle_load.cpp
     src/engine_store.cpp

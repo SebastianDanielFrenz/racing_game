@@ -531,7 +531,11 @@ TEST_CASE("engine calibration changes real parameters and rejects excessive limi
     INFO(validation.message);
     REQUIRE(validation.ok);
     REQUIRE_FALSE(rg::compile_setup(e, f.table, f.ctx,
-        setup_of("car_hyper", {{"engine_rev_limit", 1.1}})).ok);
+        setup_of("car_hyper", {{"engine_rev_limit", 2.5}})).ok);  // 20625 rpm, above the 20000 rpm slider end
+    REQUIRE_FALSE(rg::compile_setup(e, f.table, f.ctx,
+        setup_of("car_hyper", {{"engine_rev_limit", 0.2}})).ok);  // 1650 rpm, below the 2000 rpm slider start
+    // the data allows far more than the stock limit now (the setup check warns, it does not refuse)
+    REQUIRE(rg::compile_setup(e, f.table, f.ctx, setup_of("car_hyper", {{"engine_rev_limit", 1.1}})).ok);
     REQUIRE_FALSE(rg::compile_setup(e, f.table, f.ctx,
         setup_of("car_hyper", {{"engine_throttle_response", 0.0}})).ok);
 }

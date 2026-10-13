@@ -25,6 +25,7 @@ extends Control
 signal back_requested
 signal changed # a binding / tuning changed (main.gd re-syncs the menu actions; the file is saved on leaving)
 
+const SliderBox := preload("res://scripts/slider_box.gd")
 const ACCENT := Color(0.91, 0.45, 0.17)
 const WARN := Color(1.0, 0.7, 0.3)
 const DIM := Color(1, 1, 1, 0.7)
@@ -661,12 +662,8 @@ func _tuning_slider(parent: Control, key: String, text: String, action: String, 
 	slider.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	slider.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	line.add_child(slider)
-	var value_label := _label("%.2f" % slider.value, 13, HORIZONTAL_ALIGNMENT_RIGHT)
-	value_label.custom_minimum_size = Vector2(40, 0)
-	line.add_child(value_label)
-	slider.value_changed.connect(func(v: float):
-		value_label.text = "%.2f" % v
-		_tune(action, index, key, v))
+	SliderBox.attach(line, slider, 2) # the value box shows the number and takes a typed one (garage numeric inputs)
+	slider.value_changed.connect(func(v: float): _tune(action, index, key, v))
 	parent.add_child(line)
 	_hooks["tune:%s:%d" % [key, index]] = slider
 

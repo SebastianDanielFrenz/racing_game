@@ -41,6 +41,12 @@ std::string fmt_num(double v) {
     return buf;
 }
 
+std::string fmt_fixed(double v, int decimals) {
+    char buf[64];
+    std::snprintf(buf, sizeof(buf), "%.*f", decimals, v);
+    return buf;
+}
+
 std::string fmt2(double v) {
     char buf[48];
     std::snprintf(buf, sizeof(buf), "%.2f", v);
@@ -341,9 +347,16 @@ std::vector<std::string> pointers_for(const CatalogEntry& entry, const SetupOpti
     return it != entry.setup_pointers.end() ? it->second : def.pointers;
 }
 
-std::pair<double, double> range_for(const CatalogEntry& entry, const SetupOptionDef& def) {
+// The allowed factor range of a Scale/ScaleList option. A catalog entry's own range wins; a slider option derives it from
+// its absolute bounds and `stock_file` (the first target leaf's stock value; <= 0 or NaN = unknown: no range then).
+std::pair<double, double> range_for(const CatalogEntry& entry, const SetupOptionDef& def, double stock_file = 0.0) {
     const auto it = entry.setup_ranges.find(def.id);
     if (it != entry.setup_ranges.end()) return it->second;
+    if (def.slider) {
+        if (!(stock_file > 0.0) || !std::isfinite(stock_file)) return {1.0, 1.0};
+        const auto bounds = slider_bounds(*def.slider, stock_file);
+        return {bounds.first / stock_file, bounds.second / stock_file};
+    }
     return {def.min, def.max};
 }
 
@@ -875,6 +888,84 @@ const SetupOptionDef* SetupOptionTable::find(const std::string& id) const {
     return nullptr;
 }
 
+// ---- numbers in the player's units (garage numeric inputs) ---------------------------------------------------
+
+NumberEntry number_entry(const OptionView& view, int index) {
+    NumberEntry e;
+    switch (view.def.kind) {
+        case OptionKind::Scale: {
+            e.unit = view.def.unit.empty() ? "x" : view.def.unit;
+            e.lo = view.min;
+            e.hi = view.max;
+            if (view.def.slider) {
+                const double stock = view.stock_numbers.empty() ? 0.0 : view.stock_numbers.front();
+                e.multiplier = (stock > 0.0 ? stock : 1.0) * view.def.slider->factor;
+                e.unit = view.def.slider->unit;
+                e.decimals = view.def.slider->decimals;
+                e.positional = true;
+                e.mapping = view.def.slider->mapping;
+                e.lo = view.min * e.multiplier;
+                e.hi = view.max * e.multiplier;
+            }
+            break;
+        }
+        case OptionKind::ScaleList: {
+            const double stock = index >= 0 && static_cast<std::size_t>(index) < view.stock_numbers.size() ? view.stock_numbers[index] : 0.0;
+            e.multiplier = stock > 0.0 ? stock : 1.0;
+            e.lo = view.min * e.multiplier;
+            e.hi = view.max * e.multiplier;
+            break;
+        }
+        case OptionKind::BrakeBias:
+            e.multiplier = 100.0;
+            e.unit = "%";
+            e.decimals = 1;
+            e.lo = view.min * 100.0;
+            e.hi = view.max * 100.0;
+            break;
+        default: break;
+    }
+    return e;
+}
+
+double entry_to_displayed(const NumberEntry& entry, double stored) { return stored * entry.multiplier; }
+
+std::string format_entry(const NumberEntry& entry, double stored) {
+    if (!entry.positional && entry.unit == "x") return "x" + fmt_fixed(stored, entry.decimals);
+    std::string text = fmt_fixed(stored * entry.multiplier, entry.decimals);
+    if (!entry.unit.empty()) text += " " + entry.unit;
+    return text;
+}
+
+double entry_slider_position(const NumberEntry& entry, double stored) {
+    return slider_position(entry.mapping, entry.lo, entry.hi, stored * entry.multiplier);
+}
+
+double entry_value_at_position(const NumberEntry& entry, double position) {
+    double displayed = slider_value(entry.mapping, entry.lo, entry.hi, position);
+    displayed = round_to_decimals(displayed, entry.decimals);
+    displayed = std::clamp(displayed, entry.lo, entry.hi);
+    return displayed / entry.multiplier;
+}
+
+EntryConversion entry_from_displayed(const NumberEntry& entry, double displayed) {
+    EntryConversion r;
+    if (!std::isfinite(displayed)) {
+        r.message = "that is not a number";
+        return r;
+    }
+    const double eps = 1e-9 * std::max(1.0, std::abs(entry.hi));
+    if (displayed < entry.lo - eps || displayed > entry.hi + eps) {
+        r.message = fmt_fixed(displayed, entry.decimals) + (entry.unit.empty() ? "" : " " + entry.unit) +
+                    " is outside the allowed range " + fmt_fixed(entry.lo, entry.decimals) + " to " + fmt_fixed(entry.hi, entry.decimals) +
+                    (entry.unit.empty() ? "" : " " + entry.unit);
+        return r;
+    }
+    r.ok = true;
+    r.value = std::clamp(displayed, entry.lo, entry.hi) / entry.multiplier;
+    return r;
+}
+
 std::optional<SetupOptionTable> parse_setup_options(const std::string& json_text, const std::string& origin,
                                                     std::string* err) {
     auto bad = [&](const std::string& message) -> std::optional<SetupOptionTable> {
@@ -915,6 +1006,30 @@ std::optional<SetupOptionTable> parse_setup_options(const std::string& json_text
         detail::get_number(o, "min", d.min);
         detail::get_number(o, "max", d.max);
         detail::get_number(o, "step", d.step);
+        if (const auto slider = o.find("slider"); slider != o.end()) {
+            if (d.kind != OptionKind::Scale) return bad(where + ": a \"slider\" block belongs to a scale option only");
+            if (o.contains("min") || o.contains("max")) {
+                return bad(where + ": a slider option takes its range from the slider block, not from \"min\"/\"max\"");
+            }
+            if (!slider->is_object()) return bad(where + ": \"slider\" must be an object");
+            SliderSpec spec;
+            std::string mapping;
+            if (!detail::get_string(*slider, "mapping", mapping) || (mapping != "log" && mapping != "linear")) {
+                return bad(where + ": slider \"mapping\" must be \"log\" or \"linear\"");
+            }
+            spec.mapping = mapping == "log" ? SliderMapping::Log : SliderMapping::Linear;
+            if (!detail::get_number(*slider, "abs_min", spec.abs_min) || !detail::get_number(*slider, "abs_max", spec.abs_max)) {
+                return bad(where + ": slider needs numbers abs_min and abs_max");
+            }
+            detail::get_number(*slider, "factor", spec.factor);
+            double decimals = spec.decimals;
+            if (detail::get_number(*slider, "decimals", decimals)) spec.decimals = static_cast<int>(decimals);
+            if (static_cast<double>(spec.decimals) != decimals) return bad(where + ": slider decimals must be a whole number");
+            if (!detail::get_string(*slider, "unit", spec.unit)) spec.unit = d.unit;
+            const std::string spec_error = validate_slider_spec(spec);
+            if (!spec_error.empty()) return bad(where + ": slider " + spec_error);
+            d.slider = std::move(spec);
+        }
         detail::get_number(o, "max_shift", d.max_shift);
         detail::get_string(o, "file", d.file);
         if (d.file != "vehicle" && d.file != "gearbox" && d.file != "engine" && d.file != "turbo") {
@@ -939,9 +1054,9 @@ std::optional<SetupOptionTable> parse_setup_options(const std::string& json_text
         }
         if (d.kind != OptionKind::Colour && d.pointers.empty()) return bad(where + ": \"pointers\" (the whitelist) is empty");
         if (d.kind == OptionKind::Colour && !d.pointers.empty()) return bad(where + ": a colour edits no file, so it has no pointers");
-        const double scale_max_limit = d.id == "turbo_boost_target" ? 20.0 : 10.0;
-        if ((d.kind == OptionKind::Scale || d.kind == OptionKind::ScaleList) &&
-            !(d.min > 0.0 && d.min <= 1.0 && d.max >= 1.0 && d.max < scale_max_limit && d.step > 0.0)) {
+        // A slider option's factor range comes from its absolute bounds and the car's stock value, not from min/max.
+        if ((d.kind == OptionKind::Scale || d.kind == OptionKind::ScaleList) && !d.slider &&
+            !(d.min > 0.0 && d.min <= 1.0 && d.max >= 1.0 && d.max < 10.0 && d.step > 0.0)) {
             return bad(where + ": a scale needs 0 < min <= 1 <= max < 10 and step > 0");
         }
         if (d.kind == OptionKind::BrakeBias && !(d.max_shift > 0.0 && d.max_shift < 0.5)) {
@@ -1229,6 +1344,11 @@ SetupModel build_setup_model(const CatalogEntry& entry, const SetupOptionTable& 
                     const auto* leaf = at_pointer(target.file->work, target.pointer);
                     if (leaf && leaf->is_number()) v.stock_numbers.push_back(leaf->get<double>());
                 }
+                if (def.slider) {
+                    const auto absolute = range_for(entry, def, v.stock_numbers.empty() ? 0.0 : v.stock_numbers.front());
+                    v.min = absolute.first;
+                    v.max = absolute.second;
+                }
                 if (v.available && targets.empty()) v.available = false;
                 break;
             }
@@ -1378,11 +1498,26 @@ std::string apply_option(const CatalogEntry& entry, const SetupOptionDef& def, c
         case OptionKind::Scale: {
             if (!std::holds_alternative<double>(value)) return type_error("a number");
             const double s = std::get<double>(value);
-            if (!std::isfinite(s) || s < range.first - kEps || s > range.second + kEps) {
-                return id + ": " + fmt2(s) + " is outside the allowed range " + fmt2(range.first) + " to " + fmt2(range.second);
-            }
             std::vector<Target> targets = targets_of(files, def, patterns);
             if (targets.empty()) return "option \"" + id + "\" matches nothing in " + entry.id + "'s files";
+            double lo = range.first, hi = range.second;
+            double stock_file = 0.0;
+            if (def.slider) {
+                const json* first = at_pointer(targets.front().file->work, targets.front().pointer);
+                if (first != nullptr && first->is_number()) stock_file = first->get<double>();
+                const auto absolute = range_for(entry, def, stock_file);
+                lo = absolute.first;
+                hi = absolute.second;
+            }
+            if (!std::isfinite(s) || s < lo - kEps || s > hi + kEps) {
+                if (def.slider && entry.setup_ranges.count(id) == 0 && stock_file > 0.0 && std::isfinite(s)) {
+                    const double m = stock_file * def.slider->factor;
+                    const int dec = def.slider->decimals;
+                    return id + ": " + fmt_fixed(s * m, dec) + " " + def.slider->unit + " is outside the allowed range " +
+                           fmt_fixed(lo * m, dec) + " to " + fmt_fixed(hi * m, dec) + " " + def.slider->unit;
+                }
+                return id + ": " + fmt2(s) + " is outside the allowed range " + fmt2(lo) + " to " + fmt2(hi);
+            }
             for (Target& t : targets) {
                 const json* leaf = at_pointer(t.file->work, t.pointer);
                 if (leaf == nullptr || !leaf->is_number()) return "option \"" + id + "\": " + t.pointer + " is not a number";
