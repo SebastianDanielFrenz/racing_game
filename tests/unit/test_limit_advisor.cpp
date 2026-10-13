@@ -1,0 +1,480 @@
+// Garage limit advisor (rg/limit_advisor.h): the config file, the pure advice builder (grouping, merging, severity,
+// templates), the Find-fix text, and - [long] - the real advisor on the hypercar with the owner's extreme turbo setup.
+#include "rg/limit_advisor.h"
+
+#include "rg/vehicle_catalog.h"
+#include "rg/vehicle_setup.h"
+
+#include <catch2/catch_approx.hpp>
+#include <catch2/catch_test_macros.hpp>
+
+#include <chrono>
+#include <cmath>
+#include <cstdio>
+#include <filesystem>
+#include <fstream>
+#include <iterator>
+#include <limits>
+#include <thread>
+
+namespace {
+
+namespace pd = ps::drivetrain;
+const std::string kRepo = RG_SOURCE_DIR;
+
+rg::AdvisorConfig shipped_config() {
+    std::string err;
+    auto c = rg::load_advisor_config(kRepo + "/data/garage/advisor.json", &err);
+    INFO(err);
+    REQUIRE(c.has_value());
+    return *c;
+}
+
+pd::LimitFinding F(pd::LimitKind kind, pd::LimitSeverity s, double rpm, double value, double limit, pd::LimitUnit unit, const std::string& field = "") {
+    pd::LimitFinding f;
+    f.kind = kind;
+    f.severity = s;
+    f.rpm = rpm;
+    f.value = value;
+    f.limit = limit;
+    f.unit = unit;
+    f.part.field = field;
+    return f;
+}
+
+pd::DynoPoint P(double rpm, double charge_bar) {
+    pd::DynoPoint p;
+    p.rpm = rpm;
+    p.charge_boost_bar = charge_bar;
+    return p;
+}
+
+// A sweep 2000..8000 in 250 steps, boost rising linearly to `top` bar.
+std::vector<pd::DynoPoint> sweep_points(double top) {
+    std::vector<pd::DynoPoint> pts;
+    for (double rpm = 2000; rpm <= 8000; rpm += 250) pts.push_back(P(rpm, top * (rpm - 1500) / 6500.0));
+    return pts;
+}
+
+std::string joined(const rg::AdviceItem& i) {
+    std::string s = i.title;
+    for (const auto& l : i.lines) s += "\n" + l;
+    if (!i.suggestion.empty()) s += "\n" + i.suggestion;
+    return s;
+}
+
+const rg::AdviceItem* find_item(const std::vector<rg::AdviceItem>& items, const std::string& id) {
+    for (const auto& i : items) {
+        if (i.id == id) return &i;
+    }
+    return nullptr;
+}
+
+} // namespace
+
+TEST_CASE("advisor config: the shipped file loads and names every kind the advisor can produce", "[limit_advisor]") {
+    const rg::AdvisorConfig c = shipped_config();
+    CHECK(c.debounce_ms == 300);
+    CHECK(c.sweep.quality == "sketch");
+    for (const pd::LimitKind k : {pd::LimitKind::BoostBelowTarget, pd::LimitKind::BoostAboveTarget, pd::LimitKind::WastegateSaturated,
+                                  pd::LimitKind::TurboRotorCap, pd::LimitKind::CompressorChoke, pd::LimitKind::CompressorSurge,
+                                  pd::LimitKind::RevLimiter, pd::LimitKind::FuelCut, pd::LimitKind::MeanPistonSpeed, pd::LimitKind::MapGridEdge,
+                                  pd::LimitKind::ClutchCapacity, pd::LimitKind::Knock, pd::LimitKind::KitFuelLean,
+                                  pd::LimitKind::N2OBottleDuration, pd::LimitKind::N2OBottlePressureDrop}) {
+        INFO(pd::to_string(k));
+        const rg::AdviceKindConfig* kc = c.find(k);
+        REQUIRE(kc != nullptr);
+        CHECK_FALSE(kc->text.title.empty());
+        CHECK_FALSE(kc->text.lines.empty());
+    }
+    // Pure noise for a player stays hidden: the limiter kinds (the sweep ends under the limiter) and MapGridEdge Near.
+    CHECK_FALSE(c.find(pd::LimitKind::RevLimiter)->min_severity.has_value());
+    CHECK_FALSE(c.find(pd::LimitKind::FuelCut)->min_severity.has_value());
+    REQUIRE(c.find(pd::LimitKind::MapGridEdge)->min_severity.has_value());
+    CHECK(*c.find(pd::LimitKind::MapGridEdge)->min_severity == pd::LimitSeverity::Exceeded);
+}
+
+TEST_CASE("advisor config: rejections", "[limit_advisor]") {
+    std::string good;
+    {
+        std::ifstream in(kRepo + "/data/garage/advisor.json");
+        good.assign(std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>());
+    }
+    const auto replaced = [&](const std::string& from, const std::string& to) {
+        std::string s = good;
+        const auto at = s.find(from);
+        REQUIRE(at != std::string::npos);
+        s.replace(at, from.size(), to);
+        return s;
+    };
+    std::string err;
+    CHECK(rg::parse_advisor_config(good, "good", &err).has_value());
+    CHECK_FALSE(rg::parse_advisor_config("{", "bad", &err).has_value());
+    CHECK_FALSE(rg::parse_advisor_config(replaced("rg.garage_advisor/1", "rg.garage_advisor/9"), "fmt", &err).has_value());
+    CHECK_FALSE(rg::parse_advisor_config(replaced("\"BoostBelowTarget\"", "\"NoSuchKind\""), "kind", &err).has_value());
+    CHECK(err.find("LimitKind") != std::string::npos);
+    CHECK_FALSE(rg::parse_advisor_config(replaced("{peak_rpm}", "{peek_rpm}"), "tpl", &err).has_value());
+    CHECK(err.find("{peek_rpm}") != std::string::npos);
+    CHECK_FALSE(rg::parse_advisor_config(replaced("\"never\"", "\"sometimes\""), "sev", &err).has_value());
+    CHECK_FALSE(rg::parse_advisor_config(replaced("\"quality\": \"sketch\"", "\"quality\": \"ultra\""), "q", &err).has_value());
+    CHECK_FALSE(rg::parse_advisor_config(replaced("\"debounce_ms\": 300", "\"debounce_ms\": -1"), "d", &err).has_value());
+    CHECK_FALSE(rg::parse_advisor_config(replaced("\"merge_gap_rpm\": 300", "\"merge_gap_rpm\": 300, \"typo\": 1"), "key", &err).has_value());
+    CHECK_FALSE(rg::parse_advisor_config(replaced("{target}", "{target"), "brace", &err).has_value());
+}
+
+TEST_CASE("advice text: the owner's boost example, to the line", "[limit_advisor]") {
+    const rg::AdvisorConfig c = shipped_config();
+    rg::AdviceInput in;
+    in.points = sweep_points(3.4);
+    in.target_boost_bar = 15.5;
+    // Exceeded at every swept rpm: the target is never reached.
+    for (const auto& p : in.points)
+        in.findings.push_back(F(pd::LimitKind::BoostBelowTarget, pd::LimitSeverity::Exceeded, p.rpm, p.charge_boost_bar * 1e5, 15.5e5, pd::LimitUnit::Pascal));
+    const auto items = rg::build_advice(in, c);
+    REQUIRE(items.size() == 1);
+    const rg::AdviceItem& i = items[0];
+    CHECK(i.severity == rg::AdviceSeverity::Critical);
+    CHECK(i.title == "Excessive turbo boost target");
+    REQUIRE(i.lines.size() == 3);
+    CHECK(i.lines[0] == "Boost target is set to 15.5 bar.");
+    CHECK(i.lines[1] == "The current setup achieved");
+    CHECK(i.lines[2] == "3.4 bar @ 8000 RPM."); // the best the setup reached over the sweep
+    CHECK(i.suggestion == "Bigger turbos or a lower boost target.");
+    CHECK(i.option_id == "turbo_boost_target");
+    CHECK(i.variant.empty());
+    REQUIRE(i.ranges.size() == 1);
+    CHECK(i.rpm_from == 2000);
+    CHECK(i.rpm_to == 8000);
+    CHECK(i.remedy_state == rg::RemedyState::None);
+    CHECK(joined(i) == "Excessive turbo boost target\nBoost target is set to 15.5 bar.\nThe current setup achieved\n3.4 bar @ 8000 RPM.\nBigger turbos or a lower boost target.");
+}
+
+TEST_CASE("advice grouping: contiguous rpm ranges merge, far ones stay apart, worst severity first", "[limit_advisor]") {
+    const rg::AdvisorConfig c = shipped_config(); // merge gap 300
+    rg::AdviceInput in;
+    in.points = sweep_points(2.0);
+    in.target_boost_bar = 1.8;
+    // CompressorChoke: 3000, 3250, 3500 merge; 6000 is a second range.
+    for (const double rpm : {3000.0, 3250.0, 3500.0, 6000.0})
+        in.findings.push_back(F(pd::LimitKind::CompressorChoke, pd::LimitSeverity::Near, rpm, 0.92, 1.0, pd::LimitUnit::Fraction, "/max_mass_flow_kg_s"));
+    in.findings.push_back(F(pd::LimitKind::CompressorChoke, pd::LimitSeverity::Limiting, 6000.0, 1.03, 1.0, pd::LimitUnit::Fraction, "/max_mass_flow_kg_s"));
+    in.findings.push_back(F(pd::LimitKind::TurboRotorCap, pd::LimitSeverity::Exceeded, 7000.0, 190000, 150000, pd::LimitUnit::RevPerMinute));
+    in.findings.push_back(F(pd::LimitKind::RevLimiter, pd::LimitSeverity::Exceeded, 8000.0, 8000, 7900, pd::LimitUnit::RevPerMinute));  // hidden kind
+    in.findings.push_back(F(pd::LimitKind::MapGridEdge, pd::LimitSeverity::Near, 5000.0, 250e3, 255e3, pd::LimitUnit::Pascal, "/cycle/grid_p_im_kpa")); // below its min
+    const auto items = rg::build_advice(in, c);
+    REQUIRE(items.size() == 2);
+    // Worst severity first: Critical rotor cap, then the warning choke.
+    CHECK(items[0].kind == pd::LimitKind::TurboRotorCap);
+    CHECK(items[0].severity == rg::AdviceSeverity::Critical);
+    CHECK(items[1].kind == pd::LimitKind::CompressorChoke);
+    CHECK(items[1].severity == rg::AdviceSeverity::Warning);
+    REQUIRE(items[1].ranges.size() == 2);
+    CHECK(items[1].ranges[0].from_rpm == 3000);
+    CHECK(items[1].ranges[0].to_rpm == 3500);
+    CHECK(items[1].ranges[1].from_rpm == 6000);
+    CHECK(items[1].ranges[1].to_rpm == 6000);
+    CHECK(items[1].findings.size() == 5);
+    CHECK(items[1].lines[0] == "The compressor runs at 103 %");   // the worst finding speaks
+    CHECK(items[1].lines[1] == "of its flow capacity @ 6000 RPM.");
+    CHECK(rg::format_rpm_ranges(items[1].ranges, c) == "3000-3500, 6000 RPM");
+}
+
+TEST_CASE("advice grouping: the config's minimum severity filters before merging", "[limit_advisor]") {
+    rg::AdvisorConfig c = shipped_config();
+    rg::AdviceInput in;
+    in.points = sweep_points(2.0);
+    for (const double rpm : {3000.0, 3250.0, 3500.0})
+        in.findings.push_back(F(pd::LimitKind::CompressorChoke, rpm == 3250.0 ? pd::LimitSeverity::Near : pd::LimitSeverity::Limiting, rpm, 1.0, 1.0, pd::LimitUnit::Fraction));
+    for (auto& k : c.kinds) {
+        if (k.kind == pd::LimitKind::CompressorChoke) k.min_severity = pd::LimitSeverity::Limiting;
+    }
+    const auto items = rg::build_advice(in, c);
+    REQUIRE(items.size() == 1);
+    REQUIRE(items[0].ranges.size() == 2); // the Near point between them is gone: 3000 and 3500 are 500 apart (> the 300 gap)
+    CHECK(items[0].findings.size() == 2);
+    // A kind absent from the config is never shown.
+    c.kinds.clear();
+    c.kinds.push_back(rg::AdviceKindConfig{});
+    CHECK(rg::build_advice(in, c).empty());
+}
+
+TEST_CASE("advice variants: boost shortfall at the start of the sweep is spool-up, at the end a fall-off", "[limit_advisor]") {
+    const rg::AdvisorConfig c = shipped_config();
+    rg::AdviceInput in;
+    in.points = sweep_points(1.8);
+    in.target_boost_bar = 1.8;
+    for (const double rpm : {2000.0, 2250.0, 2500.0})
+        in.findings.push_back(F(pd::LimitKind::BoostBelowTarget, pd::LimitSeverity::Near, rpm, 1.4e5, 1.8e5, pd::LimitUnit::Pascal));
+    auto items = rg::build_advice(in, c);
+    REQUIRE(items.size() == 1);
+    CHECK(items[0].variant == "spool");
+    CHECK(items[0].title == "Slow turbo spool-up");
+    CHECK(items[0].severity == rg::AdviceSeverity::Advice);
+    CHECK(items[0].lines[0] == "Boost target is set to 1.8 bar.");
+    CHECK(items[0].lines[1] == "The turbos reach it from 2750 RPM."); // the first swept rpm after the shortfall
+    CHECK(items[0].lines[2] == "Below that the setup achieved 1.4 bar @ 2000 RPM.");
+
+    in.findings.clear();
+    for (const double rpm : {7500.0, 7750.0, 8000.0})
+        in.findings.push_back(F(pd::LimitKind::BoostBelowTarget, pd::LimitSeverity::Limiting, rpm, 1.5e5, 1.8e5, pd::LimitUnit::Pascal));
+    items = rg::build_advice(in, c);
+    REQUIRE(items.size() == 1);
+    CHECK(items[0].variant == "falloff");
+    CHECK(items[0].lines[1] == "The turbos hold it up to 7250 RPM.");
+
+    in.findings.clear();
+    in.findings.push_back(F(pd::LimitKind::BoostBelowTarget, pd::LimitSeverity::Near, 5000.0, 1.5e5, 1.8e5, pd::LimitUnit::Pascal));
+    items = rg::build_advice(in, c);
+    REQUIRE(items.size() == 1);
+    CHECK(items[0].variant.empty()); // a dip in the middle keeps the base text
+}
+
+TEST_CASE("advice text: every kind renders without a missing fact", "[limit_advisor]") {
+    const rg::AdvisorConfig c = shipped_config();
+    struct Row {
+        pd::LimitKind kind;
+        pd::LimitSeverity severity;
+        double value, limit;
+        pd::LimitUnit unit;
+        const char* field;
+        const char* expect_in_text; // a number that must show up
+    };
+    const Row rows[] = {
+        {pd::LimitKind::BoostBelowTarget, pd::LimitSeverity::Exceeded, 1.0e5, 1.8e5, pd::LimitUnit::Pascal, "", "bar"},
+        {pd::LimitKind::BoostAboveTarget, pd::LimitSeverity::Exceeded, 2.4e5, 1.8e5, pd::LimitUnit::Pascal, "/wastegate_area_m2", "2.4 bar"},
+        {pd::LimitKind::WastegateSaturated, pd::LimitSeverity::Limiting, 0.99, 0.98, pd::LimitUnit::Fraction, "/wastegate_area_m2", "99 % open"},
+        {pd::LimitKind::TurboRotorCap, pd::LimitSeverity::Exceeded, 190000, 150000, pd::LimitUnit::RevPerMinute, "", "190000 RPM"},
+        {pd::LimitKind::CompressorChoke, pd::LimitSeverity::Limiting, 1.04, 1.0, pd::LimitUnit::Fraction, "/max_mass_flow_kg_s", "104 %"},
+        {pd::LimitKind::CompressorSurge, pd::LimitSeverity::Exceeded, 0.95, 1.0, pd::LimitUnit::Dimensionless, "/surge_line", "0.95x"},
+        {pd::LimitKind::MeanPistonSpeed, pd::LimitSeverity::Limiting, 26.2, 25.0, pd::LimitUnit::MetrePerSecond, "/limiter/rpm", "26.2 m/s"},
+        {pd::LimitKind::MapGridEdge, pd::LimitSeverity::Exceeded, 320e3, 300e3, pd::LimitUnit::Pascal, "/cycle/grid_p_im_kpa", "320 kPa"},
+        {pd::LimitKind::MapGridEdge, pd::LimitSeverity::Exceeded, 8300, 8250, pd::LimitUnit::RevPerMinute, "/cycle/grid_rpm", "8300 RPM"},
+        {pd::LimitKind::ClutchCapacity, pd::LimitSeverity::Limiting, 1800, 1500, pd::LimitUnit::NewtonMetre, "/capacity_nm", "1800 N*m"},
+        {pd::LimitKind::Knock, pd::LimitSeverity::Limiting, 6.5, 5.0, pd::LimitUnit::CrankDegree, "/knock/ron", "6.5 deg"},
+        {pd::LimitKind::KitFuelLean, pd::LimitSeverity::Exceeded, 1.15, 0.9, pd::LimitUnit::Dimensionless, "/fuel_jet_diameter_mm", "1.15"},
+        {pd::LimitKind::N2OBottleDuration, pd::LimitSeverity::Limiting, 6.0, 10.0, pd::LimitUnit::Second, "/capacity_kg", "6.0 s"},
+        {pd::LimitKind::N2OBottlePressureDrop, pd::LimitSeverity::Limiting, 0.75, 0.9, pd::LimitUnit::Dimensionless, "/pressure", "75 %"},
+    };
+    for (const Row& r : rows) {
+        INFO(pd::to_string(r.kind) << " " << r.field);
+        rg::AdviceInput in;
+        in.points = sweep_points(2.0);
+        in.target_boost_bar = 1.8;
+        pd::LimitFinding f = F(r.kind, r.severity, 6500.0, r.value, r.limit, r.unit, r.field);
+        in.findings.push_back(f);
+        const auto items = rg::build_advice(in, c);
+        REQUIRE(items.size() == 1);
+        const std::string text = joined(items[0]);
+        INFO(text);
+        CHECK(text.find('?') == std::string::npos);
+        CHECK(text.find('{') == std::string::npos);
+        CHECK(text.find(r.expect_in_text) != std::string::npos);
+        if (r.kind != pd::LimitKind::BoostBelowTarget) CHECK(text.find("6500 RPM") != std::string::npos); // BoostBelowTarget names the best rpm of the sweep
+        CHECK(items[0].lines.size() >= 1);
+    }
+}
+
+TEST_CASE("advice remedies: Closed shows at once, Simulated waits for Find fix, solved and failed text", "[limit_advisor]") {
+    const rg::AdvisorConfig c = shipped_config();
+    rg::AdviceInput in;
+    in.points = sweep_points(2.0);
+    in.target_boost_bar = 1.8;
+    // Clutch: Closed remedy, capacity 1500 -> at least 1800 (x1.3 margin 2340).
+    pd::LimitFinding clutch = F(pd::LimitKind::ClutchCapacity, pd::LimitSeverity::Limiting, 6000.0, 1800, 1500, pd::LimitUnit::NewtonMetre, "/capacity_nm");
+    pd::Remedy cr;
+    cr.current = 1500;
+    cr.required_min = 1800;
+    cr.required_margin = 2340;
+    cr.unit = pd::LimitUnit::NewtonMetre;
+    cr.cost = pd::RemedyCost::Closed;
+    clutch.remedy = cr;
+    // Wastegate: Simulated and unsolved.
+    pd::LimitFinding gate = F(pd::LimitKind::WastegateSaturated, pd::LimitSeverity::Limiting, 7000.0, 0.99, 0.98, pd::LimitUnit::Fraction, "/wastegate_area_m2");
+    pd::Remedy sr;
+    sr.current = 1.18e-3;
+    sr.unit = pd::LimitUnit::SquareMetre;
+    sr.cost = pd::RemedyCost::Simulated;
+    sr.solved = false;
+    sr.required_min = sr.required_margin = std::numeric_limits<double>::quiet_NaN();
+    gate.remedy = sr;
+    // Knock: a Simulated placeholder physics cannot solve: no button.
+    pd::LimitFinding knock = F(pd::LimitKind::Knock, pd::LimitSeverity::Limiting, 6000.0, 6.0, 5.0, pd::LimitUnit::CrankDegree, "/knock/ron");
+    knock.remedy = sr;
+    in.findings = {clutch, gate, knock};
+    auto items = rg::build_advice(in, c);
+    REQUIRE(items.size() == 3);
+    const auto* ci = find_item(items, "ClutchCapacity@/capacity_nm");
+    REQUIRE(ci != nullptr);
+    CHECK(ci->remedy_state == rg::RemedyState::Closed);
+    CHECK(ci->remedy_text == "A clutch rated for about 2340 N*m holds it with margin (now 1500 N*m).");
+    CHECK_FALSE(ci->can_solve);
+    auto* gi = const_cast<rg::AdviceItem*>(find_item(items, "WastegateSaturated@/wastegate_area_m2"));
+    REQUIRE(gi != nullptr);
+    CHECK(gi->remedy_state == rg::RemedyState::Available);
+    CHECK(gi->can_solve);
+    CHECK(gi->remedy_text.empty());
+    const auto* ki = find_item(items, "Knock@/knock/ron");
+    REQUIRE(ki != nullptr);
+    CHECK(ki->remedy_state == rg::RemedyState::None);
+    CHECK_FALSE(ki->can_solve);
+
+    pd::Remedy a = sr, b = sr;
+    a.solved = true;
+    a.required_min = 1.18e-3 * 1.215;
+    a.required_margin = a.required_min * 1.1;
+    b.solved = true;
+    b.required_min = 1.18e-3 * 1.32;
+    b.required_margin = b.required_min * 1.1;
+    rg::apply_solved_remedy(*gi, {a, b}, c);
+    CHECK(gi->remedy_state == rg::RemedyState::Solved);
+    CHECK(gi->remedy_text == "Wastegate needs about 1.32x the area, 1.45x to be safe."); // the larger need wins
+    rg::apply_solved_remedy(*gi, {a, sr}, c);
+    CHECK(gi->remedy_state == rg::RemedyState::Failed);
+    CHECK(gi->remedy_text.find("8x") != std::string::npos);
+    rg::apply_solved_remedy(*gi, {}, c);
+    CHECK(gi->remedy_state == rg::RemedyState::Failed);
+}
+
+TEST_CASE("advice severity vocabulary", "[limit_advisor]") {
+    CHECK(rg::advice_severity(pd::LimitSeverity::Near) == rg::AdviceSeverity::Advice);
+    CHECK(rg::advice_severity(pd::LimitSeverity::Limiting) == rg::AdviceSeverity::Warning);
+    CHECK(rg::advice_severity(pd::LimitSeverity::Exceeded) == rg::AdviceSeverity::Critical);
+    CHECK(std::string(rg::to_string(rg::AdviceSeverity::Warning)) == "warning");
+}
+
+// ---- the real thing ------------------------------------------------------------------------------------------------------
+
+namespace {
+
+namespace fs = std::filesystem;
+
+struct World {
+    rg::VehicleCatalog catalog;
+    rg::SetupOptionTable table;
+    rg::SetupContext ctx;
+    std::string work_root;
+};
+
+World make_world() {
+    World w;
+    std::string err;
+    auto catalog = rg::load_vehicle_catalog(kRepo + "/data/vehicles/catalog.json", kRepo, &err);
+    REQUIRE(catalog.has_value());
+    w.catalog = *catalog;
+    auto table = rg::load_setup_options(kRepo + "/data/vehicles/setup_options.json", &err);
+    REQUIRE(table.has_value());
+    w.table = *table;
+    w.work_root = (fs::temp_directory_path() / "rg_advisor_test").generic_string();
+    w.ctx.tyre_families_path = kRepo + "/data/tyres/families.json";
+    w.ctx.work_root = w.work_root;
+    w.ctx.engine_map_cache_dir = kRepo + "/out/godot_engine_cache";
+    auto store = rg::EngineStore::open(kRepo + "/data/engines/engine_catalog.json", kRepo, "", &err);
+    REQUIRE(store != nullptr);
+    w.ctx.engines = std::shared_ptr<const rg::EngineStore>(std::move(store));
+    return w;
+}
+
+rg::AdvisorRequest make_request(const World& w, const std::string& car, const std::string& setup_json, const std::string& key) {
+    rg::AdvisorRequest r;
+    const rg::CatalogEntry* e = w.catalog.find(car);
+    REQUIRE(e != nullptr);
+    r.entry = *e;
+    r.table = w.table;
+    r.context = w.ctx;
+    std::string err;
+    auto setup = rg::parse_setup(setup_json, w.table, "test", &err);
+    INFO(err);
+    REQUIRE(setup.has_value());
+    r.setup = *setup;
+    r.key = key;
+    return r;
+}
+
+rg::AdvisorResult wait_done(rg::LimitAdvisor& advisor, double timeout_s = 180.0) {
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::duration<double>(timeout_s);
+    for (;;) {
+        const auto r = advisor.result();
+        if (!r.busy && !r.solving) return r;
+        REQUIRE(std::chrono::steady_clock::now() < deadline);
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    }
+}
+
+void print_items(const rg::AdvisorResult& r) {
+    std::printf("ADVISOR maps %.2f s, sweep %.2f s, %zu items\n", r.maps_seconds, r.sweep_seconds, r.items.size());
+    for (const auto& i : r.items) {
+        std::printf("ADVISOR [%s] %s  (%s, option %s, remedy %s)\n", rg::to_string(i.severity), i.id.c_str(), i.variant.c_str(), i.option_id.c_str(),
+                    rg::to_string(i.remedy_state));
+        std::printf("%s\n", joined(i).c_str());
+        if (!i.remedy_text.empty()) std::printf("  fix: %s\n", i.remedy_text.c_str());
+    }
+    std::fflush(stdout);
+}
+
+// The owner's setup (garage/setups/car_hyper_n2o.json, 2026-10-13): the huge turbos on a 15 bar boost target, an 8x clutch.
+const char* kOwnerSetup = R"({"format":"racing_game.vehicle_setup/1","vehicle":"car_hyper_n2o","options":{
+  "clutch_capacity":8.0,"turbo_boost_target":8.600083819796385,"turbo_install_n2o":"hyper_twin_large_n2o"}})";
+const char* kStockSetup = R"({"format":"racing_game.vehicle_setup/1","vehicle":"car_hyper_n2o","options":{}})";
+
+} // namespace
+
+TEST_CASE("advisor: a failing setup reports an error and keeps the thread usable", "[limit_advisor]") {
+    World w = make_world();
+    rg::AdvisorConfig cfg = shipped_config();
+    cfg.debounce_ms = 5;
+    rg::LimitAdvisor advisor(cfg);
+    auto bad = make_request(w, "car_hyper_n2o", kStockSetup, "bad");
+    bad.setup.values["turbo_install_n2o"] = std::string("not_a_part");
+    advisor.request(bad);
+    const auto r = wait_done(advisor, 30.0);
+    CHECK_FALSE(r.error.empty());
+    CHECK_FALSE(r.have_result);
+    advisor.request(bad); // the same key is one request
+    advisor.cancel();
+    CHECK_FALSE(advisor.result().busy);
+}
+
+TEST_CASE("advisor: the owner's extreme turbo setup is flagged (boost, rotor, choke), stock has no rotor/choke items", "[limit_advisor][long]") {
+    World w = make_world();
+    rg::LimitAdvisor advisor(shipped_config());
+    advisor.request(make_request(w, "car_hyper_n2o", kOwnerSetup, "owner"));
+    const auto owner = wait_done(advisor);
+    INFO(owner.error);
+    REQUIRE(owner.error.empty());
+    REQUIRE(owner.have_result);
+    print_items(owner);
+    const auto* boost = find_item(owner.items, "BoostBelowTarget");
+    REQUIRE(boost != nullptr);
+    CHECK(boost->severity == rg::AdviceSeverity::Critical);
+    CHECK(boost->title == "Excessive turbo boost target");
+    CHECK(boost->lines[0].find("bar.") != std::string::npos);
+    const auto* rotor = find_item(owner.items, "TurboRotorCap");
+    REQUIRE(rotor != nullptr);
+    CHECK(rotor->severity == rg::AdviceSeverity::Critical);
+    CHECK(rotor->can_solve);
+    const auto* choke = find_item(owner.items, "CompressorChoke@/max_mass_flow_kg_s");
+    REQUIRE(choke != nullptr);
+    CHECK(choke->severity >= rg::AdviceSeverity::Warning);
+
+    // The Find fix button: wastegate search on the worker.
+    advisor.solve(rotor->id);
+    CHECK(advisor.result().solving); // set when the solve is queued, so wait_done cannot miss it
+    const auto solved = wait_done(advisor);
+    const auto* after = find_item(solved.items, "TurboRotorCap");
+    REQUIRE(after != nullptr);
+    CHECK((after->remedy_state == rg::RemedyState::Solved || after->remedy_state == rg::RemedyState::Failed));
+    CHECK_FALSE(after->remedy_text.empty());
+    std::printf("ADVISOR fix (%.2f s): %s\n", solved.last_solve_seconds, after->remedy_text.c_str());
+
+    // Stock: the newest setup wins. The stock N2O car is not quiet (its gate nearly saturates, the spool-up is slow) but
+    // the owner-setup problems must be absent: no rotor cap, no choke.
+    advisor.request(make_request(w, "car_hyper_n2o", kStockSetup, "stock"));
+    const auto stock = wait_done(advisor);
+    REQUIRE(stock.error.empty());
+    print_items(stock);
+    CHECK(stock.key == "stock");
+    CHECK(find_item(stock.items, "TurboRotorCap") == nullptr);
+    CHECK(find_item(stock.items, "CompressorChoke@/max_mass_flow_kg_s") == nullptr);
+    for (const auto& i : stock.items)
+        if (i.variant == "spool") CHECK(i.severity == rg::AdviceSeverity::Advice);
+}

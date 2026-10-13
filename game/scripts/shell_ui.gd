@@ -79,6 +79,14 @@ var _garage_performance: VBoxContainer
 var _garage_dyno: Control
 var _garage_dyno_status: Label
 var _dyno_poll := 0.0
+# Limit advisor (setup check): simulation-derived notes for the pending setup; the core decides everything.
+var _advice_box: VBoxContainer
+var _advice_status: Label
+var _advice_list: VBoxContainer
+var _advice_scroll: ScrollContainer
+var _advice_poll := 0.0
+var _advice_signature := ""
+var _advice_data: Dictionary = {}
 var _garage_path: Array[String] = []
 var _garage_preferred: Button
 var _engine_notice := ""                        # G1: options an engine change reset (shown under the engine cards)
@@ -203,6 +211,10 @@ func _process(delta: float) -> void:
 			if simulated_turbo:
 				_garage_dyno_status.text += " · Turbo: sim + fallback" if mixed_turbo else " · Turbo: simulated"
 		_garage_dyno_status.tooltip_text = str(data.get("error",""))
+	_advice_poll -= delta
+	if screen == "configurator" and _advice_box != null and is_instance_valid(_advice_box) and _advice_poll <= 0.0:
+		_advice_poll = 0.2
+		_refresh_advice()
 	if screen == "boot" and not _boot_done:
 		_boot_elapsed += delta
 		if _boot_elapsed >= BOOT_SECONDS:
@@ -635,12 +647,14 @@ func _build_configurator() -> void:
 		button.set_pressed_no_signal(mode == _garage_mode)
 	var scroll := ScrollContainer.new()
 	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	scroll.custom_minimum_size.y = 150.0 # the setup check below never squeezes the options away
 	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
 	column.add_child(scroll)
 	_option_box = VBoxContainer.new()
 	_option_box.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_option_box.add_theme_constant_override("separation",12)
 	scroll.add_child(_option_box)
+	_build_advice_panel(column)
 	_status_label = _label("",14,HORIZONTAL_ALIGNMENT_LEFT)
 	_status_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	column.add_child(_status_label)
@@ -818,6 +832,133 @@ func _draw_garage_options() -> void:
 		_option_box.add_child(_label("No adjustable installed parts in this area.",14,HORIZONTAL_ALIGNMENT_LEFT,true))
 
 	_focus_tuning.call_deferred()
+
+# ---- garage: setup check (limit advisor) -------------------------------------------------------------------------
+
+const ADVICE_COLOURS := [Color(0.62, 0.78, 0.95), Color(0.98, 0.72, 0.22), Color(0.95, 0.32, 0.28)]
+const ADVICE_MAX_HEIGHT := 140.0
+
+func _build_advice_panel(column: VBoxContainer) -> void:
+	_advice_box = VBoxContainer.new()
+	_advice_box.name = "SetupCheck"
+	_advice_box.add_theme_constant_override("separation", 4)
+	column.add_child(_advice_box)
+	_advice_box.add_child(HSeparator.new())
+	_advice_status = _label("SETUP CHECK", 14, HORIZONTAL_ALIGNMENT_LEFT, true)
+	_advice_box.add_child(_advice_status)
+	_advice_scroll = ScrollContainer.new()
+	_advice_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	_advice_scroll.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_advice_scroll.size_flags_vertical = Control.SIZE_SHRINK_BEGIN
+	_advice_box.add_child(_advice_scroll)
+	_advice_list = VBoxContainer.new()
+	_advice_list.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_advice_list.add_theme_constant_override("separation", 6)
+	_advice_scroll.add_child(_advice_list)
+	_advice_signature = ""
+	_advice_poll = 0.0
+
+# The advisor's findings never block an edit (owner 2026-10-13: allow extreme setups, show warnings).
+func _refresh_advice() -> void:
+	if not garage.has_method("get_advice"):
+		_advice_status.text = "Setup check pending · restart after installation"
+		return
+	var data: Dictionary = garage.get_advice()
+	_advice_data = data
+	if not bool(data.get("available", false)):
+		_advice_status.text = "SETUP CHECK · unavailable"
+		_advice_status.tooltip_text = str(data.get("error", ""))
+		return
+	var busy := bool(data.get("busy", false))
+	var items: Array = data.get("items", [])
+	var worst := -1
+	for item in items:
+		worst = maxi(worst, int(item.get("severity", 0)))
+	var text := "SETUP CHECK"
+	if busy:
+		text += " · checking… %d%%" % int(data.get("progress", 0))
+	elif not str(data.get("error", "")).is_empty():
+		text += " · check failed"
+	elif bool(data.get("have_result", false)):
+		text += " · %s" % ("no issues found" if items.is_empty() else ("%d note%s" % [items.size(), "" if items.size() == 1 else "s"]))
+	_advice_status.text = text
+	_advice_status.tooltip_text = str(data.get("error", "")) if not busy else str(data.get("stage", ""))
+	_advice_status.modulate = ADVICE_COLOURS[worst] if (worst >= 0 and not busy) else Color(1, 1, 1, 0.7)
+	var signature := "%d|%s|%s|%d" % [int(data.get("revision", 0)), str(data.get("vehicle_id", "")), str(busy), 1 if bool(data.get("solving", false)) else 0]
+	for item in items:
+		signature += "|%s:%d" % [str(item.get("id", "")), int(item.get("remedy_state", 0))]
+	if signature == _advice_signature:
+		return
+	_advice_signature = signature
+	_draw_advice(items, busy)
+
+func _draw_advice(items: Array, stale: bool) -> void:
+	for key in _buttons.keys():
+		if str(key).begins_with("advice_fix:"):
+			_buttons.erase(key)
+	for child in _advice_list.get_children():
+		_advice_list.remove_child(child)
+		child.queue_free()
+	for item in items:
+		_advice_list.add_child(_advice_item_control(item, stale))
+	# A fixed band (items scroll inside it): the option list above never loses its room.
+	_advice_scroll.custom_minimum_size.y = ADVICE_MAX_HEIGHT if not items.is_empty() else 0.0
+	_advice_scroll.visible = not items.is_empty()
+
+func _advice_item_control(item: Dictionary, stale: bool) -> Control:
+	var colour: Color = ADVICE_COLOURS[clampi(int(item.get("severity", 0)), 0, 2)]
+	var panel := PanelContainer.new()
+	panel.set_meta("advice_id", str(item.get("id", "")))
+	var style := StyleBoxFlat.new()
+	style.bg_color = Color(0.03, 0.04, 0.055, 0.82)
+	style.border_color = colour
+	style.border_width_left = 4
+	style.set_content_margin_all(8)
+	style.content_margin_left = 12
+	panel.add_theme_stylebox_override("panel", style)
+	if stale:
+		panel.modulate = Color(1, 1, 1, 0.55)
+	var box := VBoxContainer.new()
+	box.add_theme_constant_override("separation", 2)
+	panel.add_child(box)
+	var title := _label("*%s*" % str(item.get("title", "")), 15, HORIZONTAL_ALIGNMENT_LEFT)
+	title.add_theme_color_override("font_color", colour)
+	box.add_child(title)
+	for line in item.get("lines", []):
+		box.add_child(_label(str(line), 13, HORIZONTAL_ALIGNMENT_LEFT))
+	var suggestion := str(item.get("suggestion", ""))
+	if not suggestion.is_empty():
+		box.add_child(_label(suggestion, 13, HORIZONTAL_ALIGNMENT_LEFT, true))
+	var state := int(item.get("remedy_state", 0))
+	var remedy_text := str(item.get("remedy_text", ""))
+	if not remedy_text.is_empty() and state in [1, 4, 5]:
+		var fix_label := _label(remedy_text, 13, HORIZONTAL_ALIGNMENT_LEFT)
+		fix_label.add_theme_color_override("font_color", Color(0.55, 0.88, 0.6) if state != 5 else Color(0.98, 0.72, 0.22))
+		box.add_child(fix_label)
+	if bool(item.get("can_solve", false)) and state in [2, 3]:
+		var id := str(item.get("id", ""))
+		var button := Button.new()
+		button.text = "Searching…" if state == 3 else "Find fix"
+		button.disabled = state == 3
+		button.add_theme_font_size_override("font_size", 14)
+		button.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
+		button.pressed.connect(func():
+			garage.solve_advice(id)
+			button.text = "Searching…"
+			button.disabled = true)
+		box.add_child(button)
+		_buttons["advice_fix:" + id] = button
+	return panel
+
+# Test hooks: the advisor's last polled view-model.
+func advice_data() -> Dictionary:
+	return _advice_data
+
+func advice_status_text() -> String:
+	return _advice_status.text if _advice_status != null and is_instance_valid(_advice_status) else ""
+
+func advice_item_count() -> int:
+	return _advice_list.get_child_count() if _advice_list != null and is_instance_valid(_advice_list) else 0
 
 func _focus_tuning() -> void:
 	for control in _option_controls.values():

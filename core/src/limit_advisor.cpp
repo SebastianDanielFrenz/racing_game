@@ -1,0 +1,905 @@
+// rg/limit_advisor.cpp - see limit_advisor.h.
+#include "rg/limit_advisor.h"
+
+#include "rg/vehicle_load.h"
+
+#include "json_util.h"
+
+#include "ps/io/vehicle_io.h"
+#include "ps/jobs/job_system.h"
+
+#include <algorithm>
+#include <charconv>
+#include <chrono>
+#include <cmath>
+#include <cstdio>
+#include <cstdlib>
+#include <set>
+#include <stdexcept>
+#include <string_view>
+#include <utility>
+
+#ifdef _WIN32
+#define NOMINMAX
+#include <windows.h>
+#endif
+
+namespace rg {
+
+namespace pd = ps::drivetrain;
+
+namespace {
+
+using detail::json;
+constexpr double kNaN = std::numeric_limits<double>::quiet_NaN();
+constexpr const char* kSquared = "\xC2\xB2"; // UTF-8 superscript two
+
+// ---- numbers ----------------------------------------------------------------------------------------------------------
+
+std::string fixed(double v, int decimals) {
+    if (!std::isfinite(v)) return "?";
+    decimals = std::clamp(decimals, 0, 6);
+    char buf[64];
+    std::snprintf(buf, sizeof buf, "%.*f", decimals, v);
+    std::string s(buf);
+    // "-0" / "-0.0": a value that rounds to zero carries no sign.
+    bool zero = true;
+    for (const char c : s) {
+        if (c >= '1' && c <= '9') zero = false;
+    }
+    if (zero && !s.empty() && s[0] == '-') s.erase(0, 1);
+    return s;
+}
+
+// The built-in default decimals per quantity (the config may override every one).
+int default_decimals(const std::string& q) {
+    static const std::map<std::string, int> d = {{"bar", 1}, {"rpm", 0}, {"nm", 0},   {"kw", 0},       {"percent", 0}, {"ratio", 2}, {"mps", 1},
+                                                 {"mm", 2},  {"mm2", 0}, {"kg", 1},   {"seconds", 1}, {"degrees", 1}, {"kpa", 0},   {"plain", 2}};
+    const auto it = d.find(q);
+    return it == d.end() ? 1 : it->second;
+}
+
+int dec(const AdvisorConfig& c, const char* q) { return c.decimals_for(q, default_decimals(q)); }
+
+std::string fmt_rpm(double rpm, const AdvisorConfig& c) { return std::isfinite(rpm) ? fixed(rpm, dec(c, "rpm")) + " RPM" : "?"; }
+
+std::string fmt_bar(double pa, const AdvisorConfig& c) { return std::isfinite(pa) ? fixed(pa / 1.0e5, dec(c, "bar")) + " bar" : "?"; }
+std::string fmt_kpa(double pa, const AdvisorConfig& c) { return std::isfinite(pa) ? fixed(pa / 1.0e3, dec(c, "kpa")) + " kPa" : "?"; }
+std::string fmt_pct(double fraction, const AdvisorConfig& c) { return std::isfinite(fraction) ? fixed(fraction * 100.0, dec(c, "percent")) + " %" : "?"; }
+
+// One value in the unit physics reports it in. Pascal is boost in bar (gauge) unless `pascal_kpa` (a manifold axis).
+std::string fmt_quantity(double v, pd::LimitUnit unit, const AdvisorConfig& c, bool pascal_kpa = false) {
+    if (!std::isfinite(v)) return "?";
+    switch (unit) {
+        case pd::LimitUnit::Dimensionless: return fixed(v, dec(c, "plain"));
+        case pd::LimitUnit::Fraction: return fmt_pct(v, c);
+        case pd::LimitUnit::Pascal: return pascal_kpa ? fmt_kpa(v, c) : fmt_bar(v, c);
+        case pd::LimitUnit::Kelvin: return fixed(v, 0) + " K";
+        case pd::LimitUnit::NewtonMetre: return fixed(v, dec(c, "nm")) + " N*m";
+        case pd::LimitUnit::MetrePerSecond: return fixed(v, dec(c, "mps")) + " m/s";
+        case pd::LimitUnit::RevPerMinute: return fmt_rpm(v, c);
+        case pd::LimitUnit::SquareMetre: return fixed(v * 1.0e6, dec(c, "mm2")) + " mm" + kSquared;
+        case pd::LimitUnit::Millimetre: return fixed(v, dec(c, "mm")) + " mm";
+        case pd::LimitUnit::Kilogram: return fixed(v, dec(c, "kg")) + " kg";
+        case pd::LimitUnit::Second: return fixed(v, dec(c, "seconds")) + " s";
+        case pd::LimitUnit::CrankDegree: return fixed(v, dec(c, "degrees")) + " deg";
+    }
+    return fixed(v, 2);
+}
+
+// ---- config parsing ---------------------------------------------------------------------------------------------------
+
+bool fail(std::string* err, const std::string& origin, const std::string& message) {
+    if (err != nullptr) *err = origin + ": " + message;
+    return false;
+}
+
+std::optional<pd::LimitKind> kind_from_name(const std::string& name) {
+    for (int v = 0; v <= 18; ++v) {
+        const auto k = static_cast<pd::LimitKind>(v);
+        if (name == pd::to_string(k)) return k;
+    }
+    return std::nullopt;
+}
+
+std::optional<pd::LimitSeverity> severity_from_name(const std::string& n, bool* ok) {
+    *ok = true;
+    if (n == "near") return pd::LimitSeverity::Near;
+    if (n == "limiting") return pd::LimitSeverity::Limiting;
+    if (n == "exceeded") return pd::LimitSeverity::Exceeded;
+    if (n == "never") return std::nullopt;
+    *ok = false;
+    return std::nullopt;
+}
+
+// Checks every {name} of a template against the facts the builder produces.
+bool check_template(const std::string& tpl, const std::string& where, const std::string& origin, std::string* err) {
+    const auto& known = known_advice_fact_names();
+    for (std::size_t i = 0; i < tpl.size(); ++i) {
+        if (tpl[i] == '}') return fail(err, origin, where + ": a '}' without '{' in \"" + tpl + "\"");
+        if (tpl[i] != '{') continue;
+        const std::size_t end = tpl.find('}', i);
+        if (end == std::string::npos) return fail(err, origin, where + ": an unclosed '{' in \"" + tpl + "\"");
+        const std::string name = tpl.substr(i + 1, end - i - 1);
+        if (std::find(known.begin(), known.end(), name) == known.end()) {
+            return fail(err, origin, where + ": unknown placeholder {" + name + "}");
+        }
+        i = end;
+    }
+    return true;
+}
+
+bool read_text(const json& o, const char* key, std::string& out, bool required, const std::string& where, const std::string& origin,
+               std::string* err) {
+    const auto it = o.find(key);
+    if (it == o.end()) {
+        if (required) return fail(err, origin, where + ": \"" + key + "\" is missing");
+        return true;
+    }
+    if (!it->is_string()) return fail(err, origin, where + ": \"" + key + "\" must be text");
+    out = it->get<std::string>();
+    return check_template(out, where + "." + key, origin, err);
+}
+
+bool read_advice_text(const json& o, bool base, AdviceText& out, const std::string& where, const std::string& origin, std::string* err) {
+    if (!read_text(o, "title", out.title, base, where, origin, err)) return false;
+    if (!read_text(o, "suggestion", out.suggestion, false, where, origin, err)) return false;
+    if (!read_text(o, "remedy", out.remedy, false, where, origin, err)) return false;
+    if (!read_text(o, "remedy_failed", out.remedy_failed, false, where, origin, err)) return false;
+    std::string cap;
+    if (detail::get_string(o, "max_severity", cap)) {
+        bool ok = false;
+        out.max_severity = severity_from_name(cap, &ok);
+        if (!ok || !out.max_severity) return fail(err, origin, where + ": \"max_severity\" must be near / limiting / exceeded");
+    }
+    const auto lines = o.find("lines");
+    if (lines == o.end()) {
+        if (base) return fail(err, origin, where + ": \"lines\" is missing");
+        return true;
+    }
+    if (!lines->is_array() || (base && lines->empty())) return fail(err, origin, where + ": \"lines\" must be a" + (base ? " non-empty" : "n") + " array of text");
+    for (const json& l : *lines) {
+        if (!l.is_string()) return fail(err, origin, where + ": \"lines\" must hold text");
+        out.lines.push_back(l.get<std::string>());
+        if (!check_template(out.lines.back(), where + ".lines", origin, err)) return false;
+    }
+    return true;
+}
+
+} // namespace
+
+const AdviceKindConfig* AdvisorConfig::find(pd::LimitKind kind) const {
+    for (const AdviceKindConfig& k : kinds) {
+        if (k.kind == kind) return &k;
+    }
+    return nullptr;
+}
+
+int AdvisorConfig::decimals_for(const std::string& quantity, int fallback) const {
+    const auto it = decimals.find(quantity);
+    return it == decimals.end() ? fallback : it->second;
+}
+
+const std::vector<std::string>& known_advice_fact_names() {
+    static const std::vector<std::string> names = {
+        "target", "value", "limit", "value_pct", "limit_pct", "value_kpa", "limit_kpa", "rpm", "rpm_from", "rpm_to", "range",
+        "peak", "peak_rpm", "low", "low_rpm", "reach_rpm", "drop_rpm", "current", "required_min", "required", "ratio_min", "ratio"};
+    return names;
+}
+
+std::string render_advice_template(const std::string& tpl, const std::map<std::string, std::string>& facts, std::vector<std::string>* missing) {
+    std::string out;
+    for (std::size_t i = 0; i < tpl.size(); ++i) {
+        if (tpl[i] != '{') {
+            out += tpl[i];
+            continue;
+        }
+        const std::size_t end = tpl.find('}', i);
+        if (end == std::string::npos) {
+            out += tpl.substr(i);
+            break;
+        }
+        const std::string name = tpl.substr(i + 1, end - i - 1);
+        const auto it = facts.find(name);
+        if (it == facts.end()) {
+            out += '?';
+            if (missing != nullptr) missing->push_back(name);
+        } else {
+            out += it->second;
+        }
+        i = end;
+    }
+    return out;
+}
+
+std::optional<AdvisorConfig> parse_advisor_config(const std::string& json_text, const std::string& origin, std::string* err) {
+    const std::optional<json> parsed = detail::parse_json(json_text);
+    if (!parsed || !parsed->is_object()) {
+        fail(err, origin, "not a JSON object");
+        return std::nullopt;
+    }
+    const json& root = *parsed;
+    std::string format;
+    if (!detail::get_string(root, "format", format) || format != "rg.garage_advisor/1") {
+        fail(err, origin, "\"format\" must be \"rg.garage_advisor/1\"");
+        return std::nullopt;
+    }
+    static const std::set<std::string> allowed = {"format", "source", "debounce_ms", "sweep", "merge_gap_rpm", "decimals", "remedy", "kinds"};
+    for (auto it = root.begin(); it != root.end(); ++it) {
+        const std::string& key = it.key();
+        const bool help = key.size() > 5 && key.compare(key.size() - 5, 5, "_help") == 0;
+        if (!help && allowed.find(key) == allowed.end()) {
+            fail(err, origin, "unknown key \"" + key + "\"");
+            return std::nullopt;
+        }
+    }
+    AdvisorConfig c;
+    double d = 0.0;
+    if (!detail::get_number(root, "debounce_ms", d) || d < 0.0 || d > 10000.0) {
+        fail(err, origin, "\"debounce_ms\" must be a number in 0..10000");
+        return std::nullopt;
+    }
+    c.debounce_ms = static_cast<int>(d);
+    if (!detail::get_number(root, "merge_gap_rpm", c.merge_gap_rpm) || !(c.merge_gap_rpm >= 0.0)) {
+        fail(err, origin, "\"merge_gap_rpm\" must be a number >= 0");
+        return std::nullopt;
+    }
+    const auto sweep = root.find("sweep");
+    if (sweep == root.end() || !sweep->is_object()) {
+        fail(err, origin, "\"sweep\" must be an object");
+        return std::nullopt;
+    }
+    if (!detail::get_string(*sweep, "quality", c.sweep.quality) || (c.sweep.quality != "sketch" && c.sweep.quality != "preview" && c.sweep.quality != "full")) {
+        fail(err, origin, "sweep.quality must be \"sketch\", \"preview\" or \"full\"");
+        return std::nullopt;
+    }
+    if (!detail::get_number(*sweep, "rpm_step", c.sweep.rpm_step) || !(c.sweep.rpm_step >= 10.0) || !detail::get_number(*sweep, "rpm_min", c.sweep.rpm_min) ||
+        !(c.sweep.rpm_min > 0.0) || !detail::get_number(*sweep, "limiter_margin_rpm", c.sweep.limiter_margin_rpm) || !(c.sweep.limiter_margin_rpm >= 0.0) ||
+        !detail::get_bool(*sweep, "nitrous_with_kit", c.sweep.nitrous_with_kit)) {
+        fail(err, origin, "sweep needs rpm_step (>= 10), rpm_min (> 0), limiter_margin_rpm (>= 0) and nitrous_with_kit (true/false)");
+        return std::nullopt;
+    }
+    const auto decimals = root.find("decimals");
+    if (decimals != root.end()) {
+        if (!decimals->is_object()) {
+            fail(err, origin, "\"decimals\" must be an object");
+            return std::nullopt;
+        }
+        for (auto it = decimals->begin(); it != decimals->end(); ++it) {
+            if (!it->is_number_integer() || it->get<int>() < 0 || it->get<int>() > 4) {
+                fail(err, origin, "decimals." + it.key() + " must be an integer in 0..4");
+                return std::nullopt;
+            }
+            c.decimals[it.key()] = it->get<int>();
+        }
+    }
+    const auto remedy = root.find("remedy");
+    if (remedy != root.end()) {
+        const auto points = remedy->is_object() ? remedy->find("solve_points") : remedy->end();
+        if (!remedy->is_object() || points == remedy->end() || !points->is_array() || points->empty()) {
+            fail(err, origin, "remedy.solve_points must be a non-empty array of \"worst\" / \"last\"");
+            return std::nullopt;
+        }
+        c.solve_points.clear();
+        for (const json& p : *points) {
+            if (!p.is_string() || (p.get<std::string>() != "worst" && p.get<std::string>() != "last")) {
+                fail(err, origin, "remedy.solve_points must hold \"worst\" / \"last\"");
+                return std::nullopt;
+            }
+            c.solve_points.push_back(p.get<std::string>());
+        }
+    }
+    const auto kinds = root.find("kinds");
+    if (kinds == root.end() || !kinds->is_object() || kinds->empty()) {
+        fail(err, origin, "\"kinds\" must be a non-empty object");
+        return std::nullopt;
+    }
+    for (auto it = kinds->begin(); it != kinds->end(); ++it) {
+        const std::string where = "kinds." + it.key();
+        const auto kind = kind_from_name(it.key());
+        if (!kind || !it->is_object()) {
+            fail(err, origin, where + ": not a LimitKind name or not an object");
+            return std::nullopt;
+        }
+        AdviceKindConfig k;
+        k.kind = *kind;
+        std::string sev;
+        bool ok = false;
+        if (!detail::get_string(*it, "min_severity", sev)) {
+            fail(err, origin, where + ": \"min_severity\" must be near / limiting / exceeded / never");
+            return std::nullopt;
+        }
+        k.min_severity = severity_from_name(sev, &ok);
+        if (!ok) {
+            fail(err, origin, where + ": \"min_severity\" must be near / limiting / exceeded / never");
+            return std::nullopt;
+        }
+        detail::get_string(*it, "option", k.option_id);
+        if (!read_advice_text(*it, true, k.text, where, origin, err)) return std::nullopt;
+        const auto variants = it->find("variants");
+        if (variants != it->end()) {
+            if (!variants->is_object()) {
+                fail(err, origin, where + ": \"variants\" must be an object");
+                return std::nullopt;
+            }
+            for (auto vt = variants->begin(); vt != variants->end(); ++vt) {
+                if (!vt->is_object()) {
+                    fail(err, origin, where + ".variants." + vt.key() + " must be an object");
+                    return std::nullopt;
+                }
+                AdviceText v;
+                if (!read_advice_text(*vt, false, v, where + ".variants." + vt.key(), origin, err)) return std::nullopt;
+                k.variants.emplace(vt.key(), std::move(v));
+            }
+        }
+        c.kinds.push_back(std::move(k));
+    }
+    return c;
+}
+
+std::optional<AdvisorConfig> load_advisor_config(const std::string& path, std::string* err) {
+    const auto text = detail::read_text_file(path);
+    if (!text) {
+        fail(err, path, "cannot read the file");
+        return std::nullopt;
+    }
+    return parse_advisor_config(*text, path, err);
+}
+
+// ---- advice items -----------------------------------------------------------------------------------------------------
+
+const char* to_string(AdviceSeverity s) {
+    switch (s) {
+        case AdviceSeverity::Advice: return "advice";
+        case AdviceSeverity::Warning: return "warning";
+        case AdviceSeverity::Critical: return "critical";
+    }
+    return "advice";
+}
+
+AdviceSeverity advice_severity(pd::LimitSeverity s) {
+    switch (s) {
+        case pd::LimitSeverity::Near: return AdviceSeverity::Advice;
+        case pd::LimitSeverity::Limiting: return AdviceSeverity::Warning;
+        case pd::LimitSeverity::Exceeded: return AdviceSeverity::Critical;
+    }
+    return AdviceSeverity::Advice;
+}
+
+const char* to_string(RemedyState s) {
+    switch (s) {
+        case RemedyState::None: return "none";
+        case RemedyState::Closed: return "closed";
+        case RemedyState::Available: return "available";
+        case RemedyState::Running: return "running";
+        case RemedyState::Solved: return "solved";
+        case RemedyState::Failed: return "failed";
+    }
+    return "none";
+}
+
+bool advice_kind_is_solvable(pd::LimitKind kind) {
+    return kind == pd::LimitKind::WastegateSaturated || kind == pd::LimitKind::BoostAboveTarget || kind == pd::LimitKind::TurboRotorCap;
+}
+
+std::string format_rpm_ranges(const std::vector<AdviceRange>& ranges, const AdvisorConfig& config) {
+    std::string out;
+    const int d = dec(config, "rpm");
+    for (std::size_t i = 0; i < ranges.size(); ++i) {
+        if (i > 0) out += ", ";
+        const AdviceRange& r = ranges[i];
+        if (fixed(r.from_rpm, d) == fixed(r.to_rpm, d)) out += fixed(r.from_rpm, d);
+        else out += fixed(r.from_rpm, d) + "-" + fixed(r.to_rpm, d);
+    }
+    return out.empty() ? out : out + " RPM";
+}
+
+namespace {
+
+// Deviation from the limit, the tie-break between findings of one severity.
+double deviation(const pd::LimitFinding& f) { return std::abs(f.value - f.limit); }
+
+bool worse(const pd::LimitFinding& a, const pd::LimitFinding& b) {
+    if (a.severity != b.severity) return a.severity > b.severity;
+    return deviation(a) > deviation(b);
+}
+
+const pd::LimitFinding& worst_of(const std::vector<pd::LimitFinding>& v) {
+    const pd::LimitFinding* w = &v.front();
+    for (const pd::LimitFinding& f : v) {
+        if (worse(f, *w)) w = &f;
+    }
+    return *w;
+}
+
+// The text of a variant: fields it leaves empty fall back to the kind's base text.
+AdviceText resolve_text(const AdviceKindConfig& k, const std::string& variant) {
+    AdviceText t = k.text;
+    const auto it = k.variants.find(variant);
+    if (it == k.variants.end()) return t;
+    const AdviceText& v = it->second;
+    if (!v.title.empty()) t.title = v.title;
+    if (!v.lines.empty()) t.lines = v.lines;
+    if (!v.suggestion.empty()) t.suggestion = v.suggestion;
+    if (!v.remedy.empty()) t.remedy = v.remedy;
+    if (!v.remedy_failed.empty()) t.remedy_failed = v.remedy_failed;
+    if (v.max_severity) t.max_severity = v.max_severity;
+    return t;
+}
+
+void add_remedy_facts(std::map<std::string, std::string>& facts, const pd::Remedy& r, const AdvisorConfig& c) {
+    facts["current"] = fmt_quantity(r.current, r.unit, c);
+    facts["required_min"] = fmt_quantity(r.required_min, r.unit, c);
+    facts["required"] = fmt_quantity(r.required_margin, r.unit, c);
+    facts["ratio_min"] = fixed(r.required_min / r.current, dec(c, "ratio"));
+    facts["ratio"] = fixed(r.required_margin / r.current, dec(c, "ratio"));
+}
+
+bool remedy_has_number(const pd::Remedy& r) { return std::isfinite(r.required_min) && std::isfinite(r.required_margin) && std::isfinite(r.current) && r.current != 0.0; }
+
+void drop_empty(std::vector<std::string>& lines) {
+    lines.erase(std::remove_if(lines.begin(), lines.end(), [](const std::string& s) { return s.empty(); }), lines.end());
+}
+
+} // namespace
+
+std::vector<AdviceItem> build_advice(const AdviceInput& input, const AdvisorConfig& config) {
+    // Group per (kind, part field), dropping what the config hides.
+    std::map<std::pair<int, std::string>, std::vector<pd::LimitFinding>> groups;
+    for (const pd::LimitFinding& f : input.findings) {
+        const AdviceKindConfig* k = config.find(f.kind);
+        if (k == nullptr || !k->min_severity || f.severity < *k->min_severity) continue;
+        groups[{static_cast<int>(f.kind), f.part.field}].push_back(f);
+    }
+    // Sweep extent for the variants and "reach"/"drop" rpm.
+    double first_rpm = kNaN, last_rpm = kNaN;
+    for (const pd::DynoPoint& p : input.points) {
+        if (!std::isfinite(first_rpm) || p.rpm < first_rpm) first_rpm = p.rpm;
+        if (!std::isfinite(last_rpm) || p.rpm > last_rpm) last_rpm = p.rpm;
+    }
+    constexpr double kEps = 1.0e-6;
+
+    std::vector<AdviceItem> items;
+    for (auto& entry : groups) {
+        std::vector<pd::LimitFinding>& fs = entry.second;
+        std::stable_sort(fs.begin(), fs.end(), [](const pd::LimitFinding& a, const pd::LimitFinding& b) {
+            const bool an = !std::isfinite(a.rpm), bn = !std::isfinite(b.rpm);
+            if (an != bn) return an;
+            return a.rpm < b.rpm;
+        });
+        const AdviceKindConfig& kc = *config.find(fs.front().kind);
+        const pd::LimitFinding worst = worst_of(fs);
+
+        AdviceItem item;
+        item.kind = fs.front().kind;
+        item.kind_name = pd::to_string(item.kind);
+        item.id = item.kind_name + (fs.front().part.field.empty() ? std::string() : "@" + fs.front().part.field);
+        item.option_id = kc.option_id;
+        item.findings = fs;
+        pd::LimitSeverity top = pd::LimitSeverity::Near;
+        for (const pd::LimitFinding& f : fs) top = std::max(top, f.severity);
+        item.severity = advice_severity(top);
+
+        // Merge contiguous rpm ranges.
+        for (const pd::LimitFinding& f : fs) {
+            if (!std::isfinite(f.rpm)) continue;
+            if (!item.ranges.empty() && f.rpm - item.ranges.back().to_rpm <= config.merge_gap_rpm + kEps) item.ranges.back().to_rpm = f.rpm;
+            else item.ranges.push_back({f.rpm, f.rpm});
+        }
+        item.rpm_from = item.ranges.empty() ? kNaN : item.ranges.front().from_rpm;
+        item.rpm_to = item.ranges.empty() ? kNaN : item.ranges.back().to_rpm;
+
+        // The variant: where in the sweep the shortfall sits, or which axis a clamp was on.
+        const double a = item.rpm_from, b = item.rpm_to;
+        if (item.kind == pd::LimitKind::BoostBelowTarget && item.ranges.size() == 1 && std::isfinite(first_rpm)) {
+            if (a <= first_rpm + kEps && b < last_rpm - kEps) item.variant = "spool";
+            else if (a > first_rpm + kEps && b >= last_rpm - kEps) item.variant = "falloff";
+        } else if (item.kind == pd::LimitKind::MapGridEdge && fs.front().part.field.find("p_im") == std::string::npos) {
+            item.variant = "rpm";
+        }
+
+        // The facts.
+        std::map<std::string, std::string> facts;
+        const bool kpa = item.kind == pd::LimitKind::MapGridEdge && item.variant.empty();
+        facts["value"] = fmt_quantity(worst.value, worst.unit, config, kpa);
+        facts["limit"] = fmt_quantity(worst.limit, worst.unit, config, kpa);
+        facts["value_pct"] = fmt_pct(worst.value, config);
+        facts["limit_pct"] = fmt_pct(worst.limit, config);
+        facts["value_kpa"] = worst.unit == pd::LimitUnit::Pascal ? fmt_kpa(worst.value, config) : "?";
+        facts["limit_kpa"] = worst.unit == pd::LimitUnit::Pascal ? fmt_kpa(worst.limit, config) : "?";
+        facts["rpm"] = fmt_rpm(worst.rpm, config);
+        facts["rpm_from"] = fmt_rpm(a, config);
+        facts["rpm_to"] = fmt_rpm(b, config);
+        facts["range"] = format_rpm_ranges(item.ranges, config);
+        if (std::isfinite(input.target_boost_bar)) facts["target"] = fixed(input.target_boost_bar, dec(config, "bar")) + " bar";
+        else if (item.kind == pd::LimitKind::BoostBelowTarget || item.kind == pd::LimitKind::BoostAboveTarget) facts["target"] = fmt_bar(worst.limit, config);
+        else facts["target"] = "?";
+        // The best boost the setup achieved where the target was missed (the points inside the flagged ranges).
+        double peak_bar = kNaN, peak_rpm = kNaN;
+        for (const pd::DynoPoint& p : input.points) {
+            const bool inside = item.ranges.empty() || std::any_of(item.ranges.begin(), item.ranges.end(), [&](const AdviceRange& r) {
+                                    return p.rpm >= r.from_rpm - kEps && p.rpm <= r.to_rpm + kEps;
+                                });
+            if (inside && (!std::isfinite(peak_bar) || p.charge_boost_bar > peak_bar)) {
+                peak_bar = p.charge_boost_bar;
+                peak_rpm = p.rpm;
+            }
+        }
+        facts["peak"] = std::isfinite(peak_bar) ? fixed(peak_bar, dec(config, "bar")) + " bar" : "?";
+        facts["peak_rpm"] = fmt_rpm(peak_rpm, config);
+        facts["low"] = fmt_bar(worst.value, config);
+        facts["low_rpm"] = fmt_rpm(worst.rpm, config);
+        double reach = kNaN, drop = kNaN;
+        for (const pd::DynoPoint& p : input.points) {
+            if (p.rpm > b + kEps && !(std::isfinite(reach) && p.rpm >= reach)) reach = p.rpm;
+            if (p.rpm < a - kEps && !(std::isfinite(drop) && p.rpm <= drop)) drop = p.rpm;
+        }
+        facts["reach_rpm"] = fmt_rpm(reach, config);
+        facts["drop_rpm"] = fmt_rpm(drop, config);
+
+        // The remedy: a Closed number at once (the largest need of the range), a Simulated one waits for "Find fix".
+        const pd::Remedy* closed = nullptr;
+        bool simulated = false;
+        for (const pd::LimitFinding& f : fs) {
+            if (!f.remedy) continue;
+            if (f.remedy->cost == pd::RemedyCost::Closed && remedy_has_number(*f.remedy)) {
+                if (closed == nullptr || f.remedy->required_margin > closed->required_margin) closed = &*f.remedy;
+            } else if (f.remedy->cost == pd::RemedyCost::Simulated && !f.remedy->solved) {
+                simulated = true;
+            }
+        }
+        const AdviceText text = resolve_text(kc, item.variant);
+        if (closed != nullptr) {
+            add_remedy_facts(facts, *closed, config);
+            item.remedy_state = RemedyState::Closed;
+            if (!text.remedy.empty()) item.remedy_text = render_advice_template(text.remedy, facts);
+        } else if (simulated && advice_kind_is_solvable(item.kind)) {
+            item.remedy_state = RemedyState::Available;
+            item.can_solve = true;
+        }
+
+        // A variant may cap how loud the item gets (turbo lag at low rpm is information, not a fault).
+        if (text.max_severity) item.severity = std::min(item.severity, advice_severity(*text.max_severity));
+        item.title = text.title;
+        for (const std::string& l : text.lines) item.lines.push_back(render_advice_template(l, facts));
+        drop_empty(item.lines);
+        item.suggestion = render_advice_template(text.suggestion, facts);
+        items.push_back(std::move(item));
+    }
+
+    const auto kind_order = [&](pd::LimitKind kind) {
+        for (std::size_t i = 0; i < config.kinds.size(); ++i) {
+            if (config.kinds[i].kind == kind) return i;
+        }
+        return config.kinds.size();
+    };
+    std::stable_sort(items.begin(), items.end(), [&](const AdviceItem& x, const AdviceItem& y) {
+        if (x.severity != y.severity) return x.severity > y.severity;
+        const std::size_t kx = kind_order(x.kind), ky = kind_order(y.kind);
+        if (kx != ky) return kx < ky;
+        return x.rpm_from < y.rpm_from;
+    });
+    return items;
+}
+
+void apply_solved_remedy(AdviceItem& item, const std::vector<pd::Remedy>& solved, const AdvisorConfig& config) {
+    const AdviceKindConfig* kc = config.find(item.kind);
+    const AdviceText text = kc != nullptr ? resolve_text(*kc, item.variant) : AdviceText{};
+    bool all_solved = !solved.empty();
+    const pd::Remedy* need = nullptr;
+    for (const pd::Remedy& r : solved) {
+        if (!r.solved || !remedy_has_number(r)) {
+            all_solved = false;
+            continue;
+        }
+        if (need == nullptr || r.required_margin > need->required_margin) need = &r;
+    }
+    std::map<std::string, std::string> facts;
+    if (!all_solved || need == nullptr) {
+        item.remedy_state = RemedyState::Failed;
+        item.remedy_text = text.remedy_failed.empty() ? std::string("No fix was found.") : render_advice_template(text.remedy_failed, facts);
+        return;
+    }
+    add_remedy_facts(facts, *need, config);
+    item.remedy_state = RemedyState::Solved;
+    item.remedy_text = text.remedy.empty() ? std::string() : render_advice_template(text.remedy, facts);
+}
+
+// ---- the physics part -------------------------------------------------------------------------------------------------
+
+AdviceSweep run_advice_sweep(const ps::vehicle::VehicleDesc& desc, const AdvisorConfig& config, ps::jobs::JobSystem* pool,
+                             const std::atomic<bool>* cancel) {
+    const pd::ComponentParams* engine = nullptr;
+    const pd::SimulatedEngineDesc* simulated = nullptr;
+    double idle = 0.0, limiter = 0.0;
+    for (const pd::ComponentDesc& c : desc.powertrain.components) {
+        if (const auto* s = std::get_if<pd::SimulatedEngineDesc>(&c.params)) {
+            engine = &c.params;
+            simulated = s;
+            idle = s->idle_rpm;
+            limiter = s->limiter.rpm;
+            break;
+        }
+        if (const auto* m = std::get_if<pd::TorqueMapEngineDesc>(&c.params)) {
+            if (engine == nullptr) {
+                engine = &c.params;
+                idle = m->idle_rpm;
+                limiter = m->limiter.rpm;
+            }
+        }
+    }
+    AdviceSweep out;
+    if (engine == nullptr) throw std::runtime_error("The vehicle has no engine the dyno can sweep");
+    out.has_engine = true;
+
+    pd::DynoSweepSpec spec;
+    const double step = config.sweep.rpm_step;
+    const double end = limiter - config.sweep.limiter_margin_rpm;
+    double start = std::ceil(std::max(config.sweep.rpm_min, idle) / step) * step;
+    if (!(start < end)) start = std::ceil(idle / step) * step;
+    for (double rpm = start; rpm < end - 1.0e-6; rpm += step) spec.rpm.push_back(rpm);
+    if (end > idle) spec.rpm.push_back(end);
+    if (spec.rpm.empty()) spec.rpm.push_back(std::max(idle, 1.0));
+    spec.turbo_count = 1; // wastegate remedies are reported as ratios, the per-turbo count does not change them
+    if (simulated != nullptr) {
+        if (simulated->turbo_pair) out.input.target_boost_bar = simulated->turbo_pair->target_boost_pa / 1.0e5;
+        if (config.sweep.nitrous_with_kit) spec.nitrous = pd::nitrous_from_powertrain(desc.powertrain);
+    }
+
+    const auto t0 = std::chrono::steady_clock::now();
+    const pd::DynoResult dyno = pd::run_dyno_sweep(*engine, nullptr, spec, pool, cancel);
+    out.input.findings = dyno.limits;
+    for (pd::LimitFinding& f : pd::check_driveline_limits(dyno, desc.powertrain)) out.input.findings.push_back(std::move(f));
+    out.input.points = dyno.points;
+    out.remedy_request = pd::RemedyRequest{*engine, nullptr, spec};
+    out.sweep_seconds = std::chrono::duration<double>(std::chrono::steady_clock::now() - t0).count();
+    return out;
+}
+
+// ---- the background advisor -------------------------------------------------------------------------------------------
+
+namespace {
+
+int background_workers() {
+    // Leave four logical processors for rendering, audio and other work (like GarageDyno); RG_ENGINE_MAP_WORKERS overrides.
+    int workers = static_cast<int>(std::max(1u, std::thread::hardware_concurrency() > 4 ? std::thread::hardware_concurrency() - 4 : 1u));
+    if (const char* value = std::getenv("RG_ENGINE_MAP_WORKERS")) {
+        const std::string_view text(value);
+        int configured = 0;
+        const auto parsed = std::from_chars(text.data(), text.data() + text.size(), configured);
+        if (parsed.ec == std::errc{} && parsed.ptr == text.data() + text.size() && configured >= 1 && configured <= 64) workers = configured;
+    }
+    return workers;
+}
+
+pd::MapQuality quality_from(const std::string& q) {
+    if (q == "full") return pd::MapQuality::Full;
+    if (q == "preview") return pd::MapQuality::Preview;
+    return pd::MapQuality::Sketch;
+}
+
+} // namespace
+
+LimitAdvisor::LimitAdvisor(AdvisorConfig config) : config_(std::move(config)), thread_([this] { run(); }) {}
+
+LimitAdvisor::~LimitAdvisor() {
+    {
+        std::lock_guard lock(mutex_);
+        stopping_ = true;
+        if (cancel_) cancel_->store(true);
+    }
+    wake_.notify_all();
+    thread_.join();
+}
+
+void LimitAdvisor::request(AdvisorRequest request) {
+    std::lock_guard lock(mutex_);
+    if (requested_key_ == request.key && request.entry.id == result_.vehicle_id) return;
+    if (cancel_) cancel_->store(true);
+    if (result_.vehicle_id != request.entry.id) result_ = AdvisorResult{};
+    requested_key_ = request.key;
+    ++generation_;
+    pending_solves_.clear();
+    result_.vehicle_id = request.entry.id;
+    result_.busy = true;
+    result_.error.clear();
+    result_.progress = 0;
+    result_.stage = "Waiting";
+    result_.solving = false;
+    pending_ = std::move(request);
+    wake_.notify_all();
+}
+
+void LimitAdvisor::cancel() {
+    std::lock_guard lock(mutex_);
+    ++generation_;
+    requested_key_.clear();
+    pending_.reset();
+    pending_solves_.clear();
+    if (cancel_) cancel_->store(true);
+    result_.busy = false;
+    result_.solving = false;
+    result_.stage.clear();
+    // A cancelled Find fix returns to its button.
+    for (AdviceItem& i : result_.items) {
+        if (i.remedy_state == RemedyState::Running) i.remedy_state = RemedyState::Available;
+    }
+    wake_.notify_all();
+}
+
+void LimitAdvisor::solve(const std::string& item_id) {
+    std::lock_guard lock(mutex_);
+    for (AdviceItem& i : result_.items) {
+        if (i.id == item_id && i.remedy_state == RemedyState::Available && !result_.busy) {
+            i.remedy_state = RemedyState::Running; // shown at once; the worker picks it up
+            result_.solving = true;
+            result_.solve_progress = 0;
+            pending_solves_.push_back(item_id);
+            wake_.notify_all();
+            return;
+        }
+    }
+}
+
+AdvisorResult LimitAdvisor::result() const {
+    std::lock_guard lock(mutex_);
+    return result_;
+}
+
+void LimitAdvisor::run() {
+#ifdef _WIN32
+    SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_BELOW_NORMAL);
+#endif
+    ps::jobs::JobSystemOptions pool_options;
+    pool_options.background_priority = true;
+    ps::jobs::JobSystem pool(background_workers(), pool_options);
+    std::optional<AdviceSweep> last_sweep; // the sweep behind result_.items (worker thread only)
+    std::uint64_t last_revision = 0;
+
+    for (;;) {
+        AdvisorRequest request;
+        std::vector<std::string> solves;
+        std::shared_ptr<std::atomic<bool>> cancel;
+        std::uint64_t generation = 0;
+        {
+            std::unique_lock lock(mutex_);
+            wake_.wait(lock, [this] { return stopping_ || pending_.has_value() || !pending_solves_.empty(); });
+            if (stopping_) return;
+            if (pending_) {
+                // Wait for slider edits to settle before building maps again.
+                auto observed = generation_;
+                while (wake_.wait_for(lock, std::chrono::milliseconds(config_.debounce_ms), [&] { return stopping_ || generation_ != observed; })) {
+                    if (stopping_) return;
+                    observed = generation_;
+                }
+                if (!pending_) continue;
+                request = std::move(*pending_);
+                pending_.reset();
+                solves.clear();
+            } else {
+                solves = std::move(pending_solves_);
+                pending_solves_.clear();
+            }
+            generation = generation_;
+            cancel = std::make_shared<std::atomic<bool>>(false);
+            cancel_ = cancel;
+        }
+
+        if (!solves.empty()) {
+            // ---- Find fix ----
+            for (const std::string& id : solves) {
+                AdviceItem item;
+                std::uint64_t revision = 0;
+                {
+                    std::lock_guard lock(mutex_);
+                    if (generation != generation_ || !last_sweep || last_revision != result_.revision) break;
+                    const auto it = std::find_if(result_.items.begin(), result_.items.end(), [&](const AdviceItem& i) { return i.id == id; });
+                    if (it == result_.items.end()) continue;
+                    item = *it;
+                    revision = result_.revision;
+                    result_.solving = true;
+                    result_.stage = "Solving";
+                    result_.solve_progress = 0;
+                }
+                // The findings to solve: the worst and/or the last one of the item (config "solve_points").
+                std::vector<pd::LimitFinding> targets;
+                for (const std::string& p : config_.solve_points) {
+                    const pd::LimitFinding& f = p == "last" ? item.findings.back() : worst_of(item.findings);
+                    const bool dup = std::any_of(targets.begin(), targets.end(), [&](const pd::LimitFinding& t) { return t.rpm == f.rpm; });
+                    if (!dup) targets.push_back(f);
+                }
+                std::vector<pd::Remedy> solved;
+                bool cancelled = false;
+                const auto t0 = std::chrono::steady_clock::now();
+                for (std::size_t n = 0; n < targets.size() && !cancelled; ++n) {
+                    pd::RemedyOptions options;
+                    options.pool = &pool;
+                    options.cancel = cancel.get();
+                    options.on_progress = [&](std::size_t done, std::size_t total) {
+                        std::lock_guard lock(mutex_);
+                        if (generation == generation_) result_.solve_progress = static_cast<int>(100 * (n * total + done) / std::max<std::size_t>(1, targets.size() * total));
+                    };
+                    try {
+                        solved.push_back(pd::solve_remedy(last_sweep->remedy_request, targets[n], options));
+                    } catch (const ps::io::GenerationCancelled&) {
+                        cancelled = true;
+                    } catch (const std::exception&) {
+                        pd::Remedy none;
+                        none.solved = false;
+                        solved.push_back(none);
+                    }
+                }
+                const double seconds = std::chrono::duration<double>(std::chrono::steady_clock::now() - t0).count();
+                std::lock_guard lock(mutex_);
+                result_.solving = false;
+                result_.stage.clear();
+                if (generation != generation_ || result_.revision != revision) continue; // the setup changed: the items are gone
+                const auto it = std::find_if(result_.items.begin(), result_.items.end(), [&](const AdviceItem& i) { return i.id == id; });
+                if (it == result_.items.end()) continue;
+                if (cancelled) {
+                    it->remedy_state = RemedyState::Available;
+                } else {
+                    apply_solved_remedy(*it, solved, config_);
+                    result_.last_solve_seconds = seconds;
+                }
+            }
+            continue;
+        }
+
+        // ---- a new setup ----
+        const auto progress = [&](int value, const char* stage) {
+            std::lock_guard lock(mutex_);
+            if (generation == generation_) {
+                result_.progress = value;
+                result_.stage = stage;
+            }
+        };
+        AdviceSweep sweep;
+        std::vector<AdviceItem> items;
+        std::string error;
+        double maps_seconds = 0.0;
+        try {
+            progress(2, "Building engine maps");
+            const auto t0 = std::chrono::steady_clock::now();
+            ScopedWorkDir work(request.context.work_root + "_advisor", "advice");
+            const auto material = materialise_setup(request.entry, request.table, request.context, request.setup, work.path());
+            if (!material.ok) throw std::runtime_error(material.error);
+            ps::io::EngineMapOptions maps;
+            maps.quality = quality_from(config_.sweep.quality);
+            maps.cache_dir = request.context.engine_map_cache_dir;
+            maps.cancel = cancel.get();
+            maps.pool = &pool;
+            maps.on_progress = [&](std::size_t done, std::size_t total) {
+                progress(2 + static_cast<int>(78 * done / std::max<std::size_t>(1, total)), "Building engine maps");
+            };
+            const auto desc = rg::load_vehicle(material.vehicle_path, maps);
+            maps_seconds = std::chrono::duration<double>(std::chrono::steady_clock::now() - t0).count();
+            progress(82, "Sweeping the engine");
+            sweep = run_advice_sweep(desc, config_, &pool, cancel.get());
+            items = build_advice(sweep.input, config_);
+        } catch (const ps::io::GenerationCancelled&) {
+            continue; // a newer request (or cancel()) took over
+        } catch (const std::exception& e) {
+            error = e.what();
+        }
+        std::lock_guard lock(mutex_);
+        if (generation != generation_ || cancel->load()) continue;
+        result_.busy = false;
+        result_.stage.clear();
+        result_.error = error;
+        if (error.empty()) {
+            result_.items = std::move(items);
+            result_.key = request.key;
+            result_.progress = 100;
+            result_.have_result = true;
+            result_.maps_seconds = maps_seconds;
+            result_.sweep_seconds = sweep.sweep_seconds;
+            result_.solving = false;
+            ++result_.revision;
+            last_revision = result_.revision;
+            last_sweep = std::move(sweep);
+        }
+    }
+}
+
+} // namespace rg

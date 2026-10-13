@@ -1,0 +1,171 @@
+{
+  "format": "rg.garage_advisor/1",
+  "source": "Garage limit advisor (out/racing_game_queue.md 'Owner decision: allow extreme turbo setups, show warnings'). Every number the advice shows comes from physics_sim's dyno sweep (ps/drivetrain/engine_dyno.h) and its limit findings; THIS file only decides which findings are shown, how they are merged and what the text says. Physics' own thresholds (when a finding is Near / Limiting / Exceeded) stay in physics_sim (core/src/drivetrain/limit_thresholds.h; a limit_policy file is planned there). Nothing here limits a setup value: the garage never clamps, it only advises.",
+
+  "debounce_ms": 300,
+  "debounce_ms_help": "A setup change must stay unchanged this long before the engine maps and the sweep are started again (a slider drag restarts the wait).",
+
+  "sweep": {
+    "quality": "sketch",
+    "quality_help": "Engine-map quality used for the advisor: sketch (about 0.7 s cold on the hyper V8, then cached), preview or full. Maps of one quality are cached under the game's engine-map cache directory.",
+    "rpm_step": 250,
+    "rpm_min": 2000,
+    "limiter_margin_rpm": 50,
+    "limiter_margin_help": "The last swept point lies this far under the rev limit: at the limiter itself every engine reports its own limiter.",
+    "nitrous_with_kit": true
+  },
+
+  "merge_gap_rpm": 300,
+  "merge_gap_help": "Findings of one kind closer than this (rpm) belong to one range; keep it a little above rpm_step.",
+
+  "decimals": {
+    "bar": 1, "rpm": 0, "nm": 0, "kw": 0, "percent": 0, "ratio": 2, "mps": 1,
+    "mm": 2, "mm2": 0, "kg": 1, "seconds": 1, "degrees": 1, "kpa": 0, "plain": 2
+  },
+
+  "remedy": {
+    "solve_points": ["worst", "last"],
+    "solve_points_help": "A Find fix button runs the wastegate search at these rpm of an item: the worst finding and/or the last (highest-rpm) one; the answer is the larger need."
+  },
+
+  "kinds": {
+    "BoostBelowTarget": {
+      "min_severity": "near",
+      "option": "turbo_boost_target",
+      "title": "Excessive turbo boost target",
+      "lines": ["Boost target is set to {target}.", "The current setup achieved", "{peak} @ {peak_rpm}."],
+      "suggestion": "Bigger turbos or a lower boost target.",
+      "variants": {
+        "spool": {
+          "title": "Slow turbo spool-up",
+          "lines": ["Boost target is set to {target}.", "The turbos reach it from {reach_rpm}.", "Below that the setup achieved {low} @ {low_rpm}."],
+          "suggestion": "Smaller turbos spool up sooner.",
+          "max_severity": "near",
+          "max_severity_help": "Turbo lag at low rpm is information, not a fault: never louder than advice."
+        },
+        "falloff": {
+          "title": "Turbos run out of breath",
+          "lines": ["Boost target is set to {target}.", "The turbos hold it up to {drop_rpm}.", "Above that the setup achieved {low} @ {low_rpm}."],
+          "suggestion": "Bigger turbos or a lower boost target."
+        }
+      }
+    },
+    "BoostAboveTarget": {
+      "min_severity": "near",
+      "option": "turbo_boost_target",
+      "title": "Boost overshoots the target",
+      "lines": ["Boost target is set to {target}.", "The current setup reached", "{value} @ {rpm}."],
+      "suggestion": "A bigger wastegate holds the target.",
+      "remedy": "Wastegate needs about {ratio_min}x the area, {ratio}x to be safe.",
+      "remedy_failed": "Even 8x the wastegate area does not hold it. Try a lower boost target."
+    },
+    "WastegateSaturated": {
+      "min_severity": "near",
+      "option": "turbo_boost_target",
+      "title": "Wastegate is maxed out",
+      "lines": ["Boost target is set to {target}.", "The wastegate is {value_pct} open @ {rpm}", "and has no room left to hold it."],
+      "suggestion": "A bigger wastegate or a lower boost target.",
+      "remedy": "Wastegate needs about {ratio_min}x the area, {ratio}x to be safe.",
+      "remedy_failed": "Even 8x the wastegate area does not hold it. Try a lower boost target."
+    },
+    "TurboRotorCap": {
+      "min_severity": "near",
+      "option": "turbo_boost_target",
+      "title": "Turbos spin too fast",
+      "lines": ["Turbo speed limit is {limit}.", "The current setup reaches", "{value} @ {rpm} engine speed."],
+      "suggestion": "A lower boost target or bigger turbos.",
+      "remedy": "A bigger wastegate fixes it: about {ratio_min}x the area, {ratio}x to be safe.",
+      "remedy_failed": "A bigger wastegate does not fix it. It needs bigger turbos or a lower boost target."
+    },
+    "CompressorChoke": {
+      "min_severity": "near",
+      "option": "turbo_boost_target",
+      "title": "Compressor flow is maxed out",
+      "lines": ["The compressor runs at {value_pct}", "of its flow capacity @ {rpm}."],
+      "suggestion": "Bigger turbos or a lower boost target."
+    },
+    "CompressorSurge": {
+      "min_severity": "near",
+      "option": "turbo_boost_target",
+      "title": "Compressor surge",
+      "lines": ["Compressor flow is only {value}x", "the surge line @ {rpm}."],
+      "suggestion": "A smaller compressor or a lower boost target."
+    },
+    "RevLimiter": {
+      "min_severity": "never",
+      "min_severity_help": "Hidden: the sweep ends just under the limiter, so this only restates the rev limit setting.",
+      "option": "engine_rev_limit",
+      "title": "Rev limiter reached",
+      "lines": ["The engine runs into its {limit} limiter @ {rpm}."],
+      "suggestion": ""
+    },
+    "FuelCut": {
+      "min_severity": "never",
+      "min_severity_help": "Hidden: the sweep ends just under the limiter, so this only restates the rev limit setting.",
+      "option": "engine_rev_limit",
+      "title": "Rev limiter reached",
+      "lines": ["The engine runs into its {limit} limiter @ {rpm}."],
+      "suggestion": ""
+    },
+    "MeanPistonSpeed": {
+      "min_severity": "near",
+      "option": "engine_rev_limit",
+      "title": "Pistons move very fast",
+      "lines": ["Safe piston speed is about {limit}.", "The current setup reaches", "{value} @ {rpm}."],
+      "suggestion": "A lower rev limit keeps the engine alive."
+    },
+    "MapGridEdge": {
+      "min_severity": "exceeded",
+      "min_severity_help": "Near the edge of the engine's data is a modelling detail, not advice; only a clamped lookup (the result is an estimate) is shown.",
+      "option": "",
+      "title": "Beyond the engine's data range",
+      "lines": ["The engine data only goes up to {limit_kpa}.", "The current setup reaches", "{value_kpa} @ {rpm}.", "Results there are an estimate."],
+      "suggestion": "",
+      "variants": {
+        "rpm": {
+          "title": "Beyond the engine's data range",
+          "lines": ["The engine data only goes up to {limit}.", "The current setup reaches", "{value} @ {rpm}.", "Results there are an estimate."],
+          "suggestion": ""
+        }
+      }
+    },
+    "ClutchCapacity": {
+      "min_severity": "near",
+      "option": "clutch_capacity",
+      "title": "The clutch will slip",
+      "lines": ["The clutch holds about {limit}.", "The engine peaks at", "{value} @ {rpm}."],
+      "suggestion": "A stronger clutch.",
+      "remedy": "A clutch rated for about {required} holds it with margin (now {current})."
+    },
+    "Knock": {
+      "min_severity": "near",
+      "option": "turbo_boost_target",
+      "title": "The engine is knocking",
+      "lines": ["Knock control pulls back {value}", "of ignition timing @ {rpm}."],
+      "suggestion": "Higher octane fuel or a lower boost target."
+    },
+    "KitFuelLean": {
+      "min_severity": "near",
+      "option": "",
+      "title": "N2O mixture too lean",
+      "lines": ["The mixture under the shot is lambda {value} @ {rpm}.", "Safe is below {limit}."],
+      "suggestion": "A bigger kit fuel jet.",
+      "remedy": "A kit fuel jet of about {required} (now {current}) runs rich enough."
+    },
+    "N2OBottleDuration": {
+      "min_severity": "near",
+      "option": "",
+      "title": "N2O bottle empties too fast",
+      "lines": ["The bottle lasts {value} at full flow @ {rpm}.", "Aim for at least {limit}."],
+      "suggestion": "A bigger bottle.",
+      "remedy": "A bottle with about {required} of N2O (now {current}) lasts long enough."
+    },
+    "N2OBottlePressureDrop": {
+      "min_severity": "near",
+      "option": "",
+      "title": "N2O flow fades during the shot",
+      "lines": ["By the end of a pass the flow drops to {value_pct}", "of its start value @ {rpm}."],
+      "suggestion": "A heated bottle holds its pressure."
+    }
+  }
+}

@@ -102,6 +102,8 @@ RgGarage::~RgGarage() = default;
 godot::Dictionary RgGarage::initialize(const String& repo_root, const String& user_dir, const String& work_root,
                                       const String& catalog_path) {
     dyno_.cancel();
+    advisor_.reset();
+    advisor_error_.clear();
     garage_.reset();
     camera_.reset();
     rg::GarageConfig c;
@@ -116,6 +118,12 @@ godot::Dictionary RgGarage::initialize(const String& repo_root, const String& us
     std::string err;
     garage_ = rg::Garage::open(c, &err);
     if (garage_ == nullptr) return fail_reply(err);
+    // The advisor is optional: a missing/bad data/garage/advisor.json only switches the advice off (reported by get_advice).
+    std::string advisor_err;
+    if (auto advisor_config = rg::load_advisor_config(c.repo_root + "/data/garage/advisor.json", &advisor_err))
+        advisor_ = std::make_unique<rg::LimitAdvisor>(std::move(*advisor_config));
+    else
+        advisor_error_ = advisor_err;
     return ok_reply();
 }
 
@@ -378,6 +386,7 @@ godot::Dictionary RgGarage::save() {
 
 void RgGarage::discard() {
     dyno_.cancel();
+    if (advisor_) advisor_->cancel();
     if (garage_ != nullptr) garage_->discard();
 }
 
@@ -505,6 +514,7 @@ godot::Dictionary RgGarage::remove_user_engine(const String& key) {
 
 void RgGarage::cleanup() {
     dyno_.cancel();
+    if (advisor_) advisor_->cancel();
     if (garage_ != nullptr) garage_->cleanup();
 }
 
@@ -562,9 +572,14 @@ String RgGarage::get_area_for_option(const String& option_id) const {
 }
 
 void RgGarage::refresh_dyno() {
-    if(!garage_ || !garage_->editing() || !garage_->validation().ok) { dyno_.cancel(); return; }
+    if(!garage_ || !garage_->editing() || !garage_->validation().ok) { dyno_.cancel(); if(advisor_) advisor_->cancel(); return; }
     const auto* entry=garage_->catalog().find(garage_->edit_id());
     if(!entry) return;
+    if(advisor_) {
+        // The advisor sees the WHOLE pending setup (colours and gearing matter as much as the engine): what a drive would load.
+        const std::string advisor_key=garage_->edit_id()+"|"+rg::setup_to_json(garage_->working());
+        advisor_->request({*entry,garage_->options(),garage_->context_for(*entry),garage_->working(),advisor_key});
+    }
     rg::VehicleSetup engine_setup; engine_setup.vehicle_id=entry->id;
     for(const auto& option:garage_->options().options) {
         if(option.file!="engine" && option.file!="turbo" && option.part_format!="physics_sim.engine/1" && option.part_format!="physics_sim.turbo_configuration/1") continue;
@@ -573,6 +588,38 @@ void RgGarage::refresh_dyno() {
     }
     const std::string key=rg::setup_to_json(engine_setup);
     dyno_.request({*entry,garage_->options(),garage_->context_for(*entry),engine_setup,key});
+}
+godot::Dictionary RgGarage::get_advice() const {
+    godot::Dictionary out;
+    out["available"]=advisor_!=nullptr;
+    if(!advisor_) { out["error"]=from_std(advisor_error_); return out; }
+    const auto result=advisor_->result();
+    out["busy"]=result.busy; out["progress"]=result.progress; out["stage"]=from_std(result.stage);
+    out["error"]=from_std(result.error); out["revision"]=int64_t(result.revision);
+    out["have_result"]=result.have_result; out["solving"]=result.solving; out["solve_progress"]=result.solve_progress;
+    out["maps_seconds"]=result.maps_seconds; out["sweep_seconds"]=result.sweep_seconds;
+    out["vehicle_id"]=from_std(result.vehicle_id);
+    godot::Array items;
+    for(const auto& item:result.items) {
+        godot::Dictionary d;
+        d["id"]=from_std(item.id); d["kind"]=from_std(item.kind_name);
+        d["severity"]=int(item.severity); d["severity_name"]=from_std(rg::to_string(item.severity));
+        d["title"]=from_std(item.title);
+        godot::Array lines; std::string text=item.title;
+        for(const auto& line:item.lines) { lines.push_back(from_std(line)); text+="\n"+line; }
+        if(!item.suggestion.empty()) text+="\n"+item.suggestion;
+        d["lines"]=lines; d["text"]=from_std(text); d["suggestion"]=from_std(item.suggestion);
+        d["option_id"]=from_std(item.option_id);
+        d["rpm_from"]=item.rpm_from; d["rpm_to"]=item.rpm_to;
+        d["remedy_state"]=int(item.remedy_state); d["remedy_text"]=from_std(item.remedy_text);
+        d["can_solve"]=item.can_solve;
+        items.push_back(d);
+    }
+    out["items"]=items;
+    return out;
+}
+void RgGarage::solve_advice(const String& item_id) {
+    if(advisor_) advisor_->solve(to_std(item_id));
 }
 godot::Dictionary RgGarage::get_dyno() const {
     const auto result=dyno_.result();
@@ -608,6 +655,8 @@ void RgGarage::_bind_methods() {
     ClassDB::bind_method(D_METHOD("initialize", "repo_root", "user_dir", "work_root", "catalog_path"), &RgGarage::initialize, DEFVAL(String()));
     bind_browser_methods();
     ClassDB::bind_method(D_METHOD("get_dyno"), &RgGarage::get_dyno);
+    ClassDB::bind_method(D_METHOD("get_advice"), &RgGarage::get_advice);
+    ClassDB::bind_method(D_METHOD("solve_advice", "item_id"), &RgGarage::solve_advice);
     ClassDB::bind_method(D_METHOD("is_ready"), &RgGarage::is_ready);
     ClassDB::bind_method(D_METHOD("get_vehicles"), &RgGarage::get_vehicles);
     ClassDB::bind_method(D_METHOD("get_vehicle", "id"), &RgGarage::get_vehicle);

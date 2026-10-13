@@ -56,6 +56,22 @@ func _run() -> void:
 		await _frames(1)
 	await _seconds(0.25)
 	await _shot("overview")
+	# The setup check: an extreme (owner-like) turbo setup is allowed and flagged. Only for cars that have those options.
+	var shell_garage = main.get_shell_ui().garage
+	var extreme: Dictionary = shell_garage.set_option("turbo_boost_target", 8.600083819796385)
+	if bool(extreme.get("accepted", false)):
+		shell_garage.set_option("clutch_capacity", 8.0)
+		shell_garage.set_option("turbo_install_n2o", "hyper_twin_large_n2o")
+		main.get_shell_ui()._draw_garage_options()
+		var advice_deadline := Time.get_ticks_msec() + 180000
+		await _seconds(0.6)
+		while shell_garage.get_advice().get("busy", false) and Time.get_ticks_msec() < advice_deadline:
+			await _frames(1)
+		await _seconds(0.6)
+		await _shot("setup_check")
+		shell_garage.reset_all()
+		main.get_shell_ui()._draw_garage_options()
+		await _seconds(0.3)
 	await _seconds(3.0)
 	await _shot("turntable_rotated")
 	_press("tile:Wheels")

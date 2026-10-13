@@ -14,6 +14,7 @@
 #include "rg/garage.h"
 #include "rg/garage_dyno.h"
 #include "rg/garage_set.h"
+#include "rg/limit_advisor.h"
 
 #include <godot_cpp/classes/ref_counted.hpp>
 #include <godot_cpp/classes/node.hpp>
@@ -121,6 +122,14 @@ public:
     godot::Dictionary save();
     void discard();
     godot::Dictionary get_dyno() const;
+    // Limit advisor (rg/limit_advisor.h): the pending setup is checked on a background thread. Thin: start/poll/show.
+    // {available, busy, progress, stage, error, revision, have_result, solving, solve_progress, maps_seconds,
+    //  sweep_seconds, items: [{id, kind, severity (0 advice, 1 warning, 2 critical), severity_name, title,
+    //  lines: [String], text (title + lines + suggestion joined), suggestion, option_id, rpm_from, rpm_to,
+    //  remedy_state (0 none, 1 closed, 2 available, 3 running, 4 solved, 5 failed), remedy_text, can_solve}]}
+    godot::Dictionary get_advice() const;
+    // "Find fix" for one item id: computed in the background (get_advice().solving / the item's remedy_state).
+    void solve_advice(const godot::String& item_id);
     // {paint, rim}: the working colours (visual only)
     [[nodiscard]] godot::Dictionary get_working_colours() const;
 
@@ -159,6 +168,8 @@ private:
     std::string work_root_;
     rg::GarageDyno dyno_;
     void refresh_dyno();
+    std::unique_ptr<rg::LimitAdvisor> advisor_;
+    std::string advisor_error_;
 };
 
 } // namespace rg_godot

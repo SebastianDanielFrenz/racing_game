@@ -194,6 +194,28 @@ func _run() -> void:
 	_check(int(garage.get_dyno()["revision"]) == dyno_revision and not garage.get_dyno()["busy"], "brake change does not recalculate engine dyno")
 	garage.reset_all()
 
+	# ---- limit advisor: an extreme boost target is allowed and flagged, never clamped ----
+	_check(bool(garage.get_advice().get("available", false)), "the limit advisor is available (%s)" % str(garage.get_advice().get("error", "")))
+	_check(await _wait_until(func(): var a: Dictionary = garage.get_advice(); return not a["busy"] and a["have_result"], 180.0), "advisor finishes for the stock car")
+	_check(str(garage.get_advice()["error"]).is_empty(), "advisor: stock car check has no error (%s)" % str(garage.get_advice()["error"]))
+	var edit: Dictionary = garage.set_option("turbo_boost_target", 8.0)
+	_check(bool(edit["accepted"]), "an extreme turbo boost target is accepted, not clamped")
+	await _wait_seconds(0.5)
+	_check(ui.advice_status_text().contains("checking") or not bool(garage.get_advice()["busy"]), "the setup check shows a checking state (%s)" % ui.advice_status_text())
+	_check(await _wait_until(func(): var a: Dictionary = garage.get_advice(); return not a["busy"] and a["have_result"] and not a["items"].is_empty(), 180.0), "advisor reports items for the extreme boost target")
+	var boost_item := {}
+	for item in garage.get_advice()["items"]:
+		if str(item["kind"]) == "BoostBelowTarget" or str(item["kind"]) == "WastegateSaturated" or str(item["kind"]) == "TurboRotorCap":
+			boost_item = item
+			break
+	_check(not boost_item.is_empty() and str(boost_item["title"]) != "" and boost_item["lines"].size() >= 2, "a turbo item with a title and lines: %s" % str(boost_item.get("title", "")))
+	print("RG_GARAGE_TEST advice item: ", str(boost_item.get("text", "")).replace("
+", " | "))
+	await _wait_seconds(0.4)
+	_check(ui.advice_item_count() == garage.get_advice()["items"].size(), "the setup screen draws every advice item (%d)" % ui.advice_item_count())
+	garage.reset_all()
+	await _wait_until(func(): var a: Dictionary = garage.get_advice(); return not a["busy"], 180.0)
+
 	var save_button: Button = ui.get_button("save")
 	_check(save_button != null and save_button.disabled, "Save is disabled while nothing changed")
 	_check(ui.get_button("back") == null and ui.get_button("drive") == null, "garage has no Back or Drive buttons")

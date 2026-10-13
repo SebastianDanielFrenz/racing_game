@@ -171,6 +171,42 @@ failure retention). out/garage_dyno_regression.log (590 garage/setup assertions)
 Chart retention/swap check: out/dyno_chart_check.log. The updated DLL is installed;
 out/adaptive_garage_smoke.log records 199 live headless garage checks.
 
+## Setup check: the limit advisor (2026-10-13)
+
+Owner decision: "Allow stupid turbo setups, show recommendations/warnings." The garage never
+clamps a setup value (`turbo_boost_target` still reaches x20). Instead the SETUP CHECK panel under
+the options lists simulation-derived notes for the pending setup.
+
+- Core `rg/limit_advisor.h` / `core/src/limit_advisor.cpp` (engine-neutral, no Godot): the pending
+  setup (the whole working setup) is materialised and loaded exactly like a drive
+  (`materialise_setup` + `load_vehicle`, Sketch-quality engine maps, cached under the engine-map cache
+  dir), the engine is swept on physics_sim's dyno (`run_dyno_sweep`, 250 rpm steps from 2000 rpm to 50 rpm
+  under the limiter, the nitrous kit included when the car has one), `check_driveline_limits` adds the clutch,
+  and the LimitFindings become advice items: grouped per kind and part field, contiguous rpm ranges merged,
+  worst severity first. Near = advice (neutral), Limiting = warning (amber), Exceeded = critical (red).
+- Everything the game decides lives in `data/garage/advisor.json` (`rg.garage_advisor/1`): debounce
+  (300 ms), sweep grid, merge gap, per-kind minimum severity ("never" hides a kind), the text templates
+  with `{placeholders}` (validated at load), per-variant text (BoostBelowTarget "spool" / "falloff", MapGridEdge
+  "rpm") and `max_severity` caps (turbo lag at low rpm never louder than advice). Physics' own
+  Near/Limiting/Exceeded thresholds stay in physics_sim (limit_thresholds.h).
+- Item format: bold title, the configured value, what the setup achieved and where, an optional suggestion:
+  `*Excessive turbo boost target*` / `Boost target is set to 15.5 bar.` / `The current setup achieved` /
+  `13.8 bar @ 3250 RPM.`. Quantities: bar gauge, RPM, N*m, kW, m/s (piston speed), per-cent.
+- Hidden on purpose: RevLimiter and FuelCut (the sweep stops 50 rpm under the limiter, so they would only
+  restate the rev limit setting), MapGridEdge below Exceeded (a modelling detail). Not used: any km/h item (no
+  finding carries a speed). Skipped templates are listed under `kinds` with `"min_severity": "never"`.
+- Remedies: a Closed remedy (clutch capacity, kit jet, bottle) shows its line at once. The wastegate kinds
+  (WastegateSaturated, BoostAboveTarget, TurboRotorCap) get a "Find fix" button: `solve_remedy` runs on the
+  worker (about 0.6 s on the hyper, Sketch maps) and the item shows the area ratio ("x the stock area"). Knock
+  has no solvable remedy, so no button.
+- Threading: `LimitAdvisor` mirrors `GarageDyno` (own thread, debounce, newest request wins, cancellation,
+  progress, immutable snapshots only). `RgGarage.get_advice()` / `solve_advice(id)` are thin; `shell_ui.gd`
+  polls every 0.2 s, shows "SETUP CHECK - checking... n%" (items of the previous result dimmed) and redraws
+  only when the result changes.
+- Tests: tests/unit/test_limit_advisor.cpp ([limit_advisor]: config, templates, grouping/merging, variants,
+  remedies, thread; the [long] case runs the real advisor on car_hyper_n2o with the owner setup and stock),
+  `garage_test.gd` (advisor available, extreme boost accepted and flagged, panel draws the items).
+
 ## Adaptive engine pressure maps (2026-10-08)
 
 Engine-affecting garage edits enable physics_sim's `cycle.pressure_sampling`.
