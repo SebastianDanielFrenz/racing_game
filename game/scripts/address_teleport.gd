@@ -1,6 +1,7 @@
 extends CanvasLayer
 # Manual address searches only; no request on each keystroke.
 var main: Node
+var _root: Control
 var _panel: PanelContainer
 var _query: LineEdit
 var _results: ItemList
@@ -15,6 +16,10 @@ var _pending_query := ""
 var _last_request_ms := -2000
 var _mouse_before := Input.MOUSE_MODE_VISIBLE
 
+const PANEL_WIDTH := 660.0
+const RESULTS_HEIGHT := 190.0
+const SCREEN_MARGIN := 16.0
+
 func _ready() -> void:
  layer = 40
  _cache.load("user://address_search_cache.cfg")
@@ -27,14 +32,27 @@ func _ready() -> void:
  _http.body_size_limit = 2097152
  add_child(_http)
  _http.request_completed.connect(_request_complete)
+ # Full-rect root + CenterContainer, like shell_ui.gd: the dialog stays centred
+ # in the canvas whatever the window size and the ui_scale.gd content scale.
+ # (It used to be placed by hand from get_visible_rect() and _panel.size, which
+ # left it partly off-screen on a scaled 4K window.)
+ _root = Control.new()
+ _root.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+ _root.mouse_filter = Control.MOUSE_FILTER_IGNORE
+ add_child(_root)
+ var center := CenterContainer.new()
+ center.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+ center.mouse_filter = Control.MOUSE_FILTER_IGNORE
+ _root.add_child(center)
  _panel = PanelContainer.new()
- _panel.custom_minimum_size = Vector2(660, 0)
- add_child(_panel)
+ _panel.custom_minimum_size = Vector2(PANEL_WIDTH, 0)
+ center.add_child(_panel)
  var box := VBoxContainer.new()
  box.add_theme_constant_override("separation", 12)
  _panel.add_child(box)
  var title := Label.new()
  title.text = "Teleport to address (F10)"
+ title.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
  box.add_child(title)
  _query = LineEdit.new()
  _query.placeholder_text = "Street, house number, town — or latitude, longitude"
@@ -45,7 +63,7 @@ func _ready() -> void:
  search.pressed.connect(_search)
  box.add_child(search)
  _results = ItemList.new()
- _results.custom_minimum_size = Vector2(640, 190)
+ _results.custom_minimum_size = Vector2(0, RESULTS_HEIGHT)
  _results.item_selected.connect(func(_index: int): _teleport.disabled = false)
  _results.item_activated.connect(func(_index: int): _jump())
  box.add_child(_results)
@@ -54,6 +72,7 @@ func _ready() -> void:
  box.add_child(_status)
  var attribution := Label.new()
  attribution.text = "Address search: Photon / © OpenStreetMap contributors"
+ attribution.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
  box.add_child(attribution)
  _teleport = Button.new()
  _teleport.text = "Teleport to selected location"
@@ -65,10 +84,20 @@ func _ready() -> void:
  close.pressed.connect(func(): _toggle(false))
  box.add_child(close)
  _panel.hide()
- get_viewport().size_changed.connect(_center)
+ _root.resized.connect(_fit)
+ _fit()
 
-func _center() -> void:
- _panel.position = (get_viewport().get_visible_rect().size - _panel.size) * 0.5
+# Shrink the panel (width, then the result list) on a small canvas so it never
+# exceeds the window; the CenterContainer does the centring.
+func _fit() -> void:
+ var avail := _root.size - Vector2(SCREEN_MARGIN, SCREEN_MARGIN) * 2.0
+ if avail.x <= 0.0 or avail.y <= 0.0:
+  return
+ _panel.custom_minimum_size.x = minf(PANEL_WIDTH, avail.x)
+ _results.custom_minimum_size.y = RESULTS_HEIGHT
+ var overflow := _panel.get_combined_minimum_size().y - avail.y
+ if overflow > 0.0:
+  _results.custom_minimum_size.y = maxf(48.0, RESULTS_HEIGHT - overflow)
 
 func _input(event: InputEvent) -> void:
  if event is InputEventKey and event.pressed and not event.echo:
@@ -99,7 +128,7 @@ func _toggle(open: bool) -> void:
   _status.text = "Enter an address and choose a result. Terrain must exist in the current map region."
   Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
   _query.grab_focus()
-  call_deferred("_center")
+  call_deferred("_fit")
  else:
   _http.cancel_request()
   _pending_query = ""
