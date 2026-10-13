@@ -17,6 +17,8 @@ extends CanvasLayer
 
 # Key help removed (owner 2026-10-06): bindings live in Settings -> Controls (R5b).
 
+const DriveModeTheme := preload("res://scripts/drive_mode_theme.gd")
+
 @export var simulation_path: NodePath
 @export var input_map_path: NodePath
 @export var director_path: NodePath
@@ -32,6 +34,7 @@ var _streaming_label: Label
 var _prompt_label: Label
 var _message_text: String = ""
 var _message_until_ms: int = 0
+var _message_color: Color = Color.WHITE
 
 # Rolling one-second measurement window for the sim's own tick rate,
 # independent of Godot's render fps - same technique as the reference file.
@@ -68,14 +71,24 @@ func _ready() -> void:
 	add_child(_prompt_label)
 	_window_start_s = Time.get_ticks_msec() / 1000.0
 
+# "ECO / NORMAL / SPORT" for the bits of the modes a car offers.
+func _offered_drive_modes(bits: int) -> String:
+	var names := PackedStringArray()
+	for code in range(3):
+		if (bits >> code) & 1 != 0:
+			names.append(str(RgAssists.drive_mode_name(code)))
+	return " / ".join(names)
+
 func _bar(value01: float, width: int = 20) -> String:
 	var v: float = clampf(value01, 0.0, 1.0)
 	var filled: int = int(round(v * width))
 	return "[" + "#".repeat(filled) + "-".repeat(width - filled) + "]"
 
-# A short message on the prompt line (e.g. a refused get-out), for `seconds`.
-func show_message(text: String, seconds: float = 3.0) -> void:
+# A short message on the prompt line (e.g. a refused get-out), for `seconds`, in `color` (the drive-mode theme colour
+# for a drive-mode change, white otherwise).
+func show_message(text: String, seconds: float = 3.0, color: Color = Color.WHITE) -> void:
 	_message_text = text
+	_message_color = color
 	_message_until_ms = Time.get_ticks_msec() + int(seconds * 1000.0)
 
 # The prompt line: a pending message wins, else the on-foot get-in prompt.
@@ -83,8 +96,10 @@ func _update_prompt(mode: Dictionary) -> void:
 	if _prompt_label == null:
 		return
 	var text := ""
+	var color := Color.WHITE
 	if Time.get_ticks_msec() < _message_until_ms:
 		text = _message_text
+		color = _message_color
 	elif str(mode.get("mode", "")) == "on_foot":
 		var ws: Dictionary = _simulation.get_walker_state()
 		if ws.is_empty():
@@ -94,6 +109,7 @@ func _update_prompt(mode: Dictionary) -> void:
 		else:
 			text = "On foot - car %.0f m away (get within 1.5 m of it to get in)" % maxf(float(ws.get("enter_distance_m", 0.0)), 0.0)
 	_prompt_label.text = text
+	_prompt_label.add_theme_color_override("font_color", color)
 	_prompt_label.visible = text != ""
 
 # A world switch builds a new Session whose tick count restarts at 0.
@@ -224,6 +240,17 @@ func _process(_delta: float) -> void:
 					assist_line += "   "
 				assist_line += "aero automation %s (H)" % (("on, wing target %+.0f deg" % float(assist_pt.get("aero_control_target_deg", 0.0))) if bool(assist_pt.get("aero_control_active", false)) else "off")
 			lines.append(assist_line)
+		# Drive mode (assists I7, M cycles the offered modes): the mode that runs, in its theme colour; launch control
+		# state when the car has one. The whole readout takes a light tint of the mode colour.
+		var themed_readout := false
+		if DriveModeTheme.is_themed(assist_pt):
+			lines.append("drive mode %s (M)   offered: %s" % [DriveModeTheme.label(assist_pt), _offered_drive_modes(int(assist_pt.get("drive_modes_available_bits", 0)))])
+			_label.add_theme_color_override("font_color", DriveModeTheme.accent(assist_pt, Color.WHITE).lerp(Color.WHITE, 0.55))
+			themed_readout = true
+		if not themed_readout:
+			_label.remove_theme_color_override("font_color")
+		if bool(assist_pt.get("launch_control_fitted", false)):
+			lines.append("launch control: %s" % str(assist_pt.get("launch_lamp_text", "")))
 		# Nitrous (physics_sim N2O): only a car with a kit (car_sedan_gen_n2o, car_hyper_n2o) has this line.
 		var n2o: Dictionary = _simulation.get_vehicle_nitrous(vehicle_name)
 		if bool(n2o.get("present", false)):

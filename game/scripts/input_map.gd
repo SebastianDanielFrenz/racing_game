@@ -82,6 +82,7 @@ var _starter_held: bool = false
 var _auto_shift_on: bool = false
 var _traction_cycle_count: int = 0
 var _aero_toggle_count: int = 0
+var _drive_mode_cycle_count: int = 0
 var _configured_vehicle_path: String = ""
 
 var _cam_move: Vector3 = Vector3.ZERO
@@ -296,6 +297,7 @@ func _clear_edges() -> void:
 	_nitrous_toggle_count = 0
 	_traction_cycle_count = 0
 	_aero_toggle_count = 0
+	_drive_mode_cycle_count = 0
 	_flip_upright_count = 0
 	_cycle_drone_count = 0
 	_jump_count = 0
@@ -347,6 +349,9 @@ func poll() -> void:
 		_traction_cycle_count += 1
 	if _edge("toggle_aero", held.call("toggle_aero")):
 		_aero_toggle_count += 1
+	# Drive mode (M): a rising edge only; rg_core (RgAssists.next_drive_mode) picks the next OFFERED mode.
+	if _edge("drive_mode", held.call("drive_mode")):
+		_drive_mode_cycle_count += 1
 
 	# --- camera group ---
 	_cam_move = Vector3(v.call("cam_move_x"), v.call("cam_move_y"), v.call("cam_move_z"))
@@ -417,6 +422,12 @@ func consume_traction_cycle() -> int:
 func consume_aero_toggle() -> int:
 	var n := _aero_toggle_count
 	_aero_toggle_count = 0
+	return n
+
+# Rising edges of the drive-mode key (M) since last consumed: each one asks for the next offered drive mode.
+func consume_drive_mode_cycle() -> int:
+	var n := _drive_mode_cycle_count
+	_drive_mode_cycle_count = 0
 	return n
 
 func get_auto_shift() -> bool:

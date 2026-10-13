@@ -857,6 +857,19 @@ godot::Dictionary RgSimulation::get_vehicle_powertrain(const String& vehicle_nam
     d["aero_control_fitted"] = a.aero_fitted;
     d["aero_control_active"] = a.aero_active;
     d["aero_control_target_deg"] = a.aero_target_deg;
+    // Drive modes (assists I7): 0 eco, 1 normal, 2 sport; bit n of the available bits = code n. All 0/false on a car
+    // without a drive_modes part. The effective mode is the one that runs (the theme colour follows it).
+    d["drive_mode_fitted"] = a.dm_fitted;
+    d["drive_modes_available_bits"] = static_cast<int>(a.dm_available_bits);
+    d["drive_mode_requested"] = a.dm_requested;
+    d["drive_mode_effective"] = a.dm_effective;
+    d["drive_mode_name"] = a.dm_fitted ? String(rg::drive_mode_name(a.dm_effective)) : String();
+    // Launch control (assists I4 unit variant or the P8 two-step): launch_phase 0 Idle, 1 Armed, 2 Launch, 3 Handover;
+    // launch_lamp = rg::LaunchLamp (0 hidden, 1 off, 2 on, 3 armed, 4 launching) with its text.
+    d["launch_control_fitted"] = a.lc != rg::LaunchLamp::Hidden;
+    d["launch_phase"] = a.lc_phase;
+    d["launch_lamp"] = static_cast<int>(a.lc);
+    d["launch_lamp_text"] = String(rg::launch_lamp_text(a.lc));
     return d;
 }
 

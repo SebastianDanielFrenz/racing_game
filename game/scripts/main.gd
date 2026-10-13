@@ -73,7 +73,8 @@ extends Node3D
 # _apply_vehicle from the garage's drive selection before every world load. "car_hyper"
 # until the first load (the --bindings-test path and the catalog default).
 var VEHICLE_NAME := "car_hyper"
-const WORLD_LABEL := {"flat": "flat test scene", "real_world": "real world"}
+const DriveModeTheme := preload("res://scripts/drive_mode_theme.gd")
+const WORLD_LABEL :={"flat": "flat test scene", "real_world": "real world"}
 
 # --- unified scene state (read by drive_smoke.gd / drive_tour.gd) ---
 var world_kind: String = ""      # world being loaded or loaded: "flat" / "real_world"
@@ -1036,6 +1037,7 @@ func _forward_driving(live: bool, delta: float) -> void:
 	var nitrous_toggles: int = _input_map.consume_nitrous_toggle()
 	var traction_cycles: int = _input_map.consume_traction_cycle()
 	var aero_toggles: int = _input_map.consume_aero_toggle()
+	var drive_mode_cycles: int = _input_map.consume_drive_mode_cycle()
 	if not live or not bool(_simulation.is_running()):
 		_steering.reset()
 		return
@@ -1072,6 +1074,20 @@ func _forward_driving(live: bool, delta: float) -> void:
 		var fitted_bits: int = int(pt.get("assist_fitted_bits", 0))
 		for _i in range(aero_toggles):
 			_simulation.set_control("assist.aero_control", RgAssists.toggled_aero_control(fitted_bits, _simulation.get_control("assist.aero_control")))
+	# Drive mode (M, assists I7): the next OFFERED mode after the one that runs (rg_core decides which; a car without a
+	# drive_modes part gets -1 and the key does nothing). Only assist.drive_mode is written: physics_sim sets the TC
+	# request to the mode's own default on a change, so the game must NOT touch assist.traction_control here.
+	if drive_mode_cycles > 0:
+		var dm: Dictionary = _simulation.get_vehicle_powertrain(VEHICLE_NAME)
+		var dm_bits: int = int(dm.get("drive_modes_available_bits", 0))
+		var dm_mode: int = int(dm.get("drive_mode_effective", 1))
+		for _i in range(drive_mode_cycles):
+			dm_mode = RgAssists.next_drive_mode(dm_bits, dm_mode)
+			if dm_mode < 0:
+				break
+			_simulation.set_control("assist.drive_mode", float(dm_mode))
+		if dm_mode >= 0 and _hud != null:
+			_hud.show_message("Drive mode: " + str(RgAssists.drive_mode_name(dm_mode)), 2.0, DriveModeTheme.color_for_mode(dm_mode))
 	# Nitrous arm switch (gamepad Y, owner 2026-10-05; physics_sim 804137e): each
 	# rising edge flips the plain 0/1 "nitrous_arm" channel. Cars without a nitrous
 	# kit never declare it, so for them it is inert.

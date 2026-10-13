@@ -15,6 +15,7 @@
     "starter": [{"type": "key", "key": "K"}],
     "traction_control": [{"type": "key", "key": "F4"}],
     "toggle_aero": [{"type": "key", "key": "H"}],
+    "drive_mode": [{"type": "key", "key": "M"}],
     "auto_shift": [{"type": "key", "key": "F5"}],
     "toggle_nitrous": [{"type": "key", "key": "N"}],
     "flip_upright": [{"type": "key", "key": "F"}],

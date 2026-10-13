@@ -23,6 +23,15 @@ var aero_target_deg := 0.0
 var font := ThemeDB.fallback_font
 var thermal: Dictionary = {}
 const ThermalReadout := preload("res://scripts/thermal_readout.gd")
+# Drive-mode theme colours (ECO blue / NORMAL gray / SPORT orange); a car without drive modes keeps the default look.
+const DriveModeTheme := preload("res://scripts/drive_mode_theme.gd")
+const DEFAULT_SPEED_COLOR := Color(0.25,0.7,1)
+const DEFAULT_RPM_COLOR := Color(0.2,0.95,0.75)
+const DEFAULT_SMALL_DIAL_COLOR := Color(0.6,0.85,1)
+var drive_mode_label := ""
+var drive_mode_accent := Color(0.5,0.7,0.82)
+var launch_lamp := 0
+var launch_lamp_text := ""
 
 func _ready() -> void:
 	var info: Dictionary = simulation.get_vehicle_gauge_info(vehicle_name)
@@ -54,6 +63,10 @@ func _process(delta: float) -> void:
 	aero_fitted = bool(pt.get("aero_control_fitted",false))
 	aero_active = bool(pt.get("aero_control_active",false))
 	aero_target_deg = float(pt.get("aero_control_target_deg",0.0))
+	drive_mode_label = DriveModeTheme.label(pt)
+	drive_mode_accent = DriveModeTheme.accent(pt,Color(0.5,0.7,0.82))
+	launch_lamp = int(pt.get("launch_lamp",0))
+	launch_lamp_text = str(pt.get("launch_lamp_text",""))
 	speed = ground_speed*3.6
 	rpm = pt.get("rpm",0.0)
 	drive_kw = pt.get("drive_power_kw",0.0)
@@ -85,10 +98,10 @@ func dial(center: Vector2,value: float,maximum: float,color: Color,is_rpm: bool)
 		draw_line(center+direction*105,center+direction*114,Color(0.65,0.75,0.85),2,true)
 		text(str(k) if is_rpm else str(k*40),center+direction*86+Vector2(0,6),18,Color(0.65,0.75,0.85))
 
-func small_dial(center: Vector2, value: String, title: String, fraction: float) -> void:
+func small_dial(center: Vector2, value: String, title: String, fraction: float, fill := Color(0.6,0.85,1)) -> void:
 	draw_arc(center,45,deg_to_rad(135),deg_to_rad(405),48,Color(0.15,0.27,0.34),5,true)
 	if fraction>=0:
-		draw_arc(center,45,deg_to_rad(135),deg_to_rad(135)+deg_to_rad(270)*clampf(fraction,0,1),48,Color(0.6,0.85,1),5,true)
+		draw_arc(center,45,deg_to_rad(135),deg_to_rad(135)+deg_to_rad(270)*clampf(fraction,0,1),48,fill,5,true)
 	text(value,center+Vector2(0,3),28)
 	text(title,center+Vector2(0,25),15,Color(0.5,0.7,0.82))
 
@@ -105,12 +118,17 @@ func _draw() -> void:
 	text("F",Vector2(75,93),16,blue)
 	text("E",Vector2(75,259),16,blue)
 	text("%.0f%%" % (fraction*100) if has_fuel else "--",Vector2(48,286),20)
-	dial(Vector2(245,170),speed,360,Color(0.25,0.7,1),false)
-	dial(Vector2(735,170),rpm,9000,Color(0.2,0.95,0.75),true)
+	# A drive-modes car (assists I7) draws its dials in the colour of the mode that runs; any other car keeps the defaults.
+	var themed := drive_mode_label != ""
+	dial(Vector2(245,170),speed,360,drive_mode_accent if themed else DEFAULT_SPEED_COLOR,false)
+	dial(Vector2(735,170),rpm,9000,drive_mode_accent if themed else DEFAULT_RPM_COLOR,true)
 	text("%.0f" % speed,Vector2(245,180),68)
 	text("km/h",Vector2(245,214),22,blue)
 	text("%.0f" % rpm,Vector2(735,180),58)
 	text("RPM",Vector2(735,214),22,blue)
+	if themed:
+		# Drive mode, small, under the tach dial (between its lower end and the information strip).
+		text(drive_mode_label,Vector2(735,299),22,drive_mode_accent)
 	text("R" if gear<0 else ("N" if gear==0 else str(gear)),Vector2(490,174),90)
 	text("GEAR",Vector2(490,207),18,blue)
 	if tc_fitted:
@@ -120,13 +138,24 @@ func _draw() -> void:
 			tc_label += " ACTIVE"
 		var tc_color := Color(1.0,0.65,0.15) if tc_intervening or not tc_on else Color(0.2,0.95,0.75)
 		text(tc_label,Vector2(490,266),20,tc_color)
+	if launch_lamp > 0:
+		# Launch control (assists I4): gray = off, green = on, blinking amber = armed, solid amber = launching.
+		var lc_color := Color(0.45,0.5,0.55)
+		if launch_lamp == 2:
+			lc_color = Color(0.2,0.95,0.75)
+		elif launch_lamp == 3:
+			lc_color = Color(1.0,0.65,0.15) if fmod(Time.get_ticks_msec()/1000.0,0.4)<0.2 else Color(0.45,0.5,0.55)
+		elif launch_lamp >= 4:
+			lc_color = Color(1.0,0.65,0.15)
+		text(launch_lamp_text,Vector2(490,240),18,lc_color)
 	if aero_fitted:
 		var aero_label := "AERO AUTO %+.0f DEG" % aero_target_deg if aero_active else "AERO OFF"
 		text(aero_label,Vector2(490,292),16,Color(0.2,0.95,0.75) if aero_active else Color(1.0,0.65,0.15))
 	# Engine temperature, above the gear: only for a car with a thermal model (the hypercar has none yet), else nothing is drawn.
 	ThermalReadout.draw_bar(self,font,Vector2(490,66),1.0,thermal,fmod(Time.get_ticks_msec()/1000.0,0.5)<0.25)
-	small_dial(Vector2(935,109),"%.0f" % drive_kw,"DRIVE kW",maxf(drive_kw,0)/650.0)
-	small_dial(Vector2(935,241),"%.1f" % boost_bar if boost_bar>=0 else "--","BOOST bar",boost_bar/3.0 if boost_bar>=0 else -1)
+	var small_fill := drive_mode_accent if themed else DEFAULT_SMALL_DIAL_COLOR
+	small_dial(Vector2(935,109),"%.0f" % drive_kw,"DRIVE kW",maxf(drive_kw,0)/650.0,small_fill)
+	small_dial(Vector2(935,241),"%.1f" % boost_bar if boost_bar>=0 else "--","BOOST bar",boost_bar/3.0 if boost_bar>=0 else -1,small_fill)
 	# Dynamic information strip, reserved for selectable trip pages later.
 	draw_rect(Rect2(102,311,903,78),Color(0.025,0.045,0.061))
 	text("TRIP",Vector2(181,338),16,blue)

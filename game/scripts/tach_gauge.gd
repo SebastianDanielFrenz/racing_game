@@ -28,6 +28,8 @@ const GaugeLogic := preload("res://scripts/gauge_logic.gd")
 # Engine temperature readout (coolant bar + oil), shared with the cockpit cluster; shown only for a car that has a
 # thermal model (RgSimulation.get_vehicle_thermal -> rg::engine_thermal_hud).
 const ThermalReadout := preload("res://scripts/thermal_readout.gd")
+# Drive-mode theme colours (ECO blue / NORMAL gray / SPORT orange); a car without drive modes keeps its look.
+const DriveModeTheme := preload("res://scripts/drive_mode_theme.gd")
 
 var _simulation: Node
 # True speed over ground (|linear velocity|, world frame), drawn small above
@@ -100,6 +102,21 @@ func _draw_centered_text(font: Font, pos: Vector2, text: String, font_size: int,
 	var text_size: Vector2 = font.get_string_size(text, HORIZONTAL_ALIGNMENT_LEFT, -1, font_size)
 	draw_string(font, pos - Vector2(text_size.x * 0.5, -text_size.y * 0.35), text, HORIZONTAL_ALIGNMENT_LEFT, -1, font_size, color)
 
+# The launch-control lamp ("LC"), RgAssists/rg::LaunchLamp codes from get_vehicle_powertrain().launch_lamp: 1 fitted but
+# off (gray), 2 on (green), 3 armed (blinking amber), 4 launching (solid amber). 0 = no launch control: nothing drawn.
+func _draw_launch_lamp(font: Font, pos: Vector2, lamp: int, dot_radius: float, font_size: int) -> void:
+	if lamp <= 0:
+		return
+	var color: Color = COLOR_LAMP_OFF
+	if lamp == 2:
+		color = COLOR_LAMP_ON
+	elif lamp == 3:
+		color = COLOR_LAMP_INTERVENING if fmod(Time.get_ticks_msec() / 1000.0, 0.4) < 0.2 else COLOR_LAMP_OFF
+	elif lamp >= 4:
+		color = COLOR_LAMP_INTERVENING
+	draw_circle(pos, dot_radius, color)
+	_draw_centered_text(font, pos + Vector2(0, dot_radius + font_size * 0.9), "LC", font_size, color)
+
 func _draw_lamp(font: Font, pos: Vector2, label: String, state: int, dot_radius: float, font_size: int) -> void:
 	var color: Color
 	if state == GaugeLogic.LampState.ON:
@@ -154,6 +171,11 @@ func _draw() -> void:
 	var font_size_speed_unit: int = int(round(16.0 * scale))
 
 	draw_circle(center, radius * 1.08, COLOR_BG)
+	# Drive modes (assists I7): the dial rim and the gear ring take the colour of the mode that runs.
+	var themed: bool = DriveModeTheme.is_themed(_last_pt)
+	var accent: Color = DriveModeTheme.accent(_last_pt, COLOR_TICK_MINOR)
+	if themed:
+		draw_arc(center, radius * 1.08, 0.0, TAU, 96, accent, scale * 3.0, true)
 
 	var redline_start_rad: float = _clock_rad(GaugeLogic.redline_start_clock_deg(limiter_rpm, max_rpm))
 	var redline_end_rad: float = _clock_rad(GaugeLogic.redline_end_clock_deg(max_rpm))
@@ -187,12 +209,17 @@ func _draw() -> void:
 	elif engine_state == "stalled" or engine_state == "off":
 		gear_text_color = COLOR_GEAR_STALLED
 	draw_circle(center, gear_radius, COLOR_GEAR_BG)
-	draw_arc(center, gear_radius, 0.0, TAU, 48, COLOR_TICK_MINOR, scale * 1.5, true)
+	draw_arc(center, gear_radius, 0.0, TAU, 48, accent, scale * (2.5 if themed else 1.5), true)
 	_draw_centered_text(font, center, GaugeLogic.gear_label(int(_last_pt.get("gear", 0))), font_size_gear, gear_text_color)
 
 	var fitted_assists: PackedStringArray = _gauge_info.get("fitted_assists", PackedStringArray())
 	for i in range(SYSTEM_LAMP_NAMES.size()):
 		var lamp_name: String = SYSTEM_LAMP_NAMES[i]
+		if lamp_name == "LC":
+			# Launch control (assists I4): fitted/state comes from the snapshot, not from the vehicle file; the ABS lamp has no
+			# source (no ABS exists) and stays unlit.
+			_draw_launch_lamp(font, _polar(center, gear_radius * 1.7, SYSTEM_LAMP_SLOTS_CLOCK_DEG[i]), int(_last_pt.get("launch_lamp", 0)), 6.0 * scale, font_size_lamp)
+			continue
 		var state: int = GaugeLogic.lamp_state(fitted_assists.has(lamp_name), lamp_name == "TC" and bool(_last_pt.get("assist_traction_control", false)), lamp_name == "TC" and bool(_last_pt.get("traction_control_intervening", false)))
 		if state == GaugeLogic.LampState.HIDDEN:
 			continue
@@ -205,6 +232,13 @@ func _draw() -> void:
 	for i in range(extra_lamps.size()):
 		var entry: Dictionary = extra_lamps[i]
 		_draw_lamp(font, Vector2(row_start_x + i * row_spacing, row_y), entry["name"], entry["state"], 6.0 * scale, font_size_lamp)
+
+	# Drive mode name, bottom right under the dial (right edge of the dial, one line below the lamp row).
+	if themed:
+		var mode_text: String = DriveModeTheme.label(_last_pt)
+		var mode_size: int = int(round(24.0 * scale))
+		var mode_w: float = font.get_string_size(mode_text, HORIZONTAL_ALIGNMENT_LEFT, -1, mode_size).x
+		draw_string(font, Vector2(center.x + radius * 1.0 - mode_w, row_y + 44.0 * scale), mode_text, HORIZONTAL_ALIGNMENT_LEFT, -1, mode_size, accent)
 
 	var speed_kmh: float = float(_last_pt.get("speedo_kmh", 0.0))
 	var speed_pos := Vector2(center.x - radius * 1.55, center.y)
