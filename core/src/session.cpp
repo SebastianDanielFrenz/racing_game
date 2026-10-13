@@ -57,6 +57,13 @@ const char* const kControlChannelNames[] = {
     "assist.aero_control", // physics_sim assist unit (assists I5): rear-wing automation; only a car whose unit carries aero_control registers it in the World
     "assist.drive_mode", // physics_sim assists I7: 0 eco, 1 normal, 2 sport; only a car with a drive_modes part registers it in the World
     "assist.launch_control", // physics_sim assists I4: launch control on/off (1/0); only a car with the part registers it; a drive-mode change writes it (I7c)
+    "cabin.blink_lit",
+    "cabin.hazard",
+    "cabin.indicator",
+    "cabin.indicator_left",
+    "cabin.indicator_right",
+    "cabin.brake_lamp",
+    "cabin.horn",
     "park_lock",
     "gear_request", // -100 means no absolute request; zero is neutral
     "transmission.selector", // reserved until automatic transmission support

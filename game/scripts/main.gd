@@ -1105,7 +1105,7 @@ func _forward_driving(live: bool, delta: float) -> void:
 	var up: int = _input_map.consume_shift_up_count()
 	var down: int = _input_map.consume_shift_down_count()
 	if not live or not bool(_simulation.is_running()):
-		_input_map.driver_actions.discard_pending()
+		_input_map.advance_cabin(_simulation,{},delta,false,VEHICLE_NAME)
 		_steering.reset()
 		return
 	if get_tree().get_nodes_in_group("seat_adjustment_open").size() > 0 or get_tree().get_nodes_in_group("address_teleport_open").size() > 0:
@@ -1113,10 +1113,10 @@ func _forward_driving(live: bool, delta: float) -> void:
 		_simulation.set_control("steer", 0.0)
 		_simulation.set_control("throttle", 0.0)
 		_simulation.set_control("brake", 1.0)
-		_simulation.set_control("starter", 0.0)
+		_input_map.advance_cabin(_simulation,{},delta,false,VEHICLE_NAME)
 		return
 	if not scripted_controls.is_empty():
-		_input_map.driver_actions.discard_pending()
+		_input_map.advance_cabin(_simulation,{},delta,false,VEHICLE_NAME)
 		for channel in scripted_controls:
 			_simulation.set_control(channel, float(scripted_controls[channel]))
 		return
@@ -1128,11 +1128,14 @@ func _forward_driving(live: bool, delta: float) -> void:
 	_simulation.set_control("ignition", 1.0 if _input_map.get_ignition() else 0.0)
 	_simulation.set_control("starter", 1.0 if _input_map.get_starter() else 0.0)
 	var pt: Dictionary = _simulation.get_vehicle_powertrain(VEHICLE_NAME)
+	pt["speed_mps"] = _simulation.get_body_speed_mps("chassis")
 	var channels: Dictionary = load("res://scripts/driver_state.gd").channels(_simulation)
 	var drive_mode_change := -1
 	for write in _input_map.driver_actions.apply(pt,channels,true):
 		_simulation.set_control(write["channel"],float(write["value"]))
+		if write["channel"] == "ignition": _input_map.sync_ignition(float(write["value"]))
 		if write["channel"] == "assist.drive_mode": drive_mode_change = roundi(write["value"])
+	_input_map.advance_cabin(_simulation,pt,delta,true,VEHICLE_NAME)
 	if drive_mode_change >= 0 and _hud != null:
 		var requested := pt.duplicate()
 		requested["drive_mode_effective"] = drive_mode_change

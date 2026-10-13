@@ -14,6 +14,8 @@ public:
     bool submit(const godot::String& id, int kind, double value, int source);
     godot::Array apply(const godot::Dictionary& snapshot, const godot::Dictionary& channels, bool driving_enabled);
     void discard_pending();
+    void configure_cabin(const godot::Dictionary& values);
+    godot::Array advance(const godot::Dictionary& snapshot, const godot::Dictionary& channels, bool enabled, double dt);
     void configure_auto_shift(bool enabled);
     bool get_auto_shift() const;
     static godot::Dictionary state(const godot::String& id, const godot::Dictionary& snapshot, const godot::Dictionary& channels);

@@ -118,6 +118,7 @@ func _load_model() -> void:
 		_wing_rest_rotation = _wing_flap.rotation
 	if _wing_lift != null:
 		_wing_rest_position = _wing_lift.position
+	load("res://scripts/exterior_lamps.gd").attach_to(_model_root,simulation,vehicle_name,model_absolute_path)
 	_load_ok = true
 	apply_colours()
 	print("rg_godot vehicle_visual.gd: loaded model ", model_absolute_path)

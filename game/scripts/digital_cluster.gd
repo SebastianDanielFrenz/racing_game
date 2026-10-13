@@ -7,6 +7,7 @@ var drive_kw := 0.0
 var boost_bar := -1.0
 var gear := 0
 var park_engaged := false
+var cabin_lamps: Dictionary = {}
 var capacity := 0.0
 var density := 0.0
 var fuel := 0.0
@@ -59,6 +60,7 @@ func _process(delta: float) -> void:
 	elapsed = 0.0
 	var pt: Dictionary = simulation.get_vehicle_powertrain(vehicle_name)
 	var controls: Dictionary = DriverState.read(simulation,pt)
+	cabin_lamps = controls
 	thermal = simulation.get_vehicle_thermal(vehicle_name)
 	tc_fitted = controls["tc"]["fitted"]
 	tc_on = controls["tc"]["active"]
@@ -136,6 +138,11 @@ func _draw() -> void:
 		text(drive_mode_label,Vector2(735,299),22,drive_mode_accent)
 	text("P" if park_engaged else ("R" if gear<0 else ("N" if gear==0 else str(gear))),Vector2(490,174),90)
 	text("GEAR",Vector2(490,207),18,blue)
+	if not cabin_lamps.is_empty():
+		text("<",Vector2(330,32),28,Color.GREEN if cabin_lamps["left"]["active"] else Color(0.15,0.15,0.15))
+		text(">",Vector2(650,32),28,Color.GREEN if cabin_lamps["right"]["active"] else Color(0.15,0.15,0.15))
+		if cabin_lamps["epb"]["label"] != "":
+			text(cabin_lamps["epb"]["label"],Vector2(490,330),20,Color.ORANGE)
 	if tc_fitted:
 		# The mode that actually runs (physics_sim's assist unit: Off / On / Relaxed / Sport / Drift).
 		var tc_label := "TC OFF" if not tc_on else "TC " + tc_mode_name.to_upper()

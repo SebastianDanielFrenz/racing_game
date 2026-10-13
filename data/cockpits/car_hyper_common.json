@@ -36,6 +36,8 @@
     {"material":"lamp_drive_mode_normal_led0","action":"drive_mode","segment":1},
     {"material":"lamp_drive_mode_sport_led0","action":"drive_mode","segment":2},
     {"material":"lamp_drive_mode_racing_led0","action":"drive_mode","segment":3},
-    {"material":"lamp_start_ring","field":"engine_state","equals":"Running"}
+    {"material":"lamp_hazard_triangle","action":"hazard","segment":0},
+    {"material":"lamp_epb_state","action":"epb","segment":0},
+    {"material":"lamp_start_ring","action":"start_stop","segment":0}
   ]
 }

@@ -25,6 +25,10 @@ rg::DriverSnapshot convert(const godot::Dictionary& d) {
     s.epb_fitted = static_cast<bool>(d.get("epb_fitted", false));
     s.epb_state = static_cast<int>(d.get("epb_state", 0));
     s.epb_refused = static_cast<bool>(d.get("epb_refused", false));
+    s.gear = static_cast<int>(d.get("gear",0));
+    s.engine_running = godot::String(d.get("engine_state", "")) == "Running";
+    s.speed_mps = static_cast<double>(d.get("speed_mps",0.0));
+    s.steering_wheel_deg = static_cast<double>(d.get("steering_wheel_deg",0.0));
     return s;
 }
 class Sink final : public rg::ChannelSink {
@@ -53,6 +57,21 @@ godot::Array RgDriverActions::apply(const godot::Dictionary& snapshot, const god
     actions_.apply({convert(snapshot), driving_enabled}, sink);
     return sink.writes;
 }
+void RgDriverActions::configure_cabin(const godot::Dictionary& d) {
+    rg::CabinConfig c;
+    c.crank_timeout_s = d.get("crank_timeout_s",c.crank_timeout_s);
+    c.stop_max_speed_mps = d.get("stop_max_speed_mps",c.stop_max_speed_mps);
+    c.blink_hz = d.get("blink_hz",c.blink_hz);
+    c.indicator_arm_deg = d.get("indicator_arm_deg",c.indicator_arm_deg);
+    c.indicator_cancel_deg = d.get("indicator_cancel_deg",c.indicator_cancel_deg);
+    c.brake_lamp_threshold = d.get("brake_lamp_threshold",c.brake_lamp_threshold);
+    try { actions_.configure_cabin(c); } catch (const std::exception& e) { ERR_PRINT(e.what()); }
+}
+godot::Array RgDriverActions::advance(const godot::Dictionary& snapshot, const godot::Dictionary& channels, bool enabled, double dt) {
+    Sink sink(channels.duplicate());
+    actions_.advance({convert(snapshot),enabled},sink,dt);
+    return sink.writes;
+}
 void RgDriverActions::discard_pending() { actions_.discard_pending(); }
 void RgDriverActions::configure_auto_shift(bool enabled) { actions_.configure_auto_shift(enabled); }
 bool RgDriverActions::get_auto_shift() const { return actions_.cabin().auto_shift; }
@@ -77,6 +96,8 @@ void RgDriverActions::_bind_methods() {
     using godot::D_METHOD;
     ClassDB::bind_method(D_METHOD("submit", "id", "kind", "value", "source"), &RgDriverActions::submit);
     ClassDB::bind_method(D_METHOD("apply", "snapshot", "channels", "driving_enabled"), &RgDriverActions::apply);
+    ClassDB::bind_method(D_METHOD("configure_cabin", "values"), &RgDriverActions::configure_cabin);
+    ClassDB::bind_method(D_METHOD("advance", "snapshot", "channels", "enabled", "dt"), &RgDriverActions::advance);
     ClassDB::bind_method(D_METHOD("discard_pending"), &RgDriverActions::discard_pending);
     ClassDB::bind_method(D_METHOD("configure_auto_shift", "enabled"), &RgDriverActions::configure_auto_shift);
     ClassDB::bind_method(D_METHOD("get_auto_shift"), &RgDriverActions::get_auto_shift);

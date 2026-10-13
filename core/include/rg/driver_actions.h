@@ -23,6 +23,10 @@ struct ActionEvent {
 // C1 extends this game-owned state; the EPB latch belongs to physics, never here.
 struct CabinState {
     bool auto_shift = false;
+    bool horn = false;
+    bool auto_cranking = false;
+    bool indicator_turned = false;
+    double blink_elapsed_s = 0;
     bool hazard = false;
     int indicator = 0;
     int lights = 0;
@@ -50,6 +54,10 @@ struct DriverSnapshot {
     bool epb_fitted = false;
     int epb_state = 0; // released / latched / handbrake
     bool epb_refused = false;
+    int gear = 0;
+    bool engine_running = false;
+    double speed_mps = 0;
+    double steering_wheel_deg = 0;
 };
 
 struct VehicleContext {
@@ -77,6 +85,15 @@ struct ControlState {
     double aero_target_deg = 0;
 };
 
+struct CabinConfig {
+    double crank_timeout_s = 0;
+    double stop_max_speed_mps = 0;
+    double blink_hz = 0;
+    double indicator_arm_deg = 0;
+    double indicator_cancel_deg = 0;
+    double brake_lamp_threshold = 0;
+};
+
 class DriverActions {
 public:
     // Called on the adapter/main thread only. Hold values are sampled levels;
@@ -84,7 +101,9 @@ public:
     bool submit(ActionEvent event);
     void apply(const VehicleContext& context, ChannelSink& channels);
     void discard_pending();
-    void configure_auto_shift(bool enabled) { cabin_.auto_shift = enabled; }
+    void configure_cabin(const CabinConfig& config);
+    void advance(const VehicleContext& context, ChannelSink& channels, double dt);
+    void configure_auto_shift(bool enabled) { cabin_ = CabinState{}; cabin_.auto_shift = enabled; }
     const CabinState& cabin() const { return cabin_; }
     std::size_t pending_count() const { return pending_.size(); }
 
@@ -93,7 +112,9 @@ public:
 
 private:
     CabinState cabin_;
-    std::array<bool, 8> held_{};
+    CabinConfig config_;
+    bool cabin_configured_ = false;
+    std::array<bool, 13> held_{};
     std::vector<ActionEvent> pending_;
 };
 

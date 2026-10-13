@@ -137,7 +137,13 @@ func configure_vehicle(path: String, auto_shift_default = null) -> void:
 	driver_actions.configure_auto_shift((not manual) if auto_shift_default == null else bool(auto_shift_default))
 	_configured_vehicle_path = key
 
+var cabin_config: Dictionary = {}
+
 func _ready() -> void:
+	var cfg = JSON.parse_string(FileAccess.get_file_as_string(ProjectSettings.globalize_path("res://../data/controls/cabin.json")))
+	if cfg is Dictionary:
+		cabin_config = cfg
+		driver_actions.configure_cabin(cfg)
 	if controls == null:
 		push_error("input_map.gd: no RgControls (main.gd must set `controls` before add_child)")
 		return
@@ -341,7 +347,7 @@ func poll() -> void:
 		_ignition_on = not _ignition_on
 	_starter_held = held.call("starter")
 	# Sampled device levels only: rg_core owns rising edges and toggle/cycle state.
-	for action in ["auto_shift","traction_control","toggle_aero","drive_mode","toggle_launch_control","toggle_nitrous","park","epb"]:
+	for action in ["auto_shift","traction_control","toggle_aero","drive_mode","toggle_launch_control","toggle_nitrous","park","epb","start_stop","hazard","indicator_left","indicator_right","horn"]:
 		var source: int = RgDriverActions.PAD if controls.get_source(action) >= 2 else RgDriverActions.KEYBOARD
 		driver_actions.submit(action,RgDriverActions.HOLD,1.0 if held.call(action) else 0.0,source)
 
@@ -527,3 +533,15 @@ func consume_cycle_camera() -> int:
 	var count := _cycle_camera_count
 	_cycle_camera_count = 0
 	return count
+
+# Variant conversion and channel forwarding only; timed cabin behaviours live in rg_core.
+func advance_cabin(sim: Node, snapshot: Dictionary, delta: float, enabled: bool, vehicle_name: String) -> void:
+	var context := snapshot.duplicate()
+	context["speed_mps"] = sim.get_body_speed_mps("chassis")
+	context["steering_wheel_deg"] = rad_to_deg(sim.get_wheel_steer_angle(vehicle_name,0)) * float(cabin_config["steering_ratio"]) if cabin_config.has("steering_ratio") else 0.0
+	var values: Dictionary = load("res://scripts/driver_state.gd").channels(sim)
+	for write in driver_actions.advance(context,values,enabled,delta):
+		sim.set_control(write["channel"],float(write["value"]))
+
+func sync_ignition(value: float) -> void:
+	_ignition_on = value != 0

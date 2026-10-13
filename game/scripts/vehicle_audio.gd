@@ -34,7 +34,10 @@ var _view_levels: Dictionary = {}
 var _engine_native := false
 var _diagnostic_elapsed := 0.0
 
+var _horn: AudioStreamPlayer3D
+
 func _ready() -> void:
+	_create_horn()
 	var parsed = JSON.parse_string(FileAccess.get_file_as_string(ProjectSettings.globalize_path("res://../data/controls/presentation.json")))
 	if parsed is Dictionary:
 		_view_levels = parsed
@@ -140,6 +143,11 @@ func _output(samples: PackedFloat32Array, channels: int, backend: RefCounted, pl
 		playback.push_buffer(buffer)
 
 func _process(delta: float) -> void:
+	if _horn != null:
+		var sounding: bool = not muted and simulation.is_running() and simulation.get_control("cabin.horn") != 0
+		_horn.volume_db = float(_horn.get_meta("gain_db")) + linear_to_db(maxf(master_volume,0.0001))
+		if sounding and not _horn.playing: _horn.play()
+		elif not sounding and _horn.playing: _horn.stop()
 	if not simulation.is_running() or simulation.get_step_count() == 0:
 		return
 	if not _initialized:
@@ -245,3 +253,27 @@ func _exit_tree() -> void:
 	shutdown()
 	if had_players:
 		OS.delay_msec(100)
+
+func _create_horn() -> void:
+	var cfg = JSON.parse_string(FileAccess.get_file_as_string(ProjectSettings.globalize_path("res://../data/controls/cabin.json")))
+	if not cfg is Dictionary: return
+	var rate: int = int(cfg["horn_rate_hz"])
+	var frames: int = int(rate * float(cfg["horn_loop_s"]))
+	var frequencies: Array = cfg["horn_frequency_hz"]
+	var pcm := PackedByteArray()
+	pcm.resize(frames*2)
+	for i in range(frames):
+		var amplitude := 0.0
+		for hz in frequencies: amplitude += sin(TAU * float(hz) * i / rate)
+		pcm.encode_s16(i*2,int(amplitude/frequencies.size()*32767))
+	var sound := AudioStreamWAV.new()
+	sound.format = AudioStreamWAV.FORMAT_16_BITS
+	sound.mix_rate = rate
+	sound.data = pcm
+	sound.loop_mode = AudioStreamWAV.LOOP_FORWARD
+	sound.loop_begin = 0
+	sound.loop_end = frames
+	_horn = AudioStreamPlayer3D.new()
+	_horn.stream = sound
+	_horn.set_meta("gain_db",float(cfg["horn_gain_db"]))
+	add_child(_horn)
