@@ -1,0 +1,1052 @@
+{
+  "format": "physics_sim.rig/1",
+  "model": "runabout_t.glb",
+  "title": "Runabout T (1910s tourer)",
+  "description": "1910s-20s open touring car, 3.40 m, 30 x 3.5 in cord tyres on wooden wheels, front 2.9 L side-valve I4.",
+  "frame": "ISO 8855: x forward, y left, z up; metres; radians. The .glb itself uses glTF axes (+Y up, +Z forward, +X left): gltf(x,y,z) = iso(y,z,x).",
+  "origin": "Ground plane below the wheel centres, x = 0 midway between the axles, y = 0 on the centreline.",
+  "rest_pose": "All node rotations are identity at rest; a node's origin is its joint pivot. Joint values are offsets from the rest pose (0 = as modelled).",
+  "overall_bounds": {
+    "min": [
+      -1.727,
+      -0.836,
+      0.0
+    ],
+    "max": [
+      1.7267,
+      0.836,
+      1.95
+    ]
+  },
+  "nodes": [
+    {
+      "name": "runabout_t",
+      "parent": null,
+      "pivot": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "bounds_local": {
+        "min": [
+          -1.727,
+          -0.836,
+          0.22
+        ],
+        "max": [
+          1.7267,
+          0.836,
+          1.79
+        ]
+      }
+    },
+    {
+      "name": "hood_L",
+      "parent": "runabout_t",
+      "pivot": [
+        0.75,
+        0.0,
+        1.31
+      ],
+      "joint": {
+        "type": "revolute",
+        "axis": [
+          1,
+          0,
+          0
+        ],
+        "min": 0.0,
+        "max": 2.6179938779914944,
+        "note": "bonnet half, folded up about the centre hinge"
+      },
+      "bounds_local": {
+        "min": [
+          -0.2,
+          0.0,
+          -0.56
+        ],
+        "max": [
+          0.49,
+          0.335,
+          -0.01
+        ]
+      }
+    },
+    {
+      "name": "hood_R",
+      "parent": "runabout_t",
+      "pivot": [
+        0.75,
+        0.0,
+        1.31
+      ],
+      "joint": {
+        "type": "revolute",
+        "axis": [
+          -1,
+          0,
+          0
+        ],
+        "min": 0.0,
+        "max": 2.6179938779914944,
+        "note": "bonnet half, folded up about the centre hinge"
+      },
+      "bounds_local": {
+        "min": [
+          -0.2,
+          -0.335,
+          -0.56
+        ],
+        "max": [
+          0.49,
+          0.0,
+          -0.01
+        ]
+      }
+    },
+    {
+      "name": "door_L",
+      "parent": "runabout_t",
+      "pivot": [
+        0.1,
+        0.62,
+        0.85
+      ],
+      "joint": {
+        "type": "revolute",
+        "axis": [
+          0,
+          0,
+          -1
+        ],
+        "min": 0.0,
+        "max": 1.3089969389957472,
+        "note": "door opening angle"
+      },
+      "bounds_local": {
+        "min": [
+          -0.5169,
+          -0.029,
+          -0.28
+        ],
+        "max": [
+          -0.0036,
+          0.031,
+          0.2823
+        ]
+      }
+    },
+    {
+      "name": "door_R",
+      "parent": "runabout_t",
+      "pivot": [
+        0.1,
+        -0.62,
+        0.85
+      ],
+      "joint": {
+        "type": "revolute",
+        "axis": [
+          0,
+          0,
+          1
+        ],
+        "min": 0.0,
+        "max": 1.3089969389957472,
+        "note": "door opening angle"
+      },
+      "bounds_local": {
+        "min": [
+          -0.5169,
+          -0.031,
+          -0.28
+        ],
+        "max": [
+          -0.0036,
+          0.029,
+          0.2823
+        ]
+      }
+    },
+    {
+      "name": "windscreen_upper",
+      "parent": "runabout_t",
+      "pivot": [
+        0.44,
+        0.0,
+        1.76
+      ],
+      "joint": {
+        "type": "revolute",
+        "axis": [
+          0,
+          -1,
+          0
+        ],
+        "min": 0.0,
+        "max": 0.6981317007977318,
+        "note": "upper windscreen pane, + = bottom edge tilts out forward"
+      },
+      "bounds_local": {
+        "min": [
+          -0.015,
+          -0.545,
+          -0.248
+        ],
+        "max": [
+          0.015,
+          0.545,
+          0.03
+        ]
+      }
+    },
+    {
+      "name": "susp_FL",
+      "parent": "runabout_t",
+      "pivot": [
+        1.27,
+        0.71,
+        0.36
+      ],
+      "joint": {
+        "type": "prismatic",
+        "axis": [
+          0,
+          0,
+          1
+        ],
+        "min": -0.07,
+        "max": 0.07,
+        "note": "wheel travel (bump +)"
+      }
+    },
+    {
+      "name": "steer_FL",
+      "parent": "susp_FL",
+      "pivot": [
+        1.27,
+        0.71,
+        0.36
+      ],
+      "joint": {
+        "type": "revolute",
+        "axis": [
+          0,
+          0,
+          1
+        ],
+        "min": -0.6632251157578453,
+        "max": 0.6632251157578453,
+        "note": "road-wheel steer angle, + = left"
+      }
+    },
+    {
+      "name": "wheel_FL",
+      "parent": "steer_FL",
+      "pivot": [
+        1.27,
+        0.71,
+        0.36
+      ],
+      "joint": {
+        "type": "continuous",
+        "axis": [
+          0,
+          1,
+          0
+        ],
+        "note": "wheel spin, + = rolling forward"
+      },
+      "bounds_local": {
+        "min": [
+          -0.36,
+          -0.07,
+          -0.36
+        ],
+        "max": [
+          0.36,
+          0.102,
+          0.36
+        ]
+      },
+      "wheel": {
+        "radius": 0.36,
+        "width": 0.089,
+        "side": "left"
+      }
+    },
+    {
+      "name": "susp_FR",
+      "parent": "runabout_t",
+      "pivot": [
+        1.27,
+        -0.71,
+        0.36
+      ],
+      "joint": {
+        "type": "prismatic",
+        "axis": [
+          0,
+          0,
+          1
+        ],
+        "min": -0.07,
+        "max": 0.07,
+        "note": "wheel travel (bump +)"
+      }
+    },
+    {
+      "name": "steer_FR",
+      "parent": "susp_FR",
+      "pivot": [
+        1.27,
+        -0.71,
+        0.36
+      ],
+      "joint": {
+        "type": "revolute",
+        "axis": [
+          0,
+          0,
+          1
+        ],
+        "min": -0.6632251157578453,
+        "max": 0.6632251157578453,
+        "note": "road-wheel steer angle, + = left"
+      }
+    },
+    {
+      "name": "wheel_FR",
+      "parent": "steer_FR",
+      "pivot": [
+        1.27,
+        -0.71,
+        0.36
+      ],
+      "joint": {
+        "type": "continuous",
+        "axis": [
+          0,
+          1,
+          0
+        ],
+        "note": "wheel spin, + = rolling forward"
+      },
+      "bounds_local": {
+        "min": [
+          -0.36,
+          -0.102,
+          -0.36
+        ],
+        "max": [
+          0.36,
+          0.07,
+          0.36
+        ]
+      },
+      "wheel": {
+        "radius": 0.36,
+        "width": 0.089,
+        "side": "right"
+      }
+    },
+    {
+      "name": "susp_RL",
+      "parent": "runabout_t",
+      "pivot": [
+        -1.27,
+        0.71,
+        0.36
+      ],
+      "joint": {
+        "type": "prismatic",
+        "axis": [
+          0,
+          0,
+          1
+        ],
+        "min": -0.07,
+        "max": 0.07,
+        "note": "wheel travel (bump +)"
+      }
+    },
+    {
+      "name": "wheel_RL",
+      "parent": "susp_RL",
+      "pivot": [
+        -1.27,
+        0.71,
+        0.36
+      ],
+      "joint": {
+        "type": "continuous",
+        "axis": [
+          0,
+          1,
+          0
+        ],
+        "note": "wheel spin, + = rolling forward"
+      },
+      "bounds_local": {
+        "min": [
+          -0.36,
+          -0.07,
+          -0.36
+        ],
+        "max": [
+          0.36,
+          0.102,
+          0.36
+        ]
+      },
+      "wheel": {
+        "radius": 0.36,
+        "width": 0.089,
+        "side": "left"
+      }
+    },
+    {
+      "name": "susp_RR",
+      "parent": "runabout_t",
+      "pivot": [
+        -1.27,
+        -0.71,
+        0.36
+      ],
+      "joint": {
+        "type": "prismatic",
+        "axis": [
+          0,
+          0,
+          1
+        ],
+        "min": -0.07,
+        "max": 0.07,
+        "note": "wheel travel (bump +)"
+      }
+    },
+    {
+      "name": "wheel_RR",
+      "parent": "susp_RR",
+      "pivot": [
+        -1.27,
+        -0.71,
+        0.36
+      ],
+      "joint": {
+        "type": "continuous",
+        "axis": [
+          0,
+          1,
+          0
+        ],
+        "note": "wheel spin, + = rolling forward"
+      },
+      "bounds_local": {
+        "min": [
+          -0.36,
+          -0.102,
+          -0.36
+        ],
+        "max": [
+          0.36,
+          0.07,
+          0.36
+        ]
+      },
+      "wheel": {
+        "radius": 0.36,
+        "width": 0.089,
+        "side": "right"
+      }
+    },
+    {
+      "name": "top",
+      "parent": "runabout_t",
+      "pivot": [
+        -0.98,
+        0.0,
+        1.2
+      ],
+      "bounds_local": {
+        "min": [
+          -0.3262,
+          -0.652,
+          -0.0526
+        ],
+        "max": [
+          1.4568,
+          0.652,
+          0.75
+        ]
+      },
+      "option": "roof",
+      "default_hidden": true,
+      "variant": "roof"
+    },
+    {
+      "name": "needle_speed",
+      "parent": "runabout_t",
+      "pivot": [
+        0.39802,
+        0.28,
+        1.1304
+      ],
+      "joint": {
+        "type": "revolute",
+        "axis": [
+          0.9950371902099893,
+          -0.0,
+          -0.09950371902099893
+        ],
+        "min": 0.0,
+        "max": 5.235987755982989,
+        "note": "speedometer needle, + = clockwise as the driver sees it"
+      },
+      "bounds_local": {
+        "min": [
+          -0.0041,
+          -0.004,
+          -0.0332
+        ],
+        "max": [
+          0.0019,
+          0.0201,
+          0.0052
+        ]
+      }
+    },
+    {
+      "name": "needle_amps",
+      "parent": "runabout_t",
+      "pivot": [
+        0.39802,
+        0.1,
+        1.1304
+      ],
+      "joint": {
+        "type": "revolute",
+        "axis": [
+          0.9950371902099893,
+          -0.0,
+          -0.09950371902099893
+        ],
+        "min": 0.0,
+        "max": 1.5707963267948966,
+        "note": "ammeter needle, + = clockwise as the driver sees it"
+      },
+      "bounds_local": {
+        "min": [
+          -0.0037,
+          -0.0031,
+          -0.0032
+        ],
+        "max": [
+          0.0024,
+          0.0164,
+          0.0164
+        ]
+      }
+    },
+    {
+      "name": "knob_key",
+      "parent": "runabout_t",
+      "pivot": [
+        0.285,
+        -0.12,
+        1.15
+      ],
+      "joint": {
+        "type": "revolute",
+        "axis": [
+          1.0,
+          -0.0,
+          -0.0
+        ],
+        "min": 0.0,
+        "max": 1.0471975511965976,
+        "note": "key switch (off / battery / magneto) knob, + = clockwise"
+      },
+      "bounds_local": {
+        "min": [
+          -0.0208,
+          -0.012,
+          -0.012
+        ],
+        "max": [
+          0.0,
+          0.012,
+          0.012
+        ]
+      }
+    },
+    {
+      "name": "slider_choke",
+      "parent": "runabout_t",
+      "pivot": [
+        0.402,
+        0.22,
+        1.04
+      ],
+      "joint": {
+        "type": "prismatic",
+        "axis": [
+          -1.0,
+          0.0,
+          0.0
+        ],
+        "min": 0.0,
+        "max": 0.05,
+        "note": "choke pull slider, + = along the slot"
+      },
+      "bounds_local": {
+        "min": [
+          -0.029,
+          -0.007,
+          -0.007
+        ],
+        "max": [
+          0.0,
+          0.007,
+          0.007
+        ]
+      }
+    },
+    {
+      "name": "btn_horn",
+      "parent": "runabout_t",
+      "pivot": [
+        0.37,
+        0.56,
+        1.24
+      ],
+      "joint": {
+        "type": "prismatic",
+        "axis": [
+          0.5270462766947299,
+          0.42163702135578396,
+          -0.7378647873726218
+        ],
+        "min": 0.0,
+        "max": 0.015,
+        "note": "horn bulb button, + = pressed"
+      },
+      "bounds_local": {
+        "min": [
+          -0.0535,
+          -0.0497,
+          -0.0213
+        ],
+        "max": [
+          0.0272,
+          0.0286,
+          0.0582
+        ]
+      }
+    },
+    {
+      "name": "steering_wheel",
+      "parent": "runabout_t",
+      "pivot": [
+        -0.02,
+        0.3,
+        1.38
+      ],
+      "joint": {
+        "type": "revolute",
+        "axis": [
+          -0.6222441255753678,
+          -0.0,
+          0.7828232547561078
+        ],
+        "min": -3.9269908169872414,
+        "max": 3.9269908169872414,
+        "note": "steering wheel angle, + = left"
+      },
+      "bounds_local": {
+        "min": [
+          -0.1725,
+          -0.216,
+          -0.1399
+        ],
+        "max": [
+          0.1725,
+          0.216,
+          0.1399
+        ]
+      }
+    },
+    {
+      "name": "lever_spark",
+      "parent": "runabout_t",
+      "pivot": [
+        0.02356,
+        0.3,
+        1.3252
+      ],
+      "joint": {
+        "type": "revolute",
+        "axis": [
+          -0.6222441255753678,
+          -0.0,
+          0.7828232547561078
+        ],
+        "min": 0.0,
+        "max": 0.8726646259971648,
+        "note": "spark advance lever lever, + = pulled/on"
+      },
+      "bounds_local": {
+        "min": [
+          -0.007,
+          0.0,
+          -0.007
+        ],
+        "max": [
+          0.007,
+          0.164,
+          0.007
+        ]
+      }
+    },
+    {
+      "name": "lever_hand_throttle",
+      "parent": "runabout_t",
+      "pivot": [
+        0.02356,
+        0.3,
+        1.3252
+      ],
+      "joint": {
+        "type": "revolute",
+        "axis": [
+          -0.6222441255753678,
+          -0.0,
+          0.7828232547561078
+        ],
+        "min": 0.0,
+        "max": 0.8726646259971648,
+        "note": "hand throttle lever lever, + = pulled/on"
+      },
+      "bounds_local": {
+        "min": [
+          -0.007,
+          -0.164,
+          -0.007
+        ],
+        "max": [
+          0.007,
+          0.0,
+          0.007
+        ]
+      }
+    },
+    {
+      "name": "pedal_clutch",
+      "parent": "runabout_t",
+      "pivot": [
+        0.28,
+        0.42,
+        0.64
+      ],
+      "joint": {
+        "type": "revolute",
+        "axis": [
+          0.0,
+          1.0,
+          0.0
+        ],
+        "min": 0.0,
+        "max": 0.3141592653589793,
+        "note": "clutch pedal pedal travel"
+      },
+      "bounds_local": {
+        "min": [
+          -0.106,
+          -0.03,
+          -0.0036
+        ],
+        "max": [
+          0.0172,
+          0.03,
+          0.1501
+        ]
+      }
+    },
+    {
+      "name": "pedal_brake",
+      "parent": "runabout_t",
+      "pivot": [
+        0.28,
+        0.31,
+        0.64
+      ],
+      "joint": {
+        "type": "revolute",
+        "axis": [
+          0.0,
+          1.0,
+          0.0
+        ],
+        "min": 0.0,
+        "max": 0.3141592653589793,
+        "note": "brake pedal pedal travel"
+      },
+      "bounds_local": {
+        "min": [
+          -0.116,
+          -0.03,
+          -0.0036
+        ],
+        "max": [
+          0.0172,
+          0.03,
+          0.1501
+        ]
+      }
+    },
+    {
+      "name": "pedal_throttle",
+      "parent": "runabout_t",
+      "pivot": [
+        0.28,
+        0.19,
+        0.64
+      ],
+      "joint": {
+        "type": "revolute",
+        "axis": [
+          0.0,
+          1.0,
+          0.0
+        ],
+        "min": 0.0,
+        "max": 0.3141592653589793,
+        "note": "throttle pedal pedal travel"
+      },
+      "bounds_local": {
+        "min": [
+          -0.086,
+          -0.03,
+          -0.0036
+        ],
+        "max": [
+          0.0172,
+          0.03,
+          0.1301
+        ]
+      }
+    },
+    {
+      "name": "lever_gear_fa",
+      "parent": "runabout_t",
+      "pivot": [
+        0.05,
+        0.0,
+        0.62
+      ],
+      "joint": {
+        "type": "revolute",
+        "axis": [
+          0.0,
+          1.0,
+          0.0
+        ],
+        "min": -0.1832595714594046,
+        "max": 0.1832595714594046,
+        "note": "gear lever fore/aft, + = top forward"
+      }
+    },
+    {
+      "name": "lever_gear",
+      "parent": "lever_gear_fa",
+      "pivot": [
+        0.05,
+        0.0,
+        0.62
+      ],
+      "joint": {
+        "type": "revolute",
+        "axis": [
+          -1.0,
+          0.0,
+          0.0
+        ],
+        "min": -0.1832595714594046,
+        "max": 0.1832595714594046,
+        "note": "gear lever across the gate, + = top left"
+      },
+      "bounds_local": {
+        "min": [
+          -0.022,
+          -0.0217,
+          0.0
+        ],
+        "max": [
+          0.022,
+          0.0217,
+          0.5341
+        ]
+      }
+    },
+    {
+      "name": "lever_handbrake",
+      "parent": "runabout_t",
+      "pivot": [
+        -0.1,
+        0.54,
+        0.62
+      ],
+      "joint": {
+        "type": "revolute",
+        "axis": [
+          0.0,
+          1.0,
+          0.0
+        ],
+        "min": 0.0,
+        "max": 0.3490658503988659,
+        "note": "handbrake lever, + = pulled/on"
+      },
+      "bounds_local": {
+        "min": [
+          -0.0079,
+          -0.016,
+          -0.001
+        ],
+        "max": [
+          0.0764,
+          0.016,
+          0.486
+        ]
+      }
+    }
+  ],
+  "sockets": [
+    {
+      "name": "socket_driver_eye",
+      "parent": "runabout_t",
+      "position": [
+        -0.4,
+        0.3,
+        1.6
+      ],
+      "note": "driver eye point (camera)"
+    },
+    {
+      "name": "socket_engine_mount",
+      "parent": "runabout_t",
+      "position": [
+        0.62,
+        0.0,
+        0.66
+      ],
+      "note": "engine origin (crank axis centre at the flywheel face), front longitudinal, crank along -x"
+    },
+    {
+      "name": "socket_tow_front",
+      "parent": "runabout_t",
+      "position": [
+        1.37,
+        0.0,
+        0.47
+      ],
+      "note": "front towing point (front cross member)"
+    },
+    {
+      "name": "socket_tow_rear",
+      "parent": "runabout_t",
+      "position": [
+        -1.43,
+        0.0,
+        0.53
+      ],
+      "note": "rear towing point (rear cross member)"
+    },
+    {
+      "name": "socket_exhaust",
+      "parent": "runabout_t",
+      "position": [
+        -1.57,
+        -0.3,
+        0.42
+      ],
+      "note": "exhaust outlet, flow along -x"
+    }
+  ],
+  "lights": {
+    "head": {
+      "materials": [
+        "light_head",
+        "light_drl"
+      ],
+      "emissive_on": [
+        1.0,
+        0.95,
+        0.85
+      ],
+      "emissive_strength_on": 8.0
+    },
+    "tail": {
+      "materials": [
+        "light_tail"
+      ],
+      "emissive_on": [
+        1.0,
+        0.03,
+        0.02
+      ],
+      "emissive_strength_on": 2.0
+    },
+    "brake": {
+      "materials": [
+        "light_brake"
+      ],
+      "emissive_on": [
+        1.0,
+        0.02,
+        0.01
+      ],
+      "emissive_strength_on": 8.0
+    },
+    "dash": {
+      "materials": [
+        "gauge_tick",
+        "gauge_needle"
+      ],
+      "emissive_on": [
+        0.9,
+        0.9,
+        0.9
+      ],
+      "emissive_strength_on": 1.0
+    }
+  },
+  "engine_bay": {
+    "envelope_mm": [
+      700,
+      600,
+      700
+    ],
+    "box_m": {
+      "min": [
+        0.55,
+        -0.3,
+        0.58
+      ],
+      "max": [
+        1.25,
+        0.3,
+        1.28
+      ]
+    },
+    "origin": "socket_engine_mount",
+    "layout": "front longitudinal",
+    "note": "under the bonnet between the dash (x 0.55) and the radiator (x 1.25), above the frame rails"
+  },
+  "notes": [
+    "Generic 1910s-20s open tourer; class-typical dimensions, not a specific production car.",
+    "The fabric top is node 'top' (extras option 'roof', default_hidden): a garage upgrade, open car by default.",
+    "Bonnet halves hood_L/hood_R fold up about the centre hinge; the upper windscreen pane tilts.",
+    "Paint material 'paint' (black enamel). Cockpit parts are driven by runabout_t.cockpit.json (rg.cockpit/1)."
+  ]
+}

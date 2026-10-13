@@ -1,0 +1,494 @@
+{
+  "format": "rg.cockpit/1",
+  "model": "runabout_t.glb",
+  "frame": "ISO 8855 model frame (x forward, y left, z up), rest pose; hit centres relative to the node pivot, axes as at rest, moved with the node at runtime",
+  "steering": {
+    "lock_to_lock_turns": 1.25,
+    "road_wheel_lock_deg": 38.0
+  },
+  "controls": [
+    {
+      "node": "needle_speed",
+      "kind": "needle",
+      "label": "speedometer",
+      "source": "speed_kmh",
+      "map": {
+        "in": [
+          0.0,
+          80.0
+        ],
+        "out_deg": [
+          0.0,
+          300.0
+        ]
+      },
+      "joint": "revolute"
+    },
+    {
+      "node": "needle_amps",
+      "kind": "needle",
+      "label": "ammeter",
+      "source": "battery_v",
+      "map": {
+        "in": [
+          10.0,
+          15.0
+        ],
+        "out_deg": [
+          0.0,
+          90.0
+        ]
+      },
+      "joint": "revolute"
+    },
+    {
+      "node": "knob_key",
+      "kind": "knob",
+      "label": "key switch (off / battery / magneto)",
+      "source": "control:ignition",
+      "map": {
+        "detents": [
+          0,
+          1,
+          2
+        ],
+        "out_deg": [
+          0.0,
+          60.0
+        ]
+      },
+      "joint": "revolute",
+      "hit": {
+        "center": [
+          -0.01,
+          0.0,
+          0.0
+        ],
+        "half_extents": [
+          0.016,
+          0.016,
+          0.014
+        ]
+      },
+      "action": {
+        "type": "step",
+        "channel": "ignition",
+        "values": [
+          0,
+          1,
+          2
+        ]
+      }
+    },
+    {
+      "node": "slider_choke",
+      "kind": "slider",
+      "label": "choke pull",
+      "source": "cosmetic:choke",
+      "map": {
+        "positions": [
+          0,
+          1
+        ],
+        "travel_m": 0.05
+      },
+      "joint": "prismatic",
+      "hit": {
+        "center": [
+          -0.022,
+          0.0,
+          0.0
+        ],
+        "half_extents": [
+          0.015,
+          0.015,
+          0.015
+        ]
+      },
+      "action": {
+        "type": "step",
+        "channel": "choke",
+        "values": [
+          0,
+          1
+        ]
+      }
+    },
+    {
+      "node": "btn_horn",
+      "kind": "button",
+      "label": "horn bulb",
+      "source": "cosmetic:horn",
+      "map": {
+        "pressed_m": 0.015
+      },
+      "joint": "prismatic",
+      "hit": {
+        "center": [
+          -0.0132,
+          -0.0105,
+          0.0184
+        ],
+        "half_extents": [
+          0.035,
+          0.035,
+          0.029
+        ]
+      },
+      "action": {
+        "type": "press",
+        "channel": "horn"
+      }
+    },
+    {
+      "node": "steering_wheel",
+      "kind": "steering_wheel",
+      "label": "steering wheel",
+      "source": "wheel_steer_angle",
+      "map": {
+        "ratio": "lock_to_lock",
+        "lock_to_lock_turns": 1.25,
+        "road_wheel_lock_deg": 38.0
+      },
+      "joint": "revolute",
+      "hit": {
+        "center": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "half_extents": [
+          0.06,
+          0.216,
+          0.216
+        ]
+      },
+      "action": {
+        "type": "rotate",
+        "channel": "steer",
+        "range": [
+          -1.0,
+          1.0
+        ],
+        "turns_full_range": 1.25
+      }
+    },
+    {
+      "node": "lever_spark",
+      "kind": "lever",
+      "label": "spark advance lever",
+      "source": "cosmetic:spark",
+      "map": {
+        "in": [
+          0.0,
+          1.0
+        ],
+        "out_deg": [
+          0.0,
+          50.0
+        ]
+      },
+      "joint": "revolute",
+      "hit": {
+        "center": [
+          0.0,
+          0.145,
+          0.0
+        ],
+        "half_extents": [
+          0.04,
+          0.04,
+          0.04
+        ]
+      },
+      "action": {
+        "type": "drag",
+        "channel": "spark",
+        "range": [
+          0.0,
+          1.0
+        ],
+        "drag_m": 0.12
+      }
+    },
+    {
+      "node": "lever_hand_throttle",
+      "kind": "lever",
+      "label": "hand throttle lever",
+      "source": "control:hand_throttle",
+      "map": {
+        "in": [
+          0.0,
+          1.0
+        ],
+        "out_deg": [
+          0.0,
+          50.0
+        ]
+      },
+      "joint": "revolute",
+      "hit": {
+        "center": [
+          0.0,
+          -0.145,
+          0.0
+        ],
+        "half_extents": [
+          0.04,
+          0.04,
+          0.04
+        ]
+      },
+      "action": {
+        "type": "drag",
+        "channel": "hand_throttle",
+        "range": [
+          0.0,
+          1.0
+        ],
+        "drag_m": 0.12
+      }
+    },
+    {
+      "node": "pedal_clutch",
+      "kind": "pedal",
+      "label": "clutch pedal",
+      "source": "control:clutch",
+      "map": {
+        "in": [
+          0.0,
+          1.0
+        ],
+        "out_deg": [
+          0.0,
+          18.0
+        ]
+      },
+      "joint": "revolute",
+      "hit": {
+        "center": [
+          -0.08,
+          0.0,
+          0.13
+        ],
+        "half_extents": [
+          0.04,
+          0.04,
+          0.04
+        ]
+      },
+      "action": {
+        "type": "drag",
+        "channel": "clutch",
+        "range": [
+          0.0,
+          1.0
+        ],
+        "drag_m": 0.1,
+        "release_to": 0.0
+      }
+    },
+    {
+      "node": "pedal_brake",
+      "kind": "pedal",
+      "label": "brake pedal",
+      "source": "control:brake",
+      "map": {
+        "in": [
+          0.0,
+          1.0
+        ],
+        "out_deg": [
+          0.0,
+          18.0
+        ]
+      },
+      "joint": "revolute",
+      "hit": {
+        "center": [
+          -0.09,
+          0.0,
+          0.13
+        ],
+        "half_extents": [
+          0.04,
+          0.04,
+          0.04
+        ]
+      },
+      "action": {
+        "type": "drag",
+        "channel": "brake",
+        "range": [
+          0.0,
+          1.0
+        ],
+        "drag_m": 0.1,
+        "release_to": 0.0
+      }
+    },
+    {
+      "node": "pedal_throttle",
+      "kind": "pedal",
+      "label": "throttle pedal",
+      "source": "control:throttle",
+      "map": {
+        "in": [
+          0.0,
+          1.0
+        ],
+        "out_deg": [
+          0.0,
+          18.0
+        ]
+      },
+      "joint": "revolute",
+      "hit": {
+        "center": [
+          -0.06,
+          0.0,
+          0.11
+        ],
+        "half_extents": [
+          0.04,
+          0.04,
+          0.04
+        ]
+      },
+      "action": {
+        "type": "drag",
+        "channel": "throttle",
+        "range": [
+          0.0,
+          1.0
+        ],
+        "drag_m": 0.1,
+        "release_to": 0.0
+      }
+    },
+    {
+      "node": "lever_gear_fa",
+      "kind": "lever_axis",
+      "label": "lever_gear_fa",
+      "source": "gear",
+      "map": {
+        "follows": "lever_gear"
+      },
+      "joint": "revolute"
+    },
+    {
+      "node": "lever_gear",
+      "kind": "gear_lever",
+      "label": "gear lever",
+      "source": "gear",
+      "map": {
+        "gate": {
+          "R": [
+            1,
+            1
+          ],
+          "1": [
+            1,
+            -1
+          ],
+          "N": [
+            0,
+            0
+          ],
+          "2": [
+            -1,
+            1
+          ],
+          "3": [
+            -1,
+            -1
+          ]
+        },
+        "deg_per_unit_side": 7.0,
+        "deg_per_unit_fore": 7.0,
+        "fa_node": "lever_gear_fa"
+      },
+      "joint": "revolute",
+      "hit": {
+        "center": [
+          0.0,
+          0.0,
+          0.5132
+        ],
+        "half_extents": [
+          0.04,
+          0.04,
+          0.04
+        ]
+      },
+      "action": {
+        "type": "gear",
+        "gate": {
+          "R": [
+            1,
+            1
+          ],
+          "1": [
+            1,
+            -1
+          ],
+          "N": [
+            0,
+            0
+          ],
+          "2": [
+            -1,
+            1
+          ],
+          "3": [
+            -1,
+            -1
+          ]
+        }
+      }
+    },
+    {
+      "node": "lever_handbrake",
+      "kind": "lever",
+      "label": "handbrake",
+      "source": "control:handbrake",
+      "map": {
+        "in": [
+          0.0,
+          1.0
+        ],
+        "out_deg": [
+          0.0,
+          20.0
+        ]
+      },
+      "joint": "revolute",
+      "hit": {
+        "center": [
+          0.0544,
+          0.0,
+          0.4353
+        ],
+        "half_extents": [
+          0.04,
+          0.04,
+          0.04
+        ]
+      },
+      "action": {
+        "type": "drag",
+        "channel": "handbrake",
+        "range": [
+          0.0,
+          1.0
+        ],
+        "drag_m": 0.12
+      }
+    }
+  ],
+  "screens": [],
+  "notes": [
+    "The hand throttle feeds the hand_throttle channel; the spark lever is cosmetic; pedals, gear lever and handbrake follow the applied controls; the speedometer reads km/h."
+  ],
+  "source_glb_sha256": "f4e8f4b5393155ecb3a534ff9fd722f5007d76681fdf83db9757d9f232f93216"
+}

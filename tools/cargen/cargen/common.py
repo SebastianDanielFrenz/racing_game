@@ -126,3 +126,53 @@ def top_z(body, x, y):
 def surface_path(body, xs, z_of_x, offset=0.0, side=1):
     """Points on the body side at heights z_of_x(x), pushed out by `offset` (for creases, trims)."""
     return [(x, side * (body.surface_y(x, z_of_x(x)) + offset), z_of_x(x)) for x in xs]
+
+
+def loft_path(mb, secs, mat, part=""):
+    """M.loft for sections along a bending path (a U-shaped wall or rim): the caps face along the
+    path's own end tangents, not along the start-to-end chord, which can be perpendicular to them."""
+    def cen(s):
+        return tuple(sum(p[k] for p in s) / len(s) for k in range(3))
+
+    def sub(a, b):
+        return tuple(a[k] - b[k] for k in range(3))
+
+    t0 = sub(cen(secs[1]), cen(secs[0]))
+    t1 = sub(cen(secs[-1]), cen(secs[-2]))
+    nw = M.newell(secs[0])
+    if sum(nw[k] * t0[k] for k in range(3)) > 0:
+        secs = [list(reversed(s)) for s in secs]
+    recs = mb.grid(secs, mat, part, closed_v=True)
+    recs += mb.polygon(secs[0], mat, part, want_normal=tuple(-c for c in t0))
+    recs += mb.polygon(secs[-1], mat, part, want_normal=t1)
+    mb.orient_outward(recs)
+    return recs
+
+
+def tube_path(mb, path, radius, mat, part="", count=8):
+    """M.tube with loft_path's caps (for rims and beads that bend through more than 90 deg)."""
+    import math
+
+    def nrm(v):
+        L = math.sqrt(sum(c * c for c in v)) or 1.0
+        return tuple(c / L for c in v)
+
+    def cross(a, b):
+        return (a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0])
+
+    n = len(path)
+    tans = []
+    for i in range(n):
+        a, b = path[max(0, i - 1)], path[min(n - 1, i + 1)]
+        tans.append(nrm(tuple(b[k] - a[k] for k in range(3))))
+    ref = (0.0, 0.0, 1.0) if abs(tans[0][2]) < 0.9 else (1.0, 0.0, 0.0)
+    ex = nrm(cross(ref, tans[0]))
+    secs = []
+    for p, t in zip(path, tans):
+        d = sum(ex[k] * t[k] for k in range(3))
+        ex = nrm(tuple(ex[k] - t[k] * d for k in range(3)))
+        ey = cross(t, ex)
+        secs.append([tuple(p[k] + radius * (ex[k] * math.cos(2 * math.pi * j / count) +
+                                            ey[k] * math.sin(2 * math.pi * j / count)) for k in range(3))
+                     for j in range(count)])
+    return loft_path(mb, secs, mat, part)
