@@ -23,6 +23,7 @@
 
 #include <array>
 #include <cstddef>
+#include <functional>
 #include <vector>
 
 namespace rg {
@@ -108,6 +109,39 @@ struct LodCoverage {
 // build_chunk emits) at the absolute UTM point (e_abs, n_abs). False if the
 // point is outside the chunk or touches a NoData vertex.
 [[nodiscard]] bool chunk_surface_height(const RenderChunk& chunk, double e_abs, double n_abs, double& z_out);
+
+// ---------------------------------------------------------------------------
+// Rendered ground vs the physics road bed
+// ---------------------------------------------------------------------------
+// Owner 2026-10-13 ("gray areas where the road should be ... it is possible to drive through the terrain"): the
+// rendered ground must not sit above the road bed physics drives on. `beds` are road centre-line points
+// {easting, northing, bed z} (absolute UTM, WorldTerrain::road_bed_points); for each one the HIGHEST rendered
+// chunk surface among chunks[0, count) is compared with the bed. Unlike a comparison against the L0 height tile
+// this also covers the coarse levels, whose tiles physics never loads.
+struct BedCheck {
+    int samples = 0;               // bed points covered by some rendered chunk
+    int above_tolerance = 0;       // of those, rendered more than `tolerance_m` above the bed
+    double above_max_m = -1000.0;  // the largest rendered - bed (-1000: nothing compared)
+    double above_p95_m = -1000.0;
+    int worst_level = -1;          // level of the chunk that is highest above the bed
+    ChunkCarve worst_carve = ChunkCarve::NotCarved;
+    double worst_e = 0.0, worst_n = 0.0; // where (absolute UTM)
+    std::array<double, kLodCoverageLevels> above_max_by_level{}; // per level of the highest chunk; -1000 = none
+    std::array<int, kLodCoverageLevels> samples_by_level{};
+};
+[[nodiscard]] BedCheck rendered_vs_bed(const std::vector<RenderChunk>& chunks, std::size_t count,
+                                       const std::vector<std::array<double, 3>>& beds, double tolerance_m = 0.25);
+
+// ---------------------------------------------------------------------------
+// Stale fallback chunks
+// ---------------------------------------------------------------------------
+// A chunk built while one of its height tiles was a Fallback (uncarved: the road surface was not available) keeps
+// showing ground above the road bed for as long as it stays resident - the streamer never rebuilds a key it already
+// holds. Indices of the chunks among chunks[0, count) that were built as Fallback although `state_now(key)` (the
+// worst carve state of the chunk's tiles NOW) is no longer Fallback: those must be rebuilt.
+[[nodiscard]] std::vector<std::size_t> stale_fallback_chunks(
+    const std::vector<RenderChunk>& chunks, std::size_t count,
+    const std::function<ChunkCarve(const g2m::mesh::ChunkKey&)>& state_now);
 
 // ---------------------------------------------------------------------------
 // Sample window

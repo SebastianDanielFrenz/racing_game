@@ -26,6 +26,7 @@
 #include "g2m/world/terrain_service.h"
 #include "g2m/world/tile_fetch.h"
 
+#include <array>
 #include <atomic>
 #include <cstdint>
 #include <functional>
@@ -39,6 +40,12 @@
 #include <vector>
 
 namespace rg {
+
+// The carve state of one height tile (a ChunkCarve value as uint8_t); `ctx` is the WorldTerrain.
+using TileCarveFn = std::uint8_t (*)(void* ctx, const g2m::TileKey&);
+
+// The worst carve state over the height tiles a chunk's halo window touches (what RenderChunk::carve is built from).
+ChunkCarve chunk_window_carve(const g2m::mesh::ChunkKey& key, void* ctx, TileCarveFn fn);
 
 // Testable seam, independent of the Server/TileStore stack entirely (PLAN.md
 // R2.1 acceptance: "build_static_view over a synthetic in-memory store" -
@@ -68,7 +75,7 @@ namespace rg {
 void build_static_view_from_lookup(double cam_x, double cam_y, const g2m::mesh::LodParams& params, double e0,
                                    double n0, g2m::mesh::TileLookup lookup, void* ctx, unsigned thread_count,
                                    std::vector<RenderChunk>& out, const g2m::world::ClassLookup& class_lookup = {},
-                                   const RoadSurfaceMap& surfaces = {});
+                                   const RoadSurfaceMap& surfaces = {}, TileCarveFn carve_state = nullptr);
 
 // The two halves build_static_view_from_lookup is made of (R2.2 R8 split
 // them out so rg::TerrainViewStreamer can select, diff by key, and then build
@@ -93,7 +100,7 @@ void select_view_keys(double cam_x, double cam_y, const g2m::mesh::LodParams& pa
 bool build_render_chunks(const std::vector<g2m::mesh::ChunkKey>& keys, g2m::mesh::TileLookup lookup, void* ctx,
                          double e0, double n0, unsigned thread_count, std::vector<RenderChunk>& out,
                          const std::atomic<bool>* cancel = nullptr, const g2m::world::ClassLookup& class_lookup = {},
-                         const RoadSurfaceMap& surfaces = {});
+                         const RoadSurfaceMap& surfaces = {}, TileCarveFn carve_state = nullptr);
 
 // Everything a chunk selection + build needs, bundled: the LOD params, the
 // session origin (e0, n0) and the tile lookup. `lookup(ctx, key)` must be
@@ -115,6 +122,9 @@ struct TerrainViewSource {
     // WorldConfig::PhysicsTerrainConfig::road_surfaces this WorldTerrain was
     // opened with.
     RoadSurfaceMap surfaces{};
+    // How a height tile was carved (a ChunkCarve value); null = every chunk reports NotCarved. A chunk's RenderChunk::carve
+    // is the worst state over the tiles its height window touches. WorldTerrain::view_source() populates it.
+    TileCarveFn carve_state = nullptr;
 };
 
 class WorldTerrain {
@@ -205,6 +215,18 @@ public:
     // ground within ~1 km matches the road bed instead of hiding it (owner 2026-10-13: "I drove through the
     // visible ground" - uncarved L1+ DEM sits above the carved road). Changing it only affects tiles produced
     // afterwards (call it right after open(), before any render chunk is built).
+    // How the height tile `key` was produced (see ChunkCarve): Carved with the road surface, Fallback (uncarved because
+    // the road surface could not be derived at that moment) or NotCarved (level above carve_max_level(), no road layer).
+    // A key never produced reads NotCarved. Thread-safe.
+    [[nodiscard]] ChunkCarve tile_carve(const g2m::TileKey& key) const;
+    // Height tiles currently in the Fallback state (produced uncarved, not yet healed).
+    [[nodiscard]] std::size_t fallback_tile_count() const;
+    // Re-derives every Fallback tile whose road surface is available now (blocking per tile, on the caller thread);
+    // returns how many became Carved. Call from a background thread.
+    std::size_t heal_fallback_tiles();
+    // Probe aid: the physics road bed (centre-line heights of the ground road segments) inside the UTM box
+    // [e0,e1]x[n0,n1], from the road surfaces already derived (never waits). {easting, northing, z}.
+    void road_bed_points(double e0, double e1, double n0, double n1, int stride, std::vector<std::array<double, 3>>& out);
     [[nodiscard]] int carve_max_level() const { return carve_max_level_; }
     void set_carve_max_level(int level) { carve_max_level_ = level < 0 ? 0 : (level > 2 ? 2 : level); }
 
@@ -309,6 +331,7 @@ private:
 
     std::mutex cache_mutex_;
     std::map<g2m::TileKey, std::shared_ptr<const g2m::HeightTile>> height_cache_;
+    std::vector<std::shared_ptr<const g2m::HeightTile>> retired_tiles_; // replaced by heal_fallback_tiles, kept alive (cache_mutex_)
     mutable std::mutex stats_mutex_;
     FetchStats stats_;
 
@@ -319,6 +342,9 @@ private:
     std::atomic<std::uint64_t> osm_cache_hits_{0};
     bool road_profiles_enabled_ = true;
     int carve_max_level_ = 2;
+    mutable std::mutex carve_mutex_;
+    std::map<g2m::TileKey, ChunkCarve> carve_; // per produced height tile
+    std::map<g2m::TileKey, std::shared_ptr<const g2m::HeightTile>> fallback_tiles_; // the uncarved tiles of the Fallback keys
     bool has_road_layer_ = false; // set once, at open(), from the manifest
     RoadSurfaceMap road_surfaces_; // from config.physics.road_surfaces (G2.5a-grip R-b)
     std::atomic<std::uint8_t> physics_priority_{static_cast<std::uint8_t>(g2m::world::Priority::Physics)};

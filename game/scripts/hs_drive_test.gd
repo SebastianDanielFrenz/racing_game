@@ -38,6 +38,18 @@ func _target(station: float) -> Vector3:
 			return Vector3(p.x, p.y, rad_to_deg((b - a).angle()))
 	return Vector3.ZERO
 
+func _densify(src: Array, step_m: float) -> Array:
+	var out: Array = []
+	for i in range(src.size() - 1):
+		var a := Vector2(src[i][0], src[i][1])
+		var b := Vector2(src[i + 1][0], src[i + 1][1])
+		var n := maxi(1, int(ceil(a.distance_to(b) / step_m)))
+		for k in range(n):
+			var p := a.lerp(b, float(k) / n)
+			out.append([p.x, p.y])
+	out.append(src[src.size() - 1])
+	return out
+
 func _percentile(values: Array, q: float) -> float:
 	if values.is_empty():
 		return 0.0
@@ -52,6 +64,12 @@ func _run() -> void:
 	var baseline := false
 	var carve := -1
 	var shot_dir := ""
+	var route_file := "res://../data/routes/home_r1_drive.json"
+	var view_name := ""
+	var hide_terrain := false
+	var hide_ribbons := false
+	var shot_t0 := 3.0
+	var shot_step := 6.0
 	for a in OS.get_cmdline_user_args():
 		if a.begins_with("--hs-speed="):
 			target_speed = float(a.get_slice("=", 1))
@@ -63,10 +81,23 @@ func _run() -> void:
 			shot_dir = a.get_slice("=", 1)
 		elif a.begins_with("--hs-carve="):
 			carve = int(a.get_slice("=", 1))
+		elif a.begins_with("--hs-route="):
+			route_file = a.get_slice("=", 1)
+		elif a.begins_with("--hs-view="):
+			view_name = a.get_slice("=", 1)
+		elif a.begins_with("--hs-shot-t0="):
+			shot_t0 = float(a.get_slice("=", 1))
+		elif a.begins_with("--hs-shot-step="):
+			shot_step = float(a.get_slice("=", 1))
+		elif a == "--hs-hide-terrain":
+			hide_terrain = true
+		elif a == "--hs-hide-ribbons":
+			hide_ribbons = true
 		elif a == "--hs-baseline":
 			baseline = true
-	var route = JSON.parse_string(FileAccess.get_file_as_string(ProjectSettings.globalize_path("res://../data/routes/home_r1_drive.json")))
+	var route = JSON.parse_string(FileAccess.get_file_as_string((route_file if route_file.is_absolute_path() else ProjectSettings.globalize_path(route_file))))
 	points = route["waypoints"]
+	points = _densify(points, 10.0) # sparse routes (1 s log samples) would leave the station search window empty
 	stations.append(0.0)
 	for i in range(1, points.size()):
 		stations.append(stations[-1] + Vector2(points[i][0] - points[i - 1][0], points[i][1] - points[i - 1][1]).length())
@@ -84,6 +115,9 @@ func _run() -> void:
 		view.set_upload_adaptive(false)
 	if carve >= 0:
 		view.set_carve_max_level(carve) # chunks built after this (the relocation's) use it
+	if view_name != "":
+		main.set_drive_view(view_name)
+	main.debug_hide(hide_terrain, hide_ribbons)
 	main.scripted_controls = {"throttle": 0.0, "brake": 1.0, "handbrake": 1.0, "steer": 0.0, "clutch": 0.0, "ignition": 1.0, "starter": 0.0, "assist.auto_shift": 1.0}
 	var before: int = sim.get_streaming_status().get("relocations", 0)
 	var target := _target(start_s)
@@ -107,6 +141,11 @@ func _run() -> void:
 	var l1: Array = []
 	var above: Array = []
 	var far_above: Array = []
+	var bed_above: Array = []
+	var bed_samples := 0
+	var bed_worst := -1000.0
+	var bed_worst_level := -1
+	var bed_worst_carve := 0
 	var speeds: Array = []
 	var frame_ms: Array = []
 	var next_sample := 0.0
@@ -142,7 +181,7 @@ func _run() -> void:
 		main.scripted_controls = {"throttle": clampf((target_speed - speed) * 0.15, 0.0, 1.0), "brake": clampf((speed - target_speed - 6.0) * 0.1, 0.0, 0.5),
 			"handbrake": 0.0, "steer": steer, "clutch": 0.0, "ignition": 1.0, "starter": 1.0 if sim.get_sim_time() - drive_start < 1 else 0.0, "assist.auto_shift": 1.0}
 		var t := float(Time.get_ticks_msec() - drive_wall) / 1000.0
-		if shot_dir != "" and shots_taken < 4 and t >= 3.0 + shots_taken * 6.0:
+		if shot_dir != "" and shots_taken < 6 and t >= shot_t0 + shots_taken * shot_step:
 			shots_taken += 1
 			var img: Image = root.get_viewport().get_texture().get_image()
 			img.save_png(shot_dir.path_join("hs_%d_%.0fmps.png" % [shots_taken, speed]))
@@ -161,13 +200,21 @@ func _run() -> void:
 					above.append(float(gc["visible_above_m"]))
 				if int(gc["far_samples"]) > 0:
 					far_above.append(float(gc["far_above_m"]))
+				var bc: Dictionary = view.get_bed_check(pose["x"], pose["y"], d.x, d.y, 600.0)
+				if int(bc["samples"]) > 0:
+					bed_above.append(float(bc["above_max_m"]))
+					bed_samples += int(bc["samples"])
+					if float(bc["above_max_m"]) > bed_worst:
+						bed_worst = float(bc["above_max_m"])
+						bed_worst_level = int(bc["worst_level"])
+						bed_worst_carve = int(bc["worst_carve"])
 	var ss: Dictionary = sim.get_streaming_status()
 	var gc_final: Dictionary = view.get_ground_check(0.0, 0.0, 1.0, 0.0)
 	var rs: Dictionary = view.take_report_stats()
-	print("RG_HS_DONE mode=%s station=%.0f->%.0f max_speed_mps=%.1f max_lateral_m=%.1f l0_ahead_p5_m=%.0f l0_ahead_min_m=%.0f l0_ahead_p50_m=%.0f l1_ahead_p5_m=%.0f l1_ahead_min_m=%.0f ground_above_max_m=%.3f ground_above_p95_m=%.3f ground_above_p50_m=%.3f ground_samples=%d far_above_max_m=%.3f far_above_p95_m=%.3f far_above_p50_m=%.3f far_samples=%d frame_ms_avg=%.2f frame_ms_p99=%.2f falls=%d misses=%d" % [
+	print("RG_HS_DONE mode=%s station=%.0f->%.0f max_speed_mps=%.1f max_lateral_m=%.1f l0_ahead_p5_m=%.0f l0_ahead_min_m=%.0f l0_ahead_p50_m=%.0f l1_ahead_p5_m=%.0f l1_ahead_min_m=%.0f ground_above_max_m=%.3f ground_above_p95_m=%.3f ground_above_p50_m=%.3f ground_samples=%d far_above_max_m=%.3f far_above_p95_m=%.3f far_above_p50_m=%.3f far_samples=%d frame_ms_avg=%.2f frame_ms_p99=%.2f falls=%d misses=%d bed_above_max_m=%.3f bed_above_p95_m=%.3f bed_above_p50_m=%.3f bed_probes=%d bed_worst_level=%d bed_worst_carve=%d fallback_chunks_end=%d fallback_tiles_end=%d" % [
 		"baseline" if baseline else "fix", start_s, station, max_speed, max_lateral, _percentile(l0, 0.05), _percentile(l0, 0.0), _percentile(l0, 0.5),
 		_percentile(l1, 0.05), _percentile(l1, 0.0), _percentile(above, 1.0), _percentile(above, 0.95), _percentile(above, 0.5), above.size(), _percentile(far_above, 1.0), _percentile(far_above, 0.95), _percentile(far_above, 0.5), far_above.size(),
-		_avg(frame_ms), _percentile(frame_ms, 0.99), int(ss.get("falls", 0)), int(ss.get("fill_misses", 0))])
+		_avg(frame_ms), _percentile(frame_ms, 0.99), int(ss.get("falls", 0)), int(ss.get("fill_misses", 0)), bed_worst, _percentile(bed_above, 0.95), _percentile(bed_above, 0.5), bed_above.size(), bed_worst_level, bed_worst_carve, int(view.get_stream_stats().get("fallback_chunks", 0)), int(view.get_stream_stats().get("fallback_tiles", 0))])
 	main.scripted_controls = {"throttle": 0.0, "brake": 1.0, "handbrake": 1.0, "steer": 0.0}
 	quit(0)
 

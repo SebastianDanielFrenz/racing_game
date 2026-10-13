@@ -11,6 +11,11 @@
 
 namespace rg {
 
+// How the height tile(s) a chunk was built from were carved with the road surface (WorldTerrain::TileCarve, the
+// same numbers). A chunk built from a fallback tile (Fallback) shows ground that sits ABOVE the carved road bed;
+// it is rebuilt once the tile is carved (rg::stale_fallback_chunks).
+enum class ChunkCarve : std::uint8_t { NotCarved = 0, Carved = 1, Fallback = 2 };
+
 // One chunk ready to upload. `mesh` is geo2map_engine's own built chunk
 // (positions/normals/land_class/indices, Z-up, x east / y north, local to
 // mesh.origin - an ABSOLUTE UTM point). `origin_session = mesh.origin -
@@ -36,6 +41,9 @@ namespace rg {
 // has to know that TerrainChunkMesh happens to carry one too.
 struct RenderChunk {
     g2m::mesh::ChunkKey key{};
+    // The WORST carve state of the chunk's height window (any Fallback tile = Fallback). NotCarved for levels above
+    // WorldTerrain::carve_max_level() and for worlds without a road layer.
+    ChunkCarve carve = ChunkCarve::NotCarved;
     g2m::mesh::TerrainChunkMesh mesh;
     double origin_session[3] = {0.0, 0.0, 0.0};
     std::vector<std::uint32_t> rgba;

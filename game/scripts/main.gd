@@ -957,20 +957,31 @@ func _report_streams() -> void:
 	var st: Dictionary = _world_view.get_stream_stats()
 	var rs: Dictionary = _world_view.take_report_stats()
 	var gc: Dictionary = _world_view.get_ground_check(px, py, dir.x, dir.y)
+	var bed: Dictionary = _world_view.get_bed_check(px, py, dir.x, dir.y, 600.0)
 	var lead_m: float = _director.render_focus_lead_m() if _director != null else 0.0
-	print("RG_TERRAIN_STREAM speed_mps=%.1f l0_ahead_m=%.0f l1_ahead_m=%.0f l2_ahead_m=%.0f pending_adds=%d pending_removals=%d adds_s=%d upload_ms_avg=%.2f upload_ms_max=%.2f chunk_lat_p95_ms=%.0f budget_ms=%.2f lead_m=%.0f ground_above_m=%.3f max_ground_above_m=%.3f ground_level=%d far_ground_above_m=%.3f fps=%d resident=%d" % [
+	print("RG_TERRAIN_STREAM speed_mps=%.1f l0_ahead_m=%.0f l1_ahead_m=%.0f l2_ahead_m=%.0f pending_adds=%d pending_removals=%d adds_s=%d upload_ms_avg=%.2f upload_ms_max=%.2f chunk_lat_p95_ms=%.0f budget_ms=%.2f lead_m=%.0f ground_above_m=%.3f max_ground_above_m=%.3f ground_level=%d far_ground_above_m=%.3f fps=%d resident=%d fallback_chunks=%d fallback_tiles=%d bed_above_max_m=%.3f bed_above_p95_m=%.3f bed_samples=%d bed_worst_level=%d bed_worst_carve=%d" % [
 		speed, float(cov.get("l0_ahead_m", 0.0)), float(cov.get("l1_ahead_m", 0.0)), float(cov.get("l2_ahead_m", 0.0)),
 		int(st.get("pending_adds", 0)), int(st.get("pending_removals", 0)), int(rs.get("chunks_uploaded", 0)),
 		float(rs.get("upload_ms_avg", 0.0)), float(rs.get("upload_ms_max", 0.0)), float(rs.get("chunk_latency_p95_ms", 0.0)),
 		float(rs.get("budget_ms_avg", 0.0)), lead_m, float(gc.get("visible_above_m", -1000.0)),
 		float(gc.get("max_since_reset_m", -1000.0)), int(gc.get("visible_level", -1)), float(gc.get("far_above_m", -1000.0)),
 		int(Engine.get_frames_per_second()),
-		int(st.get("resident_chunks", 0))])
+		int(st.get("resident_chunks", 0)), int(st.get("fallback_chunks", 0)), int(st.get("fallback_tiles", 0)),
+		float(bed.get("above_max_m", -1000.0)), float(bed.get("above_p95_m", -1000.0)), int(bed.get("samples", 0)),
+		int(bed.get("worst_level", -1)), int(bed.get("worst_carve", 0))])
 	if _roads != null and _roads.has_method("get_stats"):
 		var rd: Dictionary = _roads.get_stats(Vector2(px, py), dir)
 		print("RG_ROAD_STREAM pending=%d oldest_age_s=%.1f ribbon_ahead_m=%.0f tiles=%d built_total=%d" % [
 			int(rd.get("pending", 0)), float(rd.get("oldest_age_s", 0.0)), float(rd.get("ribbon_ahead_m", 0.0)),
 			int(rd.get("tiles", 0)), int(rd.get("built_total", 0))])
+
+# Debug aid (gray-patch diagnosis 2026-10-13): hide the terrain chunks and/or the road ribbons to see
+# which one covers what. Tint chunks by level / carve state with env RG_TERRAIN_TINT=level|carve|both.
+func debug_hide(terrain: bool, ribbons: bool) -> void:
+	if _world_view != null:
+		_world_view.set_terrain_visible(not terrain)
+	if _roads != null:
+		_roads.visible = not ribbons
 
 # Tick-spike diagnostics (owner drive 2026-09-27, ~170 ms sim stalls): the
 # sim thread's slow or late tick attempts, per phase (rg::Session's

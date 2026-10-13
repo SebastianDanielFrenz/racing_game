@@ -2,7 +2,9 @@
 #include "g2m/layer/road_geom_tile.h"
 #include "rg/road_structures.h"
 #include "g2m/layer/height_tile.h"
+#include <array>
 #include <map>
+#include <vector>
 #include <utility>
 namespace rg {
 // Immutable one-metre sampling of accepted ground-road profiles. This is
@@ -12,6 +14,9 @@ class RoadSurfacePatch {
 public:
     explicit RoadSurfacePatch(const g2m::RoadGeomTile& geometry,double verge_drop_m=0.0);
     std::size_t apply(g2m::HeightTile& tile) const;
+    // Debug/probe aid: every `stride`-th ground (non-tunnel) road segment start as {easting, northing, bed height}
+    // (absolute UTM) appended to `out` - the physics road bed at the road centre line.
+    void bed_points(std::vector<std::array<double, 3>>& out, int stride) const;
     std::vector<std::shared_ptr<const RoadDeck>> decks;
     std::size_t accepted = 0, declined = 0, separated = 0;
 private:

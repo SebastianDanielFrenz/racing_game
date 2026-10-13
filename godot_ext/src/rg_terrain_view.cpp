@@ -23,6 +23,7 @@
 #include <algorithm>
 #include <chrono>
 #include <cmath>
+#include <cstdlib>
 #include <string>
 
 using godot::D_METHOD;
@@ -69,6 +70,7 @@ void RgTerrainView::reset_chunks() {
 }
 
 void RgTerrainView::teardown_terrain() {
+    if (heal_future_.valid()) heal_future_.wait(); // the re-carve thread reads terrain_
     streamer_.reset(); // before terrain_: its TerrainViewSource points into it
     reset_chunks();
     terrain_.reset();
@@ -331,6 +333,54 @@ godot::Dictionary RgTerrainView::get_ground_check(double px, double py, double d
     return d;
 }
 
+godot::Dictionary RgTerrainView::get_bed_check(double px, double py, double dx, double dy, double ahead_m) {
+    godot::Dictionary d;
+    d["samples"] = static_cast<std::int64_t>(0);
+    d["above_max_m"] = -1000.0;
+    d["above_p95_m"] = -1000.0;
+    d["above_tolerance"] = static_cast<std::int64_t>(0);
+    d["worst_level"] = static_cast<std::int64_t>(-1);
+    d["worst_carve"] = static_cast<std::int64_t>(0);
+    if (!terrain_) return d;
+    const double e0 = static_cast<double>(terrain_->frame().e0_m());
+    const double n0 = static_cast<double>(terrain_->frame().n0_m());
+    const double len = std::hypot(dx, dy);
+    const double ux = len > 1e-9 ? dx / len : 0.0;
+    const double uy = len > 1e-9 ? dy / len : 0.0;
+    const double r = std::max(ahead_m, 150.0);
+    std::vector<std::array<double, 3>> all;
+    terrain_->road_bed_points(px + e0 - r, px + e0 + r, py + n0 - r, py + n0 + r, 6, all);
+    std::vector<std::array<double, 3>> beds;
+    beds.reserve(all.size());
+    for (const auto& p : all) {
+        const double along = (p[0] - e0 - px) * ux + (p[1] - n0 - py) * uy;
+        if (along >= -100.0 && along <= ahead_m) beds.push_back(p);
+    }
+    const rg::BedCheck c = rg::rendered_vs_bed(chunks_, next_upload_index_, beds);
+    d["samples"] = static_cast<std::int64_t>(c.samples);
+    d["above_max_m"] = c.above_max_m;
+    d["above_p95_m"] = c.above_p95_m;
+    d["above_tolerance"] = static_cast<std::int64_t>(c.above_tolerance);
+    d["worst_level"] = static_cast<std::int64_t>(c.worst_level);
+    d["worst_carve"] = static_cast<std::int64_t>(c.worst_carve);
+    d["worst_x"] = c.worst_e - e0;
+    d["worst_y"] = c.worst_n - n0;
+    for (int k = 0; k < 4; ++k) {
+        d[godot::String("l") + godot::String::num_int64(k) + "_above_max_m"] = c.above_max_by_level[static_cast<std::size_t>(k)];
+        d[godot::String("l") + godot::String::num_int64(k) + "_samples"] = static_cast<std::int64_t>(c.samples_by_level[static_cast<std::size_t>(k)]);
+    }
+    return d;
+}
+
+void RgTerrainView::set_terrain_visible(bool visible) {
+    terrain_visible_ = visible;
+    godot::RenderingServer* rs = godot::RenderingServer::get_singleton();
+    if (rs == nullptr) return;
+    for (const godot::RID& rid : instance_rids_) {
+        if (rid.is_valid()) rs->instance_set_visible(rid, visible);
+    }
+}
+
 godot::Dictionary RgTerrainView::take_report_stats() {
     godot::Dictionary d;
     d["upload_ms_avg"] = upload_ms_window_.mean();
@@ -372,6 +422,16 @@ godot::Dictionary RgTerrainView::get_stream_stats() const {
     d["diffs_applied"] = diffs_applied_;
     d["diff_errors"] = diff_errors_;
     d["resident_chunks"] = static_cast<std::int64_t>(chunks_.size());
+    {
+        std::int64_t fallback_chunks = 0;
+        for (std::size_t i = 0; i < next_upload_index_ && i < chunks_.size(); ++i) {
+            if (chunks_[i].carve == rg::ChunkCarve::Fallback) ++fallback_chunks;
+        }
+        d["fallback_chunks"] = fallback_chunks;
+        d["healed_tiles_total"] = healed_tiles_total_;
+        d["rebuilt_chunks_total"] = rebuilt_chunks_total_;
+        d["fallback_tiles"] = terrain_ ? static_cast<std::int64_t>(terrain_->fallback_tile_count()) : 0;
+    }
     d["upload_budget_ms"] = current_budget_ms_;
     d["focus_speed_mps"] = std::hypot(focus_vx_, focus_vy_);
     if (streamer_ != nullptr) {
@@ -477,6 +537,7 @@ void RgTerrainView::upload_one_chunk(const rg::RenderChunk& chunk) {
 
     const godot::RID scenario = get_world_3d().is_valid() ? get_world_3d()->get_scenario() : godot::RID();
     const godot::RID instance_rid = rs->instance_create2(mesh_rid, scenario);
+    if (!terrain_visible_) rs->instance_set_visible(instance_rid, false);
     rs->instance_set_transform(instance_rid, chunk_instance_transform(chunk));
 
     mesh_rids_.push_back(mesh_rid);
@@ -520,6 +581,66 @@ void RgTerrainView::free_all_uploaded() {
     deck_instances_.clear();
     instance_rids_.clear();
     mesh_rids_.clear();
+}
+
+namespace {
+std::uint8_t carve_of_tile(void* ctx, const g2m::TileKey& key) {
+    return static_cast<std::uint8_t>(static_cast<rg::WorldTerrain*>(ctx)->tile_carve(key));
+}
+} // namespace
+
+// Replaces the uploaded chunk at `index` by `fresh` (same key) without a hole: the new mesh is uploaded first, then the
+// old RIDs are freed. mesh_rids_/instance_rids_/chunks_ stay index-aligned; next_upload_index_ and index_of_ are unchanged.
+void RgTerrainView::replace_chunk_at(std::size_t index, rg::RenderChunk&& fresh) {
+    godot::RenderingServer* rs = godot::RenderingServer::get_singleton();
+    upload_one_chunk(fresh); // appends one RID pair at the back
+    if (instance_rids_[index].is_valid()) rs->free_rid(instance_rids_[index]);
+    if (mesh_rids_[index].is_valid()) rs->free_rid(mesh_rids_[index]);
+    mesh_rids_[index] = mesh_rids_.back();
+    instance_rids_[index] = instance_rids_.back();
+    mesh_rids_.pop_back();
+    instance_rids_.pop_back();
+    chunks_[index] = std::move(fresh);
+}
+
+// Gray-patch fix (2026-10-13): a coarse (L1/L2) chunk built while the road surface was missing is an uncarved Fallback
+// chunk - ground above the physics road bed, hiding the ribbons - and the streamer never rebuilds a key it already
+// holds. Every 2 s, while the terrain reports Fallback tiles, they are re-carved on a background thread
+// (WorldTerrain::heal_fallback_tiles); the resident chunks built from them (stale_fallback_chunks) are then rebuilt, at
+// most 2 per frame, and swapped in place. A deterministic failure stays a Fallback and is retried only every 2 s.
+void RgTerrainView::heal_tick() {
+    if (!terrain_) return;
+    static const bool no_heal = std::getenv("RG_TERRAIN_NO_HEAL") != nullptr; // A/B aid for the gray-patch diagnosis
+    if (no_heal) return;
+    if (heal_future_.valid()) {
+        if (heal_future_.wait_for(std::chrono::seconds(0)) == std::future_status::ready) healed_tiles_total_ += static_cast<std::int64_t>(heal_future_.get());
+    } else {
+        const double now_s = static_cast<double>(std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now().time_since_epoch()).count()) / 1000.0;
+        if (now_s >= heal_next_check_s_ && terrain_->fallback_tile_count() > 0) {
+            heal_next_check_s_ = now_s + 2.0;
+            rg::WorldTerrain* wt = terrain_.get();
+            heal_future_ = std::async(std::launch::async, [wt]() { return wt->heal_fallback_tiles(); });
+        }
+    }
+    rg::WorldTerrain* wt = terrain_.get();
+    const auto stale = rg::stale_fallback_chunks(chunks_, next_upload_index_, [wt](const g2m::mesh::ChunkKey& key) {
+        return rg::chunk_window_carve(key, wt, &carve_of_tile);
+    });
+    if (stale.empty()) return;
+    const rg::TerrainViewSource source = terrain_->view_source();
+    std::size_t done = 0;
+    for (const std::size_t index : stale) {
+        if (done >= 2) break;
+        std::vector<g2m::mesh::ChunkKey> keys{chunks_[index].key};
+        std::vector<rg::RenderChunk> built;
+        if (!rg::build_render_chunks(keys, source.lookup, source.ctx, source.e0, source.n0, 1, built, nullptr, source.class_lookup,
+                                     source.surfaces, source.carve_state) || built.size() != 1) {
+            continue;
+        }
+        replace_chunk_at(index, std::move(built[0]));
+        ++rebuilt_chunks_total_;
+        ++done;
+    }
 }
 
 void RgTerrainView::remove_chunk_at(std::size_t index) {
@@ -639,6 +760,7 @@ void RgTerrainView::apply_diff(std::chrono::steady_clock::time_point frame_start
 
 void RgTerrainView::_process(double /*delta*/) {
     sync_road_decks();
+    heal_tick();
     const auto frame_start = std::chrono::steady_clock::now();
     apply_diff(frame_start);
     upload_ms_this_frame_ =
@@ -681,6 +803,9 @@ void RgTerrainView::_bind_methods() {
     godot::ClassDB::bind_method(D_METHOD("get_carve_max_level"), &RgTerrainView::get_carve_max_level);
     godot::ClassDB::bind_method(D_METHOD("get_lod_coverage", "px", "py", "dx", "dy"), &RgTerrainView::get_lod_coverage);
     godot::ClassDB::bind_method(D_METHOD("get_ground_check", "px", "py", "dx", "dy"), &RgTerrainView::get_ground_check);
+    godot::ClassDB::bind_method(D_METHOD("get_bed_check", "px", "py", "dx", "dy", "ahead_m"), &RgTerrainView::get_bed_check);
+    godot::ClassDB::bind_method(D_METHOD("set_terrain_visible", "visible"), &RgTerrainView::set_terrain_visible);
+    godot::ClassDB::bind_method(D_METHOD("get_terrain_visible"), &RgTerrainView::get_terrain_visible);
     godot::ClassDB::bind_method(D_METHOD("take_report_stats"), &RgTerrainView::take_report_stats);
     godot::ClassDB::bind_method(D_METHOD("godot_to_session", "godot_pos"), &RgTerrainView::godot_to_session);
     godot::ClassDB::bind_method(D_METHOD("is_stream_idle"), &RgTerrainView::is_stream_idle);

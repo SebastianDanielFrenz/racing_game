@@ -62,6 +62,14 @@ RoadSurfacePatch::RoadSurfacePatch(const g2m::RoadGeomTile& geometry,double verg
         }
     }
 }
+void RoadSurfacePatch::bed_points(std::vector<std::array<double, 3>>& out, int stride) const {
+    const std::size_t step = static_cast<std::size_t>(stride < 1 ? 1 : stride);
+    for (std::size_t i = 0; i < segments_.size(); i += step) {
+        const Segment& s = segments_[i];
+        if (s.tunnel) continue;
+        out.push_back({s.x0, s.y0, s.z0});
+    }
+}
 std::size_t RoadSurfacePatch::apply(g2m::HeightTile& tile) const {
     std::size_t changed=0;
     const double spacing=std::ldexp(1.0,tile.key.level);

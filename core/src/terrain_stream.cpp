@@ -203,6 +203,56 @@ bool chunk_surface_height(const RenderChunk& chunk, double e_abs, double n_abs, 
     return true;
 }
 
+BedCheck rendered_vs_bed(const std::vector<RenderChunk>& chunks, std::size_t count,
+                       const std::vector<std::array<double, 3>>& beds, double tolerance_m) {
+    BedCheck r;
+    r.above_max_by_level.fill(-1000.0);
+    std::vector<double> above;
+    above.reserve(beds.size());
+    const std::size_t n = std::min(count, chunks.size());
+    for (const auto& bed : beds) {
+        double visible = -1.0e9;
+        std::size_t best = n;
+        for (std::size_t i = 0; i < n; ++i) {
+            double z = 0.0;
+            if (chunk_surface_height(chunks[i], bed[0], bed[1], z) && z > visible) {
+                visible = z;
+                best = i;
+            }
+        }
+        if (best == n) continue;
+        const double d = visible - bed[2];
+        const int level = std::min<int>(chunks[best].key.level, kLodCoverageLevels - 1);
+        ++r.samples;
+        ++r.samples_by_level[static_cast<std::size_t>(level)];
+        above.push_back(d);
+        r.above_max_by_level[static_cast<std::size_t>(level)] = std::max(r.above_max_by_level[static_cast<std::size_t>(level)], d);
+        if (d > tolerance_m) ++r.above_tolerance;
+        if (d > r.above_max_m) {
+            r.above_max_m = d;
+            r.worst_level = level;
+            r.worst_carve = chunks[best].carve;
+            r.worst_e = bed[0];
+            r.worst_n = bed[1];
+        }
+    }
+    if (!above.empty()) {
+        std::sort(above.begin(), above.end());
+        r.above_p95_m = above[std::min(above.size() - 1, static_cast<std::size_t>(std::ceil(0.95 * above.size())) - 1)];
+    }
+    return r;
+}
+
+std::vector<std::size_t> stale_fallback_chunks(const std::vector<RenderChunk>& chunks, std::size_t count,
+                                               const std::function<ChunkCarve(const g2m::mesh::ChunkKey&)>& state_now) {
+    std::vector<std::size_t> stale;
+    const std::size_t n = std::min(count, chunks.size());
+    for (std::size_t i = 0; i < n; ++i) {
+        if (chunks[i].carve == ChunkCarve::Fallback && state_now(chunks[i].key) != ChunkCarve::Fallback) stale.push_back(i);
+    }
+    return stale;
+}
+
 void SampleWindow::add(double value) {
     if (samples_.size() < capacity_) {
         samples_.push_back(value);

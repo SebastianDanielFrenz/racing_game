@@ -57,6 +57,7 @@
 
 #include <chrono>
 #include <cstdint>
+#include <future>
 #include <map>
 #include <memory>
 #include <vector>
@@ -202,6 +203,15 @@ public:
     // for the points 150 and 300 m ahead (physics tiles only where resident).
     // -1000 when nothing could be compared.
     [[nodiscard]] godot::Dictionary get_ground_check(double px, double py, double dx, double dy);
+    // The RENDERED ground (highest uploaded chunk surface) against the physics ROAD BED (the centre line of the ground
+    // roads of the road surfaces derived so far) for every bed point within `ahead_m` along (dx, dy) of (px, py)
+    // (and 100 m behind): {samples, above_max_m, above_p95_m, above_tolerance, worst_level, worst_carve (0 not carved,
+    // 1 carved, 2 fallback), worst_x, worst_y (session), l<k>_above_max_m / l<k>_samples (k = level of the highest chunk)}.
+    // Unlike get_ground_check this reaches the coarse levels. -1000 / 0 samples when nothing could be compared.
+    [[nodiscard]] godot::Dictionary get_bed_check(double px, double py, double dx, double dy, double ahead_m);
+    // Hides / shows every uploaded terrain chunk (debug: look at the ribbons without the ground, or the reverse).
+    void set_terrain_visible(bool visible);
+    [[nodiscard]] bool get_terrain_visible() const { return terrain_visible_; }
     // Window statistics since the last call, then cleared: {upload_ms_avg,
     // upload_ms_max, frames, chunks_uploaded, chunk_latency_p95_ms,
     // chunk_latency_max_ms, budget_ms_avg}. Meant for a 1 Hz log line.
@@ -286,6 +296,15 @@ private:
     std::int64_t chunks_uploaded_window_ = 0;
     std::int64_t chunks_uploaded_total_ = 0;
     double ground_check_max_m_ = -1000.0;
+    bool terrain_visible_ = true;
+    // Re-carving of Fallback tiles (road surface was missing when the coarse tile was built) and the rebuild of the
+    // resident chunks built from them; see heal_tick().
+    void heal_tick();
+    void replace_chunk_at(std::size_t index, rg::RenderChunk&& fresh);
+    std::future<std::size_t> heal_future_;
+    double heal_next_check_s_ = 0.0;
+    std::int64_t healed_tiles_total_ = 0;
+    std::int64_t rebuilt_chunks_total_ = 0;
     bool bulk_loading_ = false; // the initial preview set is still uploading (count budget)
 
     bool diff_in_progress_ = false;
