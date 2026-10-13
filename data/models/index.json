@@ -14,5 +14,13 @@
     "rig": "ventura_gt/ventura_gt.rig.json",
     "flow": "ventura_gt/ventura_gt.flow.json",
     "cockpit": "ventura_gt/ventura_gt.cockpit.json"
+  },
+  {
+    "id": "runabout_t",
+    "title": "Runabout T (1910s tourer)",
+    "glb": "runabout_t/runabout_t.glb",
+    "rig": "runabout_t/runabout_t.rig.json",
+    "flow": "runabout_t/runabout_t.flow.json",
+    "cockpit": "runabout_t/runabout_t.cockpit.json"
   }
 ]
