@@ -424,5 +424,5 @@
   ],
   "excluded": "inner skins and perimeter returns; cabin, cockpit controls, engine bay, hidden hood variants",
   "limitations": "Closed visual shells per node; arches, grille mouth and tail pipes open. Hidden hood variants and the cabin are not in the selection. Not a boolean union.",
-  "source_glb_sha256": "dcdf060a780b0424220903654d159cc6d2e14fdddf5f352acb3d708da0080352"
+  "source_glb_sha256": "18701ee4f288a048f3024128213bd614d0a8cf64f57dfada8a1b8903eaade799"
 }

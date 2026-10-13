@@ -354,6 +354,8 @@ def build_cabin(m, ck, body):
         f = C.frame((0.268, yy, 0.74), (-1.0, 0.0, 0.0))
         C.disk(mb, f, -0.004, 0.006, 0.032, "chrome", "", count=20)
         C.disk(mb, f, 0.006, 0.009, 0.026, "trim_black", "", count=20)
+        for k in range(-2, 3):                                                             # louvres: reads as a vent
+            C.box_local(mb, f, (0.0, 0.009 * k, 0.010), (0.046 - 0.006 * abs(k) ** 2, 0.003, 0.003), "chrome", "")
     # ---- instrument binnacle: speedo + tach, four small gauges in the centre stack
     gn = norm((-1.0, 0.0, 0.18))
     M.rounded_box(mb, (0.30, EYE_Y, 0.765), (0.06, 0.34, 0.15), 0.03, "dash_hard")
@@ -368,11 +370,11 @@ def build_cabin(m, ck, body):
         yy = 0.07 if k % 2 == 0 else -0.07
         C.round_gauge(m, ck, nm, (0.268, yy, zz), gn, 0.026, src, rg, sweep_deg=90.0, start_deg=135.0, ticks=5,
                       label=nm + " gauge")
-    # clock (hour hand = gauge needle, minute hand = extra needle) on the passenger side
-    clk = (0.268, -0.36, 0.73)
-    C.round_gauge(m, ck, "clock_h", clk, gn, 0.034, "clock_h", (0.0, 12.0), sweep_deg=360.0, start_deg=90.0,
+    # clock (hour hand = gauge needle, minute hand = extra needle) in the centre stack, between the small gauges
+    clk = (0.268, 0.0, 0.73)
+    C.round_gauge(m, ck, "clock_h", clk, gn, 0.030, "clock_h", (0.0, 12.0), sweep_deg=360.0, start_deg=90.0,
                   ticks=12, label="clock hour hand")
-    C.extra_needle(m, ck, "clock_m", clk, gn, 0.030, "clock_m", {"in": [0.0, 60.0], "out_deg": [0.0, 360.0]},
+    C.extra_needle(m, ck, "clock_m", clk, gn, 0.026, "clock_m", {"in": [0.0, 60.0], "out_deg": [0.0, 360.0]},
                    label="clock minute hand", z=0.0085)
     # ---- toggle row on the wood strip
     tn = (-1.0, 0.0, 0.0)
