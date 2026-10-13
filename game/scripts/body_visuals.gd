@@ -107,6 +107,10 @@ func _make_vehicle_visual() -> void:
 
 # R6: the garage's car for the next world (a different model, colours from its setup).
 # The same car again only re-binds; a different one replaces the visual.
+# The clickable cockpit of the shown car (cockpit_controls.gd), or null.
+func get_cockpit() -> Node3D:
+	return _vehicle_visual.get_cockpit() if _vehicle_visual != null else null
+
 func set_vehicle(name_in: String, model_path: String, paint_hex: String, rim_hex: String) -> void:
 	var same := _vehicle_visual != null and model_path == model_absolute_path
 	vehicle_name = name_in

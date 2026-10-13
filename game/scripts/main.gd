@@ -1122,13 +1122,27 @@ func _forward_driving(live: bool, delta: float) -> void:
 		for channel in scripted_controls:
 			_simulation.set_control(channel, float(scripted_controls[channel]))
 		return
-	_simulation.set_control("steer", _steering.translate(_input_map.get_steer(), _input_map.steering_uses_keyboard(), _input_map.steering_uses_wheel(), _simulation.get_steering_kinematics(), delta))
-	_simulation.set_control("throttle", _input_map.get_throttle())
-	_simulation.set_control("brake", _input_map.get_brake())
-	_simulation.set_control("handbrake", _input_map.get_handbrake())
-	_simulation.set_control("clutch", _input_map.get_clutch())
+	# Clickable cockpit (cockpit_controls.gd): a dragged pedal/lever/wheel wins over the input device while held,
+	# the gear lever adds shifts, the ignition key sets the ignition and holds the starter in its start detent.
+	var cockpit: Node3D = _visuals.get_cockpit() if _visuals != null and _visuals.has_method("get_cockpit") else null
+	var cockpit_overrides: Dictionary = {}
+	var cockpit_starter := false
+	if cockpit != null:
+		cockpit_overrides = cockpit.get_overrides()
+		up += cockpit.consume_shift_up()
+		down += cockpit.consume_shift_down()
+		var ignition_request: int = cockpit.consume_ignition_request()
+		if ignition_request >= 0:
+			_input_map.set_ignition(ignition_request == 1)
+		cockpit_starter = cockpit.starter_held()
+	var steer: float = _steering.translate(_input_map.get_steer(), _input_map.steering_uses_keyboard(), _input_map.steering_uses_wheel(), _simulation.get_steering_kinematics(), delta)
+	_simulation.set_control("steer", float(cockpit_overrides.get("steer", steer)))
+	_simulation.set_control("throttle", maxf(_input_map.get_throttle(), float(cockpit_overrides.get("throttle", 0.0))))
+	_simulation.set_control("brake", maxf(_input_map.get_brake(), float(cockpit_overrides.get("brake", 0.0))))
+	_simulation.set_control("handbrake", maxf(_input_map.get_handbrake(), float(cockpit_overrides.get("handbrake", 0.0))))
+	_simulation.set_control("clutch", maxf(_input_map.get_clutch(), float(cockpit_overrides.get("clutch", 0.0))))
 	_simulation.set_control("ignition", 1.0 if _input_map.get_ignition() else 0.0)
-	_simulation.set_control("starter", 1.0 if _input_map.get_starter() else 0.0)
+	_simulation.set_control("starter", 1.0 if (_input_map.get_starter() or cockpit_starter) else 0.0)
 	_simulation.set_control("assist.auto_shift", 1.0 if _input_map.get_auto_shift() else 0.0)
 	# Assist unit (physics_sim): the channel defaults are the car's own (the Racing unit: TC On, aero automation on).
 	# A key press steps the channel from its CURRENT value, which the physics may have written itself (a drive-mode
