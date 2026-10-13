@@ -190,7 +190,7 @@ the options lists simulation-derived notes for the pending setup.
   "rpm") and `max_severity` caps (turbo lag at low rpm never louder than advice). Physics' own
   Near/Limiting/Exceeded thresholds stay in physics_sim (limit_thresholds.h).
 - Item format: bold title, the configured value, what the setup achieved and where, an optional suggestion:
-  `*Excessive turbo boost target*` / `Boost target is set to 15.5 bar.` / `The current setup achieved` /
+  `Excessive turbo boost target` (title, coloured by severity) / `Boost target is set to 15.5 bar.` / `The current setup achieved` /
   `13.8 bar @ 3250 RPM.`. Quantities: bar gauge, RPM, N*m, kW, m/s (piston speed), per-cent.
 - Hidden on purpose: RevLimiter and FuelCut (the sweep stops 50 rpm under the limiter, so they would only
   restate the rev limit setting), MapGridEdge below Exceeded (a modelling detail). Not used: any km/h item (no

@@ -921,7 +921,7 @@ func _advice_item_control(item: Dictionary, stale: bool) -> Control:
 	var box := VBoxContainer.new()
 	box.add_theme_constant_override("separation", 2)
 	panel.add_child(box)
-	var title := _label("*%s*" % str(item.get("title", "")), 15, HORIZONTAL_ALIGNMENT_LEFT)
+	var title := _label(str(item.get("title", "")), 15, HORIZONTAL_ALIGNMENT_LEFT)
 	title.add_theme_color_override("font_color", colour)
 	box.add_child(title)
 	for line in item.get("lines", []):
