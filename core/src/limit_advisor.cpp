@@ -5,6 +5,7 @@
 
 #include "json_util.h"
 
+#include "ps/io/limit_policy_io.h"
 #include "ps/io/vehicle_io.h"
 #include "ps/jobs/job_system.h"
 
@@ -14,6 +15,7 @@
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
+#include <filesystem>
 #include <set>
 #include <stdexcept>
 #include <string_view>
@@ -224,7 +226,7 @@ std::optional<AdvisorConfig> parse_advisor_config(const std::string& json_text, 
         fail(err, origin, "\"format\" must be \"rg.garage_advisor/1\"");
         return std::nullopt;
     }
-    static const std::set<std::string> allowed = {"format", "source", "debounce_ms", "sweep", "merge_gap_rpm", "decimals", "remedy", "kinds"};
+    static const std::set<std::string> allowed = {"format", "source", "debounce_ms", "sweep", "merge_gap_rpm", "decimals", "remedy", "limit_policy", "kinds"};
     for (auto it = root.begin(); it != root.end(); ++it) {
         const std::string& key = it.key();
         const bool help = key.size() > 5 && key.compare(key.size() - 5, 5, "_help") == 0;
@@ -234,6 +236,13 @@ std::optional<AdvisorConfig> parse_advisor_config(const std::string& json_text, 
         }
     }
     AdvisorConfig c;
+    if (const auto policy = root.find("limit_policy"); policy != root.end()) {
+        if (!policy->is_string() || policy->get<std::string>().empty()) {
+            fail(err, origin, "\"limit_policy\" must be the path of a physics_sim.limit_policy/1 file");
+            return std::nullopt;
+        }
+        c.policy_file = policy->get<std::string>();
+    }
     double d = 0.0;
     if (!detail::get_number(root, "debounce_ms", d) || d < 0.0 || d > 10000.0) {
         fail(err, origin, "\"debounce_ms\" must be a number in 0..10000");
@@ -303,16 +312,21 @@ std::optional<AdvisorConfig> parse_advisor_config(const std::string& json_text, 
         }
         AdviceKindConfig k;
         k.kind = *kind;
-        std::string sev;
-        bool ok = false;
-        if (!detail::get_string(*it, "min_severity", sev)) {
-            fail(err, origin, where + ": \"min_severity\" must be near / limiting / exceeded / never");
-            return std::nullopt;
-        }
-        k.min_severity = severity_from_name(sev, &ok);
-        if (!ok) {
-            fail(err, origin, where + ": \"min_severity\" must be near / limiting / exceeded / never");
-            return std::nullopt;
+        // Optional: absent = the limit policy alone decides what is shown; "never" hides the kind; a severity is a
+        // kind-specific floor above the policy's.
+        if (it->contains("min_severity")) {
+            std::string sev;
+            bool ok = false;
+            if (!detail::get_string(*it, "min_severity", sev)) {
+                fail(err, origin, where + ": \"min_severity\" must be near / limiting / exceeded / never");
+                return std::nullopt;
+            }
+            k.min_severity = severity_from_name(sev, &ok);
+            if (!ok) {
+                fail(err, origin, where + ": \"min_severity\" must be near / limiting / exceeded / never");
+                return std::nullopt;
+            }
+            if (sev == "never") k.hidden = true;
         }
         detail::get_string(*it, "option", k.option_id);
         if (!read_advice_text(*it, true, k.text, where, origin, err)) return std::nullopt;
@@ -337,13 +351,36 @@ std::optional<AdvisorConfig> parse_advisor_config(const std::string& json_text, 
     return c;
 }
 
-std::optional<AdvisorConfig> load_advisor_config(const std::string& path, std::string* err) {
+std::optional<AdvisorConfig> load_advisor_config(const std::string& path, std::string* err, const std::string& user_policy_path) {
     const auto text = detail::read_text_file(path);
     if (!text) {
         fail(err, path, "cannot read the file");
         return std::nullopt;
     }
-    return parse_advisor_config(*text, path, err);
+    std::optional<AdvisorConfig> config = parse_advisor_config(*text, path, err);
+    if (!config) return std::nullopt;
+    if (config->policy_file.empty() && user_policy_path.empty()) return config; // physics' compiled default
+    try {
+        if (config->policy_file.empty()) {
+            // No policy file named: the user layer alone (omitted entries keep the compiled defaults).
+            config->policy = ps::io::load_limit_policy_json(user_policy_path);
+        } else {
+            namespace fs = std::filesystem;
+            const fs::path file = fs::path(config->policy_file).is_absolute() ? fs::path(config->policy_file) : fs::path(path).parent_path() / config->policy_file;
+            config->policy = ps::io::load_limit_policy_json(file.generic_string(), user_policy_path);
+        }
+    } catch (const std::exception& e) {
+        fail(err, path, std::string("limit policy: ") + e.what());
+        return std::nullopt;
+    }
+    return config;
+}
+
+std::string user_limit_policy_path(const std::string& user_dir) {
+    if (user_dir.empty()) return {};
+    std::error_code ec;
+    const std::filesystem::path file = std::filesystem::path(user_dir) / "limit_policy.json";
+    return std::filesystem::is_regular_file(file, ec) ? file.generic_string() : std::string();
 }
 
 // ---- advice items -----------------------------------------------------------------------------------------------------
@@ -444,11 +481,13 @@ void drop_empty(std::vector<std::string>& lines) {
 } // namespace
 
 std::vector<AdviceItem> build_advice(const AdviceInput& input, const AdvisorConfig& config) {
-    // Group per (kind, part field), dropping what the config hides.
+    // Group per (kind, part field). What is dropped: a kind the config does not list or hides, a severity the limit
+    // policy does not warn about (config.policy.warns: the generic Near / Limiting / Exceeded filter, physics'), and
+    // below the game's own per-kind floor (min_severity, only where the game genuinely adds one).
     std::map<std::pair<int, std::string>, std::vector<pd::LimitFinding>> groups;
     for (const pd::LimitFinding& f : input.findings) {
         const AdviceKindConfig* k = config.find(f.kind);
-        if (k == nullptr || !k->min_severity || f.severity < *k->min_severity) continue;
+        if (k == nullptr || k->hidden || !config.policy.warns(f.severity) || (k->min_severity && f.severity < *k->min_severity)) continue;
         groups[{static_cast<int>(f.kind), f.part.field}].push_back(f);
     }
     // Sweep extent for the variants and "reach"/"drop" rpm.
@@ -608,7 +647,7 @@ void apply_solved_remedy(AdviceItem& item, const std::vector<pd::Remedy>& solved
 // ---- the physics part -------------------------------------------------------------------------------------------------
 
 AdviceSweep run_advice_sweep(const ps::vehicle::VehicleDesc& desc, const AdvisorConfig& config, ps::jobs::JobSystem* pool,
-                             const std::atomic<bool>* cancel) {
+                             const std::atomic<bool>* cancel, const std::string& clutch_file, const std::string& gearbox_file) {
     const pd::ComponentParams* engine = nullptr;
     const pd::SimulatedEngineDesc* simulated = nullptr;
     double idle = 0.0, limiter = 0.0;
@@ -640,6 +679,7 @@ AdviceSweep run_advice_sweep(const ps::vehicle::VehicleDesc& desc, const Advisor
     for (double rpm = start; rpm < end - 1.0e-6; rpm += step) spec.rpm.push_back(rpm);
     if (end > idle) spec.rpm.push_back(end);
     if (spec.rpm.empty()) spec.rpm.push_back(std::max(idle, 1.0));
+    spec.policy = &config.policy; // the findings' grades and remedy margins; also kept by remedy_request.spec
     spec.turbo_count = 1; // wastegate remedies are reported as ratios, the per-turbo count does not change them
     if (simulated != nullptr) {
         if (simulated->turbo_pair) out.input.target_boost_bar = simulated->turbo_pair->target_boost_pa / 1.0e5;
@@ -649,7 +689,10 @@ AdviceSweep run_advice_sweep(const ps::vehicle::VehicleDesc& desc, const Advisor
     const auto t0 = std::chrono::steady_clock::now();
     const pd::DynoResult dyno = pd::run_dyno_sweep(*engine, nullptr, spec, pool, cancel);
     out.input.findings = dyno.limits;
-    for (pd::LimitFinding& f : pd::check_driveline_limits(dyno, desc.powertrain)) out.input.findings.push_back(std::move(f));
+    // Clutch capacity and (a gearbox file with rated_input_torque_nm) the gearbox input torque, both against the sweep's peak.
+    for (pd::LimitFinding& f : pd::check_driveline_limits(dyno, desc.powertrain, clutch_file, gearbox_file, &config.policy)) {
+        out.input.findings.push_back(std::move(f));
+    }
     out.input.points = dyno.points;
     out.remedy_request = pd::RemedyRequest{*engine, nullptr, spec};
     out.sweep_seconds = std::chrono::duration<double>(std::chrono::steady_clock::now() - t0).count();
@@ -670,6 +713,31 @@ int background_workers() {
         if (parsed.ec == std::errc{} && parsed.ptr == text.data() + text.size() && configured >= 1 && configured <= 64) workers = configured;
     }
     return workers;
+}
+
+// The part file a powertrain component of the materialised vehicle file names ("clutch", "gearbox"): absolute, "" when the
+// component is inline, missing or the file cannot be read. Only fills PartRef::file of the findings.
+std::string component_ref_file(const std::string& vehicle_path, const std::string& component) {
+    const auto text = detail::read_text_file(vehicle_path);
+    if (!text) return {};
+    const std::optional<json> vehicle = detail::parse_json(*text);
+    if (!vehicle || !vehicle->is_object()) return {};
+    const auto powertrain = vehicle->find("powertrain");
+    if (powertrain == vehicle->end() || !powertrain->is_object()) return {};
+    const auto components = powertrain->find("components");
+    if (components == powertrain->end() || !components->is_array()) return {};
+    for (const json& c : *components) {
+        std::string id, type, ref;
+        detail::get_string(c, "id", id);
+        detail::get_string(c, "type", type);
+        if ((id != component && type != component) || !detail::get_string(c, "ref", ref) || ref.empty()) continue;
+        namespace fs = std::filesystem;
+        std::error_code ec;
+        const fs::path joined = fs::path(ref).is_absolute() ? fs::path(ref) : fs::path(vehicle_path).parent_path() / ref;
+        const fs::path canonical = fs::weakly_canonical(joined, ec);
+        return (ec ? joined : canonical).generic_string();
+    }
+    return {};
 }
 
 pd::MapQuality quality_from(const std::string& q) {
@@ -875,7 +943,8 @@ void LimitAdvisor::run() {
             const auto desc = rg::load_vehicle(material.vehicle_path, maps);
             maps_seconds = std::chrono::duration<double>(std::chrono::steady_clock::now() - t0).count();
             progress(82, "Sweeping the engine");
-            sweep = run_advice_sweep(desc, config_, &pool, cancel.get());
+            sweep = run_advice_sweep(desc, config_, &pool, cancel.get(), component_ref_file(material.vehicle_path, "clutch"),
+                                     component_ref_file(material.vehicle_path, "gearbox"));
             items = build_advice(sweep.input, config_);
         } catch (const ps::io::GenerationCancelled&) {
             continue; // a newer request (or cancel()) took over

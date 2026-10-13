@@ -1,6 +1,9 @@
 {
   "format": "rg.garage_advisor/1",
-  "source": "Garage limit advisor (out/racing_game_queue.md 'Owner decision: allow extreme turbo setups, show warnings'). Every number the advice shows comes from physics_sim's dyno sweep (ps/drivetrain/engine_dyno.h) and its limit findings; THIS file only decides which findings are shown, how they are merged and what the text says. Physics' own thresholds (when a finding is Near / Limiting / Exceeded) stay in physics_sim (core/src/drivetrain/limit_thresholds.h; a limit_policy file is planned there). Nothing here limits a setup value: the garage never clamps, it only advises.",
+  "source": "Garage limit advisor (out/racing_game_queue.md 'Owner decision: allow extreme turbo setups, show warnings'). Every number the advice shows comes from physics_sim's dyno sweep (ps/drivetrain/engine_dyno.h) and its limit findings; THIS file only decides how findings are merged, what the text says and which kinds the game itself hides. WHICH severities are worth telling, and every threshold physics grades a finding by, are physics_sim's limit policy (physics_sim.limit_policy/1): the file named by limit_policy below, plus an optional user layer <user dir>/limit_policy.json. A kind without min_severity is shown at whatever severity the policy warns about; min_severity (a floor above the policy's) and \"never\" (hide the kind) are the only game-side filters and appear only where the game genuinely adds one. Nothing here limits a setup value: the garage never clamps, it only advises.",
+
+  "limit_policy": "limit_policy.json",
+  "limit_policy_help": "The physics_sim limit policy (physics_sim.limit_policy/1) that decides which findings are told (warn_at), which a garage would refuse (refuse_at) and every grading threshold. Relative to this file. data/garage/limit_policy.json extends physics' default; the player's <user dir>/limit_policy.json is merged last.",
 
   "debounce_ms": 300,
   "debounce_ms_help": "A setup change must stay unchanged this long before the engine maps and the sweep are started again (a slider drag restarts the wait).",
@@ -30,7 +33,6 @@
 
   "kinds": {
     "BoostBelowTarget": {
-      "min_severity": "near",
       "option": "turbo_boost_target",
       "title": "Excessive turbo boost target",
       "lines": ["Boost target is set to {target}.", "The current setup achieved", "{peak} @ {peak_rpm}."],
@@ -51,7 +53,6 @@
       }
     },
     "BoostAboveTarget": {
-      "min_severity": "near",
       "option": "turbo_boost_target",
       "title": "Boost overshoots the target",
       "lines": ["Boost target is set to {target}.", "The current setup reached", "{value} @ {rpm}."],
@@ -60,7 +61,6 @@
       "remedy_failed": "Even 8x the wastegate area does not hold it. Try a lower boost target."
     },
     "WastegateSaturated": {
-      "min_severity": "near",
       "option": "turbo_boost_target",
       "title": "Wastegate is maxed out",
       "lines": ["Boost target is set to {target}.", "The wastegate is {value_pct} open @ {rpm}", "and has no room left to hold it."],
@@ -69,7 +69,6 @@
       "remedy_failed": "Even 8x the wastegate area does not hold it. Try a lower boost target."
     },
     "TurboRotorCap": {
-      "min_severity": "near",
       "option": "turbo_boost_target",
       "title": "Turbos spin too fast",
       "lines": ["Turbo speed limit is {limit}.", "The current setup reaches", "{value} @ {rpm} engine speed."],
@@ -78,14 +77,12 @@
       "remedy_failed": "A bigger wastegate does not fix it. It needs bigger turbos or a lower boost target."
     },
     "CompressorChoke": {
-      "min_severity": "near",
       "option": "turbo_boost_target",
       "title": "Compressor flow is maxed out",
       "lines": ["The compressor runs at {value_pct}", "of its flow capacity @ {rpm}."],
       "suggestion": "Bigger turbos or a lower boost target."
     },
     "CompressorSurge": {
-      "min_severity": "near",
       "option": "turbo_boost_target",
       "title": "Compressor surge",
       "lines": ["Compressor flow is only {value}x", "the surge line @ {rpm}."],
@@ -108,7 +105,6 @@
       "suggestion": ""
     },
     "MeanPistonSpeed": {
-      "min_severity": "near",
       "option": "engine_rev_limit",
       "title": "Pistons move very fast",
       "lines": ["Safe piston speed is about {limit}.", "The current setup reaches", "{value} @ {rpm}."],
@@ -130,22 +126,26 @@
       }
     },
     "ClutchCapacity": {
-      "min_severity": "near",
       "option": "clutch_capacity",
       "title": "The clutch will slip",
       "lines": ["The clutch holds about {limit}.", "The engine peaks at", "{value} @ {rpm}."],
       "suggestion": "A stronger clutch.",
       "remedy": "A clutch rated for about {required} holds it with margin (now {current})."
     },
+    "GearboxInputTorque": {
+      "option": "gearbox_install",
+      "title": "Gearbox overloaded",
+      "lines": ["Gearbox is rated for {limit}.", "The engine makes {value} @ {rpm}."],
+      "suggestion": "A stronger gearbox.",
+      "remedy": "A gearbox rated for about {required} holds it with margin (now {current})."
+    },
     "Knock": {
-      "min_severity": "near",
       "option": "turbo_boost_target",
       "title": "The engine is knocking",
       "lines": ["Knock control pulls back {value}", "of ignition timing @ {rpm}."],
       "suggestion": "Higher octane fuel or a lower boost target."
     },
     "KitFuelLean": {
-      "min_severity": "near",
       "option": "",
       "title": "N2O mixture too lean",
       "lines": ["The mixture under the shot is lambda {value} @ {rpm}.", "Safe is below {limit}."],
@@ -153,7 +153,6 @@
       "remedy": "A kit fuel jet of about {required} (now {current}) runs rich enough."
     },
     "N2OBottleDuration": {
-      "min_severity": "near",
       "option": "",
       "title": "N2O bottle empties too fast",
       "lines": ["The bottle lasts {value} at full flow @ {rpm}.", "Aim for at least {limit}."],
@@ -161,7 +160,6 @@
       "remedy": "A bottle with about {required} of N2O (now {current}) lasts long enough."
     },
     "N2OBottlePressureDrop": {
-      "min_severity": "near",
       "option": "",
       "title": "N2O flow fades during the shot",
       "lines": ["By the end of a pass the flow drops to {value_pct}", "of its start value @ {rpm}."],

@@ -1,7 +1,10 @@
 // test_engine_thermal_info.cpp - the engine temperature dashboard state (rg::engine_thermal_info / engine_thermal_hud,
-// what RgSimulation.get_vehicle_thermal forwards). A thermal car (physics_sim's car_sedan_thermal.json, the only
-// reference thermal vehicle; the game cars are covered by test_game_car_thermal.cpp) reports present with coolant/oil/gauge and the
-// normal / hot / overheat / cold level; a car without a thermal model reports present = false and no value.
+// what RgSimulation.get_vehicle_thermal forwards). A thermal car (the game's own data/vehicles/car_sedan.json: every game
+// car has the thermal model; physics_sim no longer ships a thermal reference vehicle in data/vehicles, its
+// car_sedan_thermal.json moved to its test fixtures) reports present with coolant/oil/gauge and the normal / hot /
+// overheat / cold level; a car without a thermal model (physics_sim's data/vehicles/car_sedan.json, the only shipped car
+// without a cooling system) reports present = false and no value. The game cars as a set are covered by
+// test_game_car_thermal.cpp.
 #include "rg/engine_thermal_info.h"
 #include "rg/session.h"
 
@@ -16,9 +19,9 @@ namespace {
 
 const std::string kRepo = RG_SOURCE_DIR;
 
-rg::SessionConfig config_for(const std::string& vehicle_file) {
+rg::SessionConfig config_for(const std::string& vehicle_path) {
     rg::SessionConfig config;
-    config.vehicle_json_path = kRepo + "/external/physics_sim/data/vehicles/" + vehicle_file;
+    config.vehicle_json_path = vehicle_path;
     config.surface_table_path = kRepo + "/external/physics_sim/data/surfaces/surfaces.json";
     return config;
 }
@@ -26,10 +29,10 @@ rg::SessionConfig config_for(const std::string& vehicle_file) {
 } // namespace
 
 TEST_CASE("engine thermal info: a thermal car reports coolant, oil, gauge and a level", "[thermal][dashboard][vehicle]") {
-    rg::Session session(config_for("car_sedan_thermal.json"));
+    rg::Session session(config_for(kRepo + "/data/vehicles/car_sedan.json"));
     const rg::EngineThermalInfo info = rg::engine_thermal_info(session.vehicle_desc());
     REQUIRE(info.present);
-    // The thresholds come from the car's cooling system (class_passenger_car.json): fan on 98 C, overheat 118 C, cold 50 C.
+    // The thresholds come from the car's cooling system (cooling_systems/sedan.json -> class_passenger_car.json): fan on 98 C, overheat 118 C, cold 50 C.
     CHECK(info.hot_c == Catch::Approx(98.0).margin(1e-6));
     CHECK(info.overheat_c == Catch::Approx(118.0).margin(1e-6));
     CHECK(info.cold_c == Catch::Approx(50.0).margin(1e-6));
@@ -61,7 +64,7 @@ TEST_CASE("engine thermal info: a thermal car reports coolant, oil, gauge and a 
 }
 
 TEST_CASE("engine thermal info: a car without a thermal model hides the gauge", "[thermal][dashboard][vehicle]") {
-    rg::Session session(config_for("car_sedan.json"));
+    rg::Session session(config_for(kRepo + "/external/physics_sim/data/vehicles/car_sedan.json"));
     const rg::EngineThermalInfo info = rg::engine_thermal_info(session.vehicle_desc());
     CHECK_FALSE(info.present);
     for (int i = 0; i < 120; ++i) session.step();

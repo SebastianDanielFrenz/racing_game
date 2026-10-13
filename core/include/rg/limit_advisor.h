@@ -14,9 +14,11 @@
 //
 // Layers (each testable on its own):
 //   * AdvisorConfig (data/garage/advisor.json, rg.garage_advisor/1): everything the GAME decides - the debounce, the
-//     sweep grid, which severities of which kind are shown, the merge gap and the text templates. Nothing is
-//     hard-coded (owner rule: refusal limits, advice thresholds and the like are config values). Physics' own
-//     Near/Limiting/Exceeded thresholds stay in physics_sim.
+//     sweep grid, the merge gap, the text templates and the few kinds the game hides (RevLimiter, FuelCut, MapGridEdge
+//     below Exceeded). Nothing is hard-coded (owner rule: refusal limits, advice thresholds and the like are config
+//     values). WHICH findings are worth telling at all (Near / Limiting / Exceeded) and every physics threshold is
+//     physics_sim's limit policy (physics_sim.limit_policy/1, L0): data/garage/limit_policy.json extends physics'
+//     default, an optional <user dir>/limit_policy.json is merged last; AdvisorConfig::policy.
 //   * build_advice(): a PURE function, findings + sweep points -> items (group per kind, merge contiguous rpm
 //     ranges, worst severity first, render the templates). No threads, no engine.
 //   * run_advice_sweep(): loaded VehicleDesc -> findings (dyno sweep, driveline check, nitrous kit when the car has one).
@@ -28,6 +30,7 @@
 
 #include "ps/drivetrain/engine_dyno.h"
 #include "ps/drivetrain/limit_findings.h"
+#include "ps/drivetrain/limit_policy.h"
 #include "ps/drivetrain/limit_remedies.h"
 #include "ps/vehicle/vehicle_desc.h"
 
@@ -61,7 +64,10 @@ struct AdviceText {
 
 struct AdviceKindConfig {
     ps::drivetrain::LimitKind kind = ps::drivetrain::LimitKind::WastegateSaturated;
-    // Findings below this severity are not shown; nullopt = the kind is never shown ("never" in the file).
+    // What the GAME adds on top of the limit policy (AdvisorConfig::policy.warns): `hidden` = the kind is never shown
+    // ("min_severity": "never" in the file); `min_severity` = a kind-specific floor above the policy's (absent = the
+    // policy alone decides).
+    bool hidden = false;
     std::optional<ps::drivetrain::LimitSeverity> min_severity;
     std::string option_id; // the garage option that changes it ("" = none); the UI may point at it
     AdviceText text;
@@ -81,6 +87,11 @@ struct AdvisorConfig {
     std::map<std::string, int> decimals; // quantity name -> decimals (missing = the built-in default)
     std::vector<std::string> solve_points = {"worst", "last"};
     std::vector<AdviceKindConfig> kinds; // file order = the order of equal-severity items
+    // The limit policy (physics_sim.limit_policy/1): which severities are worth telling (warns), which a garage would
+    // refuse (refuses), and every physics threshold. A default-constructed policy is physics' compiled default.
+    // `limit_policy` in the file names the policy file (relative to the advisor file); load_advisor_config loads it.
+    std::string policy_file;
+    ps::drivetrain::LimitPolicy policy;
 
     [[nodiscard]] const AdviceKindConfig* find(ps::drivetrain::LimitKind kind) const;
     [[nodiscard]] int decimals_for(const std::string& quantity, int fallback) const;
@@ -88,7 +99,11 @@ struct AdvisorConfig {
 
 // nullopt + *err (origin-prefixed) on a malformed file, an unknown kind, an unknown {placeholder}, a bad number.
 std::optional<AdvisorConfig> parse_advisor_config(const std::string& json_text, const std::string& origin, std::string* err);
-std::optional<AdvisorConfig> load_advisor_config(const std::string& path, std::string* err);
+// Loads the file; `limit_policy` (when given) is loaded from the path next to it, `user_policy_path` (empty = none) is
+// the user layer merged over the policy chain. Either failing is an error (origin-prefixed) and returns nullopt.
+std::optional<AdvisorConfig> load_advisor_config(const std::string& path, std::string* err, const std::string& user_policy_path = {});
+// <user_dir>/limit_policy.json when it exists (the player's own limit policy layer), else "". user_dir "" = "".
+std::string user_limit_policy_path(const std::string& user_dir);
 
 // Every {placeholder} a template may use.
 const std::vector<std::string>& known_advice_fact_names();
@@ -167,10 +182,13 @@ struct AdviceSweep {
     bool has_engine = false;
     double sweep_seconds = 0.0;
 };
-// Sweeps the engine of `desc` (simulated or torque-map) over rpm and collects the findings, plus the driveline check.
+// Sweeps the engine of `desc` (simulated or torque-map) over rpm and collects the findings, plus the driveline check
+// (clutch and, when its file names a rated_input_torque_nm, the gearbox). `config.policy` goes to the sweep
+// (DynoSweepSpec::policy) and the driveline check; remedy_request.spec keeps that pointer, so `config` must outlive
+// the returned AdviceSweep. `clutch_file` / `gearbox_file` (absolute paths, "" = unknown) only fill PartRef::file.
 // Throws ps::io::GenerationCancelled when `cancel` is set; std::runtime_error on an engine without a dyno harness.
 AdviceSweep run_advice_sweep(const ps::vehicle::VehicleDesc& desc, const AdvisorConfig& config, ps::jobs::JobSystem* pool,
-                             const std::atomic<bool>* cancel);
+                             const std::atomic<bool>* cancel, const std::string& clutch_file = {}, const std::string& gearbox_file = {});
 
 // ---- the background advisor -------------------------------------------------------------------------------------------
 

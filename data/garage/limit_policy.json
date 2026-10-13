@@ -1,0 +1,5 @@
+{
+  "format": "physics_sim.limit_policy/1",
+  "extends": "../../external/physics_sim/data/limit_policies/default.json",
+  "source": "The game's limit policy for the garage's limit advisor (rg::LimitAdvisor, data/garage/advisor.json 'limit_policy'). It extends physics_sim's compiled-default policy and overrides NOTHING yet (owner decision 2026-10-13: refusal limits and advice thresholds are configuration values, owned by physics; the game starts from physics' numbers). A value changed here moves which findings the garage tells (warn_at), which it would refuse (refuse_at) and every grading threshold of the dyno sweep and the driveline check - see external/physics_sim/docs/data_formats/limit_policy.md for the keys. The player's own <user dir>/limit_policy.json is merged over this file."
+}

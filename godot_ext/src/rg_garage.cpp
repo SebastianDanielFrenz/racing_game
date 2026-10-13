@@ -120,7 +120,8 @@ godot::Dictionary RgGarage::initialize(const String& repo_root, const String& us
     if (garage_ == nullptr) return fail_reply(err);
     // The advisor is optional: a missing/bad data/garage/advisor.json only switches the advice off (reported by get_advice).
     std::string advisor_err;
-    if (auto advisor_config = rg::load_advisor_config(c.repo_root + "/data/garage/advisor.json", &advisor_err))
+    // The limit policy is data/garage/limit_policy.json (named by advisor.json); the player's optional layer is <user dir>/limit_policy.json.
+    if (auto advisor_config = rg::load_advisor_config(c.repo_root + "/data/garage/advisor.json", &advisor_err, rg::user_limit_policy_path(c.user_dir)))
         advisor_ = std::make_unique<rg::LimitAdvisor>(std::move(*advisor_config));
     else
         advisor_error_ = advisor_err;

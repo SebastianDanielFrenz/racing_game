@@ -181,21 +181,44 @@ the options lists simulation-derived notes for the pending setup.
   setup (the whole working setup) is materialised and loaded exactly like a drive
   (`materialise_setup` + `load_vehicle`, Sketch-quality engine maps, cached under the engine-map cache
   dir), the engine is swept on physics_sim's dyno (`run_dyno_sweep`, 250 rpm steps from 2000 rpm to 50 rpm
-  under the limiter, the nitrous kit included when the car has one), `check_driveline_limits` adds the clutch,
-  and the LimitFindings become advice items: grouped per kind and part field, contiguous rpm ranges merged,
+  under the limiter, the nitrous kit included when the car has one), `check_driveline_limits` adds the clutch
+  and the gearbox (`GearboxInputTorque`, only for a gearbox file that names `rated_input_torque_nm`), and the
+  LimitFindings become advice items: grouped per kind and part field, contiguous rpm ranges merged,
   worst severity first. Near = advice (neutral), Limiting = warning (amber), Exceeded = critical (red).
 - Everything the game decides lives in `data/garage/advisor.json` (`rg.garage_advisor/1`): debounce
-  (300 ms), sweep grid, merge gap, per-kind minimum severity ("never" hides a kind), the text templates
-  with `{placeholders}` (validated at load), per-variant text (BoostBelowTarget "spool" / "falloff", MapGridEdge
-  "rpm") and `max_severity` caps (turbo lag at low rpm never louder than advice). Physics' own
-  Near/Limiting/Exceeded thresholds stay in physics_sim (limit_thresholds.h).
+  (300 ms), sweep grid, merge gap, the text templates with `{placeholders}` (validated at load),
+  per-variant text (BoostBelowTarget "spool" / "falloff", MapGridEdge "rpm"), `max_severity` caps (turbo lag
+  at low rpm never louder than advice) and the game-side kind filters (next bullet). What physics grades a
+  finding by, and which severities are worth telling, is physics' limit policy (below).
+- **Who filters what (L0, owner rule: refusal limits and advice thresholds are config values).**
+  `data/garage/advisor.json` names `limit_policy.json` (next to it), a `physics_sim.limit_policy/1` file that
+  `extends` physics' `data/limit_policies/default.json` and overrides nothing yet. The advisor loads it with
+  `ps::io::load_limit_policy_json(path, user_path)`; the optional user layer is `<user dir>/limit_policy.json`
+  (`rg::user_limit_policy_path`, merged last; a broken file switches the advice off with the loader's message
+  naming the file and key, like a broken `advisor.json`). The policy reaches `DynoSweepSpec::policy`
+  (so also `solve_remedy`) and `check_driveline_limits`. Findings are never dropped by physics; the generic
+  "is this worth telling" filter is `policy.warns(severity)` (default `warn_at` near = everything) and is the ONLY
+  severity filter for most kinds. The game adds exactly two things in `advisor.json`: `"min_severity": "never"`
+  hides a kind (RevLimiter, FuelCut: the sweep stops 50 rpm under the limiter, so they would only restate the
+  rev limit setting) and `"min_severity": "exceeded"` on MapGridEdge (Near the edge of the engine's data is a
+  modelling detail, not advice). A kind without `min_severity` is told whenever the policy warns. Refusal
+  (`policy.refuses` / `has_refusing_finding`): the garage has NO build refusal driven by physics findings -
+  extreme setups are accepted by design and the setup check only advises - so nothing uses it; the only refusals are
+  the setup compile errors and the game's own gearbox swap rating check (catalogue `rating_nm`, see
+  `rg::check_gearbox_rating`).
 - Item format: bold title, the configured value, what the setup achieved and where, an optional suggestion:
   `Excessive turbo boost target` (title, coloured by severity) / `Boost target is set to 15.5 bar.` / `The current setup achieved` /
   `13.8 bar @ 3250 RPM.`. Quantities: bar gauge, RPM, N*m, kW, m/s (piston speed), per-cent.
 - Hidden on purpose: RevLimiter and FuelCut (the sweep stops 50 rpm under the limiter, so they would only
   restate the rev limit setting), MapGridEdge below Exceeded (a modelling detail). Not used: any km/h item (no
   finding carries a speed). Skipped templates are listed under `kinds` with `"min_severity": "never"`.
-- Remedies: a Closed remedy (clutch capacity, kit jet, bottle) shows its line at once. The wastegate kinds
+- Gearbox (physics T0): `GearboxInputTorque` reads `Gearbox overloaded` / `Gearbox is rated for 1300 N*m.` /
+  `The engine makes 1371 N*m @ 6000 RPM.` / `A stronger gearbox.`, with the Closed remedy line (1.1 x the peak,
+  physics' `gearbox_rating_remedy_margin`). It is produced only for a gearbox whose physics file has
+  `rated_input_torque_nm` (the peak includes the N2O kit; graded 0-5 % over Near, 5-15 % Limiting, more Exceeded,
+  all policy entries). No shipped gearbox file carries a rating yet - the game's `rating_nm` lives in
+  `data/gearboxes/gearbox_catalog.json` - so the item does not appear on any shipped car.
+- Remedies: a Closed remedy (clutch capacity, gearbox rating, kit jet, bottle) shows its line at once. The wastegate kinds
   (WastegateSaturated, BoostAboveTarget, TurboRotorCap) get a "Find fix" button: `solve_remedy` runs on the
   worker (about 0.6 s on the hyper, Sketch maps) and the item shows the area ratio ("x the stock area"). Knock
   has no solvable remedy, so no button.
@@ -204,7 +227,9 @@ the options lists simulation-derived notes for the pending setup.
   polls every 0.2 s, shows "SETUP CHECK - checking... n%" (items of the previous result dimmed) and redraws
   only when the result changes.
 - Tests: tests/unit/test_limit_advisor.cpp ([limit_advisor]: config, templates, grouping/merging, variants,
-  remedies, thread; the [long] case runs the real advisor on car_hyper_n2o with the owner setup and stock),
+  remedies, thread, the limit policy file / user layer / warn_at filter, the gearbox template and a sweep
+  that carries a gearbox rating through `check_driveline_limits`; the [long] case runs the real advisor on
+  car_hyper_n2o with the owner setup and stock),
   `garage_test.gd` (advisor available, extreme boost accepted and flagged, panel draws the items).
 
 ## Adaptive engine pressure maps (2026-10-08)
