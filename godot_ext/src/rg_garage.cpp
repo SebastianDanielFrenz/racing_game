@@ -1,5 +1,7 @@
 #include "rg_garage.h"
 
+#include "rg/engine_swap.h"
+
 #include <godot_cpp/core/class_db.hpp>
 #include <godot_cpp/variant/packed_float64_array.hpp>
 #include <godot_cpp/variant/packed_string_array.hpp>
@@ -396,6 +398,9 @@ godot::Dictionary RgGarage::get_working_colours() const {
     if (garage_ == nullptr || !garage_->editing()) return d;
     d["paint"] = from_std(garage_->working_paint());
     d["rim"] = from_std(garage_->working_rim());
+    godot::PackedStringArray parts;
+    for (const std::string& o : garage_->working_model_options()) parts.push_back(from_std(o));
+    d["model_options"] = parts;
     return d;
 }
 
@@ -414,6 +419,9 @@ godot::Dictionary RgGarage::prepare_drive(const String& id) {
     d["model_path"] = from_std(s.model_path);
     d["paint"] = from_std(s.paint);
     d["rim"] = from_std(s.rim);
+    godot::PackedStringArray model_options;
+    for (const std::string& o : s.model_options) model_options.push_back(from_std(o));
+    d["model_options"] = model_options;
     d["engine_map_cache_dir"] = from_std(s.engine_map_cache_dir);
     d["modified"] = s.modified;
     godot::Dictionary chassis;
@@ -445,6 +453,25 @@ godot::Dictionary RgGarage::get_swap_info() const {
         d["engine_title"] = from_std(garage_->model().engine_title);
     }
     d["lines"] = lines;
+    return d;
+}
+
+godot::Dictionary RgGarage::get_bay_engine(const String& id) const {
+    godot::Dictionary d;
+    if (garage_ == nullptr) return d;
+    const rg::CatalogEntry* car = garage_->catalog().find(to_std(id));
+    const rg::EngineEntry* e = car != nullptr ? garage_->bay_engine(car->id) : nullptr;
+    if (e == nullptr) return d;
+    d["name"] = from_std(e->name);
+    d["model_path"] = from_std(e->model_path);
+    d["crank_axis"] = car->engine_bay_envelope ? String(car->engine_bay_envelope->crank_axis == 'y' ? "y" : "x") : String();
+    const std::array<double, 3> mm = e->envelope_mm.value_or(std::array<double, 3>{0.0, 0.0, 0.0});
+    d["envelope_mm"] = godot::Vector3(static_cast<float>(mm[0]), static_cast<float>(mm[1]), static_cast<float>(mm[2]));
+    const rg::FitResult fit = rg::check_fit(*car, *e);
+    d["fits"] = fit.allowed;
+    godot::PackedStringArray reasons;
+    for (const std::string& r : fit.reasons) reasons.push_back(from_std(r));
+    d["fit_reasons"] = reasons;
     return d;
 }
 
@@ -674,6 +701,7 @@ void RgGarage::_bind_methods() {
     ClassDB::bind_method(D_METHOD("get_validation"), &RgGarage::get_validation);
     ClassDB::bind_method(D_METHOD("get_swap_info"), &RgGarage::get_swap_info);
     ClassDB::bind_method(D_METHOD("get_engines"), &RgGarage::get_engines);
+    ClassDB::bind_method(D_METHOD("get_bay_engine", "id"), &RgGarage::get_bay_engine);
     ClassDB::bind_method(D_METHOD("create_user_engine", "base_key", "name", "patch_json"), &RgGarage::create_user_engine);
     ClassDB::bind_method(D_METHOD("update_user_engine", "key", "patch_json"), &RgGarage::update_user_engine);
     ClassDB::bind_method(D_METHOD("rename_user_engine", "key", "name"), &RgGarage::rename_user_engine);

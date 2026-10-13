@@ -288,6 +288,15 @@
       "kind": "colour"
     },
     {
+      "id": "folding_top",
+      "label": "Folding top",
+      "group": "Look",
+      "area": "overview",
+      "help": "Fit the fabric top. Shown on the model only: its weight and drag are not in the physics yet.",
+      "kind": "bool",
+      "model_option": "roof"
+    },
+    {
       "id": "engine_rev_limit",
       "label": "Rev limiter",
       "group": "Engine calibration",

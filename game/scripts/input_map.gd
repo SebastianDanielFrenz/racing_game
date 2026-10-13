@@ -414,6 +414,10 @@ func get_clutch() -> float:
 func get_ignition() -> bool:
 	return _ignition_on
 
+# The cockpit's ignition key (cockpit_controls.gd) sets the same state the ignition key toggles.
+func set_ignition(on: bool) -> void:
+	_ignition_on = on
+
 func get_starter() -> bool:
 	return _starter_held
 

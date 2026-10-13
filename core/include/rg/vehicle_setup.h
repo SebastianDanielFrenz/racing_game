@@ -93,6 +93,9 @@ struct SetupOptionDef {
     std::string part_format; // required referenced file format
     bool no_turbo_override = false; // default engine turbo must not shadow a vehicle override
     std::string axle;                  // TyreChoice: "front" | "rear"
+    // Bool only: a visual part of the car's art (CatalogEntry::model_options), not a file edit - no file, no
+    // pointers; offered only on a car whose model carries it, stock = off.
+    std::string model_option;
 };
 
 struct SetupOptionTable {
@@ -159,6 +162,7 @@ struct SetupModel {
     std::vector<std::string> swap_lines;
     double chassis_mass_delta_kg = 0.0;
     std::string engine_title;    // the installed engine's display name ("" = the car's own)
+    std::string engine_key;      // the installed engine's EngineStore key (the car's own too); "" = not in the store
 };
 // Builds the option views of an entry from its files.
 SetupModel build_setup_model(const CatalogEntry& entry, const SetupOptionTable& table, const SetupContext& ctx,
@@ -172,6 +176,7 @@ struct CompiledSetup {
     std::map<std::string, std::string> patches;  // "gearbox"/"engine"/"tyre:<stem>" -> merge patch text
     std::string paint;                           // visual: "" = the catalog default
     std::string rim;
+    std::vector<std::string> model_options;      // visual: the model parts switched on (SetupOptionDef::model_option)
     // Engine garage G1: what an engine/fuel choice changed besides the choice itself.
     std::vector<std::string> swap_lines;         // one line each, for the player (fuel kept/changed, clutch, mass ...)
     double chassis_mass_delta_kg = 0.0;          // added to the catalog chassis mass for the drive

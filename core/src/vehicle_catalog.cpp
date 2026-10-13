@@ -170,7 +170,7 @@ std::optional<VehicleCatalog> parse_vehicle_catalog(const std::string& json_text
                 fail(err, where, "\"preset_of\" \"" + preset_of + "\" names no base vehicle listed before this entry");
                 return std::nullopt;
             }
-            for (const char* inherited : {"vehicle", "model", "chassis", "engine_bay", "declared_engine", "setup"}) {
+            for (const char* inherited : {"vehicle", "model", "chassis", "engine_bay", "engine_bay_envelope", "model_options", "declared_engine", "setup"}) {
                 if (v.contains(inherited)) {
                     fail(err, where, std::string("a preset takes \"") + inherited + "\" from its base (\"" + preset_of + "\")");
                     return std::nullopt;
@@ -261,6 +261,35 @@ std::optional<VehicleCatalog> parse_vehicle_catalog(const std::string& json_text
                 e.engine_bay != "front" && e.engine_bay != "mid" && e.engine_bay != "rear") {
                 fail(err, where, "\"engine_bay\" must be front, mid or rear");
                 return std::nullopt;
+            }
+            if (const auto bay = v.find("engine_bay_envelope"); bay != v.end()) {
+                EngineBayEnvelope b;
+                std::string axis;
+                const auto size = bay->is_object() ? bay->find("size_mm") : bay->end();
+                bool ok = bay->is_object() && size != bay->end() && size->is_array() && size->size() == 3 &&
+                          detail::get_string(*bay, "crank_axis", axis) && (axis == "x" || axis == "y") &&
+                          detail::get_string(*bay, "source", b.source) && !b.source.empty();
+                for (std::size_t i = 0; ok && i < 3; ++i) {
+                    ok = (*size)[i].is_number() && (*size)[i].get<double>() > 0.0;
+                    if (ok) b.size_mm[i] = (*size)[i].get<double>();
+                }
+                if (!ok) {
+                    fail(err, where, "\"engine_bay_envelope\" needs size_mm [x, y, z] > 0, crank_axis \"x\" or \"y\" and a source");
+                    return std::nullopt;
+                }
+                b.crank_axis = axis[0];
+                e.engine_bay_envelope = b;
+            }
+            if (const auto mo = v.find("model_options"); mo != v.end()) {
+                bool ok = mo->is_array();
+                for (const json& o : ok ? *mo : json::array()) {
+                    ok = ok && o.is_string() && !o.get<std::string>().empty();
+                    if (ok) e.model_options.push_back(o.get<std::string>());
+                }
+                if (!ok) {
+                    fail(err, where, "\"model_options\" must be a list of model option names");
+                    return std::nullopt;
+                }
             }
             const auto declared = v.find("declared_engine");
             if (declared != v.end()) {
@@ -510,6 +539,7 @@ std::optional<VehicleStats> compute_vehicle_stats(const CatalogEntry& entry, std
 
     // Engine: the WOT curve of a torque-map engine, else the declared figures.
     const std::string engine_path = component_ref(*vehicle, entry.vehicle_path, "engine");
+    stats.engine_path = engine_path;
     if (!engine_path.empty()) {
         const auto engine = read_json_file(engine_path, err);
         if (!engine) return std::nullopt;

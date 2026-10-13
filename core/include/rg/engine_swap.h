@@ -94,8 +94,9 @@ SwapPackage derive_swap_package(const SwapCar& car, const SwapEngine& engine, co
 // "e10" -> "E10", "tier3_e10_cert" -> "Tier3 E10 cert", "gasoline" -> "Gasoline".
 std::string fuel_label(const std::string& stem);
 
-// The fit seam (design 4.4): today every engine fits every car. Reserved: car engine_bay_envelope_mm, engine
-// envelope_mm, mount, driveline.
+// The fit seam (design 4.4, new cars plan Q10): the engine's generated envelope (EngineEntry::envelope_mm, x along
+// the crank) against the car's bay (CatalogEntry::engine_bay_envelope), crank along the bay's x or y. A car without a
+// measured bay, or an engine without an envelope, fits (nothing to compare). Reserved: mount pattern, driveline.
 struct FitResult {
     bool allowed = true;
     std::vector<std::string> reasons; // empty when allowed

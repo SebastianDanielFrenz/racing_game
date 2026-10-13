@@ -111,6 +111,10 @@ public:
     // [{key, name, family, class, image, detail, user, base_key, base_name, mass_kg, idle_rpm, limiter_rpm,
     //   torque_nm, torque_rpm, power_kw, power_rpm, fuels: [String]}]
     [[nodiscard]] godot::Array get_engines() const;
+    // The engine the bay view shows for car `id` (the working setup's while that car is edited, else its own):
+    // {name, model_path (generated mesh, "" = none), crank_axis ("x" longitudinal, "y" transverse, "" = no measured
+    // bay), envelope_mm (Vector3, zero = unknown), fits, fit_reasons}. {} when unknown.
+    [[nodiscard]] godot::Dictionary get_bay_engine(const String& id) const;
     // {ok, error, key}: user engines (a merge patch over a default, validated by the physics loader first)
     godot::Dictionary create_user_engine(const godot::String& base_key, const godot::String& name, const godot::String& patch_json);
     godot::Dictionary update_user_engine(const godot::String& key, const godot::String& patch_json);

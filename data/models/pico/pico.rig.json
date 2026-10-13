@@ -1,0 +1,1511 @@
+{
+  "format": "physics_sim.rig/1",
+  "model": "pico.glb",
+  "title": "Pico (city car)",
+  "description": "A-segment five-door city car, 3.55 m, 165/65 R14, front transverse 1.0 L I3.",
+  "frame": "ISO 8855: x forward, y left, z up; metres; radians. The .glb itself uses glTF axes (+Y up, +Z forward, +X left): gltf(x,y,z) = iso(y,z,x).",
+  "origin": "Ground plane below the wheel centres, x = 0 midway between the axles, y = 0 on the centreline.",
+  "rest_pose": "All node rotations are identity at rest; a node's origin is its joint pivot. Joint values are offsets from the rest pose (0 = as modelled).",
+  "overall_bounds": {
+    "min": [
+      -1.705,
+      -0.98,
+      0.0
+    ],
+    "max": [
+      1.882,
+      0.98,
+      1.5832
+    ]
+  },
+  "nodes": [
+    {
+      "name": "pico",
+      "parent": null,
+      "pivot": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "bounds_local": {
+        "min": [
+          -1.7,
+          -0.8263,
+          0.1553
+        ],
+        "max": [
+          1.882,
+          0.8263,
+          1.5832
+        ]
+      }
+    },
+    {
+      "name": "susp_FL",
+      "parent": "pico",
+      "pivot": [
+        1.21,
+        0.71,
+        0.285
+      ],
+      "joint": {
+        "type": "prismatic",
+        "axis": [
+          0,
+          0,
+          1
+        ],
+        "min": -0.08,
+        "max": 0.08,
+        "note": "wheel travel (bump +)"
+      }
+    },
+    {
+      "name": "steer_FL",
+      "parent": "susp_FL",
+      "pivot": [
+        1.21,
+        0.71,
+        0.285
+      ],
+      "joint": {
+        "type": "revolute",
+        "axis": [
+          0,
+          0,
+          1
+        ],
+        "min": -0.6457718232379019,
+        "max": 0.6457718232379019,
+        "note": "road-wheel steer angle, + = left"
+      },
+      "bounds_local": {
+        "min": [
+          -0.1183,
+          -0.047,
+          0.0487
+        ],
+        "max": [
+          -0.0239,
+          0.003,
+          0.1543
+        ]
+      }
+    },
+    {
+      "name": "wheel_FL",
+      "parent": "steer_FL",
+      "pivot": [
+        1.21,
+        0.71,
+        0.285
+      ],
+      "joint": {
+        "type": "continuous",
+        "axis": [
+          0,
+          1,
+          0
+        ],
+        "note": "wheel spin, + = rolling forward"
+      },
+      "bounds_local": {
+        "min": [
+          -0.285,
+          -0.0825,
+          -0.285
+        ],
+        "max": [
+          0.285,
+          0.0825,
+          0.285
+        ]
+      },
+      "wheel": {
+        "radius": 0.285,
+        "width": 0.165,
+        "side": "left"
+      }
+    },
+    {
+      "name": "susp_FR",
+      "parent": "pico",
+      "pivot": [
+        1.21,
+        -0.71,
+        0.285
+      ],
+      "joint": {
+        "type": "prismatic",
+        "axis": [
+          0,
+          0,
+          1
+        ],
+        "min": -0.08,
+        "max": 0.08,
+        "note": "wheel travel (bump +)"
+      }
+    },
+    {
+      "name": "steer_FR",
+      "parent": "susp_FR",
+      "pivot": [
+        1.21,
+        -0.71,
+        0.285
+      ],
+      "joint": {
+        "type": "revolute",
+        "axis": [
+          0,
+          0,
+          1
+        ],
+        "min": -0.6457718232379019,
+        "max": 0.6457718232379019,
+        "note": "road-wheel steer angle, + = left"
+      },
+      "bounds_local": {
+        "min": [
+          -0.1183,
+          -0.003,
+          0.0487
+        ],
+        "max": [
+          -0.0239,
+          0.047,
+          0.1543
+        ]
+      }
+    },
+    {
+      "name": "wheel_FR",
+      "parent": "steer_FR",
+      "pivot": [
+        1.21,
+        -0.71,
+        0.285
+      ],
+      "joint": {
+        "type": "continuous",
+        "axis": [
+          0,
+          1,
+          0
+        ],
+        "note": "wheel spin, + = rolling forward"
+      },
+      "bounds_local": {
+        "min": [
+          -0.285,
+          -0.0825,
+          -0.285
+        ],
+        "max": [
+          0.285,
+          0.0825,
+          0.285
+        ]
+      },
+      "wheel": {
+        "radius": 0.285,
+        "width": 0.165,
+        "side": "right"
+      }
+    },
+    {
+      "name": "susp_RL",
+      "parent": "pico",
+      "pivot": [
+        -1.21,
+        0.71,
+        0.285
+      ],
+      "joint": {
+        "type": "prismatic",
+        "axis": [
+          0,
+          0,
+          1
+        ],
+        "min": -0.08,
+        "max": 0.08,
+        "note": "wheel travel (bump +)"
+      }
+    },
+    {
+      "name": "wheel_RL",
+      "parent": "susp_RL",
+      "pivot": [
+        -1.21,
+        0.71,
+        0.285
+      ],
+      "joint": {
+        "type": "continuous",
+        "axis": [
+          0,
+          1,
+          0
+        ],
+        "note": "wheel spin, + = rolling forward"
+      },
+      "bounds_local": {
+        "min": [
+          -0.285,
+          -0.0825,
+          -0.285
+        ],
+        "max": [
+          0.285,
+          0.0825,
+          0.285
+        ]
+      },
+      "wheel": {
+        "radius": 0.285,
+        "width": 0.165,
+        "side": "left"
+      }
+    },
+    {
+      "name": "susp_RR",
+      "parent": "pico",
+      "pivot": [
+        -1.21,
+        -0.71,
+        0.285
+      ],
+      "joint": {
+        "type": "prismatic",
+        "axis": [
+          0,
+          0,
+          1
+        ],
+        "min": -0.08,
+        "max": 0.08,
+        "note": "wheel travel (bump +)"
+      }
+    },
+    {
+      "name": "wheel_RR",
+      "parent": "susp_RR",
+      "pivot": [
+        -1.21,
+        -0.71,
+        0.285
+      ],
+      "joint": {
+        "type": "continuous",
+        "axis": [
+          0,
+          1,
+          0
+        ],
+        "note": "wheel spin, + = rolling forward"
+      },
+      "bounds_local": {
+        "min": [
+          -0.285,
+          -0.0825,
+          -0.285
+        ],
+        "max": [
+          0.285,
+          0.0825,
+          0.285
+        ]
+      },
+      "wheel": {
+        "radius": 0.285,
+        "width": 0.165,
+        "side": "right"
+      }
+    },
+    {
+      "name": "door_FL",
+      "parent": "pico",
+      "pivot": [
+        0.93,
+        0.8,
+        0.62
+      ],
+      "joint": {
+        "type": "revolute",
+        "axis": [
+          0,
+          0,
+          -1
+        ],
+        "min": 0.0,
+        "max": 1.2217304763960306,
+        "note": "door opening angle"
+      },
+      "bounds_local": {
+        "min": [
+          -0.9957,
+          -0.19,
+          -0.339
+        ],
+        "max": [
+          -0.0041,
+          0.18,
+          0.7472
+        ]
+      }
+    },
+    {
+      "name": "door_RL",
+      "parent": "pico",
+      "pivot": [
+        -0.08,
+        0.8,
+        0.62
+      ],
+      "joint": {
+        "type": "revolute",
+        "axis": [
+          0,
+          0,
+          -1
+        ],
+        "min": 0.0,
+        "max": 1.2217304763960306,
+        "note": "door opening angle"
+      },
+      "bounds_local": {
+        "min": [
+          -0.7788,
+          -0.19,
+          -0.3461
+        ],
+        "max": [
+          -0.0076,
+          0.037,
+          0.7469
+        ]
+      }
+    },
+    {
+      "name": "door_FR",
+      "parent": "pico",
+      "pivot": [
+        0.93,
+        -0.8,
+        0.62
+      ],
+      "joint": {
+        "type": "revolute",
+        "axis": [
+          0,
+          0,
+          1
+        ],
+        "min": 0.0,
+        "max": 1.2217304763960306,
+        "note": "door opening angle"
+      },
+      "bounds_local": {
+        "min": [
+          -0.9957,
+          -0.18,
+          -0.339
+        ],
+        "max": [
+          -0.0041,
+          0.19,
+          0.7472
+        ]
+      }
+    },
+    {
+      "name": "door_RR",
+      "parent": "pico",
+      "pivot": [
+        -0.08,
+        -0.8,
+        0.62
+      ],
+      "joint": {
+        "type": "revolute",
+        "axis": [
+          0,
+          0,
+          1
+        ],
+        "min": 0.0,
+        "max": 1.2217304763960306,
+        "note": "door opening angle"
+      },
+      "bounds_local": {
+        "min": [
+          -0.7788,
+          -0.037,
+          -0.3461
+        ],
+        "max": [
+          -0.0076,
+          0.19,
+          0.7469
+        ]
+      }
+    },
+    {
+      "name": "popout_RL",
+      "parent": "door_RL",
+      "pivot": [
+        -0.12,
+        0.74,
+        1.1
+      ],
+      "joint": {
+        "type": "revolute",
+        "axis": [
+          0,
+          0,
+          -1
+        ],
+        "min": 0.0,
+        "max": 0.10471975511965978,
+        "note": "rear pop-out window, + = opened outward at the rear edge"
+      },
+      "bounds_local": {
+        "min": [
+          -0.6947,
+          -0.059,
+          -0.1037
+        ],
+        "max": [
+          0.0103,
+          0.0308,
+          0.2302
+        ]
+      }
+    },
+    {
+      "name": "popout_RR",
+      "parent": "door_RR",
+      "pivot": [
+        -0.12,
+        -0.74,
+        1.1
+      ],
+      "joint": {
+        "type": "revolute",
+        "axis": [
+          0,
+          0,
+          1
+        ],
+        "min": 0.0,
+        "max": 0.10471975511965978,
+        "note": "rear pop-out window, + = opened outward at the rear edge"
+      },
+      "bounds_local": {
+        "min": [
+          -0.6947,
+          -0.0308,
+          -0.1037
+        ],
+        "max": [
+          0.0103,
+          0.059,
+          0.2302
+        ]
+      }
+    },
+    {
+      "name": "hood",
+      "parent": "pico",
+      "pivot": [
+        1.0,
+        0.0,
+        0.93415
+      ],
+      "joint": {
+        "type": "revolute",
+        "axis": [
+          0,
+          -1,
+          0
+        ],
+        "min": 0.0,
+        "max": 0.9599310885968813,
+        "note": "hood opening angle"
+      },
+      "bounds_local": {
+        "min": [
+          0.0076,
+          -0.6575,
+          -0.2082
+        ],
+        "max": [
+          0.7865,
+          0.6575,
+          -0.0023
+        ]
+      }
+    },
+    {
+      "name": "tailgate",
+      "parent": "pico",
+      "pivot": [
+        -1.47,
+        0.0,
+        1.47
+      ],
+      "joint": {
+        "type": "revolute",
+        "axis": [
+          0,
+          1,
+          0
+        ],
+        "min": 0.0,
+        "max": 1.3089969389957472,
+        "note": "tailgate opening angle"
+      },
+      "bounds_local": {
+        "min": [
+          -0.235,
+          -0.7694,
+          -0.7
+        ],
+        "max": [
+          -0.0012,
+          0.7694,
+          0.0063
+        ]
+      }
+    },
+    {
+      "name": "wiper_L",
+      "parent": "pico",
+      "pivot": [
+        0.97,
+        0.04,
+        0.955
+      ],
+      "joint": {
+        "type": "revolute",
+        "axis": [
+          0.552380364401192,
+          0.0,
+          0.8335921862781622
+        ],
+        "min": 0.0,
+        "max": 1.7453292519943295,
+        "note": "wiper sweep"
+      },
+      "bounds_local": {
+        "min": [
+          -0.018,
+          -0.016,
+          -0.0059
+        ],
+        "max": [
+          0.024,
+          0.55,
+          0.0299
+        ]
+      }
+    },
+    {
+      "name": "wiper_R",
+      "parent": "pico",
+      "pivot": [
+        0.97,
+        -0.56,
+        0.955
+      ],
+      "joint": {
+        "type": "revolute",
+        "axis": [
+          0.552380364401192,
+          0.0,
+          0.8335921862781622
+        ],
+        "min": 0.0,
+        "max": 1.7453292519943295,
+        "note": "wiper sweep"
+      },
+      "bounds_local": {
+        "min": [
+          -0.018,
+          -0.016,
+          -0.0059
+        ],
+        "max": [
+          0.024,
+          0.48,
+          0.0299
+        ]
+      }
+    },
+    {
+      "name": "wiper_rear",
+      "parent": "tailgate",
+      "pivot": [
+        -1.62,
+        0.0,
+        1.1
+      ],
+      "joint": {
+        "type": "revolute",
+        "axis": [
+          -1,
+          0,
+          0
+        ],
+        "min": 0.0,
+        "max": 2.792526803190927,
+        "note": "rear wiper sweep"
+      },
+      "bounds_local": {
+        "min": [
+          -0.02,
+          -0.018,
+          -0.0171
+        ],
+        "max": [
+          0.005,
+          0.34,
+          0.0171
+        ]
+      }
+    },
+    {
+      "name": "needle_speed",
+      "parent": "pico",
+      "pivot": [
+        0.58112,
+        0.385,
+        0.87597
+      ],
+      "joint": {
+        "type": "revolute",
+        "axis": [
+          0.9701425001453319,
+          -0.0,
+          -0.24253562503633297
+        ],
+        "min": 0.0,
+        "max": 4.1887902047863905,
+        "note": "speedometer needle, + = clockwise as the driver sees it"
+      },
+      "bounds_local": {
+        "min": [
+          -0.0067,
+          -0.0061,
+          -0.0237
+        ],
+        "max": [
+          0.0026,
+          0.0405,
+          0.0055
+        ]
+      }
+    },
+    {
+      "name": "screen_lcd",
+      "parent": "pico",
+      "pivot": [
+        0.588,
+        0.27,
+        0.872
+      ],
+      "bounds_local": {
+        "min": [
+          -0.0072,
+          -0.0375,
+          -0.0244
+        ],
+        "max": [
+          0.0065,
+          0.0375,
+          0.0245
+        ]
+      }
+    },
+    {
+      "name": "screen_center",
+      "parent": "pico",
+      "pivot": [
+        0.64,
+        0.0,
+        0.985
+      ],
+      "bounds_local": {
+        "min": [
+          -0.0064,
+          -0.0775,
+          -0.0432
+        ],
+        "max": [
+          0.0056,
+          0.0775,
+          0.0433
+        ]
+      }
+    },
+    {
+      "name": "knob_temp",
+      "parent": "pico",
+      "pivot": [
+        0.632,
+        0.11,
+        0.69
+      ],
+      "joint": {
+        "type": "revolute",
+        "axis": [
+          0.9438583563660174,
+          -0.0,
+          -0.33035042472810605
+        ],
+        "min": 0.0,
+        "max": 4.71238898038469,
+        "note": "temperature knob, + = clockwise"
+      },
+      "bounds_local": {
+        "min": [
+          -0.0275,
+          -0.026,
+          -0.0245
+        ],
+        "max": [
+          0.0086,
+          0.026,
+          0.0311
+        ]
+      }
+    },
+    {
+      "name": "knob_fan",
+      "parent": "pico",
+      "pivot": [
+        0.632,
+        0.0,
+        0.69
+      ],
+      "joint": {
+        "type": "revolute",
+        "axis": [
+          0.9438583563660174,
+          -0.0,
+          -0.33035042472810605
+        ],
+        "min": 0.0,
+        "max": 4.71238898038469,
+        "note": "fan speed knob, + = clockwise"
+      },
+      "bounds_local": {
+        "min": [
+          -0.0275,
+          -0.026,
+          -0.0245
+        ],
+        "max": [
+          0.0086,
+          0.026,
+          0.0311
+        ]
+      }
+    },
+    {
+      "name": "knob_mode",
+      "parent": "pico",
+      "pivot": [
+        0.632,
+        -0.11,
+        0.69
+      ],
+      "joint": {
+        "type": "revolute",
+        "axis": [
+          0.9438583563660174,
+          -0.0,
+          -0.33035042472810605
+        ],
+        "min": 0.0,
+        "max": 4.71238898038469,
+        "note": "air distribution knob, + = clockwise"
+      },
+      "bounds_local": {
+        "min": [
+          -0.0275,
+          -0.026,
+          -0.0245
+        ],
+        "max": [
+          0.0086,
+          0.026,
+          0.0311
+        ]
+      }
+    },
+    {
+      "name": "btn_hazard",
+      "parent": "pico",
+      "pivot": [
+        0.636,
+        0.0,
+        0.745
+      ],
+      "joint": {
+        "type": "prismatic",
+        "axis": [
+          0.9438583563660174,
+          -0.0,
+          -0.33035042472810605
+        ],
+        "min": 0.0,
+        "max": 0.003,
+        "note": "hazard lights button, + = pressed"
+      },
+      "bounds_local": {
+        "min": [
+          -0.0099,
+          -0.015,
+          -0.0091
+        ],
+        "max": [
+          0.0023,
+          0.015,
+          0.0117
+        ]
+      }
+    },
+    {
+      "name": "steering_wheel",
+      "parent": "pico",
+      "pivot": [
+        0.36,
+        0.34,
+        0.84
+      ],
+      "joint": {
+        "type": "revolute",
+        "axis": [
+          -0.8820753183692411,
+          -0.0,
+          0.47110840867448106
+        ],
+        "min": -9.42477796076938,
+        "max": 9.42477796076938,
+        "note": "steering wheel angle, + = left"
+      },
+      "bounds_local": {
+        "min": [
+          -0.1006,
+          -0.196,
+          -0.1746
+        ],
+        "max": [
+          0.1006,
+          0.196,
+          0.1746
+        ]
+      }
+    },
+    {
+      "name": "btn_wheel_audio_vol_up",
+      "parent": "steering_wheel",
+      "pivot": [
+        0.36036,
+        0.235,
+        0.85341
+      ],
+      "joint": {
+        "type": "prismatic",
+        "axis": [
+          0.8820753183692411,
+          -0.0,
+          -0.47110840867448106
+        ],
+        "min": 0.0,
+        "max": 0.003,
+        "note": "volume + button, + = pressed"
+      },
+      "bounds_local": {
+        "min": [
+          -0.0068,
+          -0.008,
+          -0.0052
+        ],
+        "max": [
+          0.0023,
+          0.008,
+          0.0076
+        ]
+      }
+    },
+    {
+      "name": "btn_wheel_audio_vol_down",
+      "parent": "steering_wheel",
+      "pivot": [
+        0.34905,
+        0.235,
+        0.83224
+      ],
+      "joint": {
+        "type": "prismatic",
+        "axis": [
+          0.8820753183692411,
+          -0.0,
+          -0.47110840867448106
+        ],
+        "min": 0.0,
+        "max": 0.003,
+        "note": "volume - button, + = pressed"
+      },
+      "bounds_local": {
+        "min": [
+          -0.0068,
+          -0.008,
+          -0.0052
+        ],
+        "max": [
+          0.0023,
+          0.008,
+          0.0076
+        ]
+      }
+    },
+    {
+      "name": "btn_wheel_phone",
+      "parent": "steering_wheel",
+      "pivot": [
+        0.36036,
+        0.445,
+        0.85341
+      ],
+      "joint": {
+        "type": "prismatic",
+        "axis": [
+          0.8820753183692411,
+          -0.0,
+          -0.47110840867448106
+        ],
+        "min": 0.0,
+        "max": 0.003,
+        "note": "phone button, + = pressed"
+      },
+      "bounds_local": {
+        "min": [
+          -0.0068,
+          -0.008,
+          -0.0052
+        ],
+        "max": [
+          0.0023,
+          0.008,
+          0.0076
+        ]
+      }
+    },
+    {
+      "name": "btn_wheel_audio_source",
+      "parent": "steering_wheel",
+      "pivot": [
+        0.34905,
+        0.445,
+        0.83224
+      ],
+      "joint": {
+        "type": "prismatic",
+        "axis": [
+          0.8820753183692411,
+          -0.0,
+          -0.47110840867448106
+        ],
+        "min": 0.0,
+        "max": 0.003,
+        "note": "source button, + = pressed"
+      },
+      "bounds_local": {
+        "min": [
+          -0.0068,
+          -0.008,
+          -0.0052
+        ],
+        "max": [
+          0.0023,
+          0.008,
+          0.0076
+        ]
+      }
+    },
+    {
+      "name": "stalk_indicator",
+      "parent": "pico",
+      "pivot": [
+        0.48,
+        0.375,
+        0.776
+      ],
+      "joint": {
+        "type": "revolute",
+        "axis": [
+          1.0,
+          0.0,
+          0.0
+        ],
+        "min": -0.20943951023931956,
+        "max": 0.20943951023931956,
+        "note": "indicator stalk stalk"
+      },
+      "bounds_local": {
+        "min": [
+          -0.044,
+          -0.0015,
+          -0.0234
+        ],
+        "max": [
+          0.0058,
+          0.1415,
+          0.006
+        ]
+      }
+    },
+    {
+      "name": "stalk_wiper",
+      "parent": "pico",
+      "pivot": [
+        0.48,
+        0.305,
+        0.776
+      ],
+      "joint": {
+        "type": "revolute",
+        "axis": [
+          -1.0,
+          0.0,
+          0.0
+        ],
+        "min": -0.20943951023931956,
+        "max": 0.20943951023931956,
+        "note": "wiper stalk stalk"
+      },
+      "bounds_local": {
+        "min": [
+          -0.044,
+          -0.1415,
+          -0.0234
+        ],
+        "max": [
+          0.0058,
+          0.0015,
+          0.006
+        ]
+      }
+    },
+    {
+      "name": "lever_gear_fa",
+      "parent": "pico",
+      "pivot": [
+        0.42,
+        0.0,
+        0.51
+      ],
+      "joint": {
+        "type": "revolute",
+        "axis": [
+          0.0,
+          1.0,
+          0.0
+        ],
+        "min": -0.23561944901923448,
+        "max": 0.23561944901923448,
+        "note": "gear lever fore/aft, + = top forward"
+      }
+    },
+    {
+      "name": "lever_gear",
+      "parent": "lever_gear_fa",
+      "pivot": [
+        0.42,
+        0.0,
+        0.51
+      ],
+      "joint": {
+        "type": "revolute",
+        "axis": [
+          -1.0,
+          0.0,
+          0.0
+        ],
+        "min": -0.23561944901923448,
+        "max": 0.23561944901923448,
+        "note": "gear lever across the gate, + = top left"
+      },
+      "bounds_local": {
+        "min": [
+          -0.024,
+          -0.0236,
+          0.0
+        ],
+        "max": [
+          0.024,
+          0.0236,
+          0.2072
+        ]
+      }
+    },
+    {
+      "name": "lever_handbrake",
+      "parent": "pico",
+      "pivot": [
+        0.08,
+        0.0,
+        0.51
+      ],
+      "joint": {
+        "type": "revolute",
+        "axis": [
+          0.0,
+          1.0,
+          0.0
+        ],
+        "min": 0.0,
+        "max": 0.3839724354387525,
+        "note": "handbrake lever, + = pulled/on"
+      },
+      "bounds_local": {
+        "min": [
+          -0.0009,
+          -0.017,
+          -0.0079
+        ],
+        "max": [
+          0.2659,
+          0.017,
+          0.0473
+        ]
+      }
+    },
+    {
+      "name": "pedal_clutch",
+      "parent": "pico",
+      "pivot": [
+        0.8,
+        0.47,
+        0.62
+      ],
+      "joint": {
+        "type": "revolute",
+        "axis": [
+          0.0,
+          -1.0,
+          0.0
+        ],
+        "min": 0.0,
+        "max": 0.3141592653589793,
+        "note": "clutch pedal pedal travel"
+      },
+      "bounds_local": {
+        "min": [
+          -0.1644,
+          -0.035,
+          -0.2978
+        ],
+        "max": [
+          0.0069,
+          0.035,
+          0.0041
+        ]
+      }
+    },
+    {
+      "name": "pedal_brake",
+      "parent": "pico",
+      "pivot": [
+        0.8,
+        0.35,
+        0.62
+      ],
+      "joint": {
+        "type": "revolute",
+        "axis": [
+          0.0,
+          -1.0,
+          0.0
+        ],
+        "min": 0.0,
+        "max": 0.3141592653589793,
+        "note": "brake pedal pedal travel"
+      },
+      "bounds_local": {
+        "min": [
+          -0.1744,
+          -0.035,
+          -0.2978
+        ],
+        "max": [
+          0.0067,
+          0.035,
+          0.0043
+        ]
+      }
+    },
+    {
+      "name": "pedal_throttle",
+      "parent": "pico",
+      "pivot": [
+        0.8,
+        0.23,
+        0.62
+      ],
+      "joint": {
+        "type": "revolute",
+        "axis": [
+          0.0,
+          -1.0,
+          0.0
+        ],
+        "min": 0.0,
+        "max": 0.3141592653589793,
+        "note": "throttle pedal pedal travel"
+      },
+      "bounds_local": {
+        "min": [
+          -0.1244,
+          -0.035,
+          -0.3178
+        ],
+        "max": [
+          0.0074,
+          0.035,
+          0.0029
+        ]
+      }
+    },
+    {
+      "name": "btn_window_FL",
+      "parent": "door_FL",
+      "pivot": [
+        0.25,
+        0.625,
+        0.7
+      ],
+      "joint": {
+        "type": "prismatic",
+        "axis": [
+          -0.11080752827296766,
+          0.7387168551531178,
+          -0.664845169637806
+        ],
+        "min": 0.0,
+        "max": 0.003,
+        "note": "window switch FL button, + = pressed"
+      },
+      "bounds_local": {
+        "min": [
+          -0.015,
+          -0.0125,
+          -0.0059
+        ],
+        "max": [
+          0.0159,
+          0.0066,
+          0.0112
+        ]
+      }
+    },
+    {
+      "name": "btn_window_FR",
+      "parent": "door_FR",
+      "pivot": [
+        0.25,
+        -0.625,
+        0.7
+      ],
+      "joint": {
+        "type": "prismatic",
+        "axis": [
+          -0.11080752827296766,
+          -0.7387168551531178,
+          -0.664845169637806
+        ],
+        "min": 0.0,
+        "max": 0.003,
+        "note": "window switch FR button, + = pressed"
+      },
+      "bounds_local": {
+        "min": [
+          -0.015,
+          -0.0066,
+          -0.0059
+        ],
+        "max": [
+          0.0159,
+          0.0125,
+          0.0112
+        ]
+      }
+    }
+  ],
+  "sockets": [
+    {
+      "name": "socket_driver_eye",
+      "parent": "pico",
+      "position": [
+        -0.32,
+        0.34,
+        1.2
+      ],
+      "note": "driver eye point (camera)"
+    },
+    {
+      "name": "socket_engine_mount",
+      "parent": "pico",
+      "position": [
+        1.4,
+        0.0,
+        0.42
+      ],
+      "note": "engine origin (crank axis centre at the flywheel face), transverse, crank along +y"
+    },
+    {
+      "name": "socket_tow_front",
+      "parent": "pico",
+      "position": [
+        1.86,
+        0.3,
+        0.34
+      ],
+      "note": "front towing eye"
+    },
+    {
+      "name": "socket_tow_rear",
+      "parent": "pico",
+      "position": [
+        -1.68,
+        -0.35,
+        0.36
+      ],
+      "note": "rear towing eye"
+    },
+    {
+      "name": "socket_exhaust",
+      "parent": "pico",
+      "position": [
+        -1.7,
+        -0.45,
+        0.24
+      ],
+      "note": "exhaust outlet, flow along -x"
+    }
+  ],
+  "lights": {
+    "head": {
+      "materials": [
+        "light_head",
+        "light_drl"
+      ],
+      "emissive_on": [
+        1.0,
+        0.95,
+        0.85
+      ],
+      "emissive_strength_on": 8.0
+    },
+    "tail": {
+      "materials": [
+        "light_tail"
+      ],
+      "emissive_on": [
+        1.0,
+        0.03,
+        0.02
+      ],
+      "emissive_strength_on": 2.0
+    },
+    "brake": {
+      "materials": [
+        "light_brake"
+      ],
+      "emissive_on": [
+        1.0,
+        0.02,
+        0.01
+      ],
+      "emissive_strength_on": 8.0
+    },
+    "indicator_left": {
+      "materials": [
+        "light_indicator_left"
+      ],
+      "emissive_on": [
+        1.0,
+        0.5,
+        0.0
+      ],
+      "emissive_strength_on": 6.0
+    },
+    "indicator_right": {
+      "materials": [
+        "light_indicator_right"
+      ],
+      "emissive_on": [
+        1.0,
+        0.5,
+        0.0
+      ],
+      "emissive_strength_on": 6.0
+    },
+    "reverse": {
+      "materials": [
+        "light_reverse"
+      ],
+      "emissive_on": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "emissive_strength_on": 5.0
+    },
+    "dash": {
+      "materials": [
+        "gauge_tick",
+        "gauge_needle"
+      ],
+      "emissive_on": [
+        0.9,
+        0.9,
+        0.9
+      ],
+      "emissive_strength_on": 1.0
+    }
+  },
+  "engine_bay": {
+    "envelope_mm": [
+      620,
+      900,
+      560
+    ],
+    "box_m": {
+      "min": [
+        1.08,
+        -0.45,
+        0.28
+      ],
+      "max": [
+        1.7,
+        0.45,
+        0.84
+      ]
+    },
+    "origin": "socket_engine_mount",
+    "layout": "front transverse",
+    "note": "free box under the closed hood"
+  },
+  "notes": [
+    "Generic A-segment city car; class-typical dimensions, not a specific production car.",
+    "Rear door windows pop out about their front edge (node popout_RL/RR, children of the rear doors).",
+    "Paint material 'paint', roof material 'paint_roof' (contrast roof option), dash strip 'dash_paint'.",
+    "Cockpit parts are driven by pico.cockpit.json (rg.cockpit/1)."
+  ]
+}

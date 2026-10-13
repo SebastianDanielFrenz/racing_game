@@ -47,6 +47,8 @@ var rim_colour: Color = Color(0, 0, 0, 0)
 
 var _wheel_nodes: Array = []
 var _model_root: Node3D
+var model_options: Array = [] # optional model parts switched on (model_options.gd), applied with the colours
+var _cockpit: Node3D # cockpit_controls.gd, for a model with a <model>.cockpit.json next to it
 var _load_ok: bool = false
 var _wing_flap: Node3D
 var _wing_lift: Node3D
@@ -57,6 +59,13 @@ func _ready() -> void:
 	_load_model()
 	_bind_wheel_nodes()
 	set_process(true)
+
+# The clickable cockpit of this model (cockpit_controls.gd), or null.
+func get_cockpit() -> Node3D:
+	if _cockpit != null and is_instance_valid(_cockpit) and _cockpit.is_loaded():
+		_cockpit.set("vehicle_name", vehicle_name)
+		return _cockpit
+	return null
 
 func model_loaded() -> bool:
 	return _load_ok
@@ -111,6 +120,17 @@ func _load_model() -> void:
 		cluster.set("simulation", simulation)
 		cluster.set("vehicle_name", vehicle_name)
 		_model_root.add_child(cluster)
+	var cockpit_json := model_absolute_path.get_basename() + ".cockpit.json"
+	if FileAccess.file_exists(cockpit_json):
+		_cockpit = Node3D.new()
+		_cockpit.name = "CockpitControls"
+		_cockpit.set_script(load("res://scripts/cockpit_controls.gd"))
+		_cockpit.set("simulation", simulation)
+		_cockpit.set("vehicle_name", vehicle_name)
+		_cockpit.set("model_root", _model_root)
+		_cockpit.set("cockpit_path", cockpit_json)
+		_cockpit.set("rig_path", model_absolute_path.get_basename() + ".rig.json")
+		_model_root.add_child(_cockpit)
 	_wing_flap = _model_root.find_child("wing_flap",true,false)
 	_wing_lift = _model_root.find_child("wing_lift",true,false)
 	if _wing_flap != null:
@@ -125,6 +145,8 @@ func _load_model() -> void:
 # the physics never sees them). Every surface gets its own material copy first so a colour
 # never leaks into another car loaded from the same file.
 func apply_colours() -> void:
+	if _model_root != null:
+		preload("res://scripts/model_options.gd").apply(_model_root, model_absolute_path.get_basename() + ".rig.json", model_options)
 	if _model_root == null or (paint_colour.a == 0.0 and rim_colour.a == 0.0):
 		return
 	var stack: Array = [_model_root]

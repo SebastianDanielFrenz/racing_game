@@ -55,6 +55,15 @@ struct DeclaredEngineStats {
 // field it does not set itself (vehicle, model, chassis, engine bay, declared engine,
 // colours, body type, manufacturer, displacement, offered options). The player's own
 // saved setup stays per entry and is applied on top of the preset's overlay.
+// The free space a car's engine bay offers the engine (new cars plan Q10, rg::check_fit): measured from the model's
+// rig (engine_bay.box_m), less whatever else sits in it (a transverse engine's transaxle). Crank along the car's x
+// (longitudinal) or y (transverse).
+struct EngineBayEnvelope {
+    std::array<double, 3> size_mm{0.0, 0.0, 0.0}; // car frame: x (length), y (width), z (height)
+    char crank_axis = 'x';                         // 'x' longitudinal, 'y' transverse
+    std::string source;
+};
+
 struct CatalogEntry {
     std::string id;          // unique, lower_snake
     std::string title;
@@ -71,6 +80,10 @@ struct CatalogEntry {
     std::string sim_name;     // the vehicle file's "name": the key the simulation reports the vehicle under
     VehicleChassis chassis;
     std::string engine_bay = "front"; // "front" | "mid" | "rear": where the garage camera looks for the engine
+    std::optional<EngineBayEnvelope> engine_bay_envelope; // none = not measured: every engine fits
+    // Optional model parts the car's art carries (rig.json nodes with an "option", e.g. "roof" = the Runabout's
+    // folding top). A setup option with the same model_option shows or hides them; the physics never sees them.
+    std::vector<std::string> model_options;
     std::optional<DeclaredEngineStats> declared_engine;
     std::string default_paint = "#8a8f98"; // visual only
     std::string default_rim = "#c4c8cf";
@@ -107,6 +120,7 @@ std::string default_engine_cache_dir(const std::string& vehicle_path);
 // The stats vehicle select shows, all read from data.
 struct VehicleStats {
     std::string engine_name;
+    std::string engine_path;          // the vehicle file's engine file, absolute ("" = none)
     std::string engine_kind;          // "torque_map" | "simulated"
     double peak_torque_nm = 0.0;
     double peak_torque_rpm = 0.0;

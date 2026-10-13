@@ -1,0 +1,62 @@
+{
+  "format": "physics_sim.rig/1",
+  "model": "ventura_v8_5l0_na.glb",
+  "title": "V8 5.0",
+  "description": "Generated engine mesh for V8 5.0 from its physical data.",
+  "frame": "ISO 8855: x forward, y left, z up; metres; radians. The .glb itself uses glTF axes (+Y up, +Z forward, +X left): gltf(x,y,z) = iso(y,z,x).",
+  "origin": "Crank axis at the flywheel face of the block; x toward the timing end, z up.",
+  "rest_pose": "All node rotations are identity at rest; a node's origin is its joint pivot. Joint values are offsets from the rest pose (0 = as modelled).",
+  "overall_bounds": {
+    "min": [
+      -0.0413,
+      -0.3298,
+      -0.1931
+    ],
+    "max": [
+      0.6172,
+      0.3298,
+      0.3836
+    ]
+  },
+  "nodes": [
+    {
+      "name": "ventura_v8_5l0_na",
+      "parent": null,
+      "pivot": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "bounds_local": {
+        "min": [
+          -0.0413,
+          -0.3298,
+          -0.1931
+        ],
+        "max": [
+          0.6172,
+          0.3298,
+          0.3836
+        ]
+      }
+    }
+  ],
+  "sockets": [
+    {
+      "name": "socket_flywheel",
+      "parent": "ventura_v8_5l0_na",
+      "position": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "note": "flywheel face of the block on the crank axis (+x toward the timing end): the gearbox bolts on here"
+    }
+  ],
+  "lights": {},
+  "engine": {
+    "layout": "v",
+    "source": "the engine file's own geometry (data/engines/ventura_v8_5l0_na.json)"
+  },
+  "notes": []
+}

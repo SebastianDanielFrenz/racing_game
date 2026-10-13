@@ -1,0 +1,25 @@
+{
+  "format": "physics_sim.gearbox/1",
+  "name": "vintage_3mt",
+  "type": "manual",
+  "source": "racing_game-owned vintage 3-speed sliding-mesh manual for the Runabout T (car_runabout), an invented design in the manner of 1910s-1920s three-speed boxes, NOT a specific gearbox [AS]. Ratios 3.60 / 1.90 / 1.00 (direct top) and reverse -4.50 are typical of the period's three-speed boxes behind a long-stroke side-valve four [AS]. Straight-cut sliding gears churn more than a modern helical box: mesh efficiency 0.93 / 0.95 / 0.985 (direct top gear passes through no mesh, only bearing loss) [AS]. A sliding-mesh box has no synchronisers: the small forward 'synchro' capacities (18 / 14 / 12 N*m) are a stand-in for the gear-tooth chamfer and the brake friction a driver uses to match speeds, and the wide dog window (12 rad/s) lets a careful shift engage; a careless one grinds (grind_after_s 0.35). Heavy cast-iron shafts and gears: inertias about twice the economy 5-speed's [AS]. Slow shifts: neutral phase 0.18 s. Torque rating 160 N*m is kept in data/gearboxes/gearbox_catalog.json.",
+  "forward_ratios": [3.6, 1.9, 1.0],
+  "forward_efficiency": [0.93, 0.95, 0.985],
+  "reverse_ratios": [-4.5],
+  "reverse_efficiency": [0.9],
+  "input_inertia_kgm2": 0.02,
+  "output_inertia_kgm2": 0.03,
+  "input_axis_local": [0, 1, 0],
+  "output_axis_local": [0, -1, 0],
+  "synchro": {
+    "forward_capacity_nm": [18, 14, 12],
+    "reverse_capacity_nm": [0],
+    "static_factor": 1.0,
+    "max_dog_mismatch_rad_s": 12.0
+  },
+  "neutral_phase_s": 0.18,
+  "dog_release_torque_nm": 40.0,
+  "grind_after_s": 0.35,
+  "abort_after_s": 1.5,
+  "initial_gear": 0
+}
