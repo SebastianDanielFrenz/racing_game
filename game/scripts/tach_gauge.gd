@@ -42,6 +42,9 @@ var _gauge_info: Dictionary = {}
 var _last_pt: Dictionary = {}
 var _speed_limit: Dictionary = {}
 var _thermal: Dictionary = {}
+# Pedal inputs as sent to the sim this frame (RgSimulation.get_control, like hud.gd's debug lines); empty while the
+# driving inputs are not live (free cam, on foot, unattended car), which hides the pedal bars.
+var _pedals: Dictionary = {}
 
 var _display_rpm: float = 0.0
 const NEEDLE_SMOOTH_RATE_PER_S := 10.0
@@ -60,6 +63,11 @@ const COLOR_LAMP_OFF := Color(0.4, 0.4, 0.44, 0.85)
 const COLOR_LAMP_ON := Color(0.25, 0.9, 0.35, 1.0)
 const COLOR_LAMP_INTERVENING := Color(1.0, 0.75, 0.0, 1.0)
 const COLOR_SPEED_TEXT := Color(0.95, 0.95, 1.0, 1.0)
+const COLOR_PEDAL_FRAME := Color(0.6, 0.6, 0.66, 0.7)
+const COLOR_PEDAL_CLUTCH := Color(0.35, 0.65, 1.0, 0.95)
+const COLOR_PEDAL_CLUTCH_AUTO := Color(0.35, 0.65, 1.0, 0.35)
+const COLOR_PEDAL_BRAKE := Color(0.95, 0.25, 0.2, 0.95)
+const COLOR_PEDAL_THROTTLE := Color(0.3, 0.9, 0.4, 0.95)
 
 const SYSTEM_LAMP_NAMES := ["ABS", "TC", "ESP", "LC", "HILL"]
 const SYSTEM_LAMP_SLOTS_CLOCK_DEG := [250.0, 322.0, 34.0, 106.0, 178.0]
@@ -83,12 +91,17 @@ func _process(delta: float) -> void:
 		_speed_limit = _simulation.get_vehicle_speed_limit(vehicle_name)
 		_thermal = _simulation.get_vehicle_thermal(vehicle_name)
 		_gps_kmh = _simulation.get_vehicle_ground_speed_mps(vehicle_name) * 3.6
+		_pedals = {}
+		if bool(_simulation.get_mode_state().get("driving_inputs_live", false)):
+			_pedals = {"clutch": _simulation.get_control("clutch"), "brake": _simulation.get_control("brake"),
+				"throttle": _simulation.get_control("throttle")}
 		var target_rpm: float = _last_pt.get("rpm", 0.0)
 		_display_rpm = GaugeLogic.smooth_towards(_display_rpm, target_rpm, NEEDLE_SMOOTH_RATE_PER_S, delta)
 	else:
 		_last_pt = {}
 		_speed_limit = {}
 		_thermal = {}
+		_pedals = {}
 	queue_redraw()
 
 func _clock_rad(clock_deg: float) -> float:
@@ -262,6 +275,8 @@ func _draw() -> void:
 	# Left of the lamp row, under the speed readout; nothing for a car without a thermal model.
 	ThermalReadout.draw_bar(self, font, Vector2(center.x - radius * 1.55, center.y + radius * 1.28), scale, _thermal, blink_on)
 
+	_draw_pedals(font, vp_size, center, radius, margin, scale)
+
 	var warning: String = ""
 	if engine_state == "stalled":
 		warning = "ENGINE STALLED - hold Start / K to restart"
@@ -273,3 +288,35 @@ func _draw() -> void:
 	if warning != "" and (engine_state == "off" or (slow_blink_on if engine_state == "stalled" else blink_on)):
 		var banner_pos := Vector2(center.x - radius * 0.5, center.y - radius * 1.35)
 		_draw_centered_text(font, banner_pos, warning, int(round(24.0 * scale)), COLOR_NEEDLE_REDLINE)
+
+# Clutch, brake and accelerator as three vertical bars (pedal order, left to right) in the strip between the dial and
+# the right screen edge. The bars show the driver's input; the clutch bar's faint fill behind it is how far the
+# clutch is actually open (1 - engagement), so an automatic clutch opening without the pedal shows there too.
+func _draw_pedals(font: Font, vp_size: Vector2, center: Vector2, radius: float, margin: float, scale: float) -> void:
+	if _pedals.is_empty():
+		return
+	var bar_w: float = 9.0 * scale
+	var gap: float = 6.0 * scale
+	var height: float = radius * 1.1
+	var strip_left: float = vp_size.x - margin
+	var x0: float = strip_left + (margin - (3.0 * bar_w + 2.0 * gap)) * 0.5
+	var top: float = center.y - height * 0.5
+	var font_size: int = int(round(12.0 * scale))
+	var auto_open: float = clampf(1.0 - float(_last_pt.get("clutch_engagement", 1.0)), 0.0, 1.0)
+	var bars := [
+		["C", float(_pedals.get("clutch", 0.0)), COLOR_PEDAL_CLUTCH, auto_open],
+		["B", float(_pedals.get("brake", 0.0)), COLOR_PEDAL_BRAKE, 0.0],
+		["A", float(_pedals.get("throttle", 0.0)), COLOR_PEDAL_THROTTLE, 0.0],
+	]
+	for i in range(bars.size()):
+		var x: float = x0 + i * (bar_w + gap)
+		var frame := Rect2(x, top, bar_w, height)
+		draw_rect(frame, COLOR_BG, true)
+		var ghost: float = float(bars[i][3])
+		if ghost > 0.0:
+			draw_rect(Rect2(x, top + height * (1.0 - ghost), bar_w, height * ghost), COLOR_PEDAL_CLUTCH_AUTO, true)
+		var v: float = clampf(float(bars[i][1]), 0.0, 1.0)
+		if v > 0.0:
+			draw_rect(Rect2(x, top + height * (1.0 - v), bar_w, height * v), bars[i][2], true)
+		draw_rect(frame, COLOR_PEDAL_FRAME, false, max(1.0, scale))
+		_draw_centered_text(font, Vector2(x + bar_w * 0.5, top + height + font_size * 0.9), bars[i][0], font_size, COLOR_TICK_MINOR)
