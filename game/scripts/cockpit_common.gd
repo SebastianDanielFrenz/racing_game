@@ -108,14 +108,20 @@ func _copy_lamp_materials(root: Node) -> void:
 			if not _materials.has(copy.resource_name): _materials[copy.resource_name] = []
 			_materials[copy.resource_name].append(copy)
 
-func update_lamps(snapshot: Dictionary) -> void:
+func update_lamps(snapshot: Dictionary, channels: Dictionary = {}) -> void:
+	var states: Dictionary = {}
 	for rule in _layout.get("lamps",[]):
 		var name: String = rule["material"]
-		var field: String = rule["field"]
-		var on := snapshot.has(field)
-		if rule.has("fitted"): on = on and bool(snapshot.get(rule["fitted"],false))
-		if rule.has("equals"): on = on and snapshot.get(field) == rule["equals"]
-		if rule.has("greater_than"): on = on and float(snapshot.get(field,0)) > float(rule["greater_than"])
+		var on := false
+		if rule.has("action"):
+			var action: String = rule["action"]
+			if not states.has(action): states[action] = RgDriverActions.state(action,snapshot,channels)
+			on = (int(states[action]["lamp_segments"]) & (1 << int(rule["segment"]))) != 0
+		else:
+			# New driver functions arrive in C1; the existing start ring still
+			# reads the published engine state, with no new game behaviour.
+			var field: String = rule["field"]
+			on = snapshot.has(field) and snapshot.get(field) == rule["equals"]
 		if not _lamp_specs.has(name): continue
 		var spec: Dictionary = _lamp_specs[name]
 		var rgb: Array = spec["emissive_on"]
@@ -126,7 +132,8 @@ func update_lamps(snapshot: Dictionary) -> void:
 
 func _process(_delta: float) -> void:
 	if simulation != null and simulation.has_method("get_vehicle_powertrain"):
-		update_lamps(simulation.get_vehicle_powertrain(vehicle_name))
+		var channels: Dictionary = load("res://scripts/driver_state.gd").channels(simulation) if simulation.has_method("get_control") else {}
+		update_lamps(simulation.get_vehicle_powertrain(vehicle_name),channels)
 
 func mounted_count() -> int:
 	return _mounted.size()

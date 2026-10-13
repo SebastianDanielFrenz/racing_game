@@ -38,7 +38,7 @@ func run() -> void:
 	wheel.rotate_x(0.5)
 	check((wheel.global_transform.affine_inverse()*paddle.global_transform).is_equal_approx(relative),"paddle follows wheel")
 	check(Cockpit.attach_to(car) == cockpit,"attach is idempotent")
-	cockpit.update_lamps({"traction_control_fitted":true,"traction_mode_effective":3,"drive_mode_fitted":true,"drive_mode_effective":2,"engine_state":"Running"})
+	cockpit.update_lamps({"assist_fitted_bits":8,"traction_modes_available_bits":31,"traction_mode_effective":3,"drive_modes_available_bits":7,"drive_mode_effective":2,"engine_state":"Running"})
 	check(cockpit._materials["lamp_tc_led3"][0].emission_enabled,"effective TC lamp")
 	check(not cockpit._materials["lamp_tc_led1"][0].emission_enabled,"other TC lamps off")
 	check(cockpit._materials["lamp_drive_mode_sport_led0"][0].emission_enabled,"Sport lamp")

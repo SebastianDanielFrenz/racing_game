@@ -24,18 +24,18 @@
     {"id":"horn", "part":"horn", "socket":"socket_ctl_horn", "parent":"steering_wheel", "position":[-0.004,0,0.002], "normal":[-0.954,0,0.301], "up":[0.301,0,0.954]}
   ],
   "lamps": [
-    {"material":"lamp_tc_led0", "field":"traction_mode_effective", "equals":0, "fitted":"traction_control_fitted"},
-    {"material":"lamp_tc_led1", "field":"traction_mode_effective", "equals":1, "fitted":"traction_control_fitted"},
-    {"material":"lamp_tc_led2", "field":"traction_mode_effective", "equals":2, "fitted":"traction_control_fitted"},
-    {"material":"lamp_tc_led3", "field":"traction_mode_effective", "equals":3, "fitted":"traction_control_fitted"},
-    {"material":"lamp_tc_led4", "field":"traction_mode_effective", "equals":4, "fitted":"traction_control_fitted"},
-    {"material":"lamp_lc_led0", "field":"launch_lamp", "greater_than":1, "fitted":"launch_control_fitted"},
-    {"material":"lamp_aero_led0", "field":"aero_control_active", "equals":true},
-    {"material":"lamp_am_led0", "field":"assist_auto_shift", "equals":true},
-    {"material":"lamp_drive_mode_eco_led0", "field":"drive_mode_effective", "equals":0, "fitted":"drive_mode_fitted"},
-    {"material":"lamp_drive_mode_normal_led0", "field":"drive_mode_effective", "equals":1, "fitted":"drive_mode_fitted"},
-    {"material":"lamp_drive_mode_sport_led0", "field":"drive_mode_effective", "equals":2, "fitted":"drive_mode_fitted"},
-    {"material":"lamp_drive_mode_racing_led0", "field":"drive_mode_effective", "equals":3, "fitted":"drive_mode_fitted"},
-    {"material":"lamp_start_ring", "field":"engine_state", "equals":"Running"}
+    {"material":"lamp_tc_led0","action":"traction_control","segment":0},
+    {"material":"lamp_tc_led1","action":"traction_control","segment":1},
+    {"material":"lamp_tc_led2","action":"traction_control","segment":2},
+    {"material":"lamp_tc_led3","action":"traction_control","segment":3},
+    {"material":"lamp_tc_led4","action":"traction_control","segment":4},
+    {"material":"lamp_lc_led0","action":"toggle_launch_control","segment":0},
+    {"material":"lamp_aero_led0","action":"toggle_aero","segment":0},
+    {"material":"lamp_am_led0","action":"auto_shift","segment":0},
+    {"material":"lamp_drive_mode_eco_led0","action":"drive_mode","segment":0},
+    {"material":"lamp_drive_mode_normal_led0","action":"drive_mode","segment":1},
+    {"material":"lamp_drive_mode_sport_led0","action":"drive_mode","segment":2},
+    {"material":"lamp_drive_mode_racing_led0","action":"drive_mode","segment":3},
+    {"material":"lamp_start_ring","field":"engine_state","equals":"Running"}
   ]
 }

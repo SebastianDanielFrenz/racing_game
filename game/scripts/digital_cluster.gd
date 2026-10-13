@@ -25,6 +25,7 @@ var thermal: Dictionary = {}
 const ThermalReadout := preload("res://scripts/thermal_readout.gd")
 # Drive-mode theme colours (ECO blue / NORMAL gray / SPORT orange); a car without drive modes keeps the default look.
 const DriveModeTheme := preload("res://scripts/drive_mode_theme.gd")
+const DriverState := preload("res://scripts/driver_state.gd")
 const DEFAULT_SPEED_COLOR := Color(0.25,0.7,1)
 const DEFAULT_RPM_COLOR := Color(0.2,0.95,0.75)
 const DEFAULT_SMALL_DIAL_COLOR := Color(0.6,0.85,1)
@@ -56,17 +57,19 @@ func _process(delta: float) -> void:
 	var dt := elapsed
 	elapsed = 0.0
 	var pt: Dictionary = simulation.get_vehicle_powertrain(vehicle_name)
+	var controls: Dictionary = DriverState.read(simulation,pt)
 	thermal = simulation.get_vehicle_thermal(vehicle_name)
-	tc_on = pt.get("assist_traction_control",false)
-	tc_intervening = pt.get("traction_control_intervening",false)
-	tc_mode_name = str(pt.get("traction_mode_name","Off"))
-	aero_fitted = bool(pt.get("aero_control_fitted",false))
-	aero_active = bool(pt.get("aero_control_active",false))
-	aero_target_deg = float(pt.get("aero_control_target_deg",0.0))
-	drive_mode_label = DriveModeTheme.label(pt)
-	drive_mode_accent = DriveModeTheme.accent(pt,Color(0.5,0.7,0.82))
-	launch_lamp = int(pt.get("launch_lamp",0))
-	launch_lamp_text = str(pt.get("launch_lamp_text",""))
+	tc_fitted = controls["tc"]["fitted"]
+	tc_on = controls["tc"]["active"]
+	tc_intervening = controls["tc"]["blink"]
+	tc_mode_name = controls["tc"]["label"]
+	aero_fitted = controls["aero"]["fitted"]
+	aero_active = controls["aero"]["value"] != 0
+	aero_target_deg = controls["aero"]["aero_target_deg"]
+	drive_mode_label = controls["dm"]["label"]
+	drive_mode_accent = DriveModeTheme.accent_state(controls["dm"],Color(0.5,0.7,0.82))
+	launch_lamp = controls["lc"]["lamp_state"]
+	launch_lamp_text = controls["lc"]["label"]
 	speed = ground_speed*3.6
 	rpm = pt.get("rpm",0.0)
 	drive_kw = pt.get("drive_power_kw",0.0)

@@ -52,6 +52,7 @@
 set(PS_ADAPTER_SRC_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../external/physics_sim/adapters/godot/src")
 
 add_library(rg_core STATIC
+    src/driver_actions.cpp
     src/environment.cpp
     src/npc_truck.cpp
     src/walker.cpp

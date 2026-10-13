@@ -1104,21 +1104,19 @@ func _forward_driving(live: bool, delta: float) -> void:
 	# unattended never arrive later as a burst of shifts.
 	var up: int = _input_map.consume_shift_up_count()
 	var down: int = _input_map.consume_shift_down_count()
-	var nitrous_toggles: int = _input_map.consume_nitrous_toggle()
-	var traction_cycles: int = _input_map.consume_traction_cycle()
-	var aero_toggles: int = _input_map.consume_aero_toggle()
-	var drive_mode_cycles: int = _input_map.consume_drive_mode_cycle()
-	var launch_toggles: int = _input_map.consume_launch_toggle()
 	if not live or not bool(_simulation.is_running()):
+		_input_map.driver_actions.discard_pending()
 		_steering.reset()
 		return
 	if get_tree().get_nodes_in_group("seat_adjustment_open").size() > 0 or get_tree().get_nodes_in_group("address_teleport_open").size() > 0:
+		_input_map.driver_actions.discard_pending()
 		_simulation.set_control("steer", 0.0)
 		_simulation.set_control("throttle", 0.0)
 		_simulation.set_control("brake", 1.0)
 		_simulation.set_control("starter", 0.0)
 		return
 	if not scripted_controls.is_empty():
+		_input_map.driver_actions.discard_pending()
 		for channel in scripted_controls:
 			_simulation.set_control(channel, float(scripted_controls[channel]))
 		return
@@ -1129,46 +1127,17 @@ func _forward_driving(live: bool, delta: float) -> void:
 	_simulation.set_control("clutch", _input_map.get_clutch())
 	_simulation.set_control("ignition", 1.0 if _input_map.get_ignition() else 0.0)
 	_simulation.set_control("starter", 1.0 if _input_map.get_starter() else 0.0)
-	_simulation.set_control("assist.auto_shift", 1.0 if _input_map.get_auto_shift() else 0.0)
-	# Assist unit (physics_sim): the channel defaults are the car's own (the Racing unit: TC On, aero automation on).
-	# A key press steps the channel from its CURRENT value, which the physics may have written itself (a drive-mode
-	# change sets the TC mode and launch control, assists I7c): F4 steps the requested TC mode through the modes the
-	# unit OFFERS (rg_core decides which, RgAssists); H flips the wing automation and L launch control, and only on a
-	# car that has them. Several presses in one frame chain through the value just written.
-	if traction_cycles > 0 or aero_toggles > 0 or launch_toggles > 0:
-		var pt: Dictionary = _simulation.get_vehicle_powertrain(VEHICLE_NAME)
-		var bits: int = int(pt.get("traction_modes_available_bits", 0))
-		var mode: int = roundi(_simulation.get_control("assist.traction_control"))
-		for _i in range(traction_cycles):
-			mode = RgAssists.next_traction_mode(bits, mode)
-			if mode < 0:
-				break
-			_simulation.set_control("assist.traction_control", float(mode))
-		var fitted_bits: int = int(pt.get("assist_fitted_bits", 0))
-		for _i in range(aero_toggles):
-			_simulation.set_control("assist.aero_control", RgAssists.toggled_aero_control(fitted_bits, _simulation.get_control("assist.aero_control")))
-		for _i in range(launch_toggles):
-			_simulation.set_control("assist.launch_control", RgAssists.toggled_launch_control(fitted_bits, _simulation.get_control("assist.launch_control")))
-	# Drive mode (M, assists I7): the next OFFERED mode after the channel's current value (rg_core decides which; a car
-	# without a drive_modes part gets -1 and the key does nothing). Only assist.drive_mode is written: physics_sim writes
-	# the mode's own TC and launch-control defaults into their channels after the tick (assists I7c) and the session
-	# adopts them, so the game must NOT touch those two here.
-	if drive_mode_cycles > 0:
-		var dm: Dictionary = _simulation.get_vehicle_powertrain(VEHICLE_NAME)
-		var dm_bits: int = int(dm.get("drive_modes_available_bits", 0))
-		var dm_mode: int = roundi(_simulation.get_control("assist.drive_mode"))
-		for _i in range(drive_mode_cycles):
-			dm_mode = RgAssists.next_drive_mode(dm_bits, dm_mode)
-			if dm_mode < 0:
-				break
-			_simulation.set_control("assist.drive_mode", float(dm_mode))
-		if dm_mode >= 0 and _hud != null:
-			_hud.show_message("Drive mode: " + str(RgAssists.drive_mode_name(dm_mode)), 2.0, DriveModeTheme.color_for_mode(dm_mode))
-	# Nitrous arm switch (gamepad Y, owner 2026-10-05; physics_sim 804137e): each
-	# rising edge flips the plain 0/1 "nitrous_arm" channel. Cars without a nitrous
-	# kit never declare it, so for them it is inert.
-	for _i in range(nitrous_toggles):
-		_simulation.set_control("nitrous_arm", 1.0 - _simulation.get_control("nitrous_arm"))
+	var pt: Dictionary = _simulation.get_vehicle_powertrain(VEHICLE_NAME)
+	var channels: Dictionary = load("res://scripts/driver_state.gd").channels(_simulation)
+	var drive_mode_change := -1
+	for write in _input_map.driver_actions.apply(pt,channels,true):
+		_simulation.set_control(write["channel"],float(write["value"]))
+		if write["channel"] == "assist.drive_mode": drive_mode_change = roundi(write["value"])
+	if drive_mode_change >= 0 and _hud != null:
+		var requested := pt.duplicate()
+		requested["drive_mode_effective"] = drive_mode_change
+		var state: Dictionary = RgDriverActions.state("drive_mode",requested,channels)
+		_hud.show_message("Drive mode: " + str(state["label"]),2.0,DriveModeTheme.color_for_mode(drive_mode_change))
 	# shift_up_count/shift_down_count are running edge counters on the sim
 	# side (session.cpp's kControlChannelNames): add this frame's edges.
 	if up > 0:
@@ -1520,6 +1489,10 @@ func get_controls() -> Node:
 
 func get_input_map() -> Node:
 	return _input_map
+
+# One shared dispatcher for future cockpit mouse, VR and HUD action sources.
+func get_driver_actions() -> RgDriverActions:
+	return _input_map.driver_actions
 
 func _build_shell(user_args: PackedStringArray) -> void:
 	_apply_user_dir_flag(user_args)

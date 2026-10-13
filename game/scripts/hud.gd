@@ -18,6 +18,7 @@ extends CanvasLayer
 # Key help removed (owner 2026-10-06): bindings live in Settings -> Controls (R5b).
 
 const DriveModeTheme := preload("res://scripts/drive_mode_theme.gd")
+const DriverState := preload("res://scripts/driver_state.gd")
 
 @export var simulation_path: NodePath
 @export var input_map_path: NodePath
@@ -231,26 +232,27 @@ func _process(_delta: float) -> void:
 		# Driver assists (physics_sim assist unit): the traction-control mode that runs (F4 cycles the offered modes) and
 		# the rear-wing automation (H toggles it); a line only appears for a car that has the part.
 		var assist_pt: Dictionary = _simulation.get_vehicle_powertrain(vehicle_name)
-		if bool(assist_pt.get("traction_control_fitted", false)) or bool(assist_pt.get("aero_control_fitted", false)):
+		var controls: Dictionary = DriverState.read(_simulation,assist_pt)
+		if bool(controls["tc"]["fitted"]) or bool(controls["aero"]["fitted"]):
 			var assist_line := ""
-			if bool(assist_pt.get("traction_control_fitted", false)):
-				assist_line += "traction control %s%s (F4)" % [str(assist_pt.get("traction_mode_name", "Off")), " - intervening" if bool(assist_pt.get("traction_control_intervening", false)) else ""]
-			if bool(assist_pt.get("aero_control_fitted", false)):
+			if bool(controls["tc"]["fitted"]):
+				assist_line += "traction control %s%s (F4)" % [str(controls["tc"]["label"]), " - intervening" if bool(controls["tc"]["blink"]) else ""]
+			if bool(controls["aero"]["fitted"]):
 				if assist_line != "":
 					assist_line += "   "
-				assist_line += "aero automation %s (H)" % (("on, wing target %+.0f deg" % float(assist_pt.get("aero_control_target_deg", 0.0))) if bool(assist_pt.get("aero_control_active", false)) else "off")
+				assist_line += "aero automation %s (H)" % (("on, wing target %+.0f deg" % float(controls["aero"]["aero_target_deg"])) if bool(controls["aero"]["value"]) else "off")
 			lines.append(assist_line)
 		# Drive mode (assists I7, M cycles the offered modes): the mode that runs, in its theme colour; launch control
 		# state when the car has one. The whole readout takes a light tint of the mode colour.
 		var themed_readout := false
-		if DriveModeTheme.is_themed(assist_pt):
-			lines.append("drive mode %s (M)   offered: %s" % [DriveModeTheme.label(assist_pt), _offered_drive_modes(int(assist_pt.get("drive_modes_available_bits", 0)))])
-			_label.add_theme_color_override("font_color", DriveModeTheme.accent(assist_pt, Color.WHITE).lerp(Color.WHITE, 0.55))
+		if bool(controls["dm"]["fitted"]):
+			lines.append("drive mode %s (M)   offered: %s" % [str(controls["dm"]["label"]), _offered_drive_modes(int(assist_pt.get("drive_modes_available_bits", 0)))])
+			_label.add_theme_color_override("font_color", DriveModeTheme.accent_state(controls["dm"], Color.WHITE).lerp(Color.WHITE, 0.55))
 			themed_readout = true
 		if not themed_readout:
 			_label.remove_theme_color_override("font_color")
-		if bool(assist_pt.get("launch_control_fitted", false)):
-			lines.append("launch control: %s" % str(assist_pt.get("launch_lamp_text", "")))
+		if bool(controls["lc"]["fitted"]):
+			lines.append("launch control: %s" % str(controls["lc"]["label"]))
 		# Nitrous (physics_sim N2O): only a car with a kit (car_sedan_gen_n2o, car_hyper_n2o) has this line.
 		var n2o: Dictionary = _simulation.get_vehicle_nitrous(vehicle_name)
 		if bool(n2o.get("present", false)):

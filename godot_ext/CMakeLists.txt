@@ -21,6 +21,7 @@ add_library(rg_godot SHARED
   src/rg_camera_math.cpp
   src/rg_render_focus.cpp
   src/rg_assists.cpp
+  src/rg_driver_actions.cpp
   src/rg_terrain_view.cpp
   src/rg_engine_audio.cpp
   ${CMAKE_SOURCE_DIR}/external/physics_sim/adapters/godot/src/vehicle_voice.cpp
