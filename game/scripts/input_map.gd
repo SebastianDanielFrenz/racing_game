@@ -26,8 +26,8 @@ extends Node
 # assist.auto_shift (TOGGLE, starts off for manual cars).
 # Camera group: move (x right, y up, z forward, each -1..1), look rate
 # (yaw/pitch, -1..1: right stick or arrow keys), mouse look (captured mouse
-# delta in pixels; the "mouse_capture" binding - the right button by default -
-# captures, Esc releases), fast. Drone-follow zoom (camera group): mouse wheel
+# delta in pixels; the "mouse_capture" binding - middle button by default -
+# toggles cockpit capture, Esc releases), fast. Drone-follow zoom (camera group): mouse wheel
 # ticks (consume_zoom_steps) and the zoom bindings held (get_camera_zoom_key).
 # Walking group (on foot, R9c): reuses the camera group's move axes and "fast" as
 # RUN; adds JUMP and INTERACT edge counts. The get-out key (G by default) is the
@@ -88,6 +88,9 @@ var _cam_stick: Vector2 = Vector2.ZERO # raw pad look stick (chase orbit), x rig
 var _cam_fast: bool = false
 var _mouse_delta: Vector2 = Vector2.ZERO
 var _mouse_captured: bool = false
+var _cockpit_mode := false
+var _world_input_active := true
+var _log_marker_count := 0
 
 # Raw input collected between two polls by _input.
 var _wheel_up: float = 0.0
@@ -115,6 +118,24 @@ func release_mouse() -> void:
 	_mouse_captured = false
 	_mouse_delta = Vector2.ZERO
 	_motion = Vector2.ZERO
+
+func capture_mouse() -> void:
+	Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
+	_mouse_captured = true
+	_motion = Vector2.ZERO
+	_mouse_delta = Vector2.ZERO
+
+func set_cockpit_mode(enabled: bool) -> void:
+	if _cockpit_mode == enabled: return
+	_cockpit_mode = enabled
+	if enabled and _world_input_active: capture_mouse()
+	else: release_mouse()
+
+func set_world_input_active(enabled: bool) -> void:
+	var changed := _world_input_active != enabled
+	_world_input_active = enabled
+	if not enabled: release_mouse()
+	elif changed and _cockpit_mode: capture_mouse()
 
 func is_mouse_captured() -> bool:
 	return _mouse_captured
@@ -207,9 +228,9 @@ func _input(event: InputEvent) -> void:
 		_mouse_captured = false
 		_motion = Vector2.ZERO
 		return
-	if event is InputEventMouseButton and event.pressed and controls.is_mouse_button_bound("mouse_capture", event.button_index):
-		Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
-		_mouse_captured = true
+	if _world_input_active and event is InputEventMouseButton and event.pressed and ((_cockpit_mode and event.button_index == MOUSE_BUTTON_MIDDLE) or controls.is_mouse_button_bound("mouse_capture", event.button_index)):
+		if _cockpit_mode and _mouse_captured: release_mouse()
+		else: capture_mouse()
 	elif (event is InputEventKey and event.pressed and not event.echo and event.keycode == KEY_ESCAPE) 			or (event is InputEventJoypadButton and event.pressed and event.button_index == JOY_BUTTON_START):
 		Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 		_mouse_captured = false
@@ -290,6 +311,7 @@ func set_test_snapshot(snapshot: Dictionary) -> void:
 
 func _clear_edges() -> void:
 	driver_actions.discard_pending()
+	_log_marker_count = 0
 	_shift_up_count = 0
 	_shift_down_count = 0
 	_cycle_camera_count = 0
@@ -362,6 +384,8 @@ func poll() -> void:
 	_mouse_delta += Vector2(v.call("mouse_look_x"), v.call("mouse_look_y"))
 
 	# --- global actions ---
+	if _edge("log_marker", held.call("log_marker")):
+		_log_marker_count += 1
 	if _edge("cycle_camera", held.call("cycle_camera")):
 		_cycle_camera_count += 1
 	if _edge("cycle_mode", held.call("cycle_mode")):
@@ -545,3 +569,8 @@ func advance_cabin(sim: Node, snapshot: Dictionary, delta: float, enabled: bool,
 
 func sync_ignition(value: float) -> void:
 	_ignition_on = value != 0
+
+func consume_log_marker() -> int:
+	var count := _log_marker_count
+	_log_marker_count = 0
+	return count

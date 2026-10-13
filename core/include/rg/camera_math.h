@@ -43,6 +43,12 @@ DriveView next_drive_view(DriveView v);
 // The Tab key: cockpit -> chase, anything else -> cockpit.
 DriveView toggle_cockpit_view(DriveView v);
 
+struct CockpitLook { double yaw_deg=0, pitch_deg=0; };
+struct CockpitLookInput { double mouse_x=0,mouse_y=0,look_x=0,look_y=0; bool live=true; };
+struct CockpitLookConfig { double pitch_min=0,pitch_max=0,mouse_deg_per_pixel=0,rate_deg_s=0,deadzone=0; };
+CockpitLook cockpit_look_step(CockpitLook state, const CockpitLookInput& input, double dt, const CockpitLookConfig& config);
+double steering_wheel_angle_rad(double steer, double lock_deg);
+
 // ------------------------------------------------------------- bumper ------
 
 // Where the vehicle's wheels are, from its VehicleDesc (the model's own mesh

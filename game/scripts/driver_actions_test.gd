@@ -56,14 +56,14 @@ func run() -> void:
 	adapter.set_test_snapshot({"keys":PackedStringArray(["F4"])}); adapter.poll()
 	adapter.driver_actions.discard_pending()
 	check(adapter.driver_actions.apply(snapshot,result,true).size()==1,"discarded edge cannot replay on unblock")
-	adapter.set_test_snapshot({"keys":PackedStringArray(["F6","F7","Z","J"])}); adapter.poll()
+	adapter.set_test_snapshot({"keys":PackedStringArray(["F11","F12","Z","J"])}); adapter.poll()
 	var cabin_snapshot := snapshot.duplicate()
 	cabin_snapshot["engine_state"]="Stopped"
 	var cabin_values: Dictionary = {}
 	for write in adapter.driver_actions.apply(cabin_snapshot,{},true): cabin_values[write["channel"]]=write["value"]
 	for write in adapter.driver_actions.advance(cabin_snapshot,cabin_values,true,0.1): cabin_values[write["channel"]]=write["value"]
-	check(cabin_values["ignition"]==1 and cabin_values["starter"]==1,"F6 native auto crank")
-	check(cabin_values["cabin.hazard"]==1 and cabin_values["cabin.indicator"]==1,"F7/Z native cabin actions")
+	check(cabin_values["ignition"]==1 and cabin_values["starter"]==1,"F11 native auto crank")
+	check(cabin_values["cabin.hazard"]==1 and cabin_values["cabin.indicator"]==1,"F12/Z native cabin actions")
 	check(cabin_values["cabin.horn"]==1,"J held horn")
 	adapter.set_test_snapshot({"keys":PackedStringArray()}); adapter.poll()
 	adapter.driver_actions.apply(cabin_snapshot,cabin_values,true)

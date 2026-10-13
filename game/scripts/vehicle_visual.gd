@@ -48,6 +48,11 @@ var rim_colour: Color = Color(0, 0, 0, 0)
 var _wheel_nodes: Array = []
 var _model_root: Node3D
 var _load_ok: bool = false
+var _steering_wheel: Node3D
+var _steering_rest := Basis.IDENTITY
+var _steering_axis := Vector3.ZERO
+var _steering_lock_deg := 0.0
+var _steering_angle := 0.0
 var _wing_flap: Node3D
 var _wing_lift: Node3D
 var _wing_rest_rotation := Vector3.ZERO
@@ -119,6 +124,16 @@ func _load_model() -> void:
 	if _wing_lift != null:
 		_wing_rest_position = _wing_lift.position
 	load("res://scripts/exterior_lamps.gd").attach_to(_model_root,simulation,vehicle_name,model_absolute_path)
+	_steering_wheel = _model_root.find_child("steering_wheel",true,false)
+	if _steering_wheel != null:
+		_steering_rest = _steering_wheel.basis
+		var cfg: Dictionary = JSON.parse_string(FileAccess.get_file_as_string(ProjectSettings.globalize_path("res://../data/controls/cabin.json")))
+		_steering_lock_deg = float(cfg["steering_wheel_lock_deg"])
+		var rig: Dictionary = JSON.parse_string(FileAccess.get_file_as_string(model_absolute_path.get_basename()+".rig.json"))
+		for node in rig.get("nodes",[]):
+			if node.get("name","") == "steering_wheel":
+				var axis: Array = node["joint"]["axis"]
+				_steering_axis = Vector3(axis[1],axis[2],axis[0]).normalized()
 	_load_ok = true
 	apply_colours()
 	print("rg_godot vehicle_visual.gd: loaded model ", model_absolute_path)
@@ -247,6 +262,9 @@ func _align_model_to_physics_wheels() -> void:
 		_wheel_nodes[i]["susp_bias"] = (diffs[i] - d_mean) if diffs[i] != null else Vector3.ZERO
 
 func _process(delta: float) -> void:
+	if simulation != null and _steering_wheel != null and _steering_axis.length_squared() > 0:
+		_steering_angle = RgCameraMath.steering_wheel_angle_rad(simulation.get_control("steer"),_steering_lock_deg) if simulation.has_method("get_control") else 0.0
+		_steering_wheel.basis = Basis(_steering_axis,_steering_angle)*_steering_rest
 	if simulation == null or vehicle_name == "":
 		return
 	# Self-heal the "bound too early" race documented on _bind_wheel_nodes'
@@ -314,3 +332,6 @@ func driver_eye_local() -> Vector3:
 		return Vector3(-0.35, 0.38, 0.6)
 	var eye := _model_root.find_child("socket_driver_eye", true, false) as Node3D
 	return global_transform.affine_inverse() * eye.global_position
+
+func get_steering_wheel_angle_rad() -> float:
+	return _steering_angle

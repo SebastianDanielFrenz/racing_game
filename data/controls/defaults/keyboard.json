@@ -11,8 +11,8 @@
     "clutch": [{"type": "key", "key": "C"}],
     "shift_up": [{"type": "key", "key": "E"}],
     "shift_down": [{"type": "key", "key": "Q"}],
-    "start_stop": [{"type": "key", "key": "F6"}],
-    "hazard": [{"type": "key", "key": "F7"}],
+    "start_stop": [{"type": "key", "key": "F11"}],
+    "hazard": [{"type": "key", "key": "F12"}],
     "indicator_left": [{"type": "key", "key": "Z"}],
     "indicator_right": [{"type": "key", "key": "X"}],
     "horn": [{"type": "key", "key": "J"}],
@@ -43,6 +43,7 @@
     "interact": [{"type": "key", "key": "G"}],
     "cycle_mode": [{"type": "key", "key": "V"}],
     "switch_world": [{"type": "key", "key": "F8"}],
+    "log_marker": [{"type": "key", "key": "Delete"}],
     "reset_car": [{"type": "key", "key": "R"}],
     "menu_confirm": [{"type": "key", "key": "Enter"}, {"type": "key", "key": "Kp Enter"}, {"type": "key", "key": "Space"}],
     "menu_back": [{"type": "key", "key": "Escape"}]

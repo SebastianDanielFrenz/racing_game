@@ -7,7 +7,6 @@
     {"keys": "F7", "label": "Traffic settings"},
     {"keys": "F10", "label": "Teleport to an address"},
     {"keys": "F9", "label": "Recentre the view (VR)"},
-    {"keys": "Middle mouse button", "label": "Log the current location"},
     {"keys": "Shift (held)", "label": "With the 'Truck ahead' key: removes the truck instead of adding one"}
   ]
 }

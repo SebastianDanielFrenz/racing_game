@@ -173,3 +173,6 @@ var seat_offset := Vector3(0.20, 0.0, 0.0)
 func driver_eye_local() -> Vector3:
 	var base: Vector3 = _vehicle_visual.driver_eye_local() if _vehicle_visual != null else Vector3(-0.35, 0.38, 0.6)
 	return base + seat_offset
+
+func get_steering_wheel_angle_rad() -> float:
+	return _vehicle_visual.get_steering_wheel_angle_rad() if _vehicle_visual != null else 0.0

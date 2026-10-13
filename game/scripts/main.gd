@@ -1211,6 +1211,8 @@ func _process(delta: float) -> void:
 			_simulation.cycle_drone_target()
 	if _input_map.consume_switch_world() > 0 and (in_drive or _screen == "loading"):
 		switch_world()
+	for _i in range(_input_map.consume_log_marker()):
+		if in_drive and world_state == "running": _log_owner_mark()
 	if _input_map.consume_reset_car() > 0 and in_drive and world_state == "running":
 		_simulation.reset_vehicle_to_spawn()
 	if _input_map.consume_flip_upright() > 0 and in_drive and world_state == "running" and _simulation.get_player_mode() == "drive":
@@ -1273,8 +1275,6 @@ func _input(event: InputEvent) -> void:
 		_on_escape()
 		get_viewport().set_input_as_handled()
 		return
-	if event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_MIDDLE and world_state == "running":
-		_log_owner_mark()
 	if _shell != null and event is InputEventKey and event.pressed and not event.echo:
 		if event.keycode == KEY_ESCAPE:
 			_on_escape()
@@ -1591,6 +1591,7 @@ func _show_screen(screen_name: String) -> void:
 		_enter_configurator()
 	else:
 		_free_thumbs()
+	_input_map.set_world_input_active(screen_name == "drive")
 	_input_map.suspended = screen_name == "controls" # the controls screen reads devices itself
 	_shell_ui.show_screen(screen_name)
 	if _xr_menu != null: _xr_menu.show_screen(screen_name)
@@ -1764,7 +1765,7 @@ func _log_owner_mark() -> void:
 	var wheels: Array = []
 	for wheel in range(_simulation.get_vehicle_wheel_count(VEHICLE_NAME)):
 		wheels.append({"load_n": _simulation.get_wheel_load_n(VEHICLE_NAME,wheel), "slip_deg": rad_to_deg(_simulation.get_wheel_slip_angle(VEHICLE_NAME,wheel)), "surface": _simulation.get_wheel_surface_name(VEHICLE_NAME,wheel)})
-	var mark: Dictionary = {"saved_at": Time.get_datetime_string_from_system(), "source":"middle_mouse", "world":world_kind, "sim_time_s":_simulation.get_sim_time(), "tick":_simulation.get_step_count(), "session_m":[point.x,point.y,point.z], "speed_kmh":_simulation.get_body_speed_mps("chassis")*3.6, "camera":_director.active_name, "wheels":wheels, "build":_simulation.get_build_info()}
+	var mark: Dictionary = {"saved_at": Time.get_datetime_string_from_system(), "source":"log_marker", "world":world_kind, "sim_time_s":_simulation.get_sim_time(), "tick":_simulation.get_step_count(), "session_m":[point.x,point.y,point.z], "speed_kmh":_simulation.get_body_speed_mps("chassis")*3.6, "camera":_director.active_name, "wheels":wheels, "build":_simulation.get_build_info()}
 	if world_kind == "real_world":
 		mark["utm_zone"] = origin.get("zone")
 		mark["utm_m"] = [float(origin.get("e0",0))+point.x,float(origin.get("n0",0))+point.y,point.z]

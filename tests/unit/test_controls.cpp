@@ -130,7 +130,7 @@ float value(const Controls& c, const rg::ActionState& s, const std::string& acti
 TEST_CASE("controls: the shipped schema and default profiles load and are consistent", "[controls]") {
     Controls c = make_controls();
     CHECK(c.ready());
-    CHECK(c.schema().size() == 46);
+    CHECK(c.schema().size() == 47);
     // Every action has a label, every signed axis names both directions.
     for (const rg::ActionDef& a : c.schema().actions()) {
         CAPTURE(a.id);
@@ -183,13 +183,13 @@ TEST_CASE("controls: the default profiles equal the bindings the game had before
     // Keyboard: the keys of the old project.godot [input] section and input_map.gd (plus N = nitrous arm, S1 2026-10-06: B is taken by the driving view, N is the drone-follow target key only in another mode).
     const std::map<std::string, std::string> keyboard = {
         {"steer", "key:A:-1, key:D"}, {"throttle", "key:W"}, {"brake", "key:S"}, {"handbrake", "key:Space"}, {"clutch", "key:C"},
-        {"shift_up", "key:E"}, {"shift_down", "key:Q"}, {"park", "key:P"}, {"start_stop", "key:F6"}, {"hazard", "key:F7"}, {"indicator_left", "key:Z"}, {"indicator_right", "key:X"}, {"horn", "key:J"}, {"ignition", "key:I"}, {"starter", "key:K"}, {"auto_shift", "key:F5"}, {"traction_control", "key:F4"}, {"drive_mode", "key:M"}, {"toggle_aero", "key:H"}, {"toggle_launch_control", "key:L"},
+        {"shift_up", "key:E"}, {"shift_down", "key:Q"}, {"park", "key:P"}, {"start_stop", "key:F11"}, {"hazard", "key:F12"}, {"indicator_left", "key:Z"}, {"indicator_right", "key:X"}, {"horn", "key:J"}, {"ignition", "key:I"}, {"starter", "key:K"}, {"auto_shift", "key:F5"}, {"traction_control", "key:F4"}, {"drive_mode", "key:M"}, {"toggle_aero", "key:H"}, {"toggle_launch_control", "key:L"},
         {"toggle_nitrous", "key:N"}, {"flip_upright", "key:F"}, {"npc_truck", "key:T"}, {"get_out", "key:G"}, {"cycle_view", "key:B"},
         {"cycle_camera", "key:Tab"}, {"cycle_drone_target", "key:N"}, {"cam_zoom_in", "key:PageUp"}, {"cam_zoom_out", "key:PageDown"},
         {"cam_move_x", "key:A:-1, key:D"}, {"cam_move_z", "key:S:-1, key:W"},
         {"cam_move_y", "key:Q:-1, key:Ctrl:-1, key:E, key:Space"}, {"cam_fast", "key:Shift"},
         {"cam_look_x", "key:Left:-1, key:Right"}, {"cam_look_y", "key:Down:-1, key:Up"},
-        {"jump", "key:Space"}, {"interact", "key:G"}, {"cycle_mode", "key:V"}, {"switch_world", "key:F8"}, {"reset_car", "key:R"},
+        {"jump", "key:Space"}, {"interact", "key:G"}, {"cycle_mode", "key:V"}, {"switch_world", "key:F8"}, {"reset_car", "key:R"}, {"log_marker", "key:Delete"},
         {"menu_confirm", "key:Enter, key:Kp Enter, key:Space"}, {"menu_back", "key:Escape"},
     };
     for (const auto& [action, expected] : keyboard) {
@@ -202,7 +202,7 @@ TEST_CASE("controls: the default profiles equal the bindings the game had before
     }
 
     // Mouse.
-    CHECK(fmt_list(c.effective_bindings("mouse", "mouse_capture")) == "mouse:2");
+    CHECK(fmt_list(c.effective_bindings("mouse", "mouse_capture")) == "mouse:3");
     CHECK(fmt_list(c.effective_bindings("mouse", "cam_zoom_in")) == "mouse:4");
     CHECK(fmt_list(c.effective_bindings("mouse", "cam_zoom_out")) == "mouse:5");
     CHECK(fmt_list(c.effective_bindings("mouse", "mouse_look_x")) == "motion:0");
@@ -606,7 +606,7 @@ TEST_CASE("evaluate: buttons, triggers as pedals, a trigger bound to a button, t
     CHECK(s.pulses[static_cast<std::size_t>(c.schema().index_of("cam_zoom_out"))] == 0.0F);
     // Mouse buttons.
     InputSnapshot m;
-    m.mouse_buttons = {2};
+    m.mouse_buttons = {3};
     CHECK(value(c, c.evaluate(m), "mouse_capture") == 1.0F);
     // sabotage: counting a wheel tick as a held button leaves pulses at 0.
 }
