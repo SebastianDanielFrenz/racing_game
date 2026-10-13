@@ -1,0 +1,41 @@
+{
+  "format": "rg.cockpit_common_layout/1",
+  "model": "../models/cockpit_parts/cockpit_parts.glb",
+  "rig": "../models/cockpit_parts/cockpit_parts.rig.json",
+  "description": "Common visual controls only. Fallback mounts for the pre-M1 car; actual sockets take precedence. No shifter or nitrous.",
+  "mounts": [
+    {"id":"tc", "part":"tc", "socket":"socket_btn_L1", "parent":"car_hyper", "position":[0.210,0.075,0.477], "normal":[0,0,1], "up":[1,0,0]},
+    {"id":"lc", "part":"lc", "socket":"socket_btn_L2", "parent":"car_hyper", "position":[0.178,0.075,0.477], "normal":[0,0,1], "up":[1,0,0]},
+    {"id":"aero", "part":"aero", "socket":"socket_btn_L3", "parent":"car_hyper", "position":[0.146,0.075,0.477], "normal":[0,0,1], "up":[1,0,0]},
+    {"id":"am", "part":"am", "socket":"socket_btn_L4", "parent":"car_hyper", "position":[0.114,0.075,0.477], "normal":[0,0,1], "up":[1,0,0]},
+    {"id":"epb", "part":"epb", "socket":"socket_btn_L5", "parent":"car_hyper", "position":[0.082,0.075,0.477], "normal":[0,0,1], "up":[1,0,0]},
+    {"id":"eco", "part":"drive_mode_eco", "socket":"socket_btn_R1", "parent":"car_hyper", "position":[0.210,-0.075,0.477], "normal":[0,0,1], "up":[1,0,0]},
+    {"id":"normal", "part":"drive_mode_normal", "socket":"socket_btn_R2", "parent":"car_hyper", "position":[0.178,-0.075,0.477], "normal":[0,0,1], "up":[1,0,0]},
+    {"id":"sport", "part":"drive_mode_sport", "socket":"socket_btn_R3", "parent":"car_hyper", "position":[0.146,-0.075,0.477], "normal":[0,0,1], "up":[1,0,0]},
+    {"id":"racing", "part":"drive_mode_racing", "socket":"socket_btn_R4", "parent":"car_hyper", "position":[0.114,-0.075,0.477], "normal":[0,0,1], "up":[1,0,0]},
+    {"id":"spare", "part":"blank_cap", "socket":"socket_btn_R5", "parent":"car_hyper", "position":[0.082,-0.075,0.477], "normal":[0,0,1], "up":[1,0,0]},
+    {"id":"start", "part":"start", "socket":"socket_ctl_start", "parent":"car_hyper", "position":[0.285,0,0.477], "normal":[0,0,1], "up":[1,0,0]},
+    {"id":"hazard", "part":"hazard", "socket":"socket_ctl_hazard", "parent":"car_hyper", "position":[0.417,0,0.545], "normal":[-1,0,0], "up":[0,0,1]},
+    {"id":"lights", "part":"lights", "socket":"socket_ctl_lights", "parent":"car_hyper", "position":[0.418,0.560,0.585], "normal":[-1,0,0], "up":[0,0,1]},
+    {"id":"stalk_L", "part":"stalk_L", "socket":"socket_ctl_stalk_L", "parent":"car_hyper", "position":[0.390,0.385,0.585], "normal":[0,0,1], "up":[1,0,0]},
+    {"id":"stalk_R", "part":"stalk_R", "socket":"socket_ctl_stalk_R", "parent":"car_hyper", "position":[0.390,0.275,0.585], "normal":[0,0,1], "up":[1,0,0]},
+    {"id":"paddle_L", "part":"paddle_L", "socket":"socket_ctl_paddle_L", "parent":"steering_wheel", "position":[0.032,0.065,-0.025], "normal":[0,0,1], "up":[1,0,0]},
+    {"id":"paddle_R", "part":"paddle_R", "socket":"socket_ctl_paddle_R", "parent":"steering_wheel", "position":[0.032,-0.065,-0.025], "normal":[0,0,1], "up":[1,0,0]},
+    {"id":"horn", "part":"horn", "socket":"socket_ctl_horn", "parent":"steering_wheel", "position":[-0.004,0,0.002], "normal":[-0.954,0,0.301], "up":[0.301,0,0.954]}
+  ],
+  "lamps": [
+    {"material":"lamp_tc_led0", "field":"traction_mode_effective", "equals":0, "fitted":"traction_control_fitted"},
+    {"material":"lamp_tc_led1", "field":"traction_mode_effective", "equals":1, "fitted":"traction_control_fitted"},
+    {"material":"lamp_tc_led2", "field":"traction_mode_effective", "equals":2, "fitted":"traction_control_fitted"},
+    {"material":"lamp_tc_led3", "field":"traction_mode_effective", "equals":3, "fitted":"traction_control_fitted"},
+    {"material":"lamp_tc_led4", "field":"traction_mode_effective", "equals":4, "fitted":"traction_control_fitted"},
+    {"material":"lamp_lc_led0", "field":"launch_lamp", "greater_than":1, "fitted":"launch_control_fitted"},
+    {"material":"lamp_aero_led0", "field":"aero_control_active", "equals":true},
+    {"material":"lamp_am_led0", "field":"assist_auto_shift", "equals":true},
+    {"material":"lamp_drive_mode_eco_led0", "field":"drive_mode_effective", "equals":0, "fitted":"drive_mode_fitted"},
+    {"material":"lamp_drive_mode_normal_led0", "field":"drive_mode_effective", "equals":1, "fitted":"drive_mode_fitted"},
+    {"material":"lamp_drive_mode_sport_led0", "field":"drive_mode_effective", "equals":2, "fitted":"drive_mode_fitted"},
+    {"material":"lamp_drive_mode_racing_led0", "field":"drive_mode_effective", "equals":3, "fitted":"drive_mode_fitted"},
+    {"material":"lamp_start_ring", "field":"engine_state", "equals":"Running"}
+  ]
+}

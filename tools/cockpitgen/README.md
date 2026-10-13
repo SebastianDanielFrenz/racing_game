@@ -53,3 +53,25 @@ outputs. The Blender renderer independently checks all rig nodes survived import
 This is the reusable asset increment. Car sockets/furniture (M1), game-side
 placement/fitted blanks (P2), clicking (P3), and controller/hand interaction (V1/V2)
 are separate work. No in-car integration or reach audit is claimed here.
+
+## Common controls in the current car
+
+The game now mounts common parts through `game/scripts/cockpit_common.gd` in
+both the driving model and the garage. `data/cockpits/car_hyper_common.json`
+owns the provisional mounts and existing-telemetry lamp mappings. Real socket
+positions and their rig normal/up frames override fallbacks when M1 arrives.
+The shifter and N2O are excluded. This is visual integration, with no clicking
+or new driver actions; full P2 fitted-state/action integration remains separate.
+
+Focused Godot check (no build or engine-map generation):
+
+```powershell
+. ./tools/common.ps1
+$exe = Find-GodotConsoleExe
+& $exe --headless --path game --script res://scripts/cockpit_common_test.gd
+& $exe --path game --rendering-method gl_compatibility --script res://scripts/cockpit_common_test.gd -- --capture
+```
+
+The second command saves `out/cockpit_common_in_car.png`. The check loads the
+actual driving visual and garage loader, tests reflection cloning, wheel-mounted
+parts, socket precedence and isolated lamp materials. It never starts physics.

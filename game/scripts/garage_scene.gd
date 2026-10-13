@@ -605,6 +605,8 @@ func _load_car(info: Dictionary) -> bool:
 	# glTF forward is +Z, ISO forward -> Godot -Z: a half turn about Y (see the header)
 	holder.rotation.y = PI
 	holder.add_child(model)
+	if path.get_file() == "car_hyper.glb":
+		load("res://scripts/cockpit_common.gd").attach_to(model,null,"",path)
 	_unique_materials(model)
 	var bounds := _model_bounds_iso(model)
 	_car_pivot.add_child(holder)
