@@ -1486,6 +1486,18 @@
       900,
       560
     ],
+    "box_m": {
+      "min": [
+        1.08,
+        -0.45,
+        0.28
+      ],
+      "max": [
+        1.7,
+        0.45,
+        0.84
+      ]
+    },
     "origin": "socket_engine_mount",
     "layout": "front transverse",
     "note": "free box under the closed hood"

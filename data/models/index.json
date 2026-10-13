@@ -6,5 +6,13 @@
     "rig": "pico/pico.rig.json",
     "flow": "pico/pico.flow.json",
     "cockpit": "pico/pico.cockpit.json"
+  },
+  {
+    "id": "ventura_gt",
+    "title": "Ventura GT (1970s grand tourer)",
+    "glb": "ventura_gt/ventura_gt.glb",
+    "rig": "ventura_gt/ventura_gt.rig.json",
+    "flow": "ventura_gt/ventura_gt.flow.json",
+    "cockpit": "ventura_gt/ventura_gt.cockpit.json"
   }
 ]

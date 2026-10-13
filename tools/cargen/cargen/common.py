@@ -113,3 +113,16 @@ def finish(m, flow, ck, limitations):
     m.flow_selection = flow.selection(limitations)
     m.cockpit = ck.as_json()
     return m
+
+
+def top_z(body, x, y):
+    """z of the lower body's upper surface at (x, y) (superellipse section, ignores arches)."""
+    W, zb, zt, n = body.lower_params(x)
+    zc, H = (zt + zb) / 2, (zt - zb) / 2
+    t = min(1.0, abs(y) / W)
+    return zc + H * (1 - t ** n) ** (1 / n)
+
+
+def surface_path(body, xs, z_of_x, offset=0.0, side=1):
+    """Points on the body side at heights z_of_x(x), pushed out by `offset` (for creases, trims)."""
+    return [(x, side * (body.surface_y(x, z_of_x(x)) + offset), z_of_x(x)) for x in xs]

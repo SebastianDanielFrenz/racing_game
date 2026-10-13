@@ -372,3 +372,38 @@ def screen(m, ck, name, center, normal, size, px, role, bezel_mat="trim_black", 
         mb.polygon([c[a], c[b], t[b], t[a]], "trim_black", node, want_normal=out)
     ck.screen(node, mat, px, role, size, hit=(local(f, (0, 0, z1)), (w / 2, h / 2, 0.01)))
     return node
+
+
+def slider(m, ck, name, center, normal, direction, travel, channel, positions, mat="chrome", knob_mat="knob",
+           part="", label="", up_hint=(0, 0, 1), source=None):
+    """Slide lever node slider_<name>: a short stem with a knob, prismatic along `direction`
+    (+ = toward the far end). The slot plate stays on `part`."""
+    mb = m.mb
+    f = frame(center, normal, up_hint)
+    d = norm(direction)
+    rbox_local(mb, f, (0, 0, -0.002), (0.012, 0.012, 0.004), 0.002, "trim_black", part)
+    node = m.node(f"slider_{name}", part or None, center, m.prismatic(d, 0.0, travel,
+                                                                      f"{label or name} slider, + = along the slot"))
+    n = norm(normal)
+    tip = add(center, mul(n, 0.018))
+    M.tube(mb, [center, tip], 0.0025, mat, node, count=8)
+    M.rounded_box(mb, add(tip, mul(n, 0.004)), (0.014, 0.014, 0.014), 0.004, knob_mat, node)
+    ck.add(node, "slider", source or f"cosmetic:{channel}", {"positions": positions, "travel_m": travel},
+           hit=(add(tip, mul(n, 0.004)), (0.015, 0.015, 0.015)),
+           action={"type": "step", "channel": channel, "values": positions}, label=label or name)
+    return node
+
+
+def extra_needle(m, ck, name, gauge_center, normal, length, source, mapping, sweep_deg=360.0, start_deg=90.0,
+                 mat="gauge_needle", part="", up_hint=(0, 0, 1), label="", z=0.0055, width=0.0035):
+    """A second needle on an existing gauge face (clock hour hand): node needle_<name>."""
+    mb = m.mb
+    f = frame(gauge_center, normal, up_hint)
+    axis = mul(norm(normal), -1)
+    node = m.node(f"needle_{name}", part or None, local(f, (0.0, 0.0, z)),
+                  m.revolute(axis, 0.0, sweep_deg, f"{label or name}, + = clockwise as seen"))
+    a0 = math.radians(start_deg)
+    xf = compose(f, translate((0.0, 0.0, z)), rot_axis((0, 0, 1), a0))
+    M.box(mb, (length * 0.42, 0.0, 0.0), (length * 1.0, width, 0.0016), mat, node, xf=xf)
+    ck.add(node, "needle", source, mapping, label=label or name)
+    return node

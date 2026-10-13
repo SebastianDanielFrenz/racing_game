@@ -1,0 +1,1137 @@
+{
+  "format": "rg.cockpit/1",
+  "model": "ventura_gt.glb",
+  "frame": "ISO 8855 model frame (x forward, y left, z up), rest pose; hit centres relative to the node pivot, axes as at rest, moved with the node at runtime",
+  "steering": {
+    "lock_to_lock_turns": 3.4,
+    "road_wheel_lock_deg": 34.0
+  },
+  "controls": [
+    {
+      "node": "needle_speed",
+      "kind": "needle",
+      "label": "speedometer",
+      "source": "speed_kmh",
+      "map": {
+        "in": [
+          0.0,
+          260.0
+        ],
+        "out_deg": [
+          0.0,
+          270.0
+        ]
+      },
+      "joint": "revolute"
+    },
+    {
+      "node": "needle_tach",
+      "kind": "needle",
+      "label": "tachometer",
+      "source": "engine_rpm",
+      "map": {
+        "in": [
+          0.0,
+          8000.0
+        ],
+        "out_deg": [
+          0.0,
+          270.0
+        ]
+      },
+      "joint": "revolute"
+    },
+    {
+      "node": "needle_fuel",
+      "kind": "needle",
+      "label": "fuel gauge",
+      "source": "fuel_fraction",
+      "map": {
+        "in": [
+          0.0,
+          1.0
+        ],
+        "out_deg": [
+          0.0,
+          90.0
+        ]
+      },
+      "joint": "revolute"
+    },
+    {
+      "node": "needle_coolant",
+      "kind": "needle",
+      "label": "coolant gauge",
+      "source": "coolant_c",
+      "map": {
+        "in": [
+          40.0,
+          130.0
+        ],
+        "out_deg": [
+          0.0,
+          90.0
+        ]
+      },
+      "joint": "revolute"
+    },
+    {
+      "node": "needle_oil",
+      "kind": "needle",
+      "label": "oil gauge",
+      "source": "oil_pressure_bar",
+      "map": {
+        "in": [
+          0.0,
+          6.0
+        ],
+        "out_deg": [
+          0.0,
+          90.0
+        ]
+      },
+      "joint": "revolute"
+    },
+    {
+      "node": "needle_volts",
+      "kind": "needle",
+      "label": "volts gauge",
+      "source": "battery_v",
+      "map": {
+        "in": [
+          8.0,
+          16.0
+        ],
+        "out_deg": [
+          0.0,
+          90.0
+        ]
+      },
+      "joint": "revolute"
+    },
+    {
+      "node": "needle_clock_h",
+      "kind": "needle",
+      "label": "clock hour hand",
+      "source": "clock_h",
+      "map": {
+        "in": [
+          0.0,
+          12.0
+        ],
+        "out_deg": [
+          0.0,
+          360.0
+        ]
+      },
+      "joint": "revolute"
+    },
+    {
+      "node": "needle_clock_m",
+      "kind": "needle",
+      "label": "clock minute hand",
+      "source": "clock_m",
+      "map": {
+        "in": [
+          0.0,
+          60.0
+        ],
+        "out_deg": [
+          0.0,
+          360.0
+        ]
+      },
+      "joint": "revolute"
+    },
+    {
+      "node": "sw_lights",
+      "kind": "toggle",
+      "label": "headlamps (pop-ups)",
+      "source": "cosmetic:lights",
+      "map": {
+        "off_deg": -15.0,
+        "on_deg": 15.0
+      },
+      "joint": "revolute",
+      "hit": {
+        "center": [
+          -0.011,
+          0.0,
+          0.0
+        ],
+        "half_extents": [
+          0.012,
+          0.012,
+          0.017
+        ]
+      },
+      "action": {
+        "type": "toggle",
+        "channel": "lights"
+      }
+    },
+    {
+      "node": "sw_wipers",
+      "kind": "toggle",
+      "label": "wipers",
+      "source": "cosmetic:wipers",
+      "map": {
+        "off_deg": -15.0,
+        "on_deg": 15.0
+      },
+      "joint": "revolute",
+      "hit": {
+        "center": [
+          -0.011,
+          0.0,
+          0.0
+        ],
+        "half_extents": [
+          0.012,
+          0.012,
+          0.017
+        ]
+      },
+      "action": {
+        "type": "toggle",
+        "channel": "wipers"
+      }
+    },
+    {
+      "node": "sw_fan",
+      "kind": "toggle",
+      "label": "heater fan",
+      "source": "cosmetic:fan",
+      "map": {
+        "off_deg": -15.0,
+        "on_deg": 15.0
+      },
+      "joint": "revolute",
+      "hit": {
+        "center": [
+          -0.011,
+          0.0,
+          0.0
+        ],
+        "half_extents": [
+          0.012,
+          0.012,
+          0.017
+        ]
+      },
+      "action": {
+        "type": "toggle",
+        "channel": "fan"
+      }
+    },
+    {
+      "node": "sw_hazard",
+      "kind": "toggle",
+      "label": "hazard lights",
+      "source": "cosmetic:hazard",
+      "map": {
+        "off_deg": -15.0,
+        "on_deg": 15.0
+      },
+      "joint": "revolute",
+      "hit": {
+        "center": [
+          -0.011,
+          0.0,
+          0.0
+        ],
+        "half_extents": [
+          0.012,
+          0.012,
+          0.017
+        ]
+      },
+      "action": {
+        "type": "toggle",
+        "channel": "hazard"
+      }
+    },
+    {
+      "node": "sw_fog",
+      "kind": "toggle",
+      "label": "fog lamps",
+      "source": "cosmetic:fog",
+      "map": {
+        "off_deg": -15.0,
+        "on_deg": 15.0
+      },
+      "joint": "revolute",
+      "hit": {
+        "center": [
+          -0.011,
+          0.0,
+          0.0
+        ],
+        "half_extents": [
+          0.012,
+          0.012,
+          0.017
+        ]
+      },
+      "action": {
+        "type": "toggle",
+        "channel": "fog"
+      }
+    },
+    {
+      "node": "slider_heat",
+      "kind": "slider",
+      "label": "heater temperature",
+      "source": "cosmetic:heat",
+      "map": {
+        "positions": [
+          0,
+          1,
+          2,
+          3
+        ],
+        "travel_m": 0.05
+      },
+      "joint": "prismatic",
+      "hit": {
+        "center": [
+          -0.0211,
+          0.0,
+          0.0063
+        ],
+        "half_extents": [
+          0.015,
+          0.015,
+          0.015
+        ]
+      },
+      "action": {
+        "type": "step",
+        "channel": "heat",
+        "values": [
+          0,
+          1,
+          2,
+          3
+        ]
+      }
+    },
+    {
+      "node": "slider_air",
+      "kind": "slider",
+      "label": "air distribution",
+      "source": "cosmetic:air",
+      "map": {
+        "positions": [
+          0,
+          1,
+          2,
+          3
+        ],
+        "travel_m": 0.05
+      },
+      "joint": "prismatic",
+      "hit": {
+        "center": [
+          -0.0211,
+          0.0,
+          0.0063
+        ],
+        "half_extents": [
+          0.015,
+          0.015,
+          0.015
+        ]
+      },
+      "action": {
+        "type": "step",
+        "channel": "air",
+        "values": [
+          0,
+          1,
+          2,
+          3
+        ]
+      }
+    },
+    {
+      "node": "btn_radio_1",
+      "kind": "button",
+      "label": "radio preset 1",
+      "source": "cosmetic:radio_preset_1",
+      "map": {
+        "pressed_m": 0.003
+      },
+      "joint": "prismatic",
+      "hit": {
+        "center": [
+          -0.004,
+          0.0,
+          0.0
+        ],
+        "half_extents": [
+          0.011,
+          0.011,
+          0.008
+        ]
+      },
+      "action": {
+        "type": "press",
+        "channel": "radio_preset_1"
+      }
+    },
+    {
+      "node": "btn_radio_2",
+      "kind": "button",
+      "label": "radio preset 2",
+      "source": "cosmetic:radio_preset_2",
+      "map": {
+        "pressed_m": 0.003
+      },
+      "joint": "prismatic",
+      "hit": {
+        "center": [
+          -0.004,
+          0.0,
+          0.0
+        ],
+        "half_extents": [
+          0.011,
+          0.011,
+          0.008
+        ]
+      },
+      "action": {
+        "type": "press",
+        "channel": "radio_preset_2"
+      }
+    },
+    {
+      "node": "btn_radio_3",
+      "kind": "button",
+      "label": "radio preset 3",
+      "source": "cosmetic:radio_preset_3",
+      "map": {
+        "pressed_m": 0.003
+      },
+      "joint": "prismatic",
+      "hit": {
+        "center": [
+          -0.004,
+          0.0,
+          0.0
+        ],
+        "half_extents": [
+          0.011,
+          0.011,
+          0.008
+        ]
+      },
+      "action": {
+        "type": "press",
+        "channel": "radio_preset_3"
+      }
+    },
+    {
+      "node": "btn_radio_4",
+      "kind": "button",
+      "label": "radio preset 4",
+      "source": "cosmetic:radio_preset_4",
+      "map": {
+        "pressed_m": 0.003
+      },
+      "joint": "prismatic",
+      "hit": {
+        "center": [
+          -0.004,
+          0.0,
+          0.0
+        ],
+        "half_extents": [
+          0.011,
+          0.011,
+          0.008
+        ]
+      },
+      "action": {
+        "type": "press",
+        "channel": "radio_preset_4"
+      }
+    },
+    {
+      "node": "btn_radio_5",
+      "kind": "button",
+      "label": "radio preset 5",
+      "source": "cosmetic:radio_preset_5",
+      "map": {
+        "pressed_m": 0.003
+      },
+      "joint": "prismatic",
+      "hit": {
+        "center": [
+          -0.004,
+          0.0,
+          0.0
+        ],
+        "half_extents": [
+          0.011,
+          0.011,
+          0.008
+        ]
+      },
+      "action": {
+        "type": "press",
+        "channel": "radio_preset_5"
+      }
+    },
+    {
+      "node": "knob_volume",
+      "kind": "knob",
+      "label": "radio volume",
+      "source": "cosmetic:radio_volume",
+      "map": {
+        "detents": [
+          0,
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8,
+          9,
+          10
+        ],
+        "out_deg": [
+          0.0,
+          270.0
+        ]
+      },
+      "joint": "revolute",
+      "hit": {
+        "center": [
+          -0.007,
+          0.0,
+          0.0
+        ],
+        "half_extents": [
+          0.018,
+          0.018,
+          0.011
+        ]
+      },
+      "action": {
+        "type": "step",
+        "channel": "radio_volume",
+        "values": [
+          0,
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8,
+          9,
+          10
+        ]
+      }
+    },
+    {
+      "node": "knob_tune",
+      "kind": "knob",
+      "label": "radio tuning",
+      "source": "cosmetic:radio_tune",
+      "map": {
+        "detents": [
+          0,
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8,
+          9,
+          10
+        ],
+        "out_deg": [
+          0.0,
+          270.0
+        ]
+      },
+      "joint": "revolute",
+      "hit": {
+        "center": [
+          -0.007,
+          0.0,
+          0.0
+        ],
+        "half_extents": [
+          0.018,
+          0.018,
+          0.011
+        ]
+      },
+      "action": {
+        "type": "step",
+        "channel": "radio_tune",
+        "values": [
+          0,
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8,
+          9,
+          10
+        ]
+      }
+    },
+    {
+      "node": "knob_ignition",
+      "kind": "knob",
+      "label": "ignition key",
+      "source": "control:ignition",
+      "map": {
+        "detents": [
+          0,
+          1,
+          2,
+          3
+        ],
+        "out_deg": [
+          0.0,
+          90.0
+        ]
+      },
+      "joint": "revolute",
+      "hit": {
+        "center": [
+          -0.01,
+          0.0,
+          0.0
+        ],
+        "half_extents": [
+          0.02,
+          0.02,
+          0.014
+        ]
+      },
+      "action": {
+        "type": "step",
+        "channel": "ignition",
+        "values": [
+          0,
+          1,
+          2,
+          3
+        ]
+      }
+    },
+    {
+      "node": "steering_wheel",
+      "kind": "steering_wheel",
+      "label": "steering wheel",
+      "source": "wheel_steer_angle",
+      "map": {
+        "ratio": "lock_to_lock",
+        "lock_to_lock_turns": 3.4,
+        "road_wheel_lock_deg": 34.0
+      },
+      "joint": "revolute",
+      "hit": {
+        "center": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "half_extents": [
+          0.057,
+          0.204,
+          0.204
+        ]
+      },
+      "action": {
+        "type": "rotate",
+        "channel": "steer",
+        "range": [
+          -1.0,
+          1.0
+        ],
+        "turns_full_range": 3.4
+      }
+    },
+    {
+      "node": "btn_horn",
+      "kind": "button",
+      "label": "horn",
+      "source": "cosmetic:horn",
+      "map": {
+        "pressed_m": 0.003
+      },
+      "joint": "prismatic",
+      "hit": {
+        "center": [
+          -0.0036,
+          0.0,
+          -0.0018
+        ],
+        "half_extents": [
+          0.029,
+          0.029,
+          0.008
+        ]
+      },
+      "action": {
+        "type": "press",
+        "channel": "horn"
+      }
+    },
+    {
+      "node": "stalk_indicator",
+      "kind": "stalk",
+      "label": "indicator stalk",
+      "source": "cosmetic:indicator",
+      "map": {
+        "positions": [
+          "right",
+          "off",
+          "left"
+        ],
+        "throw_deg": 12.0
+      },
+      "joint": "revolute",
+      "hit": {
+        "center": [
+          -0.0274,
+          0.1371,
+          -0.0069
+        ],
+        "half_extents": [
+          0.025,
+          0.025,
+          0.025
+        ]
+      },
+      "action": {
+        "type": "step",
+        "channel": "indicator",
+        "values": [
+          "right",
+          "off",
+          "left"
+        ]
+      }
+    },
+    {
+      "node": "stalk_wiper",
+      "kind": "stalk",
+      "label": "wiper stalk",
+      "source": "cosmetic:wipers",
+      "map": {
+        "positions": [
+          "off",
+          "slow",
+          "fast"
+        ],
+        "throw_deg": 12.0
+      },
+      "joint": "revolute",
+      "hit": {
+        "center": [
+          -0.0235,
+          -0.1175,
+          -0.0059
+        ],
+        "half_extents": [
+          0.025,
+          0.025,
+          0.025
+        ]
+      },
+      "action": {
+        "type": "step",
+        "channel": "wipers",
+        "values": [
+          "off",
+          "slow",
+          "fast"
+        ]
+      }
+    },
+    {
+      "node": "lever_gear_fa",
+      "kind": "lever_axis",
+      "label": "lever_gear_fa",
+      "source": "gear",
+      "map": {
+        "follows": "lever_gear"
+      },
+      "joint": "revolute"
+    },
+    {
+      "node": "lever_gear",
+      "kind": "gear_lever",
+      "label": "gear lever",
+      "source": "gear",
+      "map": {
+        "gate": {
+          "1": [
+            1,
+            1
+          ],
+          "2": [
+            1,
+            -1
+          ],
+          "3": [
+            0,
+            1
+          ],
+          "4": [
+            0,
+            -1
+          ],
+          "5": [
+            -1,
+            1
+          ],
+          "6": [
+            -1,
+            -1
+          ],
+          "R": [
+            1.5,
+            1
+          ],
+          "N": [
+            0,
+            0
+          ]
+        },
+        "deg_per_unit_side": 8.0,
+        "deg_per_unit_fore": 8.0,
+        "fa_node": "lever_gear_fa"
+      },
+      "joint": "revolute",
+      "hit": {
+        "center": [
+          0.0,
+          0.0,
+          0.2132
+        ],
+        "half_extents": [
+          0.04,
+          0.04,
+          0.04
+        ]
+      },
+      "action": {
+        "type": "gear",
+        "gate": {
+          "1": [
+            1,
+            1
+          ],
+          "2": [
+            1,
+            -1
+          ],
+          "3": [
+            0,
+            1
+          ],
+          "4": [
+            0,
+            -1
+          ],
+          "5": [
+            -1,
+            1
+          ],
+          "6": [
+            -1,
+            -1
+          ],
+          "R": [
+            1.5,
+            1
+          ],
+          "N": [
+            0,
+            0
+          ]
+        }
+      }
+    },
+    {
+      "node": "lever_handbrake",
+      "kind": "lever",
+      "label": "handbrake",
+      "source": "control:handbrake",
+      "map": {
+        "in": [
+          0.0,
+          1.0
+        ],
+        "out_deg": [
+          0.0,
+          22.0
+        ]
+      },
+      "joint": "revolute",
+      "hit": {
+        "center": [
+          0.1953,
+          0.0,
+          0.0244
+        ],
+        "half_extents": [
+          0.04,
+          0.04,
+          0.04
+        ]
+      },
+      "action": {
+        "type": "drag",
+        "channel": "handbrake",
+        "range": [
+          0.0,
+          1.0
+        ],
+        "drag_m": 0.12
+      }
+    },
+    {
+      "node": "pedal_clutch",
+      "kind": "pedal",
+      "label": "clutch pedal",
+      "source": "control:clutch",
+      "map": {
+        "in": [
+          0.0,
+          1.0
+        ],
+        "out_deg": [
+          0.0,
+          18.0
+        ]
+      },
+      "joint": "revolute",
+      "hit": {
+        "center": [
+          -0.1,
+          0.0,
+          -0.28
+        ],
+        "half_extents": [
+          0.04,
+          0.045,
+          0.0525
+        ]
+      },
+      "action": {
+        "type": "drag",
+        "channel": "clutch",
+        "range": [
+          0.0,
+          1.0
+        ],
+        "drag_m": 0.1,
+        "release_to": 0.0
+      }
+    },
+    {
+      "node": "pedal_brake",
+      "kind": "pedal",
+      "label": "brake pedal",
+      "source": "control:brake",
+      "map": {
+        "in": [
+          0.0,
+          1.0
+        ],
+        "out_deg": [
+          0.0,
+          18.0
+        ]
+      },
+      "joint": "revolute",
+      "hit": {
+        "center": [
+          -0.11,
+          0.0,
+          -0.29
+        ],
+        "half_extents": [
+          0.04,
+          0.045,
+          0.0525
+        ]
+      },
+      "action": {
+        "type": "drag",
+        "channel": "brake",
+        "range": [
+          0.0,
+          1.0
+        ],
+        "drag_m": 0.1,
+        "release_to": 0.0
+      }
+    },
+    {
+      "node": "pedal_throttle",
+      "kind": "pedal",
+      "label": "throttle pedal",
+      "source": "control:throttle",
+      "map": {
+        "in": [
+          0.0,
+          1.0
+        ],
+        "out_deg": [
+          0.0,
+          18.0
+        ]
+      },
+      "joint": "revolute",
+      "hit": {
+        "center": [
+          -0.03,
+          0.0,
+          0.05
+        ],
+        "half_extents": [
+          0.04,
+          0.045,
+          0.0525
+        ]
+      },
+      "action": {
+        "type": "drag",
+        "channel": "throttle",
+        "range": [
+          0.0,
+          1.0
+        ],
+        "drag_m": 0.1,
+        "release_to": 0.0
+      }
+    },
+    {
+      "node": "knob_crank_L",
+      "kind": "knob",
+      "label": "window crank L",
+      "source": "cosmetic:window_l",
+      "map": {
+        "detents": [
+          0,
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8
+        ],
+        "out_deg": [
+          0.0,
+          1440.0
+        ]
+      },
+      "joint": "revolute",
+      "hit": {
+        "center": [
+          0.0,
+          -0.006,
+          0.0
+        ],
+        "half_extents": [
+          0.034,
+          0.034,
+          0.01
+        ]
+      },
+      "action": {
+        "type": "step",
+        "channel": "window_l",
+        "values": [
+          0,
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8
+        ]
+      }
+    },
+    {
+      "node": "knob_crank_R",
+      "kind": "knob",
+      "label": "window crank R",
+      "source": "cosmetic:window_r",
+      "map": {
+        "detents": [
+          0,
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8
+        ],
+        "out_deg": [
+          0.0,
+          1440.0
+        ]
+      },
+      "joint": "revolute",
+      "hit": {
+        "center": [
+          0.0,
+          0.006,
+          0.0
+        ],
+        "half_extents": [
+          0.034,
+          0.034,
+          0.01
+        ]
+      },
+      "action": {
+        "type": "step",
+        "channel": "window_r",
+        "values": [
+          0,
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8
+        ]
+      }
+    }
+  ],
+  "screens": [],
+  "notes": [
+    "Pedals and the handbrake follow the applied control channels; the gear lever follows the selected gear through its gate (R is beyond 1, top left); gauges follow the snapshot; the clock has two needles (hour, minute)."
+  ],
+  "source_glb_sha256": "f68cd15dddfdd7e89eb99374db97820fe2ebbd1f25e48b2490a15c4577e7b5d2"
+}

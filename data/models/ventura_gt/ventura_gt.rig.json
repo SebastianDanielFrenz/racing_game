@@ -1,0 +1,1947 @@
+{
+  "format": "physics_sim.rig/1",
+  "model": "ventura_gt.glb",
+  "title": "Ventura GT (1970s grand tourer)",
+  "description": "1970s front-engine fastback GT, 4.45 m, 215/60 R15 + 225/60 R15, front-mid longitudinal V8 bay.",
+  "frame": "ISO 8855: x forward, y left, z up; metres; radians. The .glb itself uses glTF axes (+Y up, +Z forward, +X left): gltf(x,y,z) = iso(y,z,x).",
+  "origin": "Ground plane below the wheel centres, x = 0 midway between the axles, y = 0 on the centreline.",
+  "rest_pose": "All node rotations are identity at rest; a node's origin is its joint pivot. Joint values are offsets from the rest pose (0 = as modelled).",
+  "overall_bounds": {
+    "min": [
+      -2.285,
+      -0.9571,
+      0.0
+    ],
+    "max": [
+      2.3316,
+      0.9571,
+      1.25
+    ]
+  },
+  "nodes": [
+    {
+      "name": "ventura_gt",
+      "parent": null,
+      "pivot": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "bounds_local": {
+        "min": [
+          -2.285,
+          -0.918,
+          0.09
+        ],
+        "max": [
+          2.3316,
+          0.918,
+          1.25
+        ]
+      }
+    },
+    {
+      "name": "susp_FL",
+      "parent": "ventura_gt",
+      "pivot": [
+        1.275,
+        0.74,
+        0.3195
+      ],
+      "joint": {
+        "type": "prismatic",
+        "axis": [
+          0,
+          0,
+          1
+        ],
+        "min": -0.09,
+        "max": 0.09,
+        "note": "wheel travel (bump +)"
+      }
+    },
+    {
+      "name": "steer_FL",
+      "parent": "susp_FL",
+      "pivot": [
+        1.275,
+        0.74,
+        0.3195
+      ],
+      "joint": {
+        "type": "revolute",
+        "axis": [
+          0,
+          0,
+          1
+        ],
+        "min": -0.5934119456780721,
+        "max": 0.5934119456780721,
+        "note": "road-wheel steer angle, + = left"
+      },
+      "bounds_local": {
+        "min": [
+          -0.127,
+          -0.047,
+          0.0519
+        ],
+        "max": [
+          -0.0253,
+          0.003,
+          0.1656
+        ]
+      }
+    },
+    {
+      "name": "wheel_FL",
+      "parent": "steer_FL",
+      "pivot": [
+        1.275,
+        0.74,
+        0.3195
+      ],
+      "joint": {
+        "type": "continuous",
+        "axis": [
+          0,
+          1,
+          0
+        ],
+        "note": "wheel spin, + = rolling forward"
+      },
+      "bounds_local": {
+        "min": [
+          -0.3195,
+          -0.1075,
+          -0.3195
+        ],
+        "max": [
+          0.3195,
+          0.1075,
+          0.3195
+        ]
+      },
+      "wheel": {
+        "radius": 0.3195,
+        "width": 0.215,
+        "side": "left"
+      }
+    },
+    {
+      "name": "susp_FR",
+      "parent": "ventura_gt",
+      "pivot": [
+        1.275,
+        -0.74,
+        0.3195
+      ],
+      "joint": {
+        "type": "prismatic",
+        "axis": [
+          0,
+          0,
+          1
+        ],
+        "min": -0.09,
+        "max": 0.09,
+        "note": "wheel travel (bump +)"
+      }
+    },
+    {
+      "name": "steer_FR",
+      "parent": "susp_FR",
+      "pivot": [
+        1.275,
+        -0.74,
+        0.3195
+      ],
+      "joint": {
+        "type": "revolute",
+        "axis": [
+          0,
+          0,
+          1
+        ],
+        "min": -0.5934119456780721,
+        "max": 0.5934119456780721,
+        "note": "road-wheel steer angle, + = left"
+      },
+      "bounds_local": {
+        "min": [
+          -0.127,
+          -0.003,
+          0.0519
+        ],
+        "max": [
+          -0.0253,
+          0.047,
+          0.1656
+        ]
+      }
+    },
+    {
+      "name": "wheel_FR",
+      "parent": "steer_FR",
+      "pivot": [
+        1.275,
+        -0.74,
+        0.3195
+      ],
+      "joint": {
+        "type": "continuous",
+        "axis": [
+          0,
+          1,
+          0
+        ],
+        "note": "wheel spin, + = rolling forward"
+      },
+      "bounds_local": {
+        "min": [
+          -0.3195,
+          -0.1075,
+          -0.3195
+        ],
+        "max": [
+          0.3195,
+          0.1075,
+          0.3195
+        ]
+      },
+      "wheel": {
+        "radius": 0.3195,
+        "width": 0.215,
+        "side": "right"
+      }
+    },
+    {
+      "name": "susp_RL",
+      "parent": "ventura_gt",
+      "pivot": [
+        -1.275,
+        0.74,
+        0.3255
+      ],
+      "joint": {
+        "type": "prismatic",
+        "axis": [
+          0,
+          0,
+          1
+        ],
+        "min": -0.09,
+        "max": 0.09,
+        "note": "wheel travel (bump +)"
+      },
+      "bounds_local": {
+        "min": [
+          -0.127,
+          -0.047,
+          0.0519
+        ],
+        "max": [
+          -0.0253,
+          0.003,
+          0.1656
+        ]
+      }
+    },
+    {
+      "name": "wheel_RL",
+      "parent": "susp_RL",
+      "pivot": [
+        -1.275,
+        0.74,
+        0.3255
+      ],
+      "joint": {
+        "type": "continuous",
+        "axis": [
+          0,
+          1,
+          0
+        ],
+        "note": "wheel spin, + = rolling forward"
+      },
+      "bounds_local": {
+        "min": [
+          -0.3255,
+          -0.1125,
+          -0.3255
+        ],
+        "max": [
+          0.3255,
+          0.1125,
+          0.3255
+        ]
+      },
+      "wheel": {
+        "radius": 0.3255,
+        "width": 0.225,
+        "side": "left"
+      }
+    },
+    {
+      "name": "susp_RR",
+      "parent": "ventura_gt",
+      "pivot": [
+        -1.275,
+        -0.74,
+        0.3255
+      ],
+      "joint": {
+        "type": "prismatic",
+        "axis": [
+          0,
+          0,
+          1
+        ],
+        "min": -0.09,
+        "max": 0.09,
+        "note": "wheel travel (bump +)"
+      },
+      "bounds_local": {
+        "min": [
+          -0.127,
+          -0.003,
+          0.0519
+        ],
+        "max": [
+          -0.0253,
+          0.047,
+          0.1656
+        ]
+      }
+    },
+    {
+      "name": "wheel_RR",
+      "parent": "susp_RR",
+      "pivot": [
+        -1.275,
+        -0.74,
+        0.3255
+      ],
+      "joint": {
+        "type": "continuous",
+        "axis": [
+          0,
+          1,
+          0
+        ],
+        "note": "wheel spin, + = rolling forward"
+      },
+      "bounds_local": {
+        "min": [
+          -0.3255,
+          -0.1125,
+          -0.3255
+        ],
+        "max": [
+          0.3255,
+          0.1125,
+          0.3255
+        ]
+      },
+      "wheel": {
+        "radius": 0.3255,
+        "width": 0.225,
+        "side": "right"
+      }
+    },
+    {
+      "name": "door_L",
+      "parent": "ventura_gt",
+      "pivot": [
+        0.48,
+        0.84963,
+        0.55
+      ],
+      "joint": {
+        "type": "revolute",
+        "axis": [
+          0,
+          0,
+          -1
+        ],
+        "min": 0.0,
+        "max": 1.1868238913561442,
+        "note": "door opening angle"
+      },
+      "bounds_local": {
+        "min": [
+          -1.1871,
+          -0.2186,
+          -0.2671
+        ],
+        "max": [
+          -0.014,
+          0.1075,
+          0.5982
+        ]
+      }
+    },
+    {
+      "name": "door_R",
+      "parent": "ventura_gt",
+      "pivot": [
+        0.48,
+        -0.84963,
+        0.55
+      ],
+      "joint": {
+        "type": "revolute",
+        "axis": [
+          0,
+          0,
+          1
+        ],
+        "min": 0.0,
+        "max": 1.1868238913561442,
+        "note": "door opening angle"
+      },
+      "bounds_local": {
+        "min": [
+          -1.1871,
+          -0.1075,
+          -0.2671
+        ],
+        "max": [
+          -0.014,
+          0.2186,
+          0.5982
+        ]
+      }
+    },
+    {
+      "name": "hood",
+      "parent": "ventura_gt",
+      "pivot": [
+        0.47,
+        0.0,
+        0.87525
+      ],
+      "joint": {
+        "type": "revolute",
+        "axis": [
+          0,
+          -1,
+          0
+        ],
+        "min": 0.0,
+        "max": 1.0471975511965976,
+        "note": "hood opening angle"
+      },
+      "bounds_local": {
+        "min": [
+          0.0176,
+          -0.6332,
+          -0.0596
+        ],
+        "max": [
+          1.3393,
+          0.6332,
+          0.0038
+        ]
+      }
+    },
+    {
+      "name": "hatch",
+      "parent": "ventura_gt",
+      "pivot": [
+        -0.65,
+        0.0,
+        1.19155
+      ],
+      "joint": {
+        "type": "revolute",
+        "axis": [
+          0,
+          1,
+          0
+        ],
+        "min": 0.0,
+        "max": 1.2217304763960306,
+        "note": "hatch opening angle"
+      },
+      "bounds_local": {
+        "min": [
+          -1.2498,
+          -0.6816,
+          -0.2843
+        ],
+        "max": [
+          0.0125,
+          0.6816,
+          0.0306
+        ]
+      }
+    },
+    {
+      "name": "wiper_L",
+      "parent": "ventura_gt",
+      "pivot": [
+        0.44,
+        0.1,
+        0.905
+      ],
+      "joint": {
+        "type": "revolute",
+        "axis": [
+          0.7507135169227553,
+          0.0,
+          0.6606278948920247
+        ],
+        "min": 0.0,
+        "max": 1.6580627893946132,
+        "note": "wiper sweep"
+      },
+      "bounds_local": {
+        "min": [
+          -0.017,
+          -0.014,
+          -0.0055
+        ],
+        "max": [
+          0.0221,
+          0.48,
+          0.0275
+        ]
+      }
+    },
+    {
+      "name": "wiper_R",
+      "parent": "ventura_gt",
+      "pivot": [
+        0.44,
+        -0.48,
+        0.905
+      ],
+      "joint": {
+        "type": "revolute",
+        "axis": [
+          0.7507135169227553,
+          0.0,
+          0.6606278948920247
+        ],
+        "min": 0.0,
+        "max": 1.6580627893946132,
+        "note": "wiper sweep"
+      },
+      "bounds_local": {
+        "min": [
+          -0.017,
+          -0.014,
+          -0.0055
+        ],
+        "max": [
+          0.0221,
+          0.46,
+          0.0275
+        ]
+      }
+    },
+    {
+      "name": "popup_L",
+      "parent": "ventura_gt",
+      "pivot": [
+        1.86,
+        0.6,
+        0.75265
+      ],
+      "joint": {
+        "type": "revolute",
+        "axis": [
+          0,
+          -1,
+          0
+        ],
+        "min": 0.0,
+        "max": 1.5707963267948966,
+        "note": "pop-up lamp pod, 0 = closed, 90 = raised"
+      },
+      "bounds_local": {
+        "min": [
+          -0.004,
+          -0.154,
+          -0.0268
+        ],
+        "max": [
+          0.224,
+          0.1538,
+          0.0939
+        ]
+      }
+    },
+    {
+      "name": "popup_R",
+      "parent": "ventura_gt",
+      "pivot": [
+        1.86,
+        -0.6,
+        0.75265
+      ],
+      "joint": {
+        "type": "revolute",
+        "axis": [
+          0,
+          -1,
+          0
+        ],
+        "min": 0.0,
+        "max": 1.5707963267948966,
+        "note": "pop-up lamp pod, 0 = closed, 90 = raised"
+      },
+      "bounds_local": {
+        "min": [
+          -0.0039,
+          -0.1539,
+          -0.027
+        ],
+        "max": [
+          0.224,
+          0.1539,
+          0.0943
+        ]
+      }
+    },
+    {
+      "name": "needle_speed",
+      "parent": "ventura_gt",
+      "pivot": [
+        0.26106,
+        0.46,
+        0.76071
+      ],
+      "joint": {
+        "type": "revolute",
+        "axis": [
+          0.9841833239736953,
+          -0.0,
+          -0.17715299831526515
+        ],
+        "min": 0.0,
+        "max": 4.71238898038469,
+        "note": "speedometer needle, + = clockwise as the driver sees it"
+      },
+      "bounds_local": {
+        "min": [
+          -0.0064,
+          -0.0052,
+          -0.0314
+        ],
+        "max": [
+          0.0023,
+          0.0317,
+          0.0052
+        ]
+      }
+    },
+    {
+      "name": "needle_tach",
+      "parent": "ventura_gt",
+      "pivot": [
+        0.26106,
+        0.3,
+        0.76071
+      ],
+      "joint": {
+        "type": "revolute",
+        "axis": [
+          0.9841833239736953,
+          -0.0,
+          -0.17715299831526515
+        ],
+        "min": 0.0,
+        "max": 4.71238898038469,
+        "note": "tachometer needle, + = clockwise as the driver sees it"
+      },
+      "bounds_local": {
+        "min": [
+          -0.0064,
+          -0.0052,
+          -0.0314
+        ],
+        "max": [
+          0.0023,
+          0.0317,
+          0.0052
+        ]
+      }
+    },
+    {
+      "name": "needle_fuel",
+      "parent": "ventura_gt",
+      "pivot": [
+        0.26406,
+        0.07,
+        0.76071
+      ],
+      "joint": {
+        "type": "revolute",
+        "axis": [
+          0.9841833239736953,
+          -0.0,
+          -0.17715299831526515
+        ],
+        "min": 0.0,
+        "max": 1.5707963267948966,
+        "note": "fuel gauge needle, + = clockwise as the driver sees it"
+      },
+      "bounds_local": {
+        "min": [
+          -0.0038,
+          -0.0031,
+          -0.0032
+        ],
+        "max": [
+          0.0037,
+          0.0164,
+          0.0163
+        ]
+      }
+    },
+    {
+      "name": "needle_coolant",
+      "parent": "ventura_gt",
+      "pivot": [
+        0.26406,
+        -0.07,
+        0.76071
+      ],
+      "joint": {
+        "type": "revolute",
+        "axis": [
+          0.9841833239736953,
+          -0.0,
+          -0.17715299831526515
+        ],
+        "min": 0.0,
+        "max": 1.5707963267948966,
+        "note": "coolant gauge needle, + = clockwise as the driver sees it"
+      },
+      "bounds_local": {
+        "min": [
+          -0.0038,
+          -0.0031,
+          -0.0032
+        ],
+        "max": [
+          0.0037,
+          0.0164,
+          0.0163
+        ]
+      }
+    },
+    {
+      "name": "needle_oil",
+      "parent": "ventura_gt",
+      "pivot": [
+        0.26406,
+        0.07,
+        0.70071
+      ],
+      "joint": {
+        "type": "revolute",
+        "axis": [
+          0.9841833239736953,
+          -0.0,
+          -0.17715299831526515
+        ],
+        "min": 0.0,
+        "max": 1.5707963267948966,
+        "note": "oil gauge needle, + = clockwise as the driver sees it"
+      },
+      "bounds_local": {
+        "min": [
+          -0.0038,
+          -0.0031,
+          -0.0032
+        ],
+        "max": [
+          0.0037,
+          0.0164,
+          0.0163
+        ]
+      }
+    },
+    {
+      "name": "needle_volts",
+      "parent": "ventura_gt",
+      "pivot": [
+        0.26406,
+        -0.07,
+        0.70071
+      ],
+      "joint": {
+        "type": "revolute",
+        "axis": [
+          0.9841833239736953,
+          -0.0,
+          -0.17715299831526515
+        ],
+        "min": 0.0,
+        "max": 1.5707963267948966,
+        "note": "volts gauge needle, + = clockwise as the driver sees it"
+      },
+      "bounds_local": {
+        "min": [
+          -0.0038,
+          -0.0031,
+          -0.0032
+        ],
+        "max": [
+          0.0037,
+          0.0164,
+          0.0163
+        ]
+      }
+    },
+    {
+      "name": "needle_clock_h",
+      "parent": "ventura_gt",
+      "pivot": [
+        0.26406,
+        -0.36,
+        0.73071
+      ],
+      "joint": {
+        "type": "revolute",
+        "axis": [
+          0.9841833239736953,
+          -0.0,
+          -0.17715299831526515
+        ],
+        "min": 0.0,
+        "max": 6.283185307179586,
+        "note": "clock hour hand needle, + = clockwise as the driver sees it"
+      },
+      "bounds_local": {
+        "min": [
+          -0.004,
+          -0.0031,
+          -0.0039
+        ],
+        "max": [
+          0.0058,
+          0.0031,
+          0.0281
+        ]
+      }
+    },
+    {
+      "name": "needle_clock_m",
+      "parent": "ventura_gt",
+      "pivot": [
+        0.25963,
+        -0.36,
+        0.73151
+      ],
+      "joint": {
+        "type": "revolute",
+        "axis": [
+          0.9841833239736953,
+          -0.0,
+          -0.17715299831526515
+        ],
+        "min": 0.0,
+        "max": 6.283185307179586,
+        "note": "clock minute hand, + = clockwise as seen"
+      },
+      "bounds_local": {
+        "min": [
+          -0.0012,
+          -0.0018,
+          -0.0025
+        ],
+        "max": [
+          0.0057,
+          0.0017,
+          0.0273
+        ]
+      }
+    },
+    {
+      "name": "sw_lights",
+      "parent": "ventura_gt",
+      "pivot": [
+        0.258,
+        0.16,
+        0.565
+      ],
+      "joint": {
+        "type": "revolute",
+        "axis": [
+          -0.0,
+          1.0,
+          -0.0
+        ],
+        "min": -0.2617993877991494,
+        "max": 0.2617993877991494,
+        "note": "headlamps (pop-ups) toggle, + = up/on"
+      },
+      "bounds_local": {
+        "min": [
+          -0.025,
+          -0.0035,
+          -0.0033
+        ],
+        "max": [
+          0.0,
+          0.0035,
+          0.0033
+        ]
+      }
+    },
+    {
+      "name": "sw_wipers",
+      "parent": "ventura_gt",
+      "pivot": [
+        0.258,
+        0.08,
+        0.565
+      ],
+      "joint": {
+        "type": "revolute",
+        "axis": [
+          -0.0,
+          1.0,
+          -0.0
+        ],
+        "min": -0.2617993877991494,
+        "max": 0.2617993877991494,
+        "note": "wipers toggle, + = up/on"
+      },
+      "bounds_local": {
+        "min": [
+          -0.025,
+          -0.0035,
+          -0.0033
+        ],
+        "max": [
+          0.0,
+          0.0035,
+          0.0033
+        ]
+      }
+    },
+    {
+      "name": "sw_fan",
+      "parent": "ventura_gt",
+      "pivot": [
+        0.258,
+        0.0,
+        0.565
+      ],
+      "joint": {
+        "type": "revolute",
+        "axis": [
+          -0.0,
+          1.0,
+          -0.0
+        ],
+        "min": -0.2617993877991494,
+        "max": 0.2617993877991494,
+        "note": "heater fan toggle, + = up/on"
+      },
+      "bounds_local": {
+        "min": [
+          -0.025,
+          -0.0035,
+          -0.0033
+        ],
+        "max": [
+          0.0,
+          0.0035,
+          0.0033
+        ]
+      }
+    },
+    {
+      "name": "sw_hazard",
+      "parent": "ventura_gt",
+      "pivot": [
+        0.258,
+        -0.08,
+        0.565
+      ],
+      "joint": {
+        "type": "revolute",
+        "axis": [
+          -0.0,
+          1.0,
+          -0.0
+        ],
+        "min": -0.2617993877991494,
+        "max": 0.2617993877991494,
+        "note": "hazard lights toggle, + = up/on"
+      },
+      "bounds_local": {
+        "min": [
+          -0.025,
+          -0.0035,
+          -0.0033
+        ],
+        "max": [
+          0.0,
+          0.0035,
+          0.0033
+        ]
+      }
+    },
+    {
+      "name": "sw_fog",
+      "parent": "ventura_gt",
+      "pivot": [
+        0.258,
+        -0.16,
+        0.565
+      ],
+      "joint": {
+        "type": "revolute",
+        "axis": [
+          -0.0,
+          1.0,
+          -0.0
+        ],
+        "min": -0.2617993877991494,
+        "max": 0.2617993877991494,
+        "note": "fog lamps toggle, + = up/on"
+      },
+      "bounds_local": {
+        "min": [
+          -0.025,
+          -0.0035,
+          -0.0033
+        ],
+        "max": [
+          0.0,
+          0.0035,
+          0.0033
+        ]
+      }
+    },
+    {
+      "name": "slider_heat",
+      "parent": "ventura_gt",
+      "pivot": [
+        0.252,
+        0.05,
+        0.44
+      ],
+      "joint": {
+        "type": "prismatic",
+        "axis": [
+          0.0,
+          0.0,
+          1.0
+        ],
+        "min": 0.0,
+        "max": 0.05,
+        "note": "heater temperature slider, + = along the slot"
+      },
+      "bounds_local": {
+        "min": [
+          -0.0281,
+          -0.007,
+          -0.0024
+        ],
+        "max": [
+          0.0007,
+          0.007,
+          0.0133
+        ]
+      }
+    },
+    {
+      "name": "slider_air",
+      "parent": "ventura_gt",
+      "pivot": [
+        0.252,
+        -0.05,
+        0.44
+      ],
+      "joint": {
+        "type": "prismatic",
+        "axis": [
+          0.0,
+          0.0,
+          1.0
+        ],
+        "min": 0.0,
+        "max": 0.05,
+        "note": "air distribution slider, + = along the slot"
+      },
+      "bounds_local": {
+        "min": [
+          -0.0281,
+          -0.007,
+          -0.0024
+        ],
+        "max": [
+          0.0007,
+          0.007,
+          0.0133
+        ]
+      }
+    },
+    {
+      "name": "btn_radio_1",
+      "parent": "ventura_gt",
+      "pivot": [
+        0.258,
+        -0.04,
+        0.63
+      ],
+      "joint": {
+        "type": "prismatic",
+        "axis": [
+          1.0,
+          -0.0,
+          -0.0
+        ],
+        "min": 0.0,
+        "max": 0.003,
+        "note": "radio preset 1 button, + = pressed"
+      },
+      "bounds_local": {
+        "min": [
+          -0.008,
+          -0.008,
+          -0.006
+        ],
+        "max": [
+          0.0,
+          0.008,
+          0.006
+        ]
+      }
+    },
+    {
+      "name": "btn_radio_2",
+      "parent": "ventura_gt",
+      "pivot": [
+        0.258,
+        -0.02,
+        0.63
+      ],
+      "joint": {
+        "type": "prismatic",
+        "axis": [
+          1.0,
+          -0.0,
+          -0.0
+        ],
+        "min": 0.0,
+        "max": 0.003,
+        "note": "radio preset 2 button, + = pressed"
+      },
+      "bounds_local": {
+        "min": [
+          -0.008,
+          -0.008,
+          -0.006
+        ],
+        "max": [
+          0.0,
+          0.008,
+          0.006
+        ]
+      }
+    },
+    {
+      "name": "btn_radio_3",
+      "parent": "ventura_gt",
+      "pivot": [
+        0.258,
+        0.0,
+        0.63
+      ],
+      "joint": {
+        "type": "prismatic",
+        "axis": [
+          1.0,
+          -0.0,
+          -0.0
+        ],
+        "min": 0.0,
+        "max": 0.003,
+        "note": "radio preset 3 button, + = pressed"
+      },
+      "bounds_local": {
+        "min": [
+          -0.008,
+          -0.008,
+          -0.006
+        ],
+        "max": [
+          0.0,
+          0.008,
+          0.006
+        ]
+      }
+    },
+    {
+      "name": "btn_radio_4",
+      "parent": "ventura_gt",
+      "pivot": [
+        0.258,
+        0.02,
+        0.63
+      ],
+      "joint": {
+        "type": "prismatic",
+        "axis": [
+          1.0,
+          -0.0,
+          -0.0
+        ],
+        "min": 0.0,
+        "max": 0.003,
+        "note": "radio preset 4 button, + = pressed"
+      },
+      "bounds_local": {
+        "min": [
+          -0.008,
+          -0.008,
+          -0.006
+        ],
+        "max": [
+          0.0,
+          0.008,
+          0.006
+        ]
+      }
+    },
+    {
+      "name": "btn_radio_5",
+      "parent": "ventura_gt",
+      "pivot": [
+        0.258,
+        0.04,
+        0.63
+      ],
+      "joint": {
+        "type": "prismatic",
+        "axis": [
+          1.0,
+          -0.0,
+          -0.0
+        ],
+        "min": 0.0,
+        "max": 0.003,
+        "note": "radio preset 5 button, + = pressed"
+      },
+      "bounds_local": {
+        "min": [
+          -0.008,
+          -0.008,
+          -0.006
+        ],
+        "max": [
+          0.0,
+          0.008,
+          0.006
+        ]
+      }
+    },
+    {
+      "name": "knob_volume",
+      "parent": "ventura_gt",
+      "pivot": [
+        0.26,
+        0.075,
+        0.645
+      ],
+      "joint": {
+        "type": "revolute",
+        "axis": [
+          1.0,
+          -0.0,
+          -0.0
+        ],
+        "min": 0.0,
+        "max": 4.71238898038469,
+        "note": "radio volume knob, + = clockwise"
+      },
+      "bounds_local": {
+        "min": [
+          -0.0148,
+          -0.014,
+          -0.014
+        ],
+        "max": [
+          0.0,
+          0.014,
+          0.014
+        ]
+      }
+    },
+    {
+      "name": "knob_tune",
+      "parent": "ventura_gt",
+      "pivot": [
+        0.26,
+        -0.075,
+        0.645
+      ],
+      "joint": {
+        "type": "revolute",
+        "axis": [
+          1.0,
+          -0.0,
+          -0.0
+        ],
+        "min": 0.0,
+        "max": 4.71238898038469,
+        "note": "radio tuning knob, + = clockwise"
+      },
+      "bounds_local": {
+        "min": [
+          -0.0148,
+          -0.014,
+          -0.014
+        ],
+        "max": [
+          0.0,
+          0.014,
+          0.014
+        ]
+      }
+    },
+    {
+      "name": "knob_ignition",
+      "parent": "ventura_gt",
+      "pivot": [
+        0.262,
+        0.18,
+        0.6
+      ],
+      "joint": {
+        "type": "revolute",
+        "axis": [
+          1.0,
+          -0.0,
+          -0.0
+        ],
+        "min": 0.0,
+        "max": 1.5707963267948966,
+        "note": "ignition key knob, + = clockwise"
+      },
+      "bounds_local": {
+        "min": [
+          -0.0208,
+          -0.016,
+          -0.016
+        ],
+        "max": [
+          0.0,
+          0.016,
+          0.016
+        ]
+      }
+    },
+    {
+      "name": "steering_wheel",
+      "parent": "ventura_gt",
+      "pivot": [
+        -0.05,
+        0.38,
+        0.8
+      ],
+      "joint": {
+        "type": "revolute",
+        "axis": [
+          -0.8924127761526156,
+          -0.0,
+          -0.4512199429985135
+        ],
+        "min": -10.681415022205297,
+        "max": 10.681415022205297,
+        "note": "steering wheel angle, + = left"
+      },
+      "bounds_local": {
+        "min": [
+          -0.0996,
+          -0.204,
+          -0.1834
+        ],
+        "max": [
+          0.1222,
+          0.204,
+          0.1834
+        ]
+      }
+    },
+    {
+      "name": "btn_horn",
+      "parent": "steering_wheel",
+      "pivot": [
+        -0.01073,
+        0.38,
+        0.81985
+      ],
+      "joint": {
+        "type": "prismatic",
+        "axis": [
+          0.8924127761526156,
+          -0.0,
+          0.4512199429985135
+        ],
+        "min": 0.0,
+        "max": 0.003,
+        "note": "horn button, + = pressed"
+      },
+      "bounds_local": {
+        "min": [
+          -0.0187,
+          -0.026,
+          -0.0265
+        ],
+        "max": [
+          0.0116,
+          0.026,
+          0.0229
+        ]
+      }
+    },
+    {
+      "name": "stalk_indicator",
+      "parent": "ventura_gt",
+      "pivot": [
+        0.12,
+        0.415,
+        0.715
+      ],
+      "joint": {
+        "type": "revolute",
+        "axis": [
+          1.0,
+          0.0,
+          0.0
+        ],
+        "min": -0.20943951023931956,
+        "max": 0.20943951023931956,
+        "note": "indicator stalk stalk"
+      },
+      "bounds_local": {
+        "min": [
+          -0.0395,
+          -0.0012,
+          -0.017
+        ],
+        "max": [
+          0.0059,
+          0.1527,
+          0.006
+        ]
+      }
+    },
+    {
+      "name": "stalk_wiper",
+      "parent": "ventura_gt",
+      "pivot": [
+        0.12,
+        0.345,
+        0.715
+      ],
+      "joint": {
+        "type": "revolute",
+        "axis": [
+          -1.0,
+          0.0,
+          0.0
+        ],
+        "min": -0.20943951023931956,
+        "max": 0.20943951023931956,
+        "note": "wiper stalk stalk"
+      },
+      "bounds_local": {
+        "min": [
+          -0.0356,
+          -0.1331,
+          -0.0161
+        ],
+        "max": [
+          0.0059,
+          0.0012,
+          0.006
+        ]
+      }
+    },
+    {
+      "name": "lever_gear_fa",
+      "parent": "ventura_gt",
+      "pivot": [
+        0.08,
+        0.0,
+        0.45
+      ],
+      "joint": {
+        "type": "revolute",
+        "axis": [
+          0.0,
+          1.0,
+          0.0
+        ],
+        "min": -0.20943951023931956,
+        "max": 0.20943951023931956,
+        "note": "gear lever fore/aft, + = top forward"
+      }
+    },
+    {
+      "name": "lever_gear",
+      "parent": "lever_gear_fa",
+      "pivot": [
+        0.08,
+        0.0,
+        0.45
+      ],
+      "joint": {
+        "type": "revolute",
+        "axis": [
+          -1.0,
+          0.0,
+          0.0
+        ],
+        "min": -0.20943951023931956,
+        "max": 0.20943951023931956,
+        "note": "gear lever across the gate, + = top left"
+      },
+      "bounds_local": {
+        "min": [
+          -0.022,
+          -0.0217,
+          0.0
+        ],
+        "max": [
+          0.022,
+          0.0217,
+          0.2341
+        ]
+      }
+    },
+    {
+      "name": "lever_handbrake",
+      "parent": "ventura_gt",
+      "pivot": [
+        -0.32,
+        0.0,
+        0.445
+      ],
+      "joint": {
+        "type": "revolute",
+        "axis": [
+          0.0,
+          1.0,
+          0.0
+        ],
+        "min": 0.0,
+        "max": 0.3839724354387525,
+        "note": "handbrake lever, + = pulled/on"
+      },
+      "bounds_local": {
+        "min": [
+          -0.001,
+          -0.016,
+          -0.0079
+        ],
+        "max": [
+          0.246,
+          0.016,
+          0.0464
+        ]
+      }
+    },
+    {
+      "name": "pedal_clutch",
+      "parent": "ventura_gt",
+      "pivot": [
+        0.4,
+        0.51,
+        0.58
+      ],
+      "joint": {
+        "type": "revolute",
+        "axis": [
+          0.0,
+          -1.0,
+          0.0
+        ],
+        "min": 0.0,
+        "max": 0.3141592653589793,
+        "note": "clutch pedal pedal travel"
+      },
+      "bounds_local": {
+        "min": [
+          -0.1244,
+          -0.035,
+          -0.3178
+        ],
+        "max": [
+          0.0074,
+          0.035,
+          0.0029
+        ]
+      }
+    },
+    {
+      "name": "pedal_brake",
+      "parent": "ventura_gt",
+      "pivot": [
+        0.4,
+        0.39,
+        0.58
+      ],
+      "joint": {
+        "type": "revolute",
+        "axis": [
+          0.0,
+          -1.0,
+          0.0
+        ],
+        "min": 0.0,
+        "max": 0.3141592653589793,
+        "note": "brake pedal pedal travel"
+      },
+      "bounds_local": {
+        "min": [
+          -0.1344,
+          -0.035,
+          -0.3278
+        ],
+        "max": [
+          0.0074,
+          0.035,
+          0.0031
+        ]
+      }
+    },
+    {
+      "name": "pedal_throttle",
+      "parent": "ventura_gt",
+      "pivot": [
+        0.36,
+        0.27,
+        0.2
+      ],
+      "joint": {
+        "type": "revolute",
+        "axis": [
+          0.0,
+          1.0,
+          0.0
+        ],
+        "min": 0.0,
+        "max": 0.3141592653589793,
+        "note": "throttle pedal pedal travel"
+      },
+      "bounds_local": {
+        "min": [
+          -0.0662,
+          -0.035,
+          -0.0036
+        ],
+        "max": [
+          0.0172,
+          0.035,
+          0.0773
+        ]
+      }
+    },
+    {
+      "name": "knob_crank_L",
+      "parent": "door_L",
+      "pivot": [
+        0.02,
+        0.69,
+        0.56
+      ],
+      "joint": {
+        "type": "revolute",
+        "axis": [
+          -0.0,
+          1.0,
+          -0.0
+        ],
+        "min": 0.0,
+        "max": 25.132741228718345,
+        "note": "window crank L knob, + = clockwise"
+      },
+      "bounds_local": {
+        "min": [
+          -0.03,
+          -0.0128,
+          -0.03
+        ],
+        "max": [
+          0.03,
+          0.0,
+          0.03
+        ]
+      }
+    },
+    {
+      "name": "knob_crank_R",
+      "parent": "door_R",
+      "pivot": [
+        0.02,
+        -0.69,
+        0.56
+      ],
+      "joint": {
+        "type": "revolute",
+        "axis": [
+          -0.0,
+          -1.0,
+          -0.0
+        ],
+        "min": 0.0,
+        "max": 25.132741228718345,
+        "note": "window crank R knob, + = clockwise"
+      },
+      "bounds_local": {
+        "min": [
+          -0.03,
+          0.0,
+          -0.03
+        ],
+        "max": [
+          0.03,
+          0.0128,
+          0.03
+        ]
+      }
+    },
+    {
+      "name": "hood_bulge",
+      "parent": "hood",
+      "pivot": [
+        0.47,
+        0.0,
+        0.87525
+      ],
+      "bounds_local": {
+        "min": [
+          0.15,
+          -0.3,
+          -0.005
+        ],
+        "max": [
+          1.1,
+          0.3,
+          0.0627
+        ]
+      },
+      "variant": "hood",
+      "option": "hood_bulge",
+      "default_hidden": true,
+      "raise_mm": 60
+    },
+    {
+      "name": "hood_scoop",
+      "parent": "hood",
+      "pivot": [
+        0.47,
+        0.0,
+        0.87525
+      ],
+      "bounds_local": {
+        "min": [
+          0.35,
+          -0.24,
+          -0.0018
+        ],
+        "max": [
+          0.81,
+          0.24,
+          0.1202
+        ]
+      },
+      "variant": "hood",
+      "option": "hood_scoop",
+      "default_hidden": true,
+      "raise_mm": 120
+    }
+  ],
+  "sockets": [
+    {
+      "name": "socket_driver_eye",
+      "parent": "ventura_gt",
+      "position": [
+        -0.62,
+        0.38,
+        1.02
+      ],
+      "note": "driver eye point (camera)"
+    },
+    {
+      "name": "socket_engine_mount",
+      "parent": "ventura_gt",
+      "position": [
+        0.5,
+        0.0,
+        0.4
+      ],
+      "note": "engine origin (crank axis centre at the flywheel face), front-mid longitudinal, crank along -x"
+    },
+    {
+      "name": "socket_tow_front",
+      "parent": "ventura_gt",
+      "position": [
+        2.2,
+        0.32,
+        0.3
+      ],
+      "note": "front towing eye"
+    },
+    {
+      "name": "socket_tow_rear",
+      "parent": "ventura_gt",
+      "position": [
+        -2.15,
+        -0.3,
+        0.34
+      ],
+      "note": "rear towing eye"
+    },
+    {
+      "name": "socket_exhaust_L",
+      "parent": "ventura_gt",
+      "position": [
+        -2.15,
+        0.45,
+        0.3
+      ],
+      "note": "exhaust outlet, flow along -x"
+    },
+    {
+      "name": "socket_exhaust_R",
+      "parent": "ventura_gt",
+      "position": [
+        -2.15,
+        -0.45,
+        0.3
+      ],
+      "note": "exhaust outlet, flow along -x"
+    }
+  ],
+  "lights": {
+    "head": {
+      "materials": [
+        "light_head"
+      ],
+      "emissive_on": [
+        1.0,
+        0.95,
+        0.85
+      ],
+      "emissive_strength_on": 8.0
+    },
+    "tail": {
+      "materials": [
+        "light_tail"
+      ],
+      "emissive_on": [
+        1.0,
+        0.03,
+        0.02
+      ],
+      "emissive_strength_on": 2.0
+    },
+    "brake": {
+      "materials": [
+        "light_brake"
+      ],
+      "emissive_on": [
+        1.0,
+        0.02,
+        0.01
+      ],
+      "emissive_strength_on": 8.0
+    },
+    "indicator_left": {
+      "materials": [
+        "light_indicator_left"
+      ],
+      "emissive_on": [
+        1.0,
+        0.5,
+        0.0
+      ],
+      "emissive_strength_on": 6.0
+    },
+    "indicator_right": {
+      "materials": [
+        "light_indicator_right"
+      ],
+      "emissive_on": [
+        1.0,
+        0.5,
+        0.0
+      ],
+      "emissive_strength_on": 6.0
+    },
+    "reverse": {
+      "materials": [
+        "light_reverse"
+      ],
+      "emissive_on": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "emissive_strength_on": 5.0
+    },
+    "dash": {
+      "materials": [
+        "gauge_tick",
+        "gauge_needle"
+      ],
+      "emissive_on": [
+        0.9,
+        0.9,
+        0.9
+      ],
+      "emissive_strength_on": 1.0
+    }
+  },
+  "engine_bay": {
+    "envelope_mm": [
+      1000,
+      900,
+      720
+    ],
+    "box_m": {
+      "min": [
+        0.45,
+        -0.45,
+        0.14
+      ],
+      "max": [
+        1.45,
+        0.45,
+        0.86
+      ]
+    },
+    "origin": "socket_engine_mount",
+    "layout": "front-mid longitudinal",
+    "hood_variants": {
+      "flat": {
+        "clearance_mm": 720
+      },
+      "hood_bulge": {
+        "clearance_mm": 780
+      },
+      "hood_scoop": {
+        "clearance_mm": 840
+      }
+    },
+    "note": "free box between the firewall (x 0.44), radiator (x 1.62), inner fenders (|y| 0.52) and the crossmember (z 0.14); the hood variants raise the top"
+  },
+  "notes": [
+    "Generic 1970s fastback GT; class-typical dimensions, not a specific production car.",
+    "Pop-up lamp pods popup_L/popup_R hinge at their rear-bottom edge: 0 = closed, 90 = lamps facing forward.",
+    "Hood variants hood_bulge / hood_scoop are children of 'hood' with extras default_hidden = true; the garage shows the one the installed engine needs (rig engine_bay.hood_variants).",
+    "Paint material 'paint'. Cockpit parts are driven by ventura_gt.cockpit.json (rg.cockpit/1)."
+  ]
+}

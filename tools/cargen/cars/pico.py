@@ -221,7 +221,9 @@ def build():
     m.socket("socket_tow_front", None, (1.86, 0.30, 0.34), "front towing eye")
     m.socket("socket_tow_rear", None, (-1.68, -0.35, 0.36), "rear towing eye")
     m.socket("socket_exhaust", None, (-1.70, -0.45, 0.24), "exhaust outlet, flow along -x")
-    m.extra_rig["engine_bay"] = {"envelope_mm": [620, 900, 560], "origin": "socket_engine_mount",
+    m.extra_rig["engine_bay"] = {"envelope_mm": [620, 900, 560],
+                                 "box_m": {"min": [1.08, -0.45, 0.28], "max": [1.70, 0.45, 0.84]},
+                                 "origin": "socket_engine_mount",
                                  "layout": "front transverse", "note": "free box under the closed hood"}
     m.notes += [
         "Generic A-segment city car; class-typical dimensions, not a specific production car.",
