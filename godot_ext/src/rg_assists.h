@@ -19,6 +19,9 @@ public:
     static godot::String traction_mode_name(int code);
     // The new assist.aero_control channel value after a toggle press: flipped when assist_fitted_bits has bit 6.
     static double toggled_aero_control(int fitted_bits, double current_value);
+    // The new assist.launch_control channel value after a toggle press, from the channel's CURRENT value: flipped when
+    // assist_fitted_bits has bit 4 (on = strictly > 0.5, like physics_sim).
+    static double toggled_launch_control(int fitted_bits, double current_value);
     // The next OFFERED drive mode code after `current` (0 eco, 1 normal, 2 sport), cycling through `available_bits`
     // only (PowertrainSnapshot::drive_modes_available_bits). -1 when the car offers none: the key does nothing.
     static int next_drive_mode(int available_bits, int current);

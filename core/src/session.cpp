@@ -56,6 +56,7 @@ const char* const kControlChannelNames[] = {
     "assist.traction_control",
     "assist.aero_control", // physics_sim assist unit (assists I5): rear-wing automation; only a car whose unit carries aero_control registers it in the World
     "assist.drive_mode", // physics_sim assists I7: 0 eco, 1 normal, 2 sport; only a car with a drive_modes part registers it in the World
+    "assist.launch_control", // physics_sim assists I4: launch control on/off (1/0); only a car with the part registers it; a drive-mode change writes it (I7c)
     "nitrous_arm", // N2O arm switch, a plain 0/1 level (owner 2026-10-05; only cars with a nitrous kit declare it)
 };
 const std::size_t kControlChannelCount = sizeof(kControlChannelNames) / sizeof(kControlChannelNames[0]);
@@ -204,9 +205,9 @@ Session::Session(const SessionConfig& config)
     // The assist channels start at the car's own defaults (physics_sim: the assist unit's default TC mode, else the
     // traction_control block's `enabled`; aero automation: the unit's default_enabled). The game sets no default of its own.
     if(have_vehicle_) {
-        // A drive_modes part changes the TC request itself when the mode changes (physics_sim keeps it until the
-        // channel VALUE changes), so the game only ever writes these values back unchanged.
-        for(const char* name:{"assist.traction_control","assist.aero_control","assist.drive_mode"})
+        // A drive_modes part writes the mode's TC / LC defaults into the channels itself on a mode change (assists I7c);
+        // adopt_physics_channel_writes mirrors that back into this store after every step.
+        for(const char* name:{"assist.traction_control","assist.aero_control","assist.drive_mode","assist.launch_control"})
             control_channels_[name].store(world_->get_control(name),std::memory_order_relaxed);
     }
 }
@@ -831,6 +832,7 @@ bool Session::step_once(bool from_loop) {
             world_->set_aero_fan_command(vehicle_id_,i,config_.environment.fan_command);
     }
     world_->step();
+    adopt_physics_channel_writes();
     spike.step_ms = lap();
     post_step(from_loop);
     spike.post_ms = lap();
@@ -917,20 +919,32 @@ void Session::apply_live_controls() {
     // Copies this session's own control_channels_ into ps::World right
     // before the tick (session.h's set_control doc comment explains why this
     // hand-off has to happen on the stepping thread).
-    for (auto& [name, value] : control_channels_) {
-        world_->set_control(name, value.load(std::memory_order_relaxed));
-    }
+    // push_channels also records what it pushed, so adopt_physics_channel_writes can tell a channel the PHYSICS wrote
+    // during the step (a drive-mode change writes the mode's TC / LC defaults) from one it was given.
+    push_channels(control_channels_, channel_mirror_, [this](const std::string& name, double v) { world_->set_control(name, v); });
+    channels_pushed_ = true;
     if (vehicle_control_.load(std::memory_order_relaxed) != VehicleControl::Unattended || !have_vehicle_) return;
     // Unattended (R2.2 R9): the driving channels come from the policy, not
     // from the player's input (rg/player_mode.h's unattended_controls).
     const ps::Vec3 v = world_->get_motion(chassis_body_).linear;
     const UnattendedControls u = unattended_controls(v.length());
-    world_->set_control("steer", u.steer);
-    world_->set_control("throttle", u.throttle);
-    world_->set_control("brake", u.brake);
-    world_->set_control("handbrake", u.handbrake);
-    world_->set_control("clutch", u.clutch);
-    world_->set_control("starter", u.starter);
+    // The policy's values are not physics writes: tell the mirror what the World holds going into the step.
+    const auto override_channel = [this](const char* name, double value) {
+        world_->set_control(name, value);
+        note_world_override(control_channels_, channel_mirror_, name, value);
+    };
+    override_channel("steer", u.steer);
+    override_channel("throttle", u.throttle);
+    override_channel("brake", u.brake);
+    override_channel("handbrake", u.handbrake);
+    override_channel("clutch", u.clutch);
+    override_channel("starter", u.starter);
+}
+
+void Session::adopt_physics_channel_writes() {
+    if (!channels_pushed_) return; // the drive script / relocation path pushes nothing
+    channels_pushed_ = false;
+    adopt_world_channel_writes(control_channels_, channel_mirror_, [this](const std::string& name) { return world_->get_control(name); });
 }
 
 void Session::throw_if_cancelled() const {

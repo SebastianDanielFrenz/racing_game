@@ -35,6 +35,7 @@
 
 #include "g2m/layer/osm_roads.h"
 
+#include "rg/channel_mirror.h"
 #include "rg/deck_installer.h"
 #include "rg/drive_script.h"
 #include "rg/environment.h"
@@ -715,6 +716,8 @@ private:
     void throw_if_cancelled() const;
     // The real-time loop's control copy (atomics, or the unattended override).
     void apply_live_controls();
+    // After World::step: adopt channels the physics wrote (rg/channel_mirror.h); a no-op unless this tick pushed.
+    void adopt_physics_channel_writes();
     // The five spawn rays at (x, y, yaw); false (+ the first missing ray's
     // XY) when one misses.
     bool ray_spawn_pose(double x, double y, double yaw_rad, double clearance_m, ps::Pose& out, double& miss_x,
@@ -862,6 +865,10 @@ private:
     ps_godot::OriginRebase origin_rebase_;
 
     std::unordered_map<std::string, std::atomic<double>> control_channels_;
+    // Stepping thread only (rg/channel_mirror.h): what apply_live_controls pushed this tick, so a channel the PHYSICS wrote
+    // during World::step (assists I7c drive-mode defaults) is adopted back into control_channels_.
+    ChannelMirror channel_mirror_;
+    bool channels_pushed_ = false;
     std::atomic<VehicleControl> vehicle_control_{VehicleControl::Player};
 
     struct RelocateTarget {

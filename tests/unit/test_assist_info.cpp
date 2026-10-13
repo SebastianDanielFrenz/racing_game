@@ -324,41 +324,80 @@ TEST_CASE("game cars: car_hyper_n2o carries the drive modes part, no other game 
     }
 }
 
-// A real Session on car_hyper_n2o (engine maps from the cache or generated, so [long]): the drive-mode channel starts at
-// the part's default, a switch to Sport changes the TC request by itself (physics_sim) while the game keeps writing its
-// unchanged TC value, and an Eco -> Normal change moves the TC request back.
-TEST_CASE("drive modes: a hypercar Session switches mode and physics moves the TC request", "[assist][drive_mode][session][long]") {
+// A real Session on car_hyper_n2o (engine maps from the cache or generated, so [long]), stepped through the live-loop
+// path (try_step: the session's channel store is pushed into the World before every tick, like the real-time loop does).
+// The drive-mode channel starts at the part's default; a switch to Sport makes physics_sim WRITE its mode defaults into
+// assist.traction_control (Relaxed, code 2) and assist.launch_control (1) after the tick (assists I7c), and the session
+// adopts those writes into its own store, so the next tick's push does not undo them and the HUD follows. Eco and Normal
+// have launch control off. A UI write to a channel afterwards is kept (the mode did not change again). The race "a UI
+// write between the push and the step wins" cannot be injected into a single-threaded step; test_channel_mirror.cpp
+// covers it on the mirror itself.
+TEST_CASE("drive modes: a mode switch writes the TC and LC defaults into the session's channels", "[assist][drive_mode][session][long]") {
     rg::SessionConfig config;
     config.vehicle_json_path = kRepo + "/data/vehicles/car_hyper_n2o.json";
     config.surface_table_path = kRepo + "/data/surfaces/surfaces.json";
     rg::Session session(config);
+    const auto step_n = [&](int n) {
+        for (int i = 0; i < n; ++i) REQUIRE(session.try_step());
+    };
+    const auto powertrain = [&] { return session.world().powertrain_state(session.vehicle_id()); };
+    const auto hud = [&] { return rg::assist_hud(powertrain()); };
+
     CHECK(session.get_control("assist.drive_mode") == 1.0);
     CHECK(session.get_control("assist.traction_control") == 1.0);
-    const double game_tc = session.get_control("assist.traction_control");
-    // What the game's live loop does every tick: copy its own channel values into the World (unchanged TC, no write
-    // on a mode change).
-    const auto step_n = [&](int n) {
-        for (int i = 0; i < n; ++i) {
-            session.world().set_control("assist.traction_control", game_tc);
-            session.step();
-        }
-    };
+    CHECK(session.get_control("assist.launch_control") == 0.0); // Normal: launch control off
     step_n(240);
-    auto pt = session.world().powertrain_state(session.vehicle_id());
+    auto pt = powertrain();
     CHECK(pt.drive_modes_available_bits == kAllModes);
     CHECK(pt.drive_mode_effective == 1);
     CHECK(pt.traction_mode_effective == 1);
+    CHECK(session.get_control("assist.launch_control") == 0.0);
+    CHECK(hud().lc == rg::LaunchLamp::Off);
 
-    session.world().set_control("assist.drive_mode", 2.0); // M: Sport
-    step_n(60);
-    pt = session.world().powertrain_state(session.vehicle_id());
-    CHECK(pt.drive_mode_requested == 2);
+    session.set_control("assist.drive_mode", 2.0); // M: Sport
+    step_n(5);
+    pt = powertrain();
     CHECK(pt.drive_mode_effective == 2);
-    CHECK(pt.traction_mode_effective == 2); // Relaxed (code 2): the mode's own default, written by physics
+    CHECK(session.get_control("assist.traction_control") == 2.0); // Relaxed, written by physics and adopted
+    CHECK(session.get_control("assist.launch_control") == 1.0);   // Sport: launch control on, no key press
+    CHECK(pt.traction_mode_effective == 2);
+    CHECK(hud().lc == rg::LaunchLamp::On);
+    step_n(60); // the next ticks' pushes must not undo the write
+    CHECK(session.get_control("assist.traction_control") == 2.0);
+    CHECK(session.get_control("assist.launch_control") == 1.0);
+    CHECK(session.world().get_control("assist.launch_control") == 1.0);
+    CHECK(powertrain().traction_mode_effective == 2);
+    CHECK(hud().lc == rg::LaunchLamp::On);
 
-    session.world().set_control("assist.drive_mode", 0.0); // Eco
-    step_n(60);
-    pt = session.world().powertrain_state(session.vehicle_id());
-    CHECK(pt.drive_mode_effective == 0);
-    CHECK(pt.traction_mode_effective == 1); // Eco's default is On
+    // A UI write after the switch (the L key) is kept: the mode did not change again.
+    session.set_control("assist.launch_control", 0.0);
+    step_n(30);
+    CHECK(session.get_control("assist.launch_control") == 0.0);
+    CHECK(session.world().get_control("assist.launch_control") == 0.0);
+    CHECK(hud().lc == rg::LaunchLamp::Off);
+    session.set_control("assist.traction_control", 1.0); // F4 to On
+    step_n(30);
+    CHECK(session.get_control("assist.traction_control") == 1.0);
+    CHECK(powertrain().traction_mode_effective == 1);
+
+    session.set_control("assist.drive_mode", 0.0); // Eco: TC On, launch control off
+    step_n(5);
+    CHECK(powertrain().drive_mode_effective == 0);
+    CHECK(session.get_control("assist.traction_control") == 1.0);
+    CHECK(session.get_control("assist.launch_control") == 0.0);
+
+    session.set_control("assist.drive_mode", 2.0); // and Sport again
+    step_n(5);
+    CHECK(session.get_control("assist.traction_control") == 2.0);
+    CHECK(session.get_control("assist.launch_control") == 1.0);
+}
+
+TEST_CASE("launch control toggle: flips from the channel's current value, only on a car that has it", "[assist][launch_control][controls]") {
+    constexpr std::uint32_t kLcFitted = rg::kAssistBitLaunchControl;
+    CHECK(rg::toggled_launch_control(kLcFitted, 0.0) == 1.0);
+    CHECK(rg::toggled_launch_control(kLcFitted, 1.0) == 0.0);
+    CHECK(rg::toggled_launch_control(kLcFitted, 0.5) == 1.0); // physics reads "on" as strictly > 0.5
+    CHECK(rg::toggled_launch_control(kLcFitted, 0.51) == 0.0);
+    CHECK(rg::toggled_launch_control(rg::kAssistBitTractionControl, 0.0) == 0.0); // not fitted: nothing happens
+    CHECK(rg::toggled_launch_control(0, 1.0) == 1.0);
 }

@@ -86,6 +86,14 @@ inline constexpr int kDriveModeEco = 0, kDriveModeNormal = 1, kDriveModeSport = 
 // --- Launch control lamp (assists I4 unit variant or the P8 two-step; assist bit 4) -------------------------------------
 inline constexpr std::uint32_t kAssistBitLaunchControl = 1u << 4;
 
+// The new value of the channel assist.launch_control after a toggle key press, from the channel's CURRENT value (physics_sim
+// can write it itself on a drive-mode change, assists I7c): physics_sim reads "on" as strictly > 0.5. A car without launch
+// control (bit 4 of assist_fitted_bits) has no such channel; the press does nothing.
+[[nodiscard]] inline double toggled_launch_control(std::uint32_t fitted_bits, double current_value) {
+    if ((fitted_bits & kAssistBitLaunchControl) == 0) return current_value;
+    return current_value > 0.5 ? 0.0 : 1.0;
+}
+
 // PowertrainSnapshot::launch_phase codes.
 inline constexpr int kLaunchPhaseIdle = 0, kLaunchPhaseArmed = 1, kLaunchPhaseLaunch = 2, kLaunchPhaseHandover = 3;
 

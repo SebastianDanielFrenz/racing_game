@@ -1097,6 +1097,7 @@ func _forward_driving(live: bool, delta: float) -> void:
 	var traction_cycles: int = _input_map.consume_traction_cycle()
 	var aero_toggles: int = _input_map.consume_aero_toggle()
 	var drive_mode_cycles: int = _input_map.consume_drive_mode_cycle()
+	var launch_toggles: int = _input_map.consume_launch_toggle()
 	if not live or not bool(_simulation.is_running()):
 		_steering.reset()
 		return
@@ -1118,13 +1119,15 @@ func _forward_driving(live: bool, delta: float) -> void:
 	_simulation.set_control("ignition", 1.0 if _input_map.get_ignition() else 0.0)
 	_simulation.set_control("starter", 1.0 if _input_map.get_starter() else 0.0)
 	_simulation.set_control("assist.auto_shift", 1.0 if _input_map.get_auto_shift() else 0.0)
-	# Assist unit (physics_sim): the channel defaults are the car's own (the Racing unit: TC On, aero automation on);
-	# a key press only moves them. F4 steps the requested TC mode through the modes the unit OFFERS (rg_core decides
-	# which, RgAssists); H flips the wing automation, and only on a car that has it.
-	if traction_cycles > 0 or aero_toggles > 0:
+	# Assist unit (physics_sim): the channel defaults are the car's own (the Racing unit: TC On, aero automation on).
+	# A key press steps the channel from its CURRENT value, which the physics may have written itself (a drive-mode
+	# change sets the TC mode and launch control, assists I7c): F4 steps the requested TC mode through the modes the
+	# unit OFFERS (rg_core decides which, RgAssists); H flips the wing automation and L launch control, and only on a
+	# car that has them. Several presses in one frame chain through the value just written.
+	if traction_cycles > 0 or aero_toggles > 0 or launch_toggles > 0:
 		var pt: Dictionary = _simulation.get_vehicle_powertrain(VEHICLE_NAME)
 		var bits: int = int(pt.get("traction_modes_available_bits", 0))
-		var mode: int = int(pt.get("traction_mode_effective", 0))
+		var mode: int = roundi(_simulation.get_control("assist.traction_control"))
 		for _i in range(traction_cycles):
 			mode = RgAssists.next_traction_mode(bits, mode)
 			if mode < 0:
@@ -1133,13 +1136,16 @@ func _forward_driving(live: bool, delta: float) -> void:
 		var fitted_bits: int = int(pt.get("assist_fitted_bits", 0))
 		for _i in range(aero_toggles):
 			_simulation.set_control("assist.aero_control", RgAssists.toggled_aero_control(fitted_bits, _simulation.get_control("assist.aero_control")))
-	# Drive mode (M, assists I7): the next OFFERED mode after the one that runs (rg_core decides which; a car without a
-	# drive_modes part gets -1 and the key does nothing). Only assist.drive_mode is written: physics_sim sets the TC
-	# request to the mode's own default on a change, so the game must NOT touch assist.traction_control here.
+		for _i in range(launch_toggles):
+			_simulation.set_control("assist.launch_control", RgAssists.toggled_launch_control(fitted_bits, _simulation.get_control("assist.launch_control")))
+	# Drive mode (M, assists I7): the next OFFERED mode after the channel's current value (rg_core decides which; a car
+	# without a drive_modes part gets -1 and the key does nothing). Only assist.drive_mode is written: physics_sim writes
+	# the mode's own TC and launch-control defaults into their channels after the tick (assists I7c) and the session
+	# adopts them, so the game must NOT touch those two here.
 	if drive_mode_cycles > 0:
 		var dm: Dictionary = _simulation.get_vehicle_powertrain(VEHICLE_NAME)
 		var dm_bits: int = int(dm.get("drive_modes_available_bits", 0))
-		var dm_mode: int = int(dm.get("drive_mode_effective", 1))
+		var dm_mode: int = roundi(_simulation.get_control("assist.drive_mode"))
 		for _i in range(drive_mode_cycles):
 			dm_mode = RgAssists.next_drive_mode(dm_bits, dm_mode)
 			if dm_mode < 0:
