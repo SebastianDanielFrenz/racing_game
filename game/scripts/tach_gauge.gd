@@ -299,8 +299,9 @@ func _draw_pedals(font: Font, vp_size: Vector2, center: Vector2, radius: float, 
 	var gap: float = 6.0 * scale
 	var height: float = radius * 1.1
 	var strip_left: float = vp_size.x - margin
-	var x0: float = strip_left + (margin - (3.0 * bar_w + 2.0 * gap)) * 0.5
-	var top: float = center.y - height * 0.5
+	# Nudged right of the strip's centre and below the dial's centre line (owner request).
+	var x0: float = strip_left + (margin - (3.0 * bar_w + 2.0 * gap)) * 0.5 + 8.0 * scale
+	var top: float = center.y - height * 0.5 + radius * 0.35
 	var font_size: int = int(round(12.0 * scale))
 	var auto_open: float = clampf(1.0 - float(_last_pt.get("clutch_engagement", 1.0)), 0.0, 1.0)
 	var bars := [
