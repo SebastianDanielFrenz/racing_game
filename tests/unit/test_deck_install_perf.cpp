@@ -39,9 +39,9 @@ namespace {
 using Clock = std::chrono::steady_clock;
 
 bool have_env(const char* name) {
+#ifdef _WIN32
     char* buf = nullptr;
     std::size_t len = 0;
-#ifdef _WIN32
     const bool ok = _dupenv_s(&buf, &len, name) == 0 && buf != nullptr;
     std::free(buf);
     return ok;
@@ -51,9 +51,9 @@ bool have_env(const char* name) {
 }
 
 double env_double(const char* name, double fallback) {
+#ifdef _WIN32
     char* buf = nullptr;
     std::size_t len = 0;
-#ifdef _WIN32
     if (_dupenv_s(&buf, &len, name) != 0 || buf == nullptr) return fallback;
     const double v = std::atof(buf);
     std::free(buf);
