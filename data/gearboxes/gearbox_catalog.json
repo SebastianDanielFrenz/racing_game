@@ -1,0 +1,83 @@
+{
+  "format": "rg.gearbox_catalog/1",
+  "source": "Game-owned gearbox catalogue (gearbox swap, 2026-10-13). One row per gearbox file the garage offers. What a physics_sim gearbox file cannot say lives here: display name, kind (manual | sequential | automatic | cvt), focus (economy | touring | performance | race), gear_type (helical | straight_cut, the later gear-whine audio keys on it), synchro (cone | dog), the input torque rating and the card text. rating_nm is the maximum engine torque the box is rated for (N*m at the input shaft): physics_sim's GearboxDesc has no rating yet, so the rating is kept HERE and moves into the physics file when the physics session adds one; the garage offers a box only for an engine whose peak torque does not exceed it. All ratings and designs are invented [AS] and chosen to cover the shipped engines (engine peaks: i4 2.0 ~212, A25A 290, N52 300, R26B 608, hyper V8 1387 N*m). Paths are relative to the repository root. The automatic and CVT kinds have no entries yet (physics_sim has no torque converter or variator): the garage lists them as 'coming soon'; the kinds themselves are fixed in rg::GearboxCatalog (gearbox_catalog.h).",
+  "gearboxes": [
+    {
+      "id": "econ_5mt",
+      "name": "Economy 5-speed manual",
+      "kind": "manual",
+      "focus": "economy",
+      "gear_type": "helical",
+      "synchro": "cone",
+      "rating_nm": 320,
+      "file": "data/gearboxes/econ_5mt.json",
+      "description": "Long gearing and a tall overdrive fifth for low engine speed at motorway pace. Light and efficient, built for everyday engines."
+    },
+    {
+      "id": "econ_6mt_overdrive",
+      "name": "Economy 6-speed overdrive manual",
+      "kind": "manual",
+      "focus": "economy",
+      "gear_type": "helical",
+      "synchro": "cone",
+      "rating_nm": 320,
+      "file": "data/gearboxes/econ_6mt_overdrive.json",
+      "description": "Two overdrive gears, the sixth very tall. The lowest engine speed on the motorway, at the cost of punch in the top gears."
+    },
+    {
+      "id": "touring_6mt",
+      "name": "Touring 6-speed manual",
+      "kind": "manual",
+      "focus": "touring",
+      "gear_type": "helical",
+      "synchro": "cone",
+      "rating_nm": 400,
+      "file": "external/physics_sim/data/gearboxes/sedan_6mt.json",
+      "description": "The balanced six-speed of the sedans: even steps and a modest overdrive."
+    },
+    {
+      "id": "close_ratio_6mt",
+      "name": "Close-ratio 6-speed manual",
+      "kind": "manual",
+      "focus": "performance",
+      "gear_type": "helical",
+      "synchro": "cone",
+      "rating_nm": 550,
+      "file": "data/gearboxes/close_ratio_6mt.json",
+      "description": "Tightly spaced gears keep the engine in its power band after every shift. Short throw, strong synchros, nearly direct sixth."
+    },
+    {
+      "id": "heavy_duty_6mt",
+      "name": "Heavy-duty 6-speed manual",
+      "kind": "manual",
+      "focus": "performance",
+      "gear_type": "helical",
+      "synchro": "cone",
+      "rating_nm": 700,
+      "file": "data/gearboxes/heavy_duty_6mt.json",
+      "description": "Large gears and synchros for high-torque engines. Direct fourth, overdrive fifth and sixth."
+    },
+    {
+      "id": "hyper_7mt",
+      "name": "Hypercar 7-speed manual",
+      "kind": "manual",
+      "focus": "performance",
+      "gear_type": "helical",
+      "synchro": "cone",
+      "rating_nm": 1600,
+      "file": "external/physics_sim/data/gearboxes/hyper_7mt.json",
+      "description": "The hypercar's seven-speed: a long overdrive seventh for the top speed run and the strength for over 1,500 N*m."
+    },
+    {
+      "id": "straight_cut_6sq",
+      "name": "Straight-cut 6-speed sequential",
+      "kind": "sequential",
+      "focus": "race",
+      "gear_type": "straight_cut",
+      "synchro": "dog",
+      "rating_nm": 1800,
+      "file": "data/gearboxes/straight_cut_6sq.json",
+      "description": "Racing dog box with straight-cut gears: no synchros, a sequential drum and very short shifts. Rated for the hypercar."
+    }
+  ]
+}

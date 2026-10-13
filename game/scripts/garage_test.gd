@@ -277,6 +277,23 @@ func _run() -> void:
 	_press("tile:Swaps")
 	_press("tile:Drivetrain")
 	for type_name in ["AWD","RWD","FWD"]: _check(ui.get_button("tile:"+type_name).disabled, "unsupported drivetrain swap disabled: " + type_name)
+	# ---- gearbox swap: the hypercar takes only boxes rated for its V8 ----
+	await _back_to_root()
+	_press("tile:Drivetrain")
+	_press("tile:Gearbox")
+	var gb_option: Dictionary = ui._garage_option("gearbox_install")
+	_check(not gb_option.is_empty(), "the gearbox option is offered")
+	var gb_soon: Array = []
+	for section in gb_option.get("coming_soon", []): gb_soon.append(str(section))
+	_check(gb_soon.has("Automatic") and gb_soon.has("CVT"), "Automatic and CVT are reported as coming soon (%s)" % ", ".join(gb_soon))
+	_check(ui.get_button("part:gearbox_install:stock") != null and ui.get_button("part:gearbox_install:straight_cut_6sq") != null, "the stock box and the straight-cut box are listed for the hypercar")
+	_check(ui.get_button("part:gearbox_install:heavy_duty_6mt") == null and ui.get_button("part:gearbox_install:econ_5mt") == null, "boxes rated below the V8's torque are not listed")
+	_press("part:gearbox_install:straight_cut_6sq")
+	_check(garage.is_dirty() and bool(garage.get_validation()["ok"]), "the straight-cut gearbox validates")
+	_check(str(ui._garage_option("gearbox_install")["value"]) == "straight_cut_6sq", "the swapped gearbox is the working value")
+	_press("part:gearbox_install:stock")
+	_check(not garage.is_dirty(), "stock gearbox restores the clean configuration")
+	_press("reset_all")
 	# ---- a valid change through the real control ----
 	_press("garage:tuning")
 	_check(ui.get_button("garage:tuning").button_pressed and not ui.get_button("garage:upgrades").button_pressed, "active mode highlight follows Tuning")

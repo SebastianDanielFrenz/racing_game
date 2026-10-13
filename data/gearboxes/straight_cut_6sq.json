@@ -1,0 +1,60 @@
+{
+  "format": "physics_sim.gearbox/1",
+  "name": "straight_cut_6sq",
+  "type": "sequential",
+  "source": "racing_game-owned straight-cut 6-speed sequential dog gearbox for racing, an invented design, NOT a specific gearbox [AS]. Ratios 2.95 / 2.12 / 1.62 / 1.31 / 1.03 / 0.76, steps 1.39 / 1.31 / 1.24 / 1.27 / 1.36 (under the 1.62 limit that car_hyper_n2o's Sport-mode auto-shift points, up 8100 / down 5000 rpm, allow without hunting). Straight-cut (spur) gears have no axial sliding component, so mesh efficiency is higher than a helical box: 0.985 per gear against 0.97-0.98 [AS, rationale only: a spur mesh loses power to rolling friction alone, a helical one adds axial sliding friction; the figure is assumed, not cited]. Dog engagement, no cone synchros, short shift times: sequential drum, neutral dwell 0.025 s, dog release 150 N*m, grind after 0.20 s, abort 0.60 s [AS]. MODEL NOTE: physics_sim only matches the input shaft speed through a synchro capacity (zero capacity grinds on every auto-shift), so the capacity here (90 N*m, 6 gears and reverse) is the model's stand-in for the ECU-assisted dog speed match (torque cut and blip), together with a wide dog mismatch window (25 rad/s at the input shaft, about 240 rpm, chamfered dog teeth) [AS]; the catalogue lists the box as synchro 'dog'. Light shafts (input 0.008, output 0.012 kg*m2). Torque rating 1800 N*m (enough for the hypercar) is kept in data/gearboxes/gearbox_catalog.json.",
+  "forward_ratios": [
+    2.95,
+    2.12,
+    1.62,
+    1.31,
+    1.03,
+    0.76
+  ],
+  "forward_efficiency": [
+    0.985,
+    0.985,
+    0.985,
+    0.985,
+    0.985,
+    0.985
+  ],
+  "reverse_ratios": [
+    -3.0
+  ],
+  "reverse_efficiency": [
+    0.98
+  ],
+  "input_inertia_kgm2": 0.008,
+  "output_inertia_kgm2": 0.012,
+  "input_axis_local": [
+    0,
+    1,
+    0
+  ],
+  "output_axis_local": [
+    0,
+    -1,
+    0
+  ],
+  "synchro": {
+    "forward_capacity_nm": [
+      90,
+      90,
+      90,
+      90,
+      90,
+      90
+    ],
+    "reverse_capacity_nm": [
+      90
+    ],
+    "static_factor": 1.0,
+    "max_dog_mismatch_rad_s": 25.0
+  },
+  "neutral_phase_s": 0.025,
+  "dog_release_torque_nm": 150.0,
+  "grind_after_s": 0.2,
+  "abort_after_s": 0.6,
+  "initial_gear": 0
+}

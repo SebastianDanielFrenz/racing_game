@@ -17,6 +17,16 @@ returns one level at a time; the root opens the save-and-exit prompt. Upgrades:
   (unavailable), or Suspension & brakes → tuning installed hardware.
 - Wheels → All/Front/Rear → Compounds/Dimensions → installable image cards.
 - Drivetrain and Appearance & assists link to installed-part tuning.
+- Upgrades → Drivetrain → Gearbox (2026-10-13): swap the car's gearbox. Boxes are grouped Manual (manual
+  and sequential, the latter labelled "Sequential"), Automatic and CVT; the last two are empty until
+  physics_sim models a torque converter and a variator and show "Coming soon". Every car is offered the
+  whole catalogue (data/gearboxes/gearbox_catalog.json) filtered by the INSTALLED engine's peak torque:
+  a box whose rating is below it is not listed, and a setup that forces one anyway is rejected with
+  "gearbox: rated 450 N*m, engine makes 1371 N*m". The car's own box is the "stock" card. Changing
+  the box clears the per-gear ratio factors (with a notice); an engine swap that leaves a too-weak box
+  drops it back to stock with a notice. The card shows kind, focus, gear type, gear count, first/last
+  ratio and rating. The N2O shot and extra boost are not counted against the rating (the list describes
+  the engine as catalogued).
 
 Compound installs preserve each axle's width. Dimension installs preserve each
 axle's compound. All applies the chosen property to both axles, offering only

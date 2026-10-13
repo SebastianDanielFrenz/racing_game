@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="400" height="260" viewBox="0 0 400 260">
+<defs>
+<linearGradient id="case" x1="0" y1="0" x2="0" y2="1"><stop stop-color="#8b99ab"/><stop offset=".55" stop-color="#4c5b6f"/><stop offset="1" stop-color="#2a3442"/></linearGradient>
+<radialGradient id="gear"><stop stop-color="#e6ebf1"/><stop offset=".6" stop-color="#8e9db0"/><stop offset="1" stop-color="#4b596b"/></radialGradient>
+</defs>
+<ellipse cx="200" cy="232" rx="150" ry="11" fill="#000" opacity=".3"/>
+<path d="M62 92 L128 62 L292 62 L338 100 L338 176 L292 204 L128 204 L62 176 Z" fill="url(#case)" stroke="#aab6c6" stroke-width="4" stroke-linejoin="round"/>
+<path d="M128 62 L128 204 M292 62 L292 204" stroke="#2a3442" stroke-width="3" opacity=".7"/>
+<g stroke="#2a3442" stroke-width="3">
+<circle cx="116" cy="134" r="44" fill="url(#gear)"/>
+<circle cx="214" cy="134" r="31" fill="url(#gear)"/>
+<circle cx="288" cy="134" r="24" fill="url(#gear)"/>
+</g>
+<g fill="#1d2530" stroke="#aab6c6" stroke-width="3">
+<circle cx="116" cy="134" r="12"/><circle cx="214" cy="134" r="10"/><circle cx="288" cy="134" r="8"/>
+</g>
+<g fill="none" stroke="#e6ebf1" stroke-width="5" stroke-linecap="round" opacity=".85" stroke-dasharray="4 5">
+<circle cx="116" cy="134" r="38"/><circle cx="214" cy="134" r="26"/><circle cx="288" cy="134" r="19"/>
+</g>
+<rect x="188" y="36" width="24" height="30" rx="6" fill="#c6ced8" stroke="#4c5b6f" stroke-width="4"/>
+<circle cx="200" cy="30" r="12" fill="#1d2530" stroke="#d5dde9" stroke-width="4"/>
+<rect x="338" y="124" width="36" height="20" rx="5" fill="#c6ced8" stroke="#4c5b6f" stroke-width="4"/>
+<rect x="26" y="124" width="36" height="20" rx="5" fill="#c6ced8" stroke="#4c5b6f" stroke-width="4"/>
+</svg>

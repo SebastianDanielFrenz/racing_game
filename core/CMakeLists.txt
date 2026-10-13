@@ -91,6 +91,7 @@ add_library(rg_core STATIC
     src/vehicle_load.cpp
     src/engine_store.cpp
     src/engine_swap.cpp
+    src/gearbox_catalog.cpp
     src/crt_guard.cpp
     src/garage_set.cpp
     src/garage.cpp

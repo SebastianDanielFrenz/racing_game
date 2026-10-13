@@ -34,6 +34,7 @@
 #pragma once
 
 #include "rg/engine_store.h"
+#include "rg/gearbox_catalog.h"
 #include "rg/vehicle_catalog.h"
 
 #include <map>
@@ -60,6 +61,9 @@ const char* to_string(OptionKind k);
 struct SetupPart {
     std::string id, label, path, image, detail;
     bool naturally_aspirated = false;
+    // A catalog option may group its parts (the gearbox list: "Manual" / "Automatic" / "CVT") and give each a second line.
+    std::string section;   // "" = not grouped
+    std::string subtitle;  // kind and focus, e.g. "Sequential · Race · straight-cut"; detail holds the numbers
 };
 
 struct SetupOptionDef {
@@ -81,7 +85,9 @@ struct SetupOptionDef {
     // FileChoice whose parts are not listed in the option table but come from a store at run time (engine garage G1):
     // "engines" = every engine of rg::EngineStore (defaults and user engines; ids "default:<id>" / "user:<uid>", a
     // legacy table id such as "sedan_i6" still resolves), "fuels" = the fuels of the installed engine (ids = fuel stems).
-    // An engine choice also derives the swap package (engine_swap.h); both ignore compatible_engines.
+    // "gearboxes" = the rg::GearboxCatalog (data/gearboxes/gearbox_catalog.json), offered when the box's torque rating
+    // covers the installed engine's peak torque; ids = the catalogue ids. An engine choice also derives the swap
+    // package (engine_swap.h); all of them ignore compatible_engines.
     std::string catalog;
     std::vector<std::string> compatible_engines; // original engine stems, an explicit game fitment list; "*" = any engine
     std::string part_format; // required referenced file format
@@ -128,6 +134,8 @@ struct SetupContext {
     // The engine list the "engines"/"fuels" catalog options read (a snapshot: a worker thread may hold a copy of this
     // context while the garage edits user engines). nullptr = those options are unavailable.
     std::shared_ptr<const EngineStore> engines;
+    // The gearbox list the "gearboxes" catalog option reads. nullptr = that option is unavailable.
+    std::shared_ptr<const GearboxCatalog> gearboxes;
 };
 
 // One option as the configurator shows it, for one vehicle.
@@ -139,6 +147,7 @@ struct OptionView {
     SetupValue stock;                  // the value that changes nothing
     std::vector<std::string> choices;  // TyreChoice: candidate tyre ids (compound x allowed sizes)
     std::vector<SetupPart> parts; // available presentation records, including stock
+    std::vector<std::string> coming_soon; // a grouped catalog option: the sections that have no entries yet ("Automatic", "CVT")
     int list_size = 0;                 // ScaleList: number of entries
     std::vector<double> stock_numbers; // ScaleList: stock leaf values (gear ratios) for display
 };

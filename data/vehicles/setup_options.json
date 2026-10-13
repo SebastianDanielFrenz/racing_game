@@ -348,6 +348,20 @@
       "help": "The fuel in the tank, limited to the fuels the installed engine lists; the first is its reference fuel. A swap keeps the current fuel if the new engine lists it."
     },
     {
+      "id": "gearbox_install",
+      "label": "Gearbox",
+      "group": "Drivetrain",
+      "area": "rear",
+      "kind": "file_choice",
+      "catalog": "gearboxes",
+      "file": "vehicle",
+      "part_format": "physics_sim.gearbox/1",
+      "pointers": [
+        "/powertrain/components/[type=gearbox]/ref"
+      ],
+      "help": "Swap the gearbox. Manual boxes (and the sequential ones) are listed; automatic and CVT follow once the physics supports them. A box is offered only if its torque rating covers the installed engine's peak torque; the car's own box is always there. The box brings its own gear ratios (the gear ratio sliders then scale them), the shift points of the auto-shift assist stay."
+    },
+    {
       "id": "turbo_install",
       "label": "Turbo system",
       "group": "Turbo system",

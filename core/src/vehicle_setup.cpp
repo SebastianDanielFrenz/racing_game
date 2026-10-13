@@ -372,6 +372,30 @@ std::vector<Target> targets_of(Files& files, const SetupOptionDef& def, const st
 
 std::string stem_of(const std::string& path) { return fs::path(path).stem().string(); }
 
+// The gearbox file the car ships with (the vehicle file as loaded, before any swap), absolute; "" without a gearbox.
+std::string original_gearbox_path(const Files& files) {
+    const int idx = component_index(files.vehicle.base, "gearbox");
+    if (idx < 0) return {};
+    std::string ref;
+    detail::get_string(files.vehicle.base["powertrain"]["components"][static_cast<std::size_t>(idx)], "ref", ref);
+    return ref.empty() ? std::string() : resolve_ref(dir_of(files.vehicle.path), ref);
+}
+
+// The peak torque (N*m) of the engine that is installed now (a swapped-in engine, else the car's own), from the
+// engine list: a curve engine's WOT curve, a simulated engine's dyno-measured catalogue figure (a user engine
+// inherits its base's). 0 = unknown, and then no gearbox is turned away. The N2O shot and a bigger turbo setting
+// are not counted: the rating is checked against the engine as the list describes it.
+double installed_engine_peak_torque(const Files& files, const SetupContext& ctx) {
+    if (!ctx.engines || !files.engine) return 0.0;
+    const EngineEntry* installed = files.swapped ? &*files.swapped : ctx.engines->find_by_file(files.engine->path);
+    if (installed != nullptr) {
+        const EnginePeaks p = ctx.engines->peaks(*installed);
+        return p.known ? p.torque_nm : 0.0;
+    }
+    const auto facts = read_engine_facts(files.engine->path, nullptr);
+    return facts && facts->curve_peaks.known ? facts->curve_peaks.torque_nm : 0.0;
+}
+
 // File choices are never a filesystem picker: only declared compatible IDs can resolve a path.
 bool file_choice_fits(Files& files, const SetupOptionDef& def, const CatalogEntry& entry, const SetupContext& ctx) {
     if (!entry_offers(entry, def.id)) return false;
@@ -380,7 +404,7 @@ bool file_choice_fits(Files& files, const SetupOptionDef& def, const CatalogEntr
         const std::string& engine = files.engine_stem;
         const bool any_engine = std::find(def.compatible_engines.begin(), def.compatible_engines.end(), "*") != def.compatible_engines.end();
         if (!any_engine && std::find(def.compatible_engines.begin(), def.compatible_engines.end(), engine) == def.compatible_engines.end()) return false;
-    } else if (!ctx.engines) {
+    } else if (def.catalog == "gearboxes" ? !ctx.gearboxes : !ctx.engines) {
         return false;
     }
     const int idx = component_index(files.vehicle.base, "engine");
@@ -414,6 +438,27 @@ std::string install_catalog_part(Files& files, const SetupOptionDef& def, const 
         if (!load_aux(files.vehicle.work, dir_of(files.vehicle.path), "engine", files.engine, &err)) return err;
         files.engine_stem = e->base_stem;
         files.swapped = *e;
+        return {};
+    }
+    if (def.catalog == "gearboxes") {
+        const GearboxEntry* g = ctx.gearboxes->find(id);
+        if (g == nullptr) return def.id + ": \"" + id + "\" is not a gearbox in the catalogue";
+        if (g->kind != GearboxKind::Manual && g->kind != GearboxKind::Sequential) {
+            return def.id + ": " + g->name + " cannot be simulated yet";
+        }
+        if (norm_path(g->file) == original_gearbox_path(files)) {
+            // The car's own gearbox, chosen explicitly: nothing changes (also when it was swapped before in this session).
+            return {};
+        }
+        const std::string rating = check_gearbox_rating(*g, installed_engine_peak_torque(files, ctx));
+        if (!rating.empty()) return rating;
+        for (auto& target : targets_of(files, def, pointers_for(entry, def))) {
+            const json* leaf = at_pointer(target.file->work, target.pointer);
+            if (!leaf || !leaf->is_string()) return def.id + ": reference is not a string";
+            target.file->work[json::json_pointer(target.pointer)] = norm_path(g->file);
+        }
+        std::string err;
+        if (!load_aux(files.vehicle.work, dir_of(files.vehicle.path), "gearbox", files.gearbox, &err)) return err;
         return {};
     }
     if (def.catalog == "fuels") {
@@ -543,6 +588,15 @@ std::string apply_swap(Files& files, const CatalogEntry& entry, const SetupConte
 
     pkg = derive_swap_package(car, eng, SwapChoices{files.fuel_choice}, files.swapped.has_value());
     if (!pkg.ok) return entry.id + ": " + pkg.error;
+    // The car's current gearbox is not turned away by an engine swap, but the player is told when it is too weak.
+    if (files.swapped && ctx.gearboxes && files.gearbox && eng.peak_torque_nm > 0.0) {
+        const GearboxEntry* g = ctx.gearboxes->find_by_file(files.gearbox->path);
+        if (g != nullptr && !check_gearbox_rating(*g, eng.peak_torque_nm).empty()) {
+            char buf[160];
+            std::snprintf(buf, sizeof(buf), "Gearbox: %s is rated %.0f N*m but this engine makes %.0f N*m - install a stronger one", g->name.c_str(), g->rating_nm, eng.peak_torque_nm);
+            pkg.lines.push_back(buf);
+        }
+    }
 
     const std::string comp_path = "/powertrain/components/";
     if (pkg.set_fuel && tank >= 0) {
@@ -898,8 +952,8 @@ std::optional<SetupOptionTable> parse_setup_options(const std::string& json_text
             if (!detail::get_string(o, "part_format", d.part_format) || d.part_format.empty()) return bad(where + ": part_format missing");
             detail::get_bool(o, "no_turbo_override", d.no_turbo_override);
             detail::get_string(o, "catalog", d.catalog);
-            if (!d.catalog.empty() && d.catalog != "engines" && d.catalog != "fuels") {
-                return bad(where + ": \"catalog\" must be \"engines\" or \"fuels\"");
+            if (!d.catalog.empty() && d.catalog != "engines" && d.catalog != "fuels" && d.catalog != "gearboxes") {
+                return bad(where + ": \"catalog\" must be \"engines\", \"fuels\" or \"gearboxes\"");
             }
             if (!d.catalog.empty()) {
                 if (o.contains("parts") || o.contains("compatible_engines")) {
@@ -1080,6 +1134,26 @@ std::string power_text(const EnginePeaks& p) {
 std::vector<SetupPart> parts_of(const SetupOptionDef& def, const SetupContext& ctx, const Files& files) {
     if (def.catalog.empty()) return def.parts;
     std::vector<SetupPart> out;
+    if (def.catalog == "gearboxes") {
+        if (!ctx.gearboxes) return out;
+        const double peak = installed_engine_peak_torque(files, ctx);
+        const std::string original = original_gearbox_path(files);
+        for (const GearboxEntry& g : ctx.gearboxes->list()) {
+            // The car's own box is always listed (it becomes "stock"); any other must take the engine's torque.
+            if (norm_path(g.file) != original && !check_gearbox_rating(g, peak).empty()) continue;
+            if (g.kind != GearboxKind::Manual && g.kind != GearboxKind::Sequential) continue;
+            SetupPart p;
+            p.id = g.id;
+            p.label = g.name;
+            p.path = g.file;
+            p.image = "res://assets/components/drivetrain/gearbox.svg";
+            p.section = gearbox_section(g);
+            p.subtitle = gearbox_summary_line(g);
+            p.detail = gearbox_detail_line(g);
+            out.push_back(std::move(p));
+        }
+        return out;
+    }
     if (!ctx.engines) return out;
     if (def.catalog == "engines") {
         for (const EngineEntry& e : ctx.engines->list()) {
@@ -1213,6 +1287,9 @@ SetupModel build_setup_model(const CatalogEntry& entry, const SetupOptionTable& 
                     v.choices.push_back(part.id);
                 }
                 if (v.choices.size() < 2) v.available = false;
+                if (def.catalog == "gearboxes" && ctx.gearboxes) {
+                    for (const GearboxSection& sec : ctx.gearboxes->sections()) if (!sec.has_entries) v.coming_soon.push_back(sec.label);
+                }
                 break;
             }
             case OptionKind::TyreChoice: {

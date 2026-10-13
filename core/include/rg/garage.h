@@ -34,6 +34,7 @@ struct GarageConfig {
     std::string options_path;  // data/vehicles/setup_options.json
     std::string set_path;      // data/garage/garage_set.json
     std::string engine_catalog_path; // data/engines/engine_catalog.json ("" = <repo_root>/data/engines/engine_catalog.json)
+    std::string gearbox_catalog_path; // data/gearboxes/gearbox_catalog.json ("" = <repo_root>/data/gearboxes/gearbox_catalog.json)
     std::string tyre_families_path; // data/tyres/families.json ("" = no tyre choice)
     std::string user_dir;      // selection and setups are saved under <user_dir>/garage/
     std::string work_root;     // scratch and drive materialisations

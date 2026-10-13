@@ -82,6 +82,7 @@ var _dyno_poll := 0.0
 var _garage_path: Array[String] = []
 var _garage_preferred: Button
 var _engine_notice := ""                        # G1: options an engine change reset (shown under the engine cards)
+var _gearbox_notice := ""                       # a gearbox change reset the gear ratios (shown under the gearbox cards)
 var _component_textures: Dictionary = {}
 var _component_catalog: Dictionary = {}
 var _garage_exit: Control
@@ -935,10 +936,13 @@ func _draw_upgrades() -> void:
 		return
 	if top == "Drivetrain":
 		var clutch := _garage_option("clutch_capacity")
+		var gearbox := _garage_option("gearbox_install")
 		if _garage_path.size() == 1:
-			_draw_tiles(["Clutch", "Gearing"], ["Clutch"] if clutch.is_empty() else [])
+			_draw_tiles(["Clutch", "Gearbox", "Gearing"], (["Clutch"] if clutch.is_empty() else []) + (["Gearbox"] if gearbox.is_empty() else []))
 		elif _garage_path[1] == "Clutch":
 			_draw_clutch_upgrades(clutch)
+		elif _garage_path[1] == "Gearbox":
+			_draw_gearbox_choices(gearbox)
 		else:
 			_draw_tuning_link()
 		return
@@ -987,6 +991,48 @@ func _draw_clutch_upgrades(opt: Dictionary) -> void:
 		_buttons["clutch:" + str(factor)] = card
 		card.pressed.connect(func(): _edit_option("clutch_capacity",factor); _draw_garage_options())
 		if installed or _garage_preferred == null: _garage_preferred = card
+	_focus_garage.call_deferred()
+
+# The gearbox swap: the compatible boxes in sections (Manual incl. sequential, Automatic, CVT). A section with no entries
+# yet says "Coming soon". The list is already filtered by the torque rating against the installed engine (RgGarage).
+func _draw_gearbox_choices(opt: Dictionary) -> void:
+	if opt.is_empty(): return
+	var by_section: Dictionary = {}
+	for part in opt["parts"]:
+		var section := str(part.get("section", ""))
+		if section.is_empty(): section = "Manual"
+		if not by_section.has(section): by_section[section] = []
+		by_section[section].append(part)
+	var order: Array = ["Manual", "Automatic", "CVT"]
+	for section in by_section.keys():
+		if not order.has(section): order.append(section)
+	var note := _label("Only gearboxes rated for the installed engine's torque are listed.",13,HORIZONTAL_ALIGNMENT_LEFT,true)
+	note.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_option_box.add_child(note)
+	for section in order:
+		_option_box.add_child(_label(str(section),18,HORIZONTAL_ALIGNMENT_LEFT))
+		if not by_section.has(section):
+			var soon := PackedStringArray(opt.get("coming_soon", [])).has(str(section))
+			_option_box.add_child(_label("Coming soon" if soon else "No gearbox in this section is rated for the installed engine.",14,HORIZONTAL_ALIGNMENT_LEFT,true))
+			continue
+		var grid := GridContainer.new()
+		grid.columns = 2
+		grid.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		_option_box.add_child(grid)
+		for part in by_section[section]:
+			var installed := str(part["id"]) == str(opt["value"])
+			var presentation: Dictionary = part.duplicate()
+			presentation["size"] = (str(part.get("subtitle", "")) + "\n" + str(part.get("size", ""))).strip_edges()
+			var card := _make_component_card(presentation,"INSTALLED" if installed else "Install")
+			grid.add_child(card)
+			_buttons["part:" + str(opt["id"]) + ":" + str(part["id"])] = card
+			card.pressed.connect(func(): _edit_option(str(opt["id"]),str(part["id"])); _draw_garage_options())
+			if installed or _garage_preferred == null: _garage_preferred = card
+	for text in [_gearbox_notice, _engine_notice]:
+		if not str(text).is_empty():
+			var line := _label(str(text),14,HORIZONTAL_ALIGNMENT_LEFT,true)
+			line.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+			_option_box.add_child(line)
 	_focus_garage.call_deferred()
 
 func _induction_type(part_id: String) -> String:
@@ -1360,6 +1406,8 @@ func _edit_option(option_id: String, value: Variant) -> void:
 	var result: Dictionary = garage.set_option(option_id, value)
 	if option_id == "engine_install":
 		_engine_notice = str(result.get("notice", ""))
+	if option_id == "gearbox_install":
+		_gearbox_notice = str(result.get("notice", ""))
 	var note: Label = _option_notes.get(option_id, null)
 	if note != null:
 		note.visible = not bool(result["accepted"])

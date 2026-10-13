@@ -148,6 +148,16 @@ std::unique_ptr<Garage> Garage::open(const GarageConfig& config, std::string* er
         g->store_ = std::move(store);
         g->ctx_.engines = std::make_shared<const EngineStore>(*g->store_);
     }
+    {
+        const std::string cat = config.gearbox_catalog_path.empty() ? config.repo_root + "/data/gearboxes/gearbox_catalog.json"
+                                                                     : config.gearbox_catalog_path;
+        auto boxes = GearboxCatalog::open(cat, config.repo_root, &e);
+        if (!boxes) {
+            if (err != nullptr) *err = e;
+            return nullptr;
+        }
+        g->ctx_.gearboxes = std::shared_ptr<const GearboxCatalog>(std::move(boxes));
+    }
 
     // A crashed run can leave its drive materialisation behind: remove it.
     std::error_code ec;
@@ -415,6 +425,10 @@ EditResult Garage::set_option(const std::string& option_id, const SetupValue& va
         working_.values[option_id] = stored;
     }
     r.accepted = true;
+    if (option_id == "gearbox_install" && working_.values.erase("gear_ratios") != 0) {
+        // The gear factors belong to the old box (another gear count, other ratios): back to the new box's own ratios.
+        r.notice = "The gear ratios were reset to the new gearbox's own.";
+    }
     revalidate();
     if (option_id == "engine_install") r.notice = drop_unavailable_values();
     r.validation = validation_;
@@ -446,6 +460,10 @@ std::string Garage::drop_unavailable_values() {
             gone = s != "stock" && std::find(view->choices.begin(), view->choices.end(), s) == view->choices.end();
         }
         if (gone) drop.push_back(id);
+    }
+    // Gear factors belong to the gearbox they were set on: a gearbox that goes back to stock takes them along.
+    if (std::find(drop.begin(), drop.end(), "gearbox_install") != drop.end() && working_.values.count("gear_ratios") != 0) {
+        drop.push_back("gear_ratios");
     }
     for (const std::string& id : drop) {
         working_.values.erase(id);

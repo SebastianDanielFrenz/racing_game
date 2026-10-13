@@ -1,0 +1,60 @@
+{
+  "format": "physics_sim.gearbox/1",
+  "name": "heavy_duty_6mt",
+  "type": "manual",
+  "source": "racing_game-owned heavy-duty 6-speed manual in the class of the large six-speed boxes of high-torque V8 performance cars, an invented design with no resemblance claimed to any product [AS]. First 2.95 (a strong gearbox can use a taller first), direct fourth (1.00, no countershaft loss), overdrive fifth 0.78 and sixth 0.60; steps 1.42 / 1.42 / 1.46 / 1.28 / 1.30. Mesh efficiency 0.95-0.975, 0.99 in direct fourth (power flows straight through the mainshaft, no gear mesh) [AS]. Large-diameter synchros 100-180 N*m, heavy shafts (input 0.020, output 0.025 kg*m2), slower selector (neutral dwell 0.08 s, dog release 100 N*m, grind after 0.30 s) [AS]. Reverse synchronised (100 N*m). Torque rating 700 N*m is kept in data/gearboxes/gearbox_catalog.json.",
+  "forward_ratios": [
+    2.95,
+    2.08,
+    1.46,
+    1.0,
+    0.78,
+    0.6
+  ],
+  "forward_efficiency": [
+    0.95,
+    0.96,
+    0.965,
+    0.99,
+    0.97,
+    0.97
+  ],
+  "reverse_ratios": [
+    -2.9
+  ],
+  "reverse_efficiency": [
+    0.94
+  ],
+  "input_inertia_kgm2": 0.02,
+  "output_inertia_kgm2": 0.025,
+  "input_axis_local": [
+    0,
+    1,
+    0
+  ],
+  "output_axis_local": [
+    0,
+    -1,
+    0
+  ],
+  "synchro": {
+    "forward_capacity_nm": [
+      180,
+      160,
+      140,
+      120,
+      110,
+      100
+    ],
+    "reverse_capacity_nm": [
+      100
+    ],
+    "static_factor": 1.0,
+    "max_dog_mismatch_rad_s": 5.0
+  },
+  "neutral_phase_s": 0.08,
+  "dog_release_torque_nm": 100.0,
+  "grind_after_s": 0.3,
+  "abort_after_s": 1.0,
+  "initial_gear": 0
+}

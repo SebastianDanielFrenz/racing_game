@@ -1,0 +1,60 @@
+{
+  "format": "physics_sim.gearbox/1",
+  "name": "close_ratio_6mt",
+  "type": "manual",
+  "source": "racing_game-owned close-ratio 6-speed performance manual, an invented design, NOT a specific gearbox [AS]. First 3.30, sixth 0.92 (nearly direct, a track gearbox gives up the overdrive); steps 1.39 / 1.32 / 1.26 / 1.24 / 1.25 keep the engine in its power band after every shift. Mesh efficiency 0.965-0.98 per gear (wide-face helical gears, slightly more friction than the touring box) [AS]. Synchro capacities are higher than the touring box (carbon-lined cone synchros) and the shift travel is short: neutral dwell 0.045 s, dog release 90 N*m [AS]; heavier shafts for the higher torque rating (input 0.012, output 0.016 kg*m2) [AS]. Reverse is synchronised (60 N*m) so an assisted selection from neutral works. Torque rating 550 N*m is kept in data/gearboxes/gearbox_catalog.json.",
+  "forward_ratios": [
+    3.3,
+    2.38,
+    1.8,
+    1.43,
+    1.15,
+    0.92
+  ],
+  "forward_efficiency": [
+    0.965,
+    0.97,
+    0.975,
+    0.98,
+    0.98,
+    0.975
+  ],
+  "reverse_ratios": [
+    -3.4
+  ],
+  "reverse_efficiency": [
+    0.95
+  ],
+  "input_inertia_kgm2": 0.012,
+  "output_inertia_kgm2": 0.016,
+  "input_axis_local": [
+    0,
+    1,
+    0
+  ],
+  "output_axis_local": [
+    0,
+    -1,
+    0
+  ],
+  "synchro": {
+    "forward_capacity_nm": [
+      140,
+      120,
+      105,
+      90,
+      85,
+      80
+    ],
+    "reverse_capacity_nm": [
+      60
+    ],
+    "static_factor": 1.0,
+    "max_dog_mismatch_rad_s": 5.0
+  },
+  "neutral_phase_s": 0.045,
+  "dog_release_torque_nm": 90.0,
+  "grind_after_s": 0.25,
+  "abort_after_s": 1.0,
+  "initial_gear": 0
+}

@@ -1,0 +1,60 @@
+{
+  "format": "physics_sim.gearbox/1",
+  "name": "econ_6mt_overdrive",
+  "type": "manual",
+  "source": "racing_game-owned economy 6-speed manual transaxle with a very tall overdrive sixth (0.58), an invented design, NOT a specific gearbox [AS]. Geared for the lowest engine speed at motorway pace: fifth 0.74 and sixth 0.58 are both overdrives, first 3.38; steps 1.72 / 1.50 / 1.35 / 1.31 / 1.28 (all under the 1.92 zero-throttle shift-hunting limit of the car files' auto-shift points). Mesh efficiency 0.97-0.985 per gear (economy box, as econ_5mt) [AS]. Synchro capacities, inertias and timings follow physics_sim's sedan_6mt (input-shaft-referred cone synchros, reverse without a synchro) [AS]. Torque rating 320 N*m is kept in data/gearboxes/gearbox_catalog.json.",
+  "forward_ratios": [
+    3.38,
+    1.96,
+    1.31,
+    0.97,
+    0.74,
+    0.58
+  ],
+  "forward_efficiency": [
+    0.97,
+    0.975,
+    0.98,
+    0.985,
+    0.985,
+    0.98
+  ],
+  "reverse_ratios": [
+    -3.2
+  ],
+  "reverse_efficiency": [
+    0.95
+  ],
+  "input_inertia_kgm2": 0.01,
+  "output_inertia_kgm2": 0.015,
+  "input_axis_local": [
+    0,
+    1,
+    0
+  ],
+  "output_axis_local": [
+    0,
+    -1,
+    0
+  ],
+  "synchro": {
+    "forward_capacity_nm": [
+      75,
+      65,
+      55,
+      50,
+      45,
+      45
+    ],
+    "reverse_capacity_nm": [
+      0
+    ],
+    "static_factor": 1.0,
+    "max_dog_mismatch_rad_s": 5.0
+  },
+  "neutral_phase_s": 0.06,
+  "dog_release_torque_nm": 60.0,
+  "grind_after_s": 0.25,
+  "abort_after_s": 1.0,
+  "initial_gear": 0
+}
