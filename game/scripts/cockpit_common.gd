@@ -1,4 +1,5 @@
 extends Node3D
+const DriverState := preload("res://scripts/driver_state.gd") # preloaded once: this is called several times per frame
 # Visual-only GLB extraction and data-driven mounts. No driver/physics logic.
 const LAYOUT := "res://../data/cockpits/car_hyper_common.json"
 var simulation: Node
@@ -132,7 +133,7 @@ func update_lamps(snapshot: Dictionary, channels: Dictionary = {}) -> void:
 
 func _process(_delta: float) -> void:
 	if simulation != null and simulation.has_method("get_vehicle_powertrain"):
-		var channels: Dictionary = load("res://scripts/driver_state.gd").channels(simulation) if simulation.has_method("get_control") else {}
+		var channels: Dictionary = DriverState.channels(simulation) if simulation.has_method("get_control") else {}
 		update_lamps(simulation.get_vehicle_powertrain(vehicle_name),channels)
 
 func mounted_count() -> int:

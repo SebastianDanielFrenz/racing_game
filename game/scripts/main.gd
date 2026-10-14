@@ -1,4 +1,5 @@
 extends Node3D
+const DriverState := preload("res://scripts/driver_state.gd") # preloaded once: this is called several times per frame
 # game/scripts/main.gd — the one game scene (R2.2 R9), built procedurally in
 # _ready() rather than hand-authored as a .tscn (a script-built scene stays in
 # sync with RgSimulation's evolving method surface; game/scenes/main.tscn is
@@ -1152,7 +1153,7 @@ func _forward_driving(live: bool, delta: float) -> void:
 		cockpit.submit_held()
 	var pt: Dictionary = _simulation.get_vehicle_powertrain(VEHICLE_NAME)
 	pt["speed_mps"] = _simulation.get_body_speed_mps("chassis")
-	var channels: Dictionary = load("res://scripts/driver_state.gd").channels(_simulation)
+	var channels: Dictionary = DriverState.channels(_simulation)
 	var drive_mode_change := -1
 	for write in _input_map.driver_actions.apply(pt,channels,true):
 		_simulation.set_control(write["channel"],float(write["value"]))

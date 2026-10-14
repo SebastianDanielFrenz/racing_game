@@ -1,4 +1,5 @@
 extends Node
+const DriverState := preload("res://scripts/driver_state.gd") # preloaded once: this is called several times per frame
 # Material adapter: emission colours and strengths come from the supplied car rig.
 var simulation: Node
 var vehicle_name: String
@@ -36,4 +37,4 @@ func update_lamps(snapshot: Dictionary, channels: Dictionary) -> void:
 
 func _process(_delta: float) -> void:
 	if simulation != null:
-		update_lamps(simulation.get_vehicle_powertrain(vehicle_name),load("res://scripts/driver_state.gd").channels(simulation) if simulation.has_method("get_control") else {})
+		update_lamps(simulation.get_vehicle_powertrain(vehicle_name),DriverState.channels(simulation) if simulation.has_method("get_control") else {})
