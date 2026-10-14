@@ -47,7 +47,10 @@ TEST_CASE("settings: schema is consistent", "[settings]") {
         }
     }
     const auto sections = rg::settings_sections();
-    CHECK(sections == std::vector<std::string>{"graphics", "camera", "audio", "map_data"});
+    // The built-in sections first; data-defined ones (rg/lod_settings.h, installed by another test) may follow.
+    REQUIRE(sections.size() >= 4);
+    CHECK(std::vector<std::string>(sections.begin(), sections.begin() + 4) ==
+          std::vector<std::string>{"graphics", "camera", "audio", "map_data"});
     for (const auto& s : sections) CHECK(rg::settings_section_title(s) != s);
     CHECK(rg::find_setting("nope") == nullptr);
     REQUIRE(rg::find_setting("map_data.store_dir") != nullptr);

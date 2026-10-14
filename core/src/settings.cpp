@@ -224,9 +224,28 @@ json json_from_value(const SettingValue& v) {
 
 } // namespace
 
-const std::vector<SettingDef>& settings_schema() {
-    static const std::vector<SettingDef> schema = build_schema();
+namespace {
+std::vector<SettingDef>& mutable_schema() {
+    static std::vector<SettingDef> schema = build_schema();
     return schema;
+}
+std::map<std::string, std::string>& extension_titles() {
+    static std::map<std::string, std::string> titles;
+    return titles;
+}
+} // namespace
+
+const std::vector<SettingDef>& settings_schema() { return mutable_schema(); }
+
+void extend_settings_schema(const std::vector<SettingDef>& defs, const std::string& section,
+                            const std::string& section_title) {
+    std::vector<SettingDef>& schema = mutable_schema();
+    for (const SettingDef& d : defs) {
+        const auto it = std::find_if(schema.begin(), schema.end(), [&](const SettingDef& e) { return e.key == d.key; });
+        if (it != schema.end()) *it = d;
+        else schema.push_back(d);
+    }
+    if (!section.empty()) extension_titles()[section] = section_title;
 }
 
 const SettingDef* find_setting(const std::string& key) {
@@ -250,6 +269,7 @@ std::string settings_section_title(const std::string& section) {
     if (section == "camera") return "Camera";
     if (section == "audio") return "Audio";
     if (section == "map_data") return "Map data";
+    if (const auto it = extension_titles().find(section); it != extension_titles().end()) return it->second;
     return section;
 }
 
@@ -332,7 +352,8 @@ std::string Settings::display_value(const std::string& key) const {
             if (key == "graphics.max_fps" && get_int(key) == 0) return "unlimited";
             return std::to_string(get_int(key));
         case SettingType::Float:
-            std::snprintf(buf, sizeof(buf), def->max <= 1.0 ? "%.2f" : "%.0f", get_float(key));
+            if (def->decimals >= 0) std::snprintf(buf, sizeof(buf), "%.*f", def->decimals, get_float(key));
+            else std::snprintf(buf, sizeof(buf), def->max <= 1.0 ? "%.2f" : "%.0f", get_float(key));
             return buf;
         case SettingType::Choice: return get_string(key);
         case SettingType::Path: return get_string(key).empty() ? "(default)" : get_string(key);

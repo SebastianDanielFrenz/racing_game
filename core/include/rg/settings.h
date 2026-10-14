@@ -62,6 +62,8 @@ struct SettingDef {
     // false: persisted state of a screen (the car browser's group/sort/filter), not a player-facing control.
     // Hidden keys are not listed by settings_sections() / the settings screen, but load, validate and save as usual.
     bool shown = true;
+    // Decimals shown by display_value for a Float (-1 = the old rule: 2 up to a max of 1, else 0).
+    int decimals = -1;
 };
 
 // A loaded document before it meets the schema: dotted key ("section.name")
@@ -98,6 +100,13 @@ const SettingDef* find_setting(const std::string& key);
 std::vector<std::string> settings_sections();
 // Human title of a section.
 std::string settings_section_title(const std::string& section);
+// Adds data-defined entries to the process-wide schema (the LOD settings of
+// data/settings/lod_settings.json, rg/lod_settings.h), after the built-in ones;
+// an entry whose key exists already replaces it. `section_title` names their
+// section on the settings screen. Call at start-up, before the Settings that
+// should load them (a Settings built earlier still reads their defaults).
+void extend_settings_schema(const std::vector<SettingDef>& defs, const std::string& section,
+                            const std::string& section_title);
 
 class Settings {
 public:

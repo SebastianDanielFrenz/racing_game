@@ -125,6 +125,9 @@ struct TerrainViewSource {
     // How a height tile was carved (a ChunkCarve value); null = every chunk reports NotCarved. A chunk's RenderChunk::carve
     // is the worst state over the tiles its height window touches. WorldTerrain::view_source() populates it.
     TileCarveFn carve_state = nullptr;
+    // The render road LOD policy (in-game setting, rg/lod_settings.h) that class_lookup.lod points at; holding it
+    // here keeps that pointer valid for every copy of this struct. Null = g2m::default_render_road_lod().
+    std::shared_ptr<const g2m::RenderRoadLod> road_lod;
 };
 
 class WorldTerrain {
@@ -196,7 +199,9 @@ public:
     // way ids, node ids and ALL tags - no profile fitting, no DEM), cached. A key outside the release's
     // coverage yields an empty tile (like road_surface_patch); a fetch/decode failure yields nullptr and
     // is not cached. Used by the route generator (tools/rg_route_gen) and the route planner tests.
-    std::shared_ptr<const g2m::RoadGraphTile> road_graph_tile(const g2m::TileKey& key);
+    // `priority`: what a missing tile is requested at (the route planner's region build asks at Warm).
+    std::shared_ptr<const g2m::RoadGraphTile> road_graph_tile(const g2m::TileKey& key,
+                                                              g2m::world::Priority priority = g2m::world::Priority::Render);
 
     // Builds every LOD-selected chunk around (cam_x, cam_y) (session-local
     // metres) using this WorldTerrain's own store/server and
@@ -232,6 +237,12 @@ public:
 
     [[nodiscard]] const g2m::mesh::LodParams& lod_params() const { return lod_params_; }
     void set_lod_params(const g2m::mesh::LodParams& params) { lod_params_ = params; }
+    // The LodParams as open() made them from the world config (before any in-game LOD setting).
+    [[nodiscard]] const g2m::mesh::LodParams& world_lod_params() const { return world_lod_params_; }
+    // The render road LOD policy (in-game setting; null = g2m::default_render_road_lod()) that view_source() and
+    // build_static_view() build road classes with from now on. Thread-safe.
+    void set_render_road_lod(std::shared_ptr<const g2m::RenderRoadLod> lod);
+    [[nodiscard]] std::shared_ptr<const g2m::RenderRoadLod> render_road_lod() const;
 
     [[nodiscard]] const g2m::geo::SessionFrame& frame() const { return *frame_; }
     [[nodiscard]] const g2m::ReleaseId& release_id() const { return manifest_rid_; }
@@ -328,6 +339,9 @@ private:
     g2m::ReleaseId manifest_rid_{};
     std::string terrain_height_layer_;
     g2m::mesh::LodParams lod_params_;
+    g2m::mesh::LodParams world_lod_params_;
+    mutable std::mutex road_lod_mutex_;
+    std::shared_ptr<const g2m::RenderRoadLod> road_lod_;
 
     std::mutex cache_mutex_;
     std::map<g2m::TileKey, std::shared_ptr<const g2m::HeightTile>> height_cache_;

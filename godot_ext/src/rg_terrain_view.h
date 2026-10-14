@@ -42,6 +42,7 @@
 #pragma once
 #include <tuple>
 
+#include "rg/lod_settings.h"
 #include "rg/terrain_render.h"
 #include "rg/terrain_stream.h"
 #include "rg/terrain_view_streamer.h"
@@ -179,6 +180,10 @@ public:
     // streamer orders each diff's adds by what the car reaches first, and the
     // upload budget grows with the speed. Call instead of update_focus.
     void update_focus_moving(double session_x, double session_y, double vx, double vy, double ref_x, double ref_y);
+    // In-game LOD settings (rg/lod_settings.h; RgShell.get_lod_choice()): {view_distance_m, terrain_detail,
+    // road_detail, map_detail}. Kept across release()/initialize and applied at every load_preview; while streaming,
+    // the streamer reselects at once and rebuilds only the chunk levels whose road-class LOD changed (swapped in place).
+    void set_view_lod(const godot::Dictionary& choice);
     // Adaptive upload budget (default on): base upload_budget_ms (0.8) with
     // nothing pending, rising to upload_budget_max_ms (3.0) with the backlog
     // and the speed (rg::adaptive_upload_budget_ms). Off = the fixed budget.
@@ -265,6 +270,7 @@ private:
     // within budget, then (all adds in) free removals within budget, then
     // (all removals done) commit.
     void apply_diff(std::chrono::steady_clock::time_point frame_start);
+    void apply_view_lod_to_terrain(); // lod_choice_ -> terrain_'s LodParams and road LOD policy
     void remove_chunk_at(std::size_t index);
     void upload_one_chunk(const rg::RenderChunk& chunk);
     [[nodiscard]] godot::Transform3D chunk_instance_transform(const rg::RenderChunk& chunk) const;
@@ -317,6 +323,10 @@ private:
     bool diff_in_progress_ = false;
     std::uint64_t diff_serial_ = 0;
     std::vector<g2m::mesh::ChunkKey> diff_removed_;
+    std::vector<rg::RenderChunk> diff_replaced_; // road LOD rebuilds of the diff in progress, swapped before removals
+    rg::LodChoice lod_choice_;
+    bool has_lod_choice_ = false;
+    std::int64_t lod_rebuilt_chunks_total_ = 0;
     std::size_t diff_remove_next_ = 0; // cursor into diff_removed_
     std::int64_t last_diff_added_ = 0;
     std::int64_t last_diff_removed_ = 0;

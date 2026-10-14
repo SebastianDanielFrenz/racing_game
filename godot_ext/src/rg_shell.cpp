@@ -1,5 +1,6 @@
 #include "rg_shell.h"
 
+#include "rg/lod_settings.h"
 #include "rg/world_config.h"
 
 #include <godot_cpp/core/class_db.hpp>
@@ -142,6 +143,12 @@ godot::Dictionary RgShell::initialize(const String& data_dir, const String& user
         problems.push_back(from_std(err));
     }
 
+    // In-game LOD settings (data/settings/lod_settings.json) join the schema before the file is read.
+    if (auto lod = rg::load_lod_settings_spec(data + "/settings/lod_settings.json", &err)) {
+        rg::install_lod_settings(*lod);
+    } else {
+        problems.push_back(from_std(err));
+    }
     settings_ = rg::Settings{};
     settings_report_ = settings_.load_file(settings_path_);
     out["problems"] = problems;
@@ -337,6 +344,16 @@ godot::Dictionary RgShell::get_settings_report() const {
 
 // ---- credits -----------------------------------------------------------------
 
+godot::Dictionary RgShell::get_lod_choice() const {
+    const rg::LodChoice c = rg::lod_choice_from(settings_);
+    godot::Dictionary d;
+    d["view_distance_m"] = c.view_distance_m;
+    d["terrain_detail"] = c.terrain_detail;
+    d["road_detail"] = from_std(c.road_detail);
+    d["map_detail"] = c.map_detail;
+    return d;
+}
+
 String RgShell::get_attribution_line() const { return from_std(rg::attribution_line(credits_)); }
 
 godot::Array RgShell::get_credits_sections() const {
@@ -400,6 +417,7 @@ void RgShell::_bind_methods() {
     ClassDB::bind_method(D_METHOD("get_settings_report"), &RgShell::get_settings_report);
     ClassDB::bind_method(D_METHOD("get_settings_path"), &RgShell::get_settings_path);
     ClassDB::bind_method(D_METHOD("get_attribution_line"), &RgShell::get_attribution_line);
+    ClassDB::bind_method(D_METHOD("get_lod_choice"), &RgShell::get_lod_choice);
     ClassDB::bind_method(D_METHOD("get_credits_sections"), &RgShell::get_credits_sections);
     ClassDB::bind_method(D_METHOD("get_credits_entry_count"), &RgShell::get_credits_entry_count);
 }

@@ -595,3 +595,83 @@ TEST_CASE("TerrainViewStreamer: a focus with a velocity orders the adds by urgen
     }
     CHECK(streamer.commit(diff.serial));
 }
+
+// ---------------------------------------------------------------------------
+// In-game LOD settings (rg/lod_settings.h): set_source reselects at once and
+// rebuilds only the resident chunk levels whose road-class LOD changed.
+
+TEST_CASE("TerrainViewStreamer: set_source with new LodParams reselects without a focus move",
+          "[terrain_view_streamer][lod_settings]") {
+    SyntheticStore store;
+    rg::TerrainViewSource source = make_source(store);
+    rg::TerrainViewStreamer streamer(source, make_options(2));
+    std::vector<rg::RenderChunk> initial;
+    REQUIRE(streamer.build_initial(0.0, 0.0, initial));
+    const auto before = sorted_selection(source, 0.0, 0.0);
+
+    rg::TerrainViewSource finer = source;
+    finer.params.range0_m = 128.0; // terrain detail x2
+    streamer.set_source(finer);
+    rg::TerrainViewDiff diff;
+    REQUIRE(wait_for_diff(streamer, diff));
+    const auto after = sorted_selection(finer, 0.0, 0.0);
+    REQUIRE(after != before);
+    CHECK(keys_of(diff.added) == minus(after, before));
+    CHECK(diff.removed == minus(before, after));
+    CHECK(diff.replaced.empty()); // a mesh depends only on its key and heights: nothing rebuilt
+    REQUIRE(streamer.commit(diff.serial));
+    CHECK(streamer.resident_keys() == after);
+}
+
+TEST_CASE("TerrainViewStreamer: a road LOD change rebuilds exactly the changed levels",
+          "[terrain_view_streamer][lod_settings]") {
+    SyntheticStore store;
+    rg::TerrainViewSource source = make_source(store);
+    rg::TerrainViewStreamer streamer(source, make_options(2));
+    std::vector<rg::RenderChunk> initial;
+    REQUIRE(streamer.build_initial(0.0, 0.0, initial));
+    const auto resident = sorted_selection(source, 0.0, 0.0);
+
+    // Same content as the default (null) policy: a reselect, nothing rebuilt.
+    {
+        rg::TerrainViewSource same = source;
+        same.road_lod = std::make_shared<const g2m::RenderRoadLod>(g2m::default_render_road_lod());
+        same.class_lookup.lod = same.road_lod.get();
+        streamer.set_source(same);
+        rg::TerrainViewDiff diff;
+        REQUIRE(wait_for_diff(streamer, diff));
+        CHECK(diff.added.empty());
+        CHECK(diff.removed.empty());
+        CHECK(diff.replaced.empty());
+        REQUIRE(streamer.commit(diff.serial));
+    }
+    // Level 2 loses its road classes: only resident level-2 chunks are rebuilt.
+    g2m::RenderRoadLod lod = g2m::default_render_road_lod();
+    lod.levels[2].enabled = false;
+    rg::TerrainViewSource changed = source;
+    changed.road_lod = std::make_shared<const g2m::RenderRoadLod>(lod);
+    changed.class_lookup.lod = changed.road_lod.get();
+    streamer.set_source(changed);
+    rg::TerrainViewDiff diff;
+    REQUIRE(wait_for_diff(streamer, diff));
+    std::vector<ChunkKey> expected;
+    for (const ChunkKey& k : resident)
+        if (k.level == 2) expected.push_back(k);
+    REQUIRE_FALSE(expected.empty());
+    CHECK(keys_of(diff.replaced) == expected);
+    CHECK(diff.added.empty());
+    CHECK(diff.removed.empty());
+    CHECK(streamer.stats().chunks_rebuilt == expected.size());
+    REQUIRE(streamer.commit(diff.serial));
+
+    // Back to the default: level 2 again, nothing else; a move after that streams as before.
+    streamer.set_source(source);
+    REQUIRE(wait_for_diff(streamer, diff));
+    CHECK(keys_of(diff.replaced) == expected);
+    REQUIRE(streamer.commit(diff.serial));
+    streamer.update_focus(300.0, 0.0);
+    REQUIRE(wait_for_diff(streamer, diff));
+    CHECK(diff.replaced.empty());
+    CHECK(keys_of(diff.added) == minus(sorted_selection(source, 300.0, 0.0), resident));
+    REQUIRE(streamer.commit(diff.serial));
+}

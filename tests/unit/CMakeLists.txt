@@ -49,6 +49,7 @@ add_executable(rg_unit_tests
   test_tick_spikes.cpp
   test_credits.cpp
   test_settings.cpp
+  test_lod_settings.cpp
   test_spawn_presets.cpp
   test_shell_flow.cpp
   test_time_weather.cpp
