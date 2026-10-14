@@ -61,8 +61,8 @@ extends Node3D
 # credits) and loading_overlay.gd (loading); the Drive screen is the world
 # itself with the HUD. Esc pauses, Esc backs out of every other screen.
 #
-# World load flow: flat = RgSimulation.initialize() + start() at once. Real
-# world = initialize_terrain() (start-up runs on a worker thread) -> poll
+# World load flow: both worlds build their Session on a worker thread (flat =
+# initialize(), real = initialize_terrain()) -> poll
 # get_init_status() each frame, the loading overlay shows its numbers ->
 # "ready": initial controls, start() -> first tick: RgTerrainView.
 # initialize_shared(sim), load_preview at the chassis -> "running". F8 at any
@@ -185,6 +185,21 @@ func _ready() -> void:
 	else:
 		_build_scene(user_args)
 
+# Flat initialize() builds its Session on a worker: wait for get_init_status() "ready".
+func _bindings_wait_ready(sim: Node) -> bool:
+	var began := Time.get_ticks_msec()
+	while true:
+		var st: Dictionary = sim.get_init_status()
+		var state := str(st.get("state", ""))
+		if state == "ready":
+			return true
+		if state == "error" or Time.get_ticks_msec() - began > 120000:
+			push_error("bindings test: flat init did not become ready: %s" % str(st))
+			get_tree().quit(1)
+			return false
+		await get_tree().process_frame
+	return false
+
 func _run_bindings_test() -> void:
 	# R2.2 R7 smoke-only check (tools/smoke_test.ps1 -BindingsTest, task 3 of
 	# that milestone's brief): proves the new RgSimulation/RgTerrainView
@@ -207,6 +222,8 @@ func _run_bindings_test() -> void:
 	if not ok:
 		push_error("bindings test: first initialize() failed: %s" % sim.get_last_error())
 		get_tree().quit(1)
+		return
+	if not await _bindings_wait_ready(sim):
 		return
 	sim.start()
 
@@ -251,6 +268,8 @@ func _run_bindings_test() -> void:
 	if not ok:
 		push_error("bindings test: second initialize() (re-init) failed: %s" % sim.get_last_error())
 		get_tree().quit(1)
+		return
+	if not await _bindings_wait_ready(sim):
 		return
 	sim.start()
 	if not bool(sim.is_running()):
@@ -771,17 +790,14 @@ func _load_world(kind: String, keep_spawn_override: bool = false) -> void:
 	if kind == "flat":
 		if not keep_spawn_override:
 			_simulation.clear_spawn_override()
+		# Non-blocking like the real world: the Session is built on the init
+		# worker (a turbo car's first engine builds a full-load envelope);
+		# _poll_loading() starts it once get_init_status() says "ready".
 		if not _simulation.initialize(vehicle_json, surface_table_json):
 			_load_failed(str(_simulation.get_last_error()))
 			return
-		_apply_start_controls()
-		_simulation.start()
-		world_state = "running"
-		ready_sim_time = 0.0
-		_overlay.hide_overlay()
-		_visuals.on_session_ready()
-		print("RG_WORLD ready world=flat")
-		_world_running()
+		_overlay.show_loading(WORLD_LABEL[kind], {}, 0.0, _loading_footer(), str(_world_request.get("label", "")))
+		print("RG_WORLD loading world=flat")
 	else:
 		# The spawn the player picked belongs to a load started from the shell
 		# (set_spawn_override in _begin_world_load); F8 starts at the world's own.
@@ -845,9 +861,21 @@ func _poll_loading() -> void:
 			_overlay.show_loading(WORLD_LABEL[world_kind], st, elapsed, _loading_footer(), str(_world_request.get("label", "")))
 			_apply_start_controls()
 			_simulation.start()
-			world_state = "starting"
+			if world_kind == "flat":
+				_finish_flat_load()
+			else:
+				world_state = "starting"
 		"error":
 			_load_failed(str(st.get("message", "")))
+
+# The flat world is drivable as soon as its Session is started.
+func _finish_flat_load() -> void:
+	world_state = "running"
+	ready_sim_time = 0.0
+	_overlay.hide_overlay()
+	_visuals.on_session_ready()
+	print("RG_WORLD ready world=flat")
+	_world_running()
 
 # First tick after start(): the snapshot now holds the spawned chassis, so the
 # terrain view can be built around it.

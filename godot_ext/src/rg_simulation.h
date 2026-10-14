@@ -73,8 +73,11 @@ public:
     // rg_core" reasoning as SessionConfig's own doc comment. Returns false
     // and sets get_last_error() on failure (e.g. a malformed vehicle JSON)
     // instead of letting rg::io::load_vehicle_json's std::runtime_error
-    // cross the GDExtension boundary uncaught. Synchronous (flat start-up is
-    // fast - no worker thread, unlike initialize_terrain() below).
+    // cross the GDExtension boundary uncaught. Non-blocking like
+    // initialize_terrain() below: the Session (a turbo car's first engine
+    // construction builds a full-load envelope, seconds) is built on the init
+    // worker; returns true once it STARTED, poll get_init_status() for
+    // ready/error before start().
     //
     // Re-entrant (R2.2 R7 "runtime world switch"): may be called again on an
     // object that already holds a Session (flat or terrain, loading or
@@ -454,6 +457,10 @@ private:
                                  std::string surface_table_path, std::shared_ptr<rg::StartupProgress> progress,
                                  std::int64_t fetch_delay_ms, std::optional<SpawnOverride> spawn,
                                  std::string store_dir, VehicleOverrides overrides);
+
+    void run_flat_init_worker(std::string vehicle_json_path, std::string surface_table_path,
+                              std::shared_ptr<rg::StartupProgress> progress, VehicleOverrides overrides);
+    std::optional<SpawnOverride> pending_flat_spawn_; // relocation applied when a flat init is adopted
 
     // Access is serialized by init-worker join or Ready acquire. A running
     // world never writes this cache. Different paths invalidate its identity.

@@ -639,6 +639,7 @@ switch (R9)" below). R7 itself added only a `--bindings-test` smoke path to
   (which can block up to `startup_timeout_s`, 30 s, on real data - see
   "Session terrain mode (R4)" above) runs on a worker thread; returns
   `true` once the thread has been STARTED, not once the Session is ready.
+- Flat `initialize()` uses the SAME worker machinery (`run_flat_init_worker`, InitPhase atomics, `pending_session_`, cancel-then-join): it returns true once the worker STARTED (a turbo car's first engine builds a full-load envelope, seconds), `get_init_status()` reports loading/ready/error for flat too, `start()` only after "ready" (main.gd `_poll_loading` -> `_finish_flat_load`; the loading overlay shows for flat too). The spawn override ("Change car") is applied as `request_relocate` when the Session is adopted (`pending_flat_spawn_`).
 - `get_init_status() -> Dictionary` - `{state: "idle"|"loading"|"ready"|
   "error", message: String, stage: "opening"|"waiting_for_gate"|"priming"|
   "spawning"|"done", resident_l0, missing_required, inflight, failed,
