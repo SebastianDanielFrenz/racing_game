@@ -199,13 +199,16 @@ def build():
     M.tube(mb, [(hx - 0.04, -0.62, 0.86), (hx - 0.04, 0.0, 0.84), (hx - 0.04, 0.62, 0.86)], 0.014, "frame", count=8)
     for s in (1, -1):
         c = (hx, s * 0.44, 0.97)
-        M.lathe(mb, [(0.0, -0.12), (0.075, -0.11), (0.095, -0.06), (0.098, 0.0), (0.0, 0.0)], "paint",
-                axis_xf=compose(translate(c), rot_axis((0, 1, 0), math.pi / 2)), count=24, closed_profile=True)
-        M.cylinder(mb, (c[0] - 0.002, c[1], c[2]), (c[0] + 0.012, c[1], c[2]), 0.102, "brass", count=24)
         hxf = compose(translate(c), rot_axis((0, 1, 0), math.pi / 2))
+        # open drum (the reflector sits in it) and a brass bezel ring round the lens
+        M.lathe(mb, [(0.0, -0.12), (0.075, -0.11), (0.095, -0.06), (0.098, 0.0), (0.091, 0.0), (0.089, -0.05),
+                     (0.0, -0.10)], "paint", axis_xf=hxf, count=24, closed_profile=True)
+        M.lathe(mb, [(0.089, -0.002), (0.102, -0.002), (0.102, 0.008), (0.096, 0.014), (0.089, 0.014)], "brass",
+                axis_xf=hxf, count=24, closed_profile=True)
         # silvered parabolic reflector, the lamp bulb at its focus, a clear domed lens in front
         M.lathe(mb, [(0.004, -0.085), (0.04, -0.075), (0.07, -0.045), (0.088, 0.008), (0.088, 0.011),
-                     (0.004, 0.011)], "lamp_reflector", axis_xf=hxf, count=24, closed_profile=True)
+                     (0.084, 0.008), (0.066, -0.042), (0.037, -0.071), (0.004, -0.081)], "lamp_reflector",
+                axis_xf=hxf, count=24, closed_profile=True)                     # open bowl, 4 mm wall
         if Q.detail() >= 1:
             M.ellipsoid(mb, xform_point(hxf, (0, 0, -0.045)), (0.013, 0.013, 0.02), "light_head")
             M.cylinder(mb, xform_point(hxf, (0, 0, -0.08)), xform_point(hxf, (0, 0, -0.06)), 0.006, "brass")

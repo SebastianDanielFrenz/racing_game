@@ -1053,24 +1053,24 @@
     {
       "level": 0,
       "glb": "runabout_t.glb",
-      "triangles": 86120,
-      "bytes": 2869692,
+      "triangles": 87360,
+      "bytes": 2905356,
       "chord_tolerance_mm": 0.35,
       "use": "garage, showroom and close-up camera (< 15 m)"
     },
     {
       "level": 1,
       "glb": "runabout_t_lod1.glb",
-      "triangles": 52364,
-      "bytes": 2066336,
+      "triangles": 53052,
+      "bytes": 2086400,
       "chord_tolerance_mm": 1.2,
       "use": "driving camera and nearby traffic (15 - 60 m)"
     },
     {
       "level": 2,
       "glb": "runabout_t_lod2.glb",
-      "triangles": 34536,
-      "bytes": 1478024,
+      "triangles": 34864,
+      "bytes": 1489724,
       "chord_tolerance_mm": 6.0,
       "use": "distant traffic (> 60 m)"
     }
