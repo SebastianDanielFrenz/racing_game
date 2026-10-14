@@ -57,6 +57,7 @@ add_executable(rg_unit_tests
   test_tyre_spec.cpp
   test_garage_dyno.cpp
   test_limit_advisor.cpp
+  test_envelope_cost.cpp
   test_engine_garage.cpp
   test_gearbox_swap.cpp
   test_garage.cpp

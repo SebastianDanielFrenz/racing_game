@@ -222,6 +222,11 @@ the options lists simulation-derived notes for the pending setup.
   (WastegateSaturated, BoostAboveTarget, TurboRotorCap) get a "Find fix" button: `solve_remedy` runs on the
   worker (about 0.6 s on the hyper, Sketch maps) and the item shows the area ratio ("x the stock area"). Knock
   has no solvable remedy, so no button.
+- Stage-map coverage: a turbo with an offline stage map gets "Turbo map covers only part of the flow" (Near =
+  advice) or "Boost target is beyond the turbo map" (Limiting = warning) with the share of the engine's air flow
+  the map covers at the target boost ("covers 75.0 % of the engine's air flow"; physics grades it in 1/16 steps
+  and the number depends on the map quality the advisor sweeps with). Text and filters: `build_rules` in
+  data/garage/advisor.json. Other engine loader warnings appear as lines of one "Engine data notice" item.
 - Threading: `LimitAdvisor` mirrors `GarageDyno` (own thread, debounce, newest request wins, cancellation,
   progress, immutable snapshots only). `RgGarage.get_advice()` / `solve_advice(id)` are thin; `shell_ui.gd`
   polls every 0.2 s, shows "SETUP CHECK - checking... n%" (items of the previous result dimmed) and redraws

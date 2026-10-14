@@ -168,11 +168,56 @@ bool read_advice_text(const json& o, bool base, AdviceText& out, const std::stri
     return true;
 }
 
+bool read_kind_body(const json& o, const std::string& where, const std::string& origin, AdviceKindConfig& k, std::string* err) {
+        // Optional: absent = the limit policy alone decides what is shown; "never" hides the kind; a severity is a
+        // kind-specific floor above the policy's.
+        if (o.contains("min_severity")) {
+            std::string sev;
+            bool ok = false;
+            if (!detail::get_string(o, "min_severity", sev)) {
+                fail(err, origin, where + ": \"min_severity\" must be near / limiting / exceeded / never");
+                return false;
+            }
+            k.min_severity = severity_from_name(sev, &ok);
+            if (!ok) {
+                fail(err, origin, where + ": \"min_severity\" must be near / limiting / exceeded / never");
+                return false;
+            }
+            if (sev == "never") k.hidden = true;
+        }
+        detail::get_string(o, "option", k.option_id);
+        if (!read_advice_text(o, true, k.text, where, origin, err)) return false;
+        const auto variants = o.find("variants");
+        if (variants != o.end()) {
+            if (!variants->is_object()) {
+                fail(err, origin, where + ": \"variants\" must be an object");
+                return false;
+            }
+            for (auto vt = variants->begin(); vt != variants->end(); ++vt) {
+                if (!vt->is_object()) {
+                    fail(err, origin, where + ".variants." + vt.key() + " must be an object");
+                    return false;
+                }
+                AdviceText v;
+                if (!read_advice_text(*vt, false, v, where + ".variants." + vt.key(), origin, err)) return false;
+                k.variants.emplace(vt.key(), std::move(v));
+            }
+        }
+    return true;
+}
+
 } // namespace
 
 const AdviceKindConfig* AdvisorConfig::find(pd::LimitKind kind) const {
     for (const AdviceKindConfig& k : kinds) {
         if (k.kind == kind) return &k;
+    }
+    return nullptr;
+}
+
+const AdviceKindConfig* AdvisorConfig::find_rule(const std::string& rule_name) const {
+    for (const AdviceKindConfig& k : build_rules) {
+        if (k.rule_name == rule_name) return &k;
     }
     return nullptr;
 }
@@ -185,7 +230,7 @@ int AdvisorConfig::decimals_for(const std::string& quantity, int fallback) const
 const std::vector<std::string>& known_advice_fact_names() {
     static const std::vector<std::string> names = {
         "target", "value", "limit", "value_pct", "limit_pct", "value_kpa", "limit_kpa", "rpm", "rpm_from", "rpm_to", "range",
-        "peak", "peak_rpm", "low", "low_rpm", "reach_rpm", "drop_rpm", "current", "required_min", "required", "ratio_min", "ratio"};
+        "peak", "peak_rpm", "low", "low_rpm", "reach_rpm", "drop_rpm", "current", "required_min", "required", "ratio_min", "ratio", "message", "coverage", "uncovered"};
     return names;
 }
 
@@ -226,7 +271,7 @@ std::optional<AdvisorConfig> parse_advisor_config(const std::string& json_text, 
         fail(err, origin, "\"format\" must be \"rg.garage_advisor/1\"");
         return std::nullopt;
     }
-    static const std::set<std::string> allowed = {"format", "source", "debounce_ms", "sweep", "merge_gap_rpm", "decimals", "remedy", "limit_policy", "kinds"};
+    static const std::set<std::string> allowed = {"format", "source", "debounce_ms", "sweep", "merge_gap_rpm", "decimals", "remedy", "limit_policy", "kinds", "build_rules", "loader_warnings"};
     for (auto it = root.begin(); it != root.end(); ++it) {
         const std::string& key = it.key();
         const bool help = key.size() > 5 && key.compare(key.size() - 5, 5, "_help") == 0;
@@ -312,41 +357,48 @@ std::optional<AdvisorConfig> parse_advisor_config(const std::string& json_text, 
         }
         AdviceKindConfig k;
         k.kind = *kind;
-        // Optional: absent = the limit policy alone decides what is shown; "never" hides the kind; a severity is a
-        // kind-specific floor above the policy's.
-        if (it->contains("min_severity")) {
-            std::string sev;
-            bool ok = false;
-            if (!detail::get_string(*it, "min_severity", sev)) {
-                fail(err, origin, where + ": \"min_severity\" must be near / limiting / exceeded / never");
-                return std::nullopt;
-            }
-            k.min_severity = severity_from_name(sev, &ok);
-            if (!ok) {
-                fail(err, origin, where + ": \"min_severity\" must be near / limiting / exceeded / never");
-                return std::nullopt;
-            }
-            if (sev == "never") k.hidden = true;
+        if (!read_kind_body(*it, where, origin, k, err)) return std::nullopt;
+        c.kinds.push_back(std::move(k));
+    }
+    if (const auto rules = root.find("build_rules"); rules != root.end()) {
+        if (!rules->is_object()) {
+            fail(err, origin, "\"build_rules\" must be an object");
+            return std::nullopt;
         }
-        detail::get_string(*it, "option", k.option_id);
-        if (!read_advice_text(*it, true, k.text, where, origin, err)) return std::nullopt;
-        const auto variants = it->find("variants");
-        if (variants != it->end()) {
-            if (!variants->is_object()) {
-                fail(err, origin, where + ": \"variants\" must be an object");
+        for (auto it = rules->begin(); it != rules->end(); ++it) {
+            const std::string where = "build_rules." + it.key();
+            if (it.key() != "TurboStageMapCoverage" || !it->is_object()) {
+                fail(err, origin, where + ": not a supported BuildRule name (TurboStageMapCoverage) or not an object");
                 return std::nullopt;
             }
-            for (auto vt = variants->begin(); vt != variants->end(); ++vt) {
-                if (!vt->is_object()) {
-                    fail(err, origin, where + ".variants." + vt.key() + " must be an object");
+            AdviceKindConfig k;
+            k.rule_name = it.key();
+            if (!read_kind_body(*it, where, origin, k, err)) return std::nullopt;
+            c.build_rules.push_back(std::move(k));
+        }
+    }
+    if (const auto notice = root.find("loader_warnings"); notice != root.end()) {
+        if (!notice->is_object()) {
+            fail(err, origin, "\"loader_warnings\" must be an object");
+            return std::nullopt;
+        }
+        AdviceKindConfig k;
+        k.rule_name = "LoaderNotice";
+        if (!read_kind_body(*notice, "loader_warnings", origin, k, err)) return std::nullopt;
+        if (const auto ign = notice->find("ignore_containing"); ign != notice->end()) {
+            if (!ign->is_array()) {
+                fail(err, origin, "loader_warnings.ignore_containing must be an array of text");
+                return std::nullopt;
+            }
+            for (const json& t : *ign) {
+                if (!t.is_string()) {
+                    fail(err, origin, "loader_warnings.ignore_containing must hold text");
                     return std::nullopt;
                 }
-                AdviceText v;
-                if (!read_advice_text(*vt, false, v, where + ".variants." + vt.key(), origin, err)) return std::nullopt;
-                k.variants.emplace(vt.key(), std::move(v));
+                c.loader_ignore.push_back(t.get<std::string>());
             }
         }
-        c.kinds.push_back(std::move(k));
+        c.loader_notice = std::move(k);
     }
     return c;
 }
@@ -606,15 +658,65 @@ std::vector<AdviceItem> build_advice(const AdviceInput& input, const AdvisorConf
         items.push_back(std::move(item));
     }
 
-    const auto kind_order = [&](pd::LimitKind kind) {
+    // Static build-rule issues (stage map coverage): the physics severity, the numbers of the issue.
+    for (const pd::BuildIssue& issue : input.build_issues) {
+        const std::string name = pd::to_string(issue.rule);
+        const AdviceKindConfig* kc = config.find_rule(name);
+        if (kc == nullptr || kc->hidden || !config.policy.warns(issue.severity) || (kc->min_severity && issue.severity < *kc->min_severity)) continue;
+        AdviceItem item;
+        item.kind_name = name;
+        item.rule_name = name;
+        item.id = name;
+        item.option_id = kc->option_id;
+        item.severity = advice_severity(issue.severity);
+        item.variant = issue.severity == pd::LimitSeverity::Limiting ? "beyond_map" : "";
+        std::map<std::string, std::string> facts;
+        facts["message"] = issue.message;
+        facts["coverage"] = fixed(issue.value * 100.0, dec(config, "coverage"));
+        facts["uncovered"] = fixed((1.0 - issue.value) * 100.0, dec(config, "coverage"));
+        facts["coverage"] += " %";
+        facts["uncovered"] += " %";
+        facts["target"] = std::isfinite(input.target_boost_bar) ? fixed(input.target_boost_bar, dec(config, "bar")) + " bar" : "?";
+        const AdviceText text = resolve_text(*kc, item.variant);
+        if (text.max_severity) item.severity = std::min(item.severity, advice_severity(*text.max_severity));
+        item.title = text.title;
+        for (const std::string& l : text.lines) item.lines.push_back(render_advice_template(l, facts));
+        drop_empty(item.lines);
+        item.suggestion = render_advice_template(text.suggestion, facts);
+        items.push_back(std::move(item));
+    }
+    // Engine-map loader warnings, one line each, in one item.
+    if (config.loader_notice && !config.loader_notice->hidden) {
+        const AdviceKindConfig& kc = *config.loader_notice;
+        AdviceItem item;
+        item.kind_name = item.rule_name = item.id = "LoaderNotice";
+        item.option_id = kc.option_id;
+        item.severity = AdviceSeverity::Advice;
+        for (const std::string& w : input.loader_warnings) {
+            const bool ignored = std::any_of(config.loader_ignore.begin(), config.loader_ignore.end(),
+                                             [&](const std::string& t) { return w.find(t) != std::string::npos; });
+            if (ignored) continue;
+            std::map<std::string, std::string> facts{{"message", w}};
+            for (const std::string& l : kc.text.lines) item.lines.push_back(render_advice_template(l, facts));
+        }
+        drop_empty(item.lines);
+        if (!item.lines.empty()) {
+            item.title = kc.text.title;
+            item.suggestion = render_advice_template(kc.text.suggestion, {});
+            items.push_back(std::move(item));
+        }
+    }
+
+    const auto kind_order = [&](const AdviceItem& it) {
+        if (!it.rule_name.empty()) return config.kinds.size() + (it.rule_name == "LoaderNotice" ? 1u : 0u);
         for (std::size_t i = 0; i < config.kinds.size(); ++i) {
-            if (config.kinds[i].kind == kind) return i;
+            if (config.kinds[i].kind == it.kind) return i;
         }
         return config.kinds.size();
     };
     std::stable_sort(items.begin(), items.end(), [&](const AdviceItem& x, const AdviceItem& y) {
         if (x.severity != y.severity) return x.severity > y.severity;
-        const std::size_t kx = kind_order(x.kind), ky = kind_order(y.kind);
+        const std::size_t kx = kind_order(x), ky = kind_order(y);
         if (kx != ky) return kx < ky;
         return x.rpm_from < y.rpm_from;
     });
@@ -684,6 +786,7 @@ AdviceSweep run_advice_sweep(const ps::vehicle::VehicleDesc& desc, const Advisor
     if (simulated != nullptr) {
         if (simulated->turbo_pair) out.input.target_boost_bar = simulated->turbo_pair->target_boost_pa / 1.0e5;
         if (config.sweep.nitrous_with_kit) spec.nitrous = pd::nitrous_from_powertrain(desc.powertrain);
+        out.input.build_issues = pd::check_turbo_stage_coverage(*simulated, &config.policy); // stage seam S0
     }
 
     const auto t0 = std::chrono::steady_clock::now();
@@ -937,6 +1040,8 @@ void LimitAdvisor::run() {
             maps.cache_dir = request.context.engine_map_cache_dir;
             maps.cancel = cancel.get();
             maps.pool = &pool;
+            std::vector<std::string> loader_warnings;
+            maps.warnings_out = &loader_warnings;
             maps.on_progress = [&](std::size_t done, std::size_t total) {
                 progress(2 + static_cast<int>(78 * done / std::max<std::size_t>(1, total)), "Building engine maps");
             };
@@ -945,6 +1050,7 @@ void LimitAdvisor::run() {
             progress(82, "Sweeping the engine");
             sweep = run_advice_sweep(desc, config_, &pool, cancel.get(), component_ref_file(material.vehicle_path, "clutch"),
                                      component_ref_file(material.vehicle_path, "gearbox"));
+            sweep.input.loader_warnings = std::move(loader_warnings);
             items = build_advice(sweep.input, config_);
         } catch (const ps::io::GenerationCancelled&) {
             continue; // a newer request (or cancel()) took over
