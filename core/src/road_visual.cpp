@@ -56,47 +56,6 @@ std::vector<P2> clip(const std::vector<P2>& poly,int axis,double v,int keep) {
  return out;
 }
 }
-// Every junction this tile owns, as an asphalt patch over the road bed ring: ear clipping, then each triangle cut by the
-// terrain lattice lines (DGM1 cell centres, x.5 m) so the patch bends exactly where the terrain does and neighbouring
-// pieces share their vertices (no T-junctions). Heights come from `ground`; patches sit `lift` above it, a little above
-// the ribbons, so the square ribbon ends under the junction disappear. No markings (flags 0, fade 0).
-void add_junction_surfaces(RoadVisualMesh& mesh,const g2m::RoadGeomTile& geometry,const g2m::TileKey& key,const RoadVisualGround& ground,double lift) {
- const double ox=key.min_easting(),oy=key.min_northing();
- for(const auto& j:geometry.junctions) {
-  if(j.decline!=g2m::JunctionDecline::None||(j.flags&static_cast<std::uint16_t>(g2m::JunctionFlags::OnStructure)))continue;
-  // The road bed ring: carriageway plus shoulders, the band the ribbons draw as asphalt (the paved ring adds sidewalks).
-  const auto& v=j.rings[static_cast<std::size_t>(g2m::JunctionRingLayer::RoadBed)].vertices;if(v.size()<3)continue;
-  std::vector<P2> ring;ring.reserve(v.size());
-  for(const auto& q:v)ring.push_back({static_cast<double>(q.x)/1000.0-ox,static_cast<double>(q.y)/1000.0-oy});
-  const auto first=mesh.vertices.size();const auto first_index=mesh.indices.size();bool valid=true;
-  std::map<std::pair<std::int64_t,std::int64_t>,std::int32_t> shared; // vertex dedup on a 0.1 mm key
-  const auto vertex=[&](P2 p)->std::optional<std::int32_t>{
-   const std::pair<std::int64_t,std::int64_t> k{std::llround(p.x*1e4),std::llround(p.y*1e4)};
-   if(auto it=shared.find(k);it!=shared.end())return it->second;
-   const auto h=ground(p.x+ox,p.y+oy);if(!h)return {};
-   const auto index=static_cast<std::int32_t>(mesh.vertices.size());shared.emplace(k,index);
-   mesh.vertices.push_back({static_cast<float>(p.x),static_cast<float>(p.y),static_cast<float>(*h+lift+kJunctionLiftM),0,0,1000.0f,0,0,0,0});
-   return index;
-  };
-  for(const auto& t:triangulate(ring)) {
-   const double x0=std::min({t[0].x,t[1].x,t[2].x}),x1=std::max({t[0].x,t[1].x,t[2].x});
-   const double y0=std::min({t[0].y,t[1].y,t[2].y}),y1=std::max({t[0].y,t[1].y,t[2].y});
-   for(double gx=std::floor(x0-.5)+.5;gx<x1&&valid;gx+=1)
-    for(double gy=std::floor(y0-.5)+.5;gy<y1&&valid;gy+=1) {
-     std::vector<P2> cell(t.begin(),t.end());
-     cell=clip(cell,0,gx,1);cell=clip(cell,0,gx+1,-1);cell=clip(cell,1,gy,1);cell=clip(cell,1,gy+1,-1);
-     if(cell.size()<3)continue;
-     std::vector<std::int32_t> ids;
-     for(const auto& p:cell){auto id=vertex(p);if(!id){valid=false;break;}if(ids.empty()||ids.back()!=*id)ids.push_back(*id);}
-     if(!valid)break;
-     if(ids.size()>1&&ids.front()==ids.back())ids.pop_back();
-     for(std::size_t i=1;i+1<ids.size();++i)mesh.indices.insert(mesh.indices.end(),{ids[0],ids[i],ids[i+1]});
-    }
-   if(!valid)break;
-  }
-  if(!valid){mesh.vertices.resize(first);mesh.indices.resize(first_index);}
- }
-}
 namespace {
 // Lane layout of one paved stretch as the ribbon draws it (the fragment shader reads lanes, forward and the flags).
 struct LaneLayout { std::string highway,direction; bool one=false,fast=false; double width=0; int lanes=1,forward=1,flags=0; };
@@ -195,6 +154,152 @@ bool near_ring(const std::vector<g2m::geom::PointMm>& ring,double x,double y,dou
  }
  return inside||best<=tolerance;
 }
+}
+// Every junction this tile owns, as a patch over the road bed ring: ear clipping, then each triangle cut by the terrain
+// lattice lines (DGM1 cell centres, x.5 m) so the patch bends exactly where the terrain does and neighbouring pieces
+// share their vertices (no T-junctions). Heights come from `ground`; patches sit `lift` above it, a little above the
+// ribbons, so the square ribbon ends under the junction disappear. No markings (fade 0).
+// Surface: where every road meeting there has the same paving, the patch has it too. Where they differ, the major road
+// (the through pair, else the highest-ranked arm) keeps its paving across the junction up to its own road bed edge
+// (the cubic between its two trim cuts, or its centre line run on into the ring) and the rest of the ring takes the
+// paving of the nearest other arm - a paving-stone side road reaches up to the asphalt edge of the road it joins.
+void add_junction_surfaces(RoadVisualMesh& mesh,const g2m::RoadGeomTile& geometry,const g2m::TileKey& key,const RoadVisualGround& ground,double lift) {
+ const double ox=key.min_easting(),oy=key.min_northing();
+ constexpr double kPi=3.14159265358979323846;
+ struct Arm { P2 cut,in;double half=0;int surface=0,rank=0; };
+ for(const auto& j:geometry.junctions) {
+  if(j.decline!=g2m::JunctionDecline::None||(j.flags&static_cast<std::uint16_t>(g2m::JunctionFlags::OnStructure)))continue;
+  // The road bed ring: carriageway plus shoulders, the band the ribbons draw as asphalt (the paved ring adds sidewalks).
+  const auto& v=j.rings[static_cast<std::size_t>(g2m::JunctionRingLayer::RoadBed)].vertices;if(v.size()<3)continue;
+  std::vector<P2> ring;ring.reserve(v.size());
+  for(const auto& q:v)ring.push_back({static_cast<double>(q.x)/1000.0-ox,static_cast<double>(q.y)/1000.0-oy});
+  // The paved arms: their road bed centre at the trim cut, heading into the junction, half bed width and paving.
+  std::vector<Arm> arms;
+  for(const auto& ap:j.approaches) {
+   if(ap.status!=g2m::JunctionApproachStatus::Used||ap.entry_index>=geometry.entries.size())continue;
+   const auto& entry=geometry.entries[ap.entry_index];const auto* w=find_way(geometry,entry.way_id);if(!w||!entry.profile)continue;
+   const auto layout=lane_layout(entry,*w);if(!layout)continue;
+   const double length=entry.profile->reference.length_m,cut=std::clamp(ap.at_end?length-ap.trim_m:ap.trim_m,0.0,length);
+   const auto pose=reference_pose(*entry.profile,cut);if(!pose)continue;
+   const auto span=span_at(entry,*layout,cut);const double centre=(span.bed_left+span.bed_right)/2;
+   const double heading=ap.at_end?pose->heading:pose->heading+kPi;
+   arms.push_back({{pose->x-std::sin(pose->heading)*centre-ox,pose->y+std::cos(pose->heading)*centre-oy},{std::cos(heading),std::sin(heading)},
+                   (span.bed_left-span.bed_right)/2,surface_flags(tag(*w,"surface")),traffic_road_rank(*w)});
+  }
+  const bool mixed=std::any_of(arms.begin(),arms.end(),[&](const Arm& a){return a.surface!=arms.front().surface;});
+  // The major road's centre line through the ring (a polyline with its half width per point) and its arms; with one
+  // paving everywhere the first arm stands for the whole patch.
+  std::vector<std::pair<P2,double>> spine;int major_arm=arms.empty()?-1:0;std::vector<std::size_t> major;
+  if(mixed) {
+   int best_i=-1,best_j=-1,best_rank=-1;double best_dev=1e9;
+   for(std::size_t i=0;i<arms.size();++i)for(std::size_t k=i+1;k<arms.size();++k) {
+    const double dev=std::acos(std::clamp(-(arms[i].in.x*arms[k].in.x+arms[i].in.y*arms[k].in.y),-1.0,1.0));
+    if(dev>35*kPi/180||arms[i].surface!=arms[k].surface)continue;
+    const int rank=std::min(arms[i].rank,arms[k].rank);
+    if(rank>best_rank||(rank==best_rank&&dev<best_dev)){best_rank=rank;best_dev=dev;best_i=static_cast<int>(i);best_j=static_cast<int>(k);}
+   }
+   int top=0;for(std::size_t i=1;i<arms.size();++i)if(arms[i].rank>arms[static_cast<std::size_t>(top)].rank)top=static_cast<int>(i);
+   if(best_i>=0&&best_rank>=arms[static_cast<std::size_t>(top)].rank) {
+    const Arm& a=arms[static_cast<std::size_t>(best_i)];const Arm& b=arms[static_cast<std::size_t>(best_j)];
+    const double h=std::hypot(b.cut.x-a.cut.x,b.cut.y-a.cut.y)/3;
+    const P2 p0=a.cut,p1{a.cut.x+a.in.x*h,a.cut.y+a.in.y*h},p3=b.cut,p2{b.cut.x+b.in.x*h,b.cut.y+b.in.y*h};
+    for(int i=0;i<=32;++i){const double t=i/32.0,u=1-t;
+     spine.push_back({{u*u*u*p0.x+3*u*u*t*p1.x+3*u*t*t*p2.x+t*t*t*p3.x,u*u*u*p0.y+3*u*u*t*p1.y+3*u*t*t*p2.y+t*t*t*p3.y},a.half+(b.half-a.half)*t});}
+    major_arm=best_i;major={static_cast<std::size_t>(best_i),static_cast<std::size_t>(best_j)};
+   } else {
+    // No through pair: the top-ranked arm's centre line runs straight on across the ring.
+    const Arm& a=arms[static_cast<std::size_t>(top)];double reach=0;
+    for(const auto& p:ring)reach=std::max(reach,std::hypot(p.x-a.cut.x,p.y-a.cut.y));
+    spine={{a.cut,a.half},{{a.cut.x+a.in.x*reach,a.cut.y+a.in.y*reach},a.half}};
+    major_arm=top;major={static_cast<std::size_t>(top)};
+   }
+  }
+  // Signed distance to the major road bed edge (negative inside), and the paving of the nearest other arm outside it.
+  const auto inside_major=[&](P2 p){
+   double best=1e18;
+   for(std::size_t i=0;i+1<spine.size();++i) {
+    const P2 a=spine[i].first,b=spine[i+1].first;const double dx=b.x-a.x,dy=b.y-a.y,l2=dx*dx+dy*dy;
+    const double t=l2>0?std::clamp(((p.x-a.x)*dx+(p.y-a.y)*dy)/l2,0.0,1.0):0;
+    best=std::min(best,std::hypot(a.x+t*dx-p.x,a.y+t*dy-p.y)-(spine[i].second+(spine[i+1].second-spine[i].second)*t));
+   }
+   return best;
+  };
+  // Distance from p to an arm's centre line run on into the ring as far as the junction centre (further, the arms'
+  // lines would cross into each other's mouths), less its half bed width.
+  P2 centre{0,0};for(const auto& q:ring){centre.x+=q.x/ring.size();centre.y+=q.y/ring.size();}
+  const auto arm_distance=[&](std::size_t i,P2 p){
+   const Arm& a=arms[i];const double reach=std::max(0.0,(centre.x-a.cut.x)*a.in.x+(centre.y-a.cut.y)*a.in.y);
+   const double t=std::clamp((p.x-a.cut.x)*a.in.x+(p.y-a.cut.y)*a.in.y,0.0,reach);
+   return std::hypot(a.cut.x+a.in.x*t-p.x,a.cut.y+a.in.y*t-p.y)-a.half;
+  };
+  // The two other arms nearest to p outside the major road bed (-1 when there is none).
+  const auto minor_arms=[&](P2 p){
+   std::pair<int,int> best{-1,-1};double d0=1e18,d1=1e18;
+   for(std::size_t i=0;i<arms.size();++i) {
+    if(std::find(major.begin(),major.end(),i)!=major.end())continue;
+    const double d=arm_distance(i,p);
+    if(d<d0){d1=d0;best.second=best.first;d0=d;best.first=static_cast<int>(i);}else if(d<d1){d1=d;best.second=static_cast<int>(i);}
+   }
+   return best;
+  };
+  const auto first=mesh.vertices.size();const auto first_index=mesh.indices.size();bool valid=true;
+  std::map<std::tuple<std::int64_t,std::int64_t,int>,std::int32_t> shared; // vertex dedup on a 0.1 mm key per arm
+  // A piece belongs to an arm (-1: the major road): its paving, and u, v along that arm's heading in metres, so a
+  // paving pattern runs the way the arm's own ribbon lays it.
+  const auto vertex=[&](P2 p,int arm)->std::optional<std::int32_t>{
+   const std::tuple<std::int64_t,std::int64_t,int> k{std::llround(p.x*1e4),std::llround(p.y*1e4),arm};
+   if(auto it=shared.find(k);it!=shared.end())return it->second;
+   const auto h=ground(p.x+ox,p.y+oy);if(!h)return {};
+   const auto index=static_cast<std::int32_t>(mesh.vertices.size());shared.emplace(k,index);
+   const int surface=arm>=0?arms[static_cast<std::size_t>(arm)].surface:major_arm>=0?arms[static_cast<std::size_t>(major_arm)].surface:0;
+   const P2 dir=arm>=0?arms[static_cast<std::size_t>(arm)].in:major_arm>=0?arms[static_cast<std::size_t>(major_arm)].in:P2{1,0};
+   const double u=dir.x*p.y-dir.y*p.x,along=dir.x*p.x+dir.y*p.y;
+   mesh.vertices.push_back({static_cast<float>(p.x),static_cast<float>(p.y),static_cast<float>(*h+lift+kJunctionLiftM),static_cast<float>(u),static_cast<float>(along),1000.0f,0,0,0,static_cast<float>(surface)});
+   return index;
+  };
+  const auto emit=[&](const std::vector<P2>& poly,int arm) {
+   if(poly.size()<3||!valid)return;
+   std::vector<std::int32_t> ids;
+   for(const auto& p:poly){auto id=vertex(p,arm);if(!id){valid=false;return;}if(ids.empty()||ids.back()!=*id)ids.push_back(*id);}
+   if(ids.size()>1&&ids.front()==ids.back())ids.pop_back();
+   for(std::size_t i=1;i+1<ids.size();++i)mesh.indices.insert(mesh.indices.end(),{ids[0],ids[i],ids[i+1]});
+  };
+  for(const auto& t:triangulate(ring)) {
+   const double x0=std::min({t[0].x,t[1].x,t[2].x}),x1=std::max({t[0].x,t[1].x,t[2].x});
+   const double y0=std::min({t[0].y,t[1].y,t[2].y}),y1=std::max({t[0].y,t[1].y,t[2].y});
+   for(double gx=std::floor(x0-.5)+.5;gx<x1&&valid;gx+=1)
+    for(double gy=std::floor(y0-.5)+.5;gy<y1&&valid;gy+=1) {
+     std::vector<P2> cell(t.begin(),t.end());
+     cell=clip(cell,0,gx,1);cell=clip(cell,0,gx+1,-1);cell=clip(cell,1,gy,1);cell=clip(cell,1,gy+1,-1);
+     if(cell.size()<3)continue;
+     if(!mixed){emit(cell,-1);continue;}
+     // Split the (convex, at most 1 m) cell along the road bed edge; the distance is close to linear across it.
+     std::vector<double> d;for(const auto& p:cell)d.push_back(inside_major(p));
+     std::vector<P2> in,out;
+     for(std::size_t i=0;i<cell.size();++i) {
+      const std::size_t k=(i+1)%cell.size();
+      (d[i]<=0?in:out).push_back(cell[i]);
+      if((d[i]<=0)!=(d[k]<=0)){const double s=d[i]/(d[i]-d[k]);const P2 q{cell[i].x+(cell[k].x-cell[i].x)*s,cell[i].y+(cell[k].y-cell[i].y)*s};in.push_back(q);out.push_back(q);}
+     }
+     emit(in,-1);
+     if(out.size()<3)continue;
+     // Outside it, the cell is shared between the two nearest other arms along the line of equal distance to both.
+     P2 c{0,0};for(const auto& p:out){c.x+=p.x/out.size();c.y+=p.y/out.size();}
+     const auto [ai,aj]=minor_arms(c);
+     if(aj<0||arms[static_cast<std::size_t>(ai)].surface==arms[static_cast<std::size_t>(aj)].surface){emit(out,ai);continue;}
+     std::vector<double> h;for(const auto& p:out)h.push_back(arm_distance(static_cast<std::size_t>(ai),p)-arm_distance(static_cast<std::size_t>(aj),p));
+     std::vector<P2> near_i,near_j;
+     for(std::size_t i=0;i<out.size();++i) {
+      const std::size_t k=(i+1)%out.size();
+      (h[i]<=0?near_i:near_j).push_back(out[i]);
+      if((h[i]<=0)!=(h[k]<=0)){const double s=h[i]/(h[i]-h[k]);const P2 q{out[i].x+(out[k].x-out[i].x)*s,out[i].y+(out[k].y-out[i].y)*s};near_i.push_back(q);near_j.push_back(q);}
+     }
+     emit(near_i,ai);emit(near_j,aj);
+    }
+   if(!valid)break;
+  }
+  if(!valid){mesh.vertices.resize(first);mesh.indices.resize(first_index);}
+ }
 }
 RoadVisualMesh build_road_visual(const g2m::RoadGeomTile& geometry,const g2m::TileKey& key,const RoadVisualGround& ground,double lift) {
  RoadVisualMesh mesh;const auto decks=build_road_decks(geometry);
