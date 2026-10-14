@@ -78,6 +78,17 @@
       "rating_nm": 1800,
       "file": "data/gearboxes/straight_cut_6sq.json",
       "description": "Racing dog box with straight-cut gears: no synchros, a sequential drum and very short shifts. Rated for the hypercar."
+    },
+    {
+      "id": "vintage_3mt",
+      "name": "Vintage 3-speed sliding-mesh",
+      "kind": "manual",
+      "focus": "touring",
+      "gear_type": "straight_cut",
+      "synchro": "dog",
+      "rating_nm": 160,
+      "file": "data/gearboxes/vintage_3mt.json",
+      "description": "Three widely spaced straight-cut gears and no synchronisers, as in the earliest motor cars. Match the speeds or it grinds."
     }
   ]
 }

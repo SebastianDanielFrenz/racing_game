@@ -1,4 +1,5 @@
 extends Node3D
+const SliderBox := preload("res://scripts/slider_box.gd")
 var simulation: Node
 var _batches := {false: [], true: []}
 var _visibility_elapsed := 0.0
@@ -48,7 +49,11 @@ func _ready() -> void:
   slider.custom_minimum_size = Vector2(460, 28)
   slider.value = float(_settings.get_value("traffic", str(i), defaults[i]))
   slider.tooltip_text = names[i]
-  box.add_child(slider)
+  var line := HBoxContainer.new()
+  line.add_theme_constant_override("separation", 8)
+  box.add_child(line)
+  line.add_child(slider)
+  SliderBox.attach(line, slider, 2 if i == 3 else 0) # the value can be typed too (garage numeric inputs)
   _controls.append(slider)
   slider.value_changed.connect(func(_value: float): _configure())
  _status = Label.new()

@@ -32,6 +32,9 @@ public:
     // toward `desired` with 1 - exp(-rate * dt). Any frame, isotropic - the rig passes Godot-space offsets.
     static godot::Vector3 chase_follow_offset(const godot::Vector3& previous, const godot::Vector3& desired, double dt, double rate);
 
+    static godot::Dictionary cockpit_look_step(const godot::Dictionary& state, const godot::Dictionary& input, double dt, const godot::Dictionary& config);
+    static double steering_wheel_angle_rad(double steer,double lock_deg);
+
 protected:
     static void _bind_methods();
 };

@@ -1,0 +1,23 @@
+{
+  "crank_timeout_s": 1.5,
+  "stop_max_speed_mps": 2,
+  "blink_hz": 1.5,
+  "indicator_arm_deg": 90,
+  "indicator_cancel_deg": 15,
+  "brake_lamp_threshold": 0.05,
+  "steering_ratio": 15,
+  "horn_frequency_hz": [
+    440,
+    550
+  ],
+  "horn_gain_db": -20,
+  "horn_loop_s": 0.1,
+  "horn_rate_hz": 24000,
+  "steering_wheel_lock_deg": 360,
+  "cockpit_pitch_min_deg": -60,
+  "cockpit_pitch_max_deg": 10,
+  "cockpit_pitch_default_deg": -3,
+  "cockpit_mouse_deg_per_pixel": 0.15,
+  "cockpit_look_rate_deg_s": 100,
+  "cockpit_look_deadzone": 0.2
+}

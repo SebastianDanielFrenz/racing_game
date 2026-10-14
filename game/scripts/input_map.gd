@@ -26,8 +26,8 @@ extends Node
 # assist.auto_shift (TOGGLE, starts off for manual cars).
 # Camera group: move (x right, y up, z forward, each -1..1), look rate
 # (yaw/pitch, -1..1: right stick or arrow keys), mouse look (captured mouse
-# delta in pixels; the "mouse_capture" binding - the right button by default -
-# captures, Esc releases), fast. Drone-follow zoom (camera group): mouse wheel
+# delta in pixels; the "mouse_capture" binding - middle button by default -
+# toggles cockpit capture, Esc releases), fast. Drone-follow zoom (camera group): mouse wheel
 # ticks (consume_zoom_steps) and the zoom bindings held (get_camera_zoom_key).
 # Walking group (on foot, R9c): reuses the camera group's move axes and "fast" as
 # RUN; adds JUMP and INTERACT edge counts. The get-out key (G by default) is the
@@ -60,7 +60,6 @@ var _cycle_mode_count: int = 0
 var _cycle_view_count: int = 0
 var _switch_world_count: int = 0
 var _reset_car_count: int = 0
-var _nitrous_toggle_count: int = 0
 var _flip_upright_count: int = 0
 var _cycle_drone_count: int = 0
 var _jump_count: int = 0
@@ -79,11 +78,7 @@ var _handbrake: float = 0.0
 var _clutch: float = 0.0
 var _ignition_on: bool = true # physics_sim's input_map_core default: spawn with the engine running
 var _starter_held: bool = false
-var _auto_shift_on: bool = false
-var _traction_cycle_count: int = 0
-var _aero_toggle_count: int = 0
-var _drive_mode_cycle_count: int = 0
-var _launch_toggle_count: int = 0
+var driver_actions := RgDriverActions.new()
 var _configured_vehicle_path: String = ""
 
 var _cam_move: Vector3 = Vector3.ZERO
@@ -93,6 +88,9 @@ var _cam_stick: Vector2 = Vector2.ZERO # raw pad look stick (chase orbit), x rig
 var _cam_fast: bool = false
 var _mouse_delta: Vector2 = Vector2.ZERO
 var _mouse_captured: bool = false
+var _cockpit_mode := false
+var _world_input_active := true
+var _log_marker_count := 0
 
 # Raw input collected between two polls by _input.
 var _wheel_up: float = 0.0
@@ -121,6 +119,24 @@ func release_mouse() -> void:
 	_mouse_delta = Vector2.ZERO
 	_motion = Vector2.ZERO
 
+func capture_mouse() -> void:
+	Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
+	_mouse_captured = true
+	_motion = Vector2.ZERO
+	_mouse_delta = Vector2.ZERO
+
+func set_cockpit_mode(enabled: bool) -> void:
+	if _cockpit_mode == enabled: return
+	_cockpit_mode = enabled
+	if enabled and _world_input_active: capture_mouse()
+	else: release_mouse()
+
+func set_world_input_active(enabled: bool) -> void:
+	var changed := _world_input_active != enabled
+	_world_input_active = enabled
+	if not enabled: release_mouse()
+	elif changed and _cockpit_mode: capture_mouse()
+
 func is_mouse_captured() -> bool:
 	return _mouse_captured
 
@@ -139,10 +155,16 @@ func configure_vehicle(path: String, auto_shift_default = null) -> void:
 		if controller is Dictionary and str(controller.get("type", "")) == "manual_tcu":
 			manual = true
 			break
-	_auto_shift_on = (not manual) if auto_shift_default == null else bool(auto_shift_default)
+	driver_actions.configure_auto_shift((not manual) if auto_shift_default == null else bool(auto_shift_default))
 	_configured_vehicle_path = key
 
+var cabin_config: Dictionary = {}
+
 func _ready() -> void:
+	var cfg = JSON.parse_string(FileAccess.get_file_as_string(ProjectSettings.globalize_path("res://../data/controls/cabin.json")))
+	if cfg is Dictionary:
+		cabin_config = cfg
+		driver_actions.configure_cabin(cfg)
 	if controls == null:
 		push_error("input_map.gd: no RgControls (main.gd must set `controls` before add_child)")
 		return
@@ -206,9 +228,9 @@ func _input(event: InputEvent) -> void:
 		_mouse_captured = false
 		_motion = Vector2.ZERO
 		return
-	if event is InputEventMouseButton and event.pressed and controls.is_mouse_button_bound("mouse_capture", event.button_index):
-		Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
-		_mouse_captured = true
+	if _world_input_active and event is InputEventMouseButton and event.pressed and ((_cockpit_mode and event.button_index == MOUSE_BUTTON_MIDDLE) or controls.is_mouse_button_bound("mouse_capture", event.button_index)):
+		if _cockpit_mode and _mouse_captured: release_mouse()
+		else: capture_mouse()
 	elif (event is InputEventKey and event.pressed and not event.echo and event.keycode == KEY_ESCAPE) 			or (event is InputEventJoypadButton and event.pressed and event.button_index == JOY_BUTTON_START):
 		Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 		_mouse_captured = false
@@ -288,6 +310,8 @@ func set_test_snapshot(snapshot: Dictionary) -> void:
 	_use_test_snapshot = not snapshot.is_empty()
 
 func _clear_edges() -> void:
+	driver_actions.discard_pending()
+	_log_marker_count = 0
 	_shift_up_count = 0
 	_shift_down_count = 0
 	_cycle_camera_count = 0
@@ -295,11 +319,6 @@ func _clear_edges() -> void:
 	_cycle_view_count = 0
 	_switch_world_count = 0
 	_reset_car_count = 0
-	_nitrous_toggle_count = 0
-	_traction_cycle_count = 0
-	_aero_toggle_count = 0
-	_drive_mode_cycle_count = 0
-	_launch_toggle_count = 0
 	_flip_upright_count = 0
 	_cycle_drone_count = 0
 	_jump_count = 0
@@ -320,6 +339,12 @@ func poll() -> void:
 		_cam_stick = Vector2.ZERO
 		_cam_look_rate = Vector2.ZERO
 		return # Text entry must not trigger R/F/V or driving/ignition actions.
+	if get_viewport().gui_get_focus_owner() is LineEdit:
+		_cam_stick = Vector2.ZERO # a typed value (garage value boxes, settings text) is not a key binding
+		_cam_look_rate = Vector2.ZERO
+		_gather_snapshot() # drain the wheel / motion accumulators like the suspended path
+		_clear_edges()
+		return
 	var snapshot: Dictionary = _test_snapshot if _use_test_snapshot else _gather_snapshot()
 	controls.evaluate(snapshot)
 	var v := func(action: String) -> float: return controls.get_value(action)
@@ -343,20 +368,10 @@ func poll() -> void:
 	if _edge("ignition", held.call("ignition")):
 		_ignition_on = not _ignition_on
 	_starter_held = held.call("starter")
-	if _edge("auto_shift", held.call("auto_shift")):
-		_auto_shift_on = not _auto_shift_on
-	# Assist unit (physics_sim): rising edges only - which mode comes next and whether the car has the aero
-	# automation is decided in rg_core (RgAssists), main.gd applies it.
-	if _edge("traction_control", held.call("traction_control")):
-		_traction_cycle_count += 1
-	if _edge("toggle_aero", held.call("toggle_aero")):
-		_aero_toggle_count += 1
-	# Drive mode (M): a rising edge only; rg_core (RgAssists.next_drive_mode) picks the next OFFERED mode.
-	if _edge("drive_mode", held.call("drive_mode")):
-		_drive_mode_cycle_count += 1
-	# Launch control (L): a rising edge only; main.gd flips assist.launch_control from the channel's current value.
-	if _edge("toggle_launch_control", held.call("toggle_launch_control")):
-		_launch_toggle_count += 1
+	# Sampled device levels only: rg_core owns rising edges and toggle/cycle state.
+	for action in ["auto_shift","traction_control","toggle_aero","drive_mode","toggle_launch_control","toggle_nitrous","park","epb","start_stop","hazard","indicator_left","indicator_right","horn"]:
+		var source: int = RgDriverActions.PAD if controls.get_source(action) >= 2 else RgDriverActions.KEYBOARD
+		driver_actions.submit(action,RgDriverActions.HOLD,1.0 if held.call(action) else 0.0,source)
 
 	# --- camera group ---
 	_cam_move = Vector3(v.call("cam_move_x"), v.call("cam_move_y"), v.call("cam_move_z"))
@@ -369,6 +384,8 @@ func poll() -> void:
 	_mouse_delta += Vector2(v.call("mouse_look_x"), v.call("mouse_look_y"))
 
 	# --- global actions ---
+	if _edge("log_marker", held.call("log_marker")):
+		_log_marker_count += 1
 	if _edge("cycle_camera", held.call("cycle_camera")):
 		_cycle_camera_count += 1
 	if _edge("cycle_mode", held.call("cycle_mode")):
@@ -379,8 +396,6 @@ func poll() -> void:
 		_switch_world_count += 1
 	if _edge("reset_car", held.call("reset_car")):
 		_reset_car_count += 1
-	if _edge("toggle_nitrous", held.call("toggle_nitrous")):
-		_nitrous_toggle_count += 1
 	if _edge("flip_upright", held.call("flip_upright")):
 		_flip_upright_count += 1
 	if _edge("cycle_drone_target", held.call("cycle_drone_target")):
@@ -414,35 +429,15 @@ func get_clutch() -> float:
 func get_ignition() -> bool:
 	return _ignition_on
 
+# The cockpit's ignition key (cockpit_controls.gd) sets the same state the ignition key toggles.
+func set_ignition(on: bool) -> void:
+	_ignition_on = on
+
 func get_starter() -> bool:
 	return _starter_held
 
-# Rising edges of the traction-control key (F4) since last consumed: each one asks for the next offered TC mode.
-func consume_traction_cycle() -> int:
-	var n := _traction_cycle_count
-	_traction_cycle_count = 0
-	return n
-
-# Rising edges of the aero-automation key (H) since last consumed.
-func consume_aero_toggle() -> int:
-	var n := _aero_toggle_count
-	_aero_toggle_count = 0
-	return n
-
-# Rising edges of the drive-mode key (M) since last consumed: each one asks for the next offered drive mode.
-func consume_drive_mode_cycle() -> int:
-	var n := _drive_mode_cycle_count
-	_drive_mode_cycle_count = 0
-	return n
-
-# Rising edges of the launch-control key (L) since last consumed.
-func consume_launch_toggle() -> int:
-	var n := _launch_toggle_count
-	_launch_toggle_count = 0
-	return n
-
 func get_auto_shift() -> bool:
-	return _auto_shift_on
+	return driver_actions.get_auto_shift()
 
 func consume_shift_up_count() -> int:
 	var n := _shift_up_count
@@ -545,11 +540,7 @@ func consume_npc_truck() -> int:
 	_npc_truck_count = 0
 	return n
 
-# Rising edges of the nitrous binding (gamepad Y by default) since last consumed (each one flips the nitrous arm switch).
-func consume_nitrous_toggle() -> int:
-	var n := _nitrous_toggle_count
-	_nitrous_toggle_count = 0
-	return n
+
 
 func consume_flip_upright() -> int:
 	var n := _flip_upright_count
@@ -569,4 +560,21 @@ func steering_uses_wheel() -> bool:
 func consume_cycle_camera() -> int:
 	var count := _cycle_camera_count
 	_cycle_camera_count = 0
+	return count
+
+# Variant conversion and channel forwarding only; timed cabin behaviours live in rg_core.
+func advance_cabin(sim: Node, snapshot: Dictionary, delta: float, enabled: bool, vehicle_name: String) -> void:
+	var context := snapshot.duplicate()
+	context["speed_mps"] = sim.get_body_speed_mps("chassis")
+	context["steering_wheel_deg"] = rad_to_deg(sim.get_wheel_steer_angle(vehicle_name,0)) * float(cabin_config["steering_ratio"]) if cabin_config.has("steering_ratio") else 0.0
+	var values: Dictionary = load("res://scripts/driver_state.gd").channels(sim)
+	for write in driver_actions.advance(context,values,enabled,delta):
+		sim.set_control(write["channel"],float(write["value"]))
+
+func sync_ignition(value: float) -> void:
+	_ignition_on = value != 0
+
+func consume_log_marker() -> int:
+	var count := _log_marker_count
+	_log_marker_count = 0
 	return count

@@ -7,6 +7,7 @@
 
 #include "rg/crt_guard.h"
 #include "rg_assists.h"
+#include "rg_driver_actions.h"
 #include "rg_camera_math.h"
 #include "rg_controls.h"
 #include "rg_garage.h"
@@ -43,6 +44,7 @@ void initialize_rg_godot_module(ModuleInitializationLevel p_level) {
     ClassDB::register_class<rg_godot::RgGarage>();
     ClassDB::register_class<rg_godot::RgCameraMath>();
     ClassDB::register_class<rg_godot::RgAssists>();
+    ClassDB::register_class<rg_godot::RgDriverActions>();
     ClassDB::register_class<rg_godot::RgTerrainView>();
     ClassDB::register_class<rg_godot::RgRenderFocus>();
     ClassDB::register_class<ps_godot::PsSpatialAudio>();

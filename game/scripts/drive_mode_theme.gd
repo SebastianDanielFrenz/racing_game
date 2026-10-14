@@ -37,3 +37,9 @@ static func label(pt: Dictionary) -> String:
 	if not is_themed(pt):
 		return ""
 	return str(pt.get("drive_mode_name", ""))
+
+# Display palette only; logical fitting/mode comes from the shared ControlState.
+static func accent_state(control: Dictionary, fallback: Color) -> Color:
+	if not bool(control.get("fitted",false)): return fallback
+	var palette := {"eco":ECO,"normal":NORMAL,"sport":SPORT,"racing":NORMAL}
+	return palette.get(str(control.get("colour_role","normal")),NORMAL)

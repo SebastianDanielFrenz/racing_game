@@ -139,9 +139,10 @@ func _numbers() -> String:
 		steer_visual.append("%+.4f" % (visuals.get_wheel_visual_steer_angle_rad(i) if visuals != null else 0.0))
 	var pt: Dictionary = sim.get_vehicle_powertrain(main.VEHICLE_NAME)
 	var cam: Camera3D = main.get_director().active_camera()
-	return "session=(%.2f, %.2f, %.2f) speed_kmh=%.1f wheel_loads_n=[%s] sum=%.0f wheel_ride_height_m=[%s] wheel_steer_phys_rad=[%s] wheel_steer_visual_rad=[%s] engine=%s gear=%d rpm=%.0f surface=%s mode=%s cam_godot=%s chunks=%d fps=%.1f" % [
+	return "session=(%.2f, %.2f, %.2f) speed_kmh=%.1f wheel_loads_n=[%s] sum=%.0f wheel_ride_height_m=[%s] wheel_steer_phys_rad=[%s] wheel_steer_visual_rad=[%s] cockpit_wheel_rad=%+.4f engine=%s gear=%d rpm=%.0f surface=%s mode=%s cam_godot=%s chunks=%d fps=%.1f" % [
 		p.x, p.y, p.z, sim.get_body_speed_mps("chassis") * 3.6, ", ".join(loads), load_sum, ", ".join(ride_heights),
 		", ".join(steer_phys), ", ".join(steer_visual),
+		visuals.get_steering_wheel_angle_rad() if visuals != null else 0.0,
 		pt.get("engine_state", "?"), int(pt.get("gear", 0)), float(pt.get("rpm", 0.0)),
 		sim.get_wheel_surface_name(main.VEHICLE_NAME, 0), sim.get_player_mode(),
 		cam.global_position if cam != null else Vector3.ZERO, int(main.get_world_view().get_chunk_count()),

@@ -1,4 +1,5 @@
 extends CanvasLayer
+const SliderBox := preload("res://scripts/slider_box.gd")
 # Seat translation in chassis ISO axes; never modifies physical car geometry.
 var body_visuals: Node
 var vehicle_name := "car_hyper"
@@ -38,7 +39,11 @@ func _ready() -> void:
 		slider.custom_minimum_size = Vector2(380, 28)
 		slider.value = clampf(offset[axis], lower[axis], upper[axis])
 		slider.tooltip_text = names[axis]
-		box.add_child(slider)
+		var line := HBoxContainer.new()
+		line.add_theme_constant_override("separation", 8)
+		box.add_child(line)
+		line.add_child(slider)
+		SliderBox.attach(line, slider, 1, 100.0, "cm") # typed in centimetres (garage numeric inputs)
 		_sliders.append(slider)
 		slider.value_changed.connect(func(_value: float): _apply())
 	var note := Label.new()

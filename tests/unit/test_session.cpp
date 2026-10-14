@@ -649,3 +649,15 @@ TEST_CASE("Session traction control starts at the car's own default and toggles 
     CHECK(session.snapshot().powertrain.traction_mode_effective==0);
     CHECK(session.world().powertrain_state(session.vehicle_id()).traction_torque_fraction==1.0);
 }
+
+TEST_CASE("Session reserves cockpit transmission channels without requesting neutral", "[session][driver_actions]") {
+    rg::Session session(make_test_config());
+    CHECK(session.get_control("gear_request") == -100);
+    for (const char* channel : {"park_lock", "epb", "transmission.selector"}) {
+        CHECK(session.get_control(channel) == 0);
+        session.set_control(channel, 1);
+        CHECK(session.get_control(channel) == 1);
+    }
+    session.set_control("gear_request", 2);
+    CHECK(session.get_control("gear_request") == 2);
+}

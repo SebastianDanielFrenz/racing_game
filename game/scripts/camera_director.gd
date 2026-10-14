@@ -89,6 +89,7 @@ func set_active(rig_name: String) -> void:
 	if old != null:
 		from = old.global_transform
 	active_name = rig_name
+	if input_map != null: input_map.set_cockpit_mode(rig_name == "cockpit")
 	var rig: Node3D = rigs[rig_name]
 	rig.activate(from)
 	rig.camera.current = true

@@ -1,0 +1,10 @@
+{
+  "format": "physics_sim.engine_thermal/1",
+  "extends": "../../external/physics_sim/data/engine_thermal/class_si_passenger.json",
+  "source": "ventura_v8_5l0_na (data/engines/ventura_v8_5l0_na.json). displacement_l 4.942 [D: bore x stroke x cylinders of the engine file]. cast-iron block and heads: 25 kg/L participating metal x 500 J/(kg K) [AS, iron] + the class coolant share. Every other number is the class default [AS] (class_si_passenger.json carries the derivations).",
+  "displacement_l": 4.942,
+  "capacity_per_l": {
+    "engine_j_k": 36000.0,
+    "oil_j_k": 7600.0
+  }
+}

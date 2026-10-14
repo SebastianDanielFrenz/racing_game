@@ -530,3 +530,29 @@ TEST_CASE("camera math: chase offset smoothing", "[camera_math]") {
         CHECK(std::abs(honest - broken) > 0.1 * honest);
     }
 }
+
+TEST_CASE("cockpit look: mouse and rate input pitch clamps and disabled input is inert", "[camera][cockpit]") {
+    rg::CockpitLookConfig c{-60,10,0.15,100,0.2};
+    auto s=rg::cockpit_look_step({0,-3},{20,20,0,0,true},0.01,c);
+    CHECK_THAT(s.yaw_deg,WithinAbs(3,1e-12));
+    CHECK_THAT(s.pitch_deg,WithinAbs(-6,1e-12));
+    s=rg::cockpit_look_step(s,{0,1000,0,0,true},0.01,c);
+    CHECK(s.pitch_deg==-60);
+    s=rg::cockpit_look_step(s,{0,-1000,0,0,true},0.01,c);
+    CHECK(s.pitch_deg==10);
+    s=rg::cockpit_look_step(s,{100,100,1,1,false},1,c);
+    CHECK(s.pitch_deg==10); CHECK_THAT(s.yaw_deg,WithinAbs(3,1e-12));
+    const auto a=rg::cockpit_look_step({0,0},{0,0,0.1,0.1,true},1,c);
+    CHECK(a.yaw_deg==0); CHECK(a.pitch_deg==0);
+}
+TEST_CASE("cockpit look: stick rates are frame independent and wheel angle honors lock", "[camera][cockpit]") {
+    rg::CockpitLookConfig c{-60,10,0.15,100,0.2};
+    rg::CockpitLook a,b;
+    for(int i=0;i<60;++i)a=rg::cockpit_look_step(a,{0,0,0.6,-0.4,true},1.0/60,c);
+    for(int i=0;i<240;++i)b=rg::cockpit_look_step(b,{0,0,0.6,-0.4,true},1.0/240,c);
+    CHECK_THAT(a.yaw_deg,WithinAbs(b.yaw_deg,1e-10));
+    CHECK_THAT(a.pitch_deg,WithinAbs(b.pitch_deg,1e-10));
+    CHECK_THAT(rg::steering_wheel_angle_rad(0.25,360),WithinAbs(kPi/2,1e-12));
+    CHECK_THAT(rg::steering_wheel_angle_rad(-1,360),WithinAbs(-2*kPi,1e-12));
+    CHECK_THAT(rg::steering_wheel_angle_rad(2,180),WithinAbs(kPi,1e-12));
+}

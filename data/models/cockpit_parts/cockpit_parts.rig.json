@@ -1,0 +1,3284 @@
+{
+  "format": "physics_sim.rig/1",
+  "model": "cockpit_parts.glb",
+  "title": "Modular cockpit controls",
+  "description": "Standalone control trees; instantiate only the selected part at its socket.",
+  "frame": "ISO 8855: x forward, y left, z up; metres; radians. The .glb itself uses glTF axes (+Y up, +Z forward, +X left): gltf(x,y,z) = iso(y,z,x).",
+  "origin": "Every part_<id> root is its own mounting origin. +Z is the mounting normal, +X forward.",
+  "rest_pose": "All node rotations are identity at rest; a node's origin is its joint pivot. Joint values are offsets from the rest pose (0 = as modelled).",
+  "overall_bounds": {
+    "min": [
+      -0.035,
+      -0.138,
+      -0.012
+    ],
+    "max": [
+      0.035,
+      0.138,
+      0.1168
+    ]
+  },
+  "nodes": [
+    {
+      "name": "cockpit_parts",
+      "parent": null,
+      "pivot": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "name": "part_tc",
+      "parent": "cockpit_parts",
+      "pivot": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "bounds_local": {
+        "min": [
+          -0.013,
+          -0.01,
+          -0.0015
+        ],
+        "max": [
+          0.013,
+          0.01,
+          0.0055
+        ]
+      },
+      "part_id": "tc",
+      "mounting_normal": [
+        0,
+        0,
+        1
+      ],
+      "mounting_up": [
+        1,
+        0,
+        0
+      ]
+    },
+    {
+      "name": "ctl_tc",
+      "parent": "part_tc",
+      "pivot": [
+        0.0,
+        0.0,
+        0.007
+      ],
+      "joint": {
+        "type": "prismatic",
+        "axis": [
+          0,
+          0,
+          -1
+        ],
+        "min": 0,
+        "max": 0.003,
+        "note": ""
+      },
+      "bounds_local": {
+        "min": [
+          -0.011,
+          -0.008,
+          -0.002
+        ],
+        "max": [
+          0.011,
+          0.008,
+          0.0024
+        ]
+      },
+      "behaviour": {
+        "spring_return": true,
+        "press_at_m": 0.0018,
+        "release_at_m": 0.001
+      }
+    },
+    {
+      "name": "hit_tc",
+      "parent": "ctl_tc",
+      "pivot": [
+        0.0,
+        0.0,
+        0.00915
+      ],
+      "interaction": {
+        "frame": "ISO 8855, local to hit node",
+        "kind": "poke",
+        "shape": "box",
+        "half_extents_m": [
+          0.011,
+          0.008,
+          0.002
+        ],
+        "poke_point": [
+          0,
+          0,
+          0
+        ],
+        "grab_point": [
+          0,
+          0,
+          0
+        ],
+        "press_axis": [
+          0,
+          0,
+          -1
+        ]
+      }
+    },
+    {
+      "name": "part_lc",
+      "parent": "cockpit_parts",
+      "pivot": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "bounds_local": {
+        "min": [
+          -0.013,
+          -0.01,
+          -0.0015
+        ],
+        "max": [
+          0.013,
+          0.01,
+          0.0055
+        ]
+      },
+      "part_id": "lc",
+      "mounting_normal": [
+        0,
+        0,
+        1
+      ],
+      "mounting_up": [
+        1,
+        0,
+        0
+      ]
+    },
+    {
+      "name": "ctl_lc",
+      "parent": "part_lc",
+      "pivot": [
+        0.0,
+        0.0,
+        0.007
+      ],
+      "joint": {
+        "type": "prismatic",
+        "axis": [
+          0,
+          0,
+          -1
+        ],
+        "min": 0,
+        "max": 0.003,
+        "note": ""
+      },
+      "bounds_local": {
+        "min": [
+          -0.011,
+          -0.008,
+          -0.002
+        ],
+        "max": [
+          0.011,
+          0.008,
+          0.0024
+        ]
+      },
+      "behaviour": {
+        "spring_return": true,
+        "press_at_m": 0.0018,
+        "release_at_m": 0.001
+      }
+    },
+    {
+      "name": "hit_lc",
+      "parent": "ctl_lc",
+      "pivot": [
+        0.0,
+        0.0,
+        0.00915
+      ],
+      "interaction": {
+        "frame": "ISO 8855, local to hit node",
+        "kind": "poke",
+        "shape": "box",
+        "half_extents_m": [
+          0.011,
+          0.008,
+          0.002
+        ],
+        "poke_point": [
+          0,
+          0,
+          0
+        ],
+        "grab_point": [
+          0,
+          0,
+          0
+        ],
+        "press_axis": [
+          0,
+          0,
+          -1
+        ]
+      }
+    },
+    {
+      "name": "part_aero",
+      "parent": "cockpit_parts",
+      "pivot": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "bounds_local": {
+        "min": [
+          -0.013,
+          -0.01,
+          -0.0015
+        ],
+        "max": [
+          0.013,
+          0.01,
+          0.0055
+        ]
+      },
+      "part_id": "aero",
+      "mounting_normal": [
+        0,
+        0,
+        1
+      ],
+      "mounting_up": [
+        1,
+        0,
+        0
+      ]
+    },
+    {
+      "name": "ctl_aero",
+      "parent": "part_aero",
+      "pivot": [
+        0.0,
+        0.0,
+        0.007
+      ],
+      "joint": {
+        "type": "prismatic",
+        "axis": [
+          0,
+          0,
+          -1
+        ],
+        "min": 0,
+        "max": 0.003,
+        "note": ""
+      },
+      "bounds_local": {
+        "min": [
+          -0.011,
+          -0.008,
+          -0.002
+        ],
+        "max": [
+          0.011,
+          0.008,
+          0.0024
+        ]
+      },
+      "behaviour": {
+        "spring_return": true,
+        "press_at_m": 0.0018,
+        "release_at_m": 0.001
+      }
+    },
+    {
+      "name": "hit_aero",
+      "parent": "ctl_aero",
+      "pivot": [
+        0.0,
+        0.0,
+        0.00915
+      ],
+      "interaction": {
+        "frame": "ISO 8855, local to hit node",
+        "kind": "poke",
+        "shape": "box",
+        "half_extents_m": [
+          0.011,
+          0.008,
+          0.002
+        ],
+        "poke_point": [
+          0,
+          0,
+          0
+        ],
+        "grab_point": [
+          0,
+          0,
+          0
+        ],
+        "press_axis": [
+          0,
+          0,
+          -1
+        ]
+      }
+    },
+    {
+      "name": "part_am",
+      "parent": "cockpit_parts",
+      "pivot": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "bounds_local": {
+        "min": [
+          -0.013,
+          -0.01,
+          -0.0015
+        ],
+        "max": [
+          0.013,
+          0.01,
+          0.0055
+        ]
+      },
+      "part_id": "am",
+      "mounting_normal": [
+        0,
+        0,
+        1
+      ],
+      "mounting_up": [
+        1,
+        0,
+        0
+      ]
+    },
+    {
+      "name": "ctl_am",
+      "parent": "part_am",
+      "pivot": [
+        0.0,
+        0.0,
+        0.007
+      ],
+      "joint": {
+        "type": "prismatic",
+        "axis": [
+          0,
+          0,
+          -1
+        ],
+        "min": 0,
+        "max": 0.003,
+        "note": ""
+      },
+      "bounds_local": {
+        "min": [
+          -0.011,
+          -0.008,
+          -0.002
+        ],
+        "max": [
+          0.011,
+          0.008,
+          0.0024
+        ]
+      },
+      "behaviour": {
+        "spring_return": true,
+        "press_at_m": 0.0018,
+        "release_at_m": 0.001
+      }
+    },
+    {
+      "name": "hit_am",
+      "parent": "ctl_am",
+      "pivot": [
+        0.0,
+        0.0,
+        0.00915
+      ],
+      "interaction": {
+        "frame": "ISO 8855, local to hit node",
+        "kind": "poke",
+        "shape": "box",
+        "half_extents_m": [
+          0.011,
+          0.008,
+          0.002
+        ],
+        "poke_point": [
+          0,
+          0,
+          0
+        ],
+        "grab_point": [
+          0,
+          0,
+          0
+        ],
+        "press_axis": [
+          0,
+          0,
+          -1
+        ]
+      }
+    },
+    {
+      "name": "part_drive_mode_eco",
+      "parent": "cockpit_parts",
+      "pivot": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "bounds_local": {
+        "min": [
+          -0.013,
+          -0.01,
+          -0.0015
+        ],
+        "max": [
+          0.013,
+          0.01,
+          0.0055
+        ]
+      },
+      "part_id": "drive_mode_eco",
+      "mounting_normal": [
+        0,
+        0,
+        1
+      ],
+      "mounting_up": [
+        1,
+        0,
+        0
+      ]
+    },
+    {
+      "name": "ctl_drive_mode_eco",
+      "parent": "part_drive_mode_eco",
+      "pivot": [
+        0.0,
+        0.0,
+        0.007
+      ],
+      "joint": {
+        "type": "prismatic",
+        "axis": [
+          0,
+          0,
+          -1
+        ],
+        "min": 0,
+        "max": 0.003,
+        "note": ""
+      },
+      "bounds_local": {
+        "min": [
+          -0.011,
+          -0.008,
+          -0.002
+        ],
+        "max": [
+          0.011,
+          0.008,
+          0.0024
+        ]
+      },
+      "behaviour": {
+        "spring_return": true,
+        "press_at_m": 0.0018,
+        "release_at_m": 0.001
+      }
+    },
+    {
+      "name": "hit_drive_mode_eco",
+      "parent": "ctl_drive_mode_eco",
+      "pivot": [
+        0.0,
+        0.0,
+        0.00915
+      ],
+      "interaction": {
+        "frame": "ISO 8855, local to hit node",
+        "kind": "poke",
+        "shape": "box",
+        "half_extents_m": [
+          0.011,
+          0.008,
+          0.002
+        ],
+        "poke_point": [
+          0,
+          0,
+          0
+        ],
+        "grab_point": [
+          0,
+          0,
+          0
+        ],
+        "press_axis": [
+          0,
+          0,
+          -1
+        ]
+      }
+    },
+    {
+      "name": "part_drive_mode_normal",
+      "parent": "cockpit_parts",
+      "pivot": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "bounds_local": {
+        "min": [
+          -0.013,
+          -0.01,
+          -0.0015
+        ],
+        "max": [
+          0.013,
+          0.01,
+          0.0055
+        ]
+      },
+      "part_id": "drive_mode_normal",
+      "mounting_normal": [
+        0,
+        0,
+        1
+      ],
+      "mounting_up": [
+        1,
+        0,
+        0
+      ]
+    },
+    {
+      "name": "ctl_drive_mode_normal",
+      "parent": "part_drive_mode_normal",
+      "pivot": [
+        0.0,
+        0.0,
+        0.007
+      ],
+      "joint": {
+        "type": "prismatic",
+        "axis": [
+          0,
+          0,
+          -1
+        ],
+        "min": 0,
+        "max": 0.003,
+        "note": ""
+      },
+      "bounds_local": {
+        "min": [
+          -0.011,
+          -0.008,
+          -0.002
+        ],
+        "max": [
+          0.011,
+          0.008,
+          0.0024
+        ]
+      },
+      "behaviour": {
+        "spring_return": true,
+        "press_at_m": 0.0018,
+        "release_at_m": 0.001
+      }
+    },
+    {
+      "name": "hit_drive_mode_normal",
+      "parent": "ctl_drive_mode_normal",
+      "pivot": [
+        0.0,
+        0.0,
+        0.00915
+      ],
+      "interaction": {
+        "frame": "ISO 8855, local to hit node",
+        "kind": "poke",
+        "shape": "box",
+        "half_extents_m": [
+          0.011,
+          0.008,
+          0.002
+        ],
+        "poke_point": [
+          0,
+          0,
+          0
+        ],
+        "grab_point": [
+          0,
+          0,
+          0
+        ],
+        "press_axis": [
+          0,
+          0,
+          -1
+        ]
+      }
+    },
+    {
+      "name": "part_drive_mode_sport",
+      "parent": "cockpit_parts",
+      "pivot": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "bounds_local": {
+        "min": [
+          -0.013,
+          -0.01,
+          -0.0015
+        ],
+        "max": [
+          0.013,
+          0.01,
+          0.0055
+        ]
+      },
+      "part_id": "drive_mode_sport",
+      "mounting_normal": [
+        0,
+        0,
+        1
+      ],
+      "mounting_up": [
+        1,
+        0,
+        0
+      ]
+    },
+    {
+      "name": "ctl_drive_mode_sport",
+      "parent": "part_drive_mode_sport",
+      "pivot": [
+        0.0,
+        0.0,
+        0.007
+      ],
+      "joint": {
+        "type": "prismatic",
+        "axis": [
+          0,
+          0,
+          -1
+        ],
+        "min": 0,
+        "max": 0.003,
+        "note": ""
+      },
+      "bounds_local": {
+        "min": [
+          -0.011,
+          -0.008,
+          -0.002
+        ],
+        "max": [
+          0.011,
+          0.008,
+          0.0024
+        ]
+      },
+      "behaviour": {
+        "spring_return": true,
+        "press_at_m": 0.0018,
+        "release_at_m": 0.001
+      }
+    },
+    {
+      "name": "hit_drive_mode_sport",
+      "parent": "ctl_drive_mode_sport",
+      "pivot": [
+        0.0,
+        0.0,
+        0.00915
+      ],
+      "interaction": {
+        "frame": "ISO 8855, local to hit node",
+        "kind": "poke",
+        "shape": "box",
+        "half_extents_m": [
+          0.011,
+          0.008,
+          0.002
+        ],
+        "poke_point": [
+          0,
+          0,
+          0
+        ],
+        "grab_point": [
+          0,
+          0,
+          0
+        ],
+        "press_axis": [
+          0,
+          0,
+          -1
+        ]
+      }
+    },
+    {
+      "name": "part_drive_mode_racing",
+      "parent": "cockpit_parts",
+      "pivot": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "bounds_local": {
+        "min": [
+          -0.013,
+          -0.01,
+          -0.0015
+        ],
+        "max": [
+          0.013,
+          0.01,
+          0.0055
+        ]
+      },
+      "part_id": "drive_mode_racing",
+      "mounting_normal": [
+        0,
+        0,
+        1
+      ],
+      "mounting_up": [
+        1,
+        0,
+        0
+      ]
+    },
+    {
+      "name": "ctl_drive_mode_racing",
+      "parent": "part_drive_mode_racing",
+      "pivot": [
+        0.0,
+        0.0,
+        0.007
+      ],
+      "joint": {
+        "type": "prismatic",
+        "axis": [
+          0,
+          0,
+          -1
+        ],
+        "min": 0,
+        "max": 0.003,
+        "note": ""
+      },
+      "bounds_local": {
+        "min": [
+          -0.011,
+          -0.008,
+          -0.002
+        ],
+        "max": [
+          0.011,
+          0.008,
+          0.0024
+        ]
+      },
+      "behaviour": {
+        "spring_return": true,
+        "press_at_m": 0.0018,
+        "release_at_m": 0.001
+      }
+    },
+    {
+      "name": "hit_drive_mode_racing",
+      "parent": "ctl_drive_mode_racing",
+      "pivot": [
+        0.0,
+        0.0,
+        0.00915
+      ],
+      "interaction": {
+        "frame": "ISO 8855, local to hit node",
+        "kind": "poke",
+        "shape": "box",
+        "half_extents_m": [
+          0.011,
+          0.008,
+          0.002
+        ],
+        "poke_point": [
+          0,
+          0,
+          0
+        ],
+        "grab_point": [
+          0,
+          0,
+          0
+        ],
+        "press_axis": [
+          0,
+          0,
+          -1
+        ]
+      }
+    },
+    {
+      "name": "part_hazard",
+      "parent": "cockpit_parts",
+      "pivot": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "bounds_local": {
+        "min": [
+          -0.013,
+          -0.01,
+          -0.0015
+        ],
+        "max": [
+          0.013,
+          0.01,
+          0.0055
+        ]
+      },
+      "part_id": "hazard",
+      "mounting_normal": [
+        0,
+        0,
+        1
+      ],
+      "mounting_up": [
+        1,
+        0,
+        0
+      ]
+    },
+    {
+      "name": "ctl_hazard",
+      "parent": "part_hazard",
+      "pivot": [
+        0.0,
+        0.0,
+        0.007
+      ],
+      "joint": {
+        "type": "prismatic",
+        "axis": [
+          0,
+          0,
+          -1
+        ],
+        "min": 0,
+        "max": 0.003,
+        "note": ""
+      },
+      "bounds_local": {
+        "min": [
+          -0.011,
+          -0.008,
+          -0.002
+        ],
+        "max": [
+          0.011,
+          0.008,
+          0.0023
+        ]
+      },
+      "behaviour": {
+        "spring_return": true,
+        "press_at_m": 0.0018,
+        "release_at_m": 0.001
+      }
+    },
+    {
+      "name": "hit_hazard",
+      "parent": "ctl_hazard",
+      "pivot": [
+        0.0,
+        0.0,
+        0.00915
+      ],
+      "interaction": {
+        "frame": "ISO 8855, local to hit node",
+        "kind": "poke",
+        "shape": "box",
+        "half_extents_m": [
+          0.011,
+          0.008,
+          0.002
+        ],
+        "poke_point": [
+          0,
+          0,
+          0
+        ],
+        "grab_point": [
+          0,
+          0,
+          0
+        ],
+        "press_axis": [
+          0,
+          0,
+          -1
+        ]
+      }
+    },
+    {
+      "name": "part_start",
+      "parent": "cockpit_parts",
+      "pivot": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "bounds_local": {
+        "min": [
+          -0.017,
+          -0.017,
+          0.0
+        ],
+        "max": [
+          0.017,
+          0.017,
+          0.005
+        ]
+      },
+      "part_id": "start",
+      "mounting_normal": [
+        0,
+        0,
+        1
+      ],
+      "mounting_up": [
+        1,
+        0,
+        0
+      ]
+    },
+    {
+      "name": "ctl_start",
+      "parent": "part_start",
+      "pivot": [
+        0.0,
+        0.0,
+        0.006
+      ],
+      "joint": {
+        "type": "prismatic",
+        "axis": [
+          0,
+          0,
+          -1
+        ],
+        "min": 0,
+        "max": 0.003,
+        "note": ""
+      },
+      "bounds_local": {
+        "min": [
+          -0.015,
+          -0.015,
+          -0.001
+        ],
+        "max": [
+          0.015,
+          0.015,
+          0.0045
+        ]
+      },
+      "behaviour": {
+        "spring_return": true
+      }
+    },
+    {
+      "name": "hit_start",
+      "parent": "ctl_start",
+      "pivot": [
+        0.0,
+        0.0,
+        0.01
+      ],
+      "interaction": {
+        "frame": "ISO 8855, local to hit node",
+        "kind": "poke",
+        "shape": "box",
+        "half_extents_m": [
+          0.015,
+          0.015,
+          0.003
+        ],
+        "poke_point": [
+          0,
+          0,
+          0
+        ],
+        "grab_point": [
+          0,
+          0,
+          0
+        ],
+        "press_axis": [
+          0,
+          0,
+          -1
+        ]
+      }
+    },
+    {
+      "name": "part_epb",
+      "parent": "cockpit_parts",
+      "pivot": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "bounds_local": {
+        "min": [
+          -0.013,
+          -0.01,
+          -0.0015
+        ],
+        "max": [
+          0.013,
+          0.01,
+          0.0055
+        ]
+      },
+      "part_id": "epb",
+      "mounting_normal": [
+        0,
+        0,
+        1
+      ],
+      "mounting_up": [
+        1,
+        0,
+        0
+      ]
+    },
+    {
+      "name": "ctl_epb",
+      "parent": "part_epb",
+      "pivot": [
+        0.0,
+        0.0,
+        0.006
+      ],
+      "joint": {
+        "type": "revolute",
+        "axis": [
+          0,
+          1,
+          0
+        ],
+        "min": -0.26,
+        "max": 0.26,
+        "note": ""
+      },
+      "bounds_local": {
+        "min": [
+          -0.013,
+          -0.01,
+          -0.003
+        ],
+        "max": [
+          0.013,
+          0.01,
+          0.016
+        ]
+      },
+      "behaviour": {
+        "spring_return": true,
+        "apply_at_rad": 0.15,
+        "release_at_rad": -0.15
+      }
+    },
+    {
+      "name": "hit_epb",
+      "parent": "ctl_epb",
+      "pivot": [
+        -0.008,
+        0.0,
+        0.02
+      ],
+      "interaction": {
+        "frame": "ISO 8855, local to hit node",
+        "kind": "grab",
+        "shape": "box",
+        "half_extents_m": [
+          0.008,
+          0.009,
+          0.007
+        ],
+        "poke_point": [
+          0,
+          0,
+          0
+        ],
+        "grab_point": [
+          0,
+          0,
+          0
+        ],
+        "press_axis": [
+          0,
+          0,
+          -1
+        ],
+        "apply": "epb=1",
+        "release": "epb=0"
+      }
+    },
+    {
+      "name": "part_n2o",
+      "parent": "cockpit_parts",
+      "pivot": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "bounds_local": {
+        "min": [
+          -0.021,
+          -0.014,
+          -0.001
+        ],
+        "max": [
+          0.021,
+          0.014,
+          0.017
+        ]
+      },
+      "part_id": "n2o",
+      "mounting_normal": [
+        0,
+        0,
+        1
+      ],
+      "mounting_up": [
+        1,
+        0,
+        0
+      ]
+    },
+    {
+      "name": "ctl_n2o",
+      "parent": "part_n2o",
+      "pivot": [
+        0.0,
+        0.0,
+        0.008
+      ],
+      "joint": {
+        "type": "revolute",
+        "axis": [
+          0,
+          1,
+          0
+        ],
+        "min": -0.35,
+        "max": 0.35,
+        "note": ""
+      },
+      "bounds_local": {
+        "min": [
+          -0.0045,
+          -0.004,
+          0.0
+        ],
+        "max": [
+          0.0045,
+          0.004,
+          0.0195
+        ]
+      },
+      "behaviour": {
+        "detents_rad": [
+          -0.35,
+          0.35
+        ]
+      }
+    },
+    {
+      "name": "ctl_n2o_cover",
+      "parent": "part_n2o",
+      "pivot": [
+        0.017,
+        0.0,
+        0.014
+      ],
+      "joint": {
+        "type": "revolute",
+        "axis": [
+          0,
+          1,
+          0
+        ],
+        "min": 0.0,
+        "max": 1.75,
+        "note": ""
+      },
+      "bounds_local": {
+        "min": [
+          -0.034,
+          -0.011,
+          0.001
+        ],
+        "max": [
+          0.0,
+          0.011,
+          0.0198
+        ]
+      },
+      "behaviour": {
+        "enables": "hit_n2o",
+        "enabled_above_rad": 1.2,
+        "spring_below_rad": 0.5,
+        "closing_disarms": true
+      }
+    },
+    {
+      "name": "hit_n2o",
+      "parent": "ctl_n2o",
+      "pivot": [
+        0.0,
+        0.0,
+        0.025
+      ],
+      "interaction": {
+        "frame": "ISO 8855, local to hit node",
+        "kind": "grab",
+        "shape": "box",
+        "half_extents_m": [
+          0.005,
+          0.005,
+          0.01
+        ],
+        "poke_point": [
+          0,
+          0,
+          0
+        ],
+        "grab_point": [
+          0,
+          0,
+          0
+        ],
+        "press_axis": [
+          0,
+          0,
+          -1
+        ],
+        "requires": {
+          "node": "ctl_n2o_cover",
+          "above_rad": 1.2
+        }
+      }
+    },
+    {
+      "name": "hit_n2o_cover",
+      "parent": "ctl_n2o_cover",
+      "pivot": [
+        -0.014,
+        0.0,
+        0.031
+      ],
+      "interaction": {
+        "frame": "ISO 8855, local to hit node",
+        "kind": "grab",
+        "shape": "box",
+        "half_extents_m": [
+          0.008,
+          0.01,
+          0.006
+        ],
+        "poke_point": [
+          0,
+          0,
+          0
+        ],
+        "grab_point": [
+          0,
+          0,
+          0
+        ],
+        "press_axis": [
+          0,
+          0,
+          -1
+        ]
+      }
+    },
+    {
+      "name": "part_shifter_seq",
+      "parent": "cockpit_parts",
+      "pivot": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "bounds_local": {
+        "min": [
+          -0.03,
+          -0.027,
+          -0.003
+        ],
+        "max": [
+          0.03,
+          0.027,
+          0.0094
+        ]
+      },
+      "part_id": "shifter_seq",
+      "mounting_normal": [
+        0,
+        0,
+        1
+      ],
+      "mounting_up": [
+        1,
+        0,
+        0
+      ]
+    },
+    {
+      "name": "ctl_shifter_seq",
+      "parent": "part_shifter_seq",
+      "pivot": [
+        0.0,
+        0.0,
+        0.014
+      ],
+      "joint": {
+        "type": "revolute",
+        "axis": [
+          0,
+          1,
+          0
+        ],
+        "min": -0.21000000000000002,
+        "max": 0.21000000000000002,
+        "note": ""
+      },
+      "bounds_local": {
+        "min": [
+          -0.024,
+          -0.024,
+          -0.005
+        ],
+        "max": [
+          0.024,
+          0.024,
+          0.099
+        ]
+      },
+      "behaviour": {
+        "spring_return": true,
+        "click_at_rad": 0.14
+      }
+    },
+    {
+      "name": "ctl_shifter_seq_pbtn",
+      "parent": "ctl_shifter_seq",
+      "pivot": [
+        -0.007,
+        0.0,
+        0.112
+      ],
+      "joint": {
+        "type": "prismatic",
+        "axis": [
+          0,
+          0,
+          -1
+        ],
+        "min": 0,
+        "max": 0.0015,
+        "note": ""
+      },
+      "bounds_local": {
+        "min": [
+          -0.005,
+          -0.004,
+          0.0005
+        ],
+        "max": [
+          0.005,
+          0.004,
+          0.0028
+        ]
+      },
+      "behaviour": {
+        "spring_return": true
+      }
+    },
+    {
+      "name": "hit_shifter_seq_pbtn",
+      "parent": "ctl_shifter_seq_pbtn",
+      "pivot": [
+        -0.007,
+        0.0,
+        0.1147
+      ],
+      "interaction": {
+        "frame": "ISO 8855, local to hit node",
+        "kind": "poke",
+        "shape": "box",
+        "half_extents_m": [
+          0.006,
+          0.005,
+          0.002
+        ],
+        "poke_point": [
+          0,
+          0,
+          0
+        ],
+        "grab_point": [
+          0,
+          0,
+          0
+        ],
+        "press_axis": [
+          0,
+          0,
+          -1
+        ]
+      }
+    },
+    {
+      "name": "ctl_shifter_seq_ambtn",
+      "parent": "ctl_shifter_seq",
+      "pivot": [
+        0.007,
+        0.0,
+        0.112
+      ],
+      "joint": {
+        "type": "prismatic",
+        "axis": [
+          0,
+          0,
+          -1
+        ],
+        "min": 0,
+        "max": 0.0015,
+        "note": ""
+      },
+      "bounds_local": {
+        "min": [
+          -0.005,
+          -0.004,
+          0.0005
+        ],
+        "max": [
+          0.005,
+          0.004,
+          0.0028
+        ]
+      },
+      "behaviour": {
+        "spring_return": true
+      }
+    },
+    {
+      "name": "hit_shifter_seq_ambtn",
+      "parent": "ctl_shifter_seq_ambtn",
+      "pivot": [
+        0.007,
+        0.0,
+        0.1147
+      ],
+      "interaction": {
+        "frame": "ISO 8855, local to hit node",
+        "kind": "poke",
+        "shape": "box",
+        "half_extents_m": [
+          0.006,
+          0.005,
+          0.002
+        ],
+        "poke_point": [
+          0,
+          0,
+          0
+        ],
+        "grab_point": [
+          0,
+          0,
+          0
+        ],
+        "press_axis": [
+          0,
+          0,
+          -1
+        ]
+      }
+    },
+    {
+      "name": "hit_shifter_seq",
+      "parent": "ctl_shifter_seq",
+      "pivot": [
+        0.0,
+        0.0,
+        0.088
+      ],
+      "interaction": {
+        "frame": "ISO 8855, local to hit node",
+        "kind": "grab",
+        "shape": "box",
+        "half_extents_m": [
+          0.019,
+          0.016,
+          0.03
+        ],
+        "poke_point": [
+          0,
+          0,
+          0
+        ],
+        "grab_point": [
+          0,
+          0,
+          0
+        ],
+        "press_axis": [
+          0,
+          0,
+          -1
+        ]
+      }
+    },
+    {
+      "name": "part_shifter_h",
+      "parent": "cockpit_parts",
+      "pivot": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "bounds_local": {
+        "min": [
+          -0.03,
+          -0.027,
+          -0.003
+        ],
+        "max": [
+          0.03,
+          0.027,
+          0.009
+        ]
+      },
+      "part_id": "shifter_h",
+      "mounting_normal": [
+        0,
+        0,
+        1
+      ],
+      "mounting_up": [
+        1,
+        0,
+        0
+      ]
+    },
+    {
+      "name": "ctl_shifter_h_gate",
+      "parent": "part_shifter_h",
+      "pivot": [
+        0.0,
+        0.0,
+        0.014
+      ],
+      "joint": {
+        "type": "revolute",
+        "axis": [
+          1,
+          0,
+          0
+        ],
+        "min": -0.26,
+        "max": 0.26,
+        "note": ""
+      },
+      "behaviour": {
+        "spring_return": false,
+        "detents_rad": [
+          -0.26,
+          0,
+          0.26
+        ]
+      }
+    },
+    {
+      "name": "ctl_shifter_h",
+      "parent": "ctl_shifter_h_gate",
+      "pivot": [
+        0.0,
+        0.0,
+        0.014
+      ],
+      "joint": {
+        "type": "revolute",
+        "axis": [
+          0,
+          1,
+          0
+        ],
+        "min": -0.21000000000000002,
+        "max": 0.21000000000000002,
+        "note": ""
+      },
+      "bounds_local": {
+        "min": [
+          -0.024,
+          -0.024,
+          -0.005
+        ],
+        "max": [
+          0.024,
+          0.024,
+          0.0974
+        ]
+      },
+      "behaviour": {
+        "spring_return": false,
+        "click_at_rad": 0.14
+      }
+    },
+    {
+      "name": "hit_shifter_h",
+      "parent": "ctl_shifter_h",
+      "pivot": [
+        0.0,
+        0.0,
+        0.088
+      ],
+      "interaction": {
+        "frame": "ISO 8855, local to hit node",
+        "kind": "grab",
+        "shape": "box",
+        "half_extents_m": [
+          0.019,
+          0.016,
+          0.03
+        ],
+        "poke_point": [
+          0,
+          0,
+          0
+        ],
+        "grab_point": [
+          0,
+          0,
+          0
+        ],
+        "press_axis": [
+          0,
+          0,
+          -1
+        ]
+      }
+    },
+    {
+      "name": "part_shifter_sel",
+      "parent": "cockpit_parts",
+      "pivot": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "bounds_local": {
+        "min": [
+          -0.03,
+          -0.027,
+          -0.003
+        ],
+        "max": [
+          0.03,
+          0.027,
+          0.0102
+        ]
+      },
+      "part_id": "shifter_sel",
+      "mounting_normal": [
+        0,
+        0,
+        1
+      ],
+      "mounting_up": [
+        1,
+        0,
+        0
+      ]
+    },
+    {
+      "name": "ctl_shifter_sel_gate",
+      "parent": "part_shifter_sel",
+      "pivot": [
+        0.0,
+        0.0,
+        0.014
+      ],
+      "joint": {
+        "type": "revolute",
+        "axis": [
+          1,
+          0,
+          0
+        ],
+        "min": 0.0,
+        "max": 0.26,
+        "note": ""
+      },
+      "behaviour": {
+        "spring_return": true,
+        "detents_rad": [
+          0,
+          0.26
+        ]
+      }
+    },
+    {
+      "name": "ctl_shifter_sel",
+      "parent": "ctl_shifter_sel_gate",
+      "pivot": [
+        0.0,
+        0.0,
+        0.014
+      ],
+      "joint": {
+        "type": "revolute",
+        "axis": [
+          0,
+          1,
+          0
+        ],
+        "min": -0.21000000000000002,
+        "max": 0.21000000000000002,
+        "note": ""
+      },
+      "bounds_local": {
+        "min": [
+          -0.0275,
+          -0.024,
+          -0.005
+        ],
+        "max": [
+          0.024,
+          0.024,
+          0.101
+        ]
+      },
+      "behaviour": {
+        "spring_return": true,
+        "click_at_rad": 0.14
+      }
+    },
+    {
+      "name": "ctl_shifter_sel_pbtn",
+      "parent": "ctl_shifter_sel",
+      "pivot": [
+        -0.007,
+        0.0,
+        0.114
+      ],
+      "joint": {
+        "type": "prismatic",
+        "axis": [
+          0,
+          0,
+          -1
+        ],
+        "min": 0,
+        "max": 0.0015,
+        "note": ""
+      },
+      "bounds_local": {
+        "min": [
+          -0.005,
+          -0.004,
+          0.0005
+        ],
+        "max": [
+          0.005,
+          0.004,
+          0.0028
+        ]
+      },
+      "behaviour": {
+        "spring_return": true
+      }
+    },
+    {
+      "name": "hit_shifter_sel_pbtn",
+      "parent": "ctl_shifter_sel_pbtn",
+      "pivot": [
+        -0.007,
+        0.0,
+        0.1167
+      ],
+      "interaction": {
+        "frame": "ISO 8855, local to hit node",
+        "kind": "poke",
+        "shape": "box",
+        "half_extents_m": [
+          0.006,
+          0.005,
+          0.002
+        ],
+        "poke_point": [
+          0,
+          0,
+          0
+        ],
+        "grab_point": [
+          0,
+          0,
+          0
+        ],
+        "press_axis": [
+          0,
+          0,
+          -1
+        ]
+      }
+    },
+    {
+      "name": "ctl_shifter_sel_unlock",
+      "parent": "ctl_shifter_sel",
+      "pivot": [
+        0.0,
+        -0.015,
+        0.089
+      ],
+      "joint": {
+        "type": "prismatic",
+        "axis": [
+          0,
+          1,
+          0
+        ],
+        "min": 0,
+        "max": 0.002,
+        "note": ""
+      },
+      "bounds_local": {
+        "min": [
+          -0.009,
+          -0.002,
+          -0.0075
+        ],
+        "max": [
+          0.009,
+          0.002,
+          0.0075
+        ]
+      },
+      "behaviour": {
+        "spring_return": true
+      }
+    },
+    {
+      "name": "hit_shifter_sel_unlock",
+      "parent": "ctl_shifter_sel_unlock",
+      "pivot": [
+        0.0,
+        -0.017,
+        0.089
+      ],
+      "interaction": {
+        "frame": "ISO 8855, local to hit node",
+        "kind": "poke",
+        "shape": "box",
+        "half_extents_m": [
+          0.009,
+          0.003,
+          0.008
+        ],
+        "poke_point": [
+          0,
+          0,
+          0
+        ],
+        "grab_point": [
+          0,
+          0,
+          0
+        ],
+        "press_axis": [
+          0,
+          1,
+          0
+        ]
+      }
+    },
+    {
+      "name": "hit_shifter_sel",
+      "parent": "ctl_shifter_sel",
+      "pivot": [
+        0.0,
+        0.0,
+        0.088
+      ],
+      "interaction": {
+        "frame": "ISO 8855, local to hit node",
+        "kind": "grab",
+        "shape": "box",
+        "half_extents_m": [
+          0.019,
+          0.016,
+          0.03
+        ],
+        "poke_point": [
+          0,
+          0,
+          0
+        ],
+        "grab_point": [
+          0,
+          0,
+          0
+        ],
+        "press_axis": [
+          0,
+          0,
+          -1
+        ]
+      }
+    },
+    {
+      "name": "part_paddle_L",
+      "parent": "cockpit_parts",
+      "pivot": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "bounds_local": {
+        "min": [
+          -0.008,
+          -0.008,
+          -0.006
+        ],
+        "max": [
+          0.008,
+          0.008,
+          0.006
+        ]
+      },
+      "part_id": "paddle_L",
+      "mounting_normal": [
+        0,
+        0,
+        1
+      ],
+      "mounting_up": [
+        1,
+        0,
+        0
+      ]
+    },
+    {
+      "name": "ctl_paddle_L",
+      "parent": "part_paddle_L",
+      "pivot": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "joint": {
+        "type": "revolute",
+        "axis": [
+          0,
+          1,
+          0
+        ],
+        "min": 0.0,
+        "max": 0.14,
+        "note": ""
+      },
+      "bounds_local": {
+        "min": [
+          -0.0075,
+          -0.001,
+          -0.011
+        ],
+        "max": [
+          0.0075,
+          0.025,
+          0.0613
+        ]
+      },
+      "behaviour": {
+        "spring_return": true,
+        "click_at_rad": 0.09
+      }
+    },
+    {
+      "name": "hit_paddle_L",
+      "parent": "ctl_paddle_L",
+      "pivot": [
+        -0.008,
+        0.012,
+        0.026
+      ],
+      "interaction": {
+        "frame": "ISO 8855, local to hit node",
+        "kind": "poke",
+        "shape": "box",
+        "half_extents_m": [
+          0.006,
+          0.012,
+          0.026
+        ],
+        "poke_point": [
+          0,
+          0,
+          0
+        ],
+        "grab_point": [
+          0,
+          0,
+          0
+        ],
+        "press_axis": [
+          1,
+          0,
+          0
+        ]
+      }
+    },
+    {
+      "name": "part_stalk_L",
+      "parent": "cockpit_parts",
+      "pivot": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "bounds_local": {
+        "min": [
+          -0.0115,
+          -0.011,
+          -0.012
+        ],
+        "max": [
+          0.0115,
+          0.011,
+          0.012
+        ]
+      },
+      "part_id": "stalk_L",
+      "mounting_normal": [
+        0,
+        0,
+        1
+      ],
+      "mounting_up": [
+        1,
+        0,
+        0
+      ]
+    },
+    {
+      "name": "ctl_stalk_L",
+      "parent": "part_stalk_L",
+      "pivot": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "joint": {
+        "type": "revolute",
+        "axis": [
+          1,
+          0,
+          0
+        ],
+        "min": -0.21000000000000002,
+        "max": 0.21000000000000002,
+        "note": ""
+      },
+      "behaviour": {
+        "spring_return": false,
+        "momentary_rad": 0.1,
+        "detents_rad": [
+          -0.21,
+          0,
+          0.21
+        ]
+      }
+    },
+    {
+      "name": "ctl_stalk_L_flash",
+      "parent": "ctl_stalk_L",
+      "pivot": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "joint": {
+        "type": "revolute",
+        "axis": [
+          0,
+          0,
+          1
+        ],
+        "min": 0.0,
+        "max": 0.10000000000000002,
+        "note": ""
+      },
+      "bounds_local": {
+        "min": [
+          -0.0095,
+          0.0,
+          -0.01
+        ],
+        "max": [
+          0.0095,
+          0.138,
+          0.0104
+        ]
+      },
+      "behaviour": {
+        "spring_return": true
+      }
+    },
+    {
+      "name": "hit_stalk_L",
+      "parent": "ctl_stalk_L_flash",
+      "pivot": [
+        0.0,
+        0.117,
+        0.0
+      ],
+      "interaction": {
+        "frame": "ISO 8855, local to hit node",
+        "kind": "grab",
+        "shape": "box",
+        "half_extents_m": [
+          0.012,
+          0.025,
+          0.014
+        ],
+        "poke_point": [
+          0,
+          0,
+          0
+        ],
+        "grab_point": [
+          0,
+          0,
+          0
+        ],
+        "press_axis": [
+          0,
+          0,
+          -1
+        ]
+      }
+    },
+    {
+      "name": "part_paddle_R",
+      "parent": "cockpit_parts",
+      "pivot": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "bounds_local": {
+        "min": [
+          -0.008,
+          -0.008,
+          -0.006
+        ],
+        "max": [
+          0.008,
+          0.008,
+          0.006
+        ]
+      },
+      "part_id": "paddle_R",
+      "mounting_normal": [
+        0,
+        0,
+        1
+      ],
+      "mounting_up": [
+        1,
+        0,
+        0
+      ]
+    },
+    {
+      "name": "ctl_paddle_R",
+      "parent": "part_paddle_R",
+      "pivot": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "joint": {
+        "type": "revolute",
+        "axis": [
+          0,
+          1,
+          0
+        ],
+        "min": 0.0,
+        "max": 0.14,
+        "note": ""
+      },
+      "bounds_local": {
+        "min": [
+          -0.0075,
+          -0.025,
+          -0.011
+        ],
+        "max": [
+          0.0075,
+          0.001,
+          0.0613
+        ]
+      },
+      "behaviour": {
+        "spring_return": true,
+        "click_at_rad": 0.09
+      }
+    },
+    {
+      "name": "hit_paddle_R",
+      "parent": "ctl_paddle_R",
+      "pivot": [
+        -0.008,
+        -0.012,
+        0.026
+      ],
+      "interaction": {
+        "frame": "ISO 8855, local to hit node",
+        "kind": "poke",
+        "shape": "box",
+        "half_extents_m": [
+          0.006,
+          0.012,
+          0.026
+        ],
+        "poke_point": [
+          0,
+          0,
+          0
+        ],
+        "grab_point": [
+          0,
+          0,
+          0
+        ],
+        "press_axis": [
+          1,
+          0,
+          0
+        ]
+      }
+    },
+    {
+      "name": "part_stalk_R",
+      "parent": "cockpit_parts",
+      "pivot": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "bounds_local": {
+        "min": [
+          -0.0115,
+          -0.011,
+          -0.012
+        ],
+        "max": [
+          0.0115,
+          0.011,
+          0.012
+        ]
+      },
+      "part_id": "stalk_R",
+      "mounting_normal": [
+        0,
+        0,
+        1
+      ],
+      "mounting_up": [
+        1,
+        0,
+        0
+      ]
+    },
+    {
+      "name": "ctl_stalk_R",
+      "parent": "part_stalk_R",
+      "pivot": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "joint": {
+        "type": "revolute",
+        "axis": [
+          1,
+          0,
+          0
+        ],
+        "min": -0.21000000000000002,
+        "max": 0.21000000000000002,
+        "note": ""
+      },
+      "bounds_local": {
+        "min": [
+          -0.0095,
+          -0.138,
+          -0.01
+        ],
+        "max": [
+          0.0095,
+          0.0,
+          0.0104
+        ]
+      },
+      "behaviour": {
+        "spring_return": false,
+        "momentary_rad": 0.1,
+        "detents_rad": [
+          -0.0,
+          -0.06999999999999999,
+          -0.13999999999999999,
+          -0.21
+        ]
+      }
+    },
+    {
+      "name": "hit_stalk_R",
+      "parent": "ctl_stalk_R",
+      "pivot": [
+        0.0,
+        -0.117,
+        0.0
+      ],
+      "interaction": {
+        "frame": "ISO 8855, local to hit node",
+        "kind": "grab",
+        "shape": "box",
+        "half_extents_m": [
+          0.012,
+          0.025,
+          0.014
+        ],
+        "poke_point": [
+          0,
+          0,
+          0
+        ],
+        "grab_point": [
+          0,
+          0,
+          0
+        ],
+        "press_axis": [
+          0,
+          0,
+          -1
+        ]
+      }
+    },
+    {
+      "name": "part_lights",
+      "parent": "cockpit_parts",
+      "pivot": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "bounds_local": {
+        "min": [
+          -0.021,
+          -0.021,
+          0.0
+        ],
+        "max": [
+          0.021,
+          0.021,
+          0.0048
+        ]
+      },
+      "part_id": "lights",
+      "mounting_normal": [
+        0,
+        0,
+        1
+      ],
+      "mounting_up": [
+        1,
+        0,
+        0
+      ]
+    },
+    {
+      "name": "ctl_lights",
+      "parent": "part_lights",
+      "pivot": [
+        0.0,
+        0.0,
+        0.004
+      ],
+      "joint": {
+        "type": "revolute",
+        "axis": [
+          0,
+          0,
+          1
+        ],
+        "min": 0.0,
+        "max": 1.56,
+        "note": ""
+      },
+      "bounds_local": {
+        "min": [
+          -0.018,
+          -0.018,
+          0.0
+        ],
+        "max": [
+          0.018,
+          0.018,
+          0.013
+        ]
+      },
+      "behaviour": {
+        "spring_return": false,
+        "detents_rad": [
+          0.0,
+          0.52,
+          1.04,
+          1.56
+        ]
+      }
+    },
+    {
+      "name": "hit_lights",
+      "parent": "ctl_lights",
+      "pivot": [
+        0.0,
+        0.0,
+        0.009
+      ],
+      "interaction": {
+        "frame": "ISO 8855, local to hit node",
+        "kind": "grab",
+        "shape": "box",
+        "half_extents_m": [
+          0.017,
+          0.017,
+          0.011
+        ],
+        "poke_point": [
+          0,
+          0,
+          0
+        ],
+        "grab_point": [
+          0,
+          0,
+          0
+        ],
+        "press_axis": [
+          0,
+          0,
+          -1
+        ]
+      }
+    },
+    {
+      "name": "part_horn",
+      "parent": "cockpit_parts",
+      "pivot": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "part_id": "horn",
+      "mounting_normal": [
+        0,
+        0,
+        1
+      ],
+      "mounting_up": [
+        1,
+        0,
+        0
+      ]
+    },
+    {
+      "name": "ctl_horn",
+      "parent": "part_horn",
+      "pivot": [
+        0.0,
+        0.0,
+        0.006
+      ],
+      "joint": {
+        "type": "prismatic",
+        "axis": [
+          0,
+          0,
+          -1
+        ],
+        "min": 0,
+        "max": 0.003,
+        "note": ""
+      },
+      "bounds_local": {
+        "min": [
+          -0.035,
+          -0.026,
+          -0.006
+        ],
+        "max": [
+          0.035,
+          0.026,
+          0.0064
+        ]
+      },
+      "behaviour": {
+        "spring_return": true
+      }
+    },
+    {
+      "name": "hit_horn",
+      "parent": "ctl_horn",
+      "pivot": [
+        0.0,
+        0.0,
+        0.012
+      ],
+      "interaction": {
+        "frame": "ISO 8855, local to hit node",
+        "kind": "poke",
+        "shape": "box",
+        "half_extents_m": [
+          0.035,
+          0.026,
+          0.008
+        ],
+        "poke_point": [
+          0,
+          0,
+          0
+        ],
+        "grab_point": [
+          0,
+          0,
+          0
+        ],
+        "press_axis": [
+          0,
+          0,
+          -1
+        ]
+      }
+    },
+    {
+      "name": "part_blank_cap",
+      "parent": "cockpit_parts",
+      "pivot": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "bounds_local": {
+        "min": [
+          -0.013,
+          -0.01,
+          -0.0015
+        ],
+        "max": [
+          0.013,
+          0.01,
+          0.009
+        ]
+      },
+      "part_id": "blank_cap",
+      "mounting_normal": [
+        0,
+        0,
+        1
+      ],
+      "mounting_up": [
+        1,
+        0,
+        0
+      ]
+    }
+  ],
+  "sockets": [],
+  "lights": {
+    "legend.tc": {
+      "materials": [
+        "legend_tc"
+      ],
+      "emissive_on": [
+        0.85,
+        0.88,
+        0.91
+      ],
+      "emissive_strength_on": 0.8
+    },
+    "ctl.tc.led0": {
+      "materials": [
+        "lamp_tc_led0"
+      ],
+      "emissive_on": [
+        1.0,
+        0.55,
+        0.08
+      ],
+      "emissive_strength_on": 2.5
+    },
+    "ctl.tc.led1": {
+      "materials": [
+        "lamp_tc_led1"
+      ],
+      "emissive_on": [
+        1.0,
+        0.55,
+        0.08
+      ],
+      "emissive_strength_on": 2.5
+    },
+    "ctl.tc.led2": {
+      "materials": [
+        "lamp_tc_led2"
+      ],
+      "emissive_on": [
+        1.0,
+        0.55,
+        0.08
+      ],
+      "emissive_strength_on": 2.5
+    },
+    "ctl.tc.led3": {
+      "materials": [
+        "lamp_tc_led3"
+      ],
+      "emissive_on": [
+        1.0,
+        0.55,
+        0.08
+      ],
+      "emissive_strength_on": 2.5
+    },
+    "ctl.tc.led4": {
+      "materials": [
+        "lamp_tc_led4"
+      ],
+      "emissive_on": [
+        1.0,
+        0.55,
+        0.08
+      ],
+      "emissive_strength_on": 2.5
+    },
+    "legend.lc": {
+      "materials": [
+        "legend_lc"
+      ],
+      "emissive_on": [
+        0.85,
+        0.88,
+        0.91
+      ],
+      "emissive_strength_on": 0.8
+    },
+    "ctl.lc.led0": {
+      "materials": [
+        "lamp_lc_led0"
+      ],
+      "emissive_on": [
+        0.2,
+        1.0,
+        0.42
+      ],
+      "emissive_strength_on": 2.5
+    },
+    "legend.aero": {
+      "materials": [
+        "legend_aero"
+      ],
+      "emissive_on": [
+        0.85,
+        0.88,
+        0.91
+      ],
+      "emissive_strength_on": 0.8
+    },
+    "ctl.aero.led0": {
+      "materials": [
+        "lamp_aero_led0"
+      ],
+      "emissive_on": [
+        0.2,
+        1.0,
+        0.42
+      ],
+      "emissive_strength_on": 2.5
+    },
+    "legend.am": {
+      "materials": [
+        "legend_am"
+      ],
+      "emissive_on": [
+        0.85,
+        0.88,
+        0.91
+      ],
+      "emissive_strength_on": 0.8
+    },
+    "ctl.am.led0": {
+      "materials": [
+        "lamp_am_led0"
+      ],
+      "emissive_on": [
+        0.8,
+        0.83,
+        0.86
+      ],
+      "emissive_strength_on": 2.5
+    },
+    "legend.drive_mode_eco": {
+      "materials": [
+        "legend_drive_mode_eco"
+      ],
+      "emissive_on": [
+        0.85,
+        0.88,
+        0.91
+      ],
+      "emissive_strength_on": 0.8
+    },
+    "ctl.drive_mode_eco.led0": {
+      "materials": [
+        "lamp_drive_mode_eco_led0"
+      ],
+      "emissive_on": [
+        0.1,
+        0.52,
+        1.0
+      ],
+      "emissive_strength_on": 2.5
+    },
+    "legend.drive_mode_normal": {
+      "materials": [
+        "legend_drive_mode_normal"
+      ],
+      "emissive_on": [
+        0.85,
+        0.88,
+        0.91
+      ],
+      "emissive_strength_on": 0.8
+    },
+    "ctl.drive_mode_normal.led0": {
+      "materials": [
+        "lamp_drive_mode_normal_led0"
+      ],
+      "emissive_on": [
+        0.8,
+        0.83,
+        0.86
+      ],
+      "emissive_strength_on": 2.5
+    },
+    "legend.drive_mode_sport": {
+      "materials": [
+        "legend_drive_mode_sport"
+      ],
+      "emissive_on": [
+        0.85,
+        0.88,
+        0.91
+      ],
+      "emissive_strength_on": 0.8
+    },
+    "ctl.drive_mode_sport.led0": {
+      "materials": [
+        "lamp_drive_mode_sport_led0"
+      ],
+      "emissive_on": [
+        1.0,
+        0.42,
+        0.055
+      ],
+      "emissive_strength_on": 2.5
+    },
+    "legend.drive_mode_racing": {
+      "materials": [
+        "legend_drive_mode_racing"
+      ],
+      "emissive_on": [
+        0.85,
+        0.88,
+        0.91
+      ],
+      "emissive_strength_on": 0.8
+    },
+    "ctl.drive_mode_racing.led0": {
+      "materials": [
+        "lamp_drive_mode_racing_led0"
+      ],
+      "emissive_on": [
+        0.9,
+        0.1,
+        0.08
+      ],
+      "emissive_strength_on": 2.5
+    },
+    "ctl.hazard.triangle": {
+      "materials": [
+        "lamp_hazard_triangle"
+      ],
+      "emissive_on": [
+        0.67,
+        0.035,
+        0.02
+      ],
+      "emissive_strength_on": 2.5
+    },
+    "ctl.start.ring": {
+      "materials": [
+        "lamp_start_ring"
+      ],
+      "emissive_on": [
+        0.2,
+        1.0,
+        0.42
+      ],
+      "emissive_strength_on": 2.5
+    },
+    "legend.start": {
+      "materials": [
+        "legend_start"
+      ],
+      "emissive_on": [
+        0.85,
+        0.88,
+        0.91
+      ],
+      "emissive_strength_on": 0.8
+    },
+    "legend.epb": {
+      "materials": [
+        "legend_epb"
+      ],
+      "emissive_on": [
+        0.85,
+        0.88,
+        0.91
+      ],
+      "emissive_strength_on": 0.8
+    },
+    "ctl.epb.state": {
+      "materials": [
+        "lamp_epb_state"
+      ],
+      "emissive_on": [
+        0.67,
+        0.035,
+        0.02
+      ],
+      "emissive_strength_on": 2.5
+    },
+    "legend.n2o": {
+      "materials": [
+        "legend_n2o"
+      ],
+      "emissive_on": [
+        0.85,
+        0.88,
+        0.91
+      ],
+      "emissive_strength_on": 0.8
+    },
+    "ctl.n2o.armed": {
+      "materials": [
+        "lamp_n2o_armed"
+      ],
+      "emissive_on": [
+        0.67,
+        0.035,
+        0.02
+      ],
+      "emissive_strength_on": 2.5
+    },
+    "legend.shifter_seq": {
+      "materials": [
+        "legend_shifter_seq"
+      ],
+      "emissive_on": [
+        0.85,
+        0.88,
+        0.91
+      ],
+      "emissive_strength_on": 0.8
+    },
+    "ctl.shifter_seq_pbtn.state": {
+      "materials": [
+        "lamp_shifter_seq_pbtn_state"
+      ],
+      "emissive_on": [
+        0.67,
+        0.035,
+        0.02
+      ],
+      "emissive_strength_on": 2.5
+    },
+    "ctl.shifter_seq_ambtn.state": {
+      "materials": [
+        "lamp_shifter_seq_ambtn_state"
+      ],
+      "emissive_on": [
+        0.8,
+        0.83,
+        0.86
+      ],
+      "emissive_strength_on": 2.5
+    },
+    "legend.shifter_h": {
+      "materials": [
+        "legend_shifter_h"
+      ],
+      "emissive_on": [
+        0.85,
+        0.88,
+        0.91
+      ],
+      "emissive_strength_on": 0.8
+    },
+    "legend.shifter_sel": {
+      "materials": [
+        "legend_shifter_sel"
+      ],
+      "emissive_on": [
+        0.85,
+        0.88,
+        0.91
+      ],
+      "emissive_strength_on": 0.8
+    },
+    "ctl.shifter_sel_pbtn.state": {
+      "materials": [
+        "lamp_shifter_sel_pbtn_state"
+      ],
+      "emissive_on": [
+        0.67,
+        0.035,
+        0.02
+      ],
+      "emissive_strength_on": 2.5
+    },
+    "ctl.shifter_sel.P": {
+      "materials": [
+        "lamp_shifter_sel_P"
+      ],
+      "emissive_on": [
+        0.8,
+        0.83,
+        0.86
+      ],
+      "emissive_strength_on": 2.5
+    },
+    "ctl.shifter_sel.R": {
+      "materials": [
+        "lamp_shifter_sel_R"
+      ],
+      "emissive_on": [
+        0.8,
+        0.83,
+        0.86
+      ],
+      "emissive_strength_on": 2.5
+    },
+    "ctl.shifter_sel.N": {
+      "materials": [
+        "lamp_shifter_sel_N"
+      ],
+      "emissive_on": [
+        0.8,
+        0.83,
+        0.86
+      ],
+      "emissive_strength_on": 2.5
+    },
+    "ctl.shifter_sel.D": {
+      "materials": [
+        "lamp_shifter_sel_D"
+      ],
+      "emissive_on": [
+        0.8,
+        0.83,
+        0.86
+      ],
+      "emissive_strength_on": 2.5
+    },
+    "ctl.shifter_sel.M": {
+      "materials": [
+        "lamp_shifter_sel_M"
+      ],
+      "emissive_on": [
+        0.8,
+        0.83,
+        0.86
+      ],
+      "emissive_strength_on": 2.5
+    },
+    "legend.paddle_L": {
+      "materials": [
+        "legend_paddle_L"
+      ],
+      "emissive_on": [
+        0.85,
+        0.88,
+        0.91
+      ],
+      "emissive_strength_on": 0.8
+    },
+    "legend.stalk_L": {
+      "materials": [
+        "legend_stalk_L"
+      ],
+      "emissive_on": [
+        0.85,
+        0.88,
+        0.91
+      ],
+      "emissive_strength_on": 0.8
+    },
+    "legend.paddle_R": {
+      "materials": [
+        "legend_paddle_R"
+      ],
+      "emissive_on": [
+        0.85,
+        0.88,
+        0.91
+      ],
+      "emissive_strength_on": 0.8
+    },
+    "legend.stalk_R": {
+      "materials": [
+        "legend_stalk_R"
+      ],
+      "emissive_on": [
+        0.85,
+        0.88,
+        0.91
+      ],
+      "emissive_strength_on": 0.8
+    },
+    "legend.lights": {
+      "materials": [
+        "legend_lights"
+      ],
+      "emissive_on": [
+        0.85,
+        0.88,
+        0.91
+      ],
+      "emissive_strength_on": 0.8
+    },
+    "legend.horn": {
+      "materials": [
+        "legend_horn"
+      ],
+      "emissive_on": [
+        0.85,
+        0.88,
+        0.91
+      ],
+      "emissive_strength_on": 0.8
+    }
+  },
+  "cockpit_parts": {
+    "format": "rg.cockpit_parts/1",
+    "parts": [
+      {
+        "id": "tc",
+        "title": "TC",
+        "root": "part_tc"
+      },
+      {
+        "id": "lc",
+        "title": "LC",
+        "root": "part_lc"
+      },
+      {
+        "id": "aero",
+        "title": "AERO",
+        "root": "part_aero"
+      },
+      {
+        "id": "am",
+        "title": "A/M",
+        "root": "part_am"
+      },
+      {
+        "id": "drive_mode_eco",
+        "title": "ECO",
+        "root": "part_drive_mode_eco"
+      },
+      {
+        "id": "drive_mode_normal",
+        "title": "NORMAL",
+        "root": "part_drive_mode_normal"
+      },
+      {
+        "id": "drive_mode_sport",
+        "title": "SPORT",
+        "root": "part_drive_mode_sport"
+      },
+      {
+        "id": "drive_mode_racing",
+        "title": "RACING",
+        "root": "part_drive_mode_racing"
+      },
+      {
+        "id": "hazard",
+        "title": "HAZARD",
+        "root": "part_hazard"
+      },
+      {
+        "id": "start",
+        "title": "Engine start / stop",
+        "root": "part_start"
+      },
+      {
+        "id": "epb",
+        "title": "Electric parking brake rocker",
+        "root": "part_epb"
+      },
+      {
+        "id": "n2o",
+        "title": "Guarded nitrous arm switch",
+        "root": "part_n2o"
+      },
+      {
+        "id": "shifter_seq",
+        "title": "Sequential lever",
+        "root": "part_shifter_seq"
+      },
+      {
+        "id": "shifter_h",
+        "title": "H-pattern lever",
+        "root": "part_shifter_h"
+      },
+      {
+        "id": "shifter_sel",
+        "title": "Automatic selector",
+        "root": "part_shifter_sel"
+      },
+      {
+        "id": "paddle_L",
+        "title": "Left downshift paddle",
+        "root": "part_paddle_L"
+      },
+      {
+        "id": "stalk_L",
+        "title": "Indicator / flash stalk",
+        "root": "part_stalk_L"
+      },
+      {
+        "id": "paddle_R",
+        "title": "Right upshift paddle",
+        "root": "part_paddle_R"
+      },
+      {
+        "id": "stalk_R",
+        "title": "Wiper stalk",
+        "root": "part_stalk_R"
+      },
+      {
+        "id": "lights",
+        "title": "Headlight rotary dial",
+        "root": "part_lights"
+      },
+      {
+        "id": "horn",
+        "title": "Steering wheel horn pad",
+        "root": "part_horn"
+      },
+      {
+        "id": "blank_cap",
+        "title": "Unfitted control blank",
+        "root": "part_blank_cap"
+      }
+    ],
+    "interaction_defaults": {
+      "press_fraction": 0.6,
+      "release_fraction": 0.3333333333333333,
+      "approach_cone_deg": 45,
+      "debounce_s": 0.15,
+      "tc_hold_off_s": 2.0,
+      "haptics": {
+        "press": [
+          0.03,
+          0.5
+        ],
+        "detent": [
+          0.015,
+          0.3
+        ],
+        "guard": [
+          0.04,
+          0.4
+        ],
+        "refused": [
+          0.02,
+          0.5
+        ]
+      }
+    }
+  },
+  "notes": [
+    "All parts overlap at their own mounting origin; extract part_<id> and its descendants, not the entire scene.",
+    "Interaction vectors stay explicitly ISO in extras; joint axes in GLB are converted to glTF by assetgen.",
+    "No actions are executed by this asset. Physics/game wiring belongs to C0/C1/P2/P3."
+  ]
+}

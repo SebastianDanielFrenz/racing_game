@@ -354,6 +354,9 @@ func _run() -> void:
 	_check(bool(garage.get_validation()["ok"]), "final drive back to stock is valid")
 	await _wait_seconds(0.1)
 
+	# ---- keyboard entry boxes (garage numeric inputs, 2026-10-13) ----
+	await _numeric_entry_checks()
+
 	# ---- save, persistence ----
 	_check(_press("save"), "Save is pressed")
 	_check(not garage.is_dirty() and bool(garage.get_vehicle(hyper_id)["has_setup"]), "the setup is saved")
@@ -535,6 +538,154 @@ func _rev_in_second_gear(limiter_rpm: float) -> void:
 	_check(reached, "physics: the rpm reaches the new limiter in 2nd gear (peak %.0f of %.0f rpm; now gear %s, %s, clutch %s, throttle %s)" % [peak, limiter_rpm, last.get("gear"), last.get("engine_state"), last.get("clutch_engagement"), sim.get_control("throttle")])
 	_check(peak <= limiter_rpm + 400.0, "... and does not pass it by much (peak %.0f rpm)" % peak)
 	main.scripted_controls = {}
+
+# Types `text` into the value box of an option as a player does (focus, text, Enter).
+func _type_entry(id: String, text: String, index: int = 0) -> void:
+	var box: LineEdit = main.get_shell_ui().get_option_entry(id, index)
+	if not _check(box != null, "option '%s' has a value box (has %s)" % [id, ", ".join(main.get_shell_ui().option_control_ids())]):
+		return
+	box.grab_focus()
+	box.text = text
+	box.text_submitted.emit(text)
+
+func _option_value(id: String) -> Variant:
+	var garage: Node = main.get_garage()
+	for opt in garage.get_options():
+		if str(opt["id"]) == id:
+			return opt["value"]
+	return null
+
+func _option_modified(id: String) -> bool:
+	var garage: Node = main.get_garage()
+	for opt in garage.get_options():
+		if str(opt["id"]) == id:
+			return bool(opt["modified"])
+	return false
+
+func _option_stock(id: String) -> float:
+	var garage: Node = main.get_garage()
+	for opt in garage.get_options():
+		if str(opt["id"]) == id:
+			return float(opt["stock_numbers"][0])
+	return 1.0
+
+func _entry_text(id: String, index: int = 0) -> String:
+	var box: LineEdit = main.get_shell_ui().get_option_entry(id, index)
+	return box.text if box != null else "<no box>"
+
+# The value boxes: typing, both-way sync with the slider, the log mapping at both ends, rejection with a reason and the
+# take-back of a value the physics loader refuses. Runs on the hyper car's Engine page; leaves every option at stock.
+func _numeric_entry_checks() -> void:
+	var ui: CanvasLayer = main.get_shell_ui()
+	var garage: Node = main.get_garage()
+	_check(ui.active_area() == "engine", "the Engine page is open for the entry boxes (is '%s')" % ui.active_area())
+
+	# -- rev limiter: 2000..20000 rpm on a log slider, absolute rpm in the box --
+	var stock_rpm := _option_stock("engine_rev_limit")
+	_check(stock_rpm > 1000.0, "the rev limiter's stock value is the engine's limit (%.0f rpm)" % stock_rpm)
+	_check(_entry_text("engine_rev_limit") == "%d" % int(round(stock_rpm)), "the rev limiter box shows the stock limit in rpm ('%s')" % _entry_text("engine_rev_limit"))
+	var slider: HSlider = ui.get_option_control("engine_rev_limit")
+	_check(slider != null and is_equal_approx(slider.min_value, 0.0) and is_equal_approx(slider.max_value, 1.0), "the rev limiter slider runs over the log position 0..1")
+	var entry_info: Dictionary = {}
+	for opt in garage.get_options():
+		if str(opt["id"]) == "engine_rev_limit":
+			entry_info = opt["entry"]
+	_check(is_equal_approx(float(entry_info.get("lo", 0.0)), 2000.0) and is_equal_approx(float(entry_info.get("hi", 0.0)), 20000.0) and str(entry_info.get("mapping", "")) == "log", "the range comes from the option data: 2000 to 20000 rpm, log (%s)" % entry_info)
+
+	_type_entry("engine_rev_limit", "12000")
+	_check(is_equal_approx(float(_option_value("engine_rev_limit")) * stock_rpm, 12000.0), "typing 12000 stores %.1f rpm" % (float(_option_value("engine_rev_limit")) * stock_rpm))
+	_check(_entry_text("engine_rev_limit") == "12000", "... and the box keeps 12000 ('%s')" % _entry_text("engine_rev_limit"))
+	_check(absf(slider.value - log(12000.0 / 2000.0) / log(10.0)) < 0.002, "... and the slider moved to the log position of 12000 rpm (%.4f)" % slider.value)
+	_check(garage.is_dirty() and bool(garage.get_validation()["ok"]), "12000 rpm is a valid setup (%s)" % garage.get_validation()["message"])
+
+	slider.value = 0.5 # dragging the slider updates the box: the geometric middle of 2000..20000
+	_check(_entry_text("engine_rev_limit") == "%d" % int(round(sqrt(2000.0 * 20000.0))), "the slider's middle is the geometric mean in the box ('%s')" % _entry_text("engine_rev_limit"))
+
+	_type_entry("engine_rev_limit", "20000")
+	_check(is_equal_approx(float(_option_value("engine_rev_limit")) * stock_rpm, 20000.0) and is_equal_approx(slider.value, 1.0), "typing 20000 reaches the top end of the slider")
+	_check(bool(garage.get_validation()["ok"]), "20000 rpm loads in the physics (%s)" % garage.get_validation()["message"])
+	# the setup check (limit advisor) warns about what 20000 rpm does, it never refuses the value
+	_check(await _wait_until(func(): var a: Dictionary = garage.get_advice(); return not a["busy"] and a["have_result"] and not a["items"].is_empty(), 180.0), "the setup check reports items for 20000 rpm")
+	var flagged := false
+	for item in garage.get_advice()["items"]:
+		if str(item["id"]).begins_with("MeanPistonSpeed") or str(item["id"]).begins_with("MapGridEdge"):
+			flagged = true
+	_check(flagged, "20000 rpm is flagged by the setup check (piston speed / data range), not refused")
+
+	# a refused value is taken back and the reason is shown
+	var before := float(_option_value("engine_rev_limit"))
+	_type_entry("engine_rev_limit", "20001")
+	_check(is_equal_approx(float(_option_value("engine_rev_limit")), before) and _entry_text("engine_rev_limit") == "20000", "20001 rpm is rejected: the box shows 20000 again ('%s')" % _entry_text("engine_rev_limit"))
+	var note: Label = ui._option_notes.get("engine_rev_limit", null)
+	_check(note != null and note.visible and note.text.contains("2000 to 20000 rpm"), "... with the allowed range as the reason ('%s')" % (note.text if note != null else "no note"))
+	_type_entry("engine_rev_limit", "1999")
+	_check(is_equal_approx(float(_option_value("engine_rev_limit")), before) and note.visible, "1999 rpm is rejected too")
+	_type_entry("engine_rev_limit", "fast")
+	_check(is_equal_approx(float(_option_value("engine_rev_limit")), before) and note.text.contains("not a number"), "text that is no number is rejected ('%s')" % note.text)
+	# the lowest limit: inside the range; the physics loader decides (the hypercar's launch control needs rpm headroom)
+	_type_entry("engine_rev_limit", "2000")
+	var typed_2000 := is_equal_approx(float(_option_value("engine_rev_limit")) * stock_rpm, 2000.0)
+	if typed_2000:
+		_check(bool(garage.get_validation()["ok"]), "2000 rpm typed and kept: the setup is valid")
+	else:
+		_check(is_equal_approx(float(_option_value("engine_rev_limit")), before) and note.visible and not note.text.is_empty(), "2000 rpm refused by the loader is taken back with its reason ('%s')" % note.text)
+	print("garage_test: 2000 rpm typed on this car -> kept=%s, note='%s'" % [typed_2000, note.text])
+	slider.value = 0.0 # the slider end is always reachable; its verdict is the setup status
+	_check(is_equal_approx(float(_option_value("engine_rev_limit")) * stock_rpm, 2000.0), "the slider's low end is 2000 rpm (%.1f)" % (float(_option_value("engine_rev_limit")) * stock_rpm))
+	_check(_entry_text("engine_rev_limit") == "2000", "... and the box says 2000 ('%s')" % _entry_text("engine_rev_limit"))
+	print("garage_test: 2000 rpm by slider -> valid=%s message='%s'" % [garage.get_validation()["ok"], garage.get_validation()["message"]])
+	_type_entry("engine_rev_limit", "%d" % int(round(stock_rpm)))
+	_check(not _option_modified("engine_rev_limit"), "typing the stock limit is no change")
+	_check(bool(garage.get_validation()["ok"]), "the stock limit is valid again (%s)" % garage.get_validation()["message"])
+
+	# -- boost target: 0.1..30 bar, log --
+	if ui.get_option_entry("turbo_boost_target") != null:
+		var stock_bar := _option_stock("turbo_boost_target")
+		_type_entry("turbo_boost_target", "2.5")
+		_check(is_equal_approx(float(_option_value("turbo_boost_target")) * stock_bar, 2.5), "typing 2.5 bar stores %.3f bar" % (float(_option_value("turbo_boost_target")) * stock_bar))
+		_type_entry("turbo_boost_target", "30")
+		_check(is_equal_approx(float(_option_value("turbo_boost_target")) * stock_bar, 30.0), "30 bar is accepted (the data's upper end)")
+		_type_entry("turbo_boost_target", "31")
+		_check(is_equal_approx(float(_option_value("turbo_boost_target")) * stock_bar, 30.0), "31 bar is rejected")
+		_type_entry("turbo_boost_target", "0.1")
+		_check(is_equal_approx(float(_option_value("turbo_boost_target")) * stock_bar, 0.1), "0.1 bar is accepted (the data's lower end)")
+		_type_entry("turbo_boost_target", "%.3f" % stock_bar)
+		_check(not _option_modified("turbo_boost_target"), "typing the stock boost is no change")
+	else:
+		_check(false, "the hyper car's Engine page has a boost target box (has %s)" % ", ".join(ui.option_control_ids()))
+
+	# -- gear ratios: one box per gear in the absolute ratio --
+	var gears: PackedFloat64Array = _option_value("gear_ratios")
+	var stock_gear := _option_stock("gear_ratios")
+	_check(ui.get_option_entry("gear_ratios", gears.size() - 1) != null, "every gear has a value box (%d gears)" % gears.size())
+	_type_entry("gear_ratios", "%.3f" % (stock_gear * 1.1), 0)
+	_check(absf(float(_option_value("gear_ratios")[0]) - 1.1) < 0.001, "typing 110 %% of the first gear's ratio stores x1.1 (%.4f)" % float(_option_value("gear_ratios")[0]))
+	_type_entry("gear_ratios", "%.3f" % (stock_gear * 5.0), 0)
+	_check(absf(float(_option_value("gear_ratios")[0]) - 1.1) < 0.001, "a first-gear ratio far outside its range is rejected and taken back")
+	garage.reset_option("gear_ratios")
+
+	# -- a plain scale (x factor) and the brake bias (percent), on the Wheels page --
+	await _back_to_root()
+	_press("tile:Wheels")
+	await _wait_seconds(0.3)
+	_type_entry("spring_front", "1.25")
+	_check(is_equal_approx(float(_option_value("spring_front")), 1.25), "a plain scale takes a typed factor (x1.25)")
+	_check(_entry_text("spring_front") == "1.25", "... shown as the factor ('%s')" % _entry_text("spring_front"))
+	_type_entry("spring_front", "x1.3")
+	_check(is_equal_approx(float(_option_value("spring_front")), 1.3), "a typed 'x1.3' is read as 1.3")
+	_type_entry("spring_front", "4")
+	_check(is_equal_approx(float(_option_value("spring_front")), 1.3), "a factor outside the range is rejected")
+	var bias_before := float(_option_value("brake_bias"))
+	_type_entry("brake_bias", "%.1f" % (bias_before * 100.0 + 2.0))
+	_check(absf(float(_option_value("brake_bias")) - (bias_before + 0.02)) < 0.0006, "the brake bias box takes percent (%.3f -> %.3f)" % [bias_before, float(_option_value("brake_bias"))])
+	_type_entry("brake_bias", "99")
+	_check(absf(float(_option_value("brake_bias")) - (bias_before + 0.02)) < 0.0006, "a brake bias far from stock is rejected")
+	var any_box: LineEdit = ui.get_option_entry("spring_front")
+	_check(any_box != null and any_box.focus_mode == Control.FOCUS_CLICK, "value boxes are click-focus only (the pad and Tab skip them)")
+	garage.reset_option("brake_bias")
+	await _back_to_root()
+	_press("tile:Engine")
+	await _wait_seconds(0.3)
 
 func _back_to_root() -> void:
 	var ui: CanvasLayer = main.get_shell_ui()

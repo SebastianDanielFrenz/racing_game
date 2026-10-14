@@ -85,7 +85,17 @@ godot::Vector3 RgCameraMath::chase_follow_offset(const godot::Vector3& previous,
     return godot::Vector3(static_cast<float>(o.x), static_cast<float>(o.y), static_cast<float>(o.z));
 }
 
+Dictionary RgCameraMath::cockpit_look_step(const Dictionary& state,const Dictionary& input,double dt,const Dictionary& config) {
+    const rg::CockpitLook s{num(state,"yaw_deg",0),num(state,"pitch_deg",0)};
+    const rg::CockpitLookInput in{num(input,"mouse_x",0),num(input,"mouse_y",0),num(input,"look_x",0),num(input,"look_y",0),static_cast<bool>(input.get("live",true))};
+    const rg::CockpitLookConfig c{num(config,"cockpit_pitch_min_deg",0),num(config,"cockpit_pitch_max_deg",0),num(config,"cockpit_mouse_deg_per_pixel",0),num(config,"cockpit_look_rate_deg_s",0),num(config,"cockpit_look_deadzone",0)};
+    const auto next=rg::cockpit_look_step(s,in,dt,c);
+    Dictionary out;out["yaw_deg"]=next.yaw_deg;out["pitch_deg"]=next.pitch_deg;return out;
+}
+double RgCameraMath::steering_wheel_angle_rad(double steer,double lock_deg) { return rg::steering_wheel_angle_rad(steer,lock_deg); }
 void RgCameraMath::_bind_methods() {
+    godot::ClassDB::bind_static_method("RgCameraMath",godot::D_METHOD("cockpit_look_step","state","input","dt","config"),&RgCameraMath::cockpit_look_step);
+    godot::ClassDB::bind_static_method("RgCameraMath",godot::D_METHOD("steering_wheel_angle_rad","steer","lock_deg"),&RgCameraMath::steering_wheel_angle_rad);
     godot::ClassDB::bind_static_method("RgCameraMath", godot::D_METHOD("drive_view_names"), &RgCameraMath::drive_view_names);
     godot::ClassDB::bind_static_method("RgCameraMath", godot::D_METHOD("next_drive_view", "view"), &RgCameraMath::next_drive_view);
     godot::ClassDB::bind_static_method("RgCameraMath", godot::D_METHOD("toggle_cockpit_view", "view"), &RgCameraMath::toggle_cockpit_view);

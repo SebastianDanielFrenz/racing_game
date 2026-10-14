@@ -59,7 +59,7 @@ extends Node3D
 # the car, save settings, quit); _apply_transition() carries them out. The
 # screens are shell_ui.gd (boot, main menu, spawn picker, pause, settings,
 # credits) and loading_overlay.gd (loading); the Drive screen is the world
-# itself with the HUD. Esc/P pause, Esc backs out of every other screen.
+# itself with the HUD. Esc pauses, Esc backs out of every other screen.
 #
 # World load flow: flat = RgSimulation.initialize() + start() at once. Real
 # world = initialize_terrain() (start-up runs on a worker thread) -> poll
@@ -1104,73 +1104,65 @@ func _forward_driving(live: bool, delta: float) -> void:
 	# unattended never arrive later as a burst of shifts.
 	var up: int = _input_map.consume_shift_up_count()
 	var down: int = _input_map.consume_shift_down_count()
-	var nitrous_toggles: int = _input_map.consume_nitrous_toggle()
-	var traction_cycles: int = _input_map.consume_traction_cycle()
-	var aero_toggles: int = _input_map.consume_aero_toggle()
-	var drive_mode_cycles: int = _input_map.consume_drive_mode_cycle()
-	var launch_toggles: int = _input_map.consume_launch_toggle()
 	if not live or not bool(_simulation.is_running()):
+		_input_map.advance_cabin(_simulation,{},delta,false,VEHICLE_NAME)
 		_steering.reset()
 		return
 	if get_tree().get_nodes_in_group("seat_adjustment_open").size() > 0 or get_tree().get_nodes_in_group("address_teleport_open").size() > 0:
+		_input_map.driver_actions.discard_pending()
 		_simulation.set_control("steer", 0.0)
 		_simulation.set_control("throttle", 0.0)
 		_simulation.set_control("brake", 1.0)
-		_simulation.set_control("starter", 0.0)
+		_input_map.advance_cabin(_simulation,{},delta,false,VEHICLE_NAME)
 		return
 	if not scripted_controls.is_empty():
+		_input_map.advance_cabin(_simulation,{},delta,false,VEHICLE_NAME)
 		for channel in scripted_controls:
 			_simulation.set_control(channel, float(scripted_controls[channel]))
 		return
-	_simulation.set_control("steer", _steering.translate(_input_map.get_steer(), _input_map.steering_uses_keyboard(), _input_map.steering_uses_wheel(), _simulation.get_steering_kinematics(), delta))
-	_simulation.set_control("throttle", _input_map.get_throttle())
-	_simulation.set_control("brake", _input_map.get_brake())
-	_simulation.set_control("handbrake", _input_map.get_handbrake())
-	_simulation.set_control("clutch", _input_map.get_clutch())
+	# Clickable cockpit (cockpit_controls.gd): a dragged pedal/lever/wheel wins over the input device while held,
+	# the gear lever adds shifts, the ignition key sets the ignition and holds the starter in its start detent.
+	# These channels (pedals, steer, shifts, ignition, starter) are not owned by RgDriverActions, so they stay direct
+	# writes; the cockpit's hazard/indicator/horn/light switches are visual state only (cockpit_controls.gd
+	# get_cosmetic) and do not submit DriverActions events yet.
+	var cockpit: Node3D = _visuals.get_cockpit() if _visuals != null and _visuals.has_method("get_cockpit") else null
+	var cockpit_overrides: Dictionary = {}
+	var cockpit_starter := false
+	if cockpit != null:
+		cockpit_overrides = cockpit.get_overrides()
+		up += cockpit.consume_shift_up()
+		down += cockpit.consume_shift_down()
+		var ignition_request: int = cockpit.consume_ignition_request()
+		if ignition_request >= 0:
+			_input_map.set_ignition(ignition_request == 1)
+		cockpit_starter = cockpit.starter_held()
+	var steer: float = _steering.translate(_input_map.get_steer(), _input_map.steering_uses_keyboard(), _input_map.steering_uses_wheel(), _simulation.get_steering_kinematics(), delta)
+	_simulation.set_control("steer", float(cockpit_overrides.get("steer", steer)))
+	_simulation.set_control("throttle", maxf(_input_map.get_throttle(), float(cockpit_overrides.get("throttle", 0.0))))
+	_simulation.set_control("brake", maxf(_input_map.get_brake(), float(cockpit_overrides.get("brake", 0.0))))
+	_simulation.set_control("handbrake", maxf(_input_map.get_handbrake(), float(cockpit_overrides.get("handbrake", 0.0))))
+	_simulation.set_control("clutch", maxf(_input_map.get_clutch(), float(cockpit_overrides.get("clutch", 0.0))))
 	_simulation.set_control("ignition", 1.0 if _input_map.get_ignition() else 0.0)
-	_simulation.set_control("starter", 1.0 if _input_map.get_starter() else 0.0)
-	_simulation.set_control("assist.auto_shift", 1.0 if _input_map.get_auto_shift() else 0.0)
-	# Assist unit (physics_sim): the channel defaults are the car's own (the Racing unit: TC On, aero automation on).
-	# A key press steps the channel from its CURRENT value, which the physics may have written itself (a drive-mode
-	# change sets the TC mode and launch control, assists I7c): F4 steps the requested TC mode through the modes the
-	# unit OFFERS (rg_core decides which, RgAssists); H flips the wing automation and L launch control, and only on a
-	# car that has them. Several presses in one frame chain through the value just written.
-	if traction_cycles > 0 or aero_toggles > 0 or launch_toggles > 0:
-		var pt: Dictionary = _simulation.get_vehicle_powertrain(VEHICLE_NAME)
-		var bits: int = int(pt.get("traction_modes_available_bits", 0))
-		var mode: int = roundi(_simulation.get_control("assist.traction_control"))
-		for _i in range(traction_cycles):
-			mode = RgAssists.next_traction_mode(bits, mode)
-			if mode < 0:
-				break
-			_simulation.set_control("assist.traction_control", float(mode))
-		var fitted_bits: int = int(pt.get("assist_fitted_bits", 0))
-		for _i in range(aero_toggles):
-			_simulation.set_control("assist.aero_control", RgAssists.toggled_aero_control(fitted_bits, _simulation.get_control("assist.aero_control")))
-		for _i in range(launch_toggles):
-			_simulation.set_control("assist.launch_control", RgAssists.toggled_launch_control(fitted_bits, _simulation.get_control("assist.launch_control")))
-	# Drive mode (M, assists I7): the next OFFERED mode after the channel's current value (rg_core decides which; a car
-	# without a drive_modes part gets -1 and the key does nothing). Only assist.drive_mode is written: physics_sim writes
-	# the mode's own TC and launch-control defaults into their channels after the tick (assists I7c) and the session
-	# adopts them, so the game must NOT touch those two here.
-	if drive_mode_cycles > 0:
-		var dm: Dictionary = _simulation.get_vehicle_powertrain(VEHICLE_NAME)
-		var dm_bits: int = int(dm.get("drive_modes_available_bits", 0))
-		var dm_mode: int = roundi(_simulation.get_control("assist.drive_mode"))
-		for _i in range(drive_mode_cycles):
-			dm_mode = RgAssists.next_drive_mode(dm_bits, dm_mode)
-			if dm_mode < 0:
-				break
-			_simulation.set_control("assist.drive_mode", float(dm_mode))
-		if dm_mode >= 0 and _hud != null:
-			_hud.show_message("Drive mode: " + str(RgAssists.drive_mode_name(dm_mode)), 2.0, DriveModeTheme.color_for_mode(dm_mode))
-	# Nitrous arm switch (gamepad Y, owner 2026-10-05; physics_sim 804137e): each
-	# rising edge flips the plain 0/1 "nitrous_arm" channel. Cars without a nitrous
-	# kit never declare it, so for them it is inert.
-	for _i in range(nitrous_toggles):
-		_simulation.set_control("nitrous_arm", 1.0 - _simulation.get_control("nitrous_arm"))
+	# The cockpit's ignition key holds the starter in its start detent (cockpit_controls.gd), ORed with the device starter.
+	_simulation.set_control("starter", 1.0 if (_input_map.get_starter() or cockpit_starter) else 0.0)
+	var pt: Dictionary = _simulation.get_vehicle_powertrain(VEHICLE_NAME)
+	pt["speed_mps"] = _simulation.get_body_speed_mps("chassis")
+	var channels: Dictionary = load("res://scripts/driver_state.gd").channels(_simulation)
+	var drive_mode_change := -1
+	for write in _input_map.driver_actions.apply(pt,channels,true):
+		_simulation.set_control(write["channel"],float(write["value"]))
+		if write["channel"] == "ignition": _input_map.sync_ignition(float(write["value"]))
+		if write["channel"] == "assist.drive_mode": drive_mode_change = roundi(write["value"])
+	_input_map.advance_cabin(_simulation,pt,delta,true,VEHICLE_NAME)
+	if drive_mode_change >= 0 and _hud != null:
+		var requested := pt.duplicate()
+		requested["drive_mode_effective"] = drive_mode_change
+		var state: Dictionary = RgDriverActions.state("drive_mode",requested,channels)
+		_hud.show_message("Drive mode: " + str(state["label"]),2.0,DriveModeTheme.color_for_mode(drive_mode_change))
 	# shift_up_count/shift_down_count are running edge counters on the sim
 	# side (session.cpp's kControlChannelNames): add this frame's edges.
+	if up > 0 or down > 0:
+		_simulation.set_control("park_lock",0.0)
 	if up > 0:
 		_simulation.set_control("shift_up_count", _simulation.get_control("shift_up_count") + up)
 	if down > 0:
@@ -1237,6 +1229,8 @@ func _process(delta: float) -> void:
 			_simulation.cycle_drone_target()
 	if _input_map.consume_switch_world() > 0 and (in_drive or _screen == "loading"):
 		switch_world()
+	for _i in range(_input_map.consume_log_marker()):
+		if in_drive and world_state == "running": _log_owner_mark()
 	if _input_map.consume_reset_car() > 0 and in_drive and world_state == "running":
 		_simulation.reset_vehicle_to_spawn()
 	if _input_map.consume_flip_upright() > 0 and in_drive and world_state == "running" and _simulation.get_player_mode() == "drive":
@@ -1293,17 +1287,15 @@ func _try_start_vr() -> void:
 
 # Owner bookmarks survive normal log rotation in user://drive_marks.jsonl.
 func _input(event: InputEvent) -> void:
-	if _shell != null and (_screen == "configurator" or (_xr_menu != null and _xr_menu.active)) and event.is_action_pressed("ui_cancel"):
+	# A value box has the keyboard: a menu_back binding on a letter or digit is text there, only Esc leaves.
+	var typing_in_box: bool = event is InputEventKey and event.keycode != KEY_ESCAPE and _typing()
+	if _shell != null and (_screen == "configurator" or (_xr_menu != null and _xr_menu.active)) and event.is_action_pressed("ui_cancel") and not typing_in_box:
 		_on_escape()
 		get_viewport().set_input_as_handled()
 		return
-	if event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_MIDDLE and world_state == "running":
-		_log_owner_mark()
 	if _shell != null and event is InputEventKey and event.pressed and not event.echo:
 		if event.keycode == KEY_ESCAPE:
 			_on_escape()
-		elif event.keycode == KEY_P and (_screen == "drive" or _screen == "pause") and not _typing():
-			_toggle_pause()
 	# Pad Menu/Start opens and closes the pause menu like Esc (owner 2026-10-06).
 	if _shell != null and event is InputEventJoypadButton and event.pressed and event.button_index == JOY_BUTTON_START:
 		_on_escape()
@@ -1341,7 +1333,14 @@ func _apply_vehicle(sel: Dictionary) -> void:
 		"z_m": float(chassis["z_m"]),
 		"engine_map_cache_dir": str(sel["engine_map_cache_dir"]),
 	})
-	_visuals.set_vehicle(VEHICLE_NAME, str(sel["model_path"]), str(sel["paint"]), str(sel["rim"]))
+	# optional model parts: the setup's (a folding top) plus the raised hood a tall swapped-in engine needs
+	var parts: Array = Array(sel.get("model_options", []))
+	var bay: Dictionary = _garage.get_bay_engine(str(sel.get("vehicle_id", ""))) if _garage.has_method("get_bay_engine") else {}
+	if not bay.is_empty():
+		var hood: String = preload("res://scripts/model_options.gd").hood_variant(str(sel["model_path"]).get_basename() + ".rig.json", float((bay.get("envelope_mm", Vector3.ZERO) as Vector3).z))
+		if hood != "":
+			parts.append(hood)
+	_visuals.set_vehicle(VEHICLE_NAME, str(sel["model_path"]), str(sel["paint"]), str(sel["rim"]), parts)
 	_hud.vehicle_name = VEHICLE_NAME
 	_gauge.set_vehicle_name(VEHICLE_NAME)
 	_seat_ui.vehicle_name = VEHICLE_NAME
@@ -1435,6 +1434,7 @@ func _enter_configurator() -> void:
 	_garage_scene.show_vehicle(_garage.get_vehicle(id))
 	var colours: Dictionary = _garage.get_working_colours()
 	_garage_scene.set_colours(str(colours.get("paint", "")), str(colours.get("rim", "")))
+	_garage_scene.set_model_options(Array(colours.get("model_options", [])))
 	_garage_scene.panel_side = "right"
 	_garage_scene.panel_px = 528.0
 	_garage_scene.go_to_area("overview", false)
@@ -1454,6 +1454,8 @@ func _on_garage_option_changed(option_id: String) -> void:
 	if option_id == "paint" or option_id == "rim" or option_id == "":
 		var colours: Dictionary = _garage.get_working_colours()
 		_garage_scene.set_colours(str(colours.get("paint", "")), str(colours.get("rim", "")))
+	# optional model parts (the Runabout's folding top): shown as soon as the option changes
+	_garage_scene.set_model_options(Array(_garage.get_working_colours().get("model_options", [])))
 
 func _on_garage_save() -> void:
 	var saved: Dictionary = _garage.save()
@@ -1518,6 +1520,10 @@ func get_controls() -> Node:
 
 func get_input_map() -> Node:
 	return _input_map
+
+# One shared dispatcher for future cockpit mouse, VR and HUD action sources.
+func get_driver_actions() -> RgDriverActions:
+	return _input_map.driver_actions
 
 func _build_shell(user_args: PackedStringArray) -> void:
 	_apply_user_dir_flag(user_args)
@@ -1613,6 +1619,7 @@ func _show_screen(screen_name: String) -> void:
 		_enter_configurator()
 	else:
 		_free_thumbs()
+	_input_map.set_world_input_active(screen_name == "drive")
 	_input_map.suspended = screen_name == "controls" # the controls screen reads devices itself
 	_shell_ui.show_screen(screen_name)
 	if _xr_menu != null: _xr_menu.show_screen(screen_name)
@@ -1786,7 +1793,7 @@ func _log_owner_mark() -> void:
 	var wheels: Array = []
 	for wheel in range(_simulation.get_vehicle_wheel_count(VEHICLE_NAME)):
 		wheels.append({"load_n": _simulation.get_wheel_load_n(VEHICLE_NAME,wheel), "slip_deg": rad_to_deg(_simulation.get_wheel_slip_angle(VEHICLE_NAME,wheel)), "surface": _simulation.get_wheel_surface_name(VEHICLE_NAME,wheel)})
-	var mark: Dictionary = {"saved_at": Time.get_datetime_string_from_system(), "source":"middle_mouse", "world":world_kind, "sim_time_s":_simulation.get_sim_time(), "tick":_simulation.get_step_count(), "session_m":[point.x,point.y,point.z], "speed_kmh":_simulation.get_body_speed_mps("chassis")*3.6, "camera":_director.active_name, "wheels":wheels, "build":_simulation.get_build_info()}
+	var mark: Dictionary = {"saved_at": Time.get_datetime_string_from_system(), "source":"log_marker", "world":world_kind, "sim_time_s":_simulation.get_sim_time(), "tick":_simulation.get_step_count(), "session_m":[point.x,point.y,point.z], "speed_kmh":_simulation.get_body_speed_mps("chassis")*3.6, "camera":_director.active_name, "wheels":wheels, "build":_simulation.get_build_info()}
 	if world_kind == "real_world":
 		mark["utm_zone"] = origin.get("zone")
 		mark["utm_m"] = [float(origin.get("e0",0))+point.x,float(origin.get("n0",0))+point.y,point.z]

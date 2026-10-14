@@ -37,6 +37,7 @@ var rim_colour: Color = Color(0, 0, 0, 0)
 var _chassis_root: Node3D
 var _chassis_box: MeshInstance3D
 var _vehicle_visual: Node3D
+var _model_options: Array = []
 var _ground_anchor: Node3D
 
 func _ready() -> void:
@@ -103,20 +104,28 @@ func _make_vehicle_visual() -> void:
 	_vehicle_visual.model_absolute_path = model_absolute_path
 	_vehicle_visual.paint_colour = paint_colour
 	_vehicle_visual.rim_colour = rim_colour
+	_vehicle_visual.set("model_options", _model_options)
 	_chassis_root.add_child(_vehicle_visual)
+
+# The clickable cockpit of the shown car (cockpit_controls.gd), or null.
+func get_cockpit() -> Node3D:
+	return _vehicle_visual.get_cockpit() if _vehicle_visual != null else null
 
 # R6: the garage's car for the next world (a different model, colours from its setup).
 # The same car again only re-binds; a different one replaces the visual.
-func set_vehicle(name_in: String, model_path: String, paint_hex: String, rim_hex: String) -> void:
+# `model_options`: the optional model parts the setup switches on (e.g. "roof", model_options.gd).
+func set_vehicle(name_in: String, model_path: String, paint_hex: String, rim_hex: String, model_options: Array = []) -> void:
 	var same := _vehicle_visual != null and model_path == model_absolute_path
 	vehicle_name = name_in
 	model_absolute_path = model_path
 	paint_colour = Color.html(paint_hex)
 	rim_colour = Color.html(rim_hex)
+	_model_options = model_options
 	if same:
 		_vehicle_visual.vehicle_name = name_in
 		_vehicle_visual.paint_colour = paint_colour
 		_vehicle_visual.rim_colour = rim_colour
+		_vehicle_visual.set("model_options", model_options)
 		_vehicle_visual.apply_colours()
 		return
 	if _vehicle_visual != null:
@@ -173,3 +182,6 @@ var seat_offset := Vector3(0.20, 0.0, 0.0)
 func driver_eye_local() -> Vector3:
 	var base: Vector3 = _vehicle_visual.driver_eye_local() if _vehicle_visual != null else Vector3(-0.35, 0.38, 0.6)
 	return base + seat_offset
+
+func get_steering_wheel_angle_rad() -> float:
+	return _vehicle_visual.get_steering_wheel_angle_rad() if _vehicle_visual != null else 0.0

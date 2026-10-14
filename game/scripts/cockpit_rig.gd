@@ -1,14 +1,15 @@
 extends Node3D
 # Driver-eye socket and rigid chassis mounting mirror physics_sim's cockpit_cam.
 # The camera director owns rebasing and streaming focus for this rig.
-@export var look_deadzone: float = 0.2
-@export var look_lag: float = 14.0
-@export var look_pitch_deg: float = -3.0
+var look_pitch_deg: float = 0.0
+var _config: Dictionary = {}
 var body_visuals: Node
 var camera: Camera3D
 var _yaw: float = 0.0
 
 func _ready() -> void:
+	_config = JSON.parse_string(FileAccess.get_file_as_string(ProjectSettings.globalize_path("res://../data/controls/cabin.json")))
+	look_pitch_deg = float(_config["cockpit_pitch_default_deg"])
 	camera = Camera3D.new()
 	camera.name = "Camera"
 	camera.near = 0.03
@@ -25,6 +26,7 @@ func set_base_fov(base_fov_deg: float) -> void:
 
 func activate(_from: Transform3D) -> void:
 	_yaw = 0.0
+	look_pitch_deg = float(_config["cockpit_pitch_default_deg"])
 
 func shift_origin(delta: Vector3) -> void:
 	position += delta
@@ -36,17 +38,14 @@ func update_rig(delta: float, simulation: Node, input_map: Node, input_live: boo
 	var eye := Vector3(-0.35, 0.38, 0.6)
 	if body_visuals != null:
 		eye = body_visuals.driver_eye_local()
-	var target := 0.0
+	var look := Vector2.ZERO
+	var mouse := Vector2.ZERO
 	if input_live and input_map != null:
-		var keys: Vector2 = input_map.get_camera_key_look()
-		var stick: Vector2 = input_map.get_camera_stick()
-		if absf(keys.x) > 0.5:
-			target = signf(keys.x)*PI*0.5
-		elif keys.y < -0.5:
-			target = PI
-		elif stick.length() > look_deadzone:
-			target = atan2(stick.x,stick.y)
-	_yaw = target if look_lag <= 0.0 else lerp_angle(_yaw,target,1.0-exp(-look_lag*delta))
+		look = input_map.get_camera_look_rate()
+		mouse = input_map.consume_mouse_delta()
+	var next: Dictionary = RgCameraMath.cockpit_look_step({"yaw_deg":rad_to_deg(_yaw),"pitch_deg":look_pitch_deg},{"look_x":look.x,"look_y":look.y,"mouse_x":mouse.x,"mouse_y":mouse.y,"live":input_live},delta,_config)
+	_yaw = deg_to_rad(next["yaw_deg"])
+	look_pitch_deg = next["pitch_deg"]
 	var up: Vector3 = chassis.basis.z.normalized()
 	var direction: Vector3 = chassis.basis.x.normalized().rotated(up,-_yaw)
 	var side: Vector3 = chassis.basis.y.normalized().rotated(up,-_yaw)

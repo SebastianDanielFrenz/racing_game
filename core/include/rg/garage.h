@@ -52,6 +52,7 @@ struct DriveSelection {
     VehicleChassis chassis;
     std::string paint;         // "#rrggbb", the setup's or the catalog default
     std::string rim;
+    std::vector<std::string> model_options; // visual model parts switched on by the setup (e.g. "roof")
     std::string engine_map_cache_dir; // the .psmaps cache the world load should use (the vehicle's own default)
     bool modified = false;     // a saved setup is applied
     bool assist_auto_clutch = true;  // the vehicle file's controller defaults (after the setup)
@@ -100,6 +101,9 @@ public:
     bool select(const std::string& id, std::string* err); // persists
     // ---- per-vehicle data ----
     [[nodiscard]] std::optional<VehicleStats> stats(const std::string& id, std::string* err) const;
+    // The engine the garage's bay view shows for this car: the edit session's installed engine while that car is
+    // edited, else the car's own. nullptr when the engine is not in the store.
+    [[nodiscard]] const EngineEntry* bay_engine(const std::string& id) const;
     // The car's geometry for the garage camera; `model_min/max` (car frame, from the
     // loaded model's bounds) override the chassis-box based estimate when given.
     [[nodiscard]] std::optional<GarageSubject> subject(const std::string& id, const GVec3* model_min,
@@ -148,6 +152,8 @@ public:
     // Paint/rim of the working copy (visual only).
     [[nodiscard]] std::string working_paint() const;
     [[nodiscard]] std::string working_rim() const;
+    // The model parts the working setup switches on (setup options with a model_option, e.g. "roof").
+    [[nodiscard]] std::vector<std::string> working_model_options() const;
 
     // ---- hand-over to the drive ----
     DriveSelection prepare_drive(const std::string& id);

@@ -1,0 +1,52 @@
+{
+  "format": "rg.engine_envelope/1",
+  "engine": "ventura_v8_5l0_na",
+  "file": "data/engines/ventura_v8_5l0_na.json",
+  "layout": "v",
+  "frame": "x along the crank toward the timing end, y left, z up (an inline engine's cylinder axis); origin on the crank axis at the flywheel face of the block",
+  "bounds_m": {
+    "min": [
+      -0.0413,
+      -0.3298,
+      -0.1931
+    ],
+    "max": [
+      0.6172,
+      0.3298,
+      0.3836
+    ]
+  },
+  "size_mm": [
+    658,
+    660,
+    577
+  ],
+  "mounts": {
+    "flywheel_face": [
+      0.0,
+      0.0,
+      0.0
+    ],
+    "crank_axis": [
+      1.0,
+      0.0,
+      0.0
+    ]
+  },
+  "class_rule": false,
+  "derived": {
+    "per_bank": 4,
+    "pitch": 0.1238,
+    "deck": 0.2006,
+    "below": 0.0781,
+    "sump": 0.12,
+    "head_h": 0.1,
+    "cover_h": 0.06,
+    "head_w": 0.1816,
+    "front": 0.04,
+    "length": 0.5472,
+    "block_w": 0.1616,
+    "case_w": 0.2062
+  },
+  "source": "tools/cargen/engine_mesh.py from the engine file's own geometry (data/engines/ventura_v8_5l0_na.json). Proportions are [AS] rules of thumb (bore pitch 1.12 x bore + 10 mm, deck = stroke / 2 + rod + 0.33 x bore, head and cover heights by valve count, manifolds drawn compact); the bounding box is the generated mesh's own."
+}

@@ -6,6 +6,8 @@ var rpm := 0.0
 var drive_kw := 0.0
 var boost_bar := -1.0
 var gear := 0
+var park_engaged := false
+var cabin_lamps: Dictionary = {}
 var capacity := 0.0
 var density := 0.0
 var fuel := 0.0
@@ -25,6 +27,7 @@ var thermal: Dictionary = {}
 const ThermalReadout := preload("res://scripts/thermal_readout.gd")
 # Drive-mode theme colours (ECO blue / NORMAL gray / SPORT orange); a car without drive modes keeps the default look.
 const DriveModeTheme := preload("res://scripts/drive_mode_theme.gd")
+const DriverState := preload("res://scripts/driver_state.gd")
 const DEFAULT_SPEED_COLOR := Color(0.25,0.7,1)
 const DEFAULT_RPM_COLOR := Color(0.2,0.95,0.75)
 const DEFAULT_SMALL_DIAL_COLOR := Color(0.6,0.85,1)
@@ -56,22 +59,26 @@ func _process(delta: float) -> void:
 	var dt := elapsed
 	elapsed = 0.0
 	var pt: Dictionary = simulation.get_vehicle_powertrain(vehicle_name)
+	var controls: Dictionary = DriverState.read(simulation,pt)
+	cabin_lamps = controls
 	thermal = simulation.get_vehicle_thermal(vehicle_name)
-	tc_on = pt.get("assist_traction_control",false)
-	tc_intervening = pt.get("traction_control_intervening",false)
-	tc_mode_name = str(pt.get("traction_mode_name","Off"))
-	aero_fitted = bool(pt.get("aero_control_fitted",false))
-	aero_active = bool(pt.get("aero_control_active",false))
-	aero_target_deg = float(pt.get("aero_control_target_deg",0.0))
-	drive_mode_label = DriveModeTheme.label(pt)
-	drive_mode_accent = DriveModeTheme.accent(pt,Color(0.5,0.7,0.82))
-	launch_lamp = int(pt.get("launch_lamp",0))
-	launch_lamp_text = str(pt.get("launch_lamp_text",""))
+	tc_fitted = controls["tc"]["fitted"]
+	tc_on = controls["tc"]["active"]
+	tc_intervening = controls["tc"]["blink"]
+	tc_mode_name = controls["tc"]["label"]
+	aero_fitted = controls["aero"]["fitted"]
+	aero_active = controls["aero"]["value"] != 0
+	aero_target_deg = controls["aero"]["aero_target_deg"]
+	drive_mode_label = controls["dm"]["label"]
+	drive_mode_accent = DriveModeTheme.accent_state(controls["dm"],Color(0.5,0.7,0.82))
+	launch_lamp = controls["lc"]["lamp_state"]
+	launch_lamp_text = controls["lc"]["label"]
 	speed = ground_speed*3.6
 	rpm = pt.get("rpm",0.0)
 	drive_kw = pt.get("drive_power_kw",0.0)
 	boost_bar = pt.get("boost_bar",-1.0)
 	gear = int(pt.get("gear",0))
+	park_engaged = controls["park"]["active"]
 	fuel = pt.get("fuel_mass_kg",0.0)
 	if capacity>0.0 and (initial_fuel<0.0 or fuel>initial_fuel+0.01):
 		initial_fuel = fuel
@@ -129,8 +136,13 @@ func _draw() -> void:
 	if themed:
 		# Drive mode, small, under the tach dial (between its lower end and the information strip).
 		text(drive_mode_label,Vector2(735,299),22,drive_mode_accent)
-	text("R" if gear<0 else ("N" if gear==0 else str(gear)),Vector2(490,174),90)
+	text("P" if park_engaged else ("R" if gear<0 else ("N" if gear==0 else str(gear))),Vector2(490,174),90)
 	text("GEAR",Vector2(490,207),18,blue)
+	if not cabin_lamps.is_empty():
+		text("<",Vector2(330,32),28,Color.GREEN if cabin_lamps["left"]["active"] else Color(0.15,0.15,0.15))
+		text(">",Vector2(650,32),28,Color.GREEN if cabin_lamps["right"]["active"] else Color(0.15,0.15,0.15))
+		if cabin_lamps["epb"]["label"] != "":
+			text(cabin_lamps["epb"]["label"],Vector2(490,330),20,Color.ORANGE)
 	if tc_fitted:
 		# The mode that actually runs (physics_sim's assist unit: Off / On / Relaxed / Sport / Drift).
 		var tc_label := "TC OFF" if not tc_on else "TC " + tc_mode_name.to_upper()

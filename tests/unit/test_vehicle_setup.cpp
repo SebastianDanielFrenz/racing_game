@@ -531,7 +531,11 @@ TEST_CASE("engine calibration changes real parameters and rejects excessive limi
     INFO(validation.message);
     REQUIRE(validation.ok);
     REQUIRE_FALSE(rg::compile_setup(e, f.table, f.ctx,
-        setup_of("car_hyper", {{"engine_rev_limit", 1.1}})).ok);
+        setup_of("car_hyper", {{"engine_rev_limit", 2.5}})).ok);  // 20625 rpm, above the 20000 rpm slider end
+    REQUIRE_FALSE(rg::compile_setup(e, f.table, f.ctx,
+        setup_of("car_hyper", {{"engine_rev_limit", 0.2}})).ok);  // 1650 rpm, below the 2000 rpm slider start
+    // the data allows far more than the stock limit now (the setup check warns, it does not refuse)
+    REQUIRE(rg::compile_setup(e, f.table, f.ctx, setup_of("car_hyper", {{"engine_rev_limit", 1.1}})).ok);
     REQUIRE_FALSE(rg::compile_setup(e, f.table, f.ctx,
         setup_of("car_hyper", {{"engine_throttle_response", 0.0}})).ok);
 }
@@ -743,4 +747,33 @@ TEST_CASE("setup: clutch upgrade changes transmitted torque capacity and respect
             CHECK_FALSE(compiled.ok);
         }
     }
+}
+
+TEST_CASE("setup: the Runabout's folding top is a visual model option, offered only where the model has it", "[setup][garage][model_option]") {
+    Fixture f;
+    const auto offered = [&](const char* car) {
+        const rg::SetupModel m = rg::build_setup_model(f.entry(car), f.table, f.ctx);
+        REQUIRE(m.error.empty());
+        for (const auto& o : m.options) {
+            if (o.def.id == "folding_top") return o.available && std::get<bool>(o.stock) == false;
+        }
+        return false;
+    };
+    CHECK(offered("car_runabout"));
+    CHECK_FALSE(offered("car_sedan")); // no such part on its model
+    CHECK_FALSE(offered("car_gt70"));
+
+    rg::VehicleSetup s;
+    s.vehicle_id = "car_runabout";
+    s.values["folding_top"] = true;
+    const rg::CompiledSetup on = rg::compile_setup(f.entry("car_runabout"), f.table, f.ctx, s);
+    INFO(on.error);
+    REQUIRE(on.ok);
+    CHECK(on.model_options == std::vector<std::string>{"roof"});
+    CHECK(on.vehicle_patch == "{}"); // visual only: no physics file changes
+    CHECK(on.patches.empty());
+
+    s.vehicle_id = "car_sedan";
+    const rg::CompiledSetup refused = rg::compile_setup(f.entry("car_sedan"), f.table, f.ctx, s);
+    CHECK_FALSE(refused.ok);
 }

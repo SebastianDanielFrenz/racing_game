@@ -428,3 +428,20 @@ ps::Vec3 chase_follow_offset(const ps::Vec3& previous, const ps::Vec3& desired, 
 }
 
 } // namespace rg
+
+namespace rg {
+CockpitLook cockpit_look_step(CockpitLook state, const CockpitLookInput& in, double dt, const CockpitLookConfig& c) {
+    if (!in.live || !std::isfinite(dt) || dt<0 || !std::isfinite(c.pitch_min) ||
+        !std::isfinite(c.pitch_max) || c.pitch_min>c.pitch_max || !std::isfinite(c.deadzone) ||
+        c.deadzone<0 || c.deadzone>=1 || !std::isfinite(c.rate_deg_s) || c.rate_deg_s<0 ||
+        !std::isfinite(c.mouse_deg_per_pixel) || c.mouse_deg_per_pixel<0) return state;
+    const auto clean=[](double v){return std::isfinite(v)?v:0;};
+    const auto axis=[&](double v){v=std::clamp(clean(v),-1.0,1.0);return std::abs(v)<=c.deadzone?0:std::copysign((std::abs(v)-c.deadzone)/(1-c.deadzone),v);};
+    state.yaw_deg=std::remainder(clean(state.yaw_deg)+clean(in.mouse_x)*c.mouse_deg_per_pixel+axis(in.look_x)*c.rate_deg_s*dt,360.0);
+    state.pitch_deg=std::clamp(clean(state.pitch_deg)-clean(in.mouse_y)*c.mouse_deg_per_pixel+axis(in.look_y)*c.rate_deg_s*dt,c.pitch_min,c.pitch_max);
+    return state;
+}
+double steering_wheel_angle_rad(double steer,double lock_deg) {
+    return std::isfinite(steer)&&std::isfinite(lock_deg)&&lock_deg>=0?std::clamp(steer,-1.0,1.0)*lock_deg*kPi/180:0;
+}
+}
