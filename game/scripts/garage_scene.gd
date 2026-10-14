@@ -568,6 +568,9 @@ func _add_light(l: Dictionary, mirrored: bool) -> void:
 	light.light_color = _hex(l["colour"])
 	light.light_energy = float(l["energy"]) * (0.55 if mirrored else 1.0)
 	light.shadow_enabled = bool(l["shadow"]) and not mirrored
+	# Cast from back faces so curved, smooth-normal body panels do not
+	# shadow their own triangles as the turntable rotates.
+	light.shadow_reverse_cull_face = true
 	light.shadow_bias = 0.06
 	light.shadow_normal_bias = 2.5
 	light.shadow_blur = 1.6
@@ -824,3 +827,4 @@ func _apply_colours() -> void:
 				std.albedo_color = _rim
 				std.metallic = 0.9
 				std.roughness = 0.25
+
