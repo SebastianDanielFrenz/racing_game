@@ -1,4 +1,7 @@
 {
   "endpoint": "https://photon.komoot.io/api/",
-  "maximum_distance_from_origin_m": 30000
+  "maximum_distance_from_origin_m": 30000,
+  "result_limit": 5,
+  "language": "de",
+  "min_request_interval_s": 1.0
 }
