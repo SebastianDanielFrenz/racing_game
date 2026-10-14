@@ -1340,9 +1340,12 @@ returns (D44, geo2map PR #1). A store derived before encoding 7 has no junctions
   overlay (short dashes, lane and edge lines) from those lanes into the leftmost lanes of the arm 15-150 deg to the
   left nearest a right angle (not the through pair).
 - Gores (sign 298): an exit or on-ramp (one-way, under 45 deg, through road and ramp both motorway/trunk/primary/
-  secondary or their links) leaving or joining a through overlay gets the ramp's inner edge line as a curve from the
-  through edge (broken while flush, solid once apart) and diagonal bars between it and the through edge, bordered on
-  the through side. Only where a nose exists: the point halfway between the ramp's inner edge at its lead and the
+  secondary or their links) leaving or joining a through overlay gets the ramp's inner edge line along the ramp lanes'
+  inner boundary: a curve from the boundary between the through lanes and the ramp's lanes (the flush approach's
+  outermost lanes; the strip's edge line where the strip already ends there) into the ramp's own edge line at its lead.
+  Solid once it has cleared the through road's edge line, a broken lane line while still inside the through lanes, so
+  it never crosses a driven lane. Diagonal bars between it and the through road's edge line where they are 0.6 m
+  apart, bordered on the through side. Only where a nose exists: the point halfway between the ramp's inner edge at its lead and the
   through edge lies outside the ring and off the far approach's lanes; otherwise (a lane gain/drop on a paved box)
   nothing is painted.
 - Turn arrows (turn:lanes) stand 15 m before the stretch end, or further back so their tip ends 3 m before the first
@@ -1351,6 +1354,9 @@ returns (D44, geo2map PR #1). A store derived before encoding 7 has no junctions
   motorway/trunk link a service road opens it only when it is plain (no service=*) and meets it within 35 deg (a
   rest-area ramp). Ribbons draw OSM surface=paving_stones/sett/cobblestone as stones without painted lines (flag 2048)
   and concrete with 5 m slab joints (flag 4096).
+- Ribbons end 0.1 m under a served junction's trim line (owner tile; a stretch whose trims overlap draws none), so a
+  ribbon wider than the ring no longer sticks out beside it as a step; the gravel verge (0.3 m, mitred) follows the
+  road bed ring instead, kerb returns included, open across each approach's mouth.
 - Junction patches where arms of different surfaces meet are split per surface instead of filled with asphalt: the major
   road (through pair of one surface, else the top-ranked arm) keeps a spine of its bed width across the ring, the rest of
   each lattice cell goes to the nearer minor arm (equal-distance line, arm rays clamped at the ring centre), with u/v along

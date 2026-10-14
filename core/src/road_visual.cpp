@@ -537,13 +537,19 @@ RoadVisualMesh build_road_visual(const g2m::RoadGeomTile& geometry,const g2m::Ti
   const auto trim_of=[&](bool at_end)->std::optional<double>{auto t=trims.find({entry.way_id,entry.stretch.start_ref,at_end});if(t==trims.end())return {};return t->second;};
   const bool start_on=continued.contains({entry.way_id,entry.stretch.start_ref,false}),end_on=continued.contains({entry.way_id,entry.stretch.start_ref,true});
   const auto start_trim=trim_of(false),end_trim=trim_of(true);
-  const int count=std::max(1,static_cast<int>(std::ceil(length))); // metre spacing matches the terrain detail.
+  // The ribbon ends at a served junction's trim line (a little under the junction patch): inside it the patch is the
+  // road, and a ribbon wider than the ring there (a stretch absorbed into a cluster, a road narrowing at the node) would
+  // stick out beside it as a step. A stretch whose two trims overlap lies wholly inside its junction.
+  constexpr double kUnderPatchM=.1;
+  const double from=start_trim?std::clamp(*start_trim-kUnderPatchM,0.0,length):0.0;
+  const double to=end_trim?std::clamp(length-*end_trim+kUnderPatchM,0.0,length):length;
+  const int count=to-from>.05?std::max(1,static_cast<int>(std::ceil(to-from))):0; // metre spacing matches the terrain detail.
   const double shoulder=.30;
   struct Row { double station,x,y,nx,ny,fade;Span span;bool separated; };
   for(int i=0;i<count;++i) {
-   // The last row is exactly `length`: length*count/count can land one ulp past the profile end, which the profile
+   // The last row is exactly `to`: length*count/count can land one ulp past the profile end, which the profile
    // rejects - the whole last metre of the stretch was dropped and left a gap at every such stretch end.
-   const double stations[2]={length*i/count,i+1==count?length:length*(i+1)/count};auto mid=p.reference.at((stations[0]+stations[1])*.5);if(!mid)continue;
+   const double stations[2]={from+(to-from)*i/count,i+1==count?to:from+(to-from)*(i+1)/count};auto mid=p.reference.at((stations[0]+stations[1])*.5);if(!mid)continue;
    if(!owned(mid->x,mid->y))continue;
    std::array<Row,2> rows{};bool valid=true;
    for(int r=0;r<2;++r) {
@@ -635,6 +641,50 @@ RoadVisualMesh build_road_visual(const g2m::RoadGeomTile& geometry,const g2m::Ti
   if(one)arrows(tag(w,"turn:lanes"),direction=="-1"?-1:1,0,lanes);
   else {arrows(tag(w,"turn:lanes:forward"),1,0,forward);arrows(tag(w,"turn:lanes:backward"),-1,forward,lanes-forward);}
  }
+ // The gravel verge around each junction this tile owns: the ribbons' verge strips end at the trim lines, so it follows
+ // the road bed ring instead (kerb returns included) and stays open across each approach's mouth.
+ for(const auto& j:geometry.junctions) {
+  if(j.decline!=g2m::JunctionDecline::None||(j.flags&static_cast<std::uint16_t>(g2m::JunctionFlags::OnStructure)))continue;
+  const auto& ring=j.rings[static_cast<std::size_t>(g2m::JunctionRingLayer::RoadBed)].vertices;if(ring.size()<3)continue;
+  struct Mouth { double x,y,tx,ty,lo,hi; };
+  std::vector<Mouth> mouths;
+  for(const auto& ap:j.approaches) {
+   if(ap.status!=g2m::JunctionApproachStatus::Used||ap.entry_index>=geometry.entries.size())continue;
+   const auto& entry=geometry.entries[ap.entry_index];const auto* w=find_way(geometry,entry.way_id);if(!w||!entry.profile)continue;
+   const auto layout=lane_layout(entry,*w);if(!layout)continue;
+   const double length=entry.profile->reference.length_m,cut=std::clamp(ap.at_end?length-ap.trim_m:ap.trim_m,0.0,length);
+   const auto pose=reference_pose(*entry.profile,cut);if(!pose)continue;const auto span=span_at(entry,*layout,cut);
+   mouths.push_back({pose->x,pose->y,std::cos(pose->heading),std::sin(pose->heading),span.bed_right,span.bed_left});
+  }
+  // A ring vertex on an approach's trim line, across its road bed (within a few centimetres of rounding).
+  const auto on_mouth=[&](const Mouth& m,double x,double y){
+   const double along=(x-m.x)*m.tx+(y-m.y)*m.ty,lateral=-(x-m.x)*m.ty+(y-m.y)*m.tx;
+   return std::abs(along)<.3&&lateral>m.lo-.3&&lateral<m.hi+.3;};
+  const std::size_t n=ring.size();
+  std::vector<char> open(n,0);  // segment i (vertex i to i+1) crosses a mouth
+  for(std::size_t i=0;i<n;++i){const auto& a=ring[i];const auto& b=ring[(i+1)%n];
+   for(const auto& m:mouths)if(on_mouth(m,a.x/1000.0,a.y/1000.0)&&on_mouth(m,b.x/1000.0,b.y/1000.0)){open[i]=1;break;}}
+  // Outward offset per vertex: the ring is counter-clockwise, so outward is to the right of each segment; mitred at the
+  // vertices, the open (mouth) segments' own normals still shape their neighbours' ends.
+  constexpr double kVerge=.30;
+  const auto normal=[&](std::size_t i)->P2{const auto& a=ring[i];const auto& b=ring[(i+1)%n];const double dx=(b.x-a.x)/1000.0,dy=(b.y-a.y)/1000.0,l=std::hypot(dx,dy);
+   return l>1e-9?P2{dy/l,-dx/l}:P2{0,0};};
+  std::vector<P2> outer(n);
+  for(std::size_t i=0;i<n;++i){const P2 na=normal((i+n-1)%n),nb=normal(i);P2 m{na.x+nb.x,na.y+nb.y};const double l=std::hypot(m.x,m.y);
+   const P2 base{ring[i].x/1000.0,ring[i].y/1000.0};
+   if(l<1e-6){outer[i]={base.x+nb.x*kVerge,base.y+nb.y*kVerge};continue;}
+   m={m.x/l,m.y/l};const double c=std::max(m.x*nb.x+m.y*nb.y,.5);outer[i]={base.x+m.x*kVerge/c,base.y+m.y*kVerge/c};}
+  for(std::size_t i=0;i<n;++i) {
+   if(open[i])continue;const std::size_t k=(i+1)%n;
+   const P2 q[4]={{ring[i].x/1000.0,ring[i].y/1000.0},outer[i],{ring[k].x/1000.0,ring[k].y/1000.0},outer[k]};
+   if(!owned((q[0].x+q[2].x)/2,(q[0].y+q[2].y)/2))continue;
+   const auto first=static_cast<std::int32_t>(mesh.vertices.size());bool ok=true;
+   for(const auto& v:q){auto h=ground(v.x,v.y);if(!h){ok=false;break;}
+    mesh.vertices.push_back({static_cast<float>(v.x-ox),static_cast<float>(v.y-oy),static_cast<float>(*h+lift),0,0,1000.0f,0,0,0,0,1.0f});}
+   if(!ok){mesh.vertices.resize(static_cast<std::size_t>(first));continue;}
+   mesh.indices.insert(mesh.indices.end(),{first,first+2,first+1,first+1,first+2,first+3});
+  }
+ }
  add_junction_surfaces(mesh,geometry,key,ground,lift);
  // ---- markings over the junction patches ----
  constexpr double kOverlayLiftM=kJunctionLiftM+.003,kLineLiftM=kJunctionLiftM+.004;
@@ -652,40 +702,58 @@ RoadVisualMesh build_road_visual(const g2m::RoadGeomTile& geometry,const g2m::Ti
    mesh.vertices.push_back({static_cast<float>(q.x-ox),static_cast<float>(q.y-oy),static_cast<float>(*h+lift+kLineLiftM),0,0,1000.0f,1,0,0,kPaint});}
   mesh.indices.insert(mesh.indices.end(),{first,first+1,first+2,first+1,first+3,first+2});
  };
- // The gore where an exit leaves or an on-ramp joins the through road over a junction (sign 298, Sperrflaeche): the
- // ramp's inner edge line runs on as a curve from the through road's edge (where they part) to the ramp's trim cut,
- // broken while the two still touch, solid beside the hatching; the area between it and the through road's edge is
- // hatched with diagonal bars up to the nose of the road bed ring, bordered on the through side by a solid line.
+ // The gore where an exit leaves or an on-ramp joins the through road over a junction (sign 298, Sperrflaeche). The
+ // ramp's lanes are the flush approach's outermost lanes; the ramp's inner edge line runs along their inner boundary,
+ // a curve from that boundary at the flush end into the ramp's own edge line at its lead, so it follows the lane and
+ // carries over into the ribbon's marking. It is solid once it has cleared the through road's edge line and broken
+ // (a lane line) while it still runs inside the through lanes; it never crosses a driven lane. Diagonal bars hatch the
+ // area between it and the through road's edge line up to the nose of the road bed ring, bordered on the through side
+ // by a solid line.
  const auto paint_gore=[&](const Overlay& o,const auto& rows,const Approach& g) {
   if(rows.size()<2||!o.ring||o.ring->size()<3)return;
   const auto& a=o.a;const auto& b=o.b;const bool diverge=g.in_lanes==0;
   const double dx=b.pose.x-a.pose.x,dy=b.pose.y-a.pose.y;
   const double side=(dx*(g.pose.y-a.pose.y)-dy*(g.pose.x-a.pose.x))>0?1.0:-1.0;
-  std::vector<P2> edge;std::vector<double> edge_arc;
-  for(const auto& r:rows){const double l=r.offset+side*r.width/2;edge.push_back({r.x+r.nx*l,r.y+r.ny*l});edge_arc.push_back(r.arc);}
-  // Closest point on the through edge: distance and arc length.
-  const auto nearest=[&](P2 p,double& arc)->double{
+  constexpr double kMarkInset=.25;  // edge lines sit this far inside the road bed edge (road.gdshader)
+  // The through road's ramp-side bed edge and its edge line, with the strip's normals and arc lengths.
+  std::vector<P2> edge,mark,normal;std::vector<double> edge_arc;
+  for(const auto& r:rows){const double l=r.offset+side*r.width/2,m=r.offset+side*(r.width/2-kMarkInset);
+   edge.push_back({r.x+r.nx*l,r.y+r.ny*l});mark.push_back({r.x+r.nx*m,r.y+r.ny*m});normal.push_back({r.nx,r.ny});edge_arc.push_back(r.arc);}
+  // Closest point on a polyline (edge or mark): distance, arc length and the signed offset toward the ramp side.
+  const auto nearest_on=[&](const std::vector<P2>& line,P2 p,double& arc,double& beyond)->double{
    double best=1e18;
-   for(std::size_t i=0;i+1<edge.size();++i){
-    const double ex=edge[i+1].x-edge[i].x,ey=edge[i+1].y-edge[i].y,l2=ex*ex+ey*ey;
-    const double t=l2>0?std::clamp(((p.x-edge[i].x)*ex+(p.y-edge[i].y)*ey)/l2,0.0,1.0):0;
-    const double d=std::hypot(edge[i].x+t*ex-p.x,edge[i].y+t*ey-p.y);
-    if(d<best){best=d;arc=edge_arc[i]+t*(edge_arc[i+1]-edge_arc[i]);}
+   for(std::size_t i=0;i+1<line.size();++i){
+    const double ex=line[i+1].x-line[i].x,ey=line[i+1].y-line[i].y,l2=ex*ex+ey*ey;
+    const double t=l2>0?std::clamp(((p.x-line[i].x)*ex+(p.y-line[i].y)*ey)/l2,0.0,1.0):0;
+    const double qx=line[i].x+t*ex,qy=line[i].y+t*ey,d=std::hypot(qx-p.x,qy-p.y);
+    if(d<best){best=d;arc=edge_arc[i]+t*(edge_arc[i+1]-edge_arc[i]);beyond=side*((p.x-qx)*normal[i].x+(p.y-qy)*normal[i].y);}
    }
    return best;
   };
-  const auto at_arc=[&](double s)->P2{
+  const auto nearest=[&](P2 p,double& arc){double beyond=0;return nearest_on(edge,p,arc,beyond);};
+  const auto at_arc=[&](const std::vector<P2>& line,double s)->P2{
    s=std::clamp(s,edge_arc.front(),edge_arc.back());
-   for(std::size_t i=0;i+1<edge.size();++i)if(s<=edge_arc[i+1]){const double l=edge_arc[i+1]-edge_arc[i],t=l>0?(s-edge_arc[i])/l:0;
-    return {edge[i].x+t*(edge[i+1].x-edge[i].x),edge[i].y+t*(edge[i+1].y-edge[i].y)};}
-   return edge.back();
+   for(std::size_t i=0;i+1<line.size();++i)if(s<=edge_arc[i+1]){const double l=edge_arc[i+1]-edge_arc[i],t=l>0?(s-edge_arc[i])/l:0;
+    return {line[i].x+t*(line[i+1].x-line[i].x),line[i].y+t*(line[i+1].y-line[i].y)};}
+   return line.back();
   };
-  // The ramp's inner edge at its lead point: the one of its two edges nearer the through road.
+  // The ramp's inner bed edge at its lead (the one of its two edges nearer the through road) and its edge line there.
   const double th=diverge?g.inward+3.14159265358979323846:g.inward;
   P2 inner{};{double best=1e18,arc=0;for(double k:{1.0,-1.0}){const P2 q{g.lead.x-std::sin(th)*k*g.width/2,g.lead.y+std::cos(th)*k*g.width/2};
    const double d=nearest(q,arc);if(d<best){best=d;inner=q;}}}
-  const P2 flush=diverge?edge.front():edge.back();
-  const P2 p0=diverge?flush:inner,p3=diverge?inner:flush;
+  P2 ramp_mark=inner;{const double ux=g.lead.x-inner.x,uy=g.lead.y-inner.y,l=std::hypot(ux,uy);
+   if(l>kMarkInset){ramp_mark.x+=ux/l*kMarkInset;ramp_mark.y+=uy/l*kMarkInset;}}
+  // At the flush end: the boundary between the through lanes and the ramp's lanes (the flush approach's outermost
+  // lanes). Where the overlay strip already ends there (a lane gain or drop) the line starts on the strip's edge line.
+  const auto& flush_ap=diverge?a:b;const auto& fr=diverge?rows.front():rows.back();
+  const P2 flush_edge=diverge?edge.front():edge.back(),flush_mark=diverge?mark.front():mark.back();
+  const int ramp_lanes=std::max(1,g.layout.lanes);
+  P2 start=flush_mark;bool inside_strip=false;
+  if(ramp_lanes<flush_ap.layout.lanes) {
+   const double l=side*(flush_ap.width/2-ramp_lanes*flush_ap.lane);const P2 q{fr.x+fr.nx*l,fr.y+fr.ny*l};
+   if(std::hypot(q.x-flush_edge.x,q.y-flush_edge.y)>.3){start=q;inside_strip=true;}
+  }
+  const P2 p0=diverge?start:ramp_mark,p3=diverge?ramp_mark:start;
   const double t0=diverge?a.inward:g.inward,t3=diverge?g.inward+3.14159265358979323846:b.inward+3.14159265358979323846;
   const double chord=std::hypot(p3.x-p0.x,p3.y-p0.y);if(chord<2||chord>150)return;
   const double h=chord/3;const P2 p1{p0.x+std::cos(t0)*h,p0.y+std::sin(t0)*h},p2{p3.x-std::cos(t3)*h,p3.y-std::sin(t3)*h};
@@ -694,18 +762,24 @@ RoadVisualMesh build_road_visual(const g2m::RoadGeomTile& geometry,const g2m::Ti
   for(int i=0;i<=n;++i){const double t=static_cast<double>(i)/n,u=1-t;
    const P2 q{u*u*u*p0.x+3*u*u*t*p1.x+3*u*t*t*p2.x+t*t*t*p3.x,u*u*u*p0.y+3*u*u*t*p1.y+3*u*t*t*p2.y+t*t*t*p3.y};
    if(!line.empty())arc+=std::hypot(q.x-line.back().x,q.y-line.back().y);line.push_back(q);line_arc.push_back(arc);}
-  constexpr double kSeparate=.3,kLine=.15,kBar=.4,kBarStep=1.5,kDash=3,kGap=3;
+  constexpr double kLine=.15,kBar=.4,kBarStep=1.5,kBarClear=.6;
+  const bool fast=(a.layout.flags&kFast)!=0;const double dash=fast?6:3,dash_width=fast?.3:kLine;
   const auto vertices_before=mesh.vertices.size(),indices_before=mesh.indices.size();
   const auto inside=[&](P2 q){return near_ring(*o.ring,q.x,q.y,.05);};
-  // The ramp's edge line: broken (a Leitlinie) while it runs along the through road's edge, solid once they part.
+  // How far a point lies beyond the through road's edge line, toward the ramp.
+  const auto clear_of=[&](P2 p){double ea=0,beyond=0;nearest_on(mark,p,ea,beyond);return beyond;};
   for(std::size_t i=0;i+1<line.size();++i){
-   const P2 m{(line[i].x+line[i+1].x)/2,(line[i].y+line[i+1].y)/2};double ea=0;const double d=nearest(m,ea);
+   const P2 m{(line[i].x+line[i+1].x)/2,(line[i].y+line[i+1].y)/2};
    if(!near_ring(*o.ring,m.x,m.y,.3))continue;
+   if(clear_of(m)>=kLine){paint_segment(line[i],line[i+1],kLine);continue;}
+   // Still inside the through lanes: a lane line between them and the ramp's lanes (none where the strip's own edge
+   // line already runs there).
+   if(!inside_strip)continue;
    const double s_from_flush=diverge?line_arc[i]:arc-line_arc[i+1];
-   if(d<kSeparate&&std::fmod(s_from_flush,kDash+kGap)>=kDash)continue;
-   paint_segment(line[i],line[i+1],kLine);
+   if(std::fmod(s_from_flush,2*dash)<dash)paint_segment(line[i],line[i+1],dash_width);
   }
-  // Diagonal bars: from the line back toward the flush end onto the through edge (45 degrees), every kBarStep.
+  // Diagonal bars: from the line back toward the flush end onto the through edge line (45 degrees), every kBarStep,
+  // only where the line has cleared that edge line.
   double last_arc=-1,first_arc=-1;
   for(double s=0;s<=arc;s+=.25){
    const double sf=diverge?s:arc-s;  // along the line from the flush end
@@ -713,9 +787,8 @@ RoadVisualMesh build_road_visual(const g2m::RoadGeomTile& geometry,const g2m::Ti
    std::size_t k=0;while(k+1<line_arc.size()&&line_arc[k+1]<s)++k;
    const double l=line_arc[k+1]-line_arc[k],t=l>0?std::clamp((s-line_arc[k])/l,0.0,1.0):0;
    const P2 p{line[k].x+t*(line[k+1].x-line[k].x),line[k].y+t*(line[k+1].y-line[k].y)};
-   double ea=0;const double d=nearest(p,ea);if(d<.6)continue;
-   const P2 q=at_arc(diverge?ea-d:ea+d);
-   const double qa=diverge?ea-d:ea+d;
+   double ea=0,beyond=0;const double d=nearest_on(mark,p,ea,beyond);if(beyond<kBarClear)continue;
+   const double qa=diverge?ea-d:ea+d;const P2 q=at_arc(mark,qa);
    const double len=std::hypot(q.x-p.x,q.y-p.y);if(len<.5)continue;
    const double ux=(q.x-p.x)/len,uy=(q.y-p.y)/len,trim=kLine/2+.1;
    const P2 ps{p.x+ux*trim,p.y+uy*trim},qs{q.x-ux*trim,q.y-uy*trim};
@@ -728,15 +801,15 @@ RoadVisualMesh build_road_visual(const g2m::RoadGeomTile& geometry,const g2m::Ti
   // the road bed ring (grass or a kerb between the two roads, the ring's notch). Where the ring is paved across (a
   // lane gain or drop on a wide carriageway, the two roads still flush at the cut) there is nothing to hatch.
   bool nose=false;
-  if(first_arc>=0){double ea=0;nearest(inner,ea);const P2 e=at_arc(ea),m{(inner.x+e.x)/2,(inner.y+e.y)/2};
+  if(first_arc>=0){double ea=0;nearest(inner,ea);const P2 e=at_arc(edge,ea),m{(inner.x+e.x)/2,(inner.y+e.y)/2};
    // Not on the through road's own far approach either (its lanes can be wider than the overlay strip).
    const auto& far=diverge?b:a;const double fh=far.lead.heading;
    const double across=std::abs(-std::sin(fh)*(m.x-far.lead.x)+std::cos(fh)*(m.y-far.lead.y));
    nose=!near_ring(*o.ring,m.x,m.y,0)&&across>far.width/2+.5;}
   if(!nose){mesh.vertices.resize(vertices_before);mesh.indices.resize(indices_before);return;}
-  // The border on the through side, from the first bar to the last.
+  // The border on the through side, from the first bar to the last, on the through road's edge line.
   const double lo=std::min(first_arc,last_arc),hi=std::max(first_arc,last_arc);
-  for(double s=lo;s<hi;s+=.5)paint_segment(at_arc(s),at_arc(std::min(s+.5,hi)),kLine);
+  for(double s=lo;s<hi;s+=.5)paint_segment(at_arc(mark,s),at_arc(mark,std::min(s+.5,hi)),kLine);
  };
  for(const auto& o:overlays) {
   const auto& a=o.a;const auto& b=o.b;
