@@ -1,0 +1,9 @@
+{
+  "format": "rg.headlights/1",
+  "description": "Headlamp beams (game/scripts/headlights.gd): one SpotLight3D per headlamp cluster of the car rig's lights.head materials. Visual tuning [AS], Godot units (energy, metres, degrees). lights_per_car 1 merges both lamps into one spot (half the GPU passes, see the cost note in headlights.gd). Shadows off: a shadowed spot renders a shadow map every frame.",
+  "lights_per_car": 2,
+  "shadows": false,
+  "colour": [1.0, 0.95, 0.85],
+  "dipped": {"range_m": 70.0, "angle_deg": 32.0, "angle_attenuation": 1.6, "attenuation": 0.9, "energy": 6.0, "pitch_down_deg": 2.5},
+  "main_beam": {"range_m": 160.0, "angle_deg": 22.0, "angle_attenuation": 1.4, "attenuation": 0.8, "energy": 12.0, "pitch_down_deg": 0.6}
+}

@@ -16,6 +16,7 @@
     "indicator_left": [{"type": "key", "key": "Z"}],
     "indicator_right": [{"type": "key", "key": "X"}],
     "horn": [{"type": "key", "key": "J"}],
+    "lights": [{"type": "key", "key": "O"}],
     "park": [{"type": "key", "key": "P"}],
     "ignition": [{"type": "key", "key": "I"}],
     "starter": [{"type": "key", "key": "K"}],

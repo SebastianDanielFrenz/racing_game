@@ -69,6 +69,7 @@ const char* const kControlChannelNames[] = {
     "transmission.selector", // reserved until automatic transmission support
     "epb", // physics owns edge detection and the parking latch
     "nitrous_arm", // N2O arm switch, a plain 0/1 level (owner 2026-10-05; only cars with a nitrous kit declare it)
+    "cabin.lights", // 0 off, 1 dipped, 2 main beam (DriverActions "lights"); visual only
 };
 const std::size_t kControlChannelCount = sizeof(kControlChannelNames) / sizeof(kControlChannelNames[0]);
 

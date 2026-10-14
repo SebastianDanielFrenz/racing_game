@@ -226,3 +226,20 @@ TEST_CASE("driver cabin: invalid timing settings are rejected", "[driver_actions
     cfg=cabin_config();cfg.indicator_cancel_deg=cfg.indicator_arm_deg;
     CHECK_THROWS(a.configure_cabin(cfg));
 }
+TEST_CASE("driver cabin: lights toggle dipped beam, Set picks main beam, projection follows", "[driver_actions][cabin][lights]") {
+    rg::DriverActions a; a.configure_cabin(cabin_config()); Sink s; auto snap=fitted();
+    a.advance({snap,true},s,0); CHECK(s.get("cabin.lights")==0);
+    CHECK_FALSE(rg::DriverActions::state("head_lamp",snap,s).active);
+    a.submit({"lights",rg::DriverActionKind::Hold,1}); a.apply({snap,true},s); a.advance({snap,true},s,0);
+    CHECK(s.get("cabin.lights")==1);
+    a.submit({"lights",rg::DriverActionKind::Hold,1}); a.apply({snap,true},s); a.advance({snap,true},s,0);
+    CHECK(s.get("cabin.lights")==1); // held: no second edge
+    CHECK(rg::DriverActions::state("head_lamp",snap,s).active);
+    CHECK(rg::DriverActions::state("tail_lamp",snap,s).active);
+    CHECK_FALSE(rg::DriverActions::state("main_beam",snap,s).active);
+    a.submit({"lights",rg::DriverActionKind::Set,2}); a.apply({snap,true},s); a.advance({snap,true},s,0);
+    CHECK(s.get("cabin.lights")==2);
+    CHECK(rg::DriverActions::state("main_beam",snap,s).active);
+    a.submit({"lights",rg::DriverActionKind::Hold,0}); a.submit({"lights",rg::DriverActionKind::Hold,1}); a.apply({snap,true},s); a.advance({snap,true},s,0);
+    CHECK(s.get("cabin.lights")==0);
+}
