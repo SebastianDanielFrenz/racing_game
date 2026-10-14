@@ -1,5 +1,7 @@
 extends CanvasLayer
 # Manual address searches only; no request on each keystroke.
+# R4: "Set as destination" hands the checked session point to whoever listens (navigation_hud.gd).
+signal destination_chosen(point: Vector2, label: String)
 var main: Node
 var _root: Control
 var _panel: PanelContainer
@@ -81,6 +83,10 @@ func _ready() -> void:
  _teleport.disabled = true
  _teleport.pressed.connect(_jump)
  box.add_child(_teleport)
+ var destination := Button.new()
+ destination.text = "Set as route destination"
+ destination.pressed.connect(func(): _jump(true))
+ box.add_child(destination)
  var close := Button.new()
  close.text = "Cancel"
  close.pressed.connect(func(): _toggle(false))
@@ -202,7 +208,7 @@ func _show_matches(matches: Array) -> void:
   _results.select(0)
  _teleport.disabled = matches.is_empty()
 
-func _jump() -> void:
+func _jump(as_destination := false) -> void:
  var selected := _results.get_selected_items()
  if selected.is_empty() or main.world_state != "running" or main.world_kind != "real_world":
   return
@@ -217,6 +223,10 @@ func _jump() -> void:
   _status.text = "Destination is outside the current map region."
   return
  var point := Vector2(float(target.x), float(target.y))
+ if as_destination:
+  destination_chosen.emit(point, str(match.label))
+  _toggle(false)
+  return
  main._simulation.relocate_vehicle(point.x, point.y, float(_world.get("spawn", {}).get("yaw_deg", 0.0)))
  print("RG_ADDRESS_TELEPORT ", JSON.stringify({"label":match.label,"latitude":latitude,"longitude":longitude,"session_m":[point.x,point.y]}))
  _toggle(false)

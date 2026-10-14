@@ -152,6 +152,8 @@ var shell_log: PackedStringArray = PackedStringArray() # "from>to" of every acce
 var _terrain_material: ShaderMaterial
 # --terrain-preview only.
 var _terrain_view: Node
+# R4 minimap + route guidance (navigation_hud.gd; follows the real world itself).
+var _navigation: CanvasLayer
 var _terrain_preview_reported: bool = false
 # --terrain-preview without --screenshots/--stream-test: the fly camera whose
 # position drives RgTerrainView.update_focus every frame (R2.2 R8).
@@ -459,6 +461,11 @@ func _build_scene(user_args: PackedStringArray) -> void:
 	_teleport_dialog.set_script(load("res://scripts/address_teleport.gd"))
 	_teleport_dialog.main = self
 	add_child(_teleport_dialog)
+	_navigation = CanvasLayer.new()
+	_navigation.set_script(load("res://scripts/navigation_hud.gd"))
+	_navigation.main = self
+	_navigation.config_path = ProjectSettings.globalize_path("res://../data/world/route_planner.json")
+	add_child(_navigation)
 	set_process_priority(-2000)
 	var start_world := "real_world" if "--drive" in user_args else "flat"
 	var start_mode := "free_cam" if "--free-cam" in user_args else "drive"
@@ -1910,6 +1917,11 @@ func _apply_setting(key: String) -> void:
 			_apply_audio_settings()
 		"map_data.store_dir":
 			_simulation.set_store_dir_override(str(value))
+		"lod.view_distance_m", "lod.terrain_detail", "lod.road_detail", "lod.map_detail":
+			var choice: Dictionary = _shell.get_lod_choice()
+			_world_view.set_view_lod(choice)
+			if _navigation != null:
+				_navigation.set_view_lod(choice)
 
 func _apply_audio_settings() -> void:
 	if _vehicle_audio == null:
