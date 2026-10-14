@@ -547,6 +547,7 @@ func _build_scene(user_args: PackedStringArray) -> void:
 	var bumper := Node3D.new()
 	bumper.name = "BumperRig"
 	bumper.set_script(load("res://scripts/bumper_rig.gd"))
+	bumper.body_visuals = _visuals
 	add_child(bumper)
 	_director.add_rig("bumper", bumper)
 	var orbit := Node3D.new()
@@ -1914,6 +1915,8 @@ func _apply_setting(key: String) -> void:
 			Engine.max_fps = int(value)
 		"camera.fov_deg":
 			_director.set_base_fov(float(value))
+		"camera.body_motion":
+			_director.set_body_motion_strength(float(value))
 		"audio.master_volume", "audio.engine_volume", "audio.tyre_volume":
 			_apply_audio_settings()
 		"map_data.store_dir":

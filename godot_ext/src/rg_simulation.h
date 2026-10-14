@@ -216,9 +216,15 @@ public:
     // like get_body_transform). Without a Session the input is returned as is.
     [[nodiscard]] godot::Vector3 session_to_godot(const godot::Vector3& session_position) const;
     // {eye_local (chassis frame, ISO: x forward / y left / z up), pitch_down_deg,
-    //  fov_deg}: the bumper camera from the vehicle's own wheels
-    // (rg::bumper_eye_local); {} without a Session.
-    [[nodiscard]] godot::Dictionary get_bumper_camera() const;
+    //  fov_deg, source}: the bumper camera just ahead of the visual model's nose
+    // (rg::bumper_eye_from_model; rig_json_path = the model's .rig.json,
+    // model_offset = the model origin in the chassis frame, ISO), or from the
+    // wheels (rg::bumper_eye_local) without a rig file; {} without a Session.
+    [[nodiscard]] godot::Dictionary get_bumper_camera(const godot::String& rig_json_path = godot::String(),
+                                                      const godot::Vector3& model_offset = godot::Vector3()) const;
+    // {sim_time, velocity, forward, left, up (session frame, ISO), compression
+    // (PackedFloat64Array, m per wheel)}: the input of RgCameraMotion.update.
+    [[nodiscard]] godot::Dictionary get_camera_motion_sample() const;
     // One frame of the cinematic director (rg::CinematicDirector): {serial, cut,
     // source ("road_ahead" | "predicted_path"), side, session_x, session_y,
     // height_above_ground_m, fov_deg}; {} without a Session. The rig converts
