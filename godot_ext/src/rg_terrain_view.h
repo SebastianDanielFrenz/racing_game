@@ -302,6 +302,12 @@ private:
     // resident chunks built from them; see heal_tick().
     void heal_tick();
     void replace_chunk_at(std::size_t index, rg::RenderChunk&& fresh);
+    void cancel_heal_rebuild();
+    static constexpr std::size_t kHealBatch = 8;          // chunks per background rebuild batch
+    static constexpr std::size_t kHealSwapsPerFrame = 2;  // finished chunks swapped in per frame (upload cost bound)
+    rg::ChunkRebuildJob heal_job_;
+    std::vector<rg::RenderChunk> heal_ready_;
+    double heal_swap_ms_ = 0.0;
     std::future<std::size_t> heal_future_;
     double heal_next_check_s_ = 0.0;
     std::int64_t healed_tiles_total_ = 0;

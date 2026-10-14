@@ -1,4 +1,5 @@
 // rg/terrain_stream.cpp - see rg/terrain_stream.h.
+#include <chrono>
 #include "rg/terrain_stream.h"
 
 #include <algorithm>
@@ -262,6 +263,32 @@ std::vector<std::size_t> stale_fallback_chunks(const std::vector<RenderChunk>& c
         if (chunks[i].carve == ChunkCarve::Fallback && state_now(chunks[i].key) != ChunkCarve::Fallback) stale.push_back(i);
     }
     return stale;
+}
+
+bool ChunkRebuildJob::start(std::vector<g2m::mesh::ChunkKey> keys, BuildFn build) {
+    if (future_.valid() || keys.empty() || !build) return false;
+    cancel_.store(false, std::memory_order_relaxed);
+    future_ = std::async(std::launch::async, [this, keys = std::move(keys), build = std::move(build)]() {
+        std::vector<RenderChunk> built;
+        if (!build(keys, built, &cancel_) || built.size() != keys.size()) built.clear();
+        return built;
+    });
+    return true;
+}
+
+bool ChunkRebuildJob::take(std::vector<RenderChunk>& out) {
+    if (!future_.valid() || future_.wait_for(std::chrono::seconds(0)) != std::future_status::ready) return false;
+    std::vector<RenderChunk> built = future_.get();
+    if (built.empty()) return false;
+    out = std::move(built);
+    return true;
+}
+
+void ChunkRebuildJob::cancel_and_join() {
+    if (!future_.valid()) return;
+    cancel_.store(true, std::memory_order_relaxed);
+    future_.wait();
+    future_ = {};
 }
 
 void SampleWindow::add(double value) {

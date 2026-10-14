@@ -22,6 +22,8 @@
 #include "g2m/mesh/terrain_chunk.h"
 
 #include <array>
+#include <atomic>
+#include <future>
 #include <cstddef>
 #include <functional>
 #include <vector>
@@ -142,6 +144,36 @@ struct BedCheck {
 [[nodiscard]] std::vector<std::size_t> stale_fallback_chunks(
     const std::vector<RenderChunk>& chunks, std::size_t count,
     const std::function<ChunkCarve(const g2m::mesh::ChunkKey&)>& state_now);
+
+// ---------------------------------------------------------------------------
+// Background chunk rebuild
+// ---------------------------------------------------------------------------
+// One batch of chunk rebuilds on a worker thread (the blocking tile lookups of build_render_chunks can wait on a full
+// derivation and must not run on the render thread). At most one batch in flight. The owner polls `take` each frame,
+// swaps the finished chunks in (looking each key up again: it may have left or moved) and destroys/cancels the job
+// before whatever the build function reads goes away.
+class ChunkRebuildJob {
+public:
+    // Builds out[i] for keys[i]; returns false when cancelled (out is then discarded).
+    using BuildFn = std::function<bool(const std::vector<g2m::mesh::ChunkKey>& keys, std::vector<RenderChunk>& out,
+                                       const std::atomic<bool>* cancel)>;
+    ChunkRebuildJob() = default;
+    ChunkRebuildJob(const ChunkRebuildJob&) = delete;
+    ChunkRebuildJob& operator=(const ChunkRebuildJob&) = delete;
+    ~ChunkRebuildJob() { cancel_and_join(); }
+
+    [[nodiscard]] bool busy() const { return future_.valid(); }
+    // False (nothing started) while a batch is in flight or `keys` is empty.
+    bool start(std::vector<g2m::mesh::ChunkKey> keys, BuildFn build);
+    // Non-blocking. When a batch has finished, moves its chunks (one per requested key, in order) into `out`
+    // and returns true. A cancelled/failed batch yields false and is dropped.
+    bool take(std::vector<RenderChunk>& out);
+    void cancel_and_join();
+
+private:
+    std::future<std::vector<RenderChunk>> future_;
+    std::atomic<bool> cancel_{false};
+};
 
 // ---------------------------------------------------------------------------
 // Sample window

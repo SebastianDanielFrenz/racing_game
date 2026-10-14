@@ -12,7 +12,10 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include <array>
+#include <atomic>
+#include <chrono>
 #include <cmath>
+#include <thread>
 #include <map>
 #include <vector>
 
@@ -133,4 +136,44 @@ TEST_CASE("stale fallback chunks: built as Fallback, carved by now -> rebuild", 
     // Nothing healed: nothing to rebuild (a rebuild would just produce the same fallback again).
     const auto none_ready = [](const ChunkKey&) { return rg::ChunkCarve::Fallback; };
     CHECK(rg::stale_fallback_chunks(chunks, 4, none_ready).empty());
+}
+
+TEST_CASE("ChunkRebuildJob runs one batch off-thread, polls, cancels", "[terrain_stream]") {
+    std::atomic<bool> release{false};
+    std::atomic<int> calls{0};
+    const auto build = [&](const std::vector<ChunkKey>& keys, std::vector<rg::RenderChunk>& out, const std::atomic<bool>* cancel) {
+        ++calls;
+        while (!release.load() && !cancel->load()) std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        if (cancel->load()) return false;
+        out.resize(keys.size());
+        for (std::size_t i = 0; i < keys.size(); ++i) out[i].key = keys[i];
+        return true;
+    };
+    const std::vector<ChunkKey> keys{key_at(1, 0, 0), key_at(1, 1, 0)};
+    std::vector<rg::RenderChunk> got;
+    {
+        rg::ChunkRebuildJob job;
+        CHECK_FALSE(job.start({}, build));
+        REQUIRE(job.start(keys, build));
+        CHECK(job.busy());
+        CHECK_FALSE(job.start(keys, build)); // one in flight
+        CHECK_FALSE(job.take(got));          // still building, no blocking
+        release = true;
+        for (int i = 0; i < 2000 && !job.take(got); ++i) std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        REQUIRE(got.size() == 2);
+        CHECK(got[1].key == keys[1]);
+        CHECK(calls == 1);
+        CHECK_FALSE(job.busy());
+        CHECK(job.start(keys, build)); // a new batch after the first was taken
+    }
+    // Destruction with a batch in flight cancels and joins.
+    release = false;
+    {
+        rg::ChunkRebuildJob job;
+        REQUIRE(job.start(keys, build));
+        job.cancel_and_join();
+        CHECK_FALSE(job.busy());
+        CHECK_FALSE(job.take(got));
+        REQUIRE(job.start(keys, build));
+    } // dtor cancels the second batch; must not hang
 }

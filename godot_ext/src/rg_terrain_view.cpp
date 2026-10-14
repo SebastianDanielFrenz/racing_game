@@ -48,6 +48,7 @@ godot::Color unpack_rgba(std::uint32_t packed) {
 } // namespace
 
 RgTerrainView::~RgTerrainView() {
+    cancel_heal_rebuild();
     streamer_.reset(); // cancel + join the worker before anything else goes
     free_all_uploaded();
 }
@@ -70,6 +71,7 @@ void RgTerrainView::reset_chunks() {
 }
 
 void RgTerrainView::teardown_terrain() {
+    cancel_heal_rebuild();
     if (heal_future_.valid()) heal_future_.wait(); // the re-carve thread reads terrain_
     streamer_.reset(); // before terrain_: its TerrainViewSource points into it
     reset_chunks();
@@ -131,6 +133,7 @@ bool RgTerrainView::load_preview(float spawn_x, float spawn_y) {
         return false;
     }
 
+    cancel_heal_rebuild();
     streamer_.reset();
     reset_chunks();
     total_upload_time_ms_ = 0.0;
@@ -628,7 +631,13 @@ void RgTerrainView::replace_chunk_at(std::size_t index, rg::RenderChunk&& fresh)
 // holds. Every 2 s, while the terrain reports Fallback tiles, they are re-carved on a background thread
 // (WorldTerrain::heal_fallback_tiles); the resident chunks built from them (stale_fallback_chunks) are then rebuilt, at
 // most 2 per frame, and swapped in place. A deterministic failure stays a Fallback and is retried only every 2 s.
+void RgTerrainView::cancel_heal_rebuild() {
+    heal_job_.cancel_and_join();
+    heal_ready_.clear();
+}
+
 void RgTerrainView::heal_tick() {
+    heal_swap_ms_ = 0.0;
     if (!terrain_) return;
     static const bool no_heal = std::getenv("RG_TERRAIN_NO_HEAL") != nullptr; // A/B aid for the gray-patch diagnosis
     if (no_heal) return;
@@ -642,25 +651,39 @@ void RgTerrainView::heal_tick() {
             heal_future_ = std::async(std::launch::async, [wt]() { return wt->heal_fallback_tiles(); });
         }
     }
+    // Rebuilds run on a worker (the tile lookups can block on a derivation); the frame only swaps finished chunks in.
+    const auto swap_start = std::chrono::steady_clock::now();
+    if (heal_ready_.empty()) heal_job_.take(heal_ready_);
+    std::size_t swapped = 0;
+    while (!heal_ready_.empty() && swapped < kHealSwapsPerFrame) {
+        rg::RenderChunk fresh = std::move(heal_ready_.back());
+        heal_ready_.pop_back();
+        const auto it = index_of_.find(fresh.key);
+        // Gone since the batch started, not uploaded yet, or already healed some other way: drop it.
+        if (it == index_of_.end() || it->second >= next_upload_index_ || chunks_[it->second].carve != rg::ChunkCarve::Fallback) continue;
+        replace_chunk_at(it->second, std::move(fresh));
+        ++rebuilt_chunks_total_;
+        ++swapped;
+    }
+    heal_swap_ms_ = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - swap_start).count();
+    if (!heal_ready_.empty() || heal_job_.busy()) return;
+
     rg::WorldTerrain* wt = terrain_.get();
     const auto stale = rg::stale_fallback_chunks(chunks_, next_upload_index_, [wt](const g2m::mesh::ChunkKey& key) {
         return rg::chunk_window_carve(key, wt, &carve_of_tile);
     });
     if (stale.empty()) return;
-    const rg::TerrainViewSource source = terrain_->view_source();
-    std::size_t done = 0;
+    std::vector<g2m::mesh::ChunkKey> keys;
     for (const std::size_t index : stale) {
-        if (done >= 2) break;
-        std::vector<g2m::mesh::ChunkKey> keys{chunks_[index].key};
-        std::vector<rg::RenderChunk> built;
-        if (!rg::build_render_chunks(keys, source.lookup, source.ctx, source.e0, source.n0, 1, built, nullptr, source.class_lookup,
-                                     source.surfaces, source.carve_state) || built.size() != 1) {
-            continue;
-        }
-        replace_chunk_at(index, std::move(built[0]));
-        ++rebuilt_chunks_total_;
-        ++done;
+        if (keys.size() >= kHealBatch) break;
+        keys.push_back(chunks_[index].key);
     }
+    const rg::TerrainViewSource source = terrain_->view_source();
+    heal_job_.start(std::move(keys), [source](const std::vector<g2m::mesh::ChunkKey>& k, std::vector<rg::RenderChunk>& out,
+                                              const std::atomic<bool>* cancel) {
+        return rg::build_render_chunks(k, source.lookup, source.ctx, source.e0, source.n0, 1, out, cancel, source.class_lookup,
+                                       source.surfaces, source.carve_state);
+    });
 }
 
 void RgTerrainView::remove_chunk_at(std::size_t index) {
@@ -787,7 +810,8 @@ void RgTerrainView::_process(double /*delta*/) {
     decks_ms_this_frame_ = ms_since(decks_start);
     const auto heal_start = std::chrono::steady_clock::now();
     heal_tick();
-    heal_ms_this_frame_ = ms_since(heal_start);
+    heal_ms_this_frame_ = heal_swap_ms_; // main-thread swap time only (the rebuild is on a worker)
+    (void)heal_start;
     const auto frame_start = std::chrono::steady_clock::now();
     apply_diff(frame_start);
     upload_ms_this_frame_ =
