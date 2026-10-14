@@ -15,6 +15,7 @@ from . import ASSETGEN  # noqa: F401  (sys.path setup)
 from assetgen.carbody import CarBody
 from assetgen import mesh as M
 from assetgen.vehicles.hyper_shell import skin_part, clean_degenerate
+from . import quality as Q
 
 SHELL_THICKNESS = 0.018
 PANEL_INSET = 0.001
@@ -28,8 +29,10 @@ class ClosedCarBody(CarBody):
         """seams: x positions of vertical shut lines. Each gets a station pair at x +- SEAM_HALF (any regular
         station within SEAM_CLEAR of it is dropped), so a narrow gap band |c.x - seam| < SEAM_BAND selects one
         8 mm column of faces, whatever the regular station step."""
-        kw.setdefault("step", 0.03)
-        kw.setdefault("around", 112)
+        # tessellation comes from the active LOD (cargen.quality), not from the car file
+        kw["step"] = Q.cur["body_step"]
+        kw["around"] = Q.cur["body_around"]
+        kw["green_step"] = Q.cur["green_step"]
         super().__init__(model, **kw)
         self.flow = flow
         self.moving_parts = set(moving_parts)
@@ -92,6 +95,7 @@ class ClosedCarBody(CarBody):
         front = rows(offset)
         recs = mb.grid(front, mat, part, closed_v=True)
         back = rows(offset - skirt - 0.004)
+        back = [back[0], back[-1]]          # hidden backing: one ring is enough
         mb.grid([back[-1], front[-1]], skirt_mat or mat, part, closed_v=True, flip=True)
         mb.grid(back, skirt_mat or mat, part, closed_v=True, flip=True)
         clean_degenerate(mb)

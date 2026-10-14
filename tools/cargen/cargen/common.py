@@ -8,13 +8,19 @@ from assetgen import mesh as M
 from assetgen.parts import standard_materials
 from assetgen.vec import compose, translate, rot_axis
 from assetgen.vehicles.hyper_shell import clean_degenerate
+from . import quality as Q
+from .normals import smooth_model
 
 
-def materials(m, paint, roof=None):
-    """standard_materials plus the names cargen's parts and cars use."""
+def materials(m, paint, roof=None, metallic=0.25, roughness=0.2):
+    """standard_materials plus the names cargen's parts and cars use. Model.mat never redefines a name, so the
+    cargen versions of shared names (lighter glass the cabin shows through) are made first."""
+    m.mat("glass", color=(0.62, 0.70, 0.74), alpha=0.28, metallic=0.0, roughness=0.0, blend=True, role="glass")
     standard_materials(m)
-    m.mat("paint", color=paint, metallic=0.25, roughness=0.32, role="paint")
-    m.mat("paint_roof", color=roof or paint, metallic=0.25, roughness=0.32, role="paint")
+    m.mat("paint", color=paint, metallic=metallic, roughness=roughness, role="paint")
+    m.mat("paint_roof", color=roof or paint, metallic=metallic, roughness=roughness, role="paint")
+    from .detail import detail_materials
+    detail_materials(m)
     m.mat("glass_dark", color=(0.05, 0.06, 0.07), alpha=0.75, roughness=0.0, blend=True, role="glass")
     m.mat("cladding", color=(0.06, 0.06, 0.065), roughness=0.85, tex=("rubber", {"seed": 31, "shade": 0.06}),
           tile=0.25)
@@ -122,11 +128,34 @@ def door_card(m, part, side, x0, x1, z0, z1, y, mat="interior", top_mat=None, bo
         M.rounded_box(mb, (xc, yc - side * 0.04, z0 + 0.08), ((x1 - x0) * 0.75, 0.05, 0.12), 0.012, mat, part)
 
 
+CABIN_MATS = {"seat", "seat_accent", "dash_hard", "dash_top", "dash_paint", "carpet", "headliner", "gauge_face",
+              "gauge_tick", "gauge_needle", "button", "button_red", "knob", "boot", "pedal_rubber", "interior"}
+
+
+def strip_cabin(m, ck):
+    """Far LOD: drop the cabin furniture and every cockpit control's geometry (their nodes stay, empty)."""
+    ctl = {c["node"] for c in ck.controls} | {s_["node"] for s_ in ck.screens}
+    changed = True
+    while changed:                                   # descendants of control nodes (horn on the wheel, ...)
+        changed = False
+        for name, nd in m.nodes.items():
+            if nd.parent is not None and nd.parent.name in ctl and name not in ctl:
+                ctl.add(name)
+                changed = True
+    parts = {m.world_part(n) for n in ctl if n in m.nodes}
+    for (part, mat), p in m.mb.prims.items():
+        if part in parts or mat in CABIN_MATS or mat.startswith("screen_"):
+            p.pos, p.nrm, p.uv, p.idx = [], [], [], []
+
+
 def finish(m, flow, ck, limitations):
     """Final checks and sidecars: nothing degenerate left, flow selection and cockpit attached."""
     removed = clean_degenerate(m.mb)
     if removed and flow._touches_marked(removed):
         raise ValueError("final degenerate cleanup reached the flow selection")
+    if Q.detail() == 0:
+        strip_cabin(m, ck)
+    smooth_model(m.mb)
     m.flow_selection = flow.selection(limitations)
     m.cockpit = ck.as_json()
     return m
@@ -177,6 +206,7 @@ def tube_path(mb, path, radius, mat, part="", count=8):
     def cross(a, b):
         return (a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0])
 
+    count = Q.count_for(radius, count)
     n = len(path)
     tans = []
     for i in range(n):
@@ -203,7 +233,7 @@ def arch_lip(m, body, w, side, mat, width=0.04, proud=0.012, a0=-8.0, a1=188.0, 
     flare crossing onto a door is split at the shut line and the door's piece opens with the door."""
     import math
     ra = w["r"] + body.arch_clear
-    n = n or max(8, int((a1 - a0) / 6))
+    n = n or max(6, int((a1 - a0) / 360.0 * Q.seg(ra, lo=24)))
     pieces, cur, cur_part = [], [], None
     for k in range(n + 1):
         a = math.radians(a0 + (a1 - a0) * k / n)
@@ -270,6 +300,7 @@ def blade_path(mb, path, width, thick, mat, part="", normal=(0.0, 0.0, 1.0)):
         t = nrm(tuple(b[k] - a[k] for k in range(3)))
         ex = nrm(cross(normal, t))
         ey = cross(t, ex)
-        secs.append([tuple(p[k] + ws[i] / 2 * math.cos(2 * math.pi * j / 10) * ex[k] +
-                           ts[i] / 2 * math.sin(2 * math.pi * j / 10) * ey[k] for k in range(3)) for j in range(10)])
+        nb = (10, 8, 4)[Q.level()]
+        secs.append([tuple(p[k] + ws[i] / 2 * math.cos(2 * math.pi * j / nb) * ex[k] +
+                           ts[i] / 2 * math.sin(2 * math.pi * j / nb) * ey[k] for k in range(3)) for j in range(nb)])
     return loft_path(mb, secs, mat, part)

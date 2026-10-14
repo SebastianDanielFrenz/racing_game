@@ -23,6 +23,8 @@ window cranks, wipers.
 import math
 
 from cargen import controls as C
+from cargen import quality as Q
+from cargen import detail as D
 from cargen.closed_body import ClosedCarBody
 from cargen.flow import FlowRecorder
 from cargen.wheels import Wheel, corner
@@ -57,8 +59,7 @@ def build():
     m = Model("ventura_gt", "Ventura GT (1970s grand tourer)",
               "1970s front-engine fastback GT, 4.45 m, 215/60 R15 + 225/60 R15, front-mid longitudinal V8 bay.",
               "Ground plane below the wheel centres, x = 0 midway between the axles, y = 0 on the centreline.")
-    materials(m, PAINT)
-    m.mat("paint", color=PAINT, metallic=0.55, roughness=0.28, role="paint")
+    materials(m, PAINT, metallic=0.55, roughness=0.22)
     m.mat("seat", color=(0.10, 0.07, 0.05), roughness=0.75, tex=("fabric", {"color": (0.10, 0.07, 0.05)}), tile=0.2)
     m.mat("seat_accent", color=(0.62, 0.55, 0.42), roughness=0.85, tex=("fabric", {"color": (0.6, 0.52, 0.4)}),
           tile=0.05)
@@ -150,21 +151,26 @@ def build():
 
     # ---- front: recessed grille, indicators, plate; rear: twin round lamps, plate
     rr, circ = M.rrect, M.circle
-    body.patch(rr(1.18, 0.14, 0.03, 4, 0.0, 0.56), "grille", "front", offset=0.003, skirt_mat="chrome")
+    body.patch(rr(1.18, 0.14, 0.03, 4, 0.0, 0.56), "grille", "front", offset=0.0015, skirt_mat="chrome")
+    D.lattice(m, body, "front", -0.52, 0.52, 0.512, 0.608, 26, 0, "trim_black", offset=0.005, bar=0.004, depth=0.008)
     for s in (1, -1):
         ind = "light_indicator_left" if s > 0 else "light_indicator_right"
-        body.patch(rr(0.10, 0.04, 0.018, 3, s * 0.60, 0.40), ind, "front", offset=0.004, skirt_mat="chrome")
+        D.lamp(m, body, "front", rr(0.10, 0.04, 0.018, 3, s * 0.60, 0.40), ind, "lens_amber",
+               elements=[(s * 0.60, 0.40, 0.015, ind, "bowl")], bezel_mat="chrome", lens_height=0.006)
         for yy in (0.42, 0.62):
-            body.patch(circ(0.055, 20, s * yy, 0.72), "light_tail", "rear", offset=0.004, skirt_mat="chrome")
-            body.patch(circ(0.028, 16, s * yy, 0.72), "light_brake", "rear", offset=0.008, skirt=0.0)
-        body.patch(rr(0.07, 0.035, 0.012, 3, s * 0.52, 0.56), "light_reverse", "rear", offset=0.004, skirt=0.0)
+            # round tail lamp: red base, reflector bowl with the brake emitter, red domed lens, chrome bezel
+            D.lamp(m, body, "rear", circ(0.055, 20, s * yy, 0.72), "light_tail", "lens_red",
+                   elements=[(s * yy, 0.72, 0.03, "light_brake", "bowl")], bezel_mat="chrome", lens_height=0.014)
+        D.lamp(m, body, "rear", rr(0.07, 0.035, 0.012, 3, s * 0.52, 0.56), "light_reverse", "lens_clear",
+               elements=[(s * 0.52, 0.56, 0.012, "light_reverse", "bowl")], bezel_mat="chrome", lens_height=0.005)
         # side markers (amber front, red rear) on the fenders
-        body.patch(rr(0.06, 0.025, 0.01, 3, 1.95, 0.62), "light_indicator_left" if s > 0 else
-                   "light_indicator_right", "left" if s > 0 else "right", offset=0.003, skirt=0.0)
-        body.patch(rr(0.06, 0.025, 0.01, 3, -1.95, 0.66), "light_tail", "left" if s > 0 else "right",
-                   offset=0.003, skirt=0.0)
-    body.patch(rr(0.52, 0.11, 0.01, 2, 0.0, 0.58), "plate", "rear", skirt_mat="trim_black")
-    body.patch(rr(0.46, 0.10, 0.01, 2, 0.0, 0.33), "plate", "front", offset=0.006, skirt_mat="trim_black")
+        D.lamp(m, body, "left" if s > 0 else "right", rr(0.06, 0.025, 0.01, 3, 1.95, 0.62),
+               "light_indicator_left" if s > 0 else "light_indicator_right", "lens_amber", bezel_mat="chrome",
+               lens_height=0.004)
+        D.lamp(m, body, "left" if s > 0 else "right", rr(0.06, 0.025, 0.01, 3, -1.95, 0.66), "light_tail",
+               "lens_red", bezel_mat="chrome", lens_height=0.004)
+    D.plate(m, body, "rear", 0.0, 0.58, 0.52, 0.11, "EG 1973", offset=0.004)
+    D.plate(m, body, "front", 0.0, 0.33, 0.46, 0.10, "EG 1973", offset=0.007)
     # ---- detail: grille bars and badge, fender gills, chin spoiler, flared arch lips
     for zz in (0.525, 0.56, 0.595):
         ys = [-0.535 + 1.07 * k / 24 for k in range(25)]
@@ -191,13 +197,7 @@ def build():
 
     # ---- bumpers: chrome tubes wrapping round the corners, rubber over-riders
     def bumper(end, z, r, half):
-        ys = [half * (-1 + 2 * k / 24) for k in range(25)]
-        pts = [(body.surface_x(y, z, end) + end * (r + 0.012), y, z) for y in ys]
-        for s in (-1, 1):
-            yy = s * half
-            xe = body.surface_x(yy, z, end)
-            wrap = [(xe - end * d, s * (body.surface_y(xe - end * d, z) + r + 0.01), z) for d in (0.06, 0.16)]
-            pts = (list(reversed(wrap)) + pts) if s < 0 else (pts + wrap)
+        pts = D.plan_offset_path(body, end, z, half, 0.16, r + 0.012)
         M.tube(m.mb, pts, r, "chrome", count=12)
         for s in (1, -1):
             yy = s * 0.36
@@ -235,8 +235,12 @@ def build():
         m.node(name, None, (x1, side * (W(x1) - 0.02), 0.55), m.revolute((0, 0, -side), 0, 68, "door opening angle"))
         hx = x0 + 0.16
         zh = crease_z(hx) - 0.035
+        D.handle_recess(m, body, "left" if side > 0 else "right", hx, zh - 0.004, 0.15, 0.05, part=name)
         M.rounded_box(m.mb, (hx, side * (body.surface_y(hx, zh) + 0.008), zh), (0.13, 0.016, 0.022), 0.008,
                       "chrome", name)                                     # chrome pull handle
+        # belt seal under the frameless door glass, chrome-capped
+        D.seal_line(m, body, [(x0 + 0.03 + (min(x1, 0.40) - x0 - 0.04) * k / 12, 0.10) for k in range(13)], side,
+                    part=name, r=0.005, mat="chrome", off=0.006)
     m.node("hood", None, (HOOD_X0, 0.0, body.zt(HOOD_X0)), m.revolute((0, -1, 0), 0, 60, "hood opening angle"))
     m.node("hatch", None, (HATCH_X, 0.0, body.green["zroof"](HATCH_X)),
            m.revolute((0, 1, 0), 0, 70, "hatch opening angle"))
@@ -272,7 +276,8 @@ def build():
     build_popups(m, body)
     flow.mark("pop-up headlamp pods")
 
-    build_cabin(m, ck, body)
+    with Q.coarse(3.0):     # seen through glass: looser chord tolerance
+        build_cabin(m, ck, body)
     build_hood_variants(m, body)
     flow.skip("cabin, cockpit controls, engine bay, hidden hood variants")
 
@@ -334,8 +339,8 @@ def build_popups(m, body):
         for k in (-1, 1):
             cx, cy = (POD_X0 + POD_X1) / 2 + 0.005, yc + k * 0.072
             zb = pivot[2]
-            M.cylinder(mb, (cx, cy, zb - 0.002), (cx, cy, zb - 0.020), 0.060, "chrome", name, count=24)
-            M.cylinder(mb, (cx, cy, zb - 0.020), (cx, cy, zb - 0.026), 0.054, "light_head", name, count=24)
+            D.round_lamp(m, (cx, cy, zb - 0.030), (0.0, 0.0, -1.0), 0.056, "light_head", name, depth=0.024,
+                         lens_height=0.010)
 
 
 def build_hood_variants(m, body):
