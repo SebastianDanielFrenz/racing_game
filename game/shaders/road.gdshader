@@ -55,6 +55,9 @@ void fragment() {
 		float aa = max(fwidth(UV.y),0.01);
 		float joint = 1.0-smoothstep(0.0,0.02+aa,min(slab,5.0-slab));
 		asphalt = vec3(0.36,0.36,0.345)+vec3(grain*0.01*detail*UV2.y)-vec3(0.12*joint);
+	} else if ((flags & 8192)!=0) {
+		// Unpaved (a track's mouth in a junction patch): the terrain's dirt colour with a little gravel grain.
+		asphalt = vec3(0.36,0.28,0.16)+vec3(grain*0.02*detail);
 	}
 	// The gravel verge strip beside the road bed (no paint there).
 	float edge = (flags & 256)!=0 ? 1.0 : 0.0;

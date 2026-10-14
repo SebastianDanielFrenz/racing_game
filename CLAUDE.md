@@ -1342,7 +1342,10 @@ returns (D44, geo2map PR #1). A store derived before encoding 7 has no junctions
 - Junction patches where arms of different surfaces meet are split per surface instead of filled with asphalt: the major
   road (through pair of one surface, else the top-ranked arm) keeps a spine of its bed width across the ring, the rest of
   each lattice cell goes to the nearer minor arm (equal-distance line, arm rays clamped at the ring centre), with u/v along
-  that arm so the paving pattern follows it. Unpaved arms (no lane layout) are not part of the split.
+  that arm so the paving pattern follows it. Unpaved arms (tracks; the terrain draws them) take part with a dirt piece
+  (flag 8192) and never carry the major road while a paved arm meets there; a through pair may change paving (each
+  keeps its own up to the line across the middle between their cuts); a minor arm only claims corners on its own side
+  of the major road.
 - The vertex flags no longer fit 4 bits: the adapter packs them over COLOR.b (low 8) and COLOR.a (high 8).
 - Review tooling used: a geo2map scratch test dumping the mesh of both OSM fixtures and a Python software rasteriser
   (not committed).
