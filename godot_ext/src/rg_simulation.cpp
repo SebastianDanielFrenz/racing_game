@@ -648,7 +648,7 @@ godot::Dictionary RgSimulation::get_aero_state() const {
     d["coefficient_map_inputs"]=map_inputs;d["coefficient_map_coefficients"]=map_coefficients;
     d["enabled"]=a.enabled;d["airspeed_m_s"]=a.airspeed_m_s;d["drag_n"]=a.drag_n;d["downforce_n"]=a.downforce_n;d["side_force_n"]=a.side_force_n;
     d["front_balance"]=a.front_balance;d["wing_pitch_offset_deg"]=a.wing_pitch_offset_deg;d["wing_lift_m"]=a.wing_lift_m;
-    d["fan_power_w"]=a.fan_power_w;d["wake_factor"]=a.wake_factor;d["air_density"]=a.environment.air_density;
+    d["fan_power_w"]=a.fan_power_w;d["wake_factor"]=a.wake_factor;d["air_density"]=a.environment.air_density;d["temperature_k"]=a.environment.temperature_k;d["pressure_pa"]=a.environment.pressure_pa;
     d["wind_world_m_s"]=godot::Vector3(a.environment.wind_world_m_s.x,a.environment.wind_world_m_s.y,a.environment.wind_world_m_s.z);
     d["force_world_n"]=godot::Vector3(a.force_world.x,a.force_world.y,a.force_world.z);d["moment_world_nm"]=godot::Vector3(a.moment_world.x,a.moment_world.y,a.moment_world.z);
     d["fan_energy_remaining_j"]=a.fan_energy_remaining_j;
