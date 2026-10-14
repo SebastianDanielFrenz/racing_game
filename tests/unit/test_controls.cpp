@@ -130,7 +130,7 @@ float value(const Controls& c, const rg::ActionState& s, const std::string& acti
 TEST_CASE("controls: the shipped schema and default profiles load and are consistent", "[controls]") {
     Controls c = make_controls();
     CHECK(c.ready());
-    CHECK(c.schema().size() == 47);
+    CHECK(c.schema().size() == 48);
     // Every action has a label, every signed axis names both directions.
     for (const rg::ActionDef& a : c.schema().actions()) {
         CAPTURE(a.id);
