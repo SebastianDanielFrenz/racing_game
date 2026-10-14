@@ -142,6 +142,7 @@ struct Approach {
  Pose lead{};                                        // the lane centre 1 m outward of the cut: a through overlay starts here
  LaneLayout layout;int rank=0;bool roundabout=false;const g2m::RoadGraphWay* way=nullptr;
  int in_lanes=0;double in_from=0,in_to=0;            // lanes driving into the junction and their lateral span (reference frame)
+ double centre=0,lane=0;                             // the counted lanes' centre (reference frame) and one lane's width
 };
 double wrap(double a) {return std::remainder(a,2*3.14159265358979323846);}
 // Whether (x, y) lies inside a junction ring (mm vertices) or within `tolerance` metres of its boundary.
@@ -375,7 +376,7 @@ RoadVisualMesh build_road_visual(const g2m::RoadGeomTile& geometry,const g2m::Ti
   if(fu.kind==g2m::FurnitureKind::Signal)signal_entries.insert(fu.entry_index);
  }
  std::set<std::tuple<std::int64_t,std::uint32_t,bool>> continued; // approach ends whose markings run on over the junction
- struct Overlay { Approach a,b;int broken=0;const std::vector<g2m::geom::PointMm>* ring=nullptr; };
+ struct Overlay { Approach a,b;int broken=0;const std::vector<g2m::geom::PointMm>* ring=nullptr;std::vector<Approach> gores{}; };
  std::vector<Overlay> overlays;
  struct GiveWay { std::size_t entry;double station,t0,t1; };
  std::vector<GiveWay> give_ways;
@@ -392,7 +393,7 @@ RoadVisualMesh build_road_visual(const g2m::RoadGeomTile& geometry,const g2m::Ti
    auto pose=reference_pose(*entry.profile,a.cut);if(!pose)continue;
    // The cut point on the centre of the counted lanes (the marking frame), and the lanes toward the junction: the
    // way-direction lanes (right of the reference) at the stretch end, else the others.
-   const auto span=span_at(entry,*layout,a.cut);const double lane=span.width()/layout->lanes;
+   const auto span=span_at(entry,*layout,a.cut);const double lane=span.width()/layout->lanes;a.centre=span.centre();a.lane=lane;
    a.pose=*pose;a.pose.x-=std::sin(pose->heading)*span.centre();a.pose.y+=std::cos(pose->heading)*span.centre();
    a.width=span.width();a.inward=ap.at_end?pose->heading:pose->heading+3.14159265358979323846;
    {const double st=std::clamp(ap.at_end?a.cut-1:a.cut+1,0.0,length);auto lp=reference_pose(*entry.profile,st);if(!lp)continue;
@@ -447,7 +448,17 @@ RoadVisualMesh build_road_visual(const g2m::RoadGeomTile& geometry,const g2m::Ti
     // opposite directions, so the smaller of the two deviations is the angle to the axis).
     const double angle=std::min(std::abs(wrap(list[i].inward-a.inward)),std::abs(wrap(list[i].inward-b.inward)));
     if(!opens_edge_line(*list[i].way,a.layout.highway,angle))continue;
-    o.broken|=(dx*(list[i].pose.y-a.pose.y)-dy*(list[i].pose.x-a.pose.x))>0?kLeftEdgeBroken:kRightEdgeBroken;}
+    o.broken|=(dx*(list[i].pose.y-a.pose.y)-dy*(list[i].pose.x-a.pose.x))>0?kLeftEdgeBroken:kRightEdgeBroken;
+    // An exit or an on-ramp leaving or joining at a shallow angle (one-way): a hatched gore between it and the
+    // through road (Sperrflaeche, sign 298), drawn with the overlay below.
+    const auto& sa=list[i];
+    // Only on classified roads, for ramps and classified roads branching off: a one-way street in town meeting at a
+    // shallow angle is not an exit.
+    const auto classified=[](const std::string& h){
+     for(const char* c:{"motorway","trunk","primary","secondary"})if(h==c||h==std::string(c)+"_link")return true;
+     return false;};
+    if(angle<45*3.14159265358979323846/180&&(sa.in_lanes==0||sa.in_lanes==sa.layout.lanes)&&classified(a.layout.highway)&&classified(sa.layout.highway))
+     o.gores.push_back(sa);}
    overlays.push_back(o);
    for(const auto* x:{&a,&b}){const auto& e=geometry.entries[x->entry];continued.insert({e.way_id,e.stretch.start_ref,x->at_end});}
   };
@@ -455,6 +466,41 @@ RoadVisualMesh build_road_visual(const g2m::RoadGeomTile& geometry,const g2m::Ti
   // equal rank, above); its stop lines stand on the approaches.
   if(through)add_overlay(best_i,best_j);
   if(through&&extra_i>=0)add_overlay(extra_of,extra_i);
+  // Turn guide lines (Leitlinien over the box, RMS): two or more lanes tagged only "left" (turn:lanes, leftmost first)
+  // keep their lane and edge lines, broken, along a curve into the leftmost lanes of the road they turn into - the arm
+  // 15-150 degrees to the left nearest a right angle with that many lanes leaving the junction. Without them the
+  // lanes of a double left turn run into an unmarked box and the paths cross.
+  if(!roundabout)for(const auto& a:list) {
+   if(a.in_lanes<2||a.lane<=0)continue;
+   const auto turns=a.layout.one?tag(*a.way,"turn:lanes"):tag(*a.way,a.at_end?"turn:lanes:forward":"turn:lanes:backward");
+   int g=0;std::size_t begin=0,tokens=0;bool counting=true;
+   while(true){const auto end=turns.find('|',begin);const auto t=turns.substr(begin,end==std::string::npos?std::string::npos:end-begin);++tokens;
+    if(counting&&t.find("left")!=std::string::npos&&t.find("through")==std::string::npos&&t.find("right")==std::string::npos)++g;else counting=false;
+    if(end==std::string::npos)break;begin=end+1;}
+   if(turns.empty()||static_cast<int>(tokens)!=a.in_lanes||g<2)continue;
+   const Approach* target=nullptr;double target_dev=1e9;
+   const int ia=static_cast<int>(&a-list.data());
+   for(const auto& b:list) {
+    const int ib=static_cast<int>(&b-list.data());
+    if(&b==&a||b.layout.lanes-b.in_lanes<g||b.lane<=0)continue;
+    const auto pair=[&](int x,int y){return x>=0&&y>=0&&((ia==x&&ib==y)||(ia==y&&ib==x));};
+    if(through&&(pair(best_i,best_j)||pair(extra_of,extra_i)))continue; // already continued by the through overlay
+    const double turn=wrap(b.inward+3.14159265358979323846-a.inward);           // left (counter-clockwise) positive
+    if(turn<15*3.14159265358979323846/180||turn>150*3.14159265358979323846/180)continue;
+    const double dev=std::abs(turn-3.14159265358979323846/2);if(dev<target_dev){target_dev=dev;target=&b;}
+   }
+   if(!target)continue;
+   const auto shifted=[](Approach x,double t,int lanes,int in_lanes) {
+    const double d=t-x.centre;
+    x.pose.x-=std::sin(x.pose.heading)*d;x.pose.y+=std::cos(x.pose.heading)*d;x.lead.x-=std::sin(x.lead.heading)*d;x.lead.y+=std::cos(x.lead.heading)*d;
+    x.width=lanes*x.lane;x.layout.lanes=lanes;x.in_lanes=in_lanes;x.layout.flags&=~kFast;return x; // short dashes: a guide, not a motorway line
+   };
+   // The leftmost g lanes in the reference frame (left +): toward the junction at the stretch end the travel left is
+   // +t, away from it -t; the lanes leaving a junction are the ones beside the lanes entering it.
+   const double ta=a.at_end?a.in_to-g*a.lane/2:a.in_from+g*a.lane/2;
+   const auto& b=*target;const double tb=b.at_end?b.in_to+g*b.lane/2:b.in_from-g*b.lane/2;
+   overlays.push_back({shifted(a,ta,g,g),shifted(b,tb,g,0),kLeftEdgeBroken|kRightEdgeBroken,&j.rings[static_cast<std::size_t>(g2m::JunctionRingLayer::RoadBed)].vertices});
+  }
   if(signalled)continue;
   // Give-way lines nobody tagged (StVO 8 with sign 205/215): at a roundabout entry, and on a lower-ranked side road
   // of a through road unless it merges at a shallow angle (a slip lane or an on-ramp: no line, it merges).
@@ -595,6 +641,103 @@ RoadVisualMesh build_road_visual(const g2m::RoadGeomTile& geometry,const g2m::Ti
  // The through road's lane, centre and edge lines continue across the junction along a cubic between the two trim
  // cuts; the edge line is broken across each side road's mouth (a broad dash on a motorway or trunk: the exit or the
  // merge). Only the paint is drawn (kOverlay: the shader discards the rest), so the junction patch shows between.
+
+ // A painted segment on the ground (two triangles, heights from `ground`), for the gore's lines and stripes.
+ const auto paint_segment=[&](P2 a,P2 b,double width) {
+  const double dx=b.x-a.x,dy=b.y-a.y,len=std::hypot(dx,dy);if(len<.01)return;
+  const double nx=-dy/len*width/2,ny=dx/len*width/2;
+  const P2 c[4]={{a.x+nx,a.y+ny},{a.x-nx,a.y-ny},{b.x+nx,b.y+ny},{b.x-nx,b.y-ny}};
+  const auto first=static_cast<std::int32_t>(mesh.vertices.size());
+  for(const auto& q:c){auto h=ground(q.x,q.y);if(!h){mesh.vertices.resize(static_cast<std::size_t>(first));return;}
+   mesh.vertices.push_back({static_cast<float>(q.x-ox),static_cast<float>(q.y-oy),static_cast<float>(*h+lift+kLineLiftM),0,0,1000.0f,1,0,0,kPaint});}
+  mesh.indices.insert(mesh.indices.end(),{first,first+1,first+2,first+1,first+3,first+2});
+ };
+ // The gore where an exit leaves or an on-ramp joins the through road over a junction (sign 298, Sperrflaeche): the
+ // ramp's inner edge line runs on as a curve from the through road's edge (where they part) to the ramp's trim cut,
+ // broken while the two still touch, solid beside the hatching; the area between it and the through road's edge is
+ // hatched with diagonal bars up to the nose of the road bed ring, bordered on the through side by a solid line.
+ const auto paint_gore=[&](const Overlay& o,const auto& rows,const Approach& g) {
+  if(rows.size()<2||!o.ring||o.ring->size()<3)return;
+  const auto& a=o.a;const auto& b=o.b;const bool diverge=g.in_lanes==0;
+  const double dx=b.pose.x-a.pose.x,dy=b.pose.y-a.pose.y;
+  const double side=(dx*(g.pose.y-a.pose.y)-dy*(g.pose.x-a.pose.x))>0?1.0:-1.0;
+  std::vector<P2> edge;std::vector<double> edge_arc;
+  for(const auto& r:rows){const double l=r.offset+side*r.width/2;edge.push_back({r.x+r.nx*l,r.y+r.ny*l});edge_arc.push_back(r.arc);}
+  // Closest point on the through edge: distance and arc length.
+  const auto nearest=[&](P2 p,double& arc)->double{
+   double best=1e18;
+   for(std::size_t i=0;i+1<edge.size();++i){
+    const double ex=edge[i+1].x-edge[i].x,ey=edge[i+1].y-edge[i].y,l2=ex*ex+ey*ey;
+    const double t=l2>0?std::clamp(((p.x-edge[i].x)*ex+(p.y-edge[i].y)*ey)/l2,0.0,1.0):0;
+    const double d=std::hypot(edge[i].x+t*ex-p.x,edge[i].y+t*ey-p.y);
+    if(d<best){best=d;arc=edge_arc[i]+t*(edge_arc[i+1]-edge_arc[i]);}
+   }
+   return best;
+  };
+  const auto at_arc=[&](double s)->P2{
+   s=std::clamp(s,edge_arc.front(),edge_arc.back());
+   for(std::size_t i=0;i+1<edge.size();++i)if(s<=edge_arc[i+1]){const double l=edge_arc[i+1]-edge_arc[i],t=l>0?(s-edge_arc[i])/l:0;
+    return {edge[i].x+t*(edge[i+1].x-edge[i].x),edge[i].y+t*(edge[i+1].y-edge[i].y)};}
+   return edge.back();
+  };
+  // The ramp's inner edge at its lead point: the one of its two edges nearer the through road.
+  const double th=diverge?g.inward+3.14159265358979323846:g.inward;
+  P2 inner{};{double best=1e18,arc=0;for(double k:{1.0,-1.0}){const P2 q{g.lead.x-std::sin(th)*k*g.width/2,g.lead.y+std::cos(th)*k*g.width/2};
+   const double d=nearest(q,arc);if(d<best){best=d;inner=q;}}}
+  const P2 flush=diverge?edge.front():edge.back();
+  const P2 p0=diverge?flush:inner,p3=diverge?inner:flush;
+  const double t0=diverge?a.inward:g.inward,t3=diverge?g.inward+3.14159265358979323846:b.inward+3.14159265358979323846;
+  const double chord=std::hypot(p3.x-p0.x,p3.y-p0.y);if(chord<2||chord>150)return;
+  const double h=chord/3;const P2 p1{p0.x+std::cos(t0)*h,p0.y+std::sin(t0)*h},p2{p3.x-std::cos(t3)*h,p3.y-std::sin(t3)*h};
+  const int n=std::max(8,static_cast<int>(std::ceil(chord*4)));
+  std::vector<P2> line;std::vector<double> line_arc;double arc=0;
+  for(int i=0;i<=n;++i){const double t=static_cast<double>(i)/n,u=1-t;
+   const P2 q{u*u*u*p0.x+3*u*u*t*p1.x+3*u*t*t*p2.x+t*t*t*p3.x,u*u*u*p0.y+3*u*u*t*p1.y+3*u*t*t*p2.y+t*t*t*p3.y};
+   if(!line.empty())arc+=std::hypot(q.x-line.back().x,q.y-line.back().y);line.push_back(q);line_arc.push_back(arc);}
+  constexpr double kSeparate=.3,kLine=.15,kBar=.4,kBarStep=1.5,kDash=3,kGap=3;
+  const auto vertices_before=mesh.vertices.size(),indices_before=mesh.indices.size();
+  const auto inside=[&](P2 q){return near_ring(*o.ring,q.x,q.y,.05);};
+  // The ramp's edge line: broken (a Leitlinie) while it runs along the through road's edge, solid once they part.
+  for(std::size_t i=0;i+1<line.size();++i){
+   const P2 m{(line[i].x+line[i+1].x)/2,(line[i].y+line[i+1].y)/2};double ea=0;const double d=nearest(m,ea);
+   if(!near_ring(*o.ring,m.x,m.y,.3))continue;
+   const double s_from_flush=diverge?line_arc[i]:arc-line_arc[i+1];
+   if(d<kSeparate&&std::fmod(s_from_flush,kDash+kGap)>=kDash)continue;
+   paint_segment(line[i],line[i+1],kLine);
+  }
+  // Diagonal bars: from the line back toward the flush end onto the through edge (45 degrees), every kBarStep.
+  double last_arc=-1,first_arc=-1;
+  for(double s=0;s<=arc;s+=.25){
+   const double sf=diverge?s:arc-s;  // along the line from the flush end
+   if(std::fmod(sf,kBarStep)>=.25)continue;
+   std::size_t k=0;while(k+1<line_arc.size()&&line_arc[k+1]<s)++k;
+   const double l=line_arc[k+1]-line_arc[k],t=l>0?std::clamp((s-line_arc[k])/l,0.0,1.0):0;
+   const P2 p{line[k].x+t*(line[k+1].x-line[k].x),line[k].y+t*(line[k+1].y-line[k].y)};
+   double ea=0;const double d=nearest(p,ea);if(d<.6)continue;
+   const P2 q=at_arc(diverge?ea-d:ea+d);
+   const double qa=diverge?ea-d:ea+d;
+   const double len=std::hypot(q.x-p.x,q.y-p.y);if(len<.5)continue;
+   const double ux=(q.x-p.x)/len,uy=(q.y-p.y)/len,trim=kLine/2+.1;
+   const P2 ps{p.x+ux*trim,p.y+uy*trim},qs{q.x-ux*trim,q.y-uy*trim};
+   if(!inside(ps)||!inside(qs)||!inside({(p.x+q.x)/2,(p.y+q.y)/2}))continue;
+   paint_segment(ps,qs,kBar);
+   if(first_arc<0||(diverge?qa<first_arc:qa>first_arc))first_arc=qa;
+   if(last_arc<0||(diverge?ea>last_arc:ea<last_arc))last_arc=ea;
+  }
+  // A gore ends at a nose: halfway between the ramp's inner edge at its cut and the through road's edge lies outside
+  // the road bed ring (grass or a kerb between the two roads, the ring's notch). Where the ring is paved across (a
+  // lane gain or drop on a wide carriageway, the two roads still flush at the cut) there is nothing to hatch.
+  bool nose=false;
+  if(first_arc>=0){double ea=0;nearest(inner,ea);const P2 e=at_arc(ea),m{(inner.x+e.x)/2,(inner.y+e.y)/2};
+   // Not on the through road's own far approach either (its lanes can be wider than the overlay strip).
+   const auto& far=diverge?b:a;const double fh=far.lead.heading;
+   const double across=std::abs(-std::sin(fh)*(m.x-far.lead.x)+std::cos(fh)*(m.y-far.lead.y));
+   nose=!near_ring(*o.ring,m.x,m.y,0)&&across>far.width/2+.5;}
+  if(!nose){mesh.vertices.resize(vertices_before);mesh.indices.resize(indices_before);return;}
+  // The border on the through side, from the first bar to the last.
+  const double lo=std::min(first_arc,last_arc),hi=std::max(first_arc,last_arc);
+  for(double s=lo;s<hi;s+=.5)paint_segment(at_arc(s),at_arc(std::min(s+.5,hi)),kLine);
+ };
  for(const auto& o:overlays) {
   const auto& a=o.a;const auto& b=o.b;
   const double ax=std::cos(a.inward),ay=std::sin(a.inward),bx=-std::cos(b.inward),by=-std::sin(b.inward);
@@ -663,6 +806,7 @@ RoadVisualMesh build_road_visual(const g2m::RoadGeomTile& geometry,const g2m::Ti
   }
   if(!valid){mesh.vertices.resize(static_cast<std::size_t>(first));continue;}
   for(int i=0;i<count;++i)for(int j=0;j<across;++j){const auto c=first+i*(across+1)+j,d=c+across+1;mesh.indices.insert(mesh.indices.end(),{c,d,c+1,c+1,d,d+1});}
+  for(const auto& g:o.gores)paint_gore(o,rows,g);
  }
  // Stop, give-way and crossing markings: OSM-placed furniture (geo2map) and the give-way lines implied above.
  const auto in_tile=[&](const g2m::RoadGeomEntry& entry,double station){auto pose=reference_pose(*entry.profile,station);return pose&&owned(pose->x,pose->y);};

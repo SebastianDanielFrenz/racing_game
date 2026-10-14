@@ -1336,6 +1336,15 @@ returns (D44, geo2map PR #1). A store derived before encoding 7 has no junctions
   OSM give-way and roundabout entries and implied on a lower-ranked side road off a through road (not at a merge under
   25 deg), crossings (zebra 0.5/0.5 bars, ladder, Furt = two broken 0.12 m lines, also the default at a signalised
   crossing without a pattern). A stop line whose centre lies on a placed crossing (+0.5 m) is not drawn: the crossing's line already stops the traffic.
+- Turn guide lines: an approach whose leftmost two or more lanes are tagged only "left" (turn:lanes) gets a broken
+  overlay (short dashes, lane and edge lines) from those lanes into the leftmost lanes of the arm 15-150 deg to the
+  left nearest a right angle (not the through pair).
+- Gores (sign 298): an exit or on-ramp (one-way, under 45 deg, through road and ramp both motorway/trunk/primary/
+  secondary or their links) leaving or joining a through overlay gets the ramp's inner edge line as a curve from the
+  through edge (broken while flush, solid once apart) and diagonal bars between it and the through edge, bordered on
+  the through side. Only where a nose exists: the point halfway between the ramp's inner edge at its lead and the
+  through edge lies outside the ring and off the far approach's lanes; otherwise (a lane gain/drop on a paved box)
+  nothing is painted.
 - Turn arrows (turn:lanes) stand 15 m before the stretch end, or further back so their tip ends 3 m before the first
   marking the traffic meets there (junction trim, a stop/give-way line of that direction, a crossing).
 - Side roads closed to the public (access no/private/permissive/permit/...) never open an edge line; on a motorway or a
