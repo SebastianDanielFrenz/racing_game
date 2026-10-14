@@ -333,7 +333,7 @@ godot::Dictionary RgTerrainView::get_ground_check(double px, double py, double d
     return d;
 }
 
-godot::Dictionary RgTerrainView::get_bed_check(double px, double py, double dx, double dy, double ahead_m) {
+godot::Dictionary RgTerrainView::get_bed_check(double px, double py, double dx, double dy, double ahead_m, std::int64_t max_samples) {
     godot::Dictionary d;
     d["samples"] = static_cast<std::int64_t>(0);
     d["above_max_m"] = -1000.0;
@@ -355,6 +355,15 @@ godot::Dictionary RgTerrainView::get_bed_check(double px, double py, double dx, 
     for (const auto& p : all) {
         const double along = (p[0] - e0 - px) * ux + (p[1] - n0 - py) * uy;
         if (along >= -100.0 && along <= ahead_m) beds.push_back(p);
+    }
+    // Diagnostic probe on the main thread: keep a uniform subsample (statistics over a few hundred points are as good
+    // as over thousands, and the cost stays at about a millisecond).
+    if (max_samples > 0 && beds.size() > static_cast<std::size_t>(max_samples)) {
+        std::vector<std::array<double, 3>> thinned;
+        thinned.reserve(static_cast<std::size_t>(max_samples));
+        const double step = static_cast<double>(beds.size()) / static_cast<double>(max_samples);
+        for (std::int64_t k = 0; k < max_samples; ++k) thinned.push_back(beds[static_cast<std::size_t>(static_cast<double>(k) * step)]);
+        beds.swap(thinned);
     }
     const rg::BedCheck c = rg::rendered_vs_bed(chunks_, next_upload_index_, beds);
     d["samples"] = static_cast<std::int64_t>(c.samples);
@@ -821,7 +830,7 @@ void RgTerrainView::_bind_methods() {
     godot::ClassDB::bind_method(D_METHOD("get_carve_max_level"), &RgTerrainView::get_carve_max_level);
     godot::ClassDB::bind_method(D_METHOD("get_lod_coverage", "px", "py", "dx", "dy"), &RgTerrainView::get_lod_coverage);
     godot::ClassDB::bind_method(D_METHOD("get_ground_check", "px", "py", "dx", "dy"), &RgTerrainView::get_ground_check);
-    godot::ClassDB::bind_method(D_METHOD("get_bed_check", "px", "py", "dx", "dy", "ahead_m"), &RgTerrainView::get_bed_check);
+    godot::ClassDB::bind_method(D_METHOD("get_bed_check", "px", "py", "dx", "dy", "ahead_m", "max_samples"), &RgTerrainView::get_bed_check, DEFVAL(800));
     godot::ClassDB::bind_method(D_METHOD("set_terrain_visible", "visible"), &RgTerrainView::set_terrain_visible);
     godot::ClassDB::bind_method(D_METHOD("get_terrain_visible"), &RgTerrainView::get_terrain_visible);
     godot::ClassDB::bind_method(D_METHOD("take_report_stats"), &RgTerrainView::take_report_stats);

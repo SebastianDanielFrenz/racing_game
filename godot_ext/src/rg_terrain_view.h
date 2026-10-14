@@ -208,7 +208,7 @@ public:
     // (and 100 m behind): {samples, above_max_m, above_p95_m, above_tolerance, worst_level, worst_carve (0 not carved,
     // 1 carved, 2 fallback), worst_x, worst_y (session), l<k>_above_max_m / l<k>_samples (k = level of the highest chunk)}.
     // Unlike get_ground_check this reaches the coarse levels. -1000 / 0 samples when nothing could be compared.
-    [[nodiscard]] godot::Dictionary get_bed_check(double px, double py, double dx, double dy, double ahead_m);
+    [[nodiscard]] godot::Dictionary get_bed_check(double px, double py, double dx, double dy, double ahead_m, std::int64_t max_samples = 800);
     // Hides / shows every uploaded terrain chunk (debug: look at the ribbons without the ground, or the reverse).
     void set_terrain_visible(bool visible);
     [[nodiscard]] bool get_terrain_visible() const { return terrain_visible_; }

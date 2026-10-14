@@ -1175,6 +1175,15 @@ request/gate/control/World-step/post-step timings, position, speed and resident
 tile count. RG_FRAME_SPIKE reports main-thread frames over 50 ms with the step
 count. These thresholds exceed the 4.17 ms budget at 240 Hz.
 
+Frame-time diagnostics (2026-10-14, render stutter): main.gd prints `RG_FRAME_STATS` once per second (fps, frame ms
+avg/p99/max, frames over 25/50 ms, per probe avg/max ms) and `RG_FRAME_SPIKE` per frame over `RG_FRAME_SPIKE_MS` (default
+50) with process_ms, render_cpu/gpu_ms (viewport render timing, off with `RG_RENDER_TIMING=0`), the terrain upload/heal/decks
+ms (`RgTerrainView.get_frame_costs`) and the nodes' own `_process` costs. Nodes time themselves with
+`game/scripts/frame_probe.gd` (`FrameProbe.add(name, usec)`; the node's `_process` wraps `_process_body`). A spike whose
+probes sum to a few ms was spent outside the scripts (render, GPU, driver, OS). The 1 Hz bed probe is thinned to 800
+samples (`get_bed_check` max_samples) and `rendered_vs_bed` prefilters by chunk footprint; hidden benchmark
+`rg_unit_tests "[.][perf][stutter]"`.
+
 Set RG_WORLD_CSV to an output path before launching to record ps::World per-tick
 telemetry, including stage.<name>.ms, for attribution inside step_ms (for
 example terrain_tiles). The path announcement goes to stdout to avoid the
