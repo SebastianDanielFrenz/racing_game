@@ -1319,3 +1319,20 @@ the ribbons so the square ribbon ends vanish; a ring with a NoData vertex is dro
 the served trim (2 m ramp) where this tile owns the junction, else the old 3-11 m ramp. Rings carry geo2map's kerb
 returns (D44, geo2map PR #1). A store derived before encoding 7 has no junctions: ribbons only, as before. Test
 `tests/unit/test_road_visual_junctions.cpp` ([road_visual][junction]).
+
+**Junction markings (2026-10-14).** `build_road_visual` also lays out the paint at served junctions (owner tile only):
+- Ribbons follow the served cross-section: asphalt = `carve_footprint().roadbed`, markings over the counted lanes
+  (lanes/forward/width from the counted bands when a cross-section exists, else the tags), a 0.3 m gravel verge strip
+  (vertex `verge`, adapter bit 256) each side. The last ribbon row sits exactly at the stretch length (it used to land
+  one ulp past it and drop the last metre, leaving a gap at every stretch end).
+- Through road: the pair of approaches within 35 deg with the highest rank (StVO 18(3) ranks of `rg::traffic_road_rank`)
+  continues its lane and edge lines over the junction as a cubic overlay (flag 32); not at a signal, a roundabout or an
+  equal-rank crossing. Its edge line is broken (flags 64/128) across a side road's mouth (motorway: 0.30 m 6/6, else
+  1.5/1.5) and hidden (512/1024) where it leaves the ring.
+- Lines (flag 16, 4 mm above the junction): OSM stop lines (solid 0.5 m), give-way lines (0.5 m dashes, 0.25 m gaps) at
+  OSM give-way and roundabout entries and implied on a lower-ranked side road off a through road (not at a merge under
+  25 deg), crossings (zebra 0.5/0.5 bars, ladder, Furt = two broken 0.12 m lines, also the default at a signalised
+  crossing without a pattern). Signalised junctions keep a plain box (no through overlay), as German practice does.
+- The vertex flags no longer fit 4 bits: the adapter packs them over COLOR.b (low 8) and COLOR.a (high 8).
+- Review tooling used: a geo2map scratch test dumping the mesh of both OSM fixtures and a Python software rasteriser
+  (not committed).

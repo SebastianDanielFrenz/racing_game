@@ -154,8 +154,10 @@ TEST_CASE("Right of way rules: signs, then road class, then right before left; s
  rg::TrafficJunction signed_major=major;signed_major.sign_yield=true;
  CHECK(rg::junction_yields(signed_major,minor,false));CHECK_FALSE(rg::junction_yields(minor,signed_major,true));
  CHECK(rg::junction_yields(minor,minor,true));CHECK_FALSE(rg::junction_yields(minor,minor,false));
- g2m::RoadGraphWay way;way.tags={{"highway","secondary_link"}};CHECK(rg::traffic_road_rank(way)==4);
- way.tags={{"highway","residential"}};CHECK(rg::traffic_road_rank(way)==1);
+ g2m::RoadGraphWay way;way.tags={{"highway","secondary"}};CHECK(rg::traffic_road_rank(way)==8);
+ // Links yield where they merge or end: below every road class but a living street.
+ way.tags={{"highway","motorway_link"}};CHECK(rg::traffic_road_rank(way)==1);
+ way.tags={{"highway","residential"}};CHECK(rg::traffic_road_rank(way)==2);
  way.tags={{"highway","living_street"}};CHECK(rg::traffic_road_rank(way)==0);
  for(std::int64_t node:{1,56,123456789}){int green0=0,green1=0;
   for(int k=0;k<5600;++k){const double t=k*.01;const bool a=rg::traffic_signal_green(node,0,t),b=rg::traffic_signal_green(node,1,t);

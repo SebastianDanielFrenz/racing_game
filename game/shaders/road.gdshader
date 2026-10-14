@@ -31,16 +31,31 @@ void fragment() {
 	float lateral = UV.x;
 	float lanes = round(COLOR.r*32.0);
 	float forward_lanes = round(COLOR.g*32.0);
-	int flags = int(round(COLOR.b*16.0));
+	// Bits as road_visual.h documents them: low byte in COLOR.b, high byte in COLOR.a (256 = verge strip).
+	int flags = int(round(COLOR.b*255.0)) + 256*int(round(COLOR.a*255.0));
 	float grain = sin(UV.x*29.1+UV.y*18.7)*sin(UV.x*9.2-UV.y*26.3);
 	float detail = 1.0-smoothstep(0.08,0.3,max(fwidth(UV.x),fwidth(UV.y)));
 	vec3 asphalt = vec3(0.105,0.113,0.122)+vec3(grain*0.008*detail*UV2.y);
-	float edge = smoothstep(half_width-0.03,half_width+0.05,abs(lateral))*UV2.y;
+	// The gravel verge strip beside the road bed (no paint there).
+	float edge = (flags & 256)!=0 ? 1.0 : 0.0;
 	ALBEDO = mix(asphalt,vec3(0.27,0.25,0.22),edge);
 	float paint = 0.0;
 	if ((flags & 1)!=0) {
 		if ((flags & 2)!=0) {
-			paint = stripe(abs(lateral)-(half_width-0.25),line_width_m);
+			// Edge line; across a side road's mouth (flags 64 left / 128 right) it is broken: a 6 m / 6 m broad
+			// dash on a motorway or trunk (an exit or a merge), else 1.5 m / 1.5 m.
+			bool fast = (flags & 8)!=0;
+			bool broken = (lateral>0.0 && (flags & 64)!=0) || (lateral<0.0 && (flags & 128)!=0);
+			float edge_width = broken && fast ? 0.30 : line_width_m;
+			float edge_paint = stripe(abs(lateral)-(half_width-0.25),edge_width);
+			if (broken) {
+				float dash = fast ? 6.0 : 1.5;
+				float phase = mod(UV.y,dash*2.0);
+				float aa = max(fwidth(UV.y),0.015);
+				edge_paint *= (1.0-smoothstep(dash-aa,dash+aa,phase))*smoothstep(0.0,aa,phase);
+			}
+			bool hidden = (lateral>0.0 && (flags & 512)!=0) || (lateral<0.0 && (flags & 1024)!=0);
+			paint = hidden ? 0.0 : edge_paint;
 		}
 		if (lanes>1.0) {
 			float lane_width = width/lanes;
@@ -58,8 +73,10 @@ void fragment() {
 			}
 		}
 	}
-	paint *= UV2.y;
+	paint *= UV2.y*(1.0-edge);
 	if ((flags & 16)!=0) { paint = 1.0; }
+	// Junction overlay: only the paint, the junction patch below shows everywhere else.
+	if ((flags & 32)!=0 && paint < 0.5) { discard; }
 	ALBEDO = mix(ALBEDO,vec3(0.85,0.86,0.83),paint);
 	ROUGHNESS = 0.94;
 	SPECULAR = 0.0;

@@ -34,7 +34,8 @@ std::pair<double,double> junction_turn_cuts(double heading_change_rad,double wid
 // One junction a trip drives through: the OSM node, the stations where the turn path enters and leaves it, and this
 // approach's right of way (StVO 8): its road rank, a give-way or stop line on it, and its signal phase (-1 = no signal).
 struct TrafficJunction {std::int64_t node=0;double enter_station=0,exit_station=0;int rank=0;bool sign_yield=false;int signal_phase=-1;};
-// Road class rank for right of way: motorway 7 ... residential 1, living_street 0; a link ranks as its road.
+// Road class rank for right of way: motorway 14, trunk 12 ... residential 2, living_street 0 (even steps); every
+// *_link ranks 1, so it yields where it merges or ends (StVO 18(3)). Unknown classes (service, track) rank 0.
 int traffic_road_rank(const g2m::RoadGraphWay&);
 // Whether approach `a` must let approach `b` (both at the same unsignalled junction) go first: a give-way/stop line
 // yields to an approach without one; else the lower road rank yields; equal ranks: right before left (b_from_right).

@@ -279,8 +279,10 @@ Tests: `tests/unit/test_npc_traffic.cpp` `[junction_turn]`.
 Each planned trip carries `TrafficTrip::junctions`: every node with three or more stretches (or a signal) it drives
 through, with the stations where its turn path enters and leaves, and this approach's right of way:
 
-- `rank` from the road class (`traffic_road_rank`: motorway 7, trunk 6, primary 5, secondary 4, tertiary 3,
-  unclassified 2, residential 1, living street 0; a link ranks as its road);
+- `rank` from the road class (`traffic_road_rank`: motorway 14, trunk 12, primary 10, secondary 8, tertiary 6,
+  unclassified 4, residential 2, living street 0; every `*_link` ranks 1, so a ramp yields where it merges onto its
+  road (StVO 18(3)) and at the terminal where it ends on another road, matching the give-way lines the road visual
+  draws there);
 - `sign_yield`: a served give-way or stop line (`RoadGeomTile::furniture`, OSM `highway=give_way|stop`) on this
   approach in its travel direction;
 - `signal_phase`: a served signal on the approach. Approaches within 45 degrees of the junction's reference axis (the
