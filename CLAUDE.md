@@ -143,7 +143,7 @@ racing_game/
     controls/
       fixed_keys.json                 rg.fixed_keys/1 (R5b): the keys the controls screen lists but cannot rebind (Esc/P, F6, F7, F10, F9, middle mouse, Shift); described by hand, keep in step with the scripts
       actions.json                    rg.control_actions/1 (R5b): the ONE action schema (48 actions: id, label, group, kind, mode held/edge, range, modes); strictly validated
-      defaults/{keyboard,mouse,gamepad}.json  rg.control_profile/1 (R5b): built-in per-class default bindings (equal to the pre-R5b ones)
+      defaults/{keyboard,mouse,gamepad}.json  rg.control_profile/1 (R5b): built-in per-class default bindings (the pre-R5b ones, plus the B7 pad bindings of driving actions: docs/controls.md "Gamepad coverage")
     routes/
       home_r1_drive.json              rg.route/1 (R2.2 R5): the scripted-drive route, waypoints in the session frame + the spawn it starts from; checked by tools/route_check. Spawn (Engelsruhe, Frankfurt-Unterliederbach) -> B 8 -> the Koenigstein city-limit sign, 9.85 km, 2103 OSM-centreline waypoints densified to <= 5 m; its "criteria" (max_grade_pct 31, min_corner_radius_m 7) and every measured number are in its own "source" field
     vehicles/
