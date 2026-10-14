@@ -266,7 +266,7 @@ release/`linux-release` preset's populated FetchContent sources. Override
 with `-DRG_G2M_DEPS_DIR=...` if that path differs on another machine; a
 `message(WARNING ...)` fires if the directory does not exist.
 
-Bumped to `3f98044` (2026-10-14, geo2map branch claude/pin-crossings-routing = junction crossings + G4 routing slices 1/2/4/5 and the LOD-settings API): `g2m_route` is linked PUBLIC into `rg_core` (route_planner.h, map_view.h); `g2m::RenderRoadLod` / `ClassLookup::lod` carry the in-game road-detail setting.
+Bumped to `162f0c5` (2026-10-14, geo2map main: junction crossings PR #1 + G4 routing slices 1/2/4/5 and the LOD-settings API PR #2): `g2m_route` is linked PUBLIC into `rg_core` (route_planner.h, map_view.h); `g2m::RenderRoadLod` / `ClassLookup::lod` carry the in-game road-detail setting.
 
 Bumped to `1e18588` (G2.5a-grip G-a/G-b/G-c, 2026-09-27) to bring in road
 paint + the owner-rule raster (`g2m::layer::osm_roads`'s `RoadValueLut`,
