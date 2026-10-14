@@ -5,15 +5,21 @@ Owner request 2026-10-14: low and tall grass, farmland with crops by season
 light the road, time of day (progressive and set by the player) and a top-right
 weather/time menu with condition icons and temperature.
 
-Slices V1 (time of day + widget) and V2 (headlights) are built; see the end.
+Scope (owner, 2026-10-14): the game moves to Unreal Engine within days. No new
+Godot shaders. Everything that decides WHAT is shown (clock, sun/moon, weather
+state, icon, crops and seasons, beam parameters) lives in rg_core with tests,
+its numbers in `data/`; the renderer only maps the results onto its materials,
+foliage and lights. Godot keeps a thin preview (sky light, widget, headlights).
+
+Built: V1 time of day + widget, V2 headlights, V6a crop/season logic (no
+rendering). See "Built" at the end.
 
 ## Owner questions (each with a recommendation)
 
-1. **Renderer.** Everything below is planned for `gl_compatibility` (today's
-   setting, also used for VR via OpenXR). Forward+ would give cheaper many-light
-   scenes, decals, better shadows and SSAO, but changes the look and the VR path.
-   *Recommendation:* stay on Compatibility, build every slice to work there,
-   and re-run the Forward+/Mobile A/B only after the stutter work is closed.
+1. **Godot preview.** The Godot side stays a thin preview (sky light, widget,
+   headlights on `gl_compatibility`, where every spot light costs one extra pass
+   per lit object). *Recommendation:* no Godot work beyond that; grass, crops and
+   textures are rendered first in Unreal.
 2. **Game clock start.** Today: the real date (UTC) at 14:00 local, progressing
    at x1 (real time). *Recommendation:* keep that; the menu offers stopped/x1/
    x10/x60/x600 and preset times. Alternative: always start at a fixed date.
@@ -37,14 +43,18 @@ Slices V1 (time of day + widget) and V2 (headlights) are built; see the end.
    the physics climate once V8 installs it.
 
 Assets: the owner allowed downloading textures, sounds and models within their
-licence terms (2026-10-14). Use CC0 sets (ambientCG, Poly Haven); record each
-set's source URL and licence in `data/credits.json` (provenance, even where CC0
-asks for nothing). Size policy: 1K maps for ground/grass/crops, 2K only for
-asphalt (the surface seen closest and longest); JPG/PNG sources, Godot imports
-them VRAM-compressed (BC7/BC1 desktop, ETC2 on Quest/Steam Frame). Estimate:
+licence terms (2026-10-14). Use CC0 sets (ambientCG, Poly Haven); keep them
+under `data/textures/<surface>/` (engine-neutral, for the UE import) and record
+each set's source URL and licence in `data/credits.json` (provenance, even where
+CC0 asks for nothing). Not done yet: this container's egress proxy refuses
+ambientcg.com, polyhaven.com/dl.polyhaven.org and cdn.jsdelivr.net (HTTP 403 on
+CONNECT), so the download has to run on the owner's machine (or the hosts be
+allowed). Size policy: 1K maps for ground/grass/crops, 2K only for
+asphalt (the surface seen closest and longest); JPG/PNG sources, the engine imports
+them block-compressed (BC7/BC5/BC1 desktop, ASTC/ETC2 on Quest/Steam Frame). Estimate:
 1K set (albedo, normal, roughness) ~2-4 MB on disk, ~4 MB in VRAM with mips;
 2K set ~8-14 MB on disk, ~16 MB VRAM. About 14 sets (12 x 1K + 2 x 2K) = ~60 MB
-in git, ~80 MB VRAM. If the repo grows past that, move `game/assets/textures`
+in git, ~80 MB VRAM. If the repo grows past that, move `data/textures`
 to git LFS (owner decision at that point).
 
 ## What exists today
@@ -86,24 +96,23 @@ to git LFS (owner decision at that point).
   (indicators, brake, reverse); no light was cast. Rigs have `lights.head`
   materials but no lamp sockets. `CabinState::lights` existed without an action.
 
-## Features
+## Features (engine-neutral core, Unreal mapping)
 
-Per-frame cost rule for every slice: the main thread only uploads finished
-buffers under a time budget (like the terrain's 0.8 ms); generation runs on
-workers in rg_core; drawing is instanced (MultiMesh) or done in shaders.
+Per-frame cost rule for every slice: generation runs on workers in rg_core and
+is deterministic; the engine instances (UE: PCG / instanced static meshes /
+foliage, Nanite where available) and does the shading in materials.
 
-| Feature | Approach | Data | Main thread / GPU | rg_core vs Godot | Assets |
-|---|---|---|---|---|---|
-| Time of day | Real sun/moon position (NOAA / Schlyter) from date, local time, lat/lon of the world origin; light/sky/ambient by sun elevation from a key table | `data/world/sky.json` | one native call at 10 Hz; sky radiance re-rendered only on colour change | astronomy, clock, lighting curve: rg_core; lights/env: `sky_controller.gd` | none |
-| Weather widget + menu | Icon from (cloud cover, precipitation, thunder, night); menu items with enabled/reason from a view-model | same | 4 Hz label update | icon table, menu VM: rg_core; drawing: `weather_icon.gd` (procedural) | none |
-| Headlights | SpotLight3D per headlamp cluster from the rig's head lamp geometry, dipped/main beam | `data/world/headlights.json` | +1 pass per lit object per spot (2 spots); no shadows | on/off state: DriverActions; lights: `headlights.gd` | none |
-| Real textures for surfaces | Texture2DArray per class (asphalt, concrete, sett, cobble, paving, gravel, compacted, dirt, sand, grass, forest floor, field soil); road ribbons sample by surface id, terrain by land class; UV = (chunk origin mod period) + object-space position, passed as an instance uniform so the floating origin stays exact | surfaces + land classes | GPU: 2-3 texture samples per pixel, triplanar only on steep slopes | surface id per ribbon/vertex: rg_core; shaders: Godot | CC0 1K sets, 2K asphalt |
-| Land classes to render chunks | Rasterise OSM `landuse`/`natural` polygons (+ WorldCover where OSM is empty) into a per-L2-tile class raster (2 m) on a worker; vertex class id in the chunk (COLOR.a or CUSTOM0) | `g2m.src.osm`, `g2m.src.landcover` | none (worker) | rg_core (like the road raster) | none |
-| Low grass | Clumps (alpha-scissor cards, 3-4 per clump) scattered by hash(cell, seed) on Grassland/meadow/verges, density from the class raster, MultiMesh per 32 m cell within ~80 m, wind sway in the vertex shader, distance fade | class raster | upload <= 0.3 ms/frame; target GPU < 1.5 ms at 1080p | positions/transform buffers: rg_core workers; MultiMesh + shader: Godot | 1-2 CC0 grass atlases |
-| Tall grass | Same scatter, taller cards, lower density, only meadow/`natural=grassland`/field edges; mown state by season | class raster + date | as above | as above | CC0 tall-grass atlas |
-| Fields and crops | Per `landuse=farmland` polygon: crop = rotation[(hash(way id, world seed) + year) mod n], growth stage from day of year (crop calendar in data); far: shader rows along the polygon's main axis with stage colour; near (< 150 m) for tall crops (maize, rapeseed, cereals after heading): MultiMesh cards | OSM polygons, `data/world/crops.json`, game date | worker build; GPU like grass | crop choice, stage, row axis: rg_core; shader/MultiMesh: Godot | CC0 soil/stubble/crop textures |
-| Dirt paths | Add `path`/`footway`/`bridleway`/`cycleway` (unpaved/paved by `surface=*`) to the ribbon style; `track` with `tracktype` grade3-5 gets a two-rut texture with a grass strip | OSM | ribbons as today | geo2map style table (request), ribbon width/texture id: rg_core | CC0 dirt/gravel |
-| Weather wired | Install `ps::environment` in Session (preset or dynamic weather), wet grip, rain/snow GPU particles around the camera, wet road shader (darker, lower roughness, puddle mask), snow cover blend, lightning flash + delayed thunder | `ps::environment` climate | particles GPU only | weather state: physics + rg_core; visuals: Godot | CC0 rain/thunder sounds |
+| Feature | rg_core (engine-neutral, tested) | Data | Unreal mapping | Godot now |
+|---|---|---|---|---|
+| Time of day | `rg::TimeWeather`: civil clock (rate, user override, EU summer time), sun/moon position from date + lat/lon, light level and sky colours by sun elevation and cloud cover | `data/world/sky.json` | Directional Light (sun, Atmosphere Sun Light index 0) + second directional (moon, index 1) rotated from `sun`/`moon` directions; Sky Atmosphere + Sky Light (real-time capture) + Exponential Height Fog; Volumetric Clouds coverage from `cloud_cover`; the lighting key table becomes optional (UE's atmosphere does the colours) - keep it for exposure/ambient targets | `sky_controller.gd` |
+| Weather widget + menu | icon table (`weather_icon`), menu view-model with enabled/reason, temperature text | same | UMG widget top right reading the same view-model; icons as SVG/texture | `weather_widget.gd`, `weather_icon.gd` (procedural) |
+| Weather wired | V8: `ps::environment` in Session (weather timeline, water film, wet grip, temperature); the view-model then enables rain/snow/hail/thunder | physics_sim climate | Niagara rain/snow/hail around the camera, wet material parameter (darken + roughness + puddle mask), lightning flash on the moon/sun light + delayed thunder | - |
+| Headlights | `lights` action, `cabin.lights` (0 off, 1 dipped, 2 main), head/tail lamp projection | `data/world/headlights.json` (range, cone, energy, pitch) | two Spot Lights per car at the lamp geometry (or a socket added in the car asset), IES profile for a real low-beam cut-off, Lumen picks up bounce; shadows on for the player car only | `headlights.gd` SpotLight3D |
+| Surface textures | surface id per road ribbon / ground cell (exists: `surface_kinds.h`, 13 surfaces) | `data/surfaces/surfaces.json` + texture sets under `data/textures/` | Landscape material / road material with a texture array or layer per surface id (asphalt, concrete, sett, cobble, paving, gravel, compacted, dirt, sand, grass, field soil, forest floor) | none (kept per-vertex colours) |
+| Land classes | V4: rasterise OSM `landuse`/`natural` polygons (+ WorldCover where OSM is empty) into a per-tile class raster (2 m) on a worker | `g2m.src.osm`, `g2m.src.landcover` | Landscape layer weights / Runtime Virtual Texture from the class raster; PCG graphs keyed on class | - |
+| Low / tall grass | V5: deterministic scatter per 32 m cell (hash of cell + seed), density and height by class and season (meadow mown/tall from `crops.json` meadow calendar) | class raster, `crops.json` | PCG grass/foliage instances (or Landscape Grass Types) from the core's density/height per cell; wind via UE's foliage wind | - |
+| Fields and crops | V6a built: `rg::field_look` (crop by rotation + seed + harvest year, stage by date, height, ground cover, colour, row spacing; row direction from the polygon) | `data/world/crops.json` | per field: a material instance with stage colour, row direction/spacing and cover; tall crops (maize, rapeseed, cereals after heading) as PCG instanced meshes near the camera, impostors/material far | - |
+| Dirt paths | V7: add `path`/`footway`/`bridleway`/`cycleway` to the ribbon style; `track` + `tracktype` grade3-5 = two ruts with a grass strip | OSM | road ribbons as spline meshes / procedural mesh with the rut material | - |
 
 ### Crops for the Main-Taunus region
 
@@ -138,27 +147,30 @@ look.
   action; GDScript test of cluster placement and aim; owner night drive shows
   the road lit to ~60 m dipped / ~160 m main beam; GPU frame time with lights
   on vs off measured on the owner's machine (target < +0.5 ms).
-- **V3 surface textures.** Download CC0 sets, Texture2DArray, road ribbons by
-  surface id, terrain grass/dirt by the existing ramp. Accept: screenshots of
-  each surface; VRAM < 100 MB for all ground textures; frame time +-0.3 ms.
-- **V4 land classes in render chunks.** Worker-side OSM polygon raster. Accept:
+- **V3 surface textures.** Download CC0 sets into `data/textures/` with credits
+  entries (on the owner's machine: hosts blocked here); UE landscape/road
+  materials by surface id. Accept: one set per physics surface; screenshots;
+  VRAM < 100 MB for all ground textures.
+- **V4 land classes.** Worker-side OSM polygon raster in rg_core (class per
+  2 m cell, field way id per cell for `field_look`). Accept:
   synthetic-polygon unit tests; real store: share of chunk vertices per class
   vs polygon area within 2 %.
-- **V5 low grass.** Accept: deterministic scatter test (same cell -> same
-  buffer, any thread count); main-thread upload <= 0.3 ms/frame at 150 km/h;
-  GPU < 1.5 ms at 1080p; no pop inside 60 m.
-- **V6 fields and crops + tall grass.** `data/world/crops.json`. Accept: unit
-  tests of crop choice/rotation/stage; screenshots in April, June, August,
-  October.
+- **V5 low grass.** rg_core scatter (density/height per cell). Accept:
+  deterministic scatter test (same cell -> same instances, any thread count);
+  in UE: game-thread cost of instance updates <= 0.3 ms/frame at 150 km/h,
+  GPU < 1.5 ms at 1080p, no pop inside 60 m.
+- **V6a crop/season logic (built).** `rg::field_look`, `data/world/crops.json`,
+  unit tests. **V6b** UE field materials and tall-crop instances: screenshots
+  in April, June, August, October.
 - **V7 dirt paths.** Geo2map style request for path classes; rut texture.
   Accept: route samples on tracks classify unpaved; screenshots.
 - **V8 weather wired.** `ps::environment` in Session, menu precipitation enabled,
   wet grip, particles, wet shader, temperature from the climate. Accept: grip
   drop on wet asphalt matches physics_sim's own test values; particle cost
   < 0.5 ms GPU.
-- **V9 (optional) renderer A/B** for headlight shadows and more lights.
+- **V9 (UE)** headlight IES profiles and per-car shadowed spots.
 
-## Built in V1/V2 (2026-10-14)
+## Built (2026-10-14)
 
 - `core/include/rg/sky.h`, `core/src/sky.cpp`: Julian day, Gregorian date
   helpers, sun (NOAA) and moon (Schlyter + parallax, illuminated fraction)
@@ -171,6 +183,12 @@ look.
   `temperature_k`/`pressure_pa`.
 - `game/scripts/sky_controller.gd`, `weather_widget.gd`, `weather_icon.gd`,
   `headlights.gd`; `exterior_lamps.gd` also drives head/tail lamp emission.
+- `core/include/rg/crops.h`, `core/src/crops.cpp`, `data/world/crops.json`
+  (`rg.crops/1`): 13 crops/calendars (winter wheat, winter barley, winter
+  rapeseed, maize, sugar beet, spring barley, rye/triticale, potatoes, field
+  grass, fallow, meadow, orchard, vineyard), 6 weighted rotations, fixed
+  calendars for meadow/grass/grassland/orchard/vineyard, `field_look`,
+  `rotation_crop`, `field_row_angle_deg`. Nothing renders it yet.
 - Weather menu: Clear, Partly cloudy, Overcast are applied (sky colour and light
   level only); Rain, Snow, Hail, Thunderstorm are greyed out (no precipitation
   visuals, no wet-grip environment in Session).

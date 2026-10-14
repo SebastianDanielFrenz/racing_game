@@ -1,0 +1,1250 @@
+{
+ "format": "rg.crops/1",
+ "description": "Field looks by date (rg::field_look, core/include/rg/crops.h). Rotations and weights are an assumed [AS] Hessian arable mix (winter wheat about a third of the area, then maize, barley, rapeseed, beet), to be checked against the Hessian statistics office. Stage start days are non-leap day-of-year numbers for the Main-Taunus lowlands, assumed [AS] from typical sowing/harvest windows; heights and colours are visual targets for the renderer. season_end_doy: from this day the field belongs to the next crop of its rotation (autumn sowing shows up before the harvest year). fixed_landuse: OSM landuse/natural values with one fixed calendar. An OSM crop=* tag naming a crop id or alias wins over the rotation.",
+ "world_seed": 20261014,
+ "date_jitter_days": 6,
+ "crops": [
+  {
+   "id": "winter_wheat",
+   "label": "Winter wheat",
+   "aliases": [
+    "wheat"
+   ],
+   "row_spacing_m": 0.125,
+   "season_end_doy": 235,
+   "stages": [
+    {
+     "id": "tillering",
+     "start_doy": 60,
+     "height_m": 0.15,
+     "ground_cover": 0.5,
+     "rgb": [
+      0.38,
+      0.52,
+      0.22
+     ]
+    },
+    {
+     "id": "stem_extension",
+     "start_doy": 105,
+     "height_m": 0.45,
+     "ground_cover": 0.85,
+     "rgb": [
+      0.22,
+      0.42,
+      0.16
+     ]
+    },
+    {
+     "id": "heading",
+     "start_doy": 150,
+     "height_m": 0.85,
+     "ground_cover": 1.0,
+     "rgb": [
+      0.28,
+      0.44,
+      0.26
+     ]
+    },
+    {
+     "id": "ripening",
+     "start_doy": 172,
+     "height_m": 0.85,
+     "ground_cover": 1.0,
+     "rgb": [
+      0.66,
+      0.62,
+      0.32
+     ]
+    },
+    {
+     "id": "ripe",
+     "start_doy": 195,
+     "height_m": 0.85,
+     "ground_cover": 1.0,
+     "rgb": [
+      0.82,
+      0.7,
+      0.38
+     ]
+    },
+    {
+     "id": "stubble",
+     "start_doy": 215,
+     "height_m": 0.15,
+     "ground_cover": 0.6,
+     "rgb": [
+      0.74,
+      0.65,
+      0.43
+     ]
+    },
+    {
+     "id": "cultivated",
+     "start_doy": 235,
+     "height_m": 0.0,
+     "ground_cover": 0.0,
+     "rgb": [
+      0.36,
+      0.28,
+      0.2
+     ]
+    },
+    {
+     "id": "sown",
+     "start_doy": 280,
+     "height_m": 0.0,
+     "ground_cover": 0.0,
+     "rgb": [
+      0.3,
+      0.23,
+      0.17
+     ]
+    },
+    {
+     "id": "emerged",
+     "start_doy": 300,
+     "height_m": 0.06,
+     "ground_cover": 0.2,
+     "rgb": [
+      0.38,
+      0.52,
+      0.22
+     ]
+    }
+   ]
+  },
+  {
+   "id": "winter_barley",
+   "label": "Winter barley",
+   "aliases": [
+    "barley"
+   ],
+   "row_spacing_m": 0.125,
+   "season_end_doy": 215,
+   "stages": [
+    {
+     "id": "tillering",
+     "start_doy": 55,
+     "height_m": 0.15,
+     "ground_cover": 0.5,
+     "rgb": [
+      0.38,
+      0.52,
+      0.22
+     ]
+    },
+    {
+     "id": "stem_extension",
+     "start_doy": 95,
+     "height_m": 0.5,
+     "ground_cover": 0.9,
+     "rgb": [
+      0.22,
+      0.42,
+      0.16
+     ]
+    },
+    {
+     "id": "heading",
+     "start_doy": 130,
+     "height_m": 0.8,
+     "ground_cover": 1.0,
+     "rgb": [
+      0.28,
+      0.44,
+      0.26
+     ]
+    },
+    {
+     "id": "ripening",
+     "start_doy": 160,
+     "height_m": 0.8,
+     "ground_cover": 1.0,
+     "rgb": [
+      0.66,
+      0.62,
+      0.32
+     ]
+    },
+    {
+     "id": "ripe",
+     "start_doy": 180,
+     "height_m": 0.8,
+     "ground_cover": 1.0,
+     "rgb": [
+      0.82,
+      0.7,
+      0.38
+     ]
+    },
+    {
+     "id": "stubble",
+     "start_doy": 195,
+     "height_m": 0.15,
+     "ground_cover": 0.6,
+     "rgb": [
+      0.74,
+      0.65,
+      0.43
+     ]
+    },
+    {
+     "id": "cultivated",
+     "start_doy": 215,
+     "height_m": 0.0,
+     "ground_cover": 0.0,
+     "rgb": [
+      0.36,
+      0.28,
+      0.2
+     ]
+    },
+    {
+     "id": "sown",
+     "start_doy": 265,
+     "height_m": 0.0,
+     "ground_cover": 0.0,
+     "rgb": [
+      0.3,
+      0.23,
+      0.17
+     ]
+    },
+    {
+     "id": "emerged",
+     "start_doy": 285,
+     "height_m": 0.06,
+     "ground_cover": 0.25,
+     "rgb": [
+      0.38,
+      0.52,
+      0.22
+     ]
+    }
+   ]
+  },
+  {
+   "id": "winter_rapeseed",
+   "label": "Winter rapeseed",
+   "aliases": [
+    "rape",
+    "rapeseed",
+    "canola"
+   ],
+   "row_spacing_m": 0.25,
+   "season_end_doy": 225,
+   "stages": [
+    {
+     "id": "rosette",
+     "start_doy": 50,
+     "height_m": 0.25,
+     "ground_cover": 0.6,
+     "rgb": [
+      0.22,
+      0.42,
+      0.16
+     ]
+    },
+    {
+     "id": "stem_extension",
+     "start_doy": 85,
+     "height_m": 0.7,
+     "ground_cover": 0.9,
+     "rgb": [
+      0.22,
+      0.42,
+      0.16
+     ]
+    },
+    {
+     "id": "flowering",
+     "start_doy": 110,
+     "height_m": 1.4,
+     "ground_cover": 1.0,
+     "rgb": [
+      0.95,
+      0.85,
+      0.12
+     ]
+    },
+    {
+     "id": "pods",
+     "start_doy": 140,
+     "height_m": 1.5,
+     "ground_cover": 1.0,
+     "rgb": [
+      0.22,
+      0.42,
+      0.16
+     ]
+    },
+    {
+     "id": "ripening",
+     "start_doy": 175,
+     "height_m": 1.5,
+     "ground_cover": 1.0,
+     "rgb": [
+      0.66,
+      0.62,
+      0.32
+     ]
+    },
+    {
+     "id": "stubble",
+     "start_doy": 205,
+     "height_m": 0.2,
+     "ground_cover": 0.5,
+     "rgb": [
+      0.74,
+      0.65,
+      0.43
+     ]
+    },
+    {
+     "id": "sown",
+     "start_doy": 235,
+     "height_m": 0.0,
+     "ground_cover": 0.0,
+     "rgb": [
+      0.3,
+      0.23,
+      0.17
+     ]
+    },
+    {
+     "id": "emerged",
+     "start_doy": 250,
+     "height_m": 0.1,
+     "ground_cover": 0.4,
+     "rgb": [
+      0.38,
+      0.52,
+      0.22
+     ]
+    }
+   ]
+  },
+  {
+   "id": "maize",
+   "label": "Maize",
+   "aliases": [
+    "corn",
+    "maize"
+   ],
+   "row_spacing_m": 0.75,
+   "season_end_doy": 290,
+   "stages": [
+    {
+     "id": "ploughed",
+     "start_doy": 60,
+     "height_m": 0.0,
+     "ground_cover": 0.0,
+     "rgb": [
+      0.3,
+      0.23,
+      0.17
+     ]
+    },
+    {
+     "id": "sown",
+     "start_doy": 115,
+     "height_m": 0.0,
+     "ground_cover": 0.0,
+     "rgb": [
+      0.3,
+      0.23,
+      0.17
+     ]
+    },
+    {
+     "id": "emerged",
+     "start_doy": 135,
+     "height_m": 0.15,
+     "ground_cover": 0.1,
+     "rgb": [
+      0.38,
+      0.52,
+      0.22
+     ]
+    },
+    {
+     "id": "growing",
+     "start_doy": 160,
+     "height_m": 1.0,
+     "ground_cover": 0.5,
+     "rgb": [
+      0.22,
+      0.42,
+      0.16
+     ]
+    },
+    {
+     "id": "tall",
+     "start_doy": 190,
+     "height_m": 2.6,
+     "ground_cover": 1.0,
+     "rgb": [
+      0.22,
+      0.42,
+      0.16
+     ]
+    },
+    {
+     "id": "ripening",
+     "start_doy": 235,
+     "height_m": 2.6,
+     "ground_cover": 1.0,
+     "rgb": [
+      0.66,
+      0.62,
+      0.32
+     ]
+    },
+    {
+     "id": "harvested",
+     "start_doy": 270,
+     "height_m": 0.25,
+     "ground_cover": 0.2,
+     "rgb": [
+      0.74,
+      0.65,
+      0.43
+     ]
+    },
+    {
+     "id": "cultivated",
+     "start_doy": 290,
+     "height_m": 0.0,
+     "ground_cover": 0.0,
+     "rgb": [
+      0.36,
+      0.28,
+      0.2
+     ]
+    }
+   ]
+  },
+  {
+   "id": "sugar_beet",
+   "label": "Sugar beet",
+   "aliases": [
+    "sugar_beet",
+    "beet"
+   ],
+   "row_spacing_m": 0.45,
+   "season_end_doy": 300,
+   "stages": [
+    {
+     "id": "ploughed",
+     "start_doy": 60,
+     "height_m": 0.0,
+     "ground_cover": 0.0,
+     "rgb": [
+      0.3,
+      0.23,
+      0.17
+     ]
+    },
+    {
+     "id": "sown",
+     "start_doy": 95,
+     "height_m": 0.0,
+     "ground_cover": 0.0,
+     "rgb": [
+      0.3,
+      0.23,
+      0.17
+     ]
+    },
+    {
+     "id": "emerged",
+     "start_doy": 120,
+     "height_m": 0.08,
+     "ground_cover": 0.15,
+     "rgb": [
+      0.38,
+      0.52,
+      0.22
+     ]
+    },
+    {
+     "id": "leaves",
+     "start_doy": 160,
+     "height_m": 0.4,
+     "ground_cover": 0.9,
+     "rgb": [
+      0.22,
+      0.42,
+      0.16
+     ]
+    },
+    {
+     "id": "harvested",
+     "start_doy": 280,
+     "height_m": 0.0,
+     "ground_cover": 0.05,
+     "rgb": [
+      0.36,
+      0.28,
+      0.2
+     ]
+    },
+    {
+     "id": "cultivated",
+     "start_doy": 300,
+     "height_m": 0.0,
+     "ground_cover": 0.0,
+     "rgb": [
+      0.36,
+      0.28,
+      0.2
+     ]
+    }
+   ]
+  },
+  {
+   "id": "spring_barley",
+   "label": "Spring barley",
+   "aliases": [],
+   "row_spacing_m": 0.125,
+   "season_end_doy": 240,
+   "stages": [
+    {
+     "id": "ploughed",
+     "start_doy": 60,
+     "height_m": 0.0,
+     "ground_cover": 0.0,
+     "rgb": [
+      0.3,
+      0.23,
+      0.17
+     ]
+    },
+    {
+     "id": "sown",
+     "start_doy": 80,
+     "height_m": 0.0,
+     "ground_cover": 0.0,
+     "rgb": [
+      0.3,
+      0.23,
+      0.17
+     ]
+    },
+    {
+     "id": "emerged",
+     "start_doy": 100,
+     "height_m": 0.08,
+     "ground_cover": 0.3,
+     "rgb": [
+      0.38,
+      0.52,
+      0.22
+     ]
+    },
+    {
+     "id": "stem_extension",
+     "start_doy": 130,
+     "height_m": 0.45,
+     "ground_cover": 0.9,
+     "rgb": [
+      0.22,
+      0.42,
+      0.16
+     ]
+    },
+    {
+     "id": "heading",
+     "start_doy": 165,
+     "height_m": 0.7,
+     "ground_cover": 1.0,
+     "rgb": [
+      0.28,
+      0.44,
+      0.26
+     ]
+    },
+    {
+     "id": "ripe",
+     "start_doy": 200,
+     "height_m": 0.7,
+     "ground_cover": 1.0,
+     "rgb": [
+      0.82,
+      0.7,
+      0.38
+     ]
+    },
+    {
+     "id": "stubble",
+     "start_doy": 218,
+     "height_m": 0.15,
+     "ground_cover": 0.6,
+     "rgb": [
+      0.74,
+      0.65,
+      0.43
+     ]
+    },
+    {
+     "id": "cultivated",
+     "start_doy": 240,
+     "height_m": 0.0,
+     "ground_cover": 0.0,
+     "rgb": [
+      0.36,
+      0.28,
+      0.2
+     ]
+    }
+   ]
+  },
+  {
+   "id": "rye",
+   "label": "Winter rye / triticale",
+   "aliases": [
+    "rye",
+    "triticale"
+   ],
+   "row_spacing_m": 0.125,
+   "season_end_doy": 230,
+   "stages": [
+    {
+     "id": "tillering",
+     "start_doy": 55,
+     "height_m": 0.2,
+     "ground_cover": 0.5,
+     "rgb": [
+      0.38,
+      0.52,
+      0.22
+     ]
+    },
+    {
+     "id": "stem_extension",
+     "start_doy": 95,
+     "height_m": 0.7,
+     "ground_cover": 0.9,
+     "rgb": [
+      0.22,
+      0.42,
+      0.16
+     ]
+    },
+    {
+     "id": "heading",
+     "start_doy": 135,
+     "height_m": 1.4,
+     "ground_cover": 1.0,
+     "rgb": [
+      0.28,
+      0.44,
+      0.26
+     ]
+    },
+    {
+     "id": "ripe",
+     "start_doy": 190,
+     "height_m": 1.4,
+     "ground_cover": 1.0,
+     "rgb": [
+      0.82,
+      0.7,
+      0.38
+     ]
+    },
+    {
+     "id": "stubble",
+     "start_doy": 210,
+     "height_m": 0.15,
+     "ground_cover": 0.6,
+     "rgb": [
+      0.74,
+      0.65,
+      0.43
+     ]
+    },
+    {
+     "id": "cultivated",
+     "start_doy": 230,
+     "height_m": 0.0,
+     "ground_cover": 0.0,
+     "rgb": [
+      0.36,
+      0.28,
+      0.2
+     ]
+    },
+    {
+     "id": "sown",
+     "start_doy": 270,
+     "height_m": 0.0,
+     "ground_cover": 0.0,
+     "rgb": [
+      0.3,
+      0.23,
+      0.17
+     ]
+    },
+    {
+     "id": "emerged",
+     "start_doy": 290,
+     "height_m": 0.06,
+     "ground_cover": 0.2,
+     "rgb": [
+      0.38,
+      0.52,
+      0.22
+     ]
+    }
+   ]
+  },
+  {
+   "id": "potatoes",
+   "label": "Potatoes",
+   "aliases": [
+    "potato",
+    "potatoes"
+   ],
+   "row_spacing_m": 0.75,
+   "season_end_doy": 270,
+   "stages": [
+    {
+     "id": "ploughed",
+     "start_doy": 60,
+     "height_m": 0.0,
+     "ground_cover": 0.0,
+     "rgb": [
+      0.3,
+      0.23,
+      0.17
+     ]
+    },
+    {
+     "id": "planted",
+     "start_doy": 105,
+     "height_m": 0.0,
+     "ground_cover": 0.0,
+     "rgb": [
+      0.36,
+      0.28,
+      0.2
+     ]
+    },
+    {
+     "id": "emerged",
+     "start_doy": 135,
+     "height_m": 0.15,
+     "ground_cover": 0.2,
+     "rgb": [
+      0.38,
+      0.52,
+      0.22
+     ]
+    },
+    {
+     "id": "canopy",
+     "start_doy": 165,
+     "height_m": 0.6,
+     "ground_cover": 1.0,
+     "rgb": [
+      0.22,
+      0.42,
+      0.16
+     ]
+    },
+    {
+     "id": "haulm_dead",
+     "start_doy": 225,
+     "height_m": 0.3,
+     "ground_cover": 0.6,
+     "rgb": [
+      0.74,
+      0.65,
+      0.43
+     ]
+    },
+    {
+     "id": "harvested",
+     "start_doy": 250,
+     "height_m": 0.0,
+     "ground_cover": 0.0,
+     "rgb": [
+      0.36,
+      0.28,
+      0.2
+     ]
+    }
+   ]
+  },
+  {
+   "id": "field_grass",
+   "label": "Field grass / clover",
+   "aliases": [
+    "grass",
+    "clover",
+    "alfalfa"
+   ],
+   "row_spacing_m": 0.125,
+   "season_end_doy": 300,
+   "stages": [
+    {
+     "id": "dormant",
+     "start_doy": 1,
+     "height_m": 0.08,
+     "ground_cover": 0.9,
+     "rgb": [
+      0.4,
+      0.46,
+      0.28
+     ]
+    },
+    {
+     "id": "growing",
+     "start_doy": 90,
+     "height_m": 0.3,
+     "ground_cover": 1.0,
+     "rgb": [
+      0.22,
+      0.42,
+      0.16
+     ]
+    },
+    {
+     "id": "cut",
+     "start_doy": 145,
+     "height_m": 0.06,
+     "ground_cover": 0.9,
+     "rgb": [
+      0.55,
+      0.6,
+      0.3
+     ]
+    },
+    {
+     "id": "regrowth",
+     "start_doy": 160,
+     "height_m": 0.35,
+     "ground_cover": 1.0,
+     "rgb": [
+      0.22,
+      0.42,
+      0.16
+     ]
+    },
+    {
+     "id": "cut2",
+     "start_doy": 200,
+     "height_m": 0.06,
+     "ground_cover": 0.9,
+     "rgb": [
+      0.55,
+      0.6,
+      0.3
+     ]
+    },
+    {
+     "id": "regrowth2",
+     "start_doy": 215,
+     "height_m": 0.3,
+     "ground_cover": 1.0,
+     "rgb": [
+      0.22,
+      0.42,
+      0.16
+     ]
+    },
+    {
+     "id": "dormant_late",
+     "start_doy": 300,
+     "height_m": 0.12,
+     "ground_cover": 0.9,
+     "rgb": [
+      0.4,
+      0.46,
+      0.28
+     ]
+    }
+   ]
+  },
+  {
+   "id": "fallow",
+   "label": "Fallow / flower strip",
+   "aliases": [
+    "fallow",
+    "flowers"
+   ],
+   "row_spacing_m": 0.3,
+   "season_end_doy": 300,
+   "stages": [
+    {
+     "id": "dormant",
+     "start_doy": 1,
+     "height_m": 0.15,
+     "ground_cover": 0.7,
+     "rgb": [
+      0.48,
+      0.45,
+      0.3
+     ]
+    },
+    {
+     "id": "growing",
+     "start_doy": 100,
+     "height_m": 0.5,
+     "ground_cover": 0.9,
+     "rgb": [
+      0.22,
+      0.42,
+      0.16
+     ]
+    },
+    {
+     "id": "flowering",
+     "start_doy": 160,
+     "height_m": 0.8,
+     "ground_cover": 1.0,
+     "rgb": [
+      0.62,
+      0.55,
+      0.45
+     ]
+    },
+    {
+     "id": "seeding",
+     "start_doy": 215,
+     "height_m": 0.8,
+     "ground_cover": 0.9,
+     "rgb": [
+      0.6,
+      0.52,
+      0.32
+     ]
+    },
+    {
+     "id": "dormant_late",
+     "start_doy": 290,
+     "height_m": 0.3,
+     "ground_cover": 0.7,
+     "rgb": [
+      0.48,
+      0.45,
+      0.3
+     ]
+    }
+   ]
+  },
+  {
+   "id": "meadow",
+   "label": "Meadow",
+   "aliases": [
+    "meadow",
+    "hay"
+   ],
+   "row_spacing_m": 0.1,
+   "season_end_doy": 365,
+   "stages": [
+    {
+     "id": "dormant",
+     "start_doy": 1,
+     "height_m": 0.1,
+     "ground_cover": 0.9,
+     "rgb": [
+      0.4,
+      0.46,
+      0.28
+     ]
+    },
+    {
+     "id": "growing",
+     "start_doy": 95,
+     "height_m": 0.35,
+     "ground_cover": 1.0,
+     "rgb": [
+      0.22,
+      0.42,
+      0.16
+     ]
+    },
+    {
+     "id": "tall",
+     "start_doy": 135,
+     "height_m": 0.7,
+     "ground_cover": 1.0,
+     "rgb": [
+      0.36,
+      0.48,
+      0.22
+     ]
+    },
+    {
+     "id": "mown",
+     "start_doy": 160,
+     "height_m": 0.06,
+     "ground_cover": 0.9,
+     "rgb": [
+      0.6,
+      0.62,
+      0.32
+     ]
+    },
+    {
+     "id": "regrowth",
+     "start_doy": 175,
+     "height_m": 0.3,
+     "ground_cover": 1.0,
+     "rgb": [
+      0.22,
+      0.42,
+      0.16
+     ]
+    },
+    {
+     "id": "mown2",
+     "start_doy": 225,
+     "height_m": 0.06,
+     "ground_cover": 0.9,
+     "rgb": [
+      0.6,
+      0.62,
+      0.32
+     ]
+    },
+    {
+     "id": "regrowth2",
+     "start_doy": 240,
+     "height_m": 0.25,
+     "ground_cover": 1.0,
+     "rgb": [
+      0.22,
+      0.42,
+      0.16
+     ]
+    },
+    {
+     "id": "dormant_late",
+     "start_doy": 305,
+     "height_m": 0.15,
+     "ground_cover": 0.9,
+     "rgb": [
+      0.4,
+      0.46,
+      0.28
+     ]
+    }
+   ]
+  },
+  {
+   "id": "orchard",
+   "label": "Orchard meadow",
+   "aliases": [],
+   "row_spacing_m": 8.0,
+   "season_end_doy": 365,
+   "stages": [
+    {
+     "id": "dormant",
+     "start_doy": 1,
+     "height_m": 0.2,
+     "ground_cover": 0.8,
+     "rgb": [
+      0.42,
+      0.45,
+      0.3
+     ]
+    },
+    {
+     "id": "blossom",
+     "start_doy": 105,
+     "height_m": 0.4,
+     "ground_cover": 1.0,
+     "rgb": [
+      0.85,
+      0.85,
+      0.8
+     ]
+    },
+    {
+     "id": "leaf",
+     "start_doy": 130,
+     "height_m": 0.5,
+     "ground_cover": 1.0,
+     "rgb": [
+      0.22,
+      0.42,
+      0.16
+     ]
+    },
+    {
+     "id": "fruit",
+     "start_doy": 230,
+     "height_m": 0.5,
+     "ground_cover": 1.0,
+     "rgb": [
+      0.3,
+      0.42,
+      0.18
+     ]
+    },
+    {
+     "id": "autumn",
+     "start_doy": 290,
+     "height_m": 0.3,
+     "ground_cover": 0.9,
+     "rgb": [
+      0.6,
+      0.5,
+      0.25
+     ]
+    },
+    {
+     "id": "bare",
+     "start_doy": 320,
+     "height_m": 0.2,
+     "ground_cover": 0.8,
+     "rgb": [
+      0.42,
+      0.45,
+      0.3
+     ]
+    }
+   ]
+  },
+  {
+   "id": "vineyard",
+   "label": "Vineyard",
+   "aliases": [
+    "grape",
+    "grapes"
+   ],
+   "row_spacing_m": 2.0,
+   "season_end_doy": 365,
+   "stages": [
+    {
+     "id": "dormant",
+     "start_doy": 1,
+     "height_m": 1.0,
+     "ground_cover": 0.3,
+     "rgb": [
+      0.45,
+      0.38,
+      0.28
+     ]
+    },
+    {
+     "id": "budburst",
+     "start_doy": 115,
+     "height_m": 1.1,
+     "ground_cover": 0.4,
+     "rgb": [
+      0.38,
+      0.52,
+      0.22
+     ]
+    },
+    {
+     "id": "leaf",
+     "start_doy": 150,
+     "height_m": 1.6,
+     "ground_cover": 0.8,
+     "rgb": [
+      0.22,
+      0.42,
+      0.16
+     ]
+    },
+    {
+     "id": "harvest",
+     "start_doy": 265,
+     "height_m": 1.6,
+     "ground_cover": 0.8,
+     "rgb": [
+      0.35,
+      0.4,
+      0.2
+     ]
+    },
+    {
+     "id": "autumn",
+     "start_doy": 290,
+     "height_m": 1.4,
+     "ground_cover": 0.6,
+     "rgb": [
+      0.72,
+      0.55,
+      0.2
+     ]
+    },
+    {
+     "id": "bare",
+     "start_doy": 320,
+     "height_m": 1.0,
+     "ground_cover": 0.3,
+     "rgb": [
+      0.45,
+      0.38,
+      0.28
+     ]
+    }
+   ]
+  }
+ ],
+ "rotations": [
+  {
+   "weight": 4,
+   "sequence": [
+    "winter_rapeseed",
+    "winter_wheat",
+    "winter_barley"
+   ]
+  },
+  {
+   "weight": 3,
+   "sequence": [
+    "maize",
+    "winter_wheat",
+    "winter_barley",
+    "winter_wheat"
+   ]
+  },
+  {
+   "weight": 2,
+   "sequence": [
+    "sugar_beet",
+    "winter_wheat",
+    "spring_barley"
+   ]
+  },
+  {
+   "weight": 1,
+   "sequence": [
+    "potatoes",
+    "winter_wheat",
+    "rye"
+   ]
+  },
+  {
+   "weight": 1,
+   "sequence": [
+    "field_grass",
+    "field_grass",
+    "winter_wheat",
+    "maize"
+   ]
+  },
+  {
+   "weight": 0.5,
+   "sequence": [
+    "fallow",
+    "winter_wheat"
+   ]
+  }
+ ],
+ "fixed_landuse": {
+  "meadow": "meadow",
+  "grass": "meadow",
+  "grassland": "meadow",
+  "orchard": "orchard",
+  "vineyard": "vineyard"
+ }
+}
