@@ -4,6 +4,7 @@
 #include "g2m/layer/osm_roads.h"
 #include <algorithm>
 #include <cmath>
+#include <cstdint>
 #include <map>
 #include <queue>
 #include <set>
@@ -11,6 +12,113 @@ namespace rg {
 namespace {
 std::string tag(const g2m::RoadGraphWay& w,const std::string& k){for(const auto& [key,v]:w.tags)if(key==k)return v;return {};}
 bool public_access(const std::string& s){return s.empty()||s=="yes"||s=="permissive"||s=="designated";}
+}
+namespace {
+constexpr double kPi=3.141592653589793;
+std::vector<double> leg_stations(const std::vector<TruckRoutePoint>& leg){
+ std::vector<double> s(leg.size(),0);
+ for(std::size_t i=1;i<leg.size();++i)s[i]=s[i-1]+std::hypot(leg[i].ground.x-leg[i-1].ground.x,leg[i].ground.y-leg[i-1].ground.y);
+ return s;
+}
+TruckRoutePoint leg_at(const std::vector<TruckRoutePoint>& leg,const std::vector<double>& s,double station){
+ if(leg.size()<2||station<=s.front())return leg.front();
+ if(station>=s.back())return leg.back();
+ const auto j=static_cast<std::size_t>(std::upper_bound(s.begin(),s.end(),station)-s.begin());
+ const auto& a=leg[j-1];const auto& b=leg[j];const double span=s[j]-s[j-1],t=span>1e-9?(station-s[j-1])/span:0;
+ TruckRoutePoint p=a;p.ground=a.ground+(b.ground-a.ground)*t;p.yaw=a.yaw+std::remainder(b.yaw-a.yaw,2*kPi)*t;
+ p.grade=a.grade+(b.grade-a.grade)*t;p.speed_m_s=std::min(a.speed_m_s,b.speed_m_s);return p;
+}
+// Cubic Bezier from `from` to `to` tangent to both headings. Interior points only, about one per metre.
+void append_turn(std::vector<TruckRoutePoint>& out,const TruckRoutePoint& from,const TruckRoutePoint& to){
+ const double cx=to.ground.x-from.ground.x,cy=to.ground.y-from.ground.y,chord=std::hypot(cx,cy);if(chord<1e-3)return;
+ const double t0x=std::cos(from.yaw),t0y=std::sin(from.yaw),t3x=std::cos(to.yaw),t3y=std::sin(to.yaw);
+ // A cut point behind the other one along its heading (overlapping cuts) would make the curve loop: keep the plain join.
+ if(t0x*cx+t0y*cy<=0||t3x*cx+t3y*cy<=0)return;
+ const double theta=std::abs(std::remainder(to.yaw-from.yaw,2*kPi));
+ // Handles along each tangent, scaled from that side's distance to the corner where the two lane lines meet: the curve
+ // stays inside the corner triangle (it never swings out past either lane line when the cuts differ) and is the exact
+ // circular arc when the two distances are equal. No corner ahead (parallel or diverging lines, an S-shaped lane
+ // shift): chord / 3 on both sides.
+ double h0=chord/3,h3=chord/3;
+ {const double den=t0x*t3y-t0y*t3x;
+  if(theta>kPi/180&&std::abs(den)>1e-9){const double d0=(cx*t3y-cy*t3x)/den,d3=(cy*t0x-cx*t0y)/den;
+   if(d0>0&&d3>0){const double k=(4./3)*std::tan(theta/4)/std::tan(theta/2);h0=std::min(k*d0,chord);h3=std::min(k*d3,chord);}}}
+ const double h=std::max(h0,h3);
+ const ps::Vec3 p0=from.ground,p1{p0.x+t0x*h0,p0.y+t0y*h0,0},p3=to.ground,p2{p3.x-t3x*h3,p3.y-t3y*h3,0};
+ const int n=std::max(2,static_cast<int>(std::ceil(chord+theta*h)));
+ for(int i=1;i<n;++i){
+  const double t=static_cast<double>(i)/n,u=1-t;
+  TruckRoutePoint p=to;
+  p.ground.x=u*u*u*p0.x+3*u*u*t*p1.x+3*u*t*t*p2.x+t*t*t*p3.x;
+  p.ground.y=u*u*u*p0.y+3*u*u*t*p1.y+3*u*t*t*p2.y+t*t*t*p3.y;
+  p.ground.z=p0.z+(p3.z-p0.z)*t;
+  const double dx=3*u*u*(p1.x-p0.x)+6*u*t*(p2.x-p1.x)+3*t*t*(p3.x-p2.x),dy=3*u*u*(p1.y-p0.y)+6*u*t*(p2.y-p1.y)+3*t*t*(p3.y-p2.y);
+  p.yaw=std::atan2(dy,dx);p.grade=from.grade+(to.grade-from.grade)*t;p.speed_m_s=std::min(from.speed_m_s,to.speed_m_s);
+  out.push_back(p);
+ }
+}
+}
+TruckRoute join_route_legs(const std::vector<std::vector<TruckRoutePoint>>& legs,const std::vector<std::pair<double,double>>& cuts,
+ std::vector<std::pair<double,double>>* joints){
+ TruckRoute route;const std::size_t n=legs.size();
+ std::vector<std::vector<double>> st(n);std::vector<double> head(n,0),tail(n,0);
+ for(std::size_t k=0;k<n;++k)st[k]=leg_stations(legs[k]);
+ for(std::size_t k=0;k+1<n&&k<cuts.size();++k){tail[k]=std::max(0.,cuts[k].first);head[k+1]=std::max(0.,cuts[k].second);}
+ for(std::size_t k=0;k<n;++k){
+  const double length=st[k].empty()?0:st[k].back();
+  if(legs[k].size()<2||length<1e-6){head[k]=tail[k]=0;continue;}
+  // On a road that bends within the cut, the curve (tangent to the lane at the cut point, aimed at the corner) would
+  // leave the road: the cut ends where the lane has turned 20 degrees from its heading at the junction.
+  const auto& leg=legs[k];const double limit=20*kPi/180;
+  for(std::size_t i=leg.size();i-->0;)if(std::abs(std::remainder(leg[i].yaw-leg.back().yaw,2*kPi))>limit){tail[k]=std::min(tail[k],length-st[k][i]);break;}
+  for(std::size_t i=0;i<leg.size();++i)if(std::abs(std::remainder(leg[i].yaw-leg.front().yaw,2*kPi))>limit){head[k]=std::min(head[k],st[k][i]);break;}
+  if(head[k]+tail[k]>.9*length){const double f=.9*length/(head[k]+tail[k]);head[k]*=f;tail[k]*=f;}
+ }
+ auto& out=route.points;
+ const auto push=[&](const TruckRoutePoint& p){if(out.empty()||std::hypot(p.ground.x-out.back().ground.x,p.ground.y-out.back().ground.y)>1e-3)out.push_back(p);};
+ std::vector<std::pair<std::size_t,std::size_t>> joint_index;   // indices into out: curve start, curve end
+ for(std::size_t k=0;k<n;++k){
+  if(legs[k].empty())continue;
+  const double length=st[k].back(),begin=head[k],end=length-tail[k];
+  push(leg_at(legs[k],st[k],begin));
+  if(k>0&&!joint_index.empty()&&joint_index.back().second==SIZE_MAX)joint_index.back().second=out.size()-1;
+  for(std::size_t i=0;i<legs[k].size();++i)if(st[k][i]>begin&&st[k][i]<end)push(legs[k][i]);
+  const auto last=leg_at(legs[k],st[k],end);push(last);
+  if(k+1<n&&!legs[k+1].empty()){joint_index.push_back({out.size()-1,SIZE_MAX});append_turn(out,last,leg_at(legs[k+1],st[k+1],head[k+1]));}
+ }
+ double total=0;
+ for(std::size_t i=0;i<out.size();++i){if(i)total+=(out[i].ground-out[i-1].ground).length();out[i].station=total;}
+ if(joints){joints->clear();for(const auto& [a,b]:joint_index)joints->push_back({out[a].station,out[b==SIZE_MAX?out.size()-1:b].station});}
+ return route;
+}
+std::pair<double,double> junction_turn_cuts(double turn,double width_in_m,double width_out_m,double trim_in_m,double trim_out_m){
+ const double angle=std::min(std::abs(std::remainder(turn,2*kPi)),2.6);
+ const bool straight=angle<10*kPi/180;
+ const double cap=std::max(straight?2.:3.,30*std::tan(angle/2)+2);
+ // At least the cut of a 4 m radius turn plus a lane offset, so a tiny trim on a narrow crossing still gives a turn a car
+ // can follow (the curve may start on the approach lane, which is road too).
+ const double least=straight?2.:4*std::tan(angle/2)+2.5;
+ const auto pick=[&](double trim,double width){return std::min(cap,std::max(least,trim>=0?trim:straight?2.:.5*std::max(0.,width)+3));};
+ return {pick(trim_in_m,width_out_m),pick(trim_out_m,width_in_m)};
+}
+int traffic_road_rank(const g2m::RoadGraphWay& w){
+ const auto highway=tag(w,"highway");
+ // A link yields where it ends: onto its road (merging, StVO 18(3)) and at the ramp terminal onto any road but a
+ // living street (an exit ramp ends at a give-way line or a signal, never with priority).
+ if(highway.ends_with("_link"))return 1;
+ static const std::map<std::string,int> rank={{"motorway",14},{"trunk",12},{"primary",10},{"secondary",8},{"tertiary",6},{"unclassified",4},{"road",4},{"residential",2},{"living_street",0}};
+ const auto it=rank.find(highway);return it==rank.end()?0:it->second;
+}
+bool junction_yields(const TrafficJunction& a,const TrafficJunction& b,bool b_from_right){
+ if(a.sign_yield!=b.sign_yield)return a.sign_yield;
+ if(a.rank!=b.rank)return a.rank<b.rank;
+ return b_from_right;
+}
+bool traffic_signal_green(std::int64_t node,int phase,double time_s){
+ constexpr double kCycle=56,kGreen=25,kClear=3;
+ const double offset=static_cast<double>((static_cast<std::uint64_t>(node)*2654435761ull)%56ull);
+ const double t=std::fmod(std::fmod(time_s+offset,kCycle)+kCycle,kCycle);
+ return phase==0?t<kGreen:(t>=kGreen+kClear&&t<2*kGreen+kClear);
 }
 TrafficConfig sanitize_traffic_config(TrafficConfig c){
  auto bounded=[](double v,double fallback,double lo,double hi){return std::clamp(std::isfinite(v)?v:fallback,lo,hi);};
@@ -76,7 +184,12 @@ std::vector<TrafficDestination> extract_traffic_destinations(const g2m::OsmTile&
 TrafficPlan plan_traffic(std::shared_ptr<WorldTerrain> terrain,ps::Vec3 player,TrafficConfig config,std::uint64_t seed,const std::atomic<bool>& cancel,bool cached_geometry_only){
  TrafficPlan plan;if(cancel.load())return plan;config=sanitize_traffic_config(config);if(!terrain){plan.message="Traffic needs OSM roads and destinations (real world)";return plan;}
  const auto& frame=terrain->frame();
- struct Edge{std::int64_t first,last;const g2m::RoadProfile* profile;const g2m::RoadGraphWay* way;int direction;};
+ struct Edge{std::int64_t first,last;const g2m::RoadProfile* profile;const g2m::RoadGraphWay* way;int direction;std::uint32_t start_ref,end_ref;};
+ // Served junction trims per approach (way, stretch start_ref, end_ref, junction at the stretch end): where an NPC's turn
+ // path through the junction starts and ends.
+ std::map<std::tuple<std::int64_t,std::uint32_t,std::uint32_t,bool>,double> trims;
+ // Approaches (way, stretch start_ref, end_ref, travel direction) with a served give-way/stop line or a signal.
+ std::set<std::tuple<std::int64_t,std::uint32_t,std::uint32_t,int>> yield_signs,signalled;
  struct TurnRule {std::int64_t from=0,to=0,via=0;bool only=false,unsupported=false;};
  std::vector<TurnRule> turn_rules;
  std::vector<std::shared_ptr<const g2m::RoadGeomTile>> tiles;std::vector<Edge> edges;std::vector<TrafficDestination> destinations;
@@ -99,18 +212,42 @@ TrafficPlan plan_traffic(std::shared_ptr<WorldTerrain> terrain,ps::Vec3 player,T
     if(rule.from&&rule.to)turn_rules.push_back(rule);
    }
   }
+  for(const auto& junction:tile->junctions){if(junction.decline!=g2m::JunctionDecline::None)continue;
+   for(const auto& approach:junction.approaches){if(approach.status!=g2m::JunctionApproachStatus::Used||approach.entry_index>=tile->entries.size())continue;
+    const auto& entry=tile->entries[approach.entry_index];trims.emplace(std::tuple{entry.way_id,entry.stretch.start_ref,entry.stretch.end_ref,approach.at_end},approach.trim_m);}}
+  for(const auto& item:tile->furniture){
+   if(item.decline!=g2m::FurnitureDecline::None||item.kind==g2m::FurnitureKind::Crossing||item.entry_index>=tile->entries.size())continue;
+   if(item.travel!=g2m::LaneDirection::Forward&&item.travel!=g2m::LaneDirection::Backward)continue;
+   const auto& entry=tile->entries[item.entry_index];
+   (item.kind==g2m::FurnitureKind::Signal?signalled:yield_signs).emplace(entry.way_id,entry.stretch.start_ref,entry.stretch.end_ref,item.travel==g2m::LaneDirection::Forward?1:-1);}
   for(const auto& entry:tile->entries){if(!entry.profile||!seen.emplace(entry.way_id,entry.stretch.start_ref,entry.stretch.end_ref).second)continue;
    const auto& ways=tile->source.graph.ways;auto w=std::lower_bound(ways.begin(),ways.end(),entry.way_id,[](const auto& a,auto id){return a.osm_id<id;});
    if(w==ways.end()||w->osm_id!=entry.way_id||entry.stretch.end_ref>=w->node_ids.size())continue;
    for(int dir:{1,-1})if(traffic_road_allowed(*w,false,dir)&&truck_lane(*w,entry.profile->attributes.width_mm*.001,entry.profile->attributes.lanes,dir).allowed)
-    edges.push_back({w->node_ids[dir>0?entry.stretch.start_ref:entry.stretch.end_ref],w->node_ids[dir>0?entry.stretch.end_ref:entry.stretch.start_ref],&*entry.profile,&*w,dir});
+    edges.push_back({w->node_ids[dir>0?entry.stretch.start_ref:entry.stretch.end_ref],w->node_ids[dir>0?entry.stretch.end_ref:entry.stretch.start_ref],&*entry.profile,&*w,dir,entry.stretch.start_ref,entry.stretch.end_ref});
   }
  }
  plan.destinations=destinations.size();
  for(const auto& edge:edges){auto xy=edge.profile->reference.at(edge.profile->reference.length_m*.5);if(xy&&std::hypot(xy->x-e,xy->y-n)<config.radius_m)plan.road_length_m+=edge.profile->reference.length_m;}
  const int count=std::min(std::min(512,config.max_vehicles),static_cast<int>(std::ceil(plan.road_length_m*config.density_per_km/1000)));
  std::mt19937_64 random(seed);const auto decks=terrain->road_decks();
- std::map<std::int64_t,std::vector<std::size_t>> outgoing;for(std::size_t i=0;i<edges.size();++i)outgoing[edges[i].first].push_back(i);
+ std::map<std::int64_t,std::vector<std::size_t>> outgoing,incoming;for(std::size_t i=0;i<edges.size();++i){outgoing[edges[i].first].push_back(i);incoming[edges[i].last].push_back(i);}
+ const auto approach_key=[&](const Edge& edge){return std::tuple{edge.way->osm_id,edge.start_ref,edge.end_ref,edge.direction};};
+ const auto heading_at_end=[](const Edge& edge){auto p=edge.profile->reference.at(edge.direction>0?edge.profile->reference.length_m:0);return p?p->heading+(edge.direction<0?kPi:0):0.;};
+ // Right of way of one approach at its end node; nullopt where the node is no junction (fewer than three stretches meet).
+ const auto junction_of=[&](std::size_t index)->std::optional<TrafficJunction>{
+  const auto& edge=edges[index];std::set<std::pair<std::int64_t,std::uint32_t>> stretches;
+  for(auto i:incoming[edge.last])stretches.emplace(edges[i].way->osm_id,edges[i].start_ref);
+  for(auto i:outgoing[edge.last])stretches.emplace(edges[i].way->osm_id,edges[i].start_ref);
+  const bool signal=signalled.contains(approach_key(edge));
+  if(stretches.size()<3&&!signal)return std::nullopt;
+  TrafficJunction j;j.node=edge.last;j.rank=traffic_road_rank(*edge.way);j.sign_yield=yield_signs.contains(approach_key(edge));
+  if(signal){
+   // Two phases by axis: approaches within 45 degrees of the reference axis (the incoming edge with the smallest
+   // way id, stretch and direction) or of its opposite share phase 0, the others phase 1.
+   std::size_t reference=index;for(auto i:incoming[edge.last])if(approach_key(edges[i])<approach_key(edges[reference]))reference=i;
+   j.signal_phase=std::abs(std::remainder(2*(heading_at_end(edge)-heading_at_end(edges[reference])),2*kPi))<kPi/2?0:1;}
+  return j;};
  // Destination entrances attach only to nearby ordinary roads, never motorway/grade crossings.
  struct Goal{TrafficDestination destination;std::size_t edge;double station;};std::vector<Goal> goals;
  struct RoadSample{std::size_t edge;double station,x,y;};
@@ -160,7 +297,8 @@ TrafficPlan plan_traffic(std::shared_ptr<WorldTerrain> terrain,ps::Vec3 player,T
   std::vector<std::size_t> path;for(auto i=goal.edge;i<edges.size();i=parent[i]){path.push_back(i);if(i==initial)break;}if(path.back()!=initial)continue;std::reverse(path.begin(),path.end());
   TrafficTrip trip;trip.truck=truck;trip.destination=goal.destination;trip.desired_speed=truck?80./3.6:(80.+170.*std::generate_canonical<double,53>(random))/3.6;
   bool valid=true;double total=0;
-  for(auto index:path){if(cancel.load())return plan;const auto& edge=edges[index];const auto& p=*edge.profile;const auto lane=truck_lane(*edge.way,p.attributes.width_mm*.001,p.attributes.lanes,edge.direction);
+  std::vector<std::vector<TruckRoutePoint>> legs;
+  for(auto index:path){legs.emplace_back();if(cancel.load())return plan;const auto& edge=edges[index];const auto& p=*edge.profile;const auto lane=truck_lane(*edge.way,p.attributes.width_mm*.001,p.attributes.lanes,edge.direction);
    const double begin=index==initial?start:(edge.direction>0?0:p.reference.length_m),end=index==goal.edge?goal.station:(edge.direction>0?p.reference.length_m:0);
    double mu=tag(*edge.way,"surface")=="gravel"||tag(*edge.way,"surface")=="unpaved"?.45:1.;
    for(double s=begin;;s+=edge.direction*2){if(cancel.load())return plan;if((edge.direction>0&&s>end)||(edge.direction<0&&s<end))s=end;auto xy=p.reference.at(s);auto z=p.at(s);if(!xy||!z){valid=false;break;}
@@ -168,10 +306,25 @@ TrafficPlan plan_traffic(std::shared_ptr<WorldTerrain> terrain,ps::Vec3 player,T
     for(const auto& deck:decks)if(deck->way_id==edge.way->osm_id&&xy->x>=deck->min_easting-2&&xy->x<=deck->max_easting+2&&xy->y>=deck->min_northing-2&&xy->y<=deck->max_northing+2)if(auto h=road_deck_height(*deck,s,lane.offset_m))height=*h;
     TruckRoutePoint point{{xy->x-std::sin(xy->heading)*lane.offset_m-frame.e0_m(),xy->y+std::cos(xy->heading)*lane.offset_m-frame.n0_m(),height},xy->heading+(edge.direction<0?3.141592653589793:0),z->grade*edge.direction,traffic_speed_cap(*edge.way,truck,edge.direction,trip.desired_speed),0,edge.way->osm_id};
     point.speed_m_s=std::min(point.speed_m_s,std::sqrt(2.5*mu*config.grip_multiplier/std::max(.001,std::abs(xy->curvature))));
-    if(!trip.route.points.empty()){double gap=(point.ground-trip.route.points.back().ground).length();if(gap>12||std::abs(point.ground.z-trip.route.points.back().ground.z)>2){valid=false;break;}total+=gap;}
-    point.station=total;trip.route.points.push_back(point);if(s==end)break;
+    const TruckRoutePoint* last=!legs.back().empty()?&legs.back().back():legs.size()>1&&!legs[legs.size()-2].empty()?&legs[legs.size()-2].back():nullptr;
+    if(last){double gap=(point.ground-last->ground).length();if(gap>12||std::abs(point.ground.z-last->ground.z)>2){valid=false;break;}total+=gap;}
+    point.station=total;legs.back().push_back(point);if(s==end)break;
    }if(!valid)break;
   }
+  if(!valid)continue;
+  // Turn paths through the junctions: each joint between two path edges becomes a curve from the trim line of the
+  // approach to the trim line of the exit (served trims, else a width-based fallback).
+  {std::vector<std::pair<double,double>> cuts;
+   for(std::size_t k=0;k+1<path.size();++k){const auto& in=edges[path[k]];const auto& out=edges[path[k+1]];
+    auto a=in.profile->reference.at(in.direction>0?in.profile->reference.length_m:0),b=out.profile->reference.at(out.direction>0?0:out.profile->reference.length_m);
+    const double turn=a&&b?std::remainder(b->heading+(out.direction<0?kPi:0)-a->heading-(in.direction<0?kPi:0),2*kPi):0;
+    const auto trim_in=trims.find({in.way->osm_id,in.start_ref,in.end_ref,in.direction>0}),trim_out=trims.find({out.way->osm_id,out.start_ref,out.end_ref,out.direction<0});
+    const auto cut=junction_turn_cuts(turn,in.profile->attributes.width_mm*.001,out.profile->attributes.width_mm*.001,
+     trim_in==trims.end()?-1:trim_in->second,trim_out==trims.end()?-1:trim_out->second);
+    cuts.push_back(cut);}
+   std::vector<std::pair<double,double>> joints;
+   trip.route=join_route_legs(legs,cuts,&joints);total=trip.route.points.empty()?0:trip.route.points.back().station;
+   for(std::size_t k=0;k<joints.size()&&k+1<path.size();++k)if(auto j=junction_of(path[k])){j->enter_station=joints[k].first;j->exit_station=joints[k].second;trip.junctions.push_back(*j);}}
   if(!valid||total<40||trip.route.points.size()<3)continue;
   // Reject overlapping initial footprints; physics performs another live check before spawn.
   const auto& proposed=trip.route.points.front();

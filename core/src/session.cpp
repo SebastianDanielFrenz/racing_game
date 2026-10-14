@@ -1507,11 +1507,11 @@ void Session::update_walker() {
 }
 
 namespace rg {
-std::uint64_t Session::add_test_traffic_actor(const ps::Pose& pose,double speed_mps,double route_length_m,bool stop_at_end){
+std::uint64_t Session::add_test_traffic_actor(const ps::Pose& pose,double speed_mps,double route_length_m,bool stop_at_end,std::vector<TrafficJunction> junctions){
  if(loop_.running())throw std::logic_error("Session::add_test_traffic_actor: not while running");
  const ps::Vec3 forward=pose.orientation.rotate(ps::Vec3::unit_x());
  const double yaw=ps::math::atan2(forward.y,forward.x);
- TrafficTrip trip;
+ TrafficTrip trip;trip.junctions=std::move(junctions);
  const auto add_point=[&](double station,double speed){TruckRoutePoint point;point.ground=pose.position+forward*station;point.yaw=yaw;point.speed_m_s=speed;point.station=station;trip.route.points.push_back(point);};
  add_point(0,speed_mps);
  if(stop_at_end){add_point(route_length_m-5.,speed_mps);add_point(route_length_m-.7,1.);add_point(route_length_m,0.);}else add_point(route_length_m,speed_mps);
@@ -1578,7 +1578,9 @@ void Session::update_traffic(bool clear){
   traffic_neighbor_grid_.clear();traffic_body_keys_.clear();
   for(const auto& actor:traffic_actors_){const auto pose=world_->get_pose(actor.body);const auto p=pose.position;const auto f=pose.orientation.rotate(ps::Vec3::unit_x());
    traffic_body_keys_.insert(body_key(actor.body));
-   traffic_neighbor_grid_[{static_cast<int>(std::floor(p.x/32)),static_cast<int>(std::floor(p.y/32))}].push_back({actor.id,p,actor.speed,actor.trip.truck?6.5:2.3,f.x,f.y});}
+   TrafficNeighbor neighbor{actor.id,p,actor.speed,actor.trip.truck?6.5:2.3,f.x,f.y};
+   if(const auto* j=current_junction(actor)){neighbor.junction=*j;neighbor.to_enter=j->enter_station-actor.station;}
+   traffic_neighbor_grid_[{static_cast<int>(std::floor(p.x/32)),static_cast<int>(std::floor(p.y/32))}].push_back(neighbor);}
  }
  if(!std::is_sorted(visible.begin(),visible.end()))std::sort(visible.begin(),visible.end());
  std::vector<ps::aero::WakeSource> wakes;
@@ -1631,6 +1633,30 @@ void Session::update_traffic(bool clear){
    for(const auto& other:cell->second)if(other.id!=a.id)avoid(other.position,other.speed,other.half_length,other.id,other.fx*forward.x+other.fy*forward.y);}
 
   if(truck_state_.active)avoid(world_->get_pose(truck_body_).position,truck_speed_,6.5,kNpcTruckVehicleId,2.0);
+  // Junction right of way (StVO 8, docs/npc_traffic.md "Right of way"): before the turn path of the next junction the
+  // actor holds at its stop point (1 m before the turn path, nose included) while the signal of its approach is red,
+  // or while a crossing NPC that has the right of way over it is inside the junction or reaches it within 6 s. A red
+  // signal too close to stop for (6 m/s^2) is passed. After kCrossingPatienceS standing the yield is dropped
+  // (the same deadlock breaker as for crossing traffic: four equal approaches all yield to the right).
+  a.at_red=false;
+  if(const auto* j=current_junction(a);j&&a.station<j->enter_station&&j->enter_station-a.station<60){
+   const double stop_at=j->enter_station-(a.trip.truck?6.5:2.3)-1,before=stop_at-a.station;
+   bool hold=false;std::uint64_t holder=0;
+   if(j->signal_phase>=0){
+    if(!traffic_signal_green(j->node,j->signal_phase,now)&&before>a.speed*a.speed/12-.5)hold=a.at_red=true;
+   }else if(a.stuck.below_s<=kCrossingPatienceS&&j->enter_station-a.station<40){
+    for(int y=cy-2;y<=cy+2&&!hold;++y)for(int x=cx-2;x<=cx+2&&!hold;++x){auto cell=traffic_neighbor_grid_.find({x,y});if(cell==traffic_neighbor_grid_.end())continue;
+     for(const auto& other:cell->second){
+      if(other.id==a.id||other.junction.node!=j->node||other.junction.signal_phase>=0)continue;
+      const double heading_cos=other.fx*forward.x+other.fy*forward.y;if(heading_cos<-.5||heading_cos>.5)continue;   // crossing traffic only
+      const bool inside=other.to_enter<=0;
+      if(!inside&&other.to_enter/std::max(other.speed,1.)>6)continue;
+      const auto rel=other.position-pose.position;const bool from_right=forward.x*rel.y-forward.y*rel.x<0;
+      if(inside||junction_yields(*j,other.junction,from_right)){hold=true;holder=other.id;break;}
+     }}
+   }
+   if(hold){const double cap=std::sqrt(8*std::max(0.,before));if(cap<follow){follow=cap;follow_id=holder;}}
+  }
   a.follow_cap=follow;a.follow_id=follow_id;
   // Static obstacle probe excludes the moving NPC's own collider.
   const double nose=a.trip.truck?6.5:2.3,look=std::max(12.,a.speed*a.speed/8+8);
@@ -1645,7 +1671,7 @@ void Session::update_traffic(bool clear){
   target=std::min({target,a.obstacle_cap,a.follow_cap});
   a.speed+=std::clamp(target-a.speed,-4*dt,(a.trip.truck?1.2:2.5)*dt);
   a.station=std::min(end,a.station+a.speed*dt);
-  {const auto ev=advance_stuck_track(a.stuck,a.speed,end-a.station<kStuckArrivingM,dt);
+  {const auto ev=advance_stuck_track(a.stuck,a.speed,end-a.station<kStuckArrivingM||a.at_red,dt);
    if(ev==StuckTrackEvent::Declared){a.stuck_since=now-kStuckTimeS;stuck_declared.push_back(a.id);}
    else if(ev==StuckTrackEvent::Recovered)traffic_stuck_.note_recovered(now-a.stuck_since);
    if(a.stuck.declared)++stuck_active;}
@@ -1662,6 +1688,11 @@ void Session::update_traffic(bool clear){
  world_->set_aero_wakes(std::move(wakes));
  traffic_stuck_.set_active(stuck_active);
  note_stuck_events(stuck_declared,now);
+}
+const TrafficJunction* Session::current_junction(const TrafficActor& a){
+ const auto& js=a.trip.junctions;
+ auto it=std::upper_bound(js.begin(),js.end(),a.station,[](double s,const TrafficJunction& j){return s<j.exit_station;});
+ return it==js.end()?nullptr:&*it;
 }
 // Classifies each newly declared stuck actor by what the controller is obeying (traffic_stuck.h) and logs it.
 void Session::note_stuck_events(const std::vector<std::uint64_t>& declared,double now){

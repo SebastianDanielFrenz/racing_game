@@ -247,3 +247,65 @@ junction), not deadlocks; `root_cycle` 2 (a 3-cycle and a 4+-cycle at junctions 
 despawn is **not** used (`backstop=0`). A full junction right-of-way needs: per-junction reservation or priority from the
 road data (priority roads, give way/stop signs, signals, right-hand rule fallback), turning-conflict zones instead of the
 point-neighbour test, and a yield state that survives the 20 Hz decisions. Not attempted here.
+
+## Turn paths through junctions (2026-10-14)
+
+Before, a route was the lane lines of its path edges laid end to end: each edge's lane line ran to the OSM node, and
+the next one started at the node on its own lane offset. A turn therefore was a heading jump at the node, and a right
+turn hopped backwards between the two lane offsets (measured on the frankfurt_hoechst and hoechst_a66 fixtures: 1301
+of 2793 junction turns ran backwards, median tightest radius 1.4 m).
+
+`plan_traffic` now keeps the lane line of each path edge as a leg and joins them with `join_route_legs`
+(`core/include/rg/npc_traffic.h`):
+
+- Each joint is cut back on both sides by `junction_turn_cuts`: the served junction trim of that approach
+  (`RoadGeomTile::junctions`, the line where the junction surface begins) where known, otherwise half the width of
+  the road being entered + 3 m (2 m for an almost straight joint). Never less than the cut of a 4 m radius turn
+  + 2.5 m, never more than that of a 30 m radius turn + 2 m (long merge wedges).
+- On a road that bends within the cut, the cut ends where the lane has turned 20 degrees from its heading at the
+  junction; a leg always keeps 10 % of its length.
+- The two cut points are joined by a cubic Bezier tangent to both lane lines. Each handle is scaled from that side's
+  distance to the corner where the two lane lines meet, so the curve stays inside that triangle and is a circular arc
+  when the distances are equal. With no corner ahead (an S-shaped lane shift) the handles are a third of the chord.
+- The corner speed pass then sees real curvature instead of a jump.
+
+Measured on every turn through every single-node fixture junction (2793; scratch harness, not in the repo): backwards
+hops 1301 -> 4, median tightest radius 1.4 m -> 7.2 m. The remaining tight or backwards cases are road stubs a few
+metres long, where no curve fits, and loop roads returning to their own node.
+Tests: `tests/unit/test_npc_traffic.cpp` `[junction_turn]`.
+
+## Right of way (2026-10-14)
+
+Each planned trip carries `TrafficTrip::junctions`: every node with three or more stretches (or a signal) it drives
+through, with the stations where its turn path enters and leaves, and this approach's right of way:
+
+- `rank` from the road class (`traffic_road_rank`: motorway 14, trunk 12, primary 10, secondary 8, tertiary 6,
+  unclassified 4, residential 2, living street 0; every `*_link` ranks 1, so a ramp yields where it merges onto its
+  road (StVO 18(3)) and at the terminal where it ends on another road, matching the give-way lines the road visual
+  draws there);
+- `sign_yield`: a served give-way or stop line (`RoadGeomTile::furniture`, OSM `highway=give_way|stop`) on this
+  approach in its travel direction;
+- `signal_phase`: a served signal on the approach. Approaches within 45 degrees of the junction's reference axis (the
+  incoming edge with the smallest way id, stretch and direction) or its opposite are phase 0, the others phase 1.
+
+`junction_yields(a, b, b_from_right)` is StVO 8 in that order: a give-way/stop line yields to an approach without one,
+else the lower road rank yields, else right before left. Service roads and exits from property never carry traffic, so
+§10 needs no rule here.
+
+In `Session::update_traffic` (decision step, 20 Hz) an actor within 60 m of the next junction's turn path holds 1 m
+before it, nose included, while:
+
+- its signal is red (`traffic_signal_green`: 25 s green per phase, 3 s all-red between them, cycle offset per node).
+  A red too close to stop for at 6 m/s^2 is passed. Waiting at a red does not count as stuck.
+- or, within 40 m and without a signal, a crossing NPC (heading cos between -0.5 and 0.5) at the same node has the
+  right of way over it and is inside the junction or reaches it within 6 s. Any NPC already inside counts.
+
+After `kCrossingPatienceS` (8 s) standing, an actor stops yielding, as before. Four equal approaches all give way to
+the right, and this breaks that wait. The physical crossing rule above (lower id, only once the other car is in front)
+stays as the last resort.
+Tests: `test_npc_traffic.cpp` `[right_of_way]` (rules, signal phases never overlap) and `test_traffic_stuck.cpp`
+`[right_of_way]` (right before left, major road, a give-way line over the major road, a red signal; sabotage noted).
+
+Not modelled yet: turning conflicts with oncoming traffic (left turn yields to oncoming straight), pedestrians at
+crossings, signal-specific phases from the data (only the two-axis fixed cycle), priority signs without a line
+(`priority_road` tags), and the player car in the junction logic (NPCs still only react to it physically).
