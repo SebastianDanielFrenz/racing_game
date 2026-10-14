@@ -1,0 +1,47 @@
+[
+  {
+    "id": "hyper_v8_one1_audio",
+    "glb": "hyper_v8_one1_audio/hyper_v8_one1_audio.glb",
+    "envelope": "hyper_v8_one1_audio/hyper_v8_one1_audio.envelope.json"
+  },
+  {
+    "id": "demo_i4_pipes",
+    "glb": "demo_i4_pipes/demo_i4_pipes.glb",
+    "envelope": "demo_i4_pipes/demo_i4_pipes.envelope.json"
+  },
+  {
+    "id": "toyota_a25a_fks_gen",
+    "glb": "toyota_a25a_fks_gen/toyota_a25a_fks_gen.glb",
+    "envelope": "toyota_a25a_fks_gen/toyota_a25a_fks_gen.envelope.json"
+  },
+  {
+    "id": "pico_i3_1l0_na",
+    "glb": "pico_i3_1l0_na/pico_i3_1l0_na.glb",
+    "envelope": "pico_i3_1l0_na/pico_i3_1l0_na.envelope.json"
+  },
+  {
+    "id": "ventura_v8_5l0_na",
+    "glb": "ventura_v8_5l0_na/ventura_v8_5l0_na.glb",
+    "envelope": "ventura_v8_5l0_na/ventura_v8_5l0_na.envelope.json"
+  },
+  {
+    "id": "runabout_i4_2l9_sv",
+    "glb": "runabout_i4_2l9_sv/runabout_i4_2l9_sv.glb",
+    "envelope": "runabout_i4_2l9_sv/runabout_i4_2l9_sv.envelope.json"
+  },
+  {
+    "id": "i4_2l_na",
+    "glb": "i4_2l_na/i4_2l_na.glb",
+    "envelope": "i4_2l_na/i4_2l_na.envelope.json"
+  },
+  {
+    "id": "n52b30_3l_na",
+    "glb": "n52b30_3l_na/n52b30_3l_na.glb",
+    "envelope": "n52b30_3l_na/n52b30_3l_na.envelope.json"
+  },
+  {
+    "id": "r26b_4rotor",
+    "glb": "r26b_4rotor/r26b_4rotor.glb",
+    "envelope": "r26b_4rotor/r26b_4rotor.envelope.json"
+  }
+]

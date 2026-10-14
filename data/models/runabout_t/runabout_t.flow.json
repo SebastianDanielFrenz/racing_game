@@ -1,0 +1,332 @@
+{
+  "format": "physics_sim.visual_flow_selection/1",
+  "frame": "ISO x forward,y left,z up; rig ground origin, not chassis COM",
+  "status": "visual_surface_selection_not_fluid_solid",
+  "cfd_ready": false,
+  "ranges": [
+    {
+      "node": "runabout_t",
+      "material": "frame",
+      "first_triangle": 0,
+      "triangle_count": 1476
+    },
+    {
+      "node": "runabout_t",
+      "material": "paint",
+      "first_triangle": 0,
+      "triangle_count": 8204
+    },
+    {
+      "node": "runabout_t",
+      "material": "floorboard",
+      "first_triangle": 0,
+      "triangle_count": 504
+    },
+    {
+      "node": "runabout_t",
+      "material": "brass",
+      "first_triangle": 0,
+      "triangle_count": 876
+    },
+    {
+      "node": "runabout_t",
+      "material": "radiator",
+      "first_triangle": 0,
+      "triangle_count": 252
+    },
+    {
+      "node": "runabout_t",
+      "material": "light_head",
+      "first_triangle": 0,
+      "triangle_count": 184
+    },
+    {
+      "node": "hood_L",
+      "material": "paint",
+      "first_triangle": 0,
+      "triangle_count": 2876
+    },
+    {
+      "node": "hood_L",
+      "material": "brass",
+      "first_triangle": 0,
+      "triangle_count": 36
+    },
+    {
+      "node": "hood_R",
+      "material": "paint",
+      "first_triangle": 0,
+      "triangle_count": 2876
+    },
+    {
+      "node": "hood_R",
+      "material": "brass",
+      "first_triangle": 0,
+      "triangle_count": 36
+    },
+    {
+      "node": "runabout_t",
+      "material": "light_drl",
+      "first_triangle": 0,
+      "triangle_count": 120
+    },
+    {
+      "node": "runabout_t",
+      "material": "leather",
+      "first_triangle": 0,
+      "triangle_count": 748
+    },
+    {
+      "node": "door_L",
+      "material": "paint",
+      "first_triangle": 0,
+      "triangle_count": 68
+    },
+    {
+      "node": "door_L",
+      "material": "leather",
+      "first_triangle": 0,
+      "triangle_count": 392
+    },
+    {
+      "node": "door_L",
+      "material": "brass",
+      "first_triangle": 0,
+      "triangle_count": 252
+    },
+    {
+      "node": "door_R",
+      "material": "paint",
+      "first_triangle": 0,
+      "triangle_count": 68
+    },
+    {
+      "node": "door_R",
+      "material": "leather",
+      "first_triangle": 0,
+      "triangle_count": 392
+    },
+    {
+      "node": "door_R",
+      "material": "brass",
+      "first_triangle": 0,
+      "triangle_count": 252
+    },
+    {
+      "node": "runabout_t",
+      "material": "plate",
+      "first_triangle": 0,
+      "triangle_count": 252
+    },
+    {
+      "node": "runabout_t",
+      "material": "light_tail",
+      "first_triangle": 0,
+      "triangle_count": 60
+    },
+    {
+      "node": "runabout_t",
+      "material": "light_brake",
+      "first_triangle": 0,
+      "triangle_count": 44
+    },
+    {
+      "node": "runabout_t",
+      "material": "glass",
+      "first_triangle": 0,
+      "triangle_count": 12
+    },
+    {
+      "node": "windscreen_upper",
+      "material": "brass",
+      "first_triangle": 0,
+      "triangle_count": 24
+    },
+    {
+      "node": "windscreen_upper",
+      "material": "glass",
+      "first_triangle": 0,
+      "triangle_count": 12
+    },
+    {
+      "node": "wheel_FL",
+      "material": "tyre_sidewall",
+      "first_triangle": 0,
+      "triangle_count": 2048
+    },
+    {
+      "node": "wheel_FL",
+      "material": "tyre_tread_F",
+      "first_triangle": 0,
+      "triangle_count": 1920
+    },
+    {
+      "node": "wheel_FL",
+      "material": "rim_F",
+      "first_triangle": 0,
+      "triangle_count": 576
+    },
+    {
+      "node": "wheel_FL",
+      "material": "wheel_wood",
+      "first_triangle": 0,
+      "triangle_count": 816
+    },
+    {
+      "node": "wheel_FL",
+      "material": "wheel_hub",
+      "first_triangle": 0,
+      "triangle_count": 344
+    },
+    {
+      "node": "wheel_FL",
+      "material": "brass",
+      "first_triangle": 0,
+      "triangle_count": 240
+    },
+    {
+      "node": "wheel_FL",
+      "material": "brake_drum",
+      "first_triangle": 0,
+      "triangle_count": 256
+    },
+    {
+      "node": "wheel_FR",
+      "material": "tyre_sidewall",
+      "first_triangle": 0,
+      "triangle_count": 2048
+    },
+    {
+      "node": "wheel_FR",
+      "material": "tyre_tread_F",
+      "first_triangle": 0,
+      "triangle_count": 1920
+    },
+    {
+      "node": "wheel_FR",
+      "material": "rim_F",
+      "first_triangle": 0,
+      "triangle_count": 576
+    },
+    {
+      "node": "wheel_FR",
+      "material": "wheel_wood",
+      "first_triangle": 0,
+      "triangle_count": 816
+    },
+    {
+      "node": "wheel_FR",
+      "material": "wheel_hub",
+      "first_triangle": 0,
+      "triangle_count": 344
+    },
+    {
+      "node": "wheel_FR",
+      "material": "brass",
+      "first_triangle": 0,
+      "triangle_count": 240
+    },
+    {
+      "node": "wheel_FR",
+      "material": "brake_drum",
+      "first_triangle": 0,
+      "triangle_count": 256
+    },
+    {
+      "node": "wheel_RL",
+      "material": "tyre_sidewall",
+      "first_triangle": 0,
+      "triangle_count": 2048
+    },
+    {
+      "node": "wheel_RL",
+      "material": "tyre_tread_R",
+      "first_triangle": 0,
+      "triangle_count": 1920
+    },
+    {
+      "node": "wheel_RL",
+      "material": "rim_R",
+      "first_triangle": 0,
+      "triangle_count": 576
+    },
+    {
+      "node": "wheel_RL",
+      "material": "wheel_wood",
+      "first_triangle": 0,
+      "triangle_count": 816
+    },
+    {
+      "node": "wheel_RL",
+      "material": "wheel_hub",
+      "first_triangle": 0,
+      "triangle_count": 344
+    },
+    {
+      "node": "wheel_RL",
+      "material": "brass",
+      "first_triangle": 0,
+      "triangle_count": 240
+    },
+    {
+      "node": "wheel_RL",
+      "material": "brake_drum",
+      "first_triangle": 0,
+      "triangle_count": 256
+    },
+    {
+      "node": "wheel_RR",
+      "material": "tyre_sidewall",
+      "first_triangle": 0,
+      "triangle_count": 2048
+    },
+    {
+      "node": "wheel_RR",
+      "material": "tyre_tread_R",
+      "first_triangle": 0,
+      "triangle_count": 1920
+    },
+    {
+      "node": "wheel_RR",
+      "material": "rim_R",
+      "first_triangle": 0,
+      "triangle_count": 576
+    },
+    {
+      "node": "wheel_RR",
+      "material": "wheel_wood",
+      "first_triangle": 0,
+      "triangle_count": 816
+    },
+    {
+      "node": "wheel_RR",
+      "material": "wheel_hub",
+      "first_triangle": 0,
+      "triangle_count": 344
+    },
+    {
+      "node": "wheel_RR",
+      "material": "brass",
+      "first_triangle": 0,
+      "triangle_count": 240
+    },
+    {
+      "node": "wheel_RR",
+      "material": "brake_drum",
+      "first_triangle": 0,
+      "triangle_count": 256
+    }
+  ],
+  "selected": [
+    "frame, axles, springs",
+    "wings and running boards",
+    "radiator, headlamps",
+    "bonnet, scuttle, carriage lamps",
+    "tub, doors, tail",
+    "windscreen, horn",
+    "wheels"
+  ],
+  "excluded": "cabin, cockpit controls, engine bay, hidden top",
+  "limitations": "Closed visual shells per part; separate parts overlap and touch (coachbuilt), not a boolean union. The open car is selected; the hidden top and the cabin are not.",
+  "source_glb_sha256": "f4e8f4b5393155ecb3a534ff9fd722f5007d76681fdf83db9757d9f232f93216"
+}

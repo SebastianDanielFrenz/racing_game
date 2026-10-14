@@ -251,6 +251,8 @@ struct Files {
     std::string fuel_choice;            // set when the fuel option picked a fuel
     // Vehicle-file subtrees the swap package (trusted code, not a player option) edited; exempt from the whitelist.
     std::vector<std::string> derived_subtrees;
+    // Electronics parts the swap package re-targeted (a launch rpm outside the new engine's idle..limiter band).
+    std::vector<FileDoc> electronics;
 };
 
 bool read_doc(const std::string& path, json& out, std::string* err) {
@@ -601,6 +603,39 @@ std::string apply_swap(Files& files, const CatalogEntry& entry, const SetupConte
 
     pkg = derive_swap_package(car, eng, SwapChoices{files.fuel_choice}, files.swapped.has_value());
     if (!pkg.ok) return entry.id + ": " + pkg.error;
+    // A launch rpm is a second rev limit of the old engine: one outside the new engine's idle..limiter band is moved
+    // to 60 % of the new limiter (at least idle + 300 rpm), else the loader rejects the car.
+    files.electronics.clear();
+    if (files.swapped && eng.limiter_rpm > eng.idle_rpm && veh.contains("controllers") && veh["controllers"].is_array()) {
+        const double launch = std::min(std::round(std::max(eng.idle_rpm + 300.0, 0.6 * eng.limiter_rpm) / 50.0) * 50.0,
+                                       eng.limiter_rpm - 100.0);
+        for (const json& c : veh["controllers"]) {
+            std::string ty, ref;
+            if (!c.is_object() || !detail::get_string(c, "type", ty) || ty != "electronics" || !detail::get_string(c, "ref", ref)) continue;
+            FileDoc doc;
+            doc.path = resolve_ref(dir_of(files.vehicle.path), ref);
+            if (!read_doc(doc.path, doc.base, &err)) return err;
+            doc.work = doc.base;
+            std::string kind;
+            detail::get_string(doc.base, "kind", kind);
+            json* holder = nullptr;
+            const char* key = nullptr;
+            if (kind == "launch_control") {
+                holder = &doc.work;
+                key = "rpm";
+            } else if (kind == "assist_unit" && doc.work.contains("launch_control") && doc.work["launch_control"].is_object()) {
+                holder = &doc.work["launch_control"];
+                key = "launch_rpm";
+            }
+            double rpm = 0.0;
+            if (holder == nullptr || !detail::get_number(*holder, key, rpm)) continue;
+            if (rpm > eng.idle_rpm && rpm < eng.limiter_rpm) continue;
+            (*holder)[key] = launch;
+            pkg.lines.push_back("Launch control: launch rpm moved from " + std::to_string(static_cast<int>(rpm)) + " to " +
+                                std::to_string(static_cast<int>(launch)) + " rpm (limiter " + std::to_string(static_cast<int>(eng.limiter_rpm)) + " rpm)");
+            files.electronics.push_back(std::move(doc));
+        }
+    }
     // The car's current gearbox is not turned away by an engine swap, but the player is told when it is too weak.
     if (files.swapped && ctx.gearboxes && files.gearbox && eng.peak_torque_nm > 0.0) {
         const GearboxEntry* g = ctx.gearboxes->find_by_file(files.gearbox->path);
@@ -1032,6 +1067,7 @@ std::optional<SetupOptionTable> parse_setup_options(const std::string& json_text
         }
         detail::get_number(o, "max_shift", d.max_shift);
         detail::get_string(o, "file", d.file);
+        detail::get_string(o, "model_option", d.model_option);
         if (d.file != "vehicle" && d.file != "gearbox" && d.file != "engine" && d.file != "turbo") {
             return bad(where + ": \"file\" must be vehicle, gearbox, engine or turbo");
         }
@@ -1052,7 +1088,10 @@ std::optional<SetupOptionTable> parse_setup_options(const std::string& json_text
                 d.pointers.push_back(p.get<std::string>());
             }
         }
-        if (d.kind != OptionKind::Colour && d.pointers.empty()) return bad(where + ": \"pointers\" (the whitelist) is empty");
+        if (!d.model_option.empty() && (d.kind != OptionKind::Bool || !d.pointers.empty())) {
+            return bad(where + ": a model_option is a bool that edits no file, so it has no pointers");
+        }
+        if (d.kind != OptionKind::Colour && d.model_option.empty() && d.pointers.empty()) return bad(where + ": \"pointers\" (the whitelist) is empty");
         if (d.kind == OptionKind::Colour && !d.pointers.empty()) return bad(where + ": a colour edits no file, so it has no pointers");
         // A slider option's factor range comes from its absolute bounds and the car's stock value, not from min/max.
         if ((d.kind == OptionKind::Scale || d.kind == OptionKind::ScaleList) && !d.slider &&
@@ -1325,6 +1364,11 @@ SetupModel build_setup_model(const CatalogEntry& entry, const SetupOptionTable& 
         model.swap_lines = pkg.lines;
         model.chassis_mass_delta_kg = pkg.mass_delta_kg;
         if (files.swapped) model.engine_title = files.swapped->name;
+        if (files.swapped) {
+            model.engine_key = files.swapped->key;
+        } else if (ctx.engines) {
+            if (const EngineEntry* own = ctx.engines->find_by_file(files.original_engine_path)) model.engine_key = own->key;
+        }
     }
     if (!load_turbo(files, &model.error)) return model;
     for (const SetupOptionDef& def : table.options) {
@@ -1420,6 +1464,13 @@ SetupModel build_setup_model(const CatalogEntry& entry, const SetupOptionTable& 
                 break;
             }
             case OptionKind::Bool: {
+                if (!def.model_option.empty()) { // a visual part: off as delivered, offered where the model has it
+                    v.stock = false;
+                    if (std::find(entry.model_options.begin(), entry.model_options.end(), def.model_option) == entry.model_options.end()) {
+                        v.available = false;
+                    }
+                    break;
+                }
                 const std::vector<Target> t = targets_of(files, def, v.def.pointers);
                 bool value = false;
                 if (!t.empty()) {
@@ -1617,6 +1668,13 @@ std::string apply_option(const CatalogEntry& entry, const SetupOptionDef& def, c
         }
         case OptionKind::Bool: {
             if (!std::holds_alternative<bool>(value)) return type_error("true or false");
+            if (!def.model_option.empty()) {
+                if (std::find(entry.model_options.begin(), entry.model_options.end(), def.model_option) == entry.model_options.end()) {
+                    return id + ": " + entry.id + "'s model has no " + def.model_option;
+                }
+                if (std::get<bool>(value)) out.model_options.push_back(def.model_option);
+                return {};
+            }
             std::vector<Target> targets = targets_of(files, def, patterns);
             if (targets.empty()) return "option \"" + id + "\" matches nothing in " + entry.id + "'s files";
             for (Target& t : targets) {
@@ -1801,6 +1859,11 @@ CompiledSetup compile_setup_internal(const CatalogEntry& entry, const SetupOptio
     if (files.gearbox && !finish_file("gearbox", *files.gearbox, false)) return out;
     if (files.engine && !finish_file("engine", *files.engine, false)) return out;
     if (files.turbo && !finish_file("turbo", *files.turbo, false)) return out;
+    // Trusted swap-package edits (no player option touches an electronics part, so no whitelist).
+    for (const FileDoc& f : files.electronics) {
+        const json patch = make_merge_patch(f.base, f.work);
+        if (!(patch.is_object() && patch.empty())) out.patches[basename_key("electronics", f)] = patch_text(patch);
+    }
     out.ok = true;
     return out;
 }
@@ -1907,6 +1970,9 @@ MaterialisedSetup materialise_setup(const CatalogEntry& entry, const SetupOption
     if (files.turbo && !write_aux("turbo", *files.turbo)) return out;
     if (files.gearbox && !write_aux("gearbox", *files.gearbox)) return out;
     if (files.engine && !write_aux("engine", *files.engine)) return out;
+    for (const FileDoc& f : files.electronics) {
+        if (!write_aux("electronics", f)) return out;
+    }
     json vehicle = files.vehicle.base;
     vehicle.merge_patch(*detail::parse_json(out.compiled.vehicle_patch));
     absolutise_refs(vehicle, dir_of(files.vehicle.path));

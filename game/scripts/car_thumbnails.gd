@@ -177,6 +177,7 @@ func _model_for(path: String) -> Node3D:
 	var model := scene as Node3D
 	_holder.add_child(model)
 	_unique_materials(model)
+	preload("res://scripts/model_options.gd").apply(model, path.get_basename() + ".rig.json", []) # optional parts off
 	_models[path] = model
 	return model
 

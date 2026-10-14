@@ -172,13 +172,13 @@ double max_step(const ps::drivetrain::GearboxDesc& g) {
 TEST_CASE("gearbox catalogue: the shipped rows load with their kinds, ratings and sections", "[gearbox_swap][garage]") {
     Fixture f;
     const auto& list = f.boxes->list();
-    CHECK(list.size() == 7);
+    CHECK(list.size() == 8);
     std::set<std::string> ids;
     for (const auto& g : list) {
         INFO(g.id);
         ids.insert(g.id);
         CHECK(g.rating_nm > 0.0);
-        CHECK(g.gears >= 5);
+        CHECK(g.gears >= 3);
         CHECK(g.first_ratio > g.top_ratio);
         CHECK(g.first_ratio > 1.0);
         CHECK(fs::exists(g.file));
@@ -274,9 +274,10 @@ TEST_CASE("gearbox swap: the garage offers exactly the boxes the engine's torque
         const std::vector<std::string> got = offered_ids(f, f.entry(id));
         CHECK(std::set<std::string>(got.begin(), got.end()) == std::set<std::string>{"stock", "straight_cut_6sq"});
     }
-    // an economy sedan (about 150 N*m) is offered the whole catalogue
+    // the economy sedan (i4, about 212 N*m) is offered the whole catalogue except the 160 N*m vintage 3-speed
     const std::vector<std::string> sedan = offered_ids(f, f.entry("car_sedan_rwd"));
-    CHECK(sedan.size() == f.boxes->list().size());
+    CHECK(sedan.size() == f.boxes->list().size() - 1);
+    CHECK(std::find(sedan.begin(), sedan.end(), "vintage_3mt") == sedan.end());
 }
 
 TEST_CASE("gearbox swap: a box rated below the engine's torque is turned away with a plain message", "[gearbox_swap][garage]") {
@@ -511,7 +512,9 @@ Drive drive_with(const Fixture& f, const rg::CatalogEntry& car, const rg::Vehicl
 TEST_CASE("gearbox swap: the sedan shifts up through every box on auto-shift without grinding", "[gearbox_swap][drive][long]") {
     Fixture f;
     const auto& car = f.entry("car_sedan_rwd");
+    const double peak = engine_peak_of(f, car);
     for (const rg::GearboxEntry& box : f.boxes->list()) {
+        if (!rg::check_gearbox_rating(box, peak).empty()) continue; // the vintage 3-speed (160 N*m) is not offered to this engine
         INFO(box.id);
         const Drive d = drive_with(f, car, setup_of(car.id, {{"gearbox_install", box.id}}), 16.0);
         CHECK(d.started);

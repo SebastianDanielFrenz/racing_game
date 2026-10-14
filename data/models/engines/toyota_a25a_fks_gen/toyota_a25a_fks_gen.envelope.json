@@ -1,0 +1,52 @@
+{
+  "format": "rg.engine_envelope/1",
+  "engine": "toyota_a25a_fks_gen",
+  "file": "external/physics_sim/data/engines/toyota_a25a_fks_gen.json",
+  "layout": "inline",
+  "frame": "x along the crank toward the timing end, y left, z up (an inline engine's cylinder axis); origin on the crank axis at the flywheel face of the block",
+  "bounds_m": {
+    "min": [
+      -0.0483,
+      -0.1908,
+      -0.2067
+    ],
+    "max": [
+      0.552,
+      0.3286,
+      0.4157
+    ]
+  },
+  "size_mm": [
+    600,
+    519,
+    622
+  ],
+  "mounts": {
+    "flywheel_face": [
+      0.0,
+      0.0,
+      0.0
+    ],
+    "crank_axis": [
+      1.0,
+      0.0,
+      0.0
+    ]
+  },
+  "class_rule": false,
+  "derived": {
+    "per_bank": 4,
+    "pitch": 0.108,
+    "deck": 0.2357,
+    "below": 0.0917,
+    "sump": 0.12,
+    "head_h": 0.13,
+    "cover_h": 0.05,
+    "head_w": 0.2075,
+    "front": 0.06,
+    "length": 0.462,
+    "block_w": 0.1475,
+    "case_w": 0.2334
+  },
+  "source": "tools/cargen/engine_mesh.py from the engine file's own geometry (external/physics_sim/data/engines/toyota_a25a_fks_gen.json). Proportions are [AS] rules of thumb (bore pitch 1.12 x bore + 10 mm, deck = stroke / 2 + rod + 0.33 x bore, head and cover heights by valve count, manifolds drawn compact); the bounding box is the generated mesh's own."
+}

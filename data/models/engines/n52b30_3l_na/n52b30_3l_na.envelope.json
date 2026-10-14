@@ -1,0 +1,52 @@
+{
+  "format": "rg.engine_envelope/1",
+  "engine": "n52b30_3l_na",
+  "file": "data/engines/n52b30_3l_na.json",
+  "layout": "inline",
+  "frame": "x along the crank toward the timing end, y left, z up (an inline engine's cylinder axis); origin on the crank axis at the flywheel face of the block",
+  "bounds_m": {
+    "min": [
+      -0.0497,
+      -0.1895,
+      -0.214
+    ],
+    "max": [
+      0.7512,
+      0.3181,
+      0.3964
+    ]
+  },
+  "size_mm": [
+    801,
+    508,
+    610
+  ],
+  "mounts": {
+    "flywheel_face": [
+      0.0,
+      0.0,
+      0.0
+    ],
+    "crank_axis": [
+      1.0,
+      0.0,
+      0.0
+    ]
+  },
+  "class_rule": true,
+  "derived": {
+    "per_bank": 6,
+    "pitch": 0.1052,
+    "deck": 0.2164,
+    "below": 0.084,
+    "sump": 0.135,
+    "head_h": 0.13,
+    "cover_h": 0.05,
+    "head_w": 0.205,
+    "front": 0.06,
+    "length": 0.6612,
+    "block_w": 0.145,
+    "case_w": 0.218
+  },
+  "source": "tools/cargen/engine_mesh.py from class rule (the file is a torque map with no geometry): BMW N52B30 3.0 L inline-six (the file's source): 85 x 88 mm, rod 144.35 mm (published class values, recalled), DOHC four-valve. Proportions are [AS] rules of thumb (bore pitch 1.12 x bore + 10 mm, deck = stroke / 2 + rod + 0.33 x bore, head and cover heights by valve count, manifolds drawn compact); the bounding box is the generated mesh's own."
+}

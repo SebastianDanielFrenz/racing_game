@@ -260,6 +260,27 @@ std::unique_ptr<EngineStore> EngineStore::open(const std::string& catalog_path, 
                 e.crank_axis_local[i] = (*it)[i].get<double>();
             }
         }
+        if (const auto it = row.find("envelope"); it != row.end()) {
+            if (!it->is_string() || it->get<std::string>().empty()) return fail(where + "\"envelope\" must be a path");
+            e.envelope_path = resolve_from(s->repo_root_, it->get<std::string>());
+            const auto text = detail::read_text_file(e.envelope_path);
+            const auto env = text ? detail::parse_json(*text) : std::nullopt;
+            std::string format;
+            const auto size = env && env->is_object() ? env->find("size_mm") : json::const_iterator{};
+            if (!env || !env->is_object() || !detail::get_string(*env, "format", format) || format != "rg.engine_envelope/1" ||
+                size == env->end() || !size->is_array() || size->size() != 3) {
+                return fail(where + e.envelope_path + ": not an rg.engine_envelope/1 file with size_mm [x, y, z]");
+            }
+            std::array<double, 3> mm{};
+            for (std::size_t i = 0; i < 3; ++i) {
+                if (!(*size)[i].is_number() || !((*size)[i].get<double>() > 0.0)) return fail(where + e.envelope_path + ": size_mm must be > 0");
+                mm[i] = (*size)[i].get<double>();
+            }
+            e.envelope_mm = mm;
+            const fs::path glb = fs::path(e.envelope_path).parent_path() / (e.id + ".glb");
+            std::error_code gec;
+            if (fs::is_regular_file(glb, gec)) e.model_path = glb.generic_string();
+        }
         if (const auto it = row.find("peaks"); it != row.end()) {
             if (!it->is_object()) return fail(where + "\"peaks\" must be an object");
             EnginePeaks p;
@@ -445,7 +466,13 @@ std::optional<std::string> EngineStore::create_user_engine(const std::string& ba
     std::snprintf(uid_buf, sizeof(uid_buf), "e%04d", highest + 1);
     const std::string uid = uid_buf;
     const std::string dir = root + "/" + uid;
-    if (!validate_engine_text(*text, dir, err)) return std::nullopt;
+    // The directory exists before the validation: the loader rebases the base engine's relative paths against it, and
+    // a POSIX open() resolves "<dir>/../.." through the real directory (Windows normalises it lexically).
+    fs::create_directories(fs::path(dir), ec);
+    if (!validate_engine_text(*text, dir, err)) {
+        fs::remove_all(fs::path(dir), ec);
+        return std::nullopt;
+    }
     int copies = 1;
     for (const EngineEntry& u : users_) {
         if (u.base_key == def->key) ++copies;

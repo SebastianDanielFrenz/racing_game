@@ -1120,13 +1120,31 @@ func _forward_driving(live: bool, delta: float) -> void:
 		for channel in scripted_controls:
 			_simulation.set_control(channel, float(scripted_controls[channel]))
 		return
-	_simulation.set_control("steer", _steering.translate(_input_map.get_steer(), _input_map.steering_uses_keyboard(), _input_map.steering_uses_wheel(), _simulation.get_steering_kinematics(), delta))
-	_simulation.set_control("throttle", _input_map.get_throttle())
-	_simulation.set_control("brake", _input_map.get_brake())
-	_simulation.set_control("handbrake", _input_map.get_handbrake())
-	_simulation.set_control("clutch", _input_map.get_clutch())
+	# Clickable cockpit (cockpit_controls.gd): a dragged pedal/lever/wheel wins over the input device while held,
+	# the gear lever adds shifts, the ignition key sets the ignition and holds the starter in its start detent.
+	# These channels (pedals, steer, shifts, ignition, starter) are not owned by RgDriverActions, so they stay direct
+	# writes; the cockpit's hazard/indicator/horn/light switches are visual state only (cockpit_controls.gd
+	# get_cosmetic) and do not submit DriverActions events yet.
+	var cockpit: Node3D = _visuals.get_cockpit() if _visuals != null and _visuals.has_method("get_cockpit") else null
+	var cockpit_overrides: Dictionary = {}
+	var cockpit_starter := false
+	if cockpit != null:
+		cockpit_overrides = cockpit.get_overrides()
+		up += cockpit.consume_shift_up()
+		down += cockpit.consume_shift_down()
+		var ignition_request: int = cockpit.consume_ignition_request()
+		if ignition_request >= 0:
+			_input_map.set_ignition(ignition_request == 1)
+		cockpit_starter = cockpit.starter_held()
+	var steer: float = _steering.translate(_input_map.get_steer(), _input_map.steering_uses_keyboard(), _input_map.steering_uses_wheel(), _simulation.get_steering_kinematics(), delta)
+	_simulation.set_control("steer", float(cockpit_overrides.get("steer", steer)))
+	_simulation.set_control("throttle", maxf(_input_map.get_throttle(), float(cockpit_overrides.get("throttle", 0.0))))
+	_simulation.set_control("brake", maxf(_input_map.get_brake(), float(cockpit_overrides.get("brake", 0.0))))
+	_simulation.set_control("handbrake", maxf(_input_map.get_handbrake(), float(cockpit_overrides.get("handbrake", 0.0))))
+	_simulation.set_control("clutch", maxf(_input_map.get_clutch(), float(cockpit_overrides.get("clutch", 0.0))))
 	_simulation.set_control("ignition", 1.0 if _input_map.get_ignition() else 0.0)
-	_simulation.set_control("starter", 1.0 if _input_map.get_starter() else 0.0)
+	# The cockpit's ignition key holds the starter in its start detent (cockpit_controls.gd), ORed with the device starter.
+	_simulation.set_control("starter", 1.0 if (_input_map.get_starter() or cockpit_starter) else 0.0)
 	var pt: Dictionary = _simulation.get_vehicle_powertrain(VEHICLE_NAME)
 	pt["speed_mps"] = _simulation.get_body_speed_mps("chassis")
 	var channels: Dictionary = load("res://scripts/driver_state.gd").channels(_simulation)
@@ -1315,7 +1333,14 @@ func _apply_vehicle(sel: Dictionary) -> void:
 		"z_m": float(chassis["z_m"]),
 		"engine_map_cache_dir": str(sel["engine_map_cache_dir"]),
 	})
-	_visuals.set_vehicle(VEHICLE_NAME, str(sel["model_path"]), str(sel["paint"]), str(sel["rim"]))
+	# optional model parts: the setup's (a folding top) plus the raised hood a tall swapped-in engine needs
+	var parts: Array = Array(sel.get("model_options", []))
+	var bay: Dictionary = _garage.get_bay_engine(str(sel.get("vehicle_id", ""))) if _garage.has_method("get_bay_engine") else {}
+	if not bay.is_empty():
+		var hood: String = preload("res://scripts/model_options.gd").hood_variant(str(sel["model_path"]).get_basename() + ".rig.json", float((bay.get("envelope_mm", Vector3.ZERO) as Vector3).z))
+		if hood != "":
+			parts.append(hood)
+	_visuals.set_vehicle(VEHICLE_NAME, str(sel["model_path"]), str(sel["paint"]), str(sel["rim"]), parts)
 	_hud.vehicle_name = VEHICLE_NAME
 	_gauge.set_vehicle_name(VEHICLE_NAME)
 	_seat_ui.vehicle_name = VEHICLE_NAME
@@ -1409,6 +1434,7 @@ func _enter_configurator() -> void:
 	_garage_scene.show_vehicle(_garage.get_vehicle(id))
 	var colours: Dictionary = _garage.get_working_colours()
 	_garage_scene.set_colours(str(colours.get("paint", "")), str(colours.get("rim", "")))
+	_garage_scene.set_model_options(Array(colours.get("model_options", [])))
 	_garage_scene.panel_side = "right"
 	_garage_scene.panel_px = 528.0
 	_garage_scene.go_to_area("overview", false)
@@ -1428,6 +1454,8 @@ func _on_garage_option_changed(option_id: String) -> void:
 	if option_id == "paint" or option_id == "rim" or option_id == "":
 		var colours: Dictionary = _garage.get_working_colours()
 		_garage_scene.set_colours(str(colours.get("paint", "")), str(colours.get("rim", "")))
+	# optional model parts (the Runabout's folding top): shown as soon as the option changes
+	_garage_scene.set_model_options(Array(_garage.get_working_colours().get("model_options", [])))
 
 func _on_garage_save() -> void:
 	var saved: Dictionary = _garage.save()

@@ -1,0 +1,6 @@
+{
+  "format": "physics_sim.engine_thermal/1",
+  "extends": "../../external/physics_sim/data/engine_thermal/class_si_passenger.json",
+  "source": "pico_i3_1l0_na (data/engines/pico_i3_1l0_na.json). displacement_l 0.998 [D: bore x stroke x cylinders of the engine file]. 1.0 L aluminium three: class values unchanged [AS]. Every other number is the class default [AS] (class_si_passenger.json carries the derivations).",
+  "displacement_l": 0.998
+}

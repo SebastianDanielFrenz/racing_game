@@ -300,6 +300,178 @@
       }
     },
     {
+      "id": "car_city",
+      "title": "Pico",
+      "subtitle": "Five-door city car",
+      "description": "A small, light five-door hatchback with a 1.0 litre three-cylinder, a five-speed manual and front-wheel drive. Cheap, frugal and easy to park.",
+      "body_type": "hatchback",
+      "vehicle": "data/vehicles/car_city.json",
+      "model": "data/models/pico/pico.glb",
+      "engine_bay": "front",
+      "engine_bay_envelope": {
+        "size_mm": [
+          620,
+          570,
+          560
+        ],
+        "crank_axis": "y",
+        "source": "data/models/pico/pico.rig.json engine_bay.box_m (620 x 900 x 560 mm under the closed hood), less 330 mm of its width for the transaxle at the left end of a transverse engine [AS]: the engine itself has 570 mm along the crank"
+      },
+      "chassis": {
+        "mass_kg": 852.0,
+        "half_extents": [
+          1.6,
+          0.5,
+          0.12
+        ],
+        "spawn_z_m": 0.55,
+        "source": "sprung mass of data/vehicles/car_city.json (900 kg kerb minus four 12 kg wheels); collision box inside the body, centred on the CoG; spawn height = CoG height + 3 cm [AS]"
+      },
+      "visual": {
+        "paint": "#d8473a",
+        "rim": "#b8bcc2"
+      },
+      "setup": {
+        "tyre_fitment": {
+          "front": {
+            "rims_in": [
+              14,
+              15
+            ],
+            "min_width_mm": 145,
+            "max_width_mm": 185,
+            "width_step_mm": 10,
+            "diameter_tolerance_mm": 12
+          },
+          "rear": {
+            "rims_in": [
+              14,
+              15
+            ],
+            "min_width_mm": 145,
+            "max_width_mm": 185,
+            "width_step_mm": 10,
+            "diameter_tolerance_mm": 12
+          }
+        }
+      }
+    },
+    {
+      "id": "car_gt70",
+      "title": "Ventura GT",
+      "subtitle": "1970s V8 grand tourer",
+      "description": "A long-hood 1970s coupe with a 5.0 litre V8, a close-ratio six-speed and a limited-slip rear axle. The bay is built to take a bigger engine.",
+      "body_type": "coupe",
+      "vehicle": "data/vehicles/car_gt70.json",
+      "model": "data/models/ventura_gt/ventura_gt.glb",
+      "engine_bay": "front",
+      "engine_bay_envelope": {
+        "size_mm": [
+          1000,
+          900,
+          720
+        ],
+        "crank_axis": "x",
+        "source": "data/models/ventura_gt/ventura_gt.rig.json engine_bay.box_m: firewall (x 0.44) to radiator (x 1.62) less the fan, between the inner fenders (|y| 0.45), crossmember (z 0.14) to the flat hood (720 mm); the gearbox sits behind the firewall in the tunnel"
+      },
+      "chassis": {
+        "mass_kg": 1282.0,
+        "half_extents": [
+          2.1,
+          0.5,
+          0.12
+        ],
+        "spawn_z_m": 0.51,
+        "source": "sprung mass of data/vehicles/car_gt70.json (1350 kg minus four 17 kg wheels); collision box inside the body, centred on the CoG; spawn height = CoG height + 3 cm [AS]"
+      },
+      "visual": {
+        "paint": "#1f4d3a",
+        "rim": "#c9ccd1"
+      },
+      "setup": {
+        "tyre_fitment": {
+          "front": {
+            "rims_in": [
+              15,
+              16
+            ],
+            "min_width_mm": 195,
+            "max_width_mm": 245,
+            "width_step_mm": 10,
+            "diameter_tolerance_mm": 12
+          },
+          "rear": {
+            "rims_in": [
+              15,
+              16
+            ],
+            "min_width_mm": 205,
+            "max_width_mm": 265,
+            "width_step_mm": 10,
+            "diameter_tolerance_mm": 12
+          }
+        }
+      }
+    },
+    {
+      "id": "car_runabout",
+      "title": "Runabout T",
+      "subtitle": "1910s open tourer",
+      "description": "An open tourer in the manner of the earliest mass-produced cars: a 2.9 litre side-valve four, a three-speed sliding-mesh box, tall narrow tyres and rear brakes only.",
+      "body_type": "tourer",
+      "vehicle": "data/vehicles/car_runabout.json",
+      "model": "data/models/runabout_t/runabout_t.glb",
+      "model_options": ["roof"],
+      "engine_bay": "front",
+      "engine_bay_envelope": {
+        "size_mm": [
+          700,
+          600,
+          700
+        ],
+        "crank_axis": "x",
+        "source": "data/models/runabout_t/runabout_t.rig.json engine_bay.box_m: under the bonnet between the dash (x 0.55) and the radiator (x 1.25), above the frame rails; the gearbox sits behind the dash"
+      },
+      "chassis": {
+        "mass_kg": 644.0,
+        "half_extents": [
+          1.5,
+          0.4,
+          0.15
+        ],
+        "spawn_z_m": 0.78,
+        "source": "sprung mass of data/vehicles/car_runabout.json (700 kg minus four 14 kg wheels); collision box inside the body, centred on the CoG; spawn height = CoG height + 3 cm [AS]"
+      },
+      "visual": {
+        "paint": "#15171a",
+        "rim": "#5a3a22"
+      },
+      "setup": {
+        "options_note": "every option but brake_bias: the car has rear brakes only (no front corner to bias towards)",
+        "options": ["final_drive", "gear_ratios", "clutch_capacity", "brake_force", "spring_front", "spring_rear", "damper_front", "damper_rear", "arb_front", "arb_rear", "tyre_front", "tyre_rear", "assist_auto_clutch", "assist_auto_blip", "assist_auto_shift", "assist_unit", "paint", "rim", "folding_top", "engine_rev_limit", "engine_throttle_response", "engine_install", "fuel", "gearbox_install", "turbo_install", "turbo_install_n2o", "turbo_boost_target", "nitrous_install_hyper", "nitrous_install_sedan"],
+        "tyre_fitment": {
+          "front": {
+            "rims_in": [
+              21
+            ],
+            "min_width_mm": 76,
+            "max_width_mm": 102,
+            "width_step_mm": 13,
+            "diameter_tolerance_mm": 12
+          },
+          "rear": {
+            "rims_in": [
+              21
+            ],
+            "min_width_mm": 76,
+            "max_width_mm": 102,
+            "width_step_mm": 13,
+            "diameter_tolerance_mm": 12
+          }
+        }
+      }
+    },
+    {
       "id": "car_sedan_comfort",
       "title": "Sedan 3.0 Comfort",
       "subtitle": "Soft springs, comfort tyres",

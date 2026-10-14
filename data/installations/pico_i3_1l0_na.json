@@ -1,0 +1,64 @@
+{
+  "format": "physics_sim.installation/1",
+  "source": "[AS] Pico installation: airbox behind the left headlamp with a short snorkel; close-coupled catalyst, centre and rear silencer boxes, one tailpipe at the rear left (positions in the vehicle frame, CoG origin).",
+  "intake": {
+    "airbox_m3": 0.006,
+    "snorkel": {
+      "length_m": 0.35,
+      "d_m": 0.05
+    },
+    "inlet_position_m": [
+      1.21,
+      0.3,
+      0.23
+    ]
+  },
+  "exhaust": {
+    "elements": [
+      {
+        "type": "pipe",
+        "length_m": 0.25,
+        "d_m": 0.04
+      },
+      {
+        "type": "catalyst",
+        "length_m": 0.12,
+        "d_m": 0.09,
+        "k_loss": 1.5
+      },
+      {
+        "type": "pipe",
+        "length_m": 1.6,
+        "d_m": 0.04
+      },
+      {
+        "type": "expansion_chamber",
+        "length_m": 0.3,
+        "d_m": 0.1
+      },
+      {
+        "type": "pipe",
+        "length_m": 0.8,
+        "d_m": 0.04
+      },
+      {
+        "type": "expansion_chamber",
+        "length_m": 0.32,
+        "d_m": 0.13
+      },
+      {
+        "type": "pipe",
+        "length_m": 0.15,
+        "d_m": 0.04
+      },
+      {
+        "type": "outlet",
+        "position_m": [
+          -1.99,
+          -0.45,
+          -0.28
+        ]
+      }
+    ]
+  }
+}

@@ -1,0 +1,243 @@
+{
+  "format": "physics_sim.engine/1",
+  "name": "runabout_i4_2l9_sv",
+  "kind": "simulated",
+  "source": "Game engine for the Runabout T (racing_game, docs/new_cars_plan.md 3.1). Not a real engine: an [AS] 1910s-style 2.9 L side-valve (flathead) inline-four, one intake and one exhaust valve per cylinder in the block, a single updraft carburettor and a short cast exhaust manifold; class target about 15 kW at 1600 rpm and about 110 N*m low down (the 1909 car); this engine lands a little above it, like the later improved versions. Bore 95.25 x stroke 101.6 mm (3.75 x 4.00 in) x 4 = 2896 cm3 [AS, the period Model T geometry, recalled]; compression 4.0:1 [AS, period low-octane value - far below physics_sim's modern buildability band of 8-14.5, which the garage does not apply to stock engines]; every other number is [AS]. A side-valve chamber burns slowly: Wiebe burn duration 95 deg [AS] (60 is the modern default). Firing order 1-2-4-3. A heavy engine on a period 6 V starter: starter stall torque 220 N*m and free speed 420 rpm at the crank, start complete at 300 rpm; the idle valve may open to 25 % (high friction at idle) [AS]. Electronic throttle in the model; the hand throttle lever on the steering column feeds the same throttle channel. ECU: MBT tracking limited by the generated knock limit on E5 with a 2 deg margin (ignition_strategy knock_limited), stoichiometric part load, lambda 0.88 at full load. Measured with ps::drivetrain::run_dyno_sweep (wide-open throttle, warm, default installation, 2026-10-13): peak torque 135.2 N*m at 750 rpm, peak power 18.5 kW at 1550 rpm.",
+  "default_thermal": "../engine_thermal/runabout_i4_2l9_sv.json",
+  "architecture": "piston_4stroke",
+  "bore_mm": 95.25,
+  "stroke_mm": 101.6,
+  "cylinders": 4,
+  "intake_manifold_volume_l": 0.6,
+  "throttle_body": {
+    "diameter_mm": 24.0,
+    "count": 1,
+    "discharge_coefficient": 0.8,
+    "area_fraction_vs_position": {
+      "x": [
+        0.0,
+        0.05,
+        0.1,
+        0.25,
+        0.5,
+        0.75,
+        1.0
+      ],
+      "y": [
+        0.002,
+        0.012,
+        0.03,
+        0.12,
+        0.4,
+        0.75,
+        1.0
+      ]
+    }
+  },
+  "throttle_input": "electronic",
+  "throttle_actuator_tau_s": 0.04,
+  "idle_control": {
+    "kp_per_rpm": 0.001,
+    "ki_per_rpm_s": 0.004,
+    "max_throttle": 0.25,
+    "max_torque_nm": 40.0
+  },
+  "ecu": {
+    "lambda_target": {
+      "rpm": [
+        0.0,
+        2700.0
+      ],
+      "p_im_kpa": [
+        20.0,
+        90.0,
+        100.0
+      ],
+      "values": [
+        [
+          1.0,
+          1.0,
+          0.88
+        ],
+        [
+          1.0,
+          1.0,
+          0.88
+        ]
+      ],
+      "source": "[AS] stoichiometric part load, power enrichment at wide-open throttle (lambda 0.88)"
+    },
+    "ignition_strategy": "knock_limited",
+    "knock_margin_deg": 2.0
+  },
+  "cycle": {
+    "source": "[AS] side-valve breathing: one 36.5 mm intake and one 36.5 mm exhaust valve, 236 deg duration, 6.35 mm (1/4 in) lift, IVO at TDC, EVO 45 BBDC, EVC 11 ATDC; big ports (300 cc) for the L-head passages and a discharge coefficient about 0.6x the overhead-valve curve (the flow turns twice through the pocket beside the bore) [AS]; a 24 mm updraft carburettor venturi as the throttle; friction mean effective pressure's constant term 200 kPa (3x the modern default: babbitt mains, splash oiling, heavy pistons, the flywheel magneto); 0.6 L manifold, 300 mm x 32 mm runners; 180 mm primaries paired 1+2 / 3+4. Assumed, not measured.",
+    "rod_mm": 190.5,
+    "compression_ratio": 4.0,
+    "intake_valves": 1,
+    "exhaust_valves": 1,
+    "intake_valve_d_mm": 36.5,
+    "exhaust_valve_d_mm": 36.5,
+    "intake_lift": {
+      "lift_mm_vs_deg": {
+        "x": [
+          0.0,
+          59.0,
+          118.0,
+          177.0,
+          236.0
+        ],
+        "y": [
+          0.0,
+          3.937,
+          6.35,
+          3.937,
+          0.0
+        ]
+      },
+      "phase_ref_deg": 0.0
+    },
+    "exhaust_lift": {
+      "lift_mm_vs_deg": {
+        "x": [
+          0.0,
+          59.0,
+          118.0,
+          177.0,
+          236.0
+        ],
+        "y": [
+          0.0,
+          3.937,
+          6.35,
+          3.937,
+          0.0
+        ]
+      },
+      "phase_ref_deg": 495.0
+    },
+    "intake_port_cc": 300.0,
+    "exhaust_port_cc": 300.0,
+    "cd_vs_l_over_d": {
+      "x": [
+        0.0,
+        0.1,
+        0.2,
+        0.3
+      ],
+      "y": [
+        0.4,
+        0.38,
+        0.33,
+        0.27
+      ]
+    },
+    "friction": {
+      "model": "polynomial_piston_speed",
+      "a_kpa": 200.0,
+      "b_kpa": 0.091,
+      "c_kpa": 0.347
+    },
+    "burn_duration_deg": 95.0,
+    "grid_rpm": [
+      500.0,
+      700.0,
+      900.0,
+      1200.0,
+      1600.0,
+      2000.0,
+      2400.0
+    ],
+    "grid_p_im_kpa": [
+      25.0,
+      30.0,
+      50.0,
+      70.0,
+      90.0,
+      100.0
+    ],
+    "intake": {
+      "source": "[AS] 30 mm carburettor venturi as the throttle; friction mean effective pressure's constant term 200 kPa (3x the modern default: babbitt mains, splash oiling, heavy pistons, the flywheel magneto); 0.6 L manifold, 300 mm x 32 mm runners.",
+      "throttle_bore_m": 0.03,
+      "plenum_m3": 0.0006,
+      "runners": [
+        {
+          "cylinders": "all",
+          "length_m": 0.3,
+          "d_in_m": 0.032,
+          "d_out_m": 0.032
+        }
+      ],
+      "interface": "throttle_inlet"
+    },
+    "exhaust": {
+      "source": "[AS] short cast manifold: 180 mm x 35 mm primaries paired 1+2 and 3+4, 200 mm x 45 mm to the flange.",
+      "primaries": [
+        {
+          "cylinders": "all",
+          "length_m": 0.18,
+          "d_m": 0.035
+        }
+      ],
+      "merges": [
+        {
+          "from": [
+            1,
+            2
+          ],
+          "into": "front",
+          "length_m": 0.1,
+          "d_m": 0.04
+        },
+        {
+          "from": [
+            3,
+            4
+          ],
+          "into": "rear",
+          "length_m": 0.1,
+          "d_m": 0.04
+        },
+        {
+          "from": [
+            "front",
+            "rear"
+          ],
+          "into": "flange",
+          "length_m": 0.2,
+          "d_m": 0.045
+        }
+      ],
+      "interface": "flange"
+    },
+    "firing_order": [
+      1,
+      2,
+      4,
+      3
+    ],
+    "default_installation": "../installations/runabout_i4_2l9_sv.json"
+  },
+  "inertia_kgm2": 0.45,
+  "breakaway_torque_nm": 55.0,
+  "fuel": "../../external/physics_sim/data/fuels/e5.json",
+  "ignition": "spark",
+  "idle_rpm": 550.0,
+  "stall_rpm": 250.0,
+  "fire_rpm": 100.0,
+  "start_complete_rpm": 300.0,
+  "dfco_enable_rpm": 1600.0,
+  "dfco_reenable_rpm": 1200.0,
+  "starter": {
+    "stall_torque_nm": 220.0,
+    "free_speed_rpm": 420.0
+  },
+  "initial_state": "running",
+  "limiter": {
+    "type": "fuel_cut",
+    "rpm": 2200.0,
+    "hysteresis_rpm": 100.0
+  },
+  "mass_kg": 160.0,
+  "mass_source": "ASSUMED [AS]: the period 2.9 L cast-iron side-valve four with its flywheel magneto weighs about 150-170 kg without the planetary gearbox (recalled, no citation fetched)."
+}

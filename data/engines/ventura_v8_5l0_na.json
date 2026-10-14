@@ -1,0 +1,259 @@
+{
+  "format": "physics_sim.engine/1",
+  "name": "ventura_v8_5l0_na",
+  "kind": "simulated",
+  "source": "Game engine for the Ventura GT (racing_game, docs/new_cars_plan.md Q6: 'It needs sound, give it 8 cylinders'). Not a real engine: an [AS] 1970-style naturally aspirated 90 deg cross-plane V8, two valves per cylinder, pushrod, one four-barrel-sized throttle, cast log manifolds and a dual exhaust. Bore 101.6 x stroke 76.2 mm (4.00 x 3.00 in) x 8 = 4942 cm3 [AS, the classic 302 cu in small-block geometry]; every other number is [AS]. Firing order 1-5-4-2-6-3-7-8 with banks 1-4 / 5-8 (the cross-plane small-block order): each bank fires unevenly (90/180/270 deg gaps), which is where the rumble comes from; the two banks' manifolds merge only behind 600 mm bank pipes. The throttle is electronic in the model (the game's auto-blip needs one), a carburettor is not modelled. ECU: MBT tracking limited by the generated knock limit on E5 with a 2 deg margin (ignition_strategy knock_limited), stoichiometric part load, lambda 0.86 at full load. Measured with ps::drivetrain::run_dyno_sweep (wide-open throttle, warm, default installation, 2026-10-13): peak torque 470.1 N*m at 4250 rpm, peak power 234.1 kW at 5250 rpm.",
+  "default_thermal": "../engine_thermal/ventura_v8_5l0_na.json",
+  "architecture": "piston_4stroke",
+  "bore_mm": 101.6,
+  "stroke_mm": 76.2,
+  "cylinders": 8,
+  "intake_manifold_volume_l": 4.0,
+  "throttle_body": {
+    "diameter_mm": 70.0,
+    "count": 1,
+    "discharge_coefficient": 0.8,
+    "area_fraction_vs_position": {
+      "x": [
+        0.0,
+        0.05,
+        0.1,
+        0.25,
+        0.5,
+        0.75,
+        1.0
+      ],
+      "y": [
+        0.002,
+        0.012,
+        0.03,
+        0.12,
+        0.4,
+        0.75,
+        1.0
+      ]
+    }
+  },
+  "throttle_input": "electronic",
+  "throttle_actuator_tau_s": 0.04,
+  "idle_control": {
+    "kp_per_rpm": 3e-05,
+    "ki_per_rpm_s": 6e-05,
+    "max_throttle": 0.1,
+    "max_torque_nm": 25.0
+  },
+  "ecu": {
+    "lambda_target": {
+      "rpm": [
+        0.0,
+        6500.0
+      ],
+      "p_im_kpa": [
+        20.0,
+        90.0,
+        100.0
+      ],
+      "values": [
+        [
+          1.0,
+          1.0,
+          0.86
+        ],
+        [
+          1.0,
+          1.0,
+          0.86
+        ]
+      ],
+      "source": "[AS] stoichiometric part load, power enrichment at wide-open throttle (lambda 0.86)"
+    },
+    "ignition_strategy": "knock_limited",
+    "knock_margin_deg": 2.0
+  },
+  "cycle": {
+    "source": "[AS] two valves per cylinder: 49 mm intake / 39 mm exhaust, 256 deg duration, 10.4 / 10.0 mm lift, IVO 18 BTDC / IVC 58 ABDC / EVO 72 BBDC / EVC 4 ATDC (a mild 1970s cam, 22 deg overlap); compression 9.0:1 for 1970s fuel; 380 mm runners into a 4 L plenum, 450 mm primaries into one log per bank, 600 mm bank pipes joined at the flange. Assumed, not measured.",
+    "rod_mm": 129.0,
+    "compression_ratio": 9.0,
+    "intake_valves": 1,
+    "exhaust_valves": 1,
+    "intake_valve_d_mm": 49.0,
+    "exhaust_valve_d_mm": 39.0,
+    "intake_lift": {
+      "lift_mm_vs_deg": {
+        "x": [
+          0.0,
+          64.0,
+          128.0,
+          192.0,
+          256.0
+        ],
+        "y": [
+          0.0,
+          6.448,
+          10.4,
+          6.448,
+          0.0
+        ]
+      },
+      "phase_ref_deg": -18.0
+    },
+    "exhaust_lift": {
+      "lift_mm_vs_deg": {
+        "x": [
+          0.0,
+          64.0,
+          128.0,
+          192.0,
+          256.0
+        ],
+        "y": [
+          0.0,
+          6.2,
+          10.0,
+          6.2,
+          0.0
+        ]
+      },
+      "phase_ref_deg": 468.0
+    },
+    "intake_port_cc": 180.0,
+    "exhaust_port_cc": 120.0,
+    "cd_vs_l_over_d": {
+      "x": [
+        0.0,
+        0.1,
+        0.2,
+        0.3
+      ],
+      "y": [
+        0.65,
+        0.62,
+        0.55,
+        0.45
+      ]
+    },
+    "friction": {
+      "model": "polynomial_piston_speed",
+      "a_kpa": 66.62,
+      "b_kpa": 0.091,
+      "c_kpa": 0.347
+    },
+    "grid_rpm": [
+      750.0,
+      1000.0,
+      1500.0,
+      2000.0,
+      3000.0,
+      4000.0,
+      5000.0,
+      5500.0,
+      6000.0,
+      6500.0
+    ],
+    "grid_p_im_kpa": [
+      25.0,
+      30.0,
+      50.0,
+      70.0,
+      90.0,
+      100.0
+    ],
+    "intake": {
+      "source": "[AS] 80 mm equivalent throttle (four-barrel class), 4 L plenum, 380 mm runners 48 -> 44 mm.",
+      "throttle_bore_m": 0.08,
+      "plenum_m3": 0.004,
+      "runners": [
+        {
+          "cylinders": "all",
+          "length_m": 0.38,
+          "d_in_m": 0.048,
+          "d_out_m": 0.044
+        }
+      ],
+      "interface": "throttle_inlet"
+    },
+    "exhaust": {
+      "source": "[AS] cast log manifold per bank: 450 mm x 42 mm primaries into a 600 mm x 55 mm bank pipe; both banks join in a 250 mm x 70 mm Y at the flange.",
+      "primaries": [
+        {
+          "cylinders": "all",
+          "length_m": 0.45,
+          "d_m": 0.042
+        }
+      ],
+      "merges": [
+        {
+          "from": [
+            1,
+            2,
+            3,
+            4
+          ],
+          "into": "bank_r",
+          "length_m": 0.6,
+          "d_m": 0.055
+        },
+        {
+          "from": [
+            5,
+            6,
+            7,
+            8
+          ],
+          "into": "bank_l",
+          "length_m": 0.6,
+          "d_m": 0.055
+        },
+        {
+          "from": [
+            "bank_r",
+            "bank_l"
+          ],
+          "into": "flange",
+          "length_m": 0.25,
+          "d_m": 0.07
+        }
+      ],
+      "interface": "flange"
+    },
+    "firing_order": [
+      1,
+      5,
+      4,
+      2,
+      6,
+      3,
+      7,
+      8
+    ],
+    "banks": [
+      [
+        1,
+        2,
+        3,
+        4
+      ],
+      [
+        5,
+        6,
+        7,
+        8
+      ]
+    ],
+    "bank_angle_deg": 90.0,
+    "default_installation": "../installations/ventura_v8_5l0_na.json"
+  },
+  "inertia_kgm2": 0.2,
+  "breakaway_torque_nm": 40.0,
+  "fuel": "../../external/physics_sim/data/fuels/e5.json",
+  "ignition": "spark",
+  "idle_rpm": 750.0,
+  "initial_state": "running",
+  "limiter": {
+    "type": "fuel_cut",
+    "rpm": 6300.0,
+    "hysteresis_rpm": 150.0
+  },
+  "mass_kg": 215.0,
+  "mass_source": "ASSUMED [AS]: a cast-iron 5 L two-valve pushrod V8 with intake and exhaust manifolds weighs 200-230 kg (recalled for the period small-blocks, no citation fetched)."
+}

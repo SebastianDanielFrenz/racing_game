@@ -1,0 +1,320 @@
+{
+  "format": "physics_sim.vehicle/2",
+  "tyre_families": "../tyres/families.json",
+  "name": "car_runabout",
+  "cooling_system": "../../external/physics_sim/data/cooling_systems/sedan.json",
+  "engine_thermal_start": "warm",
+  "source": "Runabout T (data/models/runabout_t): an open 1910s-style tourer after the class of the Ford Model T (docs/new_cars_plan.md 3.1). Front-engined, rear-wheel drive through an open bevel differential, the 2.9 L side-valve four (data/engines/runabout_i4_2l9_sv.json) and a three-speed sliding-mesh manual (data/gearboxes/vintage_3mt.json; the owner chose a normal manual over the period planetary box). 700 kg, CoG high (z 0.75 m) and slightly rearward (x -0.127 m) [AS]. Tall, narrow 30 x 3.5 in clincher tyres (89 mm wide on a 21 in rim, 720 mm diameter). Brakes on the rear wheels only, as in the period (the transmission brake is folded into the rear drums); no anti-roll bars (transverse leaf springs). Layout copied from data/vehicles/car_sedan.json (controllers, clutch engagement curve, shafts, fuel tank, fluid link); geometry from the model's rig (wheel centres, radii, widths, travel = the rig's joint range). Vehicle frame origin = the centre of gravity, so attachment_local = wheel centre minus CoG, lowered by the static spring compression. Springs from the corner sprung mass at 1.80 / 1.80 Hz ride frequency, dampers 0.15 / 0.25 of critical (bump / rebound), wheel inertia 0.6 m r^2: all [D] from the [AS] masses and frequencies. Fuel tank 38 L of E5 at 0.745 kg/L, 80 % full. Clutch static capacity >= 1.2x the engine's peak torque.",
+  "wheels": [
+    {
+      "name": "FL",
+      "attachment_local": [
+        1.397,
+        0.71,
+        -0.4667
+      ],
+      "wheel_radius": 0.3601,
+      "wheel_width": 0.089,
+      "wheel_mass": 14.0,
+      "wheel_inertia": 1.09,
+      "suspension": {
+        "axis": [
+          0,
+          0,
+          1
+        ],
+        "travel_max": 0.14,
+        "spring_rate": 18500.0,
+        "damper_bump_rate": 490.0,
+        "damper_rebound_rate": 820.0,
+        "bump_stop_rate": 400000.0,
+        "arb_rate": 0.0
+      },
+      "arb_partner": 1,
+      "tyre_spec": {
+        "compound": "cord",
+        "width_mm": 89,
+        "aspect": 105,
+        "rim_in": 21
+      },
+      "steered": true,
+      "is_front": true
+    },
+    {
+      "name": "FR",
+      "attachment_local": [
+        1.397,
+        -0.71,
+        -0.4667
+      ],
+      "wheel_radius": 0.3601,
+      "wheel_width": 0.089,
+      "wheel_mass": 14.0,
+      "wheel_inertia": 1.09,
+      "suspension": {
+        "axis": [
+          0,
+          0,
+          1
+        ],
+        "travel_max": 0.14,
+        "spring_rate": 18500.0,
+        "damper_bump_rate": 490.0,
+        "damper_rebound_rate": 820.0,
+        "bump_stop_rate": 400000.0,
+        "arb_rate": 0.0
+      },
+      "arb_partner": 0,
+      "tyre_spec": {
+        "compound": "cord",
+        "width_mm": 89,
+        "aspect": 105,
+        "rim_in": 21
+      },
+      "steered": true,
+      "is_front": true
+    },
+    {
+      "name": "RL",
+      "attachment_local": [
+        -1.143,
+        0.71,
+        -0.4664
+      ],
+      "wheel_radius": 0.3601,
+      "wheel_width": 0.089,
+      "wheel_mass": 14.0,
+      "wheel_inertia": 1.09,
+      "suspension": {
+        "axis": [
+          0,
+          0,
+          1
+        ],
+        "travel_max": 0.14,
+        "spring_rate": 22700.0,
+        "damper_bump_rate": 600.0,
+        "damper_rebound_rate": 1000.0,
+        "bump_stop_rate": 400000.0,
+        "arb_rate": 0.0
+      },
+      "arb_partner": 3,
+      "tyre_spec": {
+        "compound": "cord",
+        "width_mm": 89,
+        "aspect": 105,
+        "rim_in": 21
+      },
+      "steered": false,
+      "is_front": false
+    },
+    {
+      "name": "RR",
+      "attachment_local": [
+        -1.143,
+        -0.71,
+        -0.4664
+      ],
+      "wheel_radius": 0.3601,
+      "wheel_width": 0.089,
+      "wheel_mass": 14.0,
+      "wheel_inertia": 1.09,
+      "suspension": {
+        "axis": [
+          0,
+          0,
+          1
+        ],
+        "travel_max": 0.14,
+        "spring_rate": 22700.0,
+        "damper_bump_rate": 600.0,
+        "damper_rebound_rate": 1000.0,
+        "bump_stop_rate": 400000.0,
+        "arb_rate": 0.0
+      },
+      "arb_partner": 2,
+      "tyre_spec": {
+        "compound": "cord",
+        "width_mm": 89,
+        "aspect": 105,
+        "rim_in": 21
+      },
+      "steered": false,
+      "is_front": false
+    }
+  ],
+  "steering": {
+    "max_wheel_angle": 0.55,
+    "ackermann_fraction": 1.0,
+    "rear_steer_fraction": 0.0,
+    "steer_rate_limit": 0.0
+  },
+  "brake_system": {
+    "type": "direct_torque",
+    "corners": [
+      {
+        "wheel": "RL",
+        "max_torque_nm": 550.0
+      },
+      {
+        "wheel": "RR",
+        "max_torque_nm": 550.0
+      }
+    ],
+    "handbrake": {
+      "wheels": [
+        "RL",
+        "RR"
+      ],
+      "max_torque_nm": 550.0
+    }
+  },
+  "aero": {
+    "drag_area_m2": 1.3
+  },
+  "powertrain": {
+    "components": [
+      {
+        "id": "engine",
+        "type": "engine",
+        "ref": "../engines/runabout_i4_2l9_sv.json"
+      },
+      {
+        "id": "clutch",
+        "type": "clutch",
+        "capacity_nm": 160.0,
+        "static_factor": 1.15,
+        "engagement_vs_pedal": {
+          "x": [
+            0.0,
+            0.3,
+            0.45,
+            0.6,
+            0.75,
+            1.0
+          ],
+          "y": [
+            1.0,
+            1.0,
+            0.55,
+            0.15,
+            0.0,
+            0.0
+          ]
+        },
+        "out_inertia_kgm2": 0.004,
+        "axis_local": [
+          0,
+          1,
+          0
+        ]
+      },
+      {
+        "id": "gearbox",
+        "type": "gearbox",
+        "ref": "../gearboxes/vintage_3mt.json"
+      },
+      {
+        "id": "diff",
+        "type": "differential",
+        "kind": "open",
+        "ratio": 4.0,
+        "efficiency": 0.97,
+        "carrier_inertia_kgm2": 0.02,
+        "carrier_axis_local": [
+          0,
+          1,
+          0
+        ]
+      },
+      {
+        "id": "tank",
+        "type": "fuel_tank",
+        "fuel": "../../external/physics_sim/data/fuels/e5.json",
+        "capacity_kg": 28.31,
+        "initial_kg": 22.65
+      }
+    ],
+    "shafts": [
+      {
+        "ports": [
+          "engine.crank",
+          "clutch.in"
+        ]
+      },
+      {
+        "ports": [
+          "clutch.out",
+          "gearbox.in"
+        ]
+      },
+      {
+        "ports": [
+          "gearbox.out",
+          "diff.carrier"
+        ]
+      },
+      {
+        "ports": [
+          "diff.left",
+          "wheel:RL"
+        ]
+      },
+      {
+        "ports": [
+          "diff.right",
+          "wheel:RR"
+        ]
+      }
+    ],
+    "compliance": "rigid",
+    "rotor_reaction": true,
+    "fluid": [
+      [
+        "tank.out",
+        "engine.fuel"
+      ]
+    ]
+  },
+  "controllers": [
+    {
+      "id": "tcu",
+      "type": "manual_tcu",
+      "gearbox": "gearbox",
+      "clutch": "clutch",
+      "engine": "engine",
+      "auto_clutch": {
+        "enabled": true,
+        "bite_rpm": 600,
+        "full_rpm_min": 800,
+        "full_rpm_max": 1400,
+        "lock_slip_rpm": 80,
+        "anti_stall_rpm": 450,
+        "engage_rate_per_s": 4.0,
+        "release_rate_per_s": 12.0,
+        "open_time_s": 0.08,
+        "close_time_s": 0.1,
+        "sync_time_s": 0.3,
+        "max_sync_torque_nm": 50.0
+      },
+      "auto_blip": {
+        "enabled": true,
+        "kp_per_rpm": 0.002,
+        "max_throttle": 1.0,
+        "upshift_cut": true,
+        "upshift_cut_release_slip_rpm": 300,
+        "upshift_cut_max_hold_s": 0.6,
+        "upshift_torque_ramp_s": 0.1
+      },
+      "auto_shift": {
+        "enabled": false,
+        "up_rpm_at_zero_throttle": 1200,
+        "up_rpm_at_full_throttle": 1900,
+        "down_rpm_at_zero_throttle": 600,
+        "down_rpm_at_full_throttle": 950,
+        "min_time_in_gear_s": 1.0
+      },
+      "max_pending_steps": 2
+    }
+  ]
+}
