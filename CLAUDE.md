@@ -1329,10 +1329,13 @@ returns (D44, geo2map PR #1). A store derived before encoding 7 has no junctions
   continues its lane and edge lines over the junction as a cubic overlay (flag 32); not at a signal, a roundabout or an
   equal-rank crossing. Its edge line is broken (flags 64/128) across a side road's mouth (motorway: 0.30 m 6/6, else
   1.5/1.5) and hidden (512/1024) where it leaves the ring.
+  Signalled junctions keep the through overlay too. Where a two-way road splits into two one-way ways at the junction
+  (a dual carriageway joining up), the straight pair covers one direction only, so the two-way road's other lanes get
+  a second overlay into the opposite one-way way; each strip covers only its half of the two-way road.
 - Lines (flag 16, 4 mm above the junction): OSM stop lines (solid 0.5 m), give-way lines (0.5 m dashes, 0.25 m gaps) at
   OSM give-way and roundabout entries and implied on a lower-ranked side road off a through road (not at a merge under
   25 deg), crossings (zebra 0.5/0.5 bars, ladder, Furt = two broken 0.12 m lines, also the default at a signalised
-  crossing without a pattern). Signalised junctions keep a plain box (no through overlay), as German practice does.
+  crossing without a pattern). A stop line whose centre lies on a placed crossing (+0.5 m) is not drawn: the crossing's line already stops the traffic.
 - Turn arrows (turn:lanes) stand 15 m before the stretch end, or further back so their tip ends 3 m before the first
   marking the traffic meets there (junction trim, a stop/give-way line of that direction, a crossing).
 - Side roads closed to the public (access no/private/permissive/permit/...) never open an edge line; on a motorway or a

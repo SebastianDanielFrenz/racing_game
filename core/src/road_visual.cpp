@@ -1,5 +1,6 @@
 #include "rg/road_visual.h"
 #include "rg/road_structures.h"
+#include "g2m/layer/road_furniture.h"
 #include <algorithm>
 #include <charconv>
 #include <cmath>
@@ -416,14 +417,32 @@ RoadVisualMesh build_road_visual(const g2m::RoadGeomTile& geometry,const g2m::Ti
    if(static_cast<int>(i)==best_i||static_cast<int>(i)==best_j||static_cast<int>(k)==best_i||static_cast<int>(k)==best_j)continue;
    if(std::abs(wrap(list[k].inward+3.14159265358979323846-list[i].inward))<=kThrough&&std::min(list[i].rank,list[k].rank)>=best_rank)through=false;
   }
-  if(signalled)through=false;
-  if(through) {
+  // A signalled junction keeps the through road's lane and edge lines too (the box stays clear only at a crossing of
+  // equal rank, above); its stop lines stand on the approaches.
+  // A dual carriageway meeting a two-way road (the B 8 splitting into two one-way ways at a junction): the straight
+  // pair carries one direction only, so the two-way member's other lanes continue into the opposite one-way way. That
+  // way is the second overlay; without it half the road's lanes would stop at the box.
+  int extra_i=-1,extra_of=-1;
+  if(through)for(int m:{best_i,best_j}) {
+   const auto& two=list[static_cast<std::size_t>(m)];const auto& one=list[static_cast<std::size_t>(m==best_i?best_j:best_i)];
+   if(two.in_lanes<=0||two.in_lanes>=two.layout.lanes||(one.in_lanes>0&&one.in_lanes<one.layout.lanes))continue;
+   double dev_best=1e9;
+   for(std::size_t i=0;i<list.size();++i) {
+    if(static_cast<int>(i)==best_i||static_cast<int>(i)==best_j)continue;
+    const auto& c=list[i];if(c.rank<best_rank||(c.in_lanes>0&&c.in_lanes<c.layout.lanes))continue;
+    if((c.in_lanes>0)==(one.in_lanes>0))continue;  // the opposite direction to the paired one-way way
+    const double dev=std::abs(wrap(c.inward+3.14159265358979323846-two.inward));
+    if(dev<=kThrough&&dev<dev_best){dev_best=dev;extra_i=static_cast<int>(i);extra_of=m;}
+   }
+   if(extra_i>=0)break;
+  }
+  const auto add_overlay=[&](int pi,int pj) {
    // Orient the overlay with the traffic: from the approach that can be driven into the junction.
-   Approach a=list[static_cast<std::size_t>(best_i)],b=list[static_cast<std::size_t>(best_j)];
+   Approach a=list[static_cast<std::size_t>(pi)],b=list[static_cast<std::size_t>(pj)];
    if(a.in_lanes==0&&b.in_lanes>0)std::swap(a,b);
    Overlay o{a,b,0,&j.rings[static_cast<std::size_t>(g2m::JunctionRingLayer::RoadBed)].vertices};
    const double dx=b.pose.x-a.pose.x,dy=b.pose.y-a.pose.y;
-   for(std::size_t i=0;i<list.size();++i){if(static_cast<int>(i)==best_i||static_cast<int>(i)==best_j)continue;
+   for(std::size_t i=0;i<list.size();++i){const int ii=static_cast<int>(i);if(ii==best_i||ii==best_j||ii==extra_i)continue;
     // The side road's angle to the through road's axis (0 = it leaves or joins parallel to it; a and b point in
     // opposite directions, so the smaller of the two deviations is the angle to the axis).
     const double angle=std::min(std::abs(wrap(list[i].inward-a.inward)),std::abs(wrap(list[i].inward-b.inward)));
@@ -431,7 +450,11 @@ RoadVisualMesh build_road_visual(const g2m::RoadGeomTile& geometry,const g2m::Ti
     o.broken|=(dx*(list[i].pose.y-a.pose.y)-dy*(list[i].pose.x-a.pose.x))>0?kLeftEdgeBroken:kRightEdgeBroken;}
    overlays.push_back(o);
    for(const auto* x:{&a,&b}){const auto& e=geometry.entries[x->entry];continued.insert({e.way_id,e.stretch.start_ref,x->at_end});}
-  }
+  };
+  // A signalled junction keeps the through road's lane and edge lines too (the box stays clear only at a crossing of
+  // equal rank, above); its stop lines stand on the approaches.
+  if(through)add_overlay(best_i,best_j);
+  if(through&&extra_i>=0)add_overlay(extra_of,extra_i);
   if(signalled)continue;
   // Give-way lines nobody tagged (StVO 8 with sign 205/215): at a roundabout entry, and on a lower-ranked side road
   // of a through road unless it merges at a shallow angle (a slip lane or an on-ramp: no line, it merges).
@@ -439,7 +462,7 @@ RoadVisualMesh build_road_visual(const g2m::RoadGeomTile& geometry,const g2m::Ti
    const auto& a=list[i];if(a.in_lanes==0||a.roundabout||a.rank==0)continue;
    const auto& entry=geometry.entries[a.entry];if(lined.contains({a.entry,a.at_end}))continue;
    bool yields=roundabout;
-   if(!yields&&best_i>=0&&static_cast<int>(i)!=best_i&&static_cast<int>(i)!=best_j&&a.rank<best_rank) {
+   if(!yields&&best_i>=0&&static_cast<int>(i)!=best_i&&static_cast<int>(i)!=best_j&&static_cast<int>(i)!=extra_i&&a.rank<best_rank) {
     yields=true;
     for(int t:{best_i,best_j})if(std::abs(wrap(list[static_cast<std::size_t>(t)].inward+3.14159265358979323846-a.inward))<25*3.14159265358979323846/180)yields=false;
    }
@@ -583,6 +606,7 @@ RoadVisualMesh build_road_visual(const g2m::RoadGeomTile& geometry,const g2m::Ti
   int lanes=a.layout.lanes,forward=a.in_lanes;
   const int b_lanes=b.layout.lanes,b_right=b.layout.lanes-b.in_lanes;
   double wa=a.width,wb=b.width,oa=0,ob=0; // strip width and its centre offset (left +) at either end
+  int o_hide=0;
   if(lanes!=b_lanes||forward!=b_right) {
    const bool two_way=forward>0&&forward<lanes&&b_right>0&&b_right<b_lanes;
    if(two_way){lanes=2;forward=1;}
@@ -593,9 +617,18 @@ RoadVisualMesh build_road_visual(const g2m::RoadGeomTile& geometry,const g2m::Ti
     const int side=o.broken==kRightEdgeBroken?1:o.broken==kLeftEdgeBroken?-1:0;
     oa=side*(a.width-w)/2;ob=side*(b.width-w)/2;wa=wb=w;lanes=forward=keep;
    }
+   else if(forward==lanes&&b_right==lanes&&b.in_lanes>0) {
+    // A one-way way into the matching half of a two-way road (a dual carriageway joining up): the strip covers that
+    // half only; its left edge becomes the two-way road's centre, so no edge line there.
+    wb=b.width*lanes/b_lanes;ob=-(b.width-wb)/2;o_hide|=kLeftEdgeHidden;
+   }
+   else if(b.in_lanes==0&&b_lanes==a.in_lanes&&forward>0&&forward<lanes) {
+    // The two-way road's lanes toward the junction continuing into a one-way way (a dual carriageway splitting).
+    wa=a.width*forward/lanes;oa=-(a.width-wa)/2;lanes=forward;o_hide|=kLeftEdgeHidden;
+   }
    else {lanes=1;forward=1;}
   }
-  int flags=(a.layout.flags&b.layout.flags&(kMarking|kEdgeLines))|(a.layout.flags&(kSolidSeparator|kFast))|kOverlay|o.broken;
+  int flags=(a.layout.flags&b.layout.flags&(kMarking|kEdgeLines))|(a.layout.flags&(kSolidSeparator|kFast))|kOverlay|o.broken|o_hide;
   if(!(flags&kMarking))continue;
   const int count=std::max(2,static_cast<int>(std::ceil(chord)));
   struct Row { double x,y,nx,ny,arc,width,offset; };
@@ -639,11 +672,30 @@ RoadVisualMesh build_road_visual(const g2m::RoadGeomTile& geometry,const g2m::Ti
   for(double t=lo;t<hi-.05;t+=.75)paint_rect(entry,station-depth/2,station+depth/2,t,std::min(t+.5,hi),kLineLiftM);
  };
  for(const auto& g:give_ways){const auto& entry=geometry.entries[g.entry];if(in_tile(entry,g.station))give_way_line(entry,g.station,.5,g.t0,g.t1);}
+ // A stop line whose centre falls on a placed crossing (a signal's line derived on a short link piece between two
+ // junctions lands in the Furt of the crossing that already stops the traffic): the crossing's own line is the one
+ // painted, a second bar across it reads as a duplicate.
+ std::vector<std::array<g2m::LateralPoint,4>> crossing_quads;
+ for(const auto& fu:geometry.furniture)if(fu.decline==g2m::FurnitureDecline::None&&fu.kind==g2m::FurnitureKind::Crossing)
+  if(auto q=g2m::furniture_quad(geometry,fu))crossing_quads.push_back(*q);
+ const auto inside_crossing=[&](const g2m::RoadFurniture& line) {
+  auto q=g2m::furniture_quad(geometry,line);if(!q)return false;
+  double cx=0,cy=0;for(const auto& p:*q){cx+=p.x/4;cy+=p.y/4;}
+  for(const auto& c:crossing_quads) {
+   // Inside the quad grown by 0.5 m: every edge's signed distance (counter-clockwise or clockwise alike) >= -0.5.
+   double area=0;for(int k=0;k<4;++k){const auto& a=c[k];const auto& b=c[(k+1)%4];area+=a.x*b.y-b.x*a.y;}
+   bool in=area!=0;
+   for(int k=0;k<4&&in;++k){const auto& a=c[k];const auto& b=c[(k+1)%4];const double ex=b.x-a.x,ey=b.y-a.y,len=std::hypot(ex,ey);
+    if(len<1e-9)continue;in=(area>0?1:-1)*(ex*(cy-a.y)-ey*(cx-a.x))/len>=-.5;}
+   if(in)return true;
+  }
+  return false;
+ };
  for(const auto& fu:geometry.furniture) {
   if(fu.decline!=g2m::FurnitureDecline::None||fu.kind==g2m::FurnitureKind::Signal||fu.entry_index>=geometry.entries.size())continue;
   const auto& entry=geometry.entries[fu.entry_index];if(!entry.profile||!in_tile(entry,fu.station_m))continue;
   const double s0=fu.station_m-fu.length_m/2,s1=fu.station_m+fu.length_m/2,lo=std::min(fu.t_from,fu.t_to),hi=std::max(fu.t_from,fu.t_to);
-  if(fu.kind==g2m::FurnitureKind::StopLine){paint_rect(entry,s0,s1,lo,hi,kLineLiftM);continue;}
+  if(fu.kind==g2m::FurnitureKind::StopLine){if(!inside_crossing(fu))paint_rect(entry,s0,s1,lo,hi,kLineLiftM);continue;}
   if(fu.kind==g2m::FurnitureKind::GiveWayLine){give_way_line(entry,fu.station_m,fu.length_m,lo,hi);continue;}
   // Crossings. Zebra (sign 293): 0.50 m bars along the road with 0.50 m gaps; a ladder adds the two side lines.
   // A signalled crossing without a recorded pattern, or "dashes": the Furt, two broken 0.12 m lines (0.50 / 0.20 m).
