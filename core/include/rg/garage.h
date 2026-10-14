@@ -36,6 +36,7 @@ struct GarageConfig {
     std::string engine_catalog_path; // data/engines/engine_catalog.json ("" = <repo_root>/data/engines/engine_catalog.json)
     std::string gearbox_catalog_path; // data/gearboxes/gearbox_catalog.json ("" = <repo_root>/data/gearboxes/gearbox_catalog.json)
     std::string tyre_families_path; // data/tyres/families.json ("" = no tyre choice)
+    std::string turbo_map_extension_path; // data/engines/turbo_map_extension.json ("" = <repo_root>/data/engines/turbo_map_extension.json if it exists, else no extension)
     std::string user_dir;      // selection and setups are saved under <user_dir>/garage/
     std::string work_root;     // scratch and drive materialisations
     std::string engine_map_cache_dir; // .psmaps cache for the loader ("" = the per-vehicle default rg::Session uses)
@@ -54,6 +55,7 @@ struct DriveSelection {
     std::string rim;
     std::vector<std::string> model_options; // visual model parts switched on by the setup (e.g. "roof")
     std::string engine_map_cache_dir; // the .psmaps cache the world load should use (the vehicle's own default)
+    std::string turbo_map_extension_path; // the turbo map extension policy the world load should use ("" = none)
     bool modified = false;     // a saved setup is applied
     bool assist_auto_clutch = true;  // the vehicle file's controller defaults (after the setup)
     bool assist_auto_blip = true;
@@ -177,6 +179,7 @@ private:
     SetupOptionTable options_;
     GarageSetDesc set_;
     SetupContext ctx_;
+    std::string turbo_map_extension_path_; // the loaded policy file, "" = none
     std::shared_ptr<EngineStore> store_;
     std::string selected_;
 

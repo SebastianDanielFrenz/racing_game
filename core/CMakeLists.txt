@@ -109,6 +109,7 @@ add_library(rg_core STATIC
     src/garage.cpp
     src/garage_dyno.cpp
     src/limit_advisor.cpp
+    src/turbo_map_extension.cpp
     src/road_ahead.cpp
     src/camera_math.cpp
     "${PS_ADAPTER_SRC_DIR}/frame_convert_core.cpp"

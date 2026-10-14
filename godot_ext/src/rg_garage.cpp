@@ -485,6 +485,7 @@ godot::Dictionary RgGarage::prepare_drive(const String& id) {
     for (const std::string& o : s.model_options) model_options.push_back(from_std(o));
     d["model_options"] = model_options;
     d["engine_map_cache_dir"] = from_std(s.engine_map_cache_dir);
+    d["turbo_map_extension_path"] = from_std(s.turbo_map_extension_path);
     d["modified"] = s.modified;
     godot::Dictionary chassis;
     chassis["mass_kg"] = s.chassis.mass_kg;

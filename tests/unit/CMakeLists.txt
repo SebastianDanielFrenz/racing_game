@@ -87,6 +87,7 @@ add_executable(rg_unit_tests
   test_hyper_power_jumps.cpp
   test_flat_ground.cpp
   test_surface_kinds.cpp
+  test_turbo_map_extension.cpp
 )
 
 target_link_libraries(rg_unit_tests

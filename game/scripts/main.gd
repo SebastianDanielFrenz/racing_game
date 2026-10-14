@@ -1469,6 +1469,7 @@ func _apply_vehicle(sel: Dictionary) -> void:
 		"half_extents": chassis["half_extents"],
 		"z_m": float(chassis["z_m"]),
 		"engine_map_cache_dir": str(sel["engine_map_cache_dir"]),
+		"turbo_map_extension_path": str(sel.get("turbo_map_extension_path", "")),
 	})
 	# optional model parts: the setup's (a folding top) plus the raised hood a tall swapped-in engine needs
 	var parts: Array = Array(sel.get("model_options", []))

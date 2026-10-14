@@ -74,6 +74,8 @@ void RgSimulation::set_vehicle_overrides(const godot::Dictionary& overrides) {
     }
     if (overrides.has("engine_map_cache_dir"))
         o.engine_map_cache_dir = std::string(godot::String(overrides["engine_map_cache_dir"]).utf8().get_data());
+    if (overrides.has("turbo_map_extension_path"))
+        o.turbo_map_extension_path = std::string(godot::String(overrides["turbo_map_extension_path"]).utf8().get_data());
     vehicle_overrides_ = std::move(o);
 }
 

@@ -149,6 +149,24 @@ std::unique_ptr<Garage> Garage::open(const GarageConfig& config, std::string* er
         g->ctx_.engines = std::make_shared<const EngineStore>(*g->store_);
     }
     {
+        // Turbo stage map extension policy: optional file, strict when present.
+        std::string path = config.turbo_map_extension_path;
+        if (path.empty()) {
+            const std::string dflt = config.repo_root + "/data/engines/turbo_map_extension.json";
+            std::error_code ec;
+            if (fs::is_regular_file(fs::path(dflt), ec)) path = dflt;
+        }
+        if (!path.empty()) {
+            auto cfg = load_turbo_map_extension_config(path, &e);
+            if (!cfg) {
+                if (err != nullptr) *err = e;
+                return nullptr;
+            }
+            g->ctx_.turbo_map_extension = std::make_shared<const TurboMapExtensionConfig>(*cfg);
+            g->turbo_map_extension_path_ = path;
+        }
+    }
+    {
         const std::string cat = config.gearbox_catalog_path.empty() ? config.repo_root + "/data/gearboxes/gearbox_catalog.json"
                                                                      : config.gearbox_catalog_path;
         auto boxes = GearboxCatalog::open(cat, config.repo_root, &e);
@@ -604,6 +622,7 @@ DriveSelection Garage::prepare_drive(const std::string& id) {
     d.rim = e->default_rim;
     d.vehicle_path = e->vehicle_path;
     d.engine_map_cache_dir = context_for(*e).engine_map_cache_dir;
+    d.turbo_map_extension_path = turbo_map_extension_path_;
 
     remove_drive_dir();
     std::vector<std::string> notices;

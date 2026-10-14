@@ -35,6 +35,7 @@
 
 #include "rg/engine_store.h"
 #include "rg/gearbox_catalog.h"
+#include "rg/turbo_map_extension.h"
 #include "rg/slider_map.h"
 #include "rg/vehicle_catalog.h"
 
@@ -158,6 +159,9 @@ struct SetupContext {
     std::shared_ptr<const EngineStore> engines;
     // The gearbox list the "gearboxes" catalog option reads. nullptr = that option is unavailable.
     std::shared_ptr<const GearboxCatalog> gearboxes;
+    // Turbo stage map extension policy (rg/turbo_map_extension.h): when set, a load that finds the engine's air demand outside
+    // the stage map extends and caches the map under engine_map_cache_dir. nullptr = maps are used as they are.
+    std::shared_ptr<const TurboMapExtensionConfig> turbo_map_extension;
 };
 
 // One option as the configurator shows it, for one vehicle.
