@@ -1065,7 +1065,15 @@ std::optional<SetupOptionTable> parse_setup_options(const std::string& json_text
             if (!spec_error.empty()) return bad(where + ": slider " + spec_error);
             d.slider = std::move(spec);
         }
-        detail::get_number(o, "max_shift", d.max_shift);
+        if (d.kind == OptionKind::BrakeBias) {
+            // The brake bias limits are data (setup_options.json), never code: every one is required.
+            if (!detail::get_number(o, "max_shift", d.max_shift)) return bad(where + ": brake_bias needs a number \"max_shift\"");
+            if (!detail::get_number(o, "share_min", d.share_min)) return bad(where + ": brake_bias needs a number \"share_min\"");
+            if (!detail::get_number(o, "share_max", d.share_max)) return bad(where + ": brake_bias needs a number \"share_max\"");
+            if (!detail::get_number(o, "max_shift_bound", d.max_shift_bound)) {
+                return bad(where + ": brake_bias needs a number \"max_shift_bound\"");
+            }
+        }
         detail::get_string(o, "file", d.file);
         detail::get_string(o, "model_option", d.model_option);
         if (d.file != "vehicle" && d.file != "gearbox" && d.file != "engine" && d.file != "turbo") {
@@ -1098,8 +1106,12 @@ std::optional<SetupOptionTable> parse_setup_options(const std::string& json_text
             !(d.min > 0.0 && d.min <= 1.0 && d.max >= 1.0 && d.max < 10.0 && d.step > 0.0)) {
             return bad(where + ": a scale needs 0 < min <= 1 <= max < 10 and step > 0");
         }
-        if (d.kind == OptionKind::BrakeBias && !(d.max_shift > 0.0 && d.max_shift < 0.5)) {
-            return bad(where + ": max_shift must be in (0, 0.5)");
+        if (d.kind == OptionKind::BrakeBias) {
+            if (!(d.max_shift_bound > 0.0 && d.max_shift_bound <= 0.5)) return bad(where + ": max_shift_bound must be in (0, 0.5]");
+            if (!(d.max_shift > 0.0 && d.max_shift < d.max_shift_bound)) return bad(where + ": max_shift must be in (0, max_shift_bound)");
+            if (!(d.share_min >= 0.0 && d.share_min < d.share_max && d.share_max <= 1.0)) {
+                return bad(where + ": share_min and share_max must satisfy 0 <= share_min < share_max <= 1");
+            }
         }
         if (d.kind == OptionKind::FileChoice) {
             if (d.file != "vehicle" && d.file != "engine") return bad(where + ": file choice must edit vehicle or engine");
@@ -1420,8 +1432,8 @@ SetupModel build_setup_model(const CatalogEntry& entry, const SetupOptionTable& 
                 const double share = total > 0.0 ? front / total : 0.5;
                 v.stock = share;
                 if (entry.setup_ranges.count(def.id) == 0) {
-                    v.min = std::max(0.2, share - def.max_shift);
-                    v.max = std::min(0.85, share + def.max_shift);
+                    v.min = std::max(def.share_min, share - def.max_shift);
+                    v.max = std::min(def.share_max, share + def.max_shift);
                 }
                 if (total <= 0.0) v.available = false;
                 break;
@@ -1625,8 +1637,8 @@ std::string apply_option(const CatalogEntry& entry, const SetupOptionDef& def, c
             const double stock = front / total;
             double lo = range.first, hi = range.second;
             if (entry.setup_ranges.count(def.id) == 0) {
-                lo = std::max(0.2, stock - def.max_shift);
-                hi = std::min(0.85, stock + def.max_shift);
+                lo = std::max(def.share_min, stock - def.max_shift);
+                hi = std::min(def.share_max, stock + def.max_shift);
             }
             if (!std::isfinite(b) || b < lo - kEps || b > hi + kEps) {
                 return id + ": a front share of " + fmt2(b * 100.0) + " % is outside the allowed range " + fmt2(lo * 100.0) +
