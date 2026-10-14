@@ -1,5 +1,5 @@
 # Shell scripts run in WSL / on the Steam Frame: always LF.
 *.sh text eol=lf
-
 # Generated car models (tools/cargen): binary glTF.
 *.glb binary
+data/models/downloaded/*.glb filter=lfs diff=lfs merge=lfs -text
