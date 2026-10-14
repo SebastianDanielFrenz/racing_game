@@ -1341,7 +1341,8 @@ returns (D44, geo2map PR #1). A store derived before encoding 7 has no junctions
 - Through road: the pair of approaches within 35 deg with the highest rank (StVO 18(3) ranks of `rg::traffic_road_rank`)
   continues its lane and edge lines over the junction as a cubic overlay (flag 32); not at a signal, a roundabout or an
   equal-rank crossing. Its edge line is broken (flags 64/128) across a side road's mouth (motorway: 0.30 m 6/6, else
-  1.5/1.5) and hidden (512/1024) where it leaves the ring.
+  1.5/1.5) and hidden (512/1024) where it leaves the ring. At an exit or merge (an overlay with a gore) it is broken
+  only where the ring reaches 0.5 m past the bed edge, so the solid line runs on until the paved surface widens.
   Signalled junctions keep the through overlay too. Where a two-way road splits into two one-way ways at the junction
   (a dual carriageway joining up), the straight pair covers one direction only, so the two-way road's other lanes get
   a second overlay into the opposite one-way way; each strip covers only its half of the two-way road.

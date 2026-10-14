@@ -702,6 +702,18 @@ RoadVisualMesh build_road_visual(const g2m::RoadGeomTile& geometry,const g2m::Ti
    mesh.vertices.push_back({static_cast<float>(q.x-ox),static_cast<float>(q.y-oy),static_cast<float>(*h+lift+kLineLiftM),0,0,1000.0f,1,0,0,kPaint});}
   mesh.indices.insert(mesh.indices.end(),{first,first+1,first+2,first+1,first+3,first+2});
  };
+ // Paved width of a junction ring beyond a road bed edge point `e`, along the unit direction `d` away from the road
+ // (0 where the ring does not reach past the edge there): where an exit or a side road actually leaves the road.
+ constexpr double kLeaves=.5;  // a road counts as left once the ring reaches this far beyond its bed edge
+ const auto paved_beyond=[](const std::vector<g2m::geom::PointMm>& r,P2 e,P2 d)->double{
+  if(r.size()<3||!near_ring(r,e.x+d.x*.05,e.y+d.y*.05,0))return 0;
+  double best=1e9;
+  for(std::size_t k=0,m=r.size()-1;k<r.size();m=k++){
+   const double ax=r[m].x/1000.0,ay=r[m].y/1000.0,bx=r[k].x/1000.0,by=r[k].y/1000.0,sx=bx-ax,sy=by-ay;
+   const double den=d.x*sy-d.y*sx;if(std::abs(den)<1e-12)continue;
+   const double t=((ax-e.x)*sy-(ay-e.y)*sx)/den,u=((ax-e.x)*d.y-(ay-e.y)*d.x)/den;
+   if(t>0&&u>=0&&u<=1)best=std::min(best,t);}
+  return best<1e8?best:0;};
  // The gore where an exit leaves or an on-ramp joins the through road over a junction (sign 298, Sperrflaeche). The
  // ramp's inner edge line starts where the ramp leaves the through road (the paved ring first reaches beyond the through
  // road's bed edge), on the through road's edge line, and curves into the ramp's own edge line at its lead, so it carries
@@ -746,17 +758,8 @@ RoadVisualMesh build_road_visual(const g2m::RoadGeomTile& geometry,const g2m::Ti
   // more than kLeaves beyond the through road's bed edge. The line starts there, on the through road's edge line, and
   // runs along the ramp only; the through lanes keep their own lines (OSM does not say whether the ramp takes over a
   // through lane, so none is assumed).
-  constexpr double kLeaves=.5;
-  const auto beyond_edge=[&](std::size_t i)->double{  // paved width outside the bed edge at row i, along the normal
-   const P2 e=edge[i];const P2 d{side*normal[i].x,side*normal[i].y};
-   if(!near_ring(*o.ring,e.x+d.x*.05,e.y+d.y*.05,0))return 0;
-   double best=1e9;const auto& r=*o.ring;
-   for(std::size_t k=0,m=r.size()-1;k<r.size();m=k++){
-    const double ax=r[m].x/1000.0,ay=r[m].y/1000.0,bx=r[k].x/1000.0,by=r[k].y/1000.0,sx=bx-ax,sy=by-ay;
-    const double den=d.x*sy-d.y*sx;if(std::abs(den)<1e-12)continue;
-    const double t=((ax-e.x)*sy-(ay-e.y)*sx)/den,u=((ax-e.x)*d.y-(ay-e.y)*d.x)/den;
-    if(t>0&&u>=0&&u<=1)best=std::min(best,t);}
-   return best<1e8?best:0;};
+  const auto beyond_edge=[&](std::size_t i)->double{
+   return paved_beyond(*o.ring,edge[i],{side*normal[i].x,side*normal[i].y});};
   std::size_t start_row=diverge?0:rows.size()-1;bool found=false;
   for(std::size_t k=0;k<rows.size();++k){const std::size_t i=diverge?k:rows.size()-1-k;if(beyond_edge(i)>kLeaves){start_row=i;found=true;break;}}
   if(!found)return;
@@ -869,19 +872,42 @@ RoadVisualMesh build_road_visual(const g2m::RoadGeomTile& geometry,const g2m::Ti
     if(!near_ring(*o.ring,r.x+r.nx*l,r.y+r.ny*l,.3))flags|=side>0?kLeftEdgeHidden:kRightEdgeHidden;
    }
   }
-  const auto first=static_cast<std::int32_t>(mesh.vertices.size());bool valid=true;int across=0;
-  for(const auto& r:rows) {
-   if(!valid)break;
-   const double x=r.x,y=r.y,nx=r.nx,ny=r.ny,width=r.width,half=width/2,offset=r.offset;
-   across=std::max(2,static_cast<int>(std::ceil(std::max(wa,wb))));
-   for(int j=0;j<=across;++j) {
-    const double lateral=-half+width*j/across,e=x+nx*(offset+lateral),n=y+ny*(offset+lateral);
-    const auto height=ground(e,n);if(!height){valid=false;break;}
-    mesh.vertices.push_back({static_cast<float>(e-ox),static_cast<float>(n-oy),static_cast<float>(*height+lift+kOverlayLiftM),static_cast<float>(lateral),static_cast<float>(r.arc),static_cast<float>(width),1,static_cast<float>(lanes),static_cast<float>(forward),static_cast<float>(flags)});
+  // At an exit or a merge (an overlay with a gore) the edge line is broken only where the ramp actually leaves: where
+  // the ring reaches more than kLeaves past the bed edge on that side (the exit lane's taper), solid before and after
+  // (OSM's split node often sits metres ahead of where the paved surface starts to widen). A side road's mouth keeps
+  // its edge broken across the whole overlay (a box over several junctions can leave this ring between the mouths).
+  // Flags are per vertex, so each run of rows with the same flags gets its own vertices.
+  std::vector<int> pair_flags(static_cast<std::size_t>(count),flags);
+  if(!o.gores.empty()&&o.ring&&o.ring->size()>=3&&(flags&(kLeftEdgeBroken|kRightEdgeBroken)))
+   for(int i=0;i<count;++i){
+    const auto& r0=rows[static_cast<std::size_t>(i)];const auto& r1=rows[static_cast<std::size_t>(i)+1];
+    for(int side:{1,-1}){
+     const int bit=side>0?kLeftEdgeBroken:kRightEdgeBroken;if(!(flags&bit))continue;
+     const double nx=(r0.nx+r1.nx)/2,ny=(r0.ny+r1.ny)/2,nl=std::max(std::hypot(nx,ny),1e-9);
+     const double l=(r0.offset+r1.offset)/2+side*(r0.width+r1.width)/4;
+     const P2 e{(r0.x+r1.x)/2+nx/nl*l,(r0.y+r1.y)/2+ny/nl*l};
+     if(paved_beyond(*o.ring,e,{side*nx/nl,side*ny/nl})<=kLeaves)pair_flags[static_cast<std::size_t>(i)]&=~bit;
+    }
    }
+  const auto first=static_cast<std::int32_t>(mesh.vertices.size());const auto first_index=mesh.indices.size();bool valid=true;
+  const int across=std::max(2,static_cast<int>(std::ceil(std::max(wa,wb))));
+  for(int i0=0;i0<count&&valid;) {
+   int i1=i0+1;while(i1<count&&pair_flags[static_cast<std::size_t>(i1)]==pair_flags[static_cast<std::size_t>(i0)])++i1;
+   const auto run=static_cast<std::int32_t>(mesh.vertices.size());const float run_flags=static_cast<float>(pair_flags[static_cast<std::size_t>(i0)]);
+   for(int i=i0;i<=i1&&valid;++i) {
+    const auto& r=rows[static_cast<std::size_t>(i)];
+    const double x=r.x,y=r.y,nx=r.nx,ny=r.ny,width=r.width,half=width/2,offset=r.offset;
+    for(int j=0;j<=across;++j) {
+     const double lateral=-half+width*j/across,e=x+nx*(offset+lateral),n=y+ny*(offset+lateral);
+     const auto height=ground(e,n);if(!height){valid=false;break;}
+     mesh.vertices.push_back({static_cast<float>(e-ox),static_cast<float>(n-oy),static_cast<float>(*height+lift+kOverlayLiftM),static_cast<float>(lateral),static_cast<float>(r.arc),static_cast<float>(width),1,static_cast<float>(lanes),static_cast<float>(forward),run_flags});
+    }
+   }
+   if(!valid)break;
+   for(int i=0;i<i1-i0;++i)for(int j=0;j<across;++j){const auto c=run+i*(across+1)+j,d=c+across+1;mesh.indices.insert(mesh.indices.end(),{c,d,c+1,c+1,d,d+1});}
+   i0=i1;
   }
-  if(!valid){mesh.vertices.resize(static_cast<std::size_t>(first));continue;}
-  for(int i=0;i<count;++i)for(int j=0;j<across;++j){const auto c=first+i*(across+1)+j,d=c+across+1;mesh.indices.insert(mesh.indices.end(),{c,d,c+1,c+1,d,d+1});}
+  if(!valid){mesh.vertices.resize(static_cast<std::size_t>(first));mesh.indices.resize(first_index);continue;}
   for(const auto& g:o.gores)paint_gore(o,rows,g);
  }
  // Stop, give-way and crossing markings: OSM-placed furniture (geo2map) and the give-way lines implied above.
