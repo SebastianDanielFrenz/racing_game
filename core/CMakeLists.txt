@@ -76,6 +76,8 @@ add_library(rg_core STATIC
     src/terrain_view_streamer.cpp
     src/terrain_stream.cpp
     src/render_focus.cpp
+    src/steering_assist.cpp
+    src/address_search.cpp
     src/route_check.cpp
     src/route_follower.cpp
     src/road_network.cpp

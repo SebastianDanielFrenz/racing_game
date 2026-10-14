@@ -16,11 +16,14 @@ The public service is suitable for light personal usage without an availability
 guarantee; a private Photon endpoint can be configured for larger deployments:
 https://github.com/komoot/photon
 
-WGS84 coordinates project into the configured northern UTM zone and subtract
+WGS84 coordinates project into the configured northern UTM zone (rg_core
+`rg/address_search.h`, through geo2map's `g2m::geo::Utm`) and subtract
 the fixed Session origin, independently of the floating render origin. The
 existing relocation/terrain-loading mechanism places the car at rest and upright
 on the ground. This does not alter the configured R-reset spawn. Address points
 are exact geocoding destinations, not a nearest-road navigation calculation.
 Destinations farther than maximum_distance_from_origin_m (default 30 km) are
 rejected; actual terrain availability still depends on the current map data.
+`result_limit`, `language` and `min_request_interval_s` (geocoding.json) set
+the result count, the result language and the minimum gap between requests.
 RG_ADDRESS_TELEPORT records the selected destination for diagnostics.
