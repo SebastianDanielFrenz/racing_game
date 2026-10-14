@@ -321,5 +321,5 @@ graph LR
 4. Release the build lock. Record vault tickets through the CLI.
 
 ## Log
+- 2026-10-14: brief written (coordinator, Opus 5.5).
 - 2026-10-14: section 3 corrected from the physics brief (physics master 1858978).
-  the physics session.
