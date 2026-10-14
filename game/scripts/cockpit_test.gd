@@ -26,6 +26,23 @@ class FakeSim:
 	func get_vehicle_thermal(_n: String) -> Dictionary:
 		return {"present": true, "coolant_c": 90.0}
 
+# Stand-in for RgDriverActions: records submitted events and applies them to the stand-in simulation's cabin.* channels
+# (what DriverActions::apply/advance do), so the cockpit's posed switches read the "projected" state back.
+class FakeActions:
+	extends RefCounted
+	var sim: Node
+	var events: Array = []
+	func submit(id: String, kind: int, value: float, source: int) -> bool:
+		events.append({"id": id, "kind": kind, "value": value, "source": source})
+		match id:
+			"hazard": sim.controls["cabin.hazard"] = 1.0 if value != 0.0 else 0.0
+			"indicator_left": sim.controls["cabin.indicator"] = 1.0 if value != 0.0 else 0.0
+			"indicator_right": sim.controls["cabin.indicator"] = -1.0 if value != 0.0 else 0.0
+			"horn": sim.controls["cabin.horn"] = 1.0 if (kind == 2 and value != 0.0) else 0.0
+		return true
+	func state(id: String, _snapshot: Dictionary, channels: Dictionary) -> Dictionary:
+		return {"active": float(channels.get("cabin." + id, 0.0)) != 0.0}
+
 var checks := 0
 var failures := 0
 
@@ -128,6 +145,7 @@ func _test_model(path: String) -> void:
 				ck.activate(str(c["node"]), 1)
 				ck.activate(str(c["node"]), -1)
 				check(ck.consume_shift_up() == 2 and ck.consume_shift_down() == 1, "%s: gear lever shifts" % name)
+	await _test_shared_switches(ck, sim, spec, name)
 	# ignition key: off, then (four-position keys) start -> starter held, springs back to run
 	var key := ""
 	var detents: Array = []
@@ -196,3 +214,52 @@ func _test_model(path: String) -> void:
 	holder.queue_free()
 	sim.queue_free()
 	await process_frame
+
+# Hazard / indicator stalk / horn switches submit ActionEvents (source CockpitMouse = 3) and follow the projected state.
+func _test_shared_switches(ck: Node3D, sim: FakeSim, spec: Dictionary, name: String) -> void:
+	var fake := FakeActions.new()
+	fake.sim = sim
+	ck.set("driver_actions", fake)
+	for c in spec["controls"]:
+		var action: Dictionary = c.get("action", {})
+		var ch := str(action.get("channel", ""))
+		var node := str(c["node"])
+		if ch == "hazard":
+			fake.events.clear()
+			check(ck.activate(node, 1), "%s: %s clicks" % [name, node])
+			check(fake.events.size() == 1 and fake.events[0] == {"id": "hazard", "kind": 2, "value": 1.0, "source": 3}, "%s: hazard click submits Set 1 from the cockpit mouse (%s)" % [name, fake.events])
+			check(ck.get_cosmetic("hazard") == true, name + ": hazard switch follows the projection (on)")
+			sim.controls["cabin.hazard"] = 0.0 # a key press (or anything else) clears it: the switch follows
+			check(ck.get_cosmetic("hazard") == false, name + ": hazard switch follows a change made elsewhere")
+			ck.activate(node, 1)
+			ck.activate(node, 1)
+			check(fake.events[-1]["value"] == 0.0 and ck.get_cosmetic("hazard") == false, name + ": second click switches it off")
+		elif ch == "indicator":
+			fake.events.clear()
+			ck.activate(node, 1) # off -> left
+			check(fake.events.size() == 1 and fake.events[0]["id"] == "indicator_left" and fake.events[0]["value"] == 1.0 and fake.events[0]["source"] == 3, "%s: stalk up submits indicator_left (%s)" % [name, fake.events])
+			check(ck.get_cosmetic("indicator") == "left", name + ": stalk follows the projection (left)")
+			sim.controls["cabin.indicator"] = 0.0 # self-cancel by wheel return
+			check(ck.get_cosmetic("indicator") == "off", name + ": stalk follows the self-cancel")
+			fake.events.clear()
+			ck.activate(node, -1) # off -> right
+			check(fake.events.size() == 1 and fake.events[0]["id"] == "indicator_right" and ck.get_cosmetic("indicator") == "right", name + ": stalk down submits indicator_right")
+			ck.activate(node, 1) # right -> off
+			check(fake.events[-1]["id"] == "indicator_left" and fake.events[-1]["value"] == 0.0 and ck.get_cosmetic("indicator") == "off", name + ": stalk back to off clears")
+		elif ch == "horn":
+			fake.events.clear()
+			ck.activate(node, 1)
+			check(fake.events.size() == 1 and fake.events[0] == {"id": "horn", "kind": 2, "value": 1.0, "source": 3}, "%s: horn click submits Set 1 (%s)" % [name, fake.events])
+			check(ck.get_cosmetic("horn") == true, name + ": horn follows the projection")
+			ck.submit_held()
+			check(fake.events.size() == 2 and fake.events[1]["value"] == 1.0, name + ": held horn re-asserts its level")
+			await create_timer(0.4).timeout
+			check(fake.events[-1]["id"] == "horn" and fake.events[-1]["kind"] == 1 and ck.get_cosmetic("horn") == false, name + ": horn released after the press time")
+	# non driver-backed switches (lights, wipers) stay local
+	fake.events.clear()
+	for c in spec["controls"]:
+		var ch2 := str(c.get("action", {}).get("channel", ""))
+		if ch2 in ["lights", "wipers", "fog"]:
+			ck.activate(str(c["node"]), 1)
+	check(fake.events.is_empty(), name + ": light/wiper switches submit nothing")
+	ck.set("driver_actions", null)

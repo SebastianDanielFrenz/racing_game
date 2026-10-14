@@ -14,6 +14,10 @@ extends Node3D
 # Control channels that reach the physics (steer, throttle, brake, clutch, handbrake, gear shifts, ignition,
 # starter) are not written here: main.gd's _forward_driving pulls them (get_overrides, consume_shift_up/down,
 # consume_ignition_request, starter_held) so the one place that sets controls stays the one place.
+# Cabin switches that DriverActions owns (hazard, indicator stalk, horn) submit ActionEvents through `driver_actions`
+# (main.gd sets it to the shared instance; source CockpitMouse) and are POSED from the shared projection
+# (DriverActions::state + the cabin.* channels), so a key press and a click show the same switch position. Without a
+# driver_actions object (garage, pure-GDScript tests) they fall back to the local cosmetic state below.
 # Everything else ("cosmetic:*" sources: lights, wipers, climate, radio, ...) is state kept here; get_cosmetic
 # reads it (screens and lamps can follow it later).
 #
@@ -23,11 +27,17 @@ extends Node3D
 
 var simulation: Node
 var vehicle_name: String = ""
+var driver_actions: Object = null # RgDriverActions (submit/state), set by main.gd; null = local cosmetic state
 var model_root: Node3D
 var cockpit_path: String = ""
 var rig_path: String = ""
 
 const EYE_RADIUS_M := 0.9       # the camera must be this close to the driver eye for clicks to count
+# RgDriverActions enum values (godot_ext/src/rg_driver_actions.h); literals so this script parses without the GDExtension
+const KIND_RELEASE := 1
+const KIND_SET := 2
+const SOURCE_COCKPIT_MOUSE := 3
+const DRIVER_BACKED := ["hazard", "indicator", "horn"]   # channels with a DriverActions action
 const PRESS_TIME_S := 0.18      # how long a pressed button stays down
 const START_HOLD_S := 0.7       # an ignition key held in its start detent cranks this long, then springs back
 const DRAG_PX_FULL := 220.0     # vertical mouse travel for a pedal/lever's full range
@@ -44,6 +54,7 @@ var _shift_up := 0
 var _shift_down := 0
 var _ignition_request := -1     # -1 none, 0 off, 1 on
 var _starter_left := 0.0
+var _horn_left := 0.0           # seconds a clicked horn button keeps the horn level up
 var _steer_lock_deg := 540.0    # steering wheel angle from centre to one lock, degrees (per-car, cockpit file; else cabin.json)
 var _eye: Node3D
 var _gear_pose := Vector2.ZERO  # smoothed (side, fore) of the gear lever
@@ -140,7 +151,29 @@ func control_names() -> Array:
 	return _by_node.keys()
 
 func get_cosmetic(channel: String) -> Variant:
-	return _cosmetic.get(channel, null)
+	var shared: Variant = _shared_value(channel)
+	return shared if shared != null else _cosmetic.get(channel, null)
+
+# The switch position from the shared DriverActions projection, or null when this channel is not driver-backed.
+func _shared_value(channel: String) -> Variant:
+	if driver_actions == null or simulation == null or not channel in DRIVER_BACKED:
+		return null
+	var channels := {}
+	for key in ["cabin.hazard", "cabin.horn", "cabin.indicator", "cabin.indicator_left", "cabin.indicator_right"]:
+		channels[key] = simulation.get_control(key)
+	if channel == "indicator":
+		var dir := float(channels.get("cabin.indicator", 0.0)) # + = left (ISO), - = right, 0 = off
+		return "left" if dir > 0.0 else ("right" if dir < 0.0 else "off")
+	return bool(driver_actions.state(channel, {}, channels).get("active", false))
+
+func _submit(id: String, kind: int, value: float) -> void:
+	driver_actions.submit(id, kind, value, SOURCE_COCKPIT_MOUSE)
+
+# main.gd calls this every frame just before DriverActions.apply: the horn is a held level and the keyboard adapter
+# submits its own level each frame, so a clicked horn button has to keep asserting its level after that.
+func submit_held() -> void:
+	if driver_actions != null and _horn_left > 0.0:
+		_submit("horn", KIND_SET, 1.0)
 
 # Channel -> value for every control currently dragged (and a hand throttle that is set).
 func get_overrides() -> Dictionary:
@@ -177,6 +210,10 @@ func _process(delta: float) -> void:
 		_press_left[k] = float(_press_left[k]) - delta
 		if float(_press_left[k]) <= 0.0:
 			_press_left.erase(k)
+	if _horn_left > 0.0:
+		_horn_left -= delta
+		if _horn_left <= 0.0 and driver_actions != null:
+			_submit("horn", KIND_RELEASE, 0.0)
 	if _starter_left > 0.0:
 		_starter_left -= delta
 		if _starter_left <= 0.0:
@@ -212,7 +249,7 @@ func _live_values() -> Dictionary:
 func _source_value(spec: Dictionary, live: Dictionary) -> Variant:
 	var source := str(spec.get("source", ""))
 	if source.begins_with("cosmetic:"):
-		return _cosmetic.get(source.substr(9), 0.0)
+		return get_cosmetic(source.substr(9)) if _cosmetic.has(source.substr(9)) else 0.0
 	if source.begins_with("control:"):
 		var channel := source.substr(8)
 		if _overrides.has(channel):
@@ -411,6 +448,9 @@ func activate(node_name: String, step: int = 1) -> bool:
 	var channel := str(action.get("channel", ""))
 	match str(action.get("type", "")):
 		"toggle":
+			if driver_actions != null and channel == "hazard":
+				_submit("hazard", KIND_SET, 0.0 if _truthy(get_cosmetic(channel)) else 1.0)
+				return true
 			var on := not _truthy(_cosmetic.get(channel, false))
 			var values: Array = _channel_values.get(channel, [])
 			if values.is_empty():
@@ -419,6 +459,10 @@ func activate(node_name: String, step: int = 1) -> bool:
 				_cosmetic[channel] = _on_value(values) if on else _off_value(values)
 		"press":
 			_press_left[node_name] = PRESS_TIME_S
+			if driver_actions != null and channel == "horn":
+				_horn_left = PRESS_TIME_S
+				_submit("horn", KIND_SET, 1.0)
+				return true
 			_cosmetic[channel] = int(_cosmetic.get(channel, 0)) + 1 # a press count other code can watch
 		"step":
 			var values: Array = action.get("values", [])
@@ -427,6 +471,13 @@ func activate(node_name: String, step: int = 1) -> bool:
 			if channel == "ignition":
 				var cur: Variant = _source_value(spec, {})
 				_set_ignition_detent(spec, maxi(values.find(cur), 0) + step)
+				return true
+			if driver_actions != null and channel == "indicator":
+				var target: Variant = values[clampi(values.find(get_cosmetic(channel)) + step, 0, values.size() - 1)]
+				if target == "off":
+					_submit("indicator_left", KIND_SET, 0.0)
+				else:
+					_submit("indicator_left" if target == "left" else "indicator_right", KIND_SET, 1.0)
 				return true
 			var idx := values.find(_cosmetic.get(channel, values[0]))
 			_cosmetic[channel] = values[clampi(idx + step, 0, values.size() - 1)]

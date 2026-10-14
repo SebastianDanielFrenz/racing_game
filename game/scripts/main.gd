@@ -1102,6 +1102,9 @@ func _forward_walking(live: bool) -> void:
 func _forward_driving(live: bool, delta: float) -> void:
 	# Edge counts are consumed every frame, so presses made while the car is
 	# unattended never arrive later as a burst of shifts.
+	var cabin_cockpit: Node3D = _visuals.get_cockpit() if _visuals != null and _visuals.has_method("get_cockpit") else null
+	if cabin_cockpit != null:
+		cabin_cockpit.set("driver_actions", _input_map.driver_actions) # cockpit switches submit through the shared instance
 	var up: int = _input_map.consume_shift_up_count()
 	var down: int = _input_map.consume_shift_down_count()
 	if not live or not bool(_simulation.is_running()):
@@ -1123,8 +1126,8 @@ func _forward_driving(live: bool, delta: float) -> void:
 	# Clickable cockpit (cockpit_controls.gd): a dragged pedal/lever/wheel wins over the input device while held,
 	# the gear lever adds shifts, the ignition key sets the ignition and holds the starter in its start detent.
 	# These channels (pedals, steer, shifts, ignition, starter) are not owned by RgDriverActions, so they stay direct
-	# writes; the cockpit's hazard/indicator/horn/light switches are visual state only (cockpit_controls.gd
-	# get_cosmetic) and do not submit DriverActions events yet.
+	# writes; the cockpit's hazard/indicator/horn switches submit DriverActions events (cockpit_controls.gd) and
+	# the light/wiper/climate/radio switches are still visual state only (get_cosmetic).
 	var cockpit: Node3D = _visuals.get_cockpit() if _visuals != null and _visuals.has_method("get_cockpit") else null
 	var cockpit_overrides: Dictionary = {}
 	var cockpit_starter := false
@@ -1145,6 +1148,8 @@ func _forward_driving(live: bool, delta: float) -> void:
 	_simulation.set_control("ignition", 1.0 if _input_map.get_ignition() else 0.0)
 	# The cockpit's ignition key holds the starter in its start detent (cockpit_controls.gd), ORed with the device starter.
 	_simulation.set_control("starter", 1.0 if (_input_map.get_starter() or cockpit_starter) else 0.0)
+	if cockpit != null:
+		cockpit.submit_held()
 	var pt: Dictionary = _simulation.get_vehicle_powertrain(VEHICLE_NAME)
 	pt["speed_mps"] = _simulation.get_body_speed_mps("chassis")
 	var channels: Dictionary = load("res://scripts/driver_state.gd").channels(_simulation)
