@@ -148,3 +148,22 @@ TEST_CASE("NPC turn paths: on a bending road the curve starts where the lane sti
   CHECK(std::min(to_circle,to_line)<1.0);
  }
 }
+TEST_CASE("Right of way rules: signs, then road class, then right before left; signal phases never overlap", "[npc_traffic][right_of_way]") {
+ rg::TrafficJunction minor;minor.rank=1;rg::TrafficJunction major;major.rank=4;
+ CHECK(rg::junction_yields(minor,major,false));CHECK_FALSE(rg::junction_yields(major,minor,true));
+ rg::TrafficJunction signed_major=major;signed_major.sign_yield=true;
+ CHECK(rg::junction_yields(signed_major,minor,false));CHECK_FALSE(rg::junction_yields(minor,signed_major,true));
+ CHECK(rg::junction_yields(minor,minor,true));CHECK_FALSE(rg::junction_yields(minor,minor,false));
+ g2m::RoadGraphWay way;way.tags={{"highway","secondary_link"}};CHECK(rg::traffic_road_rank(way)==4);
+ way.tags={{"highway","residential"}};CHECK(rg::traffic_road_rank(way)==1);
+ way.tags={{"highway","living_street"}};CHECK(rg::traffic_road_rank(way)==0);
+ for(std::int64_t node:{1,56,123456789}){int green0=0,green1=0;
+  for(int k=0;k<5600;++k){const double t=k*.01;const bool a=rg::traffic_signal_green(node,0,t),b=rg::traffic_signal_green(node,1,t);
+   CHECK_FALSE((a&&b));green0+=a;green1+=b;}
+  CHECK(green0==Catch::Approx(2500).margin(2));CHECK(green1==Catch::Approx(2500).margin(2));}
+ // join_route_legs reports where each turn curve starts and ends.
+ std::vector<std::pair<double,double>> joints;
+ const auto route=rg::join_route_legs({lane(-60,-1.75,0,60),lane(-1.75,0,-kHalfPi,60)},{{8,8}},&joints);
+ REQUIRE(joints.size()==1);
+ CHECK(joints[0].first==Catch::Approx(52));CHECK(joints[0].second>joints[0].first+8);CHECK(joints[0].second<route.points.back().station-50);
+}

@@ -1297,6 +1297,8 @@ presentation and F7 configuration. WorldTerrain::source_osm_tile is blocking,
 background-only source access. Specification/current scope: docs/npc_traffic.md.
 Junction turns (2026-10-14): `join_route_legs`/`junction_turn_cuts` (npc_traffic.h) replace the node-to-node lane join with a
 curve between the served junction trims (tests `[junction_turn]`, docs/npc_traffic.md "Turn paths through junctions").
+Right of way: `TrafficTrip::junctions` (rank, served give-way/stop line, signal phase), `junction_yields`/`traffic_signal_green`,
+held in Session::update_traffic before the turn path (tests `[right_of_way]`, docs/npc_traffic.md "Right of way").
 Stuck-NPC detector and fixes (2026-10-05): core/include/rg/traffic_stuck.h + core/src/traffic_stuck.cpp (stuck = speed < 0.5 m/s for > 5 s, cause = binding cap, wait-chain roots; `RG_TRAFFIC_STUCK` / `RG_TRAFFIC_STUCK_SUMMARY` logs), headless harness tools/traffic_probe (output in out/traffic_stuck/), results and remaining limits in docs/npc_traffic.md "Stuck NPCs".
 
 Game server (plan only, nothing built): docs/game_server.md - authority model, protocol, interest management, deployment on the estate, increments S1-S9 and the required physics_sim seams; section 16.1 holds the owner's binding answers (30 Hz snapshots, environment time continues after a restart, remote cars silent apart from tyre audio, all other questions at the recommended defaults). Vault RACE-009.

@@ -4,6 +4,7 @@
 #include "g2m/layer/osm_roads.h"
 #include <algorithm>
 #include <cmath>
+#include <cstdint>
 #include <map>
 #include <queue>
 #include <set>
@@ -57,7 +58,8 @@ void append_turn(std::vector<TruckRoutePoint>& out,const TruckRoutePoint& from,c
  }
 }
 }
-TruckRoute join_route_legs(const std::vector<std::vector<TruckRoutePoint>>& legs,const std::vector<std::pair<double,double>>& cuts){
+TruckRoute join_route_legs(const std::vector<std::vector<TruckRoutePoint>>& legs,const std::vector<std::pair<double,double>>& cuts,
+ std::vector<std::pair<double,double>>* joints){
  TruckRoute route;const std::size_t n=legs.size();
  std::vector<std::vector<double>> st(n);std::vector<double> head(n,0),tail(n,0);
  for(std::size_t k=0;k<n;++k)st[k]=leg_stations(legs[k]);
@@ -74,16 +76,19 @@ TruckRoute join_route_legs(const std::vector<std::vector<TruckRoutePoint>>& legs
  }
  auto& out=route.points;
  const auto push=[&](const TruckRoutePoint& p){if(out.empty()||std::hypot(p.ground.x-out.back().ground.x,p.ground.y-out.back().ground.y)>1e-3)out.push_back(p);};
+ std::vector<std::pair<std::size_t,std::size_t>> joint_index;   // indices into out: curve start, curve end
  for(std::size_t k=0;k<n;++k){
   if(legs[k].empty())continue;
   const double length=st[k].back(),begin=head[k],end=length-tail[k];
   push(leg_at(legs[k],st[k],begin));
+  if(k>0&&!joint_index.empty()&&joint_index.back().second==SIZE_MAX)joint_index.back().second=out.size()-1;
   for(std::size_t i=0;i<legs[k].size();++i)if(st[k][i]>begin&&st[k][i]<end)push(legs[k][i]);
   const auto last=leg_at(legs[k],st[k],end);push(last);
-  if(k+1<n&&!legs[k+1].empty())append_turn(out,last,leg_at(legs[k+1],st[k+1],head[k+1]));
+  if(k+1<n&&!legs[k+1].empty()){joint_index.push_back({out.size()-1,SIZE_MAX});append_turn(out,last,leg_at(legs[k+1],st[k+1],head[k+1]));}
  }
  double total=0;
  for(std::size_t i=0;i<out.size();++i){if(i)total+=(out[i].ground-out[i-1].ground).length();out[i].station=total;}
+ if(joints){joints->clear();for(const auto& [a,b]:joint_index)joints->push_back({out[a].station,out[b==SIZE_MAX?out.size()-1:b].station});}
  return route;
 }
 std::pair<double,double> junction_turn_cuts(double turn,double width_in_m,double width_out_m,double trim_in_m,double trim_out_m){
@@ -95,6 +100,22 @@ std::pair<double,double> junction_turn_cuts(double turn,double width_in_m,double
  const double least=straight?2.:4*std::tan(angle/2)+2.5;
  const auto pick=[&](double trim,double width){return std::min(cap,std::max(least,trim>=0?trim:straight?2.:.5*std::max(0.,width)+3));};
  return {pick(trim_in_m,width_out_m),pick(trim_out_m,width_in_m)};
+}
+int traffic_road_rank(const g2m::RoadGraphWay& w){
+ auto highway=tag(w,"highway");if(highway.ends_with("_link"))highway.resize(highway.size()-5);
+ static const std::map<std::string,int> rank={{"motorway",7},{"trunk",6},{"primary",5},{"secondary",4},{"tertiary",3},{"unclassified",2},{"road",2},{"residential",1},{"living_street",0}};
+ const auto it=rank.find(highway);return it==rank.end()?0:it->second;
+}
+bool junction_yields(const TrafficJunction& a,const TrafficJunction& b,bool b_from_right){
+ if(a.sign_yield!=b.sign_yield)return a.sign_yield;
+ if(a.rank!=b.rank)return a.rank<b.rank;
+ return b_from_right;
+}
+bool traffic_signal_green(std::int64_t node,int phase,double time_s){
+ constexpr double kCycle=56,kGreen=25,kClear=3;
+ const double offset=static_cast<double>((static_cast<std::uint64_t>(node)*2654435761ull)%56ull);
+ const double t=std::fmod(std::fmod(time_s+offset,kCycle)+kCycle,kCycle);
+ return phase==0?t<kGreen:(t>=kGreen+kClear&&t<2*kGreen+kClear);
 }
 TrafficConfig sanitize_traffic_config(TrafficConfig c){
  auto bounded=[](double v,double fallback,double lo,double hi){return std::clamp(std::isfinite(v)?v:fallback,lo,hi);};
@@ -164,6 +185,8 @@ TrafficPlan plan_traffic(std::shared_ptr<WorldTerrain> terrain,ps::Vec3 player,T
  // Served junction trims per approach (way, stretch start_ref, end_ref, junction at the stretch end): where an NPC's turn
  // path through the junction starts and ends.
  std::map<std::tuple<std::int64_t,std::uint32_t,std::uint32_t,bool>,double> trims;
+ // Approaches (way, stretch start_ref, end_ref, travel direction) with a served give-way/stop line or a signal.
+ std::set<std::tuple<std::int64_t,std::uint32_t,std::uint32_t,int>> yield_signs,signalled;
  struct TurnRule {std::int64_t from=0,to=0,via=0;bool only=false,unsupported=false;};
  std::vector<TurnRule> turn_rules;
  std::vector<std::shared_ptr<const g2m::RoadGeomTile>> tiles;std::vector<Edge> edges;std::vector<TrafficDestination> destinations;
@@ -189,6 +212,11 @@ TrafficPlan plan_traffic(std::shared_ptr<WorldTerrain> terrain,ps::Vec3 player,T
   for(const auto& junction:tile->junctions){if(junction.decline!=g2m::JunctionDecline::None)continue;
    for(const auto& approach:junction.approaches){if(approach.status!=g2m::JunctionApproachStatus::Used||approach.entry_index>=tile->entries.size())continue;
     const auto& entry=tile->entries[approach.entry_index];trims.emplace(std::tuple{entry.way_id,entry.stretch.start_ref,entry.stretch.end_ref,approach.at_end},approach.trim_m);}}
+  for(const auto& item:tile->furniture){
+   if(item.decline!=g2m::FurnitureDecline::None||item.kind==g2m::FurnitureKind::Crossing||item.entry_index>=tile->entries.size())continue;
+   if(item.travel!=g2m::LaneDirection::Forward&&item.travel!=g2m::LaneDirection::Backward)continue;
+   const auto& entry=tile->entries[item.entry_index];
+   (item.kind==g2m::FurnitureKind::Signal?signalled:yield_signs).emplace(entry.way_id,entry.stretch.start_ref,entry.stretch.end_ref,item.travel==g2m::LaneDirection::Forward?1:-1);}
   for(const auto& entry:tile->entries){if(!entry.profile||!seen.emplace(entry.way_id,entry.stretch.start_ref,entry.stretch.end_ref).second)continue;
    const auto& ways=tile->source.graph.ways;auto w=std::lower_bound(ways.begin(),ways.end(),entry.way_id,[](const auto& a,auto id){return a.osm_id<id;});
    if(w==ways.end()||w->osm_id!=entry.way_id||entry.stretch.end_ref>=w->node_ids.size())continue;
@@ -200,7 +228,23 @@ TrafficPlan plan_traffic(std::shared_ptr<WorldTerrain> terrain,ps::Vec3 player,T
  for(const auto& edge:edges){auto xy=edge.profile->reference.at(edge.profile->reference.length_m*.5);if(xy&&std::hypot(xy->x-e,xy->y-n)<config.radius_m)plan.road_length_m+=edge.profile->reference.length_m;}
  const int count=std::min(std::min(512,config.max_vehicles),static_cast<int>(std::ceil(plan.road_length_m*config.density_per_km/1000)));
  std::mt19937_64 random(seed);const auto decks=terrain->road_decks();
- std::map<std::int64_t,std::vector<std::size_t>> outgoing;for(std::size_t i=0;i<edges.size();++i)outgoing[edges[i].first].push_back(i);
+ std::map<std::int64_t,std::vector<std::size_t>> outgoing,incoming;for(std::size_t i=0;i<edges.size();++i){outgoing[edges[i].first].push_back(i);incoming[edges[i].last].push_back(i);}
+ const auto approach_key=[&](const Edge& edge){return std::tuple{edge.way->osm_id,edge.start_ref,edge.end_ref,edge.direction};};
+ const auto heading_at_end=[](const Edge& edge){auto p=edge.profile->reference.at(edge.direction>0?edge.profile->reference.length_m:0);return p?p->heading+(edge.direction<0?kPi:0):0.;};
+ // Right of way of one approach at its end node; nullopt where the node is no junction (fewer than three stretches meet).
+ const auto junction_of=[&](std::size_t index)->std::optional<TrafficJunction>{
+  const auto& edge=edges[index];std::set<std::pair<std::int64_t,std::uint32_t>> stretches;
+  for(auto i:incoming[edge.last])stretches.emplace(edges[i].way->osm_id,edges[i].start_ref);
+  for(auto i:outgoing[edge.last])stretches.emplace(edges[i].way->osm_id,edges[i].start_ref);
+  const bool signal=signalled.contains(approach_key(edge));
+  if(stretches.size()<3&&!signal)return std::nullopt;
+  TrafficJunction j;j.node=edge.last;j.rank=traffic_road_rank(*edge.way);j.sign_yield=yield_signs.contains(approach_key(edge));
+  if(signal){
+   // Two phases by axis: approaches within 45 degrees of the reference axis (the incoming edge with the smallest
+   // way id, stretch and direction) or of its opposite share phase 0, the others phase 1.
+   std::size_t reference=index;for(auto i:incoming[edge.last])if(approach_key(edges[i])<approach_key(edges[reference]))reference=i;
+   j.signal_phase=std::abs(std::remainder(2*(heading_at_end(edge)-heading_at_end(edges[reference])),2*kPi))<kPi/2?0:1;}
+  return j;};
  // Destination entrances attach only to nearby ordinary roads, never motorway/grade crossings.
  struct Goal{TrafficDestination destination;std::size_t edge;double station;};std::vector<Goal> goals;
  struct RoadSample{std::size_t edge;double station,x,y;};
@@ -275,7 +319,9 @@ TrafficPlan plan_traffic(std::shared_ptr<WorldTerrain> terrain,ps::Vec3 player,T
     const auto cut=junction_turn_cuts(turn,in.profile->attributes.width_mm*.001,out.profile->attributes.width_mm*.001,
      trim_in==trims.end()?-1:trim_in->second,trim_out==trims.end()?-1:trim_out->second);
     cuts.push_back(cut);}
-   trip.route=join_route_legs(legs,cuts);total=trip.route.points.empty()?0:trip.route.points.back().station;}
+   std::vector<std::pair<double,double>> joints;
+   trip.route=join_route_legs(legs,cuts,&joints);total=trip.route.points.empty()?0:trip.route.points.back().station;
+   for(std::size_t k=0;k<joints.size()&&k+1<path.size();++k)if(auto j=junction_of(path[k])){j->enter_station=joints[k].first;j->exit_station=joints[k].second;trip.junctions.push_back(*j);}}
   if(!valid||total<40||trip.route.points.size()<3)continue;
   // Reject overlapping initial footprints; physics performs another live check before spawn.
   const auto& proposed=trip.route.points.front();

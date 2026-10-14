@@ -274,5 +274,36 @@ hops 1301 -> 4, median tightest radius 1.4 m -> 7.2 m. The remaining tight or ba
 metres long, where no curve fits, and loop roads returning to their own node.
 Tests: `tests/unit/test_npc_traffic.cpp` `[junction_turn]`.
 
-Still missing: junction right of way from the data (priority road, give-way/stop signs, signals). Crossing conflicts
-still use the lower-id rule above.
+## Right of way (2026-10-14)
+
+Each planned trip carries `TrafficTrip::junctions`: every node with three or more stretches (or a signal) it drives
+through, with the stations where its turn path enters and leaves, and this approach's right of way:
+
+- `rank` from the road class (`traffic_road_rank`: motorway 7, trunk 6, primary 5, secondary 4, tertiary 3,
+  unclassified 2, residential 1, living street 0; a link ranks as its road);
+- `sign_yield`: a served give-way or stop line (`RoadGeomTile::furniture`, OSM `highway=give_way|stop`) on this
+  approach in its travel direction;
+- `signal_phase`: a served signal on the approach. Approaches within 45 degrees of the junction's reference axis (the
+  incoming edge with the smallest way id, stretch and direction) or its opposite are phase 0, the others phase 1.
+
+`junction_yields(a, b, b_from_right)` is StVO 8 in that order: a give-way/stop line yields to an approach without one,
+else the lower road rank yields, else right before left. Service roads and exits from property never carry traffic, so
+§10 needs no rule here.
+
+In `Session::update_traffic` (decision step, 20 Hz) an actor within 60 m of the next junction's turn path holds 1 m
+before it, nose included, while:
+
+- its signal is red (`traffic_signal_green`: 25 s green per phase, 3 s all-red between them, cycle offset per node).
+  A red too close to stop for at 6 m/s^2 is passed. Waiting at a red does not count as stuck.
+- or, within 40 m and without a signal, a crossing NPC (heading cos between -0.5 and 0.5) at the same node has the
+  right of way over it and is inside the junction or reaches it within 6 s. Any NPC already inside counts.
+
+After `kCrossingPatienceS` (8 s) standing, an actor stops yielding, as before. Four equal approaches all give way to
+the right, and this breaks that wait. The physical crossing rule above (lower id, only once the other car is in front)
+stays as the last resort.
+Tests: `test_npc_traffic.cpp` `[right_of_way]` (rules, signal phases never overlap) and `test_traffic_stuck.cpp`
+`[right_of_way]` (right before left, major road, a give-way line over the major road, a red signal; sabotage noted).
+
+Not modelled yet: turning conflicts with oncoming traffic (left turn yields to oncoming straight), pedestrians at
+crossings, signal-specific phases from the data (only the two-axis fixed cycle), priority signs without a line
+(`priority_road` tags), and the player car in the junction logic (NPCs still only react to it physically).
