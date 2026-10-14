@@ -425,7 +425,8 @@ bool file_choice_fits(Files& files, const SetupOptionDef& def, const CatalogEntr
     const int idx = component_index(files.vehicle.base, "engine");
     if (def.no_turbo_override && idx >= 0 && files.vehicle.base["powertrain"]["components"][idx].contains("forced_induction")) return false;
     const json* base = def.file == "vehicle" ? &files.vehicle.base : (files.engine ? &files.engine->base : nullptr);
-    return base && !expand_patterns(*base, pointers_for(entry, def)).empty();
+    if (!base) return false;
+    return !expand_patterns(*base, pointers_for(entry, def)).empty() || def.insert_if_absent.has_value();
 }
 
 // Engine garage G1: a choice from the engine store ("engines") or the installed engine's fuels ("fuels").
@@ -516,6 +517,18 @@ std::string install_file_part(Files& files, const SetupOptionDef& def, const Cat
         return {};
     }
     if (!detail::get_string(doc, "format", format) || format != def.part_format) return def.id + ": wrong component file format";
+    if (def.insert_if_absent && targets_of(files, def, pointers_for(entry, def)).empty()) {
+        // The car has no such entry in its stock file: add it (see SetupOptionDef::insert_if_absent).
+        const auto entry_doc = detail::parse_json(def.insert_if_absent->entry_json);
+        if (!entry_doc || !entry_doc->is_object()) return def.id + ": invalid insert_if_absent entry";
+        json item = *entry_doc;
+        item[def.insert_if_absent->ref_key] = part->path;
+        const json::json_pointer arr(def.insert_if_absent->array);
+        json& target_array = files.vehicle.work[arr];
+        if (!target_array.is_array()) target_array = json::array();
+        target_array.push_back(std::move(item));
+        return {};
+    }
     for (auto& target : targets_of(files, def, pointers_for(entry, def))) {
         const json* leaf = at_pointer(target.file->work, target.pointer);
         if (!leaf || !leaf->is_string()) return def.id + ": reference is not a string";
@@ -1117,6 +1130,17 @@ std::optional<SetupOptionTable> parse_setup_options(const std::string& json_text
             if (d.file != "vehicle" && d.file != "engine") return bad(where + ": file choice must edit vehicle or engine");
             if (!detail::get_string(o, "part_format", d.part_format) || d.part_format.empty()) return bad(where + ": part_format missing");
             detail::get_bool(o, "no_turbo_override", d.no_turbo_override);
+            if (o.contains("insert_if_absent")) {
+                const json& ins = o["insert_if_absent"];
+                SetupOptionDef::InsertIfAbsent v;
+                if (!ins.is_object() || !ins.contains("entry") || !ins["entry"].is_object() ||
+                    !detail::get_string(ins, "array", v.array) || v.array.empty() || v.array.front() != '/' ||
+                    !detail::get_string(ins, "stock_label", v.stock_label) || v.stock_label.empty())
+                    return bad(where + ": insert_if_absent needs array (a JSON pointer), entry (an object) and stock_label");
+                detail::get_string(ins, "ref_key", v.ref_key);
+                v.entry_json = ins["entry"].dump();
+                d.insert_if_absent = std::move(v);
+            }
             detail::get_string(o, "catalog", d.catalog);
             if (!d.catalog.empty() && d.catalog != "engines" && d.catalog != "fuels" && d.catalog != "gearboxes") {
                 return bad(where + ": \"catalog\" must be \"engines\", \"fuels\" or \"gearboxes\"");
@@ -1446,7 +1470,9 @@ SetupModel build_setup_model(const CatalogEntry& entry, const SetupOptionTable& 
                 stock.label = "Original component";
                 std::string original;
                 const FileDoc* original_file = def.file == "vehicle" ? &files.vehicle : (files.engine ? &*files.engine : nullptr);
-                if (original_file) {
+                if (def.insert_if_absent && original_file && expand_patterns(original_file->base, v.def.pointers).empty()) {
+                    stock.label = def.insert_if_absent->stock_label; // nothing fitted as delivered
+                } else if (original_file) {
                     const auto pointers = expand_patterns(original_file->base, v.def.pointers);
                     if (!pointers.empty()) {
                         const auto* leaf = at_pointer(original_file->base, pointers.front());
@@ -1841,6 +1867,7 @@ CompiledSetup compile_setup_internal(const CatalogEntry& entry, const SetupOptio
             const std::string want = is_vehicle ? "vehicle" : kind;
             if (def.file != want) continue;
             for (const std::string& p : pointers_for(entry, def)) patterns.push_back(p);
+            if (def.insert_if_absent) patterns.push_back(def.insert_if_absent->array);
         }
         if (std::string(kind) == "engine") {
             if (adaptive_pressure) patterns.push_back("/cycle/pressure_sampling");

@@ -104,6 +104,17 @@ struct SetupOptionDef {
     // Bool only: a visual part of the car's art (CatalogEntry::model_options), not a file edit - no file, no
     // pointers; offered only on a car whose model carries it, stock = off.
     std::string model_option;
+    // FileChoice only: the controller/component entry the pointers name may be ABSENT in a car's stock file (the car
+    // has no such part). Stock then means "nothing fitted" (shown as `stock_label`, the file stays untouched); any other
+    // choice appends `entry` (a JSON object, e.g. {"id":"assists","type":"electronics"}) to the array at `array`
+    // (a JSON pointer, e.g. "/controllers") with its file reference set under `ref_key`.
+    struct InsertIfAbsent {
+        std::string array;
+        std::string entry_json;
+        std::string ref_key = "ref";
+        std::string stock_label;
+    };
+    std::optional<InsertIfAbsent> insert_if_absent;
 };
 
 struct SetupOptionTable {

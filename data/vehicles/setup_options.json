@@ -268,6 +268,7 @@
       "part_format": "physics_sim.electronics/1",
       "compatible_engines": ["*"],
       "pointers": ["/controllers/[id=assists]/ref"],
+      "insert_if_absent": {"array": "/controllers", "entry": {"id": "assists", "type": "electronics"}, "ref_key": "ref", "stock_label": "No assist unit"},
       "parts": [
         {"id": "assists_street", "label": "Street Assists", "path": "../../external/physics_sim/data/electronics/assist_unit_street.json", "detail": "Traction control: Off, On. No wing automation."},
         {"id": "assists_sport", "label": "Sport Assists", "path": "../../external/physics_sim/data/electronics/assist_unit_sport.json", "detail": "Traction control: Off, On, Relaxed, Sport. No wing automation."},
