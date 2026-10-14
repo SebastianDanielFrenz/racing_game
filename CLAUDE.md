@@ -1353,12 +1353,11 @@ returns (D44, geo2map PR #1). A store derived before encoding 7 has no junctions
   overlay (short dashes, lane and edge lines) from those lanes into the leftmost lanes of the arm 15-150 deg to the
   left nearest a right angle (not the through pair).
 - Gores (sign 298): an exit or on-ramp (one-way, under 45 deg, through road and ramp both motorway/trunk/primary/
-  secondary or their links) leaving or joining a through overlay gets the ramp's inner edge line along the ramp lanes'
-  inner boundary: a curve from the boundary between the through lanes and the ramp's lanes (the flush approach's
-  outermost lanes; the strip's edge line where the strip already ends there) into the ramp's own edge line at its lead.
-  Solid once it has cleared the through road's edge line, a broken lane line while still inside the through lanes, so
-  it never crosses a driven lane. Diagonal bars between it and the through road's edge line where they are 0.6 m
-  apart, bordered on the through side. Only where a nose exists: the point halfway between the ramp's inner edge at its lead and the
+  secondary or their links) leaving or joining a through overlay gets the ramp's inner edge line: a curve from where
+  the ramp leaves the through road (the first overlay row at which the paved ring reaches 0.5 m beyond the through
+  bed edge), on the through road's edge line, into the ramp's own edge line at its lead; drawn only where it has
+  cleared that edge line (on the ramp), so it never crosses the through lanes. Diagonal bars between it and the through
+  road's edge line where they are 0.6 m apart, bordered on the through side. Only where a nose exists: the point halfway between the ramp's inner edge at its lead and the
   through edge lies outside the ring and off the far approach's lanes; otherwise (a lane gain/drop on a paved box)
   nothing is painted.
 - Turn arrows (turn:lanes) stand 15 m before the stretch end, or further back so their tip ends 3 m before the first

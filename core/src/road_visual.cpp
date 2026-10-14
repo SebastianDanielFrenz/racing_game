@@ -703,12 +703,11 @@ RoadVisualMesh build_road_visual(const g2m::RoadGeomTile& geometry,const g2m::Ti
   mesh.indices.insert(mesh.indices.end(),{first,first+1,first+2,first+1,first+3,first+2});
  };
  // The gore where an exit leaves or an on-ramp joins the through road over a junction (sign 298, Sperrflaeche). The
- // ramp's lanes are the flush approach's outermost lanes; the ramp's inner edge line runs along their inner boundary,
- // a curve from that boundary at the flush end into the ramp's own edge line at its lead, so it follows the lane and
- // carries over into the ribbon's marking. It is solid once it has cleared the through road's edge line and broken
- // (a lane line) while it still runs inside the through lanes; it never crosses a driven lane. Diagonal bars hatch the
- // area between it and the through road's edge line up to the nose of the road bed ring, bordered on the through side
- // by a solid line.
+ // ramp's inner edge line starts where the ramp leaves the through road (the paved ring first reaches beyond the through
+ // road's bed edge), on the through road's edge line, and curves into the ramp's own edge line at its lead, so it carries
+ // over into the ribbon's marking; it is drawn only where it has cleared that edge line, i.e. on the ramp. Diagonal bars
+ // hatch the area between it and the through road's edge line up to the nose of the road bed ring, bordered on the
+ // through side by a solid line.
  const auto paint_gore=[&](const Overlay& o,const auto& rows,const Approach& g) {
   if(rows.size()<2||!o.ring||o.ring->size()<3)return;
   const auto& a=o.a;const auto& b=o.b;const bool diverge=g.in_lanes==0;
@@ -743,18 +742,28 @@ RoadVisualMesh build_road_visual(const g2m::RoadGeomTile& geometry,const g2m::Ti
    const double d=nearest(q,arc);if(d<best){best=d;inner=q;}}}
   P2 ramp_mark=inner;{const double ux=g.lead.x-inner.x,uy=g.lead.y-inner.y,l=std::hypot(ux,uy);
    if(l>kMarkInset){ramp_mark.x+=ux/l*kMarkInset;ramp_mark.y+=uy/l*kMarkInset;}}
-  // At the flush end: the boundary between the through lanes and the ramp's lanes (the flush approach's outermost
-  // lanes). Where the overlay strip already ends there (a lane gain or drop) the line starts on the strip's edge line.
-  const auto& flush_ap=diverge?a:b;const auto& fr=diverge?rows.front():rows.back();
-  const P2 flush_edge=diverge?edge.front():edge.back(),flush_mark=diverge?mark.front():mark.back();
-  const int ramp_lanes=std::max(1,g.layout.lanes);
-  P2 start=flush_mark;bool inside_strip=false;
-  if(ramp_lanes<flush_ap.layout.lanes) {
-   const double l=side*(flush_ap.width/2-ramp_lanes*flush_ap.lane);const P2 q{fr.x+fr.nx*l,fr.y+fr.ny*l};
-   if(std::hypot(q.x-flush_edge.x,q.y-flush_edge.y)>.3){start=q;inside_strip=true;}
-  }
+  // Where the ramp leaves the through road: walking from the flush end, the first row at which the paved ring reaches
+  // more than kLeaves beyond the through road's bed edge. The line starts there, on the through road's edge line, and
+  // runs along the ramp only; the through lanes keep their own lines (OSM does not say whether the ramp takes over a
+  // through lane, so none is assumed).
+  constexpr double kLeaves=.5;
+  const auto beyond_edge=[&](std::size_t i)->double{  // paved width outside the bed edge at row i, along the normal
+   const P2 e=edge[i];const P2 d{side*normal[i].x,side*normal[i].y};
+   if(!near_ring(*o.ring,e.x+d.x*.05,e.y+d.y*.05,0))return 0;
+   double best=1e9;const auto& r=*o.ring;
+   for(std::size_t k=0,m=r.size()-1;k<r.size();m=k++){
+    const double ax=r[m].x/1000.0,ay=r[m].y/1000.0,bx=r[k].x/1000.0,by=r[k].y/1000.0,sx=bx-ax,sy=by-ay;
+    const double den=d.x*sy-d.y*sx;if(std::abs(den)<1e-12)continue;
+    const double t=((ax-e.x)*sy-(ay-e.y)*sx)/den,u=((ax-e.x)*d.y-(ay-e.y)*d.x)/den;
+    if(t>0&&u>=0&&u<=1)best=std::min(best,t);}
+   return best<1e8?best:0;};
+  std::size_t start_row=diverge?0:rows.size()-1;bool found=false;
+  for(std::size_t k=0;k<rows.size();++k){const std::size_t i=diverge?k:rows.size()-1-k;if(beyond_edge(i)>kLeaves){start_row=i;found=true;break;}}
+  if(!found)return;
+  const P2 start=mark[start_row];
+  const double along=std::atan2(-normal[start_row].x,normal[start_row].y);  // the overlay's direction (a to b) there
   const P2 p0=diverge?start:ramp_mark,p3=diverge?ramp_mark:start;
-  const double t0=diverge?a.inward:g.inward,t3=diverge?g.inward+3.14159265358979323846:b.inward+3.14159265358979323846;
+  const double t0=diverge?along:g.inward,t3=diverge?g.inward+3.14159265358979323846:along;
   const double chord=std::hypot(p3.x-p0.x,p3.y-p0.y);if(chord<2||chord>150)return;
   const double h=chord/3;const P2 p1{p0.x+std::cos(t0)*h,p0.y+std::sin(t0)*h},p2{p3.x-std::cos(t3)*h,p3.y-std::sin(t3)*h};
   const int n=std::max(8,static_cast<int>(std::ceil(chord*4)));
@@ -763,7 +772,6 @@ RoadVisualMesh build_road_visual(const g2m::RoadGeomTile& geometry,const g2m::Ti
    const P2 q{u*u*u*p0.x+3*u*u*t*p1.x+3*u*t*t*p2.x+t*t*t*p3.x,u*u*u*p0.y+3*u*u*t*p1.y+3*u*t*t*p2.y+t*t*t*p3.y};
    if(!line.empty())arc+=std::hypot(q.x-line.back().x,q.y-line.back().y);line.push_back(q);line_arc.push_back(arc);}
   constexpr double kLine=.15,kBar=.4,kBarStep=1.5,kBarClear=.6;
-  const bool fast=(a.layout.flags&kFast)!=0;const double dash=fast?6:3,dash_width=fast?.3:kLine;
   const auto vertices_before=mesh.vertices.size(),indices_before=mesh.indices.size();
   const auto inside=[&](P2 q){return near_ring(*o.ring,q.x,q.y,.05);};
   // How far a point lies beyond the through road's edge line, toward the ramp.
@@ -771,12 +779,7 @@ RoadVisualMesh build_road_visual(const g2m::RoadGeomTile& geometry,const g2m::Ti
   for(std::size_t i=0;i+1<line.size();++i){
    const P2 m{(line[i].x+line[i+1].x)/2,(line[i].y+line[i+1].y)/2};
    if(!near_ring(*o.ring,m.x,m.y,.3))continue;
-   if(clear_of(m)>=kLine){paint_segment(line[i],line[i+1],kLine);continue;}
-   // Still inside the through lanes: a lane line between them and the ramp's lanes (none where the strip's own edge
-   // line already runs there).
-   if(!inside_strip)continue;
-   const double s_from_flush=diverge?line_arc[i]:arc-line_arc[i+1];
-   if(std::fmod(s_from_flush,2*dash)<dash)paint_segment(line[i],line[i+1],dash_width);
+   if(clear_of(m)>=kLine)paint_segment(line[i],line[i+1],kLine);
   }
   // Diagonal bars: from the line back toward the flush end onto the through edge line (45 degrees), every kBarStep,
   // only where the line has cleared that edge line.
