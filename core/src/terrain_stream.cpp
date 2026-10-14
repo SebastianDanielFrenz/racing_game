@@ -210,10 +210,21 @@ BedCheck rendered_vs_bed(const std::vector<RenderChunk>& chunks, std::size_t cou
     std::vector<double> above;
     above.reserve(beds.size());
     const std::size_t n = std::min(count, chunks.size());
+    // Contiguous chunk footprints: the plain scan touched every RenderChunk (~8 us per bed point at 1500 chunks, so a
+    // few thousand bed points cost tens of ms on the main thread once per second); the bounds prefilter is ~1 us.
+    struct Bounds { double e0, e1, n0, n1; };
+    std::vector<Bounds> bounds(n);
+    for (std::size_t i = 0; i < n; ++i) {
+        const auto& mesh = chunks[i].mesh;
+        const double extent = std::ldexp(1.0, mesh.key.level) * g2m::mesh::kChunkQuads;
+        bounds[i] = {mesh.origin[0], mesh.origin[0] + extent, mesh.origin[1], mesh.origin[1] + extent};
+    }
     for (const auto& bed : beds) {
         double visible = -1.0e9;
         std::size_t best = n;
         for (std::size_t i = 0; i < n; ++i) {
+            const Bounds& b = bounds[i];
+            if (bed[0] < b.e0 || bed[0] > b.e1 || bed[1] < b.n0 || bed[1] > b.n1) continue;
             double z = 0.0;
             if (chunk_surface_height(chunks[i], bed[0], bed[1], z) && z > visible) {
                 visible = z;

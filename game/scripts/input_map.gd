@@ -1,4 +1,5 @@
 extends Node
+const DriverState := preload("res://scripts/driver_state.gd") # preloaded once: this is called several times per frame
 # game/scripts/input_map.gd — the input layer (a plain GDScript node, not a
 # C++ class like physics_sim's PsInputMap - see this repo's CLAUDE.md). It
 # only READS devices; WHAT an input means is the player's configuration, owned
@@ -567,7 +568,7 @@ func advance_cabin(sim: Node, snapshot: Dictionary, delta: float, enabled: bool,
 	var context := snapshot.duplicate()
 	context["speed_mps"] = sim.get_body_speed_mps("chassis")
 	context["steering_wheel_deg"] = rad_to_deg(sim.get_wheel_steer_angle(vehicle_name,0)) * float(cabin_config["steering_ratio"]) if cabin_config.has("steering_ratio") else 0.0
-	var values: Dictionary = load("res://scripts/driver_state.gd").channels(sim)
+	var values: Dictionary = DriverState.channels(sim)
 	for write in driver_actions.advance(context,values,enabled,delta):
 		sim.set_control(write["channel"],float(write["value"]))
 

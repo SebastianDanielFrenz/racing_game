@@ -42,7 +42,12 @@ func _ready() -> void:
 	capacity = info.get("fuel_capacity_kg",0.0)
 	density = info.get("fuel_density_kg_m3",0.0)
 
+const FrameProbe := preload("res://scripts/frame_probe.gd")
 func _process(delta: float) -> void:
+	var probe_t0 := Time.get_ticks_usec()
+	_process_body(delta)
+	FrameProbe.add("cluster", Time.get_ticks_usec() - probe_t0)
+func _process_body(delta: float) -> void:
 	if not simulation.is_running() or simulation.get_step_count() <= 0:
 		return
 	if capacity <= 0.0:

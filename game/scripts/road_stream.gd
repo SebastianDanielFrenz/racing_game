@@ -39,7 +39,12 @@ func shutdown() -> void:
 	set_process(false)
 func _exit_tree() -> void:
 	shutdown()
+const FrameProbe := preload("res://scripts/frame_probe.gd")
 func _process(_delta: float) -> void:
+	var probe_t0 := Time.get_ticks_usec()
+	_process_body(_delta)
+	FrameProbe.add("road_stream", Time.get_ticks_usec() - probe_t0)
+func _process_body(_delta: float) -> void:
 	var rig: Node = director.active_rig()
 	if rig==null:
 		return
@@ -67,8 +72,10 @@ func _process(_delta: float) -> void:
 	var origin: Vector3 = simulation.get_render_origin_session()
 	for key in _tiles.keys():
 		var tile: Dictionary = _tiles[key]
-		var s: Vector3 = tile.origin-origin
-		tile.node.position = Vector3(-s.y,s.z,-s.x)
+		if not tile.has("placed") or tile.placed != origin: # only on a render-origin change or a new tile
+			var s: Vector3 = tile.origin-origin
+			tile.node.position = Vector3(-s.y,s.z,-s.x)
+			tile.placed = origin
 		var distance: float = (Vector2(tile.origin.x+512,tile.origin.y+512)-Vector2(focus.x,focus.y)).length()
 		tile.node.visible = distance<=float(settings.distance_m)+725.0
 		if distance>float(settings.distance_m)+2048.0:

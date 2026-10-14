@@ -83,7 +83,12 @@ func _ready() -> void:
 	_simulation = get_node_or_null(simulation_path)
 	_input_map = get_node_or_null(input_map_path)
 
+const FrameProbe := preload("res://scripts/frame_probe.gd")
 func _process(delta: float) -> void:
+	var probe_t0 := Time.get_ticks_usec()
+	_process_body(delta)
+	FrameProbe.add("tach", Time.get_ticks_usec() - probe_t0)
+func _process_body(delta: float) -> void:
 	if _simulation != null and vehicle_name != "" and _simulation.get_vehicle_names().has(vehicle_name):
 		if _gauge_info.is_empty():
 			_gauge_info = _simulation.get_vehicle_gauge_info(vehicle_name)

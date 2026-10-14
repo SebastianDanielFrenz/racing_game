@@ -208,7 +208,7 @@ public:
     // (and 100 m behind): {samples, above_max_m, above_p95_m, above_tolerance, worst_level, worst_carve (0 not carved,
     // 1 carved, 2 fallback), worst_x, worst_y (session), l<k>_above_max_m / l<k>_samples (k = level of the highest chunk)}.
     // Unlike get_ground_check this reaches the coarse levels. -1000 / 0 samples when nothing could be compared.
-    [[nodiscard]] godot::Dictionary get_bed_check(double px, double py, double dx, double dy, double ahead_m);
+    [[nodiscard]] godot::Dictionary get_bed_check(double px, double py, double dx, double dy, double ahead_m, std::int64_t max_samples = 800);
     // Hides / shows every uploaded terrain chunk (debug: look at the ribbons without the ground, or the reverse).
     void set_terrain_visible(bool visible);
     [[nodiscard]] bool get_terrain_visible() const { return terrain_visible_; }
@@ -228,6 +228,7 @@ public:
     //  selections_started, last_build_ms, streamer_phase (0 Idle, 1 Building,
     //  2 Ready, 3 Applying), resident_chunks, diff_errors}
     [[nodiscard]] godot::Dictionary get_stream_stats() const;
+    [[nodiscard]] godot::Dictionary get_frame_costs() const;
 
     // The material RenderingServer attaches to every uploaded chunk's mesh
     // surface (mesh_surface_set_material) - GDScript builds this from
@@ -316,6 +317,8 @@ private:
     std::int64_t diffs_applied_ = 0;
     std::int64_t diff_errors_ = 0; // a removed key that was not resident (never expected)
     double upload_ms_this_frame_ = 0.0;
+    double heal_ms_this_frame_ = 0.0;
+    double decks_ms_this_frame_ = 0.0;
     double last_remove_ms_ = 0.0; // the current/last diff's RID frees, summed over frames
 
     godot::Vector3 render_origin_session_{}; // raw (east, north, up), see set_render_origin's doc comment
