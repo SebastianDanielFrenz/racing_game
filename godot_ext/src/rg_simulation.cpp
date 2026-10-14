@@ -128,6 +128,7 @@ void RgSimulation::teardown_current() {
     origin_rebase_ = nullptr;
     init_phase_.store(InitPhase::Idle, std::memory_order_relaxed);
     init_message_.clear();
+    pending_flat_spawn_.reset();
 }
 
 void RgSimulation::reap_init_thread(bool wait) {
@@ -145,7 +146,14 @@ void RgSimulation::reap_init_thread(bool wait) {
         session_ = std::move(pending_session_);
         origin_rebase_ = &session_->origin_rebase();
         apply_shell_flags_to_session();
+        if (pending_flat_spawn_) {
+            session_->request_relocate(pending_flat_spawn_->x, pending_flat_spawn_->y,
+                                       pending_flat_spawn_->yaw_deg * (3.14159265358979323846 / 180.0));
+        }
+    } else {
+        last_error_ = String(init_message_.c_str());
     }
+    pending_flat_spawn_.reset();
     pending_session_.reset(); // no-op on the Ready path (already moved out); frees nothing on Error (never set)
     init_progress_.reset();
     modes_.finish_world_load(world_load_serial_, ready); // ignored when a newer load superseded it
@@ -300,37 +308,49 @@ void RgSimulation::remember_vehicle_definition(const rg::SessionConfig& config, 
     }
 }
 
+void RgSimulation::run_flat_init_worker(std::string vehicle_json_path, std::string surface_table_path,
+                                        std::shared_ptr<rg::StartupProgress> progress, VehicleOverrides overrides) {
+    // Same exception rule as run_terrain_init_worker: rg::make_session catches inside rg_core.
+    rg::SessionConfig config;
+    config.vehicle_json_path = std::move(vehicle_json_path);
+    configure_vehicle_chassis(config, overrides);
+    reuse_vehicle_definition(config);
+    config.rolling_resistance_model = rolling_resistance_model_;
+    config.aero_map_selection_path = aero_map_selection_path_;
+    config.surface_table_path = std::move(surface_table_path);
+    config.startup = progress;
+    std::string err;
+    std::unique_ptr<rg::Session> session = rg::make_session(config, &err);
+    if (session == nullptr) {
+        pending_session_.reset();
+        init_message_ = std::move(err);
+        init_phase_.store(InitPhase::Error, std::memory_order_release);
+        return;
+    }
+    remember_vehicle_definition(config, *session);
+    pending_session_ = std::move(session);
+    init_message_ = "ready";
+    init_phase_.store(InitPhase::Ready, std::memory_order_release);
+}
+
 bool RgSimulation::initialize(const String& vehicle_json_absolute_path, const String& surface_table_absolute_path) {
     teardown_current();
-    world_load_serial_ = modes_.begin_world_load(rg::WorldKind::Flat);
-    rg::SessionConfig config;
-    config.vehicle_json_path = to_std_string(vehicle_json_absolute_path);
-    configure_vehicle_chassis(config, vehicle_overrides_);
-    reuse_vehicle_definition(config);
-    config.rolling_resistance_model=rolling_resistance_model_;
-    config.aero_map_selection_path=aero_map_selection_path_;
-    config.surface_table_path = to_std_string(surface_table_absolute_path);
-    std::string err;
-    session_ = rg::make_session(config, &err); // never throws (see run_terrain_init_worker)
-    if (session_ == nullptr) {
-        last_error_ = String(err.c_str());
-        modes_.finish_world_load(world_load_serial_, false);
-        return false;
-    }
-    remember_vehicle_definition(config, *session_);
-    origin_rebase_ = &session_->origin_rebase();
     last_error_ = String();
-    // A "Change car" respawn (PLAN.md R6c): the new car starts where the old one stood. The flat world
-    // has no terrain gate, so the relocation lands on the first ticks like any other.
-    if (spawn_override_) {
-        session_->request_relocate(spawn_override_->x, spawn_override_->y,
-                                   spawn_override_->yaw_deg * (3.14159265358979323846 / 180.0));
-        spawn_override_.reset();
-    }
-    modes_.finish_world_load(world_load_serial_, true);
-    apply_mode_to_session();
-    apply_shell_flags_to_session();
-    return true;
+    init_message_.clear();
+    world_load_serial_ = modes_.begin_world_load(rg::WorldKind::Flat);
+    init_progress_ = std::make_shared<rg::StartupProgress>();
+    init_phase_.store(InitPhase::Loading, std::memory_order_release);
+    // A "Change car" respawn (PLAN.md R6c): the new car starts where the old one stood. Applied when the
+    // Session is adopted (reap_init_thread); the flat world has no terrain gate, so it lands on the first ticks.
+    pending_flat_spawn_ = spawn_override_;
+    spawn_override_.reset();
+    init_thread_ = std::thread([this, vehicle_json_path = to_std_string(vehicle_json_absolute_path),
+                               surface_table_path = to_std_string(surface_table_absolute_path),
+                               progress = init_progress_, overrides = vehicle_overrides_]() mutable {
+        run_flat_init_worker(std::move(vehicle_json_path), std::move(surface_table_path), std::move(progress),
+                             std::move(overrides));
+    });
+    return true; // started, not necessarily succeeded - see get_init_status()
 }
 
 bool RgSimulation::initialize_terrain(const String& world_config_absolute_path,
