@@ -18,7 +18,7 @@ State at writing: racing_game main `6f959e1` (pushed), pins physics_sim `1e07c0e
    the bottom; gitignored too). If you are on another machine, this brief replaces
    both. Ask the owner for copies if you need the anchors.
 3. Topic docs named in each work package below (`docs/*.md`, geo2map
-   `out/terrain_migration_plan.md`, geo2map `docs/pipeline/README.md`).
+   `docs/terrain_migration_plan.md`, geo2map `docs/pipeline/README.md`).
 4. The knowledge vault `S:\claude_knowledge_base`. Search it before each task:
    `S:\claude_knowledge_base\knowledge-manager\gradlew.bat -p S:\claude_knowledge_base\knowledge-manager run --quiet --args="search 'terms' 3"`.
    Relevant series: RACE-*, PHYS-*, G2M-*, TOOL-*.
@@ -104,7 +104,7 @@ package X pushed and the pin bumped first. "[g2m X]" = the same for geo2map.
   - (c) Check that no game world or test uses a large static box ground (physics
     D0: phantom wheel casts on huge thin boxes). Heightfield and mesh grounds are
     fine.
-- **A2 Next physics pin bump.** Haiku, S. [phys BOV round 3, phys G1 limiter range]
+- **A2 Next physics pin bump.** Haiku, S. [phys BOV round 3, phys G1 limiter range; later P1b, Q5, the A25A VE fix and each re-pin the same way]
   - Rerun `test_rev_limit_extremes`, drop its workarounds, and rerun the advisor
     `[long]` test. The BOV moves car_hyper/_n2o numbers, so update expectations.
 - **A3 RACING mode + EPB wiring.** Sonnet, M. [phys I8: RACING drive mode for
@@ -149,7 +149,7 @@ package X pushed and the pin bumped first. "[g2m X]" = the same for geo2map.
 
 ### Lane C: terrain migration and roads (geo2map_engine first, then racing_game)
 
-Spec: geo2map `out/terrain_migration_plan.md`. Phases 0-2 are done. Every phase is
+Spec: geo2map `docs/terrain_migration_plan.md`. Phases 0-2 are done. Every phase is
 one geo2map commit with tests, then one racing_game commit that bumps the pin,
 switches callers, deletes the game copy and test-drives the corridor. Use the
 roadcmp probe (`out/roadcmp`, `RG_ROADCMP=1`): zero game-only differences before
@@ -221,16 +221,28 @@ polish (after main features).
 
 ## 3. Physics dependencies (what the game waits for)
 
+Authoritative list: physics_sim `docs/next_steps_brief.md` (physics master
+`1858978`; `docs/handoff/` holds its coordinator log, agent briefs and CI wrapper
+scripts). Physics order after the 2026-10-18 reset: BOV r3 -> G1 -> I8 -> P1b ->
+Q5. A9 SIMD, ARM64, one of {R0, W7} and P10 data run in parallel.
+
 | Physics package | Game package it unblocks | Status 2026-10-14 |
 |---|---|---|
-| BOV round 3 (vent model) | A2 | parked WIP commit in physics |
-| G1 limiter range (LC clamp, shift points follow limiter, roll-off past data, A25A plateau) | A2 | after BOV |
+| BOV round 3. Data only (1330 mm² per turbo, tau 20 ms, crack 1.1 / full 1.6 bar); the vent model was found consistent. | A2 (moves car_hyper/_n2o pins only) | WIP 75cfcdb on a worktree branch. Left: D3 surge pins, [turbo]/[n2o] [long], the audio bank pin, the hash gate. |
+| G1 limiter range: LC clamp, shift points follow the limiter, roll-off past data, A25A plateau | A2 | after BOV |
 | I8 RACING mode + EPB law per mode | A3 | queued |
-| ABS (I5 part 2), ESC (I6) | A5 | not started |
-| R0 barrel rolls (one-substep compression jumps at kerbs/landings) | nothing blocked; improves driving | proposed to owner |
-| Per-wheel tyre profile (weather W7), frost/snow (W8) | wet/snow weather in game | open |
-| Supercharger model | D3 | not planned |
-| Stage-map seam: continuous blend or loader check | A1, D1 | S0 continuation done; Near flag exists |
+| P1b closed-plate fired floor (closes the DFCO pedal band) | re-pin; moves the sim-engine scenario hashes | after I8 |
+| Q5 turbo full-load envelope rebuild off the caller thread (0.61 s on a hyper miss) | A1(b) garage turbo-swap hitch: may make the game-side fix unnecessary | after P1b |
+| ABS / ESC (physics package 2.2b; touches vehicle_instance and the assist unit, so serial with I8, R0 and W7-W10) | A5 | not started |
+| R0 barrel rolls | needs a game repro first (car, map, speed, input): capture one to unblock it | still a hypothesis |
+| W7 aquaplaning + per-wheel tyre_profile resolution (today only parsed) | wet weather in game, tyre choice per wheel | open |
+| W8 snow, ice, frost, black ice; W10 tyre temperature and wear | winter weather, tyre wear in game | open |
+| W11 environment sync | E6 game server (weather sync) | open |
+| Transmission A1-A4, C1 CVT, D1 hyper DCT, M1/M2 | P/R/N/D/M selector UI and the snapshot selector/converter/CVT fields wait on A3/D1. The 300 km/h 6<->7 hunt is fixed by the shift policy here. | open |
+| LimitKind 19 TurboMapCoverage | A1(a) (better than reading the BuildRule warning) | awaits the owner's OK |
+| Stage-map turbine-side fallback | D1 | untouched |
+| A25A sim-engine VE-axis data fix; optional knock on the A25A cars (owner choice) | re-pin; moves the vehicle_sim_engine/vehicle_gen_engine hashes | open |
+| Supercharger model | D3 | later engine feature, unscheduled |
 | Multi-vehicle budgets (PLAN.md P9) | E8 traffic | not started |
 | Linux ARM64 build (Steam Frame) | Steam Frame native build | toolchain done, Steam Runtime SDK untested |
 
@@ -309,5 +321,5 @@ graph LR
 4. Release the build lock. Record vault tickets through the CLI.
 
 ## Log
-- 2026-10-14: brief written (coordinator, Opus 5.5). Physics brief requested from
-  the physics session.
+- 2026-10-14: brief written (coordinator, Opus 5.5).
+- 2026-10-14: section 3 corrected from the physics brief (physics master 1858978).
