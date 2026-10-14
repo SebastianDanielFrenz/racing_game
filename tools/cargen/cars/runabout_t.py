@@ -23,6 +23,8 @@ choke knob, horn bulb, speedometer and ammeter needles.
 import math
 
 from cargen import controls as C
+from cargen import quality as Q
+from cargen import detail as D
 from cargen.flow import FlowRecorder
 from cargen.wheels import Wheel, corner
 from cargen.common import materials, finish, seat_closed, loft_path, tube_path
@@ -95,7 +97,7 @@ def build():
     m = Model("runabout_t", "Runabout T (1910s tourer)",
               "1910s-20s open touring car, 3.40 m, 30 x 3.5 in cord tyres on wooden wheels, front 2.9 L side-valve I4.",
               "Ground plane below the wheel centres, x = 0 midway between the axles, y = 0 on the centreline.")
-    materials(m, BLACK)
+    materials(m, BLACK, metallic=0.0, roughness=0.12)
     m.mat("paint", color=BLACK, metallic=0.1, roughness=0.12, role="paint")
     m.mat("leather", color=(0.06, 0.04, 0.03), roughness=0.6, tex=("fabric", {"color": (0.06, 0.04, 0.03)}),
           tile=0.08)
@@ -197,12 +199,21 @@ def build():
     M.tube(mb, [(hx - 0.04, -0.62, 0.86), (hx - 0.04, 0.0, 0.84), (hx - 0.04, 0.62, 0.86)], 0.014, "frame", count=8)
     for s in (1, -1):
         c = (hx, s * 0.44, 0.97)
-        M.lathe(mb, [(0.0, -0.12), (0.075, -0.11), (0.095, -0.06), (0.098, 0.0), (0.0, 0.0)], "paint",
-                axis_xf=compose(translate(c), rot_axis((0, 1, 0), math.pi / 2)), count=24, closed_profile=True)
-        M.cylinder(mb, (c[0] - 0.002, c[1], c[2]), (c[0] + 0.012, c[1], c[2]), 0.102, "brass", count=24)
-        M.lathe(mb, [(0.0, 0.012), (0.088, 0.012), (0.086, 0.020), (0.062, 0.032), (0.030, 0.038), (0.0, 0.040)],
-                "light_head", axis_xf=compose(translate(c), rot_axis((0, 1, 0), math.pi / 2)), count=24,
-                closed_profile=True)                                          # domed lens
+        hxf = compose(translate(c), rot_axis((0, 1, 0), math.pi / 2))
+        # open drum (the reflector sits in it) and a brass bezel ring round the lens
+        M.lathe(mb, [(0.0, -0.12), (0.075, -0.11), (0.095, -0.06), (0.098, 0.0), (0.091, 0.0), (0.089, -0.05),
+                     (0.0, -0.10)], "paint", axis_xf=hxf, count=24, closed_profile=True)
+        M.lathe(mb, [(0.089, -0.002), (0.102, -0.002), (0.102, 0.008), (0.096, 0.014), (0.089, 0.014)], "brass",
+                axis_xf=hxf, count=24, closed_profile=True)
+        # silvered parabolic reflector, the lamp bulb at its focus, a clear domed lens in front
+        M.lathe(mb, [(0.004, -0.085), (0.04, -0.075), (0.07, -0.045), (0.088, 0.008), (0.088, 0.011),
+                     (0.084, 0.008), (0.066, -0.042), (0.037, -0.071), (0.004, -0.081)], "lamp_reflector",
+                axis_xf=hxf, count=24, closed_profile=True)                     # open bowl, 4 mm wall
+        if Q.detail() >= 1:
+            M.ellipsoid(mb, xform_point(hxf, (0, 0, -0.045)), (0.013, 0.013, 0.02), "light_head")
+            M.cylinder(mb, xform_point(hxf, (0, 0, -0.08)), xform_point(hxf, (0, 0, -0.06)), 0.006, "brass")
+        M.lathe(mb, [(0.0005, 0.040), (0.030, 0.038), (0.062, 0.032), (0.086, 0.020), (0.088, 0.013),
+                     (0.0005, 0.013)], "lens_clear", axis_xf=hxf, count=24, closed_profile=True)    # domed lens
         M.lathe(mb, [(0.0, 0.040), (0.012, 0.040), (0.012, 0.046), (0.0, 0.046)], "brass",
                 axis_xf=compose(translate(c), rot_axis((0, 1, 0), math.pi / 2)), count=12, closed_profile=True)
         M.tube(mb, [(c[0] - 0.05, c[1], 0.86), (c[0] - 0.05, c[1], c[2] - 0.08)], 0.010, "frame", count=8)
@@ -243,7 +254,8 @@ def build():
     for s in (1, -1):
         c = (X_DASH + 0.02, s * (TUB_W + 0.06), 1.16)
         M.rounded_box(mb, c, (0.10, 0.09, 0.15), 0.02, "paint")
-        M.cylinder(mb, (c[0] + 0.05, c[1], c[2]), (c[0] + 0.058, c[1], c[2]), 0.032, "light_drl", count=16)
+        D.round_lamp(m, (c[0] + 0.052, c[1], c[2]), (1.0, 0.0, 0.0), 0.032, "light_drl", bezel_mat="brass",
+                     depth=0.03)                                                # carriage lamp
         M.cylinder(mb, (c[0], c[1], c[2] + 0.075), (c[0], c[1], c[2] + 0.11), 0.016, "paint", count=10)
         M.box(mb, (c[0], s * (TUB_W + 0.01), c[2]), (0.03, 0.04, 0.03), "frame")
     flow.mark("bonnet, scuttle, carriage lamps")
@@ -279,14 +291,16 @@ def build():
         M.rounded_box(mb, (DOOR_X0 + 0.10, side * (TUB_W - 0.025), 0.95), (0.14, 0.008, 0.025), 0.004, "leather",
                       name)
     # tail: number plate and one tail lamp on the left rear wing
-    M.rounded_box(mb, (TUB_X0 - 0.12, 0.0, 0.66), (0.01, 0.30, 0.14), 0.005, "plate")
+    D.plate_free(m, (TUB_X0 - 0.12, 0.0, 0.66), (-1.0, 0.0, 0.0), 0.30, 0.14, "A 1912", plate_mat="plate",
+                 frame_mat="brass")
     M.box(mb, (TUB_X0 - 0.07, 0.0, 0.66), (0.10, 0.04, 0.03), "frame")
     tl = (XR - 0.35, 0.62, 0.86)
     M.rounded_box(mb, tl, (0.08, 0.07, 0.09), 0.015, "paint")
     M.tube(mb, [(TUB_X0 + 0.01, 0.52, 0.80), (tl[0] + 0.035, tl[1], tl[2] - 0.03)], 0.008, "frame", count=8)
-    M.cylinder(mb, (tl[0] - 0.04, tl[1], tl[2]), (tl[0] - 0.048, tl[1], tl[2]), 0.026, "light_tail", count=16)
-    M.cylinder(mb, (tl[0] - 0.04, tl[1], tl[2] - 0.035), (tl[0] - 0.046, tl[1], tl[2] - 0.035), 0.014,
-               "light_brake", count=12)
+    D.round_lamp(m, (tl[0] - 0.042, tl[1], tl[2] + 0.008), (-1.0, 0.0, 0.0), 0.026, "light_tail", lens_mat="lens_red",
+                 bezel_mat="brass", depth=0.02)
+    D.round_lamp(m, (tl[0] - 0.042, tl[1], tl[2] - 0.033), (-1.0, 0.0, 0.0), 0.013, "light_brake",
+                 lens_mat="lens_red", bezel_mat="brass", depth=0.012)
     flow.mark("tub, doors, tail")
 
     # ---- windscreen: brass frame, fixed lower pane, tilting upper pane
@@ -317,7 +331,8 @@ def build():
     flow.mark("wheels")
 
     build_top(m)
-    build_cabin(m, ck)
+    with Q.coarse(1.5):     # seen through glass: looser chord tolerance
+        build_cabin(m, ck)
     flow.skip("cabin, cockpit controls, engine bay, hidden top")
 
     m.socket("socket_driver_eye", None, (-0.40, EYE_Y, 1.60), "driver eye point (camera)")
@@ -327,6 +342,10 @@ def build():
     m.socket("socket_tow_rear", None, (XR - 0.16, 0.0, 0.53), "rear towing point (rear cross member)")
     m.socket("socket_exhaust", None, (XR - 0.30, -0.30, 0.42), "exhaust outlet, flow along -x")
     M.tube(mb, [(0.60, -0.25, 0.55), (0.20, -0.30, 0.40), (XR - 0.30, -0.30, 0.42)], 0.022, "exhaust_tip", count=10)
+    M.lathe(mb, [(0.021, 0.0), (0.026, 0.05), (0.034, 0.10), (0.036, 0.105), (0.031, 0.10), (0.019, 0.04),
+                 (0.017, 0.0)], "exhaust_tip", axis_xf=compose(translate((XR - 0.27, -0.30, 0.418)),
+                                                                rot_axis((0, 1, 0), -math.pi / 2)),
+            closed_profile=True)                                        # flared tail pipe end
     m.extra_rig["engine_bay"] = {
         "envelope_mm": [700, 600, 700],
         "box_m": {"min": [0.55, -0.30, 0.58], "max": [1.25, 0.30, 1.28]},

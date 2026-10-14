@@ -20,6 +20,8 @@ touchscreen as screens, wipers (front pair + rear).
 import math
 
 from cargen import controls as C
+from cargen import quality as Q
+from cargen import detail as D
 from cargen.closed_body import ClosedCarBody
 from cargen.flow import FlowRecorder
 from cargen.wheels import Wheel, corner
@@ -53,7 +55,7 @@ def build():
     m = Model("pico", "Pico (city car)",
               "A-segment five-door city car, 3.55 m, 165/65 R14, front transverse 1.0 L I3.",
               "Ground plane below the wheel centres, x = 0 midway between the axles, y = 0 on the centreline.")
-    materials(m, PAINT, ROOF)
+    materials(m, PAINT, ROOF, metallic=0.05, roughness=0.16)
     m.mat("seat", color=(0.16, 0.17, 0.19), roughness=0.9, tex=("fabric", {"color": (0.15, 0.16, 0.18)}), tile=0.2)
     m.mat("seat_accent", color=(0.86, 0.22, 0.16), roughness=0.85)
     m.mat("dash_hard", color=(0.11, 0.115, 0.12), roughness=0.85)
@@ -80,17 +82,20 @@ def build():
                    wr=[(-1.63, 0.62), (-1.4, 0.66), (0.2, 0.67), (0.97, 0.66)],
                    r=0.11, crown=0.035))
     W = body.W
+    # material borders at a constant body ls follow the loft grid (smooth lines, no staircase)
+    LS_SILL, LS_DOOR = body.ls_at(0.0, 0.27), body.ls_at(0.0, 0.29)
+    LS_REAR = body.ls_at(-1.6, 0.44)
 
     # ---- opening panels
     def door_inside(side, x0, x1):
         def f(c, n):
             return (x0 - 0.012 < c[0] < x1 + 0.012 and c[1] * side > 0 and n[1] * side > 0.3 and n[2] < 0.75
-                    and c[2] > 0.27 and not body.in_arch(c, margin=0.004))
+                    and body.ls > LS_SILL and not body.in_arch(c, margin=0.004))
         return f
 
     def door_border(side, x0, x1):
         def f(c, n):
-            return body.on_seam(c[0], x0) or body.on_seam(c[0], x1) or c[2] < 0.29
+            return body.on_seam(c[0], x0) or body.on_seam(c[0], x1) or body.ls < LS_DOOR
         return f
 
     for name, side, x0, x1 in DOORS:
@@ -109,9 +114,9 @@ def build():
         if b.in_arch(c):
             return "arch_liner"
         # black cladding: sills and bumper bottoms (straight lines along the grid, no arch flares)
-        if z < 0.27 and abs(n[1]) > 0.4:
+        if b.ls < LS_SILL and abs(n[1]) > 0.4:
             return "cladding"
-        if (x > 1.56 and z < 0.27) or (x < -1.56 and z < 0.44):
+        if (x > 1.56 and b.ls < LS_SILL) or (x < -1.56 and b.ls < LS_REAR):
             return "cladding"
         return Ellipsis
 
@@ -150,37 +155,47 @@ def build():
     # ---- lamps, grilles, plate (draped, backed)
     rr = M.rrect
     body.patch(rr(0.44, 0.045, 0.02, 4, 0.0, 0.685), "trim_black", "front", offset=0.003)        # slim upper grille
-    smile = [(0.36 * math.cos(math.pi * (1 + k / 20)) * 1.0, 0.40 + 0.06 * math.sin(math.pi * (1 + k / 20)) + 0.0)
+    smile = [(0.31 * math.cos(math.pi * (1 + k / 20)) * 1.0, 0.40 + 0.06 * math.sin(math.pi * (1 + k / 20)) + 0.0)
              for k in range(21)]
-    smile = smile + [(p[0] * 0.92, p[1] + 0.085 + 0.02 * (1 - (p[0] / 0.36) ** 2)) for p in reversed(smile)]
-    body.patch(smile, "grille", "front", offset=0.004, skirt_mat="plastic_black")              # smiling lower intake
+    smile = smile + [(p[0] * 0.92, p[1] + 0.085 + 0.02 * (1 - (p[0] / 0.31) ** 2)) for p in reversed(smile)]
+    body.patch(smile, "trim_black", "front", offset=0.0015, skirt_mat="plastic_black")         # smiling lower intake
+
+    def in_smile(a, b, poly=smile):
+        inside = False
+        for i in range(len(poly)):
+            (x1, y1), (x2, y2) = poly[i], poly[i - 1]
+            if (y1 > b) != (y2 > b) and a < x1 + (x2 - x1) * (b - y1) / (y2 - y1):
+                inside = not inside
+        return inside
+
+    D.lattice(m, body, "front", -0.29, 0.29, 0.35, 0.48, 15, 3, "plastic_black", offset=0.006, bar=0.005,
+              depth=0.010, clip=lambda a, b: in_smile(a * 1.06, b) and in_smile(a, b + 0.014) and in_smile(a, b - 0.014))   # honeycomb-ish egg crate
     for s in (1, -1):
         ind = "light_indicator_left" if s > 0 else "light_indicator_right"
         lamp = [(s * (0.43 + 0.18 * math.cos(math.pi * k / 12)), 0.70 + 0.06 * math.sin(math.pi * k / 12) - 0.02 * k / 12)
                 for k in range(13)]
         lamp += [(s * (0.43 - 0.18 + 0.36 * k / 6), 0.655 - 0.02 * math.sin(math.pi * k / 6)) for k in range(7)][1:-1]
-        body.patch(lamp, "light_head", "front", offset=0.004, skirt_mat="trim_black")
-        body.patch(rr(0.20, 0.016, 0.008, 3, s * 0.43, 0.665), "light_drl", "front", offset=0.007, skirt=0.0)
-        body.patch(rr(0.05, 0.03, 0.012, 3, s * 0.575, 0.72), ind, "front", offset=0.007, skirt=0.0)
-        body.patch(rr(0.10, 0.04, 0.015, 3, s * 0.54, 0.36), "trim_black", "front", offset=0.004)   # fog blank
+        # swept headlamp: dark housing, projector (dipped) + reflector bowl (main) + indicator, DRL light guide,
+        # one clear domed lens over all of it
+        D.lamp(m, body, "front", lamp, "lamp_housing", "lens_clear",
+               elements=[(s * 0.36, 0.708, 0.040, "light_head", "projector"),
+                         (s * 0.50, 0.712, 0.030, "light_head", "bowl"),
+                         (s * 0.575, 0.722, 0.014, ind, "led")], lens_height=0.016)
+        body.patch(rr(0.20, 0.012, 0.006, 3, s * 0.43, 0.666), "light_drl", "front", offset=0.0065, skirt=0.0)
         # rear: tall corner clusters in the lower body, below the tailgate glass
-        body.patch(rr(0.12, 0.30, 0.045, 4, s * 0.62, 0.84), "light_tail", "rear", skirt_mat="trim_black")
-        body.patch(rr(0.085, 0.075, 0.02, 3, s * 0.62, 0.93), "light_brake", "rear", offset=0.007, skirt=0.0)
-        body.patch(rr(0.085, 0.05, 0.015, 3, s * 0.62, 0.765), ind, "rear", offset=0.007, skirt=0.0)
-        body.patch(rr(0.08, 0.04, 0.012, 3, s * 0.55, 0.42), "light_reverse", "rear", offset=0.004, skirt=0.0)
-    body.patch(rr(0.52, 0.11, 0.01, 2, 0.0, 0.70), "plate", "rear", skirt_mat="trim_black")
-    body.patch(rr(0.40, 0.09, 0.01, 2, 0.0, 0.41), "plate", "front", offset=0.012, skirt_mat="trim_black")
-    # ---- detail: lamp internals, intake slats, lower lip, fog lamps, repeaters, reflectors, fuel flap
+        D.lamp(m, body, "rear", rr(0.12, 0.30, 0.045, 4, s * 0.62, 0.84), "light_tail", "lens_red",
+               elements=[(s * 0.62, 0.93, 0.030, "light_brake", "bowl"), (s * 0.62, 0.765, 0.022, ind, "bowl")],
+               lens_height=0.012)
+        D.optic_ribs(m, body, "rear", s * 0.62 - 0.045, s * 0.62 + 0.045, 0.80, 0.89, 5, "light_tail", offset=0.006)
+        D.lamp(m, body, "rear", rr(0.08, 0.04, 0.012, 3, s * 0.55, 0.42), "light_reverse", "lens_clear",
+               elements=[(s * 0.55, 0.42, 0.013, "light_reverse", "bowl")], lens_height=0.005)
+    D.plate(m, body, "rear", 0.0, 0.70, 0.52, 0.11, "PC 2024")
+    D.plate(m, body, "front", 0.0, 0.41, 0.40, 0.09, "PC 2024", offset=0.012)
+    # ---- detail: intake slats, lower lip, fog lamps, repeaters, reflectors, fuel flap
     m.mat("reflector", color=(0.55, 0.03, 0.02), roughness=0.25)
-    circ = M.circle
     for s in (1, -1):
-        for yy, rb in ((0.36, 0.046), (0.50, 0.032)):                  # projector + high-beam reflector bowls
-            body.patch(circ(rb, 24, s * yy, 0.712), "chrome", "front", offset=0.007, skirt=0.0)
-            body.patch(circ(rb * 0.68, 20, s * yy, 0.712), "light_head", "front", offset=0.010, skirt=0.0)
-        body.patch(rr(0.10, 0.006, 0.002, 2, s * 0.62, 0.885), "trim_black", "rear", offset=0.008, skirt=0.0)
-        body.patch(rr(0.10, 0.006, 0.002, 2, s * 0.62, 0.795), "trim_black", "rear", offset=0.008, skirt=0.0)
-        body.patch(circ(0.016, 16, s * 0.54, 0.36), "chrome", "front", offset=0.007, skirt=0.0)   # fog lamp
-        body.patch(circ(0.011, 14, s * 0.54, 0.36), "glass", "front", offset=0.009, skirt=0.0)
+        D.lamp(m, body, "front", rr(0.10, 0.04, 0.015, 3, s * 0.54, 0.36), "trim_black", "lens_clear",
+               elements=[(s * 0.54, 0.36, 0.015, "light_head", "projector")], lens_height=0.004)   # fog lamp
         body.patch(rr(0.07, 0.022, 0.009, 3, s * 0.68, 0.36), "reflector", "rear", offset=0.005, skirt=0.0)
         body.patch(rr(0.05, 0.016, 0.007, 3, 1.52, 0.66), "light_indicator_left" if s > 0 else
                    "light_indicator_right", "left" if s > 0 else "right", offset=0.003, skirt=0.0)  # side repeater
@@ -207,7 +222,10 @@ def build():
         m.node(name, None, (x1, side * (W(x1) - 0.02), 0.62),
                m.revolute((0, 0, -side), 0, 70, "door opening angle"))
         hx = x0 + 0.14
+        D.handle_recess(m, body, "left" if side > 0 else "right", hx, 0.895, 0.17, 0.055, part=name)
         M.rounded_box(m.mb, (hx, side * (W(hx) + 0.006), 0.90), (0.15, 0.022, 0.03), 0.01, "plastic_black", name)
+        D.seal_line(m, body, [(x0 + 0.035 + (x1 - x0 - 0.07) * k / 12, 0.14) for k in range(13)], side,
+                    part=name, r=0.0045, off=0.003)            # belt seal under the door glass
     for name, side in (("popout_RL", 1), ("popout_RR", -1)):
         x1 = -0.12
         m.node(name, "door_" + name[-2:], (x1, side * 0.74, 1.10),
@@ -232,12 +250,14 @@ def build():
     M.cylinder(m.mb, (-1.25, 0.0, 1.47), (-1.32, 0.0, 1.58), 0.006, "trim_black", count=8)
     M.rounded_box(m.mb, (-1.25, 0.0, 1.485), (0.06, 0.03, 0.02), 0.008, "trim_black")
     # exhaust tail pipe (hidden under the rear bumper, closed tube)
-    M.lathe(m.mb, [(0.023, 0.0), (0.023, 0.22), (0.019, 0.22), (0.019, 0.0)], "exhaust_tip",
+    M.lathe(m.mb, [(0.023, 0.0), (0.023, 0.16), (0.027, 0.18), (0.028, 0.22), (0.024, 0.222), (0.021, 0.205),
+                   (0.019, 0.17), (0.019, 0.0)], "exhaust_tip",
             axis_xf=compose(translate((-1.48, -0.45, 0.24)), rot_axis((0, 1, 0), -math.pi / 2)), count=16,
             closed_profile=True)
     flow.mark("handles, mirrors, wipers, antenna, tail pipe")
 
-    build_cabin(m, ck, body)
+    with Q.coarse(3.0):     # seen through glass: looser chord tolerance
+        build_cabin(m, ck, body)
     flow.skip("cabin, cockpit controls, engine bay")
 
     m.socket("socket_driver_eye", None, (-0.32, 0.34, 1.20), "driver eye point (camera)")

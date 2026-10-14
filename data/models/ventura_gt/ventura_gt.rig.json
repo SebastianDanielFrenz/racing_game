@@ -30,12 +30,12 @@
       "bounds_local": {
         "min": [
           -2.285,
-          -0.918,
+          -0.9184,
           0.09
         ],
         "max": [
           2.3316,
-          0.918,
+          0.9184,
           1.25
         ]
       }
@@ -370,8 +370,8 @@
       "bounds_local": {
         "min": [
           -1.1772,
-          -0.2148,
-          -0.2631
+          -0.2142,
+          -0.2831
         ],
         "max": [
           -0.0055,
@@ -403,11 +403,11 @@
         "min": [
           -1.1772,
           -0.1075,
-          -0.2631
+          -0.2831
         ],
         "max": [
           -0.0055,
-          0.2148,
+          0.2142,
           0.5982
         ]
       }
@@ -467,12 +467,12 @@
         "min": [
           -1.2498,
           -0.6816,
-          -0.2843
+          -0.2842
         ],
         "max": [
-          0.0155,
+          -0.0143,
           0.6816,
-          0.031
+          0.0261
         ]
       }
     },
@@ -499,12 +499,12 @@
         "min": [
           -0.017,
           -0.014,
-          -0.0055
+          -0.0058
         ],
         "max": [
-          0.0221,
+          0.0227,
           0.48,
-          0.0275
+          0.0278
         ]
       }
     },
@@ -531,12 +531,12 @@
         "min": [
           -0.017,
           -0.014,
-          -0.0055
+          -0.0058
         ],
         "max": [
-          0.0221,
+          0.0227,
           0.46,
-          0.0275
+          0.0278
         ]
       }
     },
@@ -563,7 +563,7 @@
         "min": [
           -0.004,
           -0.154,
-          -0.0268
+          -0.0401
         ],
         "max": [
           0.224,
@@ -595,7 +595,7 @@
         "min": [
           -0.0039,
           -0.1539,
-          -0.027
+          -0.0401
         ],
         "max": [
           0.224,
@@ -689,7 +689,7 @@
       },
       "bounds_local": {
         "min": [
-          -0.0038,
+          -0.0039,
           -0.0031,
           -0.0032
         ],
@@ -721,7 +721,7 @@
       },
       "bounds_local": {
         "min": [
-          -0.0038,
+          -0.0039,
           -0.0031,
           -0.0032
         ],
@@ -753,7 +753,7 @@
       },
       "bounds_local": {
         "min": [
-          -0.0038,
+          -0.0039,
           -0.0031,
           -0.0032
         ],
@@ -785,7 +785,7 @@
       },
       "bounds_local": {
         "min": [
-          -0.0038,
+          -0.0039,
           -0.0031,
           -0.0032
         ],
@@ -883,12 +883,12 @@
         "min": [
           -0.025,
           -0.0035,
-          -0.0033
+          -0.0035
         ],
         "max": [
           0.0,
           0.0035,
-          0.0033
+          0.0035
         ]
       }
     },
@@ -915,12 +915,12 @@
         "min": [
           -0.025,
           -0.0035,
-          -0.0033
+          -0.0035
         ],
         "max": [
           0.0,
           0.0035,
-          0.0033
+          0.0035
         ]
       }
     },
@@ -947,12 +947,12 @@
         "min": [
           -0.025,
           -0.0035,
-          -0.0033
+          -0.0035
         ],
         "max": [
           0.0,
           0.0035,
-          0.0033
+          0.0035
         ]
       }
     },
@@ -979,12 +979,12 @@
         "min": [
           -0.025,
           -0.0035,
-          -0.0033
+          -0.0035
         ],
         "max": [
           0.0,
           0.0035,
-          0.0033
+          0.0035
         ]
       }
     },
@@ -1011,12 +1011,12 @@
         "min": [
           -0.025,
           -0.0035,
-          -0.0033
+          -0.0035
         ],
         "max": [
           0.0,
           0.0035,
-          0.0033
+          0.0035
         ]
       }
     },
@@ -1361,14 +1361,14 @@
       },
       "bounds_local": {
         "min": [
-          -0.0996,
+          -0.0997,
           -0.204,
-          -0.1834
+          -0.1835
         ],
         "max": [
           0.1222,
           0.204,
-          0.1834
+          0.1835
         ]
       }
     },
@@ -1393,14 +1393,14 @@
       },
       "bounds_local": {
         "min": [
-          -0.0187,
+          -0.0189,
           -0.026,
-          -0.0229
+          -0.0232
         ],
         "max": [
-          0.0116,
+          0.0117,
           0.026,
-          0.0265
+          0.0268
         ]
       }
     },
@@ -1510,12 +1510,12 @@
       "bounds_local": {
         "min": [
           -0.022,
-          -0.0217,
+          -0.022,
           0.0
         ],
         "max": [
           0.022,
-          0.0217,
+          0.022,
           0.2341
         ]
       }
@@ -1943,5 +1943,56 @@
     "Pop-up lamp pods popup_L/popup_R hinge at their rear-bottom edge: 0 = closed, 90 = lamps facing forward.",
     "Hood variants hood_bulge / hood_scoop are children of 'hood' with extras default_hidden = true; the garage shows the one the installed engine needs (rig engine_bay.hood_variants).",
     "Paint material 'paint'. Cockpit parts are driven by ventura_gt.cockpit.json (rg.cockpit/1)."
-  ]
+  ],
+  "lods": [
+    {
+      "level": 0,
+      "glb": "ventura_gt.glb",
+      "triangles": 158166,
+      "bytes": 5434392,
+      "chord_tolerance_mm": 0.35,
+      "use": "garage, showroom and close-up camera (< 15 m)"
+    },
+    {
+      "level": 1,
+      "glb": "ventura_gt_lod1.glb",
+      "triangles": 89354,
+      "bytes": 3326764,
+      "chord_tolerance_mm": 1.2,
+      "use": "driving camera and nearby traffic (15 - 60 m)"
+    },
+    {
+      "level": 2,
+      "glb": "ventura_gt_lod2.glb",
+      "triangles": 41294,
+      "bytes": 1652124,
+      "chord_tolerance_mm": 6.0,
+      "use": "distant traffic (> 60 m)"
+    }
+  ],
+  "lod_note": "Every LOD has the same nodes, pivots, joints and material names (only the tessellation and the small detail differ), so a LOD swaps per node mesh; the rig, flow and cockpit sidecars describe all three. Generated by tools/cargen (cargen/quality.py).",
+  "quality_tiers": {
+    "note": "Suggested use of the LOD files per graphics quality setting (not wired into the game yet). The garage and the cockpit camera always use LOD0. lod_switch_m = camera distance at which LOD1, then LOD2 take over; transparent_lenses false = draw lamp lenses (role lens) opaque or skip them.",
+    "high": {
+      "lod_switch_m": [
+        15,
+        60
+      ],
+      "transparent_lenses": true
+    },
+    "medium": {
+      "lod_switch_m": [
+        10,
+        40
+      ],
+      "transparent_lenses": true
+    },
+    "low": {
+      "lod_switch_m": [
+        5,
+        25
+      ],
+      "transparent_lenses": false
+    }
+  }
 }

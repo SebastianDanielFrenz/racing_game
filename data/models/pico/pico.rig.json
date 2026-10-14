@@ -8,12 +8,12 @@
   "rest_pose": "All node rotations are identity at rest; a node's origin is its joint pivot. Joint values are offsets from the rest pose (0 = as modelled).",
   "overall_bounds": {
     "min": [
-      -1.705,
+      -1.7069,
       -0.98,
       0.0
     ],
     "max": [
-      1.882,
+      1.8835,
       0.98,
       1.5832
     ]
@@ -29,12 +29,12 @@
       ],
       "bounds_local": {
         "min": [
-          -1.7,
+          -1.7069,
           -0.844,
-          0.1605
+          0.1644
         ],
         "max": [
-          1.882,
+          1.8835,
           0.844,
           1.5832
         ]
@@ -345,12 +345,12 @@
       },
       "bounds_local": {
         "min": [
-          -1.0065,
+          -1.0064,
           -0.19,
           -0.4247
         ],
         "max": [
-          0.004,
+          0.0239,
           0.18,
           0.7472
         ]
@@ -377,9 +377,9 @@
       },
       "bounds_local": {
         "min": [
-          -0.8025,
+          -0.7978,
           -0.19,
-          -0.3484
+          -0.3482
         ],
         "max": [
           -0.004,
@@ -409,12 +409,12 @@
       },
       "bounds_local": {
         "min": [
-          -1.0065,
+          -1.0064,
           -0.18,
           -0.4247
         ],
         "max": [
-          0.004,
+          0.0239,
           0.19,
           0.7472
         ]
@@ -441,9 +441,9 @@
       },
       "bounds_local": {
         "min": [
-          -0.8025,
+          -0.7978,
           -0.037,
-          -0.3484
+          -0.3482
         ],
         "max": [
           -0.004,
@@ -473,12 +473,12 @@
       },
       "bounds_local": {
         "min": [
-          -0.7031,
+          -0.7156,
           -0.0591,
-          -0.1038
+          -0.1035
         ],
         "max": [
-          0.0141,
+          0.0067,
           0.0308,
           0.2302
         ]
@@ -505,12 +505,12 @@
       },
       "bounds_local": {
         "min": [
-          -0.7031,
+          -0.7156,
           -0.0308,
-          -0.1038
+          -0.1035
         ],
         "max": [
-          0.0141,
+          0.0067,
           0.0591,
           0.2302
         ]
@@ -537,13 +537,13 @@
       },
       "bounds_local": {
         "min": [
-          0.0016,
-          -0.6722,
-          -0.2093
+          0.0015,
+          -0.6645,
+          -0.2084
         ],
         "max": [
           0.7853,
-          0.6722,
+          0.6645,
           -0.0015
         ]
       }
@@ -570,13 +570,13 @@
       "bounds_local": {
         "min": [
           -0.235,
-          -0.7693,
+          -0.7692,
           -0.7
         ],
         "max": [
-          -0.0047,
-          0.7693,
-          0.0057
+          -0.0082,
+          0.7692,
+          0.005
         ]
       }
     },
@@ -603,12 +603,12 @@
         "min": [
           -0.018,
           -0.016,
-          -0.0059
+          -0.0062
         ],
         "max": [
-          0.024,
+          0.0248,
           0.55,
-          0.0299
+          0.0302
         ]
       }
     },
@@ -635,12 +635,12 @@
         "min": [
           -0.018,
           -0.016,
-          -0.0059
+          -0.0062
         ],
         "max": [
-          0.024,
+          0.0248,
           0.48,
-          0.0299
+          0.0302
         ]
       }
     },
@@ -667,12 +667,12 @@
         "min": [
           -0.02,
           -0.018,
-          -0.0171
+          -0.018
         ],
         "max": [
           0.005,
           0.34,
-          0.0171
+          0.018
         ]
       }
     },
@@ -702,9 +702,9 @@
           -0.0237
         ],
         "max": [
-          0.0026,
+          0.0027,
           0.0405,
-          0.0055
+          0.0057
         ]
       }
     },
@@ -899,14 +899,14 @@
       },
       "bounds_local": {
         "min": [
-          -0.1006,
+          -0.1008,
           -0.196,
-          -0.1746
+          -0.1748
         ],
         "max": [
-          0.1006,
+          0.1008,
           0.196,
-          0.1746
+          0.1748
         ]
       }
     },
@@ -1065,7 +1065,7 @@
         ],
         "max": [
           0.0058,
-          0.1415,
+          0.1414,
           0.006
         ]
       }
@@ -1092,7 +1092,7 @@
       "bounds_local": {
         "min": [
           -0.044,
-          -0.1415,
+          -0.1414,
           -0.0234
         ],
         "max": [
@@ -1144,12 +1144,12 @@
       "bounds_local": {
         "min": [
           -0.024,
-          -0.0236,
+          -0.024,
           0.0
         ],
         "max": [
           0.024,
-          0.0236,
+          0.024,
           0.2072
         ]
       }
@@ -1507,5 +1507,56 @@
     "Rear door windows pop out about their front edge (node popout_RL/RR, children of the rear doors).",
     "Paint material 'paint', roof material 'paint_roof' (contrast roof option), dash strip 'dash_paint'.",
     "Cockpit parts are driven by pico.cockpit.json (rg.cockpit/1)."
-  ]
+  ],
+  "lods": [
+    {
+      "level": 0,
+      "glb": "pico.glb",
+      "triangles": 142660,
+      "bytes": 5027404,
+      "chord_tolerance_mm": 0.35,
+      "use": "garage, showroom and close-up camera (< 15 m)"
+    },
+    {
+      "level": 1,
+      "glb": "pico_lod1.glb",
+      "triangles": 80668,
+      "bytes": 3070952,
+      "chord_tolerance_mm": 1.2,
+      "use": "driving camera and nearby traffic (15 - 60 m)"
+    },
+    {
+      "level": 2,
+      "glb": "pico_lod2.glb",
+      "triangles": 36932,
+      "bytes": 1527164,
+      "chord_tolerance_mm": 6.0,
+      "use": "distant traffic (> 60 m)"
+    }
+  ],
+  "lod_note": "Every LOD has the same nodes, pivots, joints and material names (only the tessellation and the small detail differ), so a LOD swaps per node mesh; the rig, flow and cockpit sidecars describe all three. Generated by tools/cargen (cargen/quality.py).",
+  "quality_tiers": {
+    "note": "Suggested use of the LOD files per graphics quality setting (not wired into the game yet). The garage and the cockpit camera always use LOD0. lod_switch_m = camera distance at which LOD1, then LOD2 take over; transparent_lenses false = draw lamp lenses (role lens) opaque or skip them.",
+    "high": {
+      "lod_switch_m": [
+        15,
+        60
+      ],
+      "transparent_lenses": true
+    },
+    "medium": {
+      "lod_switch_m": [
+        10,
+        40
+      ],
+      "transparent_lenses": true
+    },
+    "low": {
+      "lod_switch_m": [
+        5,
+        25
+      ],
+      "transparent_lenses": false
+    }
+  }
 }
