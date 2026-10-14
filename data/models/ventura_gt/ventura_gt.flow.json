@@ -8,49 +8,49 @@
       "node": "ventura_gt",
       "material": "paint",
       "first_triangle": 0,
-      "triangle_count": 13991
+      "triangle_count": 12744
     },
     {
       "node": "ventura_gt",
       "material": "underbody",
       "first_triangle": 0,
-      "triangle_count": 9108
+      "triangle_count": 7668
     },
     {
       "node": "ventura_gt",
       "material": "arch_liner",
       "first_triangle": 0,
-      "triangle_count": 1612
+      "triangle_count": 1360
     },
     {
       "node": "ventura_gt",
       "material": "gap",
       "first_triangle": 0,
-      "triangle_count": 468
+      "triangle_count": 420
     },
     {
       "node": "door_R",
       "material": "paint",
       "first_triangle": 0,
-      "triangle_count": 1308
+      "triangle_count": 1194
     },
     {
       "node": "door_L",
       "material": "paint",
       "first_triangle": 0,
-      "triangle_count": 1308
+      "triangle_count": 1194
     },
     {
       "node": "hood",
       "material": "paint",
       "first_triangle": 0,
-      "triangle_count": 2016
+      "triangle_count": 1728
     },
     {
       "node": "ventura_gt",
       "material": "trim_black",
       "first_triangle": 0,
-      "triangle_count": 5712
+      "triangle_count": 5436
     },
     {
       "node": "hatch",
@@ -610,5 +610,5 @@
   ],
   "excluded": "inner skins and perimeter returns; cabin, cockpit controls, engine bay, hidden hood variants",
   "limitations": "Closed visual shells per node; arches, grille mouth and tail pipes open. Hidden hood variants and the cabin are not in the selection. Not a boolean union.",
-  "source_glb_sha256": "5ad2438d53e55eada8786d891386fd4cd2ebaba3e39e30768a7b3910e4c475e3"
+  "source_glb_sha256": "a154b3e731027f81f1dde9c0577d7cd9bb1b2ee71939a7d1eaf0e0b8addeec44"
 }

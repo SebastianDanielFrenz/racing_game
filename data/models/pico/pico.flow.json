@@ -8,13 +8,13 @@
       "node": "pico",
       "material": "cladding",
       "first_triangle": 0,
-      "triangle_count": 2322
+      "triangle_count": 2602
     },
     {
       "node": "pico",
       "material": "paint",
       "first_triangle": 0,
-      "triangle_count": 3788
+      "triangle_count": 3508
     },
     {
       "node": "tailgate",
@@ -26,7 +26,7 @@
       "node": "pico",
       "material": "gap",
       "first_triangle": 0,
-      "triangle_count": 728
+      "triangle_count": 644
     },
     {
       "node": "pico",
@@ -56,13 +56,13 @@
       "node": "door_FR",
       "material": "paint",
       "first_triangle": 0,
-      "triangle_count": 1516
+      "triangle_count": 1558
     },
     {
       "node": "door_FL",
       "material": "paint",
       "first_triangle": 0,
-      "triangle_count": 1516
+      "triangle_count": 1558
     },
     {
       "node": "hood",
@@ -152,7 +152,7 @@
       "node": "pico",
       "material": "plastic_black",
       "first_triangle": 0,
-      "triangle_count": 2270
+      "triangle_count": 2878
     },
     {
       "node": "pico",
@@ -619,5 +619,5 @@
   ],
   "excluded": "inner skins and perimeter returns; cabin, cockpit controls, engine bay",
   "limitations": "Closed visual shells per node; arches, intake mouth and tail pipe open. Not a boolean union.",
-  "source_glb_sha256": "61eab8b71394ce584e49c9362824206538944f1f82da48b63bcda55a8a67a5b4"
+  "source_glb_sha256": "2725da882182d7293d70b81b9c6cae57c8dd2f6adbf446c424efc160bd5653bd"
 }

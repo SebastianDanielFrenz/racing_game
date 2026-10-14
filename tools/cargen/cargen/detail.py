@@ -229,13 +229,14 @@ def lattice(m, body, face, a0, a1, b0, b1, na, nb, mat, part="", offset=0.008, b
     if Q.detail() < 1:
         return
     nrm = FACES[face]
+    sa, sb = (24, 12) if clip else (16, 6)          # finer sampling where an outline clips the bars
     for k in range(nb):
         b = b0 + (b1 - b0) * (k + 0.5) / nb
-        pts = [(a0 + (a1 - a0) * t / 16, b) for t in range(17)]
+        pts = [(a0 + (a1 - a0) * t / sa, b) for t in range(sa + 1)]
         _clipped_blade(m, body, face, pts, clip, bar, depth, mat, part, offset, nrm, along_b=False)
     for k in range(na):
         a = a0 + (a1 - a0) * (k + 0.5) / na
-        pts = [(a, b0 + (b1 - b0) * t / 6) for t in range(7)]
+        pts = [(a, b0 + (b1 - b0) * t / sb) for t in range(sb + 1)]
         _clipped_blade(m, body, face, pts, clip, bar, depth, mat, part, offset, nrm, along_b=True)
 
 

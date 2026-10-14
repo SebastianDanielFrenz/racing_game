@@ -371,7 +371,7 @@
         "min": [
           -1.1772,
           -0.2142,
-          -0.2846
+          -0.2831
         ],
         "max": [
           -0.0055,
@@ -403,7 +403,7 @@
         "min": [
           -1.1772,
           -0.1075,
-          -0.2846
+          -0.2831
         ],
         "max": [
           -0.0055,
@@ -434,12 +434,12 @@
       "bounds_local": {
         "min": [
           0.006,
-          -0.6304,
-          -0.0602
+          -0.6432,
+          -0.0619
         ],
         "max": [
           1.3459,
-          0.6304,
+          0.6432,
           0.0038
         ]
       }
@@ -1948,24 +1948,24 @@
     {
       "level": 0,
       "glb": "ventura_gt.glb",
-      "triangles": 165546,
-      "bytes": 5615300,
+      "triangles": 158166,
+      "bytes": 5434392,
       "chord_tolerance_mm": 0.35,
       "use": "garage, showroom and close-up camera (< 15 m)"
     },
     {
       "level": 1,
       "glb": "ventura_gt_lod1.glb",
-      "triangles": 93346,
-      "bytes": 3426524,
+      "triangles": 89354,
+      "bytes": 3326764,
       "chord_tolerance_mm": 1.2,
       "use": "driving camera and nearby traffic (15 - 60 m)"
     },
     {
       "level": 2,
       "glb": "ventura_gt_lod2.glb",
-      "triangles": 42910,
-      "bytes": 1700712,
+      "triangles": 41294,
+      "bytes": 1652124,
       "chord_tolerance_mm": 6.0,
       "use": "distant traffic (> 60 m)"
     }

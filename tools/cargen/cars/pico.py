@@ -82,17 +82,20 @@ def build():
                    wr=[(-1.63, 0.62), (-1.4, 0.66), (0.2, 0.67), (0.97, 0.66)],
                    r=0.11, crown=0.035))
     W = body.W
+    # material borders at a constant body ls follow the loft grid (smooth lines, no staircase)
+    LS_SILL, LS_DOOR = body.ls_at(0.0, 0.27), body.ls_at(0.0, 0.29)
+    LS_REAR = body.ls_at(-1.6, 0.44)
 
     # ---- opening panels
     def door_inside(side, x0, x1):
         def f(c, n):
             return (x0 - 0.012 < c[0] < x1 + 0.012 and c[1] * side > 0 and n[1] * side > 0.3 and n[2] < 0.75
-                    and c[2] > 0.27 and not body.in_arch(c, margin=0.004))
+                    and body.ls > LS_SILL and not body.in_arch(c, margin=0.004))
         return f
 
     def door_border(side, x0, x1):
         def f(c, n):
-            return body.on_seam(c[0], x0) or body.on_seam(c[0], x1) or c[2] < 0.29
+            return body.on_seam(c[0], x0) or body.on_seam(c[0], x1) or body.ls < LS_DOOR
         return f
 
     for name, side, x0, x1 in DOORS:
@@ -111,9 +114,9 @@ def build():
         if b.in_arch(c):
             return "arch_liner"
         # black cladding: sills and bumper bottoms (straight lines along the grid, no arch flares)
-        if z < 0.27 and abs(n[1]) > 0.4:
+        if b.ls < LS_SILL and abs(n[1]) > 0.4:
             return "cladding"
-        if (x > 1.56 and z < 0.27) or (x < -1.56 and z < 0.44):
+        if (x > 1.56 and b.ls < LS_SILL) or (x < -1.56 and b.ls < LS_REAR):
             return "cladding"
         return Ellipsis
 
@@ -152,9 +155,9 @@ def build():
     # ---- lamps, grilles, plate (draped, backed)
     rr = M.rrect
     body.patch(rr(0.44, 0.045, 0.02, 4, 0.0, 0.685), "trim_black", "front", offset=0.003)        # slim upper grille
-    smile = [(0.36 * math.cos(math.pi * (1 + k / 20)) * 1.0, 0.40 + 0.06 * math.sin(math.pi * (1 + k / 20)) + 0.0)
+    smile = [(0.31 * math.cos(math.pi * (1 + k / 20)) * 1.0, 0.40 + 0.06 * math.sin(math.pi * (1 + k / 20)) + 0.0)
              for k in range(21)]
-    smile = smile + [(p[0] * 0.92, p[1] + 0.085 + 0.02 * (1 - (p[0] / 0.36) ** 2)) for p in reversed(smile)]
+    smile = smile + [(p[0] * 0.92, p[1] + 0.085 + 0.02 * (1 - (p[0] / 0.31) ** 2)) for p in reversed(smile)]
     body.patch(smile, "trim_black", "front", offset=0.0015, skirt_mat="plastic_black")         # smiling lower intake
 
     def in_smile(a, b, poly=smile):
@@ -165,8 +168,8 @@ def build():
                 inside = not inside
         return inside
 
-    D.lattice(m, body, "front", -0.34, 0.34, 0.35, 0.48, 17, 3, "plastic_black", offset=0.006, bar=0.005,
-              depth=0.010, clip=lambda a, b: in_smile(a, b) and in_smile(a * 1.04, b))   # honeycomb-ish egg crate
+    D.lattice(m, body, "front", -0.29, 0.29, 0.35, 0.48, 15, 3, "plastic_black", offset=0.006, bar=0.005,
+              depth=0.010, clip=lambda a, b: in_smile(a * 1.06, b) and in_smile(a, b + 0.014) and in_smile(a, b - 0.014))   # honeycomb-ish egg crate
     for s in (1, -1):
         ind = "light_indicator_left" if s > 0 else "light_indicator_right"
         lamp = [(s * (0.43 + 0.18 * math.cos(math.pi * k / 12)), 0.70 + 0.06 * math.sin(math.pi * k / 12) - 0.02 * k / 12)

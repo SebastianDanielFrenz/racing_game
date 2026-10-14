@@ -1512,16 +1512,16 @@
     {
       "level": 0,
       "glb": "pico.glb",
-      "triangles": 142052,
-      "bytes": 5015100,
+      "triangles": 142660,
+      "bytes": 5027404,
       "chord_tolerance_mm": 0.35,
       "use": "garage, showroom and close-up camera (< 15 m)"
     },
     {
       "level": 1,
       "glb": "pico_lod1.glb",
-      "triangles": 80180,
-      "bytes": 3058372,
+      "triangles": 80668,
+      "bytes": 3070952,
       "chord_tolerance_mm": 1.2,
       "use": "driving camera and nearby traffic (15 - 60 m)"
     },
@@ -1529,7 +1529,7 @@
       "level": 2,
       "glb": "pico_lod2.glb",
       "triangles": 36932,
-      "bytes": 1526920,
+      "bytes": 1527164,
       "chord_tolerance_mm": 6.0,
       "use": "distant traffic (> 60 m)"
     }

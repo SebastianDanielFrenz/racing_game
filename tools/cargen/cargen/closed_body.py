@@ -31,7 +31,8 @@ class ClosedCarBody(CarBody):
         8 mm column of faces, whatever the regular station step."""
         # tessellation comes from the active LOD (cargen.quality), not from the car file
         kw["step"] = Q.cur["body_step"]
-        kw["around"] = Q.cur["body_around"]
+        # around_scale: a long car with large flat sides needs fewer points round the section per metre of length
+        kw["around"] = int(round(Q.cur["body_around"] * kw.pop("around_scale", 1.0) / 4)) * 4
         kw["green_step"] = Q.cur["green_step"]
         super().__init__(model, **kw)
         self.flow = flow
@@ -57,6 +58,24 @@ class ClosedCarBody(CarBody):
             super().build(classify_lower, classify_green)
         finally:
             cb.stations = orig
+
+    def ls_at(self, x, z):
+        """CarBody.ls (0 = bottom centre, 1 = top centre, by arc length round the section) of the body side at
+        height z in section x. A material border at a constant ls follows the loft's grid lines, so it is a
+        smooth line instead of the staircase a z threshold cuts through the grid."""
+        W, zb, zt, n = self.lower_params(x)
+        pts = M.superellipse(W, (zt - zb) / 2, n, 720, 0.0, (zt + zb) / 2)
+        pts = pts[540:] + pts[:540]           # start at the bottom centre, as _lower_section
+        half = pts[:361]
+        arc = [0.0]
+        for i in range(1, len(half)):
+            arc.append(arc[-1] + ((half[i][0] - half[i - 1][0]) ** 2 + (half[i][1] - half[i - 1][1]) ** 2) ** 0.5)
+        for i in range(1, len(half)):
+            z0, z1 = half[i - 1][1], half[i][1]
+            if (z0 - z) * (z1 - z) <= 0 and z1 != z0:
+                f = (z - z0) / (z1 - z0)
+                return (arc[i - 1] + f * (arc[i] - arc[i - 1])) / arc[-1]
+        return 1.0 if z > zt else 0.0
 
     @staticmethod
     def on_seam(x, q):

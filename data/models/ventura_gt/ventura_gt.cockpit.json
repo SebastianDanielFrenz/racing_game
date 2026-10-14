@@ -1133,5 +1133,5 @@
   "notes": [
     "Pedals and the handbrake follow the applied control channels; the gear lever follows the selected gear through its gate (R is beyond 1, top left); gauges follow the snapshot; the clock has two needles (hour, minute)."
   ],
-  "source_glb_sha256": "5ad2438d53e55eada8786d891386fd4cd2ebaba3e39e30768a7b3910e4c475e3"
+  "source_glb_sha256": "a154b3e731027f81f1dde9c0577d7cd9bb1b2ee71939a7d1eaf0e0b8addeec44"
 }

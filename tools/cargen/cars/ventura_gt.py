@@ -82,7 +82,7 @@ def build():
             (1.45, 0.88), (1.75, 0.86), (2.05, 0.80), (X_FRONT, 0.72)],
         exp=[(X_REAR, 4.0), (-1.8, 4.5), (1.6, 4.5), (X_FRONT, 3.5)],
         end_r=(0.10, 0.18), wheels=wheels, arch_clear=0.045,
-        seams=[DOORS[0][2], DOORS[0][3], HOOD_X0, HOOD_X1], step=0.034,
+        seams=[DOORS[0][2], DOORS[0][3], HOOD_X0, HOOD_X1], around_scale=0.84,
         green=dict(x0=-1.90, x1=0.42,
                    zroof=[(-1.90, 0.93), (-1.6, 0.99), (-1.2, 1.08), (-0.8, 1.165), (-0.45, 1.215), (-0.15, 1.22),
                           (0.05, 1.17), (0.25, 1.04), (0.42, 0.90)],
@@ -90,17 +90,19 @@ def build():
                    wr=[(-1.90, 0.55), (-1.3, 0.62), (-0.5, 0.64), (0.0, 0.63), (0.42, 0.60)],
                    r=0.08, crown=0.03))
     W = body.W
+    # material borders at a constant body ls follow the loft grid (smooth lines, no staircase)
+    LS_LOW, LS_DOOR, LS_SILL = body.ls_at(0.0, 0.25), body.ls_at(0.0, 0.27), body.ls_at(0.0, 0.22)
 
     # ---- opening panels
     def door_inside(side, x0, x1):
         def f(c, n):
             return (x0 - 0.012 < c[0] < x1 + 0.012 and c[1] * side > 0 and n[1] * side > 0.3 and n[2] < 0.75
-                    and c[2] > 0.25 and not body.in_arch(c, margin=0.004))
+                    and body.ls > LS_LOW and not body.in_arch(c, margin=0.004))
         return f
 
     def door_border(side, x0, x1):
         def f(c, n):
-            return body.on_seam(c[0], x0) or body.on_seam(c[0], x1) or c[2] < 0.27
+            return body.on_seam(c[0], x0) or body.on_seam(c[0], x1) or body.ls < LS_DOOR
         return f
 
     for name, side, x0, x1 in DOORS:
@@ -115,7 +117,7 @@ def build():
             return "underbody"
         if b.in_arch(c):
             return "arch_liner"
-        if z < 0.22 and abs(n[1]) > 0.4:
+        if b.ls < LS_SILL and abs(n[1]) > 0.4:
             return "trim_black"          # thin black sill line
         return Ellipsis
 
@@ -151,8 +153,8 @@ def build():
 
     # ---- front: recessed grille, indicators, plate; rear: twin round lamps, plate
     rr, circ = M.rrect, M.circle
-    body.patch(rr(1.18, 0.14, 0.03, 4, 0.0, 0.56), "grille", "front", offset=0.0015, skirt_mat="chrome")
-    D.lattice(m, body, "front", -0.52, 0.52, 0.512, 0.608, 26, 0, "trim_black", offset=0.005, bar=0.004, depth=0.008)
+    body.patch(rr(1.06, 0.14, 0.03, 4, 0.0, 0.56), "grille", "front", offset=0.0015, skirt_mat="chrome")
+    D.lattice(m, body, "front", -0.47, 0.47, 0.512, 0.608, 24, 0, "trim_black", offset=0.005, bar=0.004, depth=0.008)
     for s in (1, -1):
         ind = "light_indicator_left" if s > 0 else "light_indicator_right"
         D.lamp(m, body, "front", rr(0.10, 0.04, 0.018, 3, s * 0.60, 0.40), ind, "lens_amber",
@@ -173,7 +175,7 @@ def build():
     D.plate(m, body, "front", 0.0, 0.33, 0.46, 0.10, "EG 1973", offset=0.007)
     # ---- detail: grille bars and badge, fender gills, chin spoiler, flared arch lips
     for zz in (0.525, 0.56, 0.595):
-        ys = [-0.535 + 1.07 * k / 24 for k in range(25)]
+        ys = [-0.48 + 0.96 * k / 24 for k in range(25)]
         blade_path(m.mb, [(body.surface_x(y, zz, 1) + 0.002, y, zz) for y in ys], 0.008, 0.012, "chrome",
                    normal=(1.0, 0.0, 0.0))
     body.patch(circ(0.032, 20, 0.0, 0.56), "chrome", "front", offset=0.016, skirt=0.014)          # nose badge
