@@ -18,7 +18,7 @@ State at writing: racing_game main `6f959e1` (pushed), pins physics_sim `1e07c0e
    the bottom; gitignored too). If you are on another machine, this brief replaces
    both. Ask the owner for copies if you need the anchors.
 3. Topic docs named in each work package below (`docs/*.md`, geo2map
-   `out/terrain_migration_plan.md`, geo2map `docs/pipeline/README.md`).
+   `docs/terrain_migration_plan.md`, geo2map `docs/pipeline/README.md`).
 4. The knowledge vault `S:\claude_knowledge_base`. Search it before each task:
    `S:\claude_knowledge_base\knowledge-manager\gradlew.bat -p S:\claude_knowledge_base\knowledge-manager run --quiet --args="search 'terms' 3"`.
    Relevant series: RACE-*, PHYS-*, G2M-*, TOOL-*.
@@ -149,7 +149,7 @@ package X pushed and the pin bumped first. "[g2m X]" = the same for geo2map.
 
 ### Lane C: terrain migration and roads (geo2map_engine first, then racing_game)
 
-Spec: geo2map `out/terrain_migration_plan.md`. Phases 0-2 are done. Every phase is
+Spec: geo2map `docs/terrain_migration_plan.md`. Phases 0-2 are done. Every phase is
 one geo2map commit with tests, then one racing_game commit that bumps the pin,
 switches callers, deletes the game copy and test-drives the corridor. Use the
 roadcmp probe (`out/roadcmp`, `RG_ROADCMP=1`): zero game-only differences before
