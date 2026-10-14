@@ -13,6 +13,7 @@
 
 #include <godot_cpp/core/class_db.hpp>
 #include <godot_cpp/classes/engine.hpp>
+#include <godot_cpp/variant/utility_functions.hpp>
 #include <godot_cpp/classes/multi_mesh.hpp>
 #include <godot_cpp/variant/plane.hpp>
 #include <cmath>
@@ -267,6 +268,7 @@ void RgSimulation::run_terrain_init_worker(std::string world_config_path, std::s
     config.rolling_resistance_model=rolling_resistance_model_;
     config.aero_map_selection_path=aero_map_selection_path_;
     config.surface_table_path = std::move(surface_table_path);
+    config.weather = next_weather_;
     config.terrain = rg::make_terrain_mode(*world_config, terrain); // start-up blocks inside make_session below
     config.startup = progress;
     if (fetch_delay_ms > 0) {
@@ -318,6 +320,7 @@ void RgSimulation::run_flat_init_worker(std::string vehicle_json_path, std::stri
     config.rolling_resistance_model = rolling_resistance_model_;
     config.aero_map_selection_path = aero_map_selection_path_;
     config.surface_table_path = std::move(surface_table_path);
+    config.weather = next_weather_;
     config.startup = progress;
     std::string err;
     std::unique_ptr<rg::Session> session = rg::make_session(config, &err);
@@ -335,6 +338,7 @@ void RgSimulation::run_flat_init_worker(std::string vehicle_json_path, std::stri
 
 bool RgSimulation::initialize(const String& vehicle_json_absolute_path, const String& surface_table_absolute_path) {
     teardown_current();
+    prepare_weather();
     last_error_ = String();
     init_message_.clear();
     world_load_serial_ = modes_.begin_world_load(rg::WorldKind::Flat);
@@ -357,6 +361,7 @@ bool RgSimulation::initialize_terrain(const String& world_config_absolute_path,
                                       const String& vehicle_json_absolute_path,
                                       const String& surface_table_absolute_path) {
     teardown_current();
+    prepare_weather();
     last_error_ = String();
     init_message_.clear();
     world_load_serial_ = modes_.begin_world_load(rg::WorldKind::RealWorld);
@@ -673,6 +678,47 @@ godot::Dictionary RgSimulation::get_aero_state() const {
     d["force_world_n"]=godot::Vector3(a.force_world.x,a.force_world.y,a.force_world.z);d["moment_world_nm"]=godot::Vector3(a.moment_world.x,a.moment_world.y,a.moment_world.z);
     d["fan_energy_remaining_j"]=a.fan_energy_remaining_j;
     godot::Array surfaces;for(const auto& st:a.surfaces){godot::Dictionary surface;surface["name"]=String(st.name.c_str());surface["alpha_deg"]=st.alpha_rad*180/3.141592653589793;surface["beta_deg"]=st.beta_rad*180/3.141592653589793;surface["cl"]=st.cl;surface["cd"]=st.cd;surface["clearance_m"]=st.clearance_m;surface["ground_multiplier"]=st.ground_multiplier;surface["dynamic_pressure_pa"]=st.dynamic_pressure_pa;surface["force_world_n"]=godot::Vector3(st.force_world.x,st.force_world.y,st.force_world.z);surfaces.append(surface);}d["surfaces"]=surfaces;
+    return d;
+}
+
+void RgSimulation::set_weather_source(const godot::Ref<RgSky>& sky) { weather_sky_ = sky; }
+
+void RgSimulation::prepare_weather() {
+    weather_sync_.reset();
+    next_weather_.reset();
+    const rg::TimeWeather* tw = weather_sky_.is_valid() ? weather_sky_->time_weather() : nullptr;
+    if (tw == nullptr || !tw->climate()) return;
+    std::string err;
+    auto w = rg::session_weather_for(*tw, &err);
+    if (!w) {
+        godot::UtilityFunctions::push_warning(String("weather: ") + String::utf8(err.c_str()) + " (no physics weather this load)");
+        return;
+    }
+    next_weather_ = std::make_shared<const rg::SessionWeather>(std::move(*w));
+}
+
+int RgSimulation::sync_weather() {
+    const rg::TimeWeather* tw = weather_sky_.is_valid() ? weather_sky_->time_weather() : nullptr;
+    if (!session_ || tw == nullptr) return 0;
+    return weather_sync_.sync(*tw, frame_snapshot().weather, *session_);
+}
+
+godot::Dictionary RgSimulation::get_weather_state() const {
+    godot::Dictionary d;
+    if (!session_) return d;
+    const rg::WeatherSnapshot& w = frame_snapshot().weather;
+    d["installed"] = w.installed;
+    d["env_time_s"] = w.env_time_s;
+    d["air_temp_c"] = w.air_temp_c;
+    d["precip_mm_h"] = w.precip_mm_h;
+    d["cloud_cover"] = w.cloud_cover;
+    d["rh"] = w.rh;
+    d["lightning_per_min"] = w.lightning_per_min;
+    d["wheel_surface"] = String(w.wheel_surface.c_str());
+    d["wheel_water_mm"] = w.wheel_water_mm;
+    d["wheel_snow_mm"] = w.wheel_snow_mm;
+    d["wheel_ice_mm"] = w.wheel_ice_mm;
+    d["wheel_condition_factor"] = w.wheel_condition_factor;
     return d;
 }
 
@@ -1288,6 +1334,9 @@ void RgSimulation::_bind_methods() {
     godot::ClassDB::bind_method(D_METHOD("set_rolling_resistance_model", "model"), &RgSimulation::set_rolling_resistance_model);
     godot::ClassDB::bind_method(D_METHOD("set_aero_map_selection_path", "path"), &RgSimulation::set_aero_map_selection_path);
     godot::ClassDB::bind_method(D_METHOD("get_aero_state"), &RgSimulation::get_aero_state);
+    godot::ClassDB::bind_method(D_METHOD("set_weather_source", "sky"), &RgSimulation::set_weather_source);
+    godot::ClassDB::bind_method(D_METHOD("sync_weather"), &RgSimulation::sync_weather);
+    godot::ClassDB::bind_method(D_METHOD("get_weather_state"), &RgSimulation::get_weather_state);
     godot::ClassDB::bind_method(D_METHOD("configure_traffic","density","radius","minimum","grip","maximum"), &RgSimulation::configure_traffic);
     godot::ClassDB::bind_method(D_METHOD("set_visible_traffic","ids"), &RgSimulation::set_visible_traffic);
     godot::ClassDB::bind_method(D_METHOD("update_traffic_render", "cars", "trucks", "planes", "report_visibility"), &RgSimulation::update_traffic_render);

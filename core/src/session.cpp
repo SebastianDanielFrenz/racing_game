@@ -223,6 +223,7 @@ Session::Session(const SessionConfig& config)
         for(const char* name:{"assist.traction_control","assist.aero_control","assist.drive_mode","assist.launch_control"})
             control_channels_[name].store(world_->get_control(name),std::memory_order_relaxed);
     }
+    install_weather();
 }
 
 Session::~Session() { stop(); truck_cancel_.store(true); traffic_cancel_.store(true); if(truck_worker_.joinable())truck_worker_.join(); if(traffic_worker_.joinable())traffic_worker_.join(); }
@@ -245,10 +246,19 @@ void Session::build_world_contents(const SessionConfig& config) {
         // external/physics_sim/data/scenarios/vehicle_step_steer.json's own
         // "ground" body exactly (see session.h's SessionConfig comment).
         ps::BodyDesc desc;
-        if (config.ground_tessellated) {
+        // V8: wet grip needs a surface id on the ground; only a mesh carries one, so weather turns the box into one.
+        const bool tag_ground = config.weather && !config.weather->ground_surface.empty();
+        if (config.ground_tessellated || tag_ground) {
             // PHYS-047: a huge ground must be a mesh with small triangles, not one big box.
             const double half_y = config.ground_half_extent_y_m > 0.0 ? config.ground_half_extent_y_m : config.ground_half_extent_m;
-            desc.shape = flat_ground_mesh(config.ground_half_extent_m, half_y);
+            ps::MeshShape mesh = flat_ground_mesh(config.ground_half_extent_m, half_y);
+            if (tag_ground) {
+                const ps::SurfaceId id = surface_table_->id_for(config.weather->ground_surface);
+                if (id == ps::kInvalidSurfaceId)
+                    throw std::invalid_argument("Session: weather ground_surface '" + config.weather->ground_surface + "' is not in the surface table");
+                mesh.triangle_surface_ids.assign(mesh.indices.size() / 3, id);
+            }
+            desc.shape = std::move(mesh);
             desc.pose.position = ps::Vec3{0.0, 0.0, 0.0};
         } else {
             if (config.ground_half_extent_m > kMaxFlatGroundBoxHalfExtentM) {
@@ -818,6 +828,7 @@ bool Session::step_once(bool from_loop) {
     // On foot (R9c): a pending get-out/get-in is handled here, past the gate and
     // any relocation, so a spawn only ever happens with the car's terrain resident.
     process_walker_request();
+    apply_weather_requests();
 
     if (have_vehicle_ && drive_script_) {
         drive_script_->apply(DriveTickContext{drive_tick(), chassis_body_, vehicle_id_}, *world_);
@@ -837,9 +848,15 @@ bool Session::step_once(bool from_loop) {
         update_traffic();
         check_followed_alive(); // despawned at its route end / truck removed this tick
         update_walker();
-        environment_sample_=sample_environment(config_.environment,world_->get_pose(chassis_body_).position.z,world_->sim_time());
-        if(config_.environment.enabled)world_->set_ambient({environment_sample_.pressure_pa,environment_sample_.temperature_k});
-        world_->set_aero_environment({environment_sample_.air_density,environment_sample_.wind_world_m_s});
+        if(weather_installed_) {
+            // V8: the environment provides the air (World refuses set_ambient/set_aero_environment); report what it computed last tick.
+            const ps::environment::VehicleAir air=world_->vehicle_air(vehicle_id_);
+            if(air.valid)environment_sample_={air.pressure_pa,air.temperature_k,air.density_kg_m3,air.wind_world};
+        } else {
+            environment_sample_=sample_environment(config_.environment,world_->get_pose(chassis_body_).position.z,world_->sim_time());
+            if(config_.environment.enabled)world_->set_ambient({environment_sample_.pressure_pa,environment_sample_.temperature_k});
+            world_->set_aero_environment({environment_sample_.air_density,environment_sample_.wind_world_m_s});
+        }
         // The rear wing is physics_sim's: the assist unit's aero_control (channel assist.aero_control) owns the surface.
         for(std::size_t i=0;i<vehicle_desc_.aero.fans.size();++i)
             world_->set_aero_fan_command(vehicle_id_,i,config_.environment.fan_command);
@@ -1175,6 +1192,7 @@ FrameSnapshot Session::capture_frame_snapshot() const {
         out.car_yaw_rad=ps::math::atan2(walker_footprint_.sin_yaw,walker_footprint_.cos_yaw);
     }
     snap.aero.environment = environment_sample_;
+    snap.weather = capture_weather();
     const auto& aero=world_->vehicle_aero_telemetry(vehicle_id_);
     snap.aero.enabled=!vehicle_desc_.aero.surfaces.empty()||!vehicle_desc_.aero.fans.empty()||vehicle_desc_.aero.body.reference_area_m2>0;
     snap.aero.airspeed_m_s=aero.body_airspeed_m_s;
@@ -1753,3 +1771,85 @@ void Session::note_stuck_events(const std::vector<std::uint64_t>& declared,doubl
  }
 }
 }
+
+namespace rg {
+// ---- V8 weather -------------------------------------------------------------
+void Session::install_weather() {
+    if (!config_.weather) return;
+    ps::environment::EnvironmentConfig cfg = config_.weather->config;
+    cfg.surface_names = surface_table_->names();
+    // Session z: flat = height above the station (z 0 = the climate's elevation); terrain = metres above sea level.
+    cfg.altitude_offset_m = config_.terrain ? -config_.weather->climate.location.elevation_m : 0.0;
+    world_->install_environment(std::make_shared<ps::environment::Environment>(config_.weather->climate, cfg));
+    weather_installed_ = true;
+    weather_day_ = cfg.fixed_day_of_year;
+}
+
+void Session::set_weather(const ps::environment::WeatherPresetDesc& preset, double ramp_s) {
+    if (!weather_installed_) return;
+    std::lock_guard<std::mutex> lock(weather_mutex_);
+    weather_requests_.preset = std::make_pair(preset, std::isfinite(ramp_s) && ramp_s >= 0 ? ramp_s : 0.0);
+    weather_pending_.store(true, std::memory_order_release);
+}
+
+void Session::set_environment_clock(double env_s, int fixed_day_index, double time_scale) {
+    if (!weather_installed_ || !std::isfinite(env_s) || !std::isfinite(time_scale) || time_scale < 0) return;
+    std::lock_guard<std::mutex> lock(weather_mutex_);
+    weather_requests_.clock = std::make_tuple(env_s, fixed_day_index, time_scale);
+    weather_pending_.store(true, std::memory_order_release);
+}
+
+void Session::apply_weather_requests() {
+    if (!weather_installed_ || !weather_pending_.exchange(false, std::memory_order_acq_rel)) return;
+    WeatherRequests req;
+    {
+        std::lock_guard<std::mutex> lock(weather_mutex_);
+        req = std::move(weather_requests_);
+        weather_requests_ = {};
+    }
+    try {
+        if (req.clock) {
+            const auto [env_s, day, scale] = *req.clock;
+            const int days = static_cast<int>(world_->environment()->calendar().days_per_year());
+            if (day >= 0 && day < days && day != weather_day_) {
+                world_->set_environment_calendar_lock("", day);
+                weather_day_ = day;
+            }
+            world_->set_environment_time(env_s);
+            world_->set_environment_time_scale(scale);
+        }
+        if (req.preset) {
+            world_->clear_weather_overrides();
+            world_->add_weather_override_to_season_end(req.preset->first, req.preset->second);
+        }
+    } catch (const std::exception& e) {
+        std::fprintf(stderr, "RG_WEATHER request rejected: %s\n", e.what());
+    }
+}
+
+WeatherSnapshot Session::capture_weather() const {
+    WeatherSnapshot w;
+    const ps::environment::EnvironmentSnapshot* e = weather_installed_ ? world_->environment_snapshot() : nullptr;
+    if (e == nullptr) return w;
+    w.installed = true;
+    w.env_time_s = e->t_env_s;
+    w.time_scale = e->time_scale;
+    w.air_temp_c = e->air_temp_c;
+    w.precip_mm_h = e->precip_mm_h;
+    w.cloud_cover = e->cloud_cover;
+    w.rh = e->rh;
+    w.lightning_per_min = e->lightning_per_min;
+    if (have_vehicle_ && world_->vehicle_wheel_count(vehicle_id_) > 0) {
+        const ps::SurfaceId id = world_->wheel_telemetry(vehicle_id_, 0).surface;
+        if (id != ps::kInvalidSurfaceId && e->has_surfaces && static_cast<std::int32_t>(id) < e->surface_count) {
+            const auto& sc = e->surfaces[id];
+            w.wheel_surface = surface_table_->name_for(id);
+            w.wheel_water_mm = sc.water_mm;
+            w.wheel_snow_mm = sc.snow_mm;
+            w.wheel_ice_mm = sc.ice_mm;
+            w.wheel_condition_factor = sc.condition_factor;
+        }
+    }
+    return w;
+}
+} // namespace rg

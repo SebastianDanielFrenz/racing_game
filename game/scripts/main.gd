@@ -444,6 +444,10 @@ func _add_sun_and_sky() -> void:
 	_sky.name = "Sky"
 	add_child(_sky)
 	_sky.setup(ProjectSettings.globalize_path("res://../data/world/sky.json").simplify_path(), _world_config_path())
+	# V8: the next world load installs this sky's clock, weather and climate as the physics environment.
+	if _sky.sky != null and _simulation != null and _simulation.has_method("set_weather_source"):
+		_simulation.set_weather_source(_sky.sky)
+		_sky.simulation = _simulation
 	_weather_widget = CanvasLayer.new()
 	_weather_widget.name = "WeatherWidget"
 	_weather_widget.set_script(load("res://scripts/weather_widget.gd"))

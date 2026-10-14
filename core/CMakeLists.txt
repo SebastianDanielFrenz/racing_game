@@ -87,6 +87,8 @@ add_library(rg_core STATIC
     src/shell_flow.cpp
     src/sky.cpp
     src/time_weather.cpp
+    src/climate.cpp
+    src/weather_sync.cpp
     src/crops.cpp
     src/control_binding.cpp
     src/control_schema.cpp
@@ -137,6 +139,8 @@ target_link_libraries(rg_core
         g2m_phys
         g2m_world
         g2m_ps_bridge
+        ps_environment
+        ps_environment_io
     PRIVATE
         rg_options
         nlohmann_json::nlohmann_json
