@@ -637,7 +637,9 @@ public:
     // (the flat-mode population target is 0), like any surplus actor.
     // route_length_m / stop_at_end: a shorter route whose last two points reproduce a planned trip end (the second-last
     // point 0.7 m before the end at 1 m/s, the last at 0 m/s) for the arrival-despawn test.
-    std::uint64_t add_test_traffic_actor(const ps::Pose& pose, double speed_mps, double route_length_m = 2000.0, bool stop_at_end = false);
+    // junctions: the junctions on that straight route (stations from `pose`), for the right-of-way tests.
+    std::uint64_t add_test_traffic_actor(const ps::Pose& pose, double speed_mps, double route_length_m = 2000.0, bool stop_at_end = false,
+                                         std::vector<TrafficJunction> junctions = {});
     // The interest points the latest gate check built (terrain mode; empty in
     // flat mode or before the first one). Stepping thread / tests only.
     [[nodiscard]] std::span<const g2m::phys::InterestPoint> last_interest_points() const;
@@ -739,7 +741,8 @@ private:
     // follow_id/obstacle_* record WHAT the cached caps came from (stuck detector, traffic_stuck.h); route_cap is the
     // legal/corner/end target of the latest tick; stuck is the per-actor tracker.
     struct TrafficActor {std::uint64_t id;ps::BodyId body;TrafficTrip trip;double station=0,speed=0,unseen=0,obstacle_cap=1e30,follow_cap=1e30;
-     std::uint64_t follow_id=0;ps::BodyId obstacle_body{};bool obstacle_hit=false;double obstacle_normal_z=0,route_cap=1e30,stuck_since=0;StuckTrack stuck;};
+     std::uint64_t follow_id=0;ps::BodyId obstacle_body{};bool obstacle_hit=false;double obstacle_normal_z=0,route_cap=1e30,stuck_since=0;StuckTrack stuck;
+     bool at_red=false;};   // holding at a red signal: waiting there is not being stuck
     static constexpr std::uint64_t kFollowPlayerId=~std::uint64_t{0};
     TrafficStuckStats traffic_stuck_;
     double traffic_stuck_summary_time_=0;
@@ -755,7 +758,10 @@ private:
     double traffic_scan_time_=0;
     std::uint64_t traffic_next_id_=1,traffic_seed_=91731;
     int traffic_population_target_=0;
-    struct TrafficNeighbor {std::uint64_t id;ps::Vec3 position;double speed,half_length,fx,fy;};
+    // junction: the junction the actor is approaching or inside (node 0 = none); to_enter = metres of route to its
+    // turn path (<= 0 inside).
+    struct TrafficNeighbor {std::uint64_t id;ps::Vec3 position;double speed,half_length,fx,fy;TrafficJunction junction{};double to_enter=1e30;};
+    static const TrafficJunction* current_junction(const TrafficActor& a);
     std::map<std::pair<int,int>,std::vector<TrafficNeighbor>> traffic_neighbor_grid_;
     std::unordered_set<std::uint64_t> traffic_body_keys_; // bodies of the traffic actors (20 Hz): the obstacle probe leaves NPCs to the follow rule
     static std::uint64_t body_key(ps::BodyId b){return (static_cast<std::uint64_t>(b.index)<<32)^b.generation;}

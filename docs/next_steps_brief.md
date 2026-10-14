@@ -228,7 +228,7 @@ Q5. A9 SIMD, ARM64, one of {R0, W7} and P10 data run in parallel.
 
 | Physics package | Game package it unblocks | Status 2026-10-14 |
 |---|---|---|
-| BOV round 3. Data only (1330 mm² per turbo, tau 20 ms, crack 1.1 / full 1.6 bar); the vent model was found consistent. | A2 (moves car_hyper/_n2o pins only) | WIP 75cfcdb on a worktree branch. Left: D3 surge pins, [turbo]/[n2o] [long], the audio bank pin, the hash gate. |
+| BOV round 3: data only (blow_off_valve in hyper_twin_default/_n2o, 1330 mm² per turbo, crack 1.1 / full 1.6 bar, tau 20 ms) | A2: in-shift charge peak 2.63-2.90 bar, boost recovery after an upshift 0.34-0.83 s, rotor 39k rpm at +0.5 s after a lift. Re-pin any game test on hyper boost, rotor speed or shift traces. WOT torque is unchanged. | **DONE**, physics master 8970138 (no scenario hash or audio bank pin moved) |
 | G1 limiter range: LC clamp, shift points follow the limiter, roll-off past data, A25A plateau | A2 | after BOV |
 | I8 RACING mode + EPB law per mode | A3 | queued |
 | P1b closed-plate fired floor (closes the DFCO pedal band) | re-pin; moves the sim-engine scenario hashes | after I8 |
@@ -323,3 +323,4 @@ graph LR
 ## Log
 - 2026-10-14: brief written (coordinator, Opus 5.5).
 - 2026-10-14: section 3 corrected from the physics brief (physics master 1858978).
+- 2026-10-14: physics BOV r3 pushed (8970138). Not bumped yet: racing_game has an open PR (#5) from the other account. A2 bumps once G1 lands, or earlier if the owner asks.

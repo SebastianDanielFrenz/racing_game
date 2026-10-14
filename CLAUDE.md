@@ -1334,6 +1334,10 @@ physics-thread actor lifecycle, collision bodies and combined wakes. Adapter
 get_traffic_state publishes frame-latched actors; game/scripts/npc_traffic.gd owns
 presentation and F7 configuration. WorldTerrain::source_osm_tile is blocking,
 background-only source access. Specification/current scope: docs/npc_traffic.md.
+Junction turns (2026-10-14): `join_route_legs`/`junction_turn_cuts` (npc_traffic.h) replace the node-to-node lane join with a
+curve between the served junction trims (tests `[junction_turn]`, docs/npc_traffic.md "Turn paths through junctions").
+Right of way: `TrafficTrip::junctions` (rank, served give-way/stop line, signal phase), `junction_yields`/`traffic_signal_green`,
+held in Session::update_traffic before the turn path (tests `[right_of_way]`, docs/npc_traffic.md "Right of way").
 Stuck-NPC detector and fixes (2026-10-05): core/include/rg/traffic_stuck.h + core/src/traffic_stuck.cpp (stuck = speed < 0.5 m/s for > 5 s, cause = binding cap, wait-chain roots; `RG_TRAFFIC_STUCK` / `RG_TRAFFIC_STUCK_SUMMARY` logs), headless harness tools/traffic_probe (output in out/traffic_stuck/), results and remaining limits in docs/npc_traffic.md "Stuck NPCs".
 
 Game server (plan only, nothing built): docs/game_server.md - authority model, protocol, interest management, deployment on the estate, increments S1-S9 and the required physics_sim seams; section 16.1 holds the owner's binding answers (30 Hz snapshots, environment time continues after a restart, remote cars silent apart from tyre audio, all other questions at the recommended defaults). Vault RACE-009.
@@ -1343,6 +1347,64 @@ G3/R3 consumer design (plan only, nothing built): docs/g3_consumer_design.md - g
 **High-speed render streaming (2026-10-13, owner complaint: at 400-580 km/h the terrain resolves late, roads are not visible far ahead, "I drove through the visible ground").** Render side only. (1) `camera_director.gd` feeds `RgTerrainView.update_focus_moving(x, y, vx, vy)` with the velocity-led focus (`RgRenderFocus`, velocity = `RgSimulation.get_chassis_session_pose()` vx/vy/vz, session frame); `road_stream.gd`/`building_stream.gd` read the same led focus (`render_focus_session()`), tiles behind a fast car go last. Free cam, drone and on foot get no lead. (2) `RgTerrainView::apply_diff` uses an adaptive per-frame upload budget (`set_upload_adaptive`, `set_upload_budget_max_ms`, default 0.8 ms up to ~3 ms), adds are sorted by time to reach (finest level first) inside the worker; the no-holes contract (adds before removals) is unchanged. `TerrainViewStreamer::update_focus(x, y, vx, vy, ref_x, ref_y)` and the reselect distance shrink with speed. (3) `WorldTerrain::carve_max_level()` (default 2, `set_carve_max_level` 0..2, preview flag `--carve-max-level=N`): L1/L2 chunks are carved with the same L2 road surface so coarse ground no longer rises above the ribbons; L1/L2 fall back to the smoothed uncarved tile when the road surface is not ready, L0 still fails loudly. Cost per chunk build 1.9 ms (carve 0) -> 2.9 ms (carve 2). (4) `road.gdshader` `depth_pull_per_m`/`depth_pull_near_m`/`depth_pull_max_m`: pulls the ribbon toward the camera along the view ray so it wins the depth test against coarse ground; computed in VIEW space (VERTEX is model space; the first version used it directly and hid every ribbon). (5) Instrumentation: `RG_TERRAIN_STREAM` and `RG_ROAD_STREAM` lines at 1 Hz from `main.gd _report_streams()` (speed, l0/l1/l2_ahead_m, pending adds/removals, upload ms avg/max, chunk latency p95, budget, lead_m, ground_above_m = visible surface above physics surface at 0/5/20/60 m, far_ground_above_m at 150/300 m; road pending/oldest_age_s/ribbon_ahead_m). Windowed tests: `--terrain-preview --stream-fly` (`game/scripts/terrain_fly_test.gd`, constant-speed fly, RG_FLY lines) and `game/scripts/hs_drive_test.gd` (SceneTree script, real-route pure-pursuit drive with the shipped hypercar, options --hs-speed/--hs-start/--hs-seconds/--hs-baseline/--hs-carve=N/--hs-shots=<dir>, RG_HS_DONE line; needs `--drive`).
 
 **Gray patches over the road (2026-10-13, owner: cockpit at 428 km/h, gray where the road should be, "I can drive through the terrain").** Latent defect found and fixed; the owner's exact trigger is NOT reproduced (see below). (1) Defect: an L1/L2 tile whose road surface could not be derived (`WorldTerrain::produce_height`) returned the smoothed UNCARVED tile as Ready and kept it in the service cache and `height_cache_` for good, and `TerrainViewStreamer` never rebuilds a resident key - so such a chunk draws ground above the physics road bed (L0 physics stays carved) and hides the ribbons. Forced on real data (`RG_TERRAIN_FORCE_FALLBACK=100000`, 100 m/s on the A 5): rendered ground up to 1.0 m above the bed, 132 fallback chunks resident, a magenta band in the `RG_TERRAIN_TINT=carve` shot. (2) The old `ground_above_m` probes could not see it (they compare an L0 chunk with the L0 carved tile and skip points without a physics tile, i.e. every coarse chunk): they read 0.000 in the forced run while the real excess was 1.0 m, exactly like the owner's log. New probe `RgTerrainView.get_bed_check(px, py, dx, dy, ahead_m)` = rendered ground (highest uploaded chunk, any level) minus the physics ROAD BED centre line (`RoadSurfacePatch::bed_points`, `WorldTerrain::road_bed_points`, `rg::rendered_vs_bed`); `RG_TERRAIN_STREAM` gained `fallback_chunks fallback_tiles bed_above_max_m bed_above_p95_m bed_samples bed_worst_level bed_worst_carve`. (3) Fix: `RenderChunk::carve` (NotCarved/Carved/Fallback = worst state of the chunk's height window, `rg::chunk_window_carve`), `WorldTerrain::tile_carve/fallback_tile_count/heal_fallback_tiles` (re-carves fallback tiles from the retained uncarved tile once the road surface can be derived, replaces the `height_cache_` entry, old tile kept alive in `retired_tiles_` because chunk builds hold raw pointers), `rg::stale_fallback_chunks` picks the resident chunks built as Fallback that are carved now; `RgTerrainView::heal_tick()` (every frame, background `std::async` re-carve every 2 s while fallback tiles exist, then at most 2 chunk rebuilds per frame swapped in place by `replace_chunk_at`: upload first, free the old RIDs after, no hole). Forced run: bed_above_max 1.016 -> 0.066 m, fallback chunks 132 -> 0. (4) Debug aids: env `RG_TERRAIN_TINT=level|carve|both` (chunk colours by LOD level / carve state), `RG_TERRAIN_FORCE_FALLBACK=N` (first N coarse tiles produced as Fallback), `RG_TERRAIN_NO_HEAL=1`, stderr `RG_TERRAIN_FALLBACK ...` per fallback tile, `main.debug_hide(terrain, ribbons)` + `RgTerrainView.set_terrain_visible`; `hs_drive_test.gd` gained `--hs-route=<json>` (routes are densified to 10 m), `--hs-view=cockpit`, `--hs-hide-terrain/--hs-hide-ribbons`, `--hs-shot-t0/--hs-shot-step`, bed-probe fields in RG_HS_DONE; `data/routes/a5_corridor_probe.json` (the owner's A 5 southbound path from his log, corridor world). Unit test `tests/unit/test_terrain_carve_state.cpp` ([terrain_stream]). Heal rebuilds run off the main thread: `rg::ChunkRebuildJob` (terrain_stream.h, one batch of up to 8 keys in flight via std::async, cancel+join in release/load_preview/dtor); `heal_tick()` only swaps finished chunks in (2 per frame, key looked up again, dropped if gone or no longer Fallback) and `heal_ms` is that swap time. Unfixed/unknown: with intact data no fallback occurs on the A 5 route (5.2 km at up to 114 m/s, Compatibility and Mobile renderers: bed_above_max 0.07 m, 0 fallback tiles), so what made a road surface fail in the owner's session is unknown - the stderr `RG_ROAD_SURFACE fetch_failed` / `RG_TERRAIN_FALLBACK` lines of his console would tell. L3+ chunks (beyond ~1.3 km at 4 m/8 m grid and up) are still never carved; only the ribbon depth pull covers them.
+
+## Junction surfaces (2026-10-13)
+
+`core/src/road_visual.cpp` `add_junction_surfaces` (called at the end of `build_road_visual`, public in
+`rg/road_visual.h`) draws one asphalt patch per junction the roads.geom tile owns (geo2map encoding 7
+`RoadGeomTile::junctions`, road bed ring; declined and `OnStructure` junctions skipped). Ear clipping of the ring, then
+every triangle cut by the terrain lattice lines (x.5 m), vertices shared, heights from the ground sampler, 4 mm above
+the ribbons so the square ribbon ends vanish; a ring with a NoData vertex is dropped whole. Ribbon lane markings end at
+the served trim (2 m ramp) where this tile owns the junction, else the old 3-11 m ramp. Rings carry geo2map's kerb
+returns (D44, geo2map PR #1). A store derived before encoding 7 has no junctions: ribbons only, as before. Test
+`tests/unit/test_road_visual_junctions.cpp` ([road_visual][junction]).
+
+**Junction markings (2026-10-14).** `build_road_visual` also lays out the paint at served junctions (owner tile only):
+- Ribbons follow the served cross-section: asphalt = `carve_footprint().roadbed`, markings over the counted lanes
+  (lanes/forward/width from the counted bands when a cross-section exists, else the tags), a 0.3 m gravel verge strip
+  (vertex `verge`, adapter bit 256) each side. The last ribbon row sits exactly at the stretch length (it used to land
+  one ulp past it and drop the last metre, leaving a gap at every stretch end).
+- Through road: the pair of approaches within 35 deg with the highest rank (StVO 18(3) ranks of `rg::traffic_road_rank`)
+  continues its lane and edge lines over the junction as a cubic overlay (flag 32); not at a signal, a roundabout or an
+  equal-rank crossing. Its edge line is broken (flags 64/128) across a side road's mouth (motorway: 0.30 m 6/6, else
+  1.5/1.5) and hidden (512/1024) where it leaves the ring.
+  Signalled junctions keep the through overlay too. Where a two-way road splits into two one-way ways at the junction
+  (a dual carriageway joining up), the straight pair covers one direction only, so the two-way road's other lanes get
+  a second overlay into the opposite one-way way; each strip covers only its half of the two-way road.
+- Lines (flag 16, 4 mm above the junction): OSM stop lines (solid 0.5 m), give-way lines (0.5 m dashes, 0.25 m gaps) at
+  OSM give-way and roundabout entries and implied on a lower-ranked side road off a through road (not at a merge under
+  25 deg), crossings (zebra 0.5/0.5 bars, ladder, Furt = two broken 0.12 m lines, also the default at a signalised
+  crossing without a pattern). A stop line whose centre lies on a placed crossing (+0.5 m) is not drawn: the crossing's line already stops the traffic.
+- Turn guide lines: an approach whose leftmost two or more lanes are tagged only "left" (turn:lanes) gets a broken
+  overlay (short dashes, lane and edge lines) from those lanes into the leftmost lanes of the arm 15-150 deg to the
+  left nearest a right angle (not the through pair).
+- Gores (sign 298): an exit or on-ramp (one-way, under 45 deg, through road and ramp both motorway/trunk/primary/
+  secondary or their links) leaving or joining a through overlay gets the ramp's inner edge line: a curve from where
+  the ramp leaves the through road (the first overlay row at which the paved ring reaches 0.5 m beyond the through
+  bed edge), on the through road's edge line, into the ramp's own edge line at its lead; drawn only where it has
+  cleared that edge line (on the ramp), so it never crosses the through lanes. Diagonal bars between it and the through
+  road's edge line where they are 0.6 m apart, bordered on the through side. Only where a nose exists: the point halfway between the ramp's inner edge at its lead and the
+  through edge lies outside the ring and off the far approach's lanes; otherwise (a lane gain/drop on a paved box)
+  nothing is painted.
+- Turn arrows (turn:lanes) stand 15 m before the stretch end, or further back so their tip ends 3 m before the first
+  marking the traffic meets there (junction trim, a stop/give-way line of that direction, a crossing).
+- Side roads closed to the public (access no/private/permissive/permit/...) never open an edge line; on a motorway or a
+  motorway/trunk link a service road opens it only when it is plain (no service=*) and meets it within 35 deg (a
+  rest-area ramp). Ribbons draw OSM surface=paving_stones/sett/cobblestone as stones without painted lines (flag 2048)
+  and concrete with 5 m slab joints (flag 4096).
+- Ribbons end 0.1 m under a served junction's trim line (owner tile; a stretch whose trims overlap draws none), so a
+  ribbon wider than the ring no longer sticks out beside it as a step; the gravel verge (0.3 m, mitred) follows the
+  road bed ring instead, kerb returns included, open across each approach's mouth.
+- Junction patches where arms of different surfaces meet are split per surface instead of filled with asphalt: the major
+  road (through pair of one surface, else the top-ranked arm) keeps a spine of its bed width across the ring, the rest of
+  each lattice cell goes to the nearer minor arm (equal-distance line, arm rays clamped at the ring centre), with u/v along
+  that arm so the paving pattern follows it. Unpaved arms (tracks; the terrain draws them) take part with a dirt piece
+  (flag 8192) and never carry the major road while a paved arm meets there; a through pair may change paving (each
+  keeps its own up to the line across the middle between their cuts); a minor arm only claims corners on its own side
+  of the major road.
+- The vertex flags no longer fit 4 bits: the adapter packs them over COLOR.b (low 8) and COLOR.a (high 8).
+- Review tooling used: a geo2map scratch test dumping the mesh of both OSM fixtures and a Python software rasteriser
+  (not committed).
 
 ## Cockpit control assets (P1, 2026-10-13)
 

@@ -196,3 +196,70 @@ TEST_CASE("an actor that stops one route spacing short of the end still despawns
     }
     CHECK(session.traffic_actor_count() == 0);
 }
+
+// ---- junction right of way (docs/npc_traffic.md "Right of way") ----
+namespace {
+// Two NPCs on straight routes through the node at (0, 400): `east` from (-40, 400), `north` from (0, 360), both at
+// 8 m/s, the turn path from station 34 to 46. Returns, for each, its position when the OTHER first passed the node.
+struct CrossingRun { ps::Vec3 east_when_north_passed{}, north_when_east_passed{}; bool east_passed=false, north_passed=false;
+    double north_passed_at=-1, east_passed_at=-1; std::size_t stuck_events=0; };
+CrossingRun run_crossing(rg::TrafficJunction east_j, rg::TrafficJunction north_j, double seconds) {
+    rg::Session session(make_test_config());
+    east_j.enter_station = north_j.enter_station = 34; east_j.exit_station = north_j.exit_station = 46;
+    const auto e = session.add_test_traffic_actor(pose_at(-40.0, 400.0, 0.0), 8.0, 2000.0, false, {east_j});
+    const auto n = session.add_test_traffic_actor(pose_at(0.0, 360.0, kPi / 2.0), 8.0, 2000.0, false, {north_j});
+    CrossingRun r;
+    const int steps = static_cast<int>(seconds * 240.0);
+    for (int k = 0; k < steps; ++k) {
+        if (k % 120 == 0) session.set_visible_traffic({e, n});
+        session.step();
+        const auto pe = session.traffic_actor_position(e), pn = session.traffic_actor_position(n);
+        if (!pe || !pn) break;
+        if (!r.north_passed && pn->y > 400.0) { r.north_passed = true; r.east_when_north_passed = *pe; r.north_passed_at = k / 240.0; }
+        if (!r.east_passed && pe->x > 0.0) { r.east_passed = true; r.north_when_east_passed = *pn; r.east_passed_at = k / 240.0; }
+    }
+    r.stuck_events = session.traffic_stuck_stats().summary().events;
+    return r;
+}
+}
+
+// Equal roads, no signs: right before left. The northbound car comes from the eastbound car's right, so it goes first
+// and the eastbound one waits at its stop point (enter 34 - nose 2.3 - 1 m = station 30.7, x = -9.3).
+// Sabotage: making junction_yields ignore b_from_right sends both into the node together (the old crossing rule only
+// reacts once the other car is physically in front, by id).
+TEST_CASE("junction right of way: equal roads give way to the right", "[traffic_stuck][session][right_of_way]") {
+    rg::TrafficJunction j; j.node = 7; j.rank = 1;
+    const auto r = run_crossing(j, j, 20.0);
+    REQUIRE(r.north_passed); REQUIRE(r.east_passed);
+    CHECK(r.north_passed_at < r.east_passed_at);
+    CHECK(r.east_when_north_passed.x < -8.0);
+    CHECK(r.stuck_events == 0);
+}
+
+// A higher road class has the right of way over the right-hand rule: the eastbound car is on the major road now.
+TEST_CASE("junction right of way: the major road goes first, the side road waits", "[traffic_stuck][session][right_of_way]") {
+    rg::TrafficJunction major; major.node = 7; major.rank = 4;
+    rg::TrafficJunction minor; minor.node = 7; minor.rank = 1;
+    const auto r = run_crossing(major, minor, 20.0);
+    REQUIRE(r.north_passed); REQUIRE(r.east_passed);
+    CHECK(r.east_passed_at < r.north_passed_at);
+    CHECK(r.north_when_east_passed.y < 400.0 - 8.0);
+    // A give-way line beats the road class: the major road carries the sign here, so it yields.
+    rg::TrafficJunction signed_major = major; signed_major.sign_yield = true;
+    const auto s = run_crossing(signed_major, minor, 20.0);
+    CHECK(s.north_passed_at < s.east_passed_at);
+    CHECK(s.east_when_north_passed.x < -8.0);
+}
+
+// Signals: node 56 has a zero cycle offset, so phase 0 (east) is green from t = 0 to 25 s, phase 1 (north) from 28 s.
+// The northbound car holds at its stop point through the red without being declared stuck, then goes.
+TEST_CASE("junction right of way: a red signal holds the approach until its phase is green", "[traffic_stuck][session][right_of_way]") {
+    rg::TrafficJunction east; east.node = 56; east.rank = 1; east.signal_phase = 0;
+    rg::TrafficJunction north = east; north.signal_phase = 1;
+    REQUIRE(rg::traffic_signal_green(56, 0, 0.0)); REQUIRE_FALSE(rg::traffic_signal_green(56, 1, 0.0));
+    const auto r = run_crossing(east, north, 40.0);
+    REQUIRE(r.east_passed); REQUIRE(r.north_passed);
+    CHECK(r.east_passed_at < 7.0);
+    CHECK(r.north_passed_at > 28.0);
+    CHECK(r.stuck_events == 0);
+}
