@@ -321,8 +321,8 @@ TimeWeatherState TimeWeather::state() const {
     return s;
 }
 
-std::vector<MenuItem> TimeWeather::menu() const {
-    std::vector<MenuItem> items;
+std::vector<SkyMenuItem> TimeWeather::menu() const {
+    std::vector<SkyMenuItem> items;
     for (const auto& p : config_.time_presets) items.push_back({"time:" + p.id, "time", p.label, true, false, ""});
     for (std::size_t i = 0; i < config_.rate_options.size(); ++i) {
         const double r = config_.rate_options[i];

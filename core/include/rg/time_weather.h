@@ -118,7 +118,7 @@ private:
     TimeZoneRule zone_;
 };
 
-struct MenuItem {
+struct SkyMenuItem {
     std::string id;    // "time:<preset>", "rate:<index>", "weather:<preset>"
     std::string group; // "time", "rate", "weather"
     std::string label;
@@ -154,7 +154,7 @@ public:
     const SkyConfig& config() const { return config_; }
     const GeoLocation& location() const { return location_; }
     TimeWeatherState state() const;
-    std::vector<MenuItem> menu() const;
+    std::vector<SkyMenuItem> menu() const;
     // Applies a menu item; false for an unknown or disabled id.
     bool choose(const std::string& id);
     bool weather_wired(const WeatherPreset& preset) const;
