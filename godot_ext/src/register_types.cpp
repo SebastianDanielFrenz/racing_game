@@ -14,6 +14,7 @@
 #include "rg_address_search.h"
 #include "rg_render_focus.h"
 #include "rg_shell.h"
+#include "rg_sky.h"
 #include "rg_simulation.h"
 #include "rg_steering_assist.h"
 #include "rg_terrain_view.h"
@@ -51,6 +52,7 @@ void initialize_rg_godot_module(ModuleInitializationLevel p_level) {
     ClassDB::register_class<rg_godot::RgRenderFocus>();
     ClassDB::register_class<rg_godot::RgSteeringAssist>();
     ClassDB::register_class<rg_godot::RgAddressSearch>();
+    ClassDB::register_class<rg_godot::RgSky>();
     ClassDB::register_class<ps_godot::PsSpatialAudio>();
 }
 

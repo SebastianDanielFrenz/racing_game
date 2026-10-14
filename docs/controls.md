@@ -24,7 +24,7 @@ choosing the half; a pedal resting at +-1 is bound calibrated (rest -> opposite 
 
 ## Data
 
-- `data/controls/actions.json` (`rg.control_actions/1`): the one action schema, 35 actions. Fields: `id`,
+- `data/controls/actions.json` (`rg.control_actions/1`): the one action schema, 48 actions. Fields: `id`,
   `label`, `group` (driving/camera/on_foot/menus/global), `kind` (`button` | `axis`), `mode`
   (`held` | `edge`, buttons), `range` (`signed` | `unit` | `delta`, axes), `negative_label`/
   `positive_label`, `help`, `modes` (the player modes the action is live in; two bindings of one

@@ -9,8 +9,8 @@ namespace rg {
 namespace {
 // Preserve the original forwarding order; per-action events chain through the
 // last value written, irrespective of which device submitted them.
-constexpr std::array<std::string_view, 13> ids = {
-    "auto_shift", "traction_control", "toggle_aero", "toggle_launch_control", "drive_mode", "toggle_nitrous", "park", "epb", "start_stop", "hazard", "indicator_left", "indicator_right", "horn"
+constexpr std::array<std::string_view, 14> ids = {
+    "auto_shift", "traction_control", "toggle_aero", "toggle_launch_control", "drive_mode", "toggle_nitrous", "park", "epb", "start_stop", "hazard", "indicator_left", "indicator_right", "horn", "lights"
 };
 constexpr std::array<std::string_view, 8> channels = {
     "assist.auto_shift", "assist.traction_control", "assist.aero_control", "assist.launch_control", "assist.drive_mode", "nitrous_arm", "park_lock", "epb"
@@ -136,6 +136,11 @@ void DriverActions::apply(const VehicleContext& context, ChannelSink& sink) {
             cabin_.indicator = event.kind == DriverActionKind::Set ? (event.value != 0 ? direction : 0) : cabin_.indicator == direction ? 0 : direction;
             cabin_.indicator_turned = false; cabin_.blink_elapsed_s = 0;
         } else if (index == 12) cabin_.horn = event.value != 0;
+        else if (index == 13) {
+            // Press toggles dipped beam; Set picks 0 off, 1 dipped, 2 main beam.
+            if (event.kind == DriverActionKind::Set) cabin_.lights = std::clamp(static_cast<int>(std::lround(event.value)), 0, 2);
+            else cabin_.lights = cabin_.lights == 0 ? 1 : 0;
+        }
     }
     discard_pending();
 }
@@ -183,6 +188,7 @@ void DriverActions::advance(const VehicleContext& context, ChannelSink& sink, do
     sink.set("cabin.indicator_right",lit && (cabin_.hazard || cabin_.indicator < 0) ? 1 : 0);
     sink.set("cabin.brake_lamp",sink.get("brake") > config_.brake_lamp_threshold ? 1 : 0);
     sink.set("cabin.horn",cabin_.horn ? 1 : 0);
+    sink.set("cabin.lights",cabin_.lights);
 }
 
 ControlState DriverActions::state(std::string_view id, const DriverSnapshot& snapshot, const ChannelSink& sink) {
@@ -199,6 +205,13 @@ ControlState DriverActions::state(std::string_view id, const DriverSnapshot& sna
         out.blink = id == "hazard" && out.active;
         out.label = id == "start_stop" ? (snapshot.engine_running ? "RUNNING" : "OFF") : std::string(id);
         out.colour_role = out.active ? "ok" : "off";
+    } else if (id == "lights" || id == "head_lamp" || id == "tail_lamp" || id == "main_beam") {
+        out.fitted = true; out.enabled = true;
+        out.value = sink.get("cabin.lights");
+        out.active = id == "main_beam" ? out.value >= 2 : out.value != 0;
+        out.lamp_segments = out.active ? 1 : 0;
+        out.label = out.value >= 2 ? "MAIN BEAM" : out.value != 0 ? "LIGHTS" : "";
+        out.colour_role = !out.active ? "off" : out.value >= 2 ? "info" : "ok";
     } else if (id == "park") {
         out.fitted = snapshot.park_fitted;
         out.enabled = out.fitted;

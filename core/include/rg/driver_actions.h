@@ -29,7 +29,7 @@ struct CabinState {
     double blink_elapsed_s = 0;
     bool hazard = false;
     int indicator = 0;
-    int lights = 0;
+    int lights = 0; // 0 off, 1 dipped, 2 main beam ("lights" action; channel cabin.lights)
     int wipers = 0;
     double auto_crank_elapsed_s = 0;
 };
@@ -114,7 +114,7 @@ private:
     CabinState cabin_;
     CabinConfig config_;
     bool cabin_configured_ = false;
-    std::array<bool, 13> held_{};
+    std::array<bool, 14> held_{};
     std::vector<ActionEvent> pending_;
 };
 

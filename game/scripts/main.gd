@@ -103,6 +103,8 @@ var _mode_seen: String = "drive"
 var _seat_ui: CanvasLayer
 var _director: Node
 var _hud: Node
+var _sky: Node            # sky_controller.gd
+var _weather_widget: CanvasLayer # weather_widget.gd (top right)
 var _overlay: Node
 var _visuals: Node
 var _roads: Node3D
@@ -435,21 +437,22 @@ func _build_terrain_preview_scene() -> void:
 		# and its 5 poses unchanged.
 		_terrain_focus_camera = camera
 
+# Sun, moon, sky and ambient follow the time of day (sky_controller.gd, RgSky,
+# data/world/sky.json); the weather/time widget sits top right.
 func _add_sun_and_sky() -> void:
-	var sun := DirectionalLight3D.new()
-	sun.name = "Sun"
-	sun.rotation_degrees = Vector3(-55.0, -35.0, 0.0)
-	sun.light_energy = 1.1
-	sun.shadow_enabled = true
-	sun.directional_shadow_max_distance = 300.0
-	add_child(sun)
-	var env_node := WorldEnvironment.new()
-	var env := Environment.new()
-	env.background_mode = Environment.BG_SKY
-	env.sky = Sky.new()
-	env.sky.sky_material = ProceduralSkyMaterial.new()
-	env_node.environment = env
-	add_child(env_node)
+	_sky = load("res://scripts/sky_controller.gd").new()
+	_sky.name = "Sky"
+	add_child(_sky)
+	_sky.setup(ProjectSettings.globalize_path("res://../data/world/sky.json").simplify_path(), _world_config_path())
+	_weather_widget = CanvasLayer.new()
+	_weather_widget.name = "WeatherWidget"
+	_weather_widget.set_script(load("res://scripts/weather_widget.gd"))
+	_weather_widget.sky_controller = _sky
+	_weather_widget.simulation = _simulation
+	add_child(_weather_widget)
+
+func get_sky_controller() -> Node:
+	return _sky
 
 func _build_scene(user_args: PackedStringArray) -> void:
 	_teleport_dialog = CanvasLayer.new()
@@ -1759,6 +1762,8 @@ func _show_screen(screen_name: String) -> void:
 func _set_world_ui_visible(visible_now: bool) -> void:
 	_hud.visible = visible_now
 	_gauge.visible = visible_now
+	if _weather_widget != null:
+		_weather_widget.visible = visible_now
 
 # A direct start into the real world may name a spawn preset with --spawn=ID
 # (data/world/spawn_presets.json; tools/run.ps1 -VR passes --spawn=a5_north).

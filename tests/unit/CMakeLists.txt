@@ -50,6 +50,8 @@ add_executable(rg_unit_tests
   test_settings.cpp
   test_spawn_presets.cpp
   test_shell_flow.cpp
+  test_time_weather.cpp
+  test_crops.cpp
   test_controls.cpp
   test_control_capture.cpp
   test_vehicle_catalog.cpp

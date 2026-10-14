@@ -85,6 +85,9 @@ add_library(rg_core STATIC
     src/settings.cpp
     src/spawn_presets.cpp
     src/shell_flow.cpp
+    src/sky.cpp
+    src/time_weather.cpp
+    src/crops.cpp
     src/control_binding.cpp
     src/control_schema.cpp
     src/controls.cpp

@@ -4,7 +4,7 @@ const DriverState := preload("res://scripts/driver_state.gd") # preloaded once: 
 var simulation: Node
 var vehicle_name: String
 var lamps: Array = []
-const ACTIONS := {"indicator_left":"indicator_left","indicator_right":"indicator_right","brake":"brake_lamp","reverse":"reverse_lamp"}
+const ACTIONS := {"indicator_left":"indicator_left","indicator_right":"indicator_right","brake":"brake_lamp","reverse":"reverse_lamp","head":"head_lamp","tail":"tail_lamp"}
 
 static func attach_to(model: Node3D, sim: Node, car: String, path: String) -> Node:
 	var driver = load("res://scripts/exterior_lamps.gd").new()
@@ -21,6 +21,7 @@ static func attach_to(model: Node3D, sim: Node, car: String, path: String) -> No
 						var copy = material.duplicate()
 						node.set_surface_override_material(surface,copy)
 						driver.lamps.append({"material":copy,"action":ACTIONS[kind],"spec":spec})
+		load("res://scripts/headlights.gd").attach_to(model,sim,car,rig)
 	model.add_child(driver)
 	driver.update_lamps({}, {})
 	return driver
