@@ -1,0 +1,14 @@
+{
+  "format": "rg.route_planner/1",
+  "source": "R4 route planner and minimap (rg/route_planner.h, rg/map_view.h). region_radius_m: half-size of the square of level-2 roads.graph tiles the routing graph is assembled from at world load (geo2map docs/routing_design.md question 4: one graph for the loaded region, built on a worker). landmarks, snap and heading tolerance are the routing design's defaults; the rest are [AS] HUD/minimap choices.",
+  "region_radius_m": 10000.0,
+  "landmarks": 16,
+  "snap_max_distance_m": 50.0,
+  "heading_tolerance_deg": 60.0,
+  "maneuvers_ahead": 3,
+  "rejoin_window_back_m": 100.0,
+  "rejoin_window_ahead_m": 500.0,
+  "off_route_m": 40.0,
+  "minimap_radius_m": 800.0,
+  "map_cache_max_tiles": 512
+}

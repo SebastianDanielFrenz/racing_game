@@ -12,6 +12,7 @@
 #include "rg_controls.h"
 #include "rg_garage.h"
 #include "rg_address_search.h"
+#include "rg_navigation.h"
 #include "rg_render_focus.h"
 #include "rg_shell.h"
 #include "rg_sky.h"
@@ -49,6 +50,7 @@ void initialize_rg_godot_module(ModuleInitializationLevel p_level) {
     ClassDB::register_class<rg_godot::RgAssists>();
     ClassDB::register_class<rg_godot::RgDriverActions>();
     ClassDB::register_class<rg_godot::RgTerrainView>();
+    ClassDB::register_class<rg_godot::RgNavigation>();
     ClassDB::register_class<rg_godot::RgRenderFocus>();
     ClassDB::register_class<rg_godot::RgSteeringAssist>();
     ClassDB::register_class<rg_godot::RgAddressSearch>();

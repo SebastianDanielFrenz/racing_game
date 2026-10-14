@@ -1,0 +1,40 @@
+{
+  "format": "rg.lod_settings/1",
+  "source": "In-game level-of-detail settings (owner rule: LOD aggressiveness, distance and detail are in-game settings the game passes to geo2map). Every default reproduces the behaviour before these settings existed: view distance 20000 m = the shipped world configs' lod.max_distance_m, terrain detail 1.0 = geo2map's range0_m 250 m, road detail 'standard' = g2m::default_render_road_lod(), map detail 1.0 = default_map_config(). Ranges [AS].",
+  "section": {"id": "lod", "title": "Level of detail"},
+  "settings": [
+    {"key": "lod.view_distance_m", "type": "float", "label": "Terrain view distance",
+     "help": "How far terrain is drawn, in metres. Shorter = fewer chunks to build and draw.",
+     "default": 20000.0, "min": 4000.0, "max": 40000.0, "step": 1000.0, "decimals": 0},
+    {"key": "lod.terrain_detail", "type": "float", "label": "Terrain detail",
+     "help": "Scales how far each terrain detail ring reaches (1.0 = the finest ring to 250 m). Higher = finer terrain farther out, more chunks.",
+     "default": 1.0, "min": 0.5, "max": 3.0, "step": 0.1, "decimals": 1},
+    {"key": "lod.road_detail", "type": "choice", "label": "Road detail",
+     "help": "Which road classes are painted into the terrain at each distance ring.",
+     "default": "standard", "choices": ["low", "standard", "high"]},
+    {"key": "lod.map_detail", "type": "float", "label": "Map detail",
+     "help": "Minimap and map line detail: higher = finer lines out to a larger radius.",
+     "default": 1.0, "min": 0.25, "max": 4.0, "step": 0.25, "decimals": 2}
+  ],
+  "road_presets": {
+    "low": [
+      {"min_class": "all"},
+      {"min_class": "tertiary"},
+      {"min_class": "primary"},
+      null
+    ],
+    "standard": [
+      {"min_class": "all"},
+      {"min_class": "all"},
+      {"min_class": "tertiary"},
+      {"min_class": "primary", "min_half_width_m": 6.0}
+    ],
+    "high": [
+      {"min_class": "all"},
+      {"min_class": "all"},
+      {"min_class": "residential"},
+      {"min_class": "tertiary", "min_half_width_m": 6.0},
+      {"min_class": "primary", "min_half_width_m": 12.0}
+    ]
+  }
+}

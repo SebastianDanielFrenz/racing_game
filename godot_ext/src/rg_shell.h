@@ -77,6 +77,9 @@ public:
     [[nodiscard]] godot::Array get_settings_schema() const;
     [[nodiscard]] godot::Variant get_setting(const godot::String& key) const;
     [[nodiscard]] godot::String get_setting_display(const godot::String& key) const;
+    // The in-game LOD settings as consumers take them (rg::lod_choice_from): {view_distance_m, terrain_detail,
+    // road_detail, map_detail}; RgTerrainView.set_view_lod / RgNavigation.set_view_lod take it as it is.
+    [[nodiscard]] godot::Dictionary get_lod_choice() const;
     // {ok, error, clamped, value}
     godot::Dictionary set_setting(const godot::String& key, const godot::Variant& value);
     void reset_setting(const godot::String& key);

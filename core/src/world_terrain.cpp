@@ -365,6 +365,7 @@ std::unique_ptr<WorldTerrain> WorldTerrain::open(const WorldConfig& config, std:
     // WorldTerrain::set_lod_params still overrides all of it if a caller
     // wants to.
     wt->lod_params_.max_distance_m = config.lod.max_distance_m;
+    wt->world_lod_params_ = wt->lod_params_;
 
     // G2.5a-grip R-b: render colour naming only (see chunk_vertex_colors'
     // own comment) - `enabled` is read by nothing yet (R-c wires physics).
@@ -564,12 +565,13 @@ Outcome<WorldTerrain::RoadSurface> WorldTerrain::produce_road_surface(ProductCon
     return Outcome<RoadSurface>::ready(it->second, 1 << 20);
 }
 
-std::shared_ptr<const g2m::RoadGraphTile> WorldTerrain::road_graph_tile(const g2m::TileKey& key) {
+std::shared_ptr<const g2m::RoadGraphTile> WorldTerrain::road_graph_tile(const g2m::TileKey& key,
+                                                                       g2m::world::Priority priority) {
     {
         std::lock_guard<std::mutex> lock(graph_mutex_);
         if (auto it = graph_cache_.find(key); it != graph_cache_.end()) return it->second;
     }
-    auto ticket = service_->raw_tile(std::string(g2m::kRoadGraphLayer), key, g2m::world::Priority::Render);
+    auto ticket = service_->raw_tile(std::string(g2m::kRoadGraphLayer), key, priority);
     if (!wait_ticket(ticket)) return nullptr;
     std::shared_ptr<const g2m::RoadGraphTile> result;
     if (ticket.state() == g2m::world::TileState::Absent) {
@@ -763,9 +765,21 @@ void WorldTerrain::road_bed_points(double e0, double e1, double n0, double n1, i
 void WorldTerrain::build_static_view(double cam_x, double cam_y, std::vector<RenderChunk>& out) {
     const unsigned hw = std::thread::hardware_concurrency();
     const unsigned threads = hw == 0 ? 4u : std::min(hw, 8u);
+    const std::shared_ptr<const g2m::RenderRoadLod> road_lod = render_road_lod();
     build_static_view_from_lookup(cam_x, cam_y, lod_params_, static_cast<double>(frame_->e0_m()),
                                   static_cast<double>(frame_->n0_m()), &world_terrain_lookup, this, threads, out,
-                                  g2m::world::ClassLookup{&world_terrain_road_class_lookup, this}, road_surfaces_);
+                                  g2m::world::ClassLookup{&world_terrain_road_class_lookup, this, road_lod.get()},
+                                  road_surfaces_);
+}
+
+void WorldTerrain::set_render_road_lod(std::shared_ptr<const g2m::RenderRoadLod> lod) {
+    std::lock_guard<std::mutex> lock(road_lod_mutex_);
+    road_lod_ = std::move(lod);
+}
+
+std::shared_ptr<const g2m::RenderRoadLod> WorldTerrain::render_road_lod() const {
+    std::lock_guard<std::mutex> lock(road_lod_mutex_);
+    return road_lod_;
 }
 
 TerrainViewSource WorldTerrain::view_source() {
@@ -775,7 +789,8 @@ TerrainViewSource WorldTerrain::view_source() {
     source.n0 = static_cast<double>(frame_->n0_m());
     source.lookup = &world_terrain_lookup;
     source.ctx = this;
-    source.class_lookup = g2m::world::ClassLookup{&world_terrain_road_class_lookup, this};
+    source.road_lod = render_road_lod();
+    source.class_lookup = g2m::world::ClassLookup{&world_terrain_road_class_lookup, this, source.road_lod.get()};
     source.surfaces = road_surfaces_;
     source.carve_state = &world_terrain_carve_state;
     return source;

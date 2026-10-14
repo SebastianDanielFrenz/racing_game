@@ -31,6 +31,7 @@
 // Exception-free (vault TOOL-019): nothing here throws or catches.
 #include "rg/terrain_view_streamer.h"
 
+#include "rg/lod_settings.h"
 #include "rg/terrain_stream.h"
 
 #include <algorithm>
@@ -86,6 +87,8 @@ bool TerrainViewStreamer::build_initial(double x, double y, std::vector<RenderCh
     std::sort(keys.begin(), keys.end());
     std::lock_guard<std::mutex> lk(mutex_);
     resident_ = std::move(keys);
+    resident_road_lod_ = source_.road_lod;
+    source_dirty_ = false;
     has_selection_ = true;
     selection_x_ = x;
     selection_y_ = y;
@@ -105,11 +108,23 @@ void TerrainViewStreamer::update_focus(double x, double y, double vx, double vy,
     maybe_start_locked();
 }
 
+void TerrainViewStreamer::set_source(const TerrainViewSource& source) {
+    std::lock_guard<std::mutex> lk(mutex_);
+    source_ = source;
+    source_dirty_ = true;
+    if (!has_latest_ && has_selection_) { // no focus update yet: reselect where the last selection was
+        latest_x_ = latest_rx_ = selection_x_;
+        latest_y_ = latest_ry_ = selection_y_;
+        has_latest_ = true;
+    }
+    maybe_start_locked();
+}
+
 void TerrainViewStreamer::maybe_start_locked() {
     if (phase_ != Phase::Idle || !has_latest_ || stop_) {
         return;
     }
-    if (has_selection_) {
+    if (has_selection_ && !source_dirty_) {
         const double dx = latest_x_ - selection_x_;
         const double dy = latest_y_ - selection_y_;
         const double r = reselect_distance_for_speed(options_.reselect_distance_m, std::hypot(latest_vx_, latest_vy_));
@@ -118,6 +133,7 @@ void TerrainViewStreamer::maybe_start_locked() {
         }
     }
     has_selection_ = true;
+    source_dirty_ = false;
     selection_x_ = latest_x_;
     selection_y_ = latest_y_;
     job_x_ = latest_x_;
@@ -152,6 +168,7 @@ bool TerrainViewStreamer::commit(std::uint64_t serial) {
     }
     resident_ = std::move(target_);
     target_.clear();
+    resident_road_lod_ = target_road_lod_;
     phase_ = Phase::Idle;
     ++stats_.diffs_committed;
     stats_.resident_count = resident_.size();
@@ -184,6 +201,8 @@ void TerrainViewStreamer::worker_main() {
         double rx = 0.0;
         double ry = 0.0;
         std::uint64_t serial = 0;
+        TerrainViewSource src;
+        std::shared_ptr<const g2m::RenderRoadLod> resident_lod;
         {
             std::unique_lock<std::mutex> lk(mutex_);
             cv_.wait(lk, [this]() { return stop_ || job_pending_; });
@@ -202,12 +221,14 @@ void TerrainViewStreamer::worker_main() {
             rx = job_rx_;
             ry = job_ry_;
             serial = job_serial_;
+            src = source_;
+            resident_lod = resident_road_lod_;
         }
 
         const auto start = std::chrono::steady_clock::now();
 
         std::vector<g2m::mesh::ChunkKey> selected;
-        select_view_keys(x, y, source_.params, source_.e0, source_.n0, selected);
+        select_view_keys(x, y, src.params, src.e0, src.n0, selected);
         std::sort(selected.begin(), selected.end());
         selected.erase(std::unique(selected.begin(), selected.end()), selected.end());
 
@@ -223,14 +244,36 @@ void TerrainViewStreamer::worker_main() {
                             std::back_inserter(to_build));
         std::set_difference(resident.begin(), resident.end(), selected.begin(), selected.end(),
                             std::back_inserter(diff.removed));
+        // Road LOD change: resident chunks that stay, at a level whose road-class content changed, are rebuilt.
+        const std::size_t added_count = to_build.size();
+        if (resident_lod != src.road_lod) {
+            int max_level = 0;
+            for (const auto& k : resident) max_level = std::max(max_level, static_cast<int>(k.level));
+            const std::vector<int> levels = changed_road_lod_levels(resident_lod.get(), src.road_lod.get(), max_level);
+            if (!levels.empty()) {
+                std::vector<g2m::mesh::ChunkKey> kept;
+                std::set_intersection(resident.begin(), resident.end(), selected.begin(), selected.end(),
+                                      std::back_inserter(kept));
+                for (const auto& k : kept) {
+                    if (std::find(levels.begin(), levels.end(), static_cast<int>(k.level)) != levels.end()) {
+                        to_build.push_back(k);
+                    }
+                }
+            }
+        }
 
-        if (!build_render_chunks(to_build, source_.lookup, source_.ctx, source_.e0, source_.n0,
+        if (!build_render_chunks(to_build, src.lookup, src.ctx, src.e0, src.n0,
                                  std::max(1u, options_.build_threads), diff.added, &cancel_,
-                                 source_.class_lookup, source_.surfaces, source_.carve_state)) {
+                                 src.class_lookup, src.surfaces, src.carve_state)) {
             return; // cancelled: only the destructor raises cancel_
         }
+        if (diff.added.size() > added_count) {
+            diff.replaced.assign(std::make_move_iterator(diff.added.begin() + static_cast<std::ptrdiff_t>(added_count)),
+                                 std::make_move_iterator(diff.added.end()));
+            diff.added.resize(added_count);
+        }
         if (std::hypot(vx, vy) >= 2.0) {
-            sort_adds_by_urgency(diff.added, source_.e0, source_.n0, rx, ry, vx, vy);
+            sort_adds_by_urgency(diff.added, src.e0, src.n0, rx, ry, vx, vy);
         }
         const double ms =
             std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start).count();
@@ -239,13 +282,15 @@ void TerrainViewStreamer::worker_main() {
         if (stop_) {
             return;
         }
-        stats_.chunks_built += to_build.size();
-        stats_.chunks_reused += selected.size() - to_build.size();
+        stats_.chunks_built += added_count;
+        stats_.chunks_reused += selected.size() - added_count;
+        stats_.chunks_rebuilt += diff.replaced.size();
         stats_.last_added = diff.added.size();
         stats_.last_removed = diff.removed.size();
         stats_.last_build_ms = ms;
         ready_ = std::move(diff);
         target_ = std::move(selected);
+        target_road_lod_ = src.road_lod;
         phase_ = Phase::Ready;
     }
 }

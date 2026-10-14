@@ -39,6 +39,7 @@
 namespace rg_godot {
 
 class RgTerrainView; // shared_world_terrain() friend access, see below
+class RgNavigation;  // ditto (R4 route planner / minimap)
 
 // R6: what the garage tells the next vehicle load (see RgSimulation::set_vehicle_overrides).
 struct VehicleOverrides {
@@ -375,6 +376,7 @@ private:
     bool render_interpolation_ = true;
 
     friend class RgTerrainView; // shared_world_terrain() below
+    friend class RgNavigation;  // ditto
 
     [[nodiscard]] bool has_vehicle(const godot::String& vehicle_name) const;
 

@@ -91,6 +91,10 @@ struct TerrainViewDiff {
     // reaches first, finest level first), so an adapter that uploads in order under a budget fills the road ahead first.
     std::vector<RenderChunk> added;
     std::vector<g2m::mesh::ChunkKey> removed; // resident-set minus new-set, sorted ascending
+    // Resident chunks that stay but were rebuilt because the render road LOD (in-game setting, set_source) changed at
+    // their level - render_road_lod_key differs. Sorted by key. The adapter swaps each in place of the resident chunk
+    // with the same key (upload the new one, then free the old: no hole), any time before commit().
+    std::vector<RenderChunk> replaced;
 };
 
 class TerrainViewStreamer {
@@ -123,6 +127,7 @@ public:
         std::uint64_t chunks_reused = 0;  // new-set keys that were already resident, summed over selections
         std::size_t last_added = 0;
         std::size_t last_removed = 0;
+        std::uint64_t chunks_rebuilt = 0; // resident chunks rebuilt for a road LOD change (TerrainViewDiff::replaced)
         double last_build_ms = 0.0;       // worker wall time of the last selection + build
         std::size_t resident_count = 0;   // keys committed as resident
     };
@@ -155,6 +160,12 @@ public:
     void update_focus(double x, double y, double vx = 0.0, double vy = 0.0, double ref_x = std::nan(""),
                       double ref_y = std::nan(""));
 
+    // In-game LOD settings changed (rg/lod_settings.h): the source's LodParams and/or its road LOD policy
+    // (TerrainViewSource::road_lod). The next selection is due at once (no focus move needed); it uses the new
+    // params, and resident chunks whose level's render_road_lod_key changed are rebuilt into
+    // TerrainViewDiff::replaced. A selection already in flight finishes with the old source first. Adapter thread.
+    void set_source(const TerrainViewSource& source);
+
     // Non-blocking. If a diff is Ready, moves it into `out`, switches to
     // Applying and returns true; otherwise returns false and leaves `out`
     // untouched.
@@ -176,8 +187,11 @@ private:
     void worker_main();
     void maybe_start_locked();
 
-    const TerrainViewSource source_;
+    TerrainViewSource source_;        // replaced by set_source (adapter thread, under mutex_); the worker copies it per job
     const Options options_;
+    bool source_dirty_ = false;       // set_source since the last started selection: reselect regardless of distance
+    std::shared_ptr<const g2m::RenderRoadLod> resident_road_lod_; // the policy the resident chunks were built with
+    std::shared_ptr<const g2m::RenderRoadLod> target_road_lod_;   // ... the Ready/Applying diff's
 
     mutable std::mutex mutex_;
     std::condition_variable cv_;

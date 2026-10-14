@@ -62,6 +62,7 @@ void RgTerrainView::reset_chunks() {
     diff_in_progress_ = false;
     diff_serial_ = 0;
     diff_removed_.clear();
+    diff_replaced_.clear();
     diff_remove_next_ = 0;
     last_diff_added_ = 0;
     last_diff_removed_ = 0;
@@ -138,6 +139,7 @@ bool RgTerrainView::load_preview(float spawn_x, float spawn_y) {
     reset_chunks();
     total_upload_time_ms_ = 0.0;
 
+    apply_view_lod_to_terrain();
     // R8: the preview's own chunk set is the streamer's initial selection
     // (TerrainViewStreamer::build_initial == build_static_view for the same
     // point, same chunk order), so update_focus() can stream from here on.
@@ -242,6 +244,30 @@ void RgTerrainView::update_focus_moving(double session_x, double session_y, doub
     if (streamer_ != nullptr) {
         streamer_->update_focus(session_x, session_y, vx, vy, ref_x, ref_y);
     }
+}
+
+void RgTerrainView::set_view_lod(const godot::Dictionary& choice) {
+    rg::LodChoice c;
+    c.view_distance_m = static_cast<double>(choice.get("view_distance_m", 0.0));
+    c.terrain_detail = static_cast<double>(choice.get("terrain_detail", 1.0));
+    c.road_detail = godot::String(choice.get("road_detail", godot::String())).utf8().get_data();
+    c.map_detail = static_cast<double>(choice.get("map_detail", 1.0));
+    const bool changed = !has_lod_choice_ || !(c == lod_choice_);
+    lod_choice_ = c;
+    has_lod_choice_ = true;
+    if (!changed || terrain_ == nullptr) return;
+    apply_view_lod_to_terrain();
+    if (streamer_ != nullptr) {
+        cancel_heal_rebuild(); // a heal batch built with the old road policy must not be swapped in
+        streamer_->set_source(terrain_->view_source());
+    }
+}
+
+void RgTerrainView::apply_view_lod_to_terrain() {
+    if (terrain_ == nullptr || !has_lod_choice_) return;
+    terrain_->set_lod_params(rg::terrain_lod_params(terrain_->world_lod_params(), lod_choice_));
+    const std::shared_ptr<const rg::LodSettingsSpec> spec = rg::active_lod_settings();
+    terrain_->set_render_road_lod(rg::road_lod_for(spec.get(), lod_choice_.road_detail));
 }
 
 void RgTerrainView::set_carve_max_level(std::int64_t level) {
@@ -453,6 +479,8 @@ godot::Dictionary RgTerrainView::get_stream_stats() const {
         d["fallback_chunks"] = fallback_chunks;
         d["healed_tiles_total"] = healed_tiles_total_;
         d["rebuilt_chunks_total"] = rebuilt_chunks_total_;
+        d["lod_rebuilt_chunks_total"] = lod_rebuilt_chunks_total_;
+        d["pending_replacements"] = static_cast<std::int64_t>(diff_replaced_.size());
         d["fallback_tiles"] = terrain_ ? static_cast<std::int64_t>(terrain_->fallback_tile_count()) : 0;
     }
     d["upload_budget_ms"] = current_budget_ms_;
@@ -716,6 +744,7 @@ void RgTerrainView::apply_diff(std::chrono::steady_clock::time_point frame_start
             diff_serial_ = diff.serial;
             diff_selected_at_ = diff.selected_at;
             diff_removed_ = std::move(diff.removed);
+            diff_replaced_ = std::move(diff.replaced);
             diff_remove_next_ = 0;
             last_remove_ms_ = 0.0;
             last_diff_added_ = static_cast<std::int64_t>(diff.added.size());
@@ -775,8 +804,18 @@ void RgTerrainView::apply_diff(std::chrono::steady_clock::time_point frame_start
     //    (no holes - their replacements are already up), within the same
     //    frame budget, possibly over several frames (overlap, never a hole).
     if (diff_in_progress_ && next_upload_index_ >= chunks_.size()) {
+        // Road LOD rebuilds: each replaces the resident chunk with its key in place (upload, then free the old).
+        while (!diff_replaced_.empty() && !over_budget()) {
+            rg::RenderChunk fresh = std::move(diff_replaced_.back());
+            diff_replaced_.pop_back();
+            ++work;
+            const auto it = index_of_.find(fresh.key);
+            if (it == index_of_.end()) continue; // not resident any more (cannot happen: replaced keys stay selected)
+            replace_chunk_at(it->second, std::move(fresh));
+            ++lod_rebuilt_chunks_total_;
+        }
         const auto remove_start = std::chrono::steady_clock::now();
-        while (diff_remove_next_ < diff_removed_.size() && !over_budget()) {
+        while (diff_replaced_.empty() && diff_remove_next_ < diff_removed_.size() && !over_budget()) {
             const g2m::mesh::ChunkKey key = diff_removed_[diff_remove_next_++];
             ++work;
             auto it = index_of_.find(key);
@@ -792,7 +831,8 @@ void RgTerrainView::apply_diff(std::chrono::steady_clock::time_point frame_start
     }
 
     // 4. Every add uploaded and every removal freed: commit.
-    if (diff_in_progress_ && next_upload_index_ >= chunks_.size() && diff_remove_next_ >= diff_removed_.size()) {
+    if (diff_in_progress_ && next_upload_index_ >= chunks_.size() && diff_replaced_.empty() &&
+        diff_remove_next_ >= diff_removed_.size()) {
         diff_removed_.clear();
         diff_remove_next_ = 0;
         diff_in_progress_ = false;
@@ -846,6 +886,7 @@ void RgTerrainView::_bind_methods() {
     godot::ClassDB::bind_method(D_METHOD("update_focus", "session_x", "session_y"), &RgTerrainView::update_focus);
     godot::ClassDB::bind_method(D_METHOD("update_focus_moving", "session_x", "session_y", "vx", "vy", "ref_x", "ref_y"),
                                 &RgTerrainView::update_focus_moving);
+    godot::ClassDB::bind_method(D_METHOD("set_view_lod", "choice"), &RgTerrainView::set_view_lod);
     godot::ClassDB::bind_method(D_METHOD("set_upload_adaptive", "enabled"), &RgTerrainView::set_upload_adaptive);
     godot::ClassDB::bind_method(D_METHOD("get_upload_adaptive"), &RgTerrainView::get_upload_adaptive);
     godot::ClassDB::bind_method(D_METHOD("set_upload_budget_max_ms", "budget_ms"), &RgTerrainView::set_upload_budget_max_ms);

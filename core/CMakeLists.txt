@@ -83,6 +83,9 @@ add_library(rg_core STATIC
     src/road_network.cpp
     src/credits.cpp
     src/settings.cpp
+    src/lod_settings.cpp
+    src/route_planner.cpp
+    src/map_view.cpp
     src/spawn_presets.cpp
     src/shell_flow.cpp
     src/sky.cpp
@@ -136,6 +139,7 @@ target_link_libraries(rg_core
         g2m_mesh
         g2m_phys
         g2m_world
+        g2m_route
         g2m_ps_bridge
     PRIVATE
         rg_options
