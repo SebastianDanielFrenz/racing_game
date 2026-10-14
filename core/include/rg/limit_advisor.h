@@ -29,6 +29,7 @@
 #include "rg/vehicle_setup.h"
 
 #include "ps/drivetrain/engine_dyno.h"
+#include "ps/drivetrain/engine_rules.h"
 #include "ps/drivetrain/limit_findings.h"
 #include "ps/drivetrain/limit_policy.h"
 #include "ps/drivetrain/limit_remedies.h"
@@ -70,6 +71,7 @@ struct AdviceKindConfig {
     bool hidden = false;
     std::optional<ps::drivetrain::LimitSeverity> min_severity;
     std::string option_id; // the garage option that changes it ("" = none); the UI may point at it
+    std::string rule_name; // build_rules entries only: the physics BuildRule name ("TurboStageMapCoverage"); kind is unused there
     AdviceText text;
     std::map<std::string, AdviceText> variants; // fields left empty fall back to `text`
 };
@@ -87,6 +89,14 @@ struct AdvisorConfig {
     std::map<std::string, int> decimals; // quantity name -> decimals (missing = the built-in default)
     std::vector<std::string> solve_points = {"worst", "last"};
     std::vector<AdviceKindConfig> kinds; // file order = the order of equal-severity items
+    // Static build-rule issues (ps::drivetrain::BuildIssue, today TurboStageMapCoverage) shown after the sweep findings of
+    // equal severity; same text/variant/min_severity vocabulary as `kinds`. The variant "beyond_map" is used for Limiting.
+    std::vector<AdviceKindConfig> build_rules;
+    // Engine-map loader warnings (EngineMapOptions::warnings_out) passed through as lines of ONE advice item
+    // (`loader_notice.text.lines` rendered once per warning with {message}); a warning containing any of
+    // `loader_ignore` is dropped (the stage-map advisory is already a build rule above).
+    std::optional<AdviceKindConfig> loader_notice;
+    std::vector<std::string> loader_ignore;
     // The limit policy (physics_sim.limit_policy/1): which severities are worth telling (warns), which a garage would
     // refuse (refuses), and every physics threshold. A default-constructed policy is physics' compiled default.
     // `limit_policy` in the file names the policy file (relative to the advisor file); load_advisor_config loads it.
@@ -94,6 +104,7 @@ struct AdvisorConfig {
     ps::drivetrain::LimitPolicy policy;
 
     [[nodiscard]] const AdviceKindConfig* find(ps::drivetrain::LimitKind kind) const;
+    [[nodiscard]] const AdviceKindConfig* find_rule(const std::string& rule_name) const;
     [[nodiscard]] int decimals_for(const std::string& quantity, int fallback) const;
 };
 
@@ -136,7 +147,8 @@ struct AdviceRange {
 struct AdviceItem {
     std::string id;        // "<Kind>" or "<Kind>@<field>" (stable across runs)
     ps::drivetrain::LimitKind kind = ps::drivetrain::LimitKind::WastegateSaturated;
-    std::string kind_name;
+    std::string kind_name;  // the LimitKind name, or the BuildRule name / "LoaderNotice" (then `kind` is meaningless)
+    std::string rule_name;  // non-empty for build-rule and loader-notice items
     AdviceSeverity severity = AdviceSeverity::Advice;
     std::vector<AdviceRange> ranges; // merged contiguous rpm ranges, ascending
     double rpm_from = 0.0;           // ranges.front().from_rpm
@@ -158,6 +170,8 @@ struct AdviceInput {
     std::vector<ps::drivetrain::LimitFinding> findings;
     std::vector<ps::drivetrain::DynoPoint> points; // the swept points (peak boost, sweep extent)
     double target_boost_bar = std::numeric_limits<double>::quiet_NaN(); // configured, gauge; NaN = no turbo
+    std::vector<ps::drivetrain::BuildIssue> build_issues; // check_turbo_stage_coverage of the engine (physics, with the policy)
+    std::vector<std::string> loader_warnings;             // EngineMapOptions::warnings_out of the load
 };
 
 // Groups the findings per kind (and part field), drops what the config hides, merges contiguous rpm ranges, renders

@@ -23,12 +23,37 @@
 
   "decimals": {
     "bar": 1, "rpm": 0, "nm": 0, "kw": 0, "percent": 0, "ratio": 2, "mps": 1,
-    "mm": 2, "mm2": 0, "kg": 1, "seconds": 1, "degrees": 1, "kpa": 0, "plain": 2
+    "coverage": 1, "mm": 2, "mm2": 0, "kg": 1, "seconds": 1, "degrees": 1, "kpa": 0, "plain": 2
   },
 
   "remedy": {
     "solve_points": ["worst", "last"],
     "solve_points_help": "A Find fix button runs the wastegate search at these rpm of an item: the worst finding and/or the last (highest-rpm) one; the answer is the larger need."
+  },
+
+  "build_rules": {
+    "TurboStageMapCoverage": {
+      "option": "turbo_boost_target",
+      "option_help": "Severity comes from physics_sim (check_turbo_stage_coverage, graded by the limit policy): Near = the target lies partly outside the map's certified cells, Limiting (variant beyond_map) = it needs a rotor speed above the map. {coverage} is the share of the engine's maximum air flow the map covers at the target boost.",
+      "title": "Turbo map covers only part of the flow",
+      "lines": ["Boost target is set to {target}.", "The turbo map covers {coverage} of the engine's air flow.", "Beyond that the compressor runs on estimated data."],
+      "suggestion": "A lower boost target or a turbo with a wider map.",
+      "variants": {
+        "beyond_map": {
+          "title": "Boost target is beyond the turbo map",
+          "lines": ["Boost target is set to {target}.", "The turbo map reaches it for {coverage} of the engine's air flow.", "Beyond that the turbo is extrapolated."],
+          "suggestion": "A lower boost target or a larger turbo."
+        }
+      }
+    }
+  },
+
+  "loader_warnings": {
+    "title": "Engine data notice",
+    "lines": ["{message}"],
+    "suggestion": "",
+    "ignore_containing": ["turbo stage map:"],
+    "ignore_containing_help": "The stage-map advisory of the engine loader is shown as the build rule above, with its numbers; every other loader warning is passed through as a line."
   },
 
   "kinds": {

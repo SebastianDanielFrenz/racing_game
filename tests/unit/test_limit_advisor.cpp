@@ -648,3 +648,92 @@ TEST_CASE("advisor: the owner's extreme turbo setup is flagged (boost, rotor, ch
     for (const auto& i : stock.items)
         if (i.variant == "spool") CHECK(i.severity == rg::AdviceSeverity::Advice);
 }
+
+// ---- stage-map coverage (physics BuildRule::TurboStageMapCoverage) and engine loader warnings ----
+
+namespace {
+pd::BuildIssue stage_issue(pd::LimitSeverity s, double coverage) {
+    pd::BuildIssue b;
+    b.rule = pd::BuildRule::TurboStageMapCoverage;
+    b.severity = s;
+    b.slot = "forced_induction";
+    b.field_pointer = "/turbo";
+    b.value = coverage;
+    b.limit = 1.0;
+    b.unit = pd::LimitUnit::Fraction;
+    b.message = "turbo stage map: the 1.8 bar target ...";
+    return b;
+}
+} // namespace
+
+TEST_CASE("advice stage map: the physics issue becomes a finding with the coverage number (owner format)", "[limit_advisor][stage_map]") {
+    const rg::AdvisorConfig c = shipped_config();
+    REQUIRE(c.find_rule("TurboStageMapCoverage") != nullptr);
+    rg::AdviceInput in;
+    in.points = sweep_points(1.8);
+    in.target_boost_bar = 1.8;
+    in.build_issues.push_back(stage_issue(pd::LimitSeverity::Near, 0.688));
+    auto items = rg::build_advice(in, c);
+    REQUIRE(items.size() == 1);
+    CHECK(items[0].id == "TurboStageMapCoverage");
+    CHECK(items[0].severity == rg::AdviceSeverity::Advice);
+    CHECK(items[0].option_id == "turbo_boost_target");
+    const std::string text = joined(items[0]);
+    INFO(text);
+    CHECK(text.find("68.8 %") != std::string::npos);
+    CHECK(text.find("1.8 bar") != std::string::npos);
+    CHECK(text.find('?') == std::string::npos);
+    CHECK(text.find('{') == std::string::npos);
+
+    // Limiting (needs a rotor speed above the map) uses the beyond_map variant and is louder.
+    in.build_issues = {stage_issue(pd::LimitSeverity::Limiting, 0.25)};
+    items = rg::build_advice(in, c);
+    REQUIRE(items.size() == 1);
+    CHECK(items[0].severity == rg::AdviceSeverity::Warning);
+    CHECK(items[0].variant == "beyond_map");
+    CHECK(joined(items[0]).find("25.0 %") != std::string::npos);
+
+    // The limit policy decides what is told: a policy that does not warn at Near drops it.
+    rg::AdvisorConfig quiet = c;
+    quiet.policy.warn_at = pd::WarnAt::Limiting;
+    in.build_issues = {stage_issue(pd::LimitSeverity::Near, 0.688)};
+    CHECK(rg::build_advice(in, quiet).empty());
+}
+
+TEST_CASE("advice loader warnings: passed through as lines, the stage-map advisory is not doubled", "[limit_advisor][stage_map]") {
+    const rg::AdvisorConfig c = shipped_config();
+    rg::AdviceInput in;
+    in.points = sweep_points(1.0);
+    in.loader_warnings = {"engine: Near: turbo stage map: the 1.8 bar target ...", "engine: map grid is coarse", "engine: second notice"};
+    const auto items = rg::build_advice(in, c);
+    REQUIRE(items.size() == 1);
+    CHECK(items[0].id == "LoaderNotice");
+    REQUIRE(items[0].lines.size() == 2);
+    CHECK(items[0].lines[0] == "engine: map grid is coarse");
+    in.loader_warnings = {"engine: Near: turbo stage map: x"};
+    CHECK(rg::build_advice(in, c).empty());
+}
+
+TEST_CASE("advisor: the hyper n2o setup shows the stage-map finding, a stock sedan does not", "[limit_advisor][stage_map]") {
+    World w = make_world();
+    rg::LimitAdvisor advisor(shipped_config());
+    advisor.request(make_request(w, "car_hyper_n2o", kStockSetup, "hyper"));
+    const auto hyper = wait_done(advisor, 600.0);
+    INFO(hyper.error);
+    REQUIRE(hyper.error.empty());
+    print_items(hyper);
+    const auto* stage = find_item(hyper.items, "TurboStageMapCoverage");
+    REQUIRE(stage != nullptr);
+    CHECK(stage->severity == rg::AdviceSeverity::Advice);
+    // The coverage is physics' share of the engine's air flow (16 flow steps: a multiple of 6.25 %), shown with one decimal.
+    // 68.8 % was measured with the full-quality maps; the advisor's sketch maps give another VE and so another step.
+    REQUIRE(stage->lines.size() >= 2);
+    CHECK(stage->lines[1].find("The turbo map covers ") == 0);
+    CHECK(stage->lines[1].find(".") != std::string::npos);
+    CHECK(stage->lines[1].find(" % of the engine's air flow.") != std::string::npos);
+
+    advisor.request(make_request(w, "car_sedan", R"({"format":"racing_game.vehicle_setup/1","vehicle":"car_sedan","options":{}})", "sedan"));
+    const auto sedan = wait_done(advisor, 600.0);
+    REQUIRE(sedan.error.empty());
+    CHECK(find_item(sedan.items, "TurboStageMapCoverage") == nullptr);
+}
