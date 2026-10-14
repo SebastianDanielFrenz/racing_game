@@ -213,6 +213,52 @@ TEST_CASE("setup: brake bias moves the front share and keeps the total", "[setup
     CHECK_THAT(err, ContainsSubstring("outside the allowed range"));
 }
 
+TEST_CASE("setup: brake bias limits are read from the option table and a missing one is rejected", "[setup][garage][brake_bias]") {
+    Fixture f;
+    const rg::SetupOptionDef* shipped = f.table.find("brake_bias");
+    REQUIRE(shipped != nullptr);
+    CHECK(shipped->share_min == Approx(0.2));
+    CHECK(shipped->share_max == Approx(0.85));
+    CHECK(shipped->max_shift == Approx(0.1));
+    CHECK(shipped->max_shift_bound == Approx(0.5));
+    const auto table_with = [](const std::string& fields) {
+        return std::string(R"({"format":"racing_game.vehicle_setup_options/1","options":[{"id":"brake_bias","kind":"brake_bias",)") +
+               R"("file":"vehicle","pointers":["/brake_system/corners/*/max_torque_nm"],)" + fields + "}]}";
+    };
+    struct Bad { const char* fields; const char* expect; };
+    const Bad bad[] = {
+        {R"("max_shift_bound":0.5,"share_min":0.2,"share_max":0.85)", "\"max_shift\""},
+        {R"("max_shift":0.1,"share_min":0.2,"share_max":0.85)", "\"max_shift_bound\""},
+        {R"("max_shift":0.1,"max_shift_bound":0.5,"share_max":0.85)", "\"share_min\""},
+        {R"("max_shift":0.1,"max_shift_bound":0.5,"share_min":0.2)", "\"share_max\""},
+        {R"("max_shift":0.1,"max_shift_bound":0.5,"share_min":0.9,"share_max":0.85)", "share_min and share_max"},
+        {R"("max_shift":0.5,"max_shift_bound":0.5,"share_min":0.2,"share_max":0.85)", "max_shift must be"},
+        {R"("max_shift":0.1,"max_shift_bound":0.6,"share_min":0.2,"share_max":0.85)", "max_shift_bound must be"},
+    };
+    for (const Bad& b : bad) {
+        INFO(b.fields);
+        std::string err;
+        CHECK(!rg::parse_setup_options(table_with(b.fields), "t", &err).has_value());
+        CHECK_THAT(err, ContainsSubstring(b.expect));
+    }
+    // The limits are what the garage uses: a table with its own range moves the allowed shares and the check.
+    std::string err;
+    auto custom = rg::parse_setup_options(table_with(R"("max_shift":0.45,"max_shift_bound":0.5,"share_min":0.5,"share_max":0.6)"), "t", &err);
+    REQUIRE(custom.has_value());
+    f.table = *custom;
+    const auto& e = f.entry("car_sedan");
+    const rg::SetupModel model = rg::build_setup_model(e, f.table, f.ctx);
+    const rg::OptionView* view = nullptr;
+    for (const auto& o : model.options) if (o.def.id == "brake_bias") view = &o;
+    REQUIRE(view != nullptr);
+    CHECK(view->min == Approx(0.5));
+    CHECK(view->max == Approx(0.6));
+    CHECK(rg::validate_setup(e, f.table, f.ctx, setup_of("car_sedan", {{"brake_bias", 0.55}})).ok);
+    const auto low = rg::validate_setup(e, f.table, f.ctx, setup_of("car_sedan", {{"brake_bias", 0.4}}));
+    CHECK(!low.ok);
+    CHECK_THAT(low.message, ContainsSubstring("outside the allowed range"));
+}
+
 TEST_CASE("setup: the AWD final drive scales both axle differentials, not the centre", "[setup][garage]") {
     Fixture f;
     const auto& e = f.entry("car_sedan_awd");

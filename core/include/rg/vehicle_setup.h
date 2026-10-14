@@ -78,7 +78,10 @@ struct SetupOptionDef {
     double min = 1.0;     // Scale/ScaleList: factor range
     double max = 1.0;
     double step = 0.01;
-    double max_shift = 0.1; // BrakeBias: allowed shift of the front share around the stock one
+    double max_shift = 0.1; // BrakeBias: allowed shift of the front share around the stock one (required in the table)
+    double share_min = 0.0; // BrakeBias: lowest front share the garage allows (required in the table)
+    double share_max = 1.0; // BrakeBias: highest front share the garage allows (required in the table)
+    double max_shift_bound = 0.0; // BrakeBias: upper limit of max_shift, in (0, 0.5] (required in the table)
     std::string file = "vehicle"; // "vehicle" | "gearbox" | "engine" | "turbo"
     std::vector<std::string> pointers; // the whitelist paths (empty for Colour)
     std::string monotonic;             // "decreasing": the resulting list must stay strictly decreasing
