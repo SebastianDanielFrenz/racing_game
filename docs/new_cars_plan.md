@@ -231,7 +231,7 @@ a new game-owned sidecar **`<id>.cockpit.json`** (`rg.cockpit/1`), read by a new
 {
   "format": "rg.cockpit/1",
   "controls": [
-    {"node": "steering_wheel", "source": "wheel_steer_angle", "map": {"lock_to_lock_turns": 2.8}},
+    {"node": "steering_wheel", "source": "wheel_steer_angle", "map": {"steering_wheel_lock_deg": 504}},
     {"node": "pedal_throttle", "source": "control:throttle", "map": {"range": [0, 1]}},
     {"node": "shifter", "source": "gear", "map": {"gate": {"1": [-1, 1], "2": [-1, -1], "N": [0, 0]}}},
     {"node": "needle_tach", "source": "engine_rpm", "map": {"in": [0, 8000], "out_deg": [0, 270]}},

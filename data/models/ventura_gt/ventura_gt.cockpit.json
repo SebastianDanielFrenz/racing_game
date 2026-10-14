@@ -3,7 +3,7 @@
   "model": "ventura_gt.glb",
   "frame": "ISO 8855 model frame (x forward, y left, z up), rest pose; hit centres relative to the node pivot, axes as at rest, moved with the node at runtime",
   "steering": {
-    "lock_to_lock_turns": 3.4,
+    "steering_wheel_lock_deg": 612.0,
     "road_wheel_lock_deg": 34.0
   },
   "controls": [
@@ -641,8 +641,8 @@
       "label": "steering wheel",
       "source": "wheel_steer_angle",
       "map": {
-        "ratio": "lock_to_lock",
-        "lock_to_lock_turns": 3.4,
+        "ratio": "steering_wheel_lock_deg",
+        "steering_wheel_lock_deg": 612.0,
         "road_wheel_lock_deg": 34.0
       },
       "joint": "revolute",
@@ -665,7 +665,7 @@
           -1.0,
           1.0
         ],
-        "turns_full_range": 3.4
+        "steering_wheel_lock_deg": 612.0
       }
     },
     {

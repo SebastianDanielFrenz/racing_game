@@ -162,7 +162,7 @@ func _test_model(path: String) -> void:
 	sim.gear = 1
 	for _i in 30:
 		await process_frame
-	var turns := 0.5 * float(spec["steering"]["lock_to_lock_turns"])
+	var turns := float(spec["steering"]["steering_wheel_lock_deg"]) / 360.0
 	var axis_iso: Array = []
 	var rig: Dictionary = JSON.parse_string(FileAccess.get_file_as_string(path.get_basename() + ".rig.json"))
 	for n in rig["nodes"]:

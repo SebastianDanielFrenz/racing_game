@@ -53,12 +53,12 @@ def _r(v, k=4):
 
 
 class Cockpit:
-    def __init__(self, model, steering_lock_to_lock_turns, road_wheel_lock_deg):
+    def __init__(self, model, steering_wheel_lock_deg, road_wheel_lock_deg):
         self.model = model
         self.controls = []
         self.screens = []
         self.notes = []
-        self.steering = {"lock_to_lock_turns": steering_lock_to_lock_turns,
+        self.steering = {"steering_wheel_lock_deg": steering_wheel_lock_deg,
                          "road_wheel_lock_deg": road_wheel_lock_deg}
 
     def add(self, node, kind, source, mapping, hit=None, action=None, label=""):
@@ -190,7 +190,7 @@ def steering_wheel(m, ck, center, column_dir, radius, spokes, rim_mat, spoke_mat
     dish: how far the hub sits forward of the rim plane (deep-dish 70s wheels ~0.05)."""
     mb = m.mb
     axis = norm(mul(column_dir, -1))
-    lock = lock_deg if lock_deg is not None else ck.steering["lock_to_lock_turns"] * 180.0
+    lock = lock_deg if lock_deg is not None else ck.steering["steering_wheel_lock_deg"]
     node = m.node("steering_wheel", part, center, m.revolute(axis, -lock, lock, "steering wheel angle, + = left"))
     f = frame_z_to(axis, center)
     rim = [xform_point(f, (radius * math.cos(2 * math.pi * k / 40), radius * math.sin(2 * math.pi * k / 40), 0))
@@ -209,11 +209,11 @@ def steering_wheel(m, ck, center, column_dir, radius, spokes, rim_mat, spoke_mat
     M.cylinder(mb, xform_point(f, (0, 0, -dish - 0.06)), col_end, 0.028, column_mat or "trim_black",
                "" if part is None else part, count=12)
     ck.add(node, "steering_wheel", "wheel_steer_angle",
-           {"ratio": "lock_to_lock", "lock_to_lock_turns": ck.steering["lock_to_lock_turns"],
+           {"ratio": "steering_wheel_lock_deg", "steering_wheel_lock_deg": ck.steering["steering_wheel_lock_deg"],
             "road_wheel_lock_deg": ck.steering["road_wheel_lock_deg"]},
            hit=(center, (radius * 0.3, radius + rim_r, radius + rim_r)),
            action={"type": "rotate", "channel": "steer", "range": [-1.0, 1.0],
-                   "turns_full_range": ck.steering["lock_to_lock_turns"]}, label="steering wheel")
+                   "steering_wheel_lock_deg": ck.steering["steering_wheel_lock_deg"]}, label="steering wheel")
     return node, f
 
 

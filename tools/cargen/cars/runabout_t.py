@@ -37,7 +37,7 @@ TYRE = Wheel(radius=R, width=0.089, rim_radius=0.2667, style="artillery", tread=
              disc=False, drum=True, spokes=12)
 BLACK = (0.015, 0.015, 0.017)    # gloss black enamel
 STEER_LOCK_DEG = 38.0
-LOCK_TO_LOCK_TURNS = 1.25        # period steering: about a turn and a quarter (planetary reduction)
+STEERING_WHEEL_LOCK_DEG = 225.0        # period steering: about a turn and a quarter (planetary reduction)
 EYE_Y = 0.30                     # left-hand drive
 X_DASH = 0.42                    # dash board / windscreen base
 TUB_X0, TUB_X1, TUB_W = -1.28, 0.55, 0.62
@@ -107,7 +107,7 @@ def build():
     m.mat("dash_board", color=(0.02, 0.02, 0.022), roughness=0.35)
     m.mat("horn_bulb", color=(0.05, 0.04, 0.035), roughness=0.8)
     flow = FlowRecorder(m)
-    ck = C.Cockpit(m, LOCK_TO_LOCK_TURNS, STEER_LOCK_DEG)
+    ck = C.Cockpit(m, STEERING_WHEEL_LOCK_DEG, STEER_LOCK_DEG)
     mb = m.mb
 
     # ---- chassis: frame rails, axles, transverse leaf springs, splash aprons

@@ -45,7 +45,7 @@ ROOF = (0.93, 0.93, 0.92)        # contrast roof (off-white); same as paint when
 DOORS = [("door_FL", 1, -0.06, 0.93), ("door_RL", 1, -0.86, -0.08),
          ("door_FR", -1, -0.06, 0.93), ("door_RR", -1, -0.86, -0.08)]
 STEER_LOCK_DEG = 37.0
-LOCK_TO_LOCK_TURNS = 3.0
+STEERING_WHEEL_LOCK_DEG = 540.0      # degrees from centre to one lock
 
 
 def build():
@@ -58,7 +58,7 @@ def build():
     m.mat("dash_hard", color=(0.11, 0.115, 0.12), roughness=0.85)
     m.mat("dash_paint", color=PAINT, metallic=0.2, roughness=0.35, role="paint")
     flow = FlowRecorder(m)
-    ck = C.Cockpit(m, LOCK_TO_LOCK_TURNS, STEER_LOCK_DEG)
+    ck = C.Cockpit(m, STEERING_WHEEL_LOCK_DEG, STEER_LOCK_DEG)
 
     y_out, y_in = TRACK / 2 + TYRE.width / 2, TRACK / 2 - TYRE.width / 2
     wheels = [dict(x=XF, z=R, r=R, y_out=y_out, y_in=y_in), dict(x=XR, z=R, r=R, y_out=y_out, y_in=y_in)]

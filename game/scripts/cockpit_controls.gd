@@ -44,7 +44,7 @@ var _shift_up := 0
 var _shift_down := 0
 var _ignition_request := -1     # -1 none, 0 off, 1 on
 var _starter_left := 0.0
-var _steer_turns := 1.5         # half range of the steering wheel, in turns
+var _steer_lock_deg := 540.0    # steering wheel angle from centre to one lock, degrees (per-car, cockpit file; else cabin.json)
 var _eye: Node3D
 var _gear_pose := Vector2.ZERO  # smoothed (side, fore) of the gear lever
 var _loaded := false
@@ -81,7 +81,7 @@ func load_spec() -> bool:
 				if n.has("joint"):
 					joints[str(n["name"])] = n["joint"]
 	_eye = model_root.find_child("socket_driver_eye", true, false)
-	_steer_turns = 0.5 * float(ck.get("steering", {}).get("lock_to_lock_turns", 3.0))
+	_steer_lock_deg = float(ck.get("steering", {}).get("steering_wheel_lock_deg", _cabin_lock_deg()))
 	_controls.clear()
 	_by_node.clear()
 	for spec in ck.get("controls", []):
@@ -112,6 +112,18 @@ func load_spec() -> bool:
 		if not _channel_values[channel].has(_cosmetic.get(channel)):
 			_cosmetic[channel] = _off_value(_channel_values[channel])
 	return not _controls.is_empty()
+
+# The default lock for a car whose cockpit file does not carry one (data/controls/cabin.json, same field and unit).
+static func _cabin_lock_deg() -> float:
+	var path := ProjectSettings.globalize_path("res://../data/controls/cabin.json")
+	if FileAccess.file_exists(path):
+		var cfg: Variant = JSON.parse_string(FileAccess.get_file_as_string(path))
+		if cfg is Dictionary and cfg.has("steering_wheel_lock_deg"):
+			return float(cfg["steering_wheel_lock_deg"])
+	return 540.0
+
+func get_steering_wheel_lock_deg() -> float:
+	return _steer_lock_deg
 
 static func iso_to_gltf(v: Vector3) -> Vector3:
 	return Vector3(v.y, v.z, v.x)
@@ -246,7 +258,7 @@ func _pose(entry: Dictionary, live: Dictionary, delta: float) -> void:
 		"button":
 			j = float(m.get("pressed_m", 0.003)) if (_press_left.has(str(spec["node"])) or _truthy(value) and str(spec.get("action", {}).get("type", "")) == "toggle") else 0.0
 		"steering_wheel":
-			j = float(simulation.get_control("steer") if simulation != null and not _overrides.has("steer") else _overrides.get("steer", 0.0)) * _steer_turns * TAU
+			j = float(simulation.get_control("steer") if simulation != null and not _overrides.has("steer") else _overrides.get("steer", 0.0)) * deg_to_rad(_steer_lock_deg)
 			_wheel_angle_rad = j
 		"gear_lever":
 			var gate: Dictionary = m.get("gate", {})
@@ -461,7 +473,7 @@ func drag_to(at: Vector2) -> void:
 	var v: float
 	if str(action.get("type", "")) == "rotate":
 		# dragging right turns the wheel right (steer is positive to the left)
-		v = float(_drag["value0"]) - moved.x / (WHEEL_PX_TURN * _steer_turns)
+		v = float(_drag["value0"]) - moved.x / (WHEEL_PX_TURN * _steer_lock_deg / 360.0)
 	else:
 		v = float(_drag["value0"]) + moved.y / DRAG_PX_FULL * (float(r[1]) - float(r[0]))
 	v = clampf(v, float(r[0]), float(r[1]))

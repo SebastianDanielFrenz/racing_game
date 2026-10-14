@@ -48,7 +48,7 @@ HOOD_X0, HOOD_X1 = 0.47, 1.82       # hood panel; the nose header ahead of it ca
 HATCH_X = -0.65                      # hatch glass behind this x (hinged at the roof)
 POD_X0, POD_X1, POD_Y, POD_W = 1.86, 2.08, 0.60, 0.30
 STEER_LOCK_DEG = 34.0
-LOCK_TO_LOCK_TURNS = 3.4
+STEERING_WHEEL_LOCK_DEG = 612.0
 EYE_Y = 0.38
 
 
@@ -66,7 +66,7 @@ def build():
     m.mat("wood", color=(0.36, 0.18, 0.07), roughness=0.35, metallic=0.0)
     m.mat("rubber_bumper", color=(0.04, 0.04, 0.04), roughness=0.85)
     flow = FlowRecorder(m)
-    ck = C.Cockpit(m, LOCK_TO_LOCK_TURNS, STEER_LOCK_DEG)
+    ck = C.Cockpit(m, STEERING_WHEEL_LOCK_DEG, STEER_LOCK_DEG)
 
     wheels = [dict(x=XF, z=RF, r=RF, y_out=TRACK / 2 + TYRE_F.width / 2, y_in=TRACK / 2 - TYRE_F.width / 2),
               dict(x=XR, z=RR, r=RR, y_out=TRACK / 2 + TYRE_R.width / 2, y_in=TRACK / 2 - TYRE_R.width / 2)]
