@@ -228,6 +228,7 @@ public:
     //  selections_started, last_build_ms, streamer_phase (0 Idle, 1 Building,
     //  2 Ready, 3 Applying), resident_chunks, diff_errors}
     [[nodiscard]] godot::Dictionary get_stream_stats() const;
+    [[nodiscard]] godot::Dictionary get_frame_costs() const;
 
     // The material RenderingServer attaches to every uploaded chunk's mesh
     // surface (mesh_surface_set_material) - GDScript builds this from
@@ -316,6 +317,8 @@ private:
     std::int64_t diffs_applied_ = 0;
     std::int64_t diff_errors_ = 0; // a removed key that was not resident (never expected)
     double upload_ms_this_frame_ = 0.0;
+    double heal_ms_this_frame_ = 0.0;
+    double decks_ms_this_frame_ = 0.0;
     double last_remove_ms_ = 0.0; // the current/last diff's RID frees, summed over frames
 
     godot::Vector3 render_origin_session_{}; // raw (east, north, up), see set_render_origin's doc comment

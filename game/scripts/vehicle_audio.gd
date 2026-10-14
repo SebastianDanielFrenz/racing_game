@@ -142,7 +142,12 @@ func _output(samples: PackedFloat32Array, channels: int, backend: RefCounted, pl
 			buffer[frame] = Vector2(sample, sample)
 		playback.push_buffer(buffer)
 
+const FrameProbe := preload("res://scripts/frame_probe.gd")
 func _process(delta: float) -> void:
+	var probe_t0 := Time.get_ticks_usec()
+	_process_body(delta)
+	FrameProbe.add("audio", Time.get_ticks_usec() - probe_t0)
+func _process_body(delta: float) -> void:
 	if _horn != null:
 		var sounding: bool = not muted and simulation.is_running() and simulation.get_control("cabin.horn") != 0
 		_horn.volume_db = float(_horn.get_meta("gain_db")) + linear_to_db(maxf(master_volume,0.0001))

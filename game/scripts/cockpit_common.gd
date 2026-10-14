@@ -131,7 +131,12 @@ func update_lamps(snapshot: Dictionary, channels: Dictionary = {}) -> void:
 			material.emission = Color(float(rgb[0]),float(rgb[1]),float(rgb[2])) if on else Color.BLACK
 			material.emission_energy_multiplier = float(spec["emissive_strength_on"]) if on else 0.0
 
+const FrameProbe := preload("res://scripts/frame_probe.gd")
 func _process(_delta: float) -> void:
+	var probe_t0 := Time.get_ticks_usec()
+	_process_body(_delta)
+	FrameProbe.add("cockpit_common", Time.get_ticks_usec() - probe_t0)
+func _process_body(_delta: float) -> void:
 	if simulation != null and simulation.has_method("get_vehicle_powertrain"):
 		var channels: Dictionary = DriverState.channels(simulation) if simulation.has_method("get_control") else {}
 		update_lamps(simulation.get_vehicle_powertrain(vehicle_name),channels)

@@ -165,7 +165,12 @@ func vehicle_model_ok() -> bool:
 func get_wheel_visual_steer_angle_rad(wheel_index: int) -> float:
 	return _vehicle_visual.get_wheel_visual_steer_angle_rad(wheel_index) if _vehicle_visual != null else 0.0
 
+const FrameProbe := preload("res://scripts/frame_probe.gd")
 func _process(_delta: float) -> void:
+	var probe_t0 := Time.get_ticks_usec()
+	_process_body(_delta)
+	FrameProbe.add("body_visuals", Time.get_ticks_usec() - probe_t0)
+func _process_body(_delta: float) -> void:
 	var live: bool = simulation != null and int(simulation.get_step_count()) > 0
 	_chassis_root.visible = live
 	_ground_anchor.visible = live and show_ground

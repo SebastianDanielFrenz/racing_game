@@ -118,7 +118,15 @@ func reset_tick_window() -> void:
 	_window_start_s = Time.get_ticks_msec() / 1000.0
 	_window_start_ticks = 0
 
+const FrameProbe := preload("res://scripts/frame_probe.gd")
+const HUD_TEXT_PERIOD_S := 0.05
+var _text_updated_s := -1.0
+
 func _process(_delta: float) -> void:
+	var probe_t0 := Time.get_ticks_usec()
+	_process_body(_delta)
+	FrameProbe.add("hud", Time.get_ticks_usec() - probe_t0)
+func _process_body(_delta: float) -> void:
 	if _simulation == null:
 		return
 
@@ -148,6 +156,12 @@ func _process(_delta: float) -> void:
 			_last_measured_hz, _simulation.get_tick_rate_hz(), Engine.get_frames_per_second(),
 			_last_avg_frame_time_us / 1000.0, _last_max_frame_time_us / 1000.0,
 			rd.get("frames_sampled", 0), rd.get("frames_late", 0), rd.get("frames_early", 0), rd.get("frames_stepped", 0)])
+
+	# The debug read-out is ~30 lines of changing numbers: setting Label.text re-shapes all of it, and the mode / streaming
+	# / powertrain dictionaries below are copied from native each time. 20 Hz is plenty for text (render stutter, 2026-10-14).
+	if now_s - _text_updated_s < HUD_TEXT_PERIOD_S:
+		return
+	_text_updated_s = now_s
 
 	var mode: Dictionary = _simulation.get_mode_state()
 	var ss: Dictionary = _simulation.get_streaming_status()

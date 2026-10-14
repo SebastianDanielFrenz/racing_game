@@ -111,6 +111,14 @@ var _world_view: Node # RgTerrainView shared with the real-world Session
 var _load_started_ms: int = 0
 var _last_report_ms: int = 0
 const FRAME_SPIKE_S := 0.05
+const FrameProbe := preload("res://scripts/frame_probe.gd")
+var _fd_spike_s := FRAME_SPIKE_S # env RG_FRAME_SPIKE_MS overrides (set in _ready)
+var _fd_frames := PackedFloat32Array()
+var _fd_probe_sum: Dictionary = {}
+var _fd_probe_max: Dictionary = {}
+var _fd_process_sum := 0.0
+var _fd_process_max := 0.0
+var _fd_last_report_ms := 0
 var _spawn_reported: bool = false
 
 # --- shell (R5) ---
@@ -177,6 +185,11 @@ func _ready() -> void:
 	# Window close is handled in _notification: the audio players are stopped and the
 	# audio thread given time to release their generator playbacks before quitting.
 	get_tree().set_auto_accept_quit(false)
+	var spike_env := OS.get_environment("RG_FRAME_SPIKE_MS")
+	if spike_env.is_valid_float() and float(spike_env) > 0.0:
+		_fd_spike_s = float(spike_env) / 1000.0
+	if OS.get_environment("RG_RENDER_TIMING") != "0":
+		RenderingServer.viewport_set_measure_render_time(get_viewport().get_viewport_rid(), true) # RG_FRAME_SPIKE render_cpu/gpu_ms
 	preload("res://scripts/ui_scale.gd").apply(get_tree())
 	var user_args := OS.get_cmdline_user_args()
 	if "--bindings-test" in user_args:
@@ -1012,10 +1025,17 @@ func _notification(what: int) -> void:
 			_controls.save()
 		await _shutdown_audio_and_quit()
 
+var _saved_origin_path := ""
+var _saved_origin: Dictionary = {}
+
 func _save_drive_location() -> void:
 	var p := chassis_session_position()
-	var config = JSON.parse_string(FileAccess.get_file_as_string(_world_config_path()))
-	var origin: Dictionary = config.get("session_origin_utm", {}) if config is Dictionary else {}
+	var config_path := _world_config_path()
+	if config_path != _saved_origin_path: # read + parse the world config once, not on the main thread every second
+		_saved_origin_path = config_path
+		var config = JSON.parse_string(FileAccess.get_file_as_string(config_path))
+		_saved_origin = config.get("session_origin_utm", {}) if config is Dictionary else {}
+	var origin: Dictionary = _saved_origin
 	var pose: Dictionary = _simulation.get_chassis_session_pose()
 	var file := FileAccess.open(_user_dir().path_join("last_drive.json"), FileAccess.WRITE)
 	if file:
@@ -1174,10 +1194,79 @@ func _forward_driving(live: bool, delta: float) -> void:
 	if down > 0:
 		_simulation.set_control("shift_down_count", _simulation.get_control("shift_down_count") + down)
 
+# Frame-time diagnostics (render stutter investigation 2026-10-14). The delta of THIS frame is the cost of the previous
+# one (all of its _process calls, the render and the vsync wait), so the probes taken now (FrameProbe, frame_probe.gd)
+# belong to the frame that took `delta`.
+#  RG_FRAME_SPIKE  one line per frame over RG_FRAME_SPIKE_MS (default 50): delta_ms, ticks, process_ms (Godot's own
+#     TIME_PROCESS monitor of that frame), render_cpu_ms / render_gpu_ms (main viewport; gpu 0 when the driver gives no
+#     timer), terrain_* (RgTerrainView per-frame costs), probes = the nodes' own _process costs, largest first. A spike
+#     whose probes sum to a few ms while delta is large was spent OUTSIDE the scripts (render, GPU, driver, OS).
+#  RG_FRAME_STATS  once per second: fps, frame ms avg/p99/max, frames over 25 / 50 ms, per probe avg/max ms.
+func _frame_diag(delta: float) -> void:
+	var probes: Dictionary = FrameProbe.take_frame()
+	if world_state != "running" or _simulation == null:
+		return
+	var ms := delta * 1000.0
+	var process_ms: float = Performance.get_monitor(Performance.TIME_PROCESS) * 1000.0
+	_fd_frames.append(ms)
+	_fd_process_sum += process_ms
+	_fd_process_max = maxf(_fd_process_max, process_ms)
+	for k in probes:
+		var v := float(probes[k]) / 1000.0
+		_fd_probe_sum[k] = float(_fd_probe_sum.get(k, 0.0)) + v
+		_fd_probe_max[k] = maxf(float(_fd_probe_max.get(k, 0.0)), v)
+	if delta > _fd_spike_s:
+		var keys: Array = probes.keys()
+		keys.sort_custom(func(a, b) -> bool: return probes[a] > probes[b])
+		var parts := PackedStringArray()
+		for i in range(mini(keys.size(), 8)):
+			parts.append("%s=%.1f" % [keys[i], float(probes[keys[i]]) / 1000.0])
+		var vp := get_viewport().get_viewport_rid()
+		var tv := ""
+		if _world_view != null and _world_view.has_method("get_frame_costs"):
+			var c: Dictionary = _world_view.get_frame_costs()
+			tv = " terrain_upload_ms=%.2f terrain_heal_ms=%.2f terrain_decks_ms=%.2f terrain_pending=%d" % [
+				float(c.get("upload_ms", 0.0)), float(c.get("heal_ms", 0.0)), float(c.get("decks_ms", 0.0)), int(c.get("pending_work", 0))]
+		print("RG_FRAME_SPIKE delta_ms=%.1f ticks=%d process_ms=%.1f render_cpu_ms=%.1f render_gpu_ms=%.1f%s probes=[%s]" % [
+			ms, int(_simulation.get_step_count()), process_ms,
+			RenderingServer.viewport_get_measured_render_time_cpu(vp), RenderingServer.viewport_get_measured_render_time_gpu(vp),
+			tv, ", ".join(parts)])
+	var now := Time.get_ticks_msec()
+	if now - _fd_last_report_ms < 1000:
+		return
+	_fd_last_report_ms = now
+	var n := _fd_frames.size()
+	if n > 0:
+		var sorted := _fd_frames.duplicate()
+		sorted.sort()
+		var sum := 0.0
+		var over25 := 0
+		var over50 := 0
+		for f in _fd_frames:
+			sum += f
+			over25 += 1 if f > 25.0 else 0
+			over50 += 1 if f > 50.0 else 0
+		var pk := PackedStringArray()
+		for k in _fd_probe_sum:
+			pk.append("%s=%.2f/%.1f" % [k, float(_fd_probe_sum[k]) / n, float(_fd_probe_max[k])])
+		pk.sort()
+		print("RG_FRAME_STATS frames=%d fps=%d frame_ms_avg=%.1f p99=%.1f max=%.1f over25=%d over50=%d process_ms_avg=%.1f process_ms_max=%.1f probes_avg/max_ms=[%s]" % [
+			n, int(Engine.get_frames_per_second()), sum / n, sorted[mini(n - 1, int(ceil(0.99 * n)) - 1)], sorted[n - 1], over25, over50,
+			_fd_process_sum / n, _fd_process_max, ", ".join(pk)])
+	_fd_frames.clear()
+	_fd_probe_sum.clear()
+	_fd_probe_max.clear()
+	_fd_process_sum = 0.0
+	_fd_process_max = 0.0
+
 func _process(delta: float) -> void:
+	var process_t0 := Time.get_ticks_usec()
+	_process_body(delta)
+	FrameProbe.add("main", Time.get_ticks_usec() - process_t0)
+
+func _process_body(delta: float) -> void:
 	# Main-thread frame hitches, to line up with RG_TICK_SPIKE (sim thread).
-	if world_state == "running" and delta > FRAME_SPIKE_S:
-		print("RG_FRAME_SPIKE delta_ms=%.1f ticks=%d" % [delta * 1000.0, int(_simulation.get_step_count())])
+	_frame_diag(delta)
 	if _terrain_view != null and not _terrain_preview_reported and bool(_terrain_view.is_fully_uploaded()):
 		_terrain_preview_reported = true
 		print("terrain preview loaded: chunks=%d vertices=%d upload_ms=%.2f" % [
@@ -1248,7 +1337,9 @@ func _process(delta: float) -> void:
 		"starting":
 			_attach_world_view()
 		"running":
+			var report_t0 := Time.get_ticks_usec()
 			_report()
+			FrameProbe.add("report", Time.get_ticks_usec() - report_t0)
 
 	if world_state == "running" and _vehicle_audio == null:
 		_vehicle_audio = Node3D.new()
@@ -1262,7 +1353,9 @@ func _process(delta: float) -> void:
 	if _vehicle_audio != null:
 		_vehicle_audio.muted = _paused
 	var ms := _apply_mode_state()
+	var forward_t0 := Time.get_ticks_usec()
 	_forward_driving(bool(ms.get("driving_inputs_live", false)) and in_drive, delta)
+	FrameProbe.add("forward_driving", Time.get_ticks_usec() - forward_t0)
 	_forward_walking(bool(ms.get("walking_inputs_live", false)) and in_drive)
 	_panels_open_prev = _panel_open()
 	_mouse_captured_prev = _input_map.is_mouse_captured()

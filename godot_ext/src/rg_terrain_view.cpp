@@ -381,6 +381,17 @@ void RgTerrainView::set_terrain_visible(bool visible) {
     }
 }
 
+// Main-thread cost of this node's last _process, split into its three parts (RG_FRAME_SPIKE line in main.gd).
+godot::Dictionary RgTerrainView::get_frame_costs() const {
+    godot::Dictionary d;
+    d["upload_ms"] = upload_ms_this_frame_;
+    d["heal_ms"] = heal_ms_this_frame_;
+    d["decks_ms"] = decks_ms_this_frame_;
+    d["pending_work"] = static_cast<std::int64_t>((chunks_.size() - std::min(next_upload_index_, chunks_.size())) +
+                                                  (diff_removed_.size() - std::min(diff_remove_next_, diff_removed_.size())));
+    return d;
+}
+
 godot::Dictionary RgTerrainView::take_report_stats() {
     godot::Dictionary d;
     d["upload_ms_avg"] = upload_ms_window_.mean();
@@ -759,8 +770,15 @@ void RgTerrainView::apply_diff(std::chrono::steady_clock::time_point frame_start
 }
 
 void RgTerrainView::_process(double /*delta*/) {
+    const auto ms_since = [](std::chrono::steady_clock::time_point t) {
+        return std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t).count();
+    };
+    const auto decks_start = std::chrono::steady_clock::now();
     sync_road_decks();
+    decks_ms_this_frame_ = ms_since(decks_start);
+    const auto heal_start = std::chrono::steady_clock::now();
     heal_tick();
+    heal_ms_this_frame_ = ms_since(heal_start);
     const auto frame_start = std::chrono::steady_clock::now();
     apply_diff(frame_start);
     upload_ms_this_frame_ =
@@ -807,6 +825,7 @@ void RgTerrainView::_bind_methods() {
     godot::ClassDB::bind_method(D_METHOD("set_terrain_visible", "visible"), &RgTerrainView::set_terrain_visible);
     godot::ClassDB::bind_method(D_METHOD("get_terrain_visible"), &RgTerrainView::get_terrain_visible);
     godot::ClassDB::bind_method(D_METHOD("take_report_stats"), &RgTerrainView::take_report_stats);
+    godot::ClassDB::bind_method(D_METHOD("get_frame_costs"), &RgTerrainView::get_frame_costs);
     godot::ClassDB::bind_method(D_METHOD("godot_to_session", "godot_pos"), &RgTerrainView::godot_to_session);
     godot::ClassDB::bind_method(D_METHOD("is_stream_idle"), &RgTerrainView::is_stream_idle);
     godot::ClassDB::bind_method(D_METHOD("get_stream_stats"), &RgTerrainView::get_stream_stats);

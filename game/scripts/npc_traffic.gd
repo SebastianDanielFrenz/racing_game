@@ -122,7 +122,12 @@ func _build_batches() -> void:
   _part(true, Vector3(0.04,0.35,0.2), Vector3(6.52,y,-0.8), Color(1,0.95,0.75))
   _part(true, Vector3(0.04,0.3,0.2), Vector3(-6.52,y,-0.8), Color(0.9,0.035,0.025))
 
+const FrameProbe := preload("res://scripts/frame_probe.gd")
 func _process(delta: float) -> void:
+  var probe_t0 := Time.get_ticks_usec()
+  _process_body(delta)
+  FrameProbe.add("npc_traffic", Time.get_ticks_usec() - probe_t0)
+func _process_body(delta: float) -> void:
  if simulation == null:
   return
  var ticks: int = simulation.get_step_count()

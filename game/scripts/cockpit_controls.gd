@@ -235,7 +235,12 @@ func starter_held() -> bool:
 
 # ---- per frame: pose the controls from the car --------------------------------
 
+const FrameProbe := preload("res://scripts/frame_probe.gd")
 func _process(delta: float) -> void:
+	var probe_t0 := Time.get_ticks_usec()
+	_process_body(delta)
+	FrameProbe.add("cockpit_controls", Time.get_ticks_usec() - probe_t0)
+func _process_body(delta: float) -> void:
 	if not _loaded:
 		return
 	for k in _press_left.keys():

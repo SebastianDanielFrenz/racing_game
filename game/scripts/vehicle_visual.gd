@@ -283,7 +283,12 @@ func _align_model_to_physics_wheels() -> void:
 	for i in range(_wheel_nodes.size()):
 		_wheel_nodes[i]["susp_bias"] = (diffs[i] - d_mean) if diffs[i] != null else Vector3.ZERO
 
+const FrameProbe := preload("res://scripts/frame_probe.gd")
 func _process(delta: float) -> void:
+	var probe_t0 := Time.get_ticks_usec()
+	_process_body(delta)
+	FrameProbe.add("vehicle_visual", Time.get_ticks_usec() - probe_t0)
+func _process_body(delta: float) -> void:
 	# A car with a clickable cockpit (cockpit_controls.gd) has that node pose its steering wheel (per-car turns, mouse drag);
 	# only the other cars (the hypercar) get the configured-lock wheel here.
 	if _cockpit != null and is_instance_valid(_cockpit) and _cockpit.owns_node("steering_wheel"):
