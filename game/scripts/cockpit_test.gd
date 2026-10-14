@@ -255,6 +255,24 @@ func _test_shared_switches(ck: Node3D, sim: FakeSim, spec: Dictionary, name: Str
 			check(fake.events.size() == 2 and fake.events[1]["value"] == 1.0, name + ": held horn re-asserts its level")
 			await create_timer(0.4).timeout
 			check(fake.events[-1]["id"] == "horn" and fake.events[-1]["kind"] == 1 and ck.get_cosmetic("horn") == false, name + ": horn released after the press time")
+			# button held: the level stays up across frames, mouse-up (anywhere) releases
+			fake.events.clear()
+			ck.activate(node, 1)
+			ck.hold_horn()
+			await create_timer(0.4).timeout
+			ck.submit_held()
+			check(ck.is_horn_held() and ck.get_cosmetic("horn") == true and fake.events[-1]["kind"] == 2 and fake.events[-1]["value"] == 1.0, name + ": held horn stays up past the press time")
+			var up := InputEventMouseButton.new()
+			up.button_index = MOUSE_BUTTON_LEFT
+			up.pressed = false
+			ck._input(up)
+			check(not ck.is_horn_held() and fake.events[-1]["kind"] == 1 and ck.get_cosmetic("horn") == false, name + ": mouse-up releases the horn")
+			ck.submit_held()
+			check(fake.events[-1]["kind"] == 1, name + ": nothing re-asserts after release")
+			ck.activate(node, 1)
+			ck.hold_horn()
+			ck._notification(Node.NOTIFICATION_APPLICATION_FOCUS_OUT)
+			check(not ck.is_horn_held() and fake.events[-1]["kind"] == 1, name + ": focus loss releases the horn")
 	# non driver-backed switches (lights, wipers) stay local
 	fake.events.clear()
 	for c in spec["controls"]:

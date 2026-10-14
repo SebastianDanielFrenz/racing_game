@@ -54,6 +54,7 @@ var _shift_up := 0
 var _shift_down := 0
 var _ignition_request := -1     # -1 none, 0 off, 1 on
 var _starter_left := 0.0
+var _horn_held := false         # the left mouse button is down on the horn: the level stays up until released
 var _horn_left := 0.0           # seconds a clicked horn button keeps the horn level up
 var _steer_lock_deg := 540.0    # steering wheel angle from centre to one lock, degrees (per-car, cockpit file; else cabin.json)
 var _eye: Node3D
@@ -172,8 +173,39 @@ func _submit(id: String, kind: int, value: float) -> void:
 # main.gd calls this every frame just before DriverActions.apply: the horn is a held level and the keyboard adapter
 # submits its own level each frame, so a clicked horn button has to keep asserting its level after that.
 func submit_held() -> void:
-	if driver_actions != null and _horn_left > 0.0:
+	if driver_actions != null and (_horn_held or _horn_left > 0.0):
 		_submit("horn", KIND_SET, 1.0)
+
+# A left click that landed on the horn keeps it sounding until release_horn().
+func hold_horn() -> void:
+	if driver_actions != null:
+		_horn_held = true
+
+func is_horn_held() -> bool:
+	return _horn_held
+
+func release_horn() -> void:
+	if not _horn_held:
+		return
+	_horn_held = false
+	_horn_left = 0.0
+	for k in _press_left.keys():
+		if str(_by_node.get(k, {}).get("spec", {}).get("action", {}).get("channel", "")) == "horn":
+			_press_left.erase(k)
+	if driver_actions != null:
+		_submit("horn", KIND_RELEASE, 0.0)
+
+func _exit_tree() -> void:
+	release_horn()
+
+func _notification(what: int) -> void:
+	if what == NOTIFICATION_APPLICATION_FOCUS_OUT or what == NOTIFICATION_WM_WINDOW_FOCUS_OUT:
+		release_horn()
+
+# Mouse-up anywhere (also outside the hit box or over a UI control) lets go of the horn.
+func _input(event: InputEvent) -> void:
+	if _horn_held and event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT and not event.pressed:
+		release_horn()
 
 # Channel -> value for every control currently dragged (and a hand throttle that is set).
 func get_overrides() -> Dictionary:
@@ -210,6 +242,14 @@ func _process(delta: float) -> void:
 		_press_left[k] = float(_press_left[k]) - delta
 		if float(_press_left[k]) <= 0.0:
 			_press_left.erase(k)
+	if _horn_held:
+		var cam := get_viewport().get_camera_3d() if is_inside_tree() else null
+		if Input.mouse_mode == Input.MOUSE_MODE_CAPTURED or (cam != null and not _in_car(cam)):
+			release_horn() # cursor taken away or the view left the cockpit
+		else:
+			for k in _by_node.keys():
+				if str(_by_node[k]["spec"].get("action", {}).get("channel", "")) == "horn":
+					_press_left[k] = PRESS_TIME_S # the button stays down while held
 	if _horn_left > 0.0:
 		_horn_left -= delta
 		if _horn_left <= 0.0 and driver_actions != null:
@@ -580,6 +620,8 @@ func _unhandled_input(event: InputEvent) -> void:
 			handled = begin_drag(hit, mb.position)
 			if not handled:
 				handled = activate(hit, -1 if mb.shift_pressed else 1)
+				if handled and str(_by_node.get(hit, {}).get("spec", {}).get("action", {}).get("channel", "")) == "horn":
+					hold_horn()
 		MOUSE_BUTTON_WHEEL_UP:
 			handled = activate(hit, 1)
 		MOUSE_BUTTON_WHEEL_DOWN:
