@@ -8,217 +8,247 @@
       "node": "pico",
       "material": "cladding",
       "first_triangle": 0,
-      "triangle_count": 788
+      "triangle_count": 2200
     },
     {
       "node": "pico",
       "material": "paint",
       "first_triangle": 0,
-      "triangle_count": 6760
+      "triangle_count": 4891
+    },
+    {
+      "node": "tailgate",
+      "material": "paint",
+      "first_triangle": 0,
+      "triangle_count": 412
     },
     {
       "node": "pico",
       "material": "gap",
       "first_triangle": 0,
-      "triangle_count": 828
-    },
-    {
-      "node": "tailgate",
-      "material": "paint",
-      "first_triangle": 0,
-      "triangle_count": 540
+      "triangle_count": 920
     },
     {
       "node": "pico",
       "material": "underbody",
       "first_triangle": 0,
-      "triangle_count": 13888
+      "triangle_count": 9380
     },
     {
       "node": "pico",
       "material": "arch_liner",
       "first_triangle": 0,
-      "triangle_count": 2652
+      "triangle_count": 1740
     },
     {
       "node": "door_RR",
       "material": "paint",
       "first_triangle": 0,
-      "triangle_count": 1268
+      "triangle_count": 856
     },
     {
       "node": "door_RL",
       "material": "paint",
       "first_triangle": 0,
-      "triangle_count": 1268
+      "triangle_count": 856
     },
     {
       "node": "door_FR",
       "material": "paint",
       "first_triangle": 0,
-      "triangle_count": 1832
+      "triangle_count": 1298
     },
     {
       "node": "door_FL",
       "material": "paint",
       "first_triangle": 0,
-      "triangle_count": 1832
+      "triangle_count": 1298
     },
     {
       "node": "hood",
       "material": "paint",
       "first_triangle": 0,
-      "triangle_count": 2888
+      "triangle_count": 1904
     },
     {
       "node": "tailgate",
       "material": "trim_black",
       "first_triangle": 0,
-      "triangle_count": 504
+      "triangle_count": 360
     },
     {
       "node": "tailgate",
       "material": "glass_dark",
       "first_triangle": 0,
-      "triangle_count": 224
+      "triangle_count": 160
     },
     {
       "node": "pico",
       "material": "trim_black",
       "first_triangle": 0,
-      "triangle_count": 4260
+      "triangle_count": 3700
     },
     {
       "node": "pico",
       "material": "paint_roof",
       "first_triangle": 0,
-      "triangle_count": 4552
+      "triangle_count": 3544
     },
     {
       "node": "pico",
       "material": "glass",
       "first_triangle": 0,
-      "triangle_count": 1312
+      "triangle_count": 992
+    },
+    {
+      "node": "pico",
+      "material": "glass",
+      "first_triangle": 1984,
+      "triangle_count": 336
     },
     {
       "node": "door_RR",
       "material": "trim_black",
       "first_triangle": 0,
-      "triangle_count": 264
+      "triangle_count": 192
     },
     {
       "node": "door_RL",
       "material": "trim_black",
       "first_triangle": 0,
-      "triangle_count": 264
+      "triangle_count": 192
     },
     {
       "node": "popout_RR",
       "material": "glass",
       "first_triangle": 0,
-      "triangle_count": 576
+      "triangle_count": 432
     },
     {
       "node": "popout_RL",
       "material": "glass",
       "first_triangle": 0,
-      "triangle_count": 576
+      "triangle_count": 432
     },
     {
       "node": "door_FR",
       "material": "trim_black",
       "first_triangle": 0,
-      "triangle_count": 336
+      "triangle_count": 240
     },
     {
       "node": "door_FL",
       "material": "trim_black",
       "first_triangle": 0,
-      "triangle_count": 336
+      "triangle_count": 240
     },
     {
       "node": "door_FR",
       "material": "glass",
       "first_triangle": 0,
-      "triangle_count": 756
+      "triangle_count": 540
     },
     {
       "node": "door_FL",
       "material": "glass",
       "first_triangle": 0,
-      "triangle_count": 756
+      "triangle_count": 540
     },
     {
       "node": "pico",
       "material": "grille",
       "first_triangle": 0,
-      "triangle_count": 378
+      "triangle_count": 210
     },
     {
       "node": "pico",
       "material": "plastic_black",
       "first_triangle": 0,
-      "triangle_count": 462
+      "triangle_count": 294
     },
     {
       "node": "pico",
       "material": "light_head",
       "first_triangle": 0,
-      "triangle_count": 324
+      "triangle_count": 1140
     },
     {
       "node": "pico",
       "material": "light_drl",
       "first_triangle": 0,
-      "triangle_count": 640
+      "triangle_count": 384
     },
     {
       "node": "pico",
       "material": "light_indicator_left",
       "first_triangle": 0,
-      "triangle_count": 640
+      "triangle_count": 576
     },
     {
       "node": "pico",
       "material": "light_tail",
       "first_triangle": 0,
-      "triangle_count": 360
+      "triangle_count": 200
     },
     {
       "node": "pico",
       "material": "light_brake",
       "first_triangle": 0,
-      "triangle_count": 640
+      "triangle_count": 384
     },
     {
       "node": "pico",
       "material": "light_reverse",
       "first_triangle": 0,
-      "triangle_count": 640
+      "triangle_count": 384
     },
     {
       "node": "pico",
       "material": "light_indicator_right",
       "first_triangle": 0,
-      "triangle_count": 640
+      "triangle_count": 576
     },
     {
       "node": "pico",
       "material": "plate",
       "first_triangle": 0,
-      "triangle_count": 216
+      "triangle_count": 120
+    },
+    {
+      "node": "pico",
+      "material": "chrome",
+      "first_triangle": 0,
+      "triangle_count": 1536
+    },
+    {
+      "node": "pico",
+      "material": "reflector",
+      "first_triangle": 0,
+      "triangle_count": 384
+    },
+    {
+      "node": "door_FL",
+      "material": "cladding",
+      "first_triangle": 0,
+      "triangle_count": 66
+    },
+    {
+      "node": "door_FR",
+      "material": "cladding",
+      "first_triangle": 0,
+      "triangle_count": 66
     },
     {
       "node": "wheel_FL",
       "material": "tyre_sidewall",
       "first_triangle": 0,
-      "triangle_count": 2048
+      "triangle_count": 2304
     },
     {
       "node": "wheel_FL",
       "material": "tyre_tread_F",
       "first_triangle": 0,
-      "triangle_count": 1920
+      "triangle_count": 2688
     },
     {
       "node": "wheel_FL",
@@ -247,6 +277,18 @@
     {
       "node": "wheel_FL",
       "material": "brake_disc",
+      "first_triangle": 0,
+      "triangle_count": 640
+    },
+    {
+      "node": "wheel_FL",
+      "material": "brake_hat",
+      "first_triangle": 0,
+      "triangle_count": 224
+    },
+    {
+      "node": "wheel_FL",
+      "material": "brake_vane",
       "first_triangle": 0,
       "triangle_count": 320
     },
@@ -254,19 +296,25 @@
       "node": "steer_FL",
       "material": "caliper",
       "first_triangle": 0,
-      "triangle_count": 252
+      "triangle_count": 156
+    },
+    {
+      "node": "steer_FL",
+      "material": "dust_shield",
+      "first_triangle": 0,
+      "triangle_count": 256
     },
     {
       "node": "wheel_FR",
       "material": "tyre_sidewall",
       "first_triangle": 0,
-      "triangle_count": 2048
+      "triangle_count": 2304
     },
     {
       "node": "wheel_FR",
       "material": "tyre_tread_F",
       "first_triangle": 0,
-      "triangle_count": 1920
+      "triangle_count": 2688
     },
     {
       "node": "wheel_FR",
@@ -296,25 +344,43 @@
       "node": "wheel_FR",
       "material": "brake_disc",
       "first_triangle": 0,
+      "triangle_count": 640
+    },
+    {
+      "node": "wheel_FR",
+      "material": "brake_hat",
+      "first_triangle": 0,
+      "triangle_count": 224
+    },
+    {
+      "node": "wheel_FR",
+      "material": "brake_vane",
+      "first_triangle": 0,
       "triangle_count": 320
     },
     {
       "node": "steer_FR",
       "material": "caliper",
       "first_triangle": 0,
-      "triangle_count": 252
+      "triangle_count": 156
+    },
+    {
+      "node": "steer_FR",
+      "material": "dust_shield",
+      "first_triangle": 0,
+      "triangle_count": 256
     },
     {
       "node": "wheel_RL",
       "material": "tyre_sidewall",
       "first_triangle": 0,
-      "triangle_count": 2048
+      "triangle_count": 2304
     },
     {
       "node": "wheel_RL",
       "material": "tyre_tread_R",
       "first_triangle": 0,
-      "triangle_count": 1920
+      "triangle_count": 2688
     },
     {
       "node": "wheel_RL",
@@ -344,19 +410,19 @@
       "node": "wheel_RL",
       "material": "brake_drum",
       "first_triangle": 0,
-      "triangle_count": 256
+      "triangle_count": 704
     },
     {
       "node": "wheel_RR",
       "material": "tyre_sidewall",
       "first_triangle": 0,
-      "triangle_count": 2048
+      "triangle_count": 2304
     },
     {
       "node": "wheel_RR",
       "material": "tyre_tread_R",
       "first_triangle": 0,
-      "triangle_count": 1920
+      "triangle_count": 2688
     },
     {
       "node": "wheel_RR",
@@ -386,7 +452,7 @@
       "node": "wheel_RR",
       "material": "brake_drum",
       "first_triangle": 0,
-      "triangle_count": 256
+      "triangle_count": 704
     },
     {
       "node": "door_FL",
@@ -463,5 +529,5 @@
   ],
   "excluded": "inner skins and perimeter returns; cabin, cockpit controls, engine bay",
   "limitations": "Closed visual shells per node; arches, intake mouth and tail pipe open. Not a boolean union.",
-  "source_glb_sha256": "af8b948c68b6544844b8c8a5fc759e98dbc02136aa7f4bcfdf38f56554e602e1"
+  "source_glb_sha256": "6bbba4c4bf1f42b6e99fc1803797ab3df31ff422238109b99bde9fefbdf0b0c8"
 }

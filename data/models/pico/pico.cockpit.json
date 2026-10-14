@@ -774,5 +774,5 @@
   "notes": [
     "Pedals and the handbrake follow the applied control channels; the gear lever follows the selected gear through its gate; the speedometer follows the snapshot speed."
   ],
-  "source_glb_sha256": "af8b948c68b6544844b8c8a5fc759e98dbc02136aa7f4bcfdf38f56554e602e1"
+  "source_glb_sha256": "6bbba4c4bf1f42b6e99fc1803797ab3df31ff422238109b99bde9fefbdf0b0c8"
 }

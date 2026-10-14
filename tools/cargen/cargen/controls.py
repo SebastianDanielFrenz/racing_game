@@ -182,6 +182,11 @@ def pedal(m, ck, name, pivot, pad_center, channel, travel_deg=18.0, pad_size=(0.
 
 # ---------------------------------------------------------- steering wheel
 
+def _blade(mb, path, widths, thicks, normal, mat, part):
+    from .common import blade_path
+    blade_path(mb, path, widths, thicks, mat, part, normal=normal)
+
+
 def steering_wheel(m, ck, center, column_dir, radius, spokes, rim_mat, spoke_mat, hub_mat, rim_r=0.016,
                    lock_deg=None, part=None, spoke_angles=None, dish=0.0, hub_r=None, column_mat=None,
                    column_len=0.32):
@@ -201,7 +206,10 @@ def steering_wheel(m, ck, center, column_dir, radius, spokes, rim_mat, spoke_mat
     for a in angles:
         tip = xform_point(f, (radius * 0.97 * math.cos(a), radius * 0.97 * math.sin(a), 0))
         mid = xform_point(f, (radius * 0.55 * math.cos(a), radius * 0.55 * math.sin(a), -dish * 0.45))
-        M.tube(mb, [hub, mid, tip], 0.009, spoke_mat, node, count=8)
+        # flat blade spoke, wide at the hub, slim where it meets the rim
+        root = xform_point(f, (radius * 0.12 * math.cos(a), radius * 0.12 * math.sin(a), -dish - 0.02))
+        _blade(mb, [root, mid, tip], [radius * 0.26, radius * 0.17, radius * 0.12], [0.012, 0.010, 0.010], axis,
+               spoke_mat, node)
     hr = hub_r or radius * 0.28
     M.cylinder(mb, xform_point(f, (0, 0, -dish - 0.06)), xform_point(f, (0, 0, -dish + 0.005)), hr, hub_mat, node,
                count=20)
