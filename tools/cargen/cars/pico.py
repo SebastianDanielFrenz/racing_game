@@ -23,7 +23,8 @@ from cargen import controls as C
 from cargen.closed_body import ClosedCarBody
 from cargen.flow import FlowRecorder
 from cargen.wheels import Wheel, corner
-from cargen.common import materials, finish, door_card, seat_closed, cabin_shell
+from cargen.common import (materials, finish, door_card, seat_closed, cabin_shell, arch_lip, door_part_of,
+                           blade_path)
 from assetgen.scene import Model
 from assetgen.carbody import Panel
 from assetgen.parts import mirror
@@ -71,6 +72,7 @@ def build():
             (X_FRONT, 0.74)],
         exp=[(X_REAR, 4.5), (-1.4, 6.0), (1.4, 6.0), (X_FRONT, 4.0)],
         end_r=(0.10, 0.22), wheels=wheels, arch_clear=0.05,
+        seams=sorted({x for d in DOORS for x in d[2:]} | {1.0, 1.79}),
         green=dict(x0=-1.63, x1=0.97,
                    zroof=[(-1.63, 1.04), (-1.60, 1.25), (-1.55, 1.40), (-1.45, 1.445), (-1.0, 1.465), (0.1, 1.475),
                           (0.3, 1.46), (0.62, 1.24), (0.97, 0.95)],
@@ -88,14 +90,14 @@ def build():
 
     def door_border(side, x0, x1):
         def f(c, n):
-            return c[0] < x0 + 0.008 or c[0] > x1 - 0.008 or c[2] < 0.29
+            return body.on_seam(c[0], x0) or body.on_seam(c[0], x1) or c[2] < 0.29
         return f
 
     for name, side, x0, x1 in DOORS:
         body.panels.append(Panel(name, door_inside(side, x0, x1), door_border(side, x0, x1)))
     body.panels.append(Panel(
         "hood", lambda c, n: 0.99 < c[0] < 1.80 and body.ls > 0.68 and n[2] > 0.3,
-        lambda c, n: c[0] < 1.012 or c[0] > 1.785 or body.ls < 0.70))
+        lambda c, n: body.on_seam(c[0], 1.0) or body.on_seam(c[0], 1.79) or body.ls < 0.70))
     body.panels.append(Panel(
         "tailgate", lambda c, n: c[0] < -1.52 and c[2] > 0.56 and n[0] < -0.2 and abs(c[1]) < 0.60,
         lambda c, n: c[2] < 0.58 or abs(c[1]) > 0.58))
@@ -168,6 +170,29 @@ def build():
         body.patch(rr(0.08, 0.04, 0.012, 3, s * 0.55, 0.42), "light_reverse", "rear", offset=0.004, skirt=0.0)
     body.patch(rr(0.52, 0.11, 0.01, 2, 0.0, 0.70), "plate", "rear", skirt_mat="trim_black")
     body.patch(rr(0.40, 0.09, 0.01, 2, 0.0, 0.41), "plate", "front", offset=0.012, skirt_mat="trim_black")
+    # ---- detail: lamp internals, intake slats, lower lip, fog lamps, repeaters, reflectors, fuel flap
+    m.mat("reflector", color=(0.55, 0.03, 0.02), roughness=0.25)
+    circ = M.circle
+    for s in (1, -1):
+        for yy, rb in ((0.36, 0.046), (0.50, 0.032)):                  # projector + high-beam reflector bowls
+            body.patch(circ(rb, 24, s * yy, 0.712), "chrome", "front", offset=0.007, skirt=0.0)
+            body.patch(circ(rb * 0.68, 20, s * yy, 0.712), "light_head", "front", offset=0.010, skirt=0.0)
+        body.patch(rr(0.10, 0.006, 0.002, 2, s * 0.62, 0.885), "trim_black", "rear", offset=0.008, skirt=0.0)
+        body.patch(rr(0.10, 0.006, 0.002, 2, s * 0.62, 0.795), "trim_black", "rear", offset=0.008, skirt=0.0)
+        body.patch(circ(0.016, 16, s * 0.54, 0.36), "chrome", "front", offset=0.007, skirt=0.0)   # fog lamp
+        body.patch(circ(0.011, 14, s * 0.54, 0.36), "glass", "front", offset=0.009, skirt=0.0)
+        body.patch(rr(0.07, 0.022, 0.009, 3, s * 0.68, 0.36), "reflector", "rear", offset=0.005, skirt=0.0)
+        body.patch(rr(0.05, 0.016, 0.007, 3, 1.52, 0.66), "light_indicator_left" if s > 0 else
+                   "light_indicator_right", "left" if s > 0 else "right", offset=0.003, skirt=0.0)  # side repeater
+    ys = [-0.62 + 1.24 * k / 30 for k in range(31)]                    # lower lip under the front bumper
+    blade_path(m.mb, [(body.surface_x(y, 0.27, 1) + 0.006, y, 0.262) for y in ys], 0.05, 0.016, "cladding",
+               normal=(0.0, 0.0, 1.0))
+    body.patch(rr(0.12, 0.11, 0.025, 4, -1.30, 0.83), "gap", "right", offset=0.0015, skirt=0.0)   # fuel flap
+    body.patch(rr(0.108, 0.098, 0.02, 4, -1.30, 0.83), "paint", "right", offset=0.0025, skirt=0.0)
+    for w in body.wheels:                                              # black arch flares (cladding)
+        for s in (1, -1):
+            arch_lip(m, body, w, s, "cladding", width=0.065, proud=0.024, a0=-14.0, a1=194.0,
+                     part_of=door_part_of(DOORS, s))
     flow.mark("lamps, grilles, plates")
 
     # ---- corners
@@ -306,7 +331,8 @@ def build_cabin(m, ck, body):
         C.pedal(m, ck, name, (0.80, yy, 0.62), pc, name, label=f"{name} pedal")
     # ---- seats
     for yy in (0.36, -0.36):
-        seat_closed(m, (-0.18, yy, 0.52), width=0.48, recline=0.30, mat="seat", accent="seat_accent")
+        seat_closed(m, (-0.18, yy, 0.52), width=0.48, recline=0.30, mat="seat", accent="seat_accent",
+                    bolster=0.035)
     seat_closed(m, (-1.05, 0.0, 0.50), width=1.22, recline=0.26, mat="seat", accent=None, headrest=True,
                 headrest_split=2)
     # ---- door cards (front cards carry the window switches)

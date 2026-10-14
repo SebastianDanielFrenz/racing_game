@@ -18,13 +18,46 @@ from assetgen.vehicles.hyper_shell import skin_part, clean_degenerate
 
 SHELL_THICKNESS = 0.018
 PANEL_INSET = 0.001
+SEAM_HALF = 0.004      # half width of a shut line (8 mm gap)
+SEAM_CLEAR = 0.022     # regular stations closer than this to a seam are dropped
+SEAM_BAND = 0.006      # |face centre x - seam| below this is the shut line
 
 
 class ClosedCarBody(CarBody):
-    def __init__(self, model, *, flow, moving_parts=(), **kw):
+    def __init__(self, model, *, flow, moving_parts=(), seams=(), **kw):
+        """seams: x positions of vertical shut lines. Each gets a station pair at x +- SEAM_HALF (any regular
+        station within SEAM_CLEAR of it is dropped), so a narrow gap band |c.x - seam| < SEAM_BAND selects one
+        8 mm column of faces, whatever the regular station step."""
+        kw.setdefault("step", 0.03)
+        kw.setdefault("around", 112)
         super().__init__(model, **kw)
         self.flow = flow
         self.moving_parts = set(moving_parts)
+        self.seams = sorted(seams)
+
+    def build(self, classify_lower=None, classify_green=None):
+        import assetgen.carbody as cb
+        orig = cb.stations
+        seams = self.seams
+
+        def stations(x0, x1, step, end_r):
+            xs = [x for x in orig(x0, x1, step, end_r)
+                  if all(abs(x - q) >= SEAM_CLEAR for q in seams) or x in (x0, x1)]
+            for q in seams:
+                for x in (q - SEAM_HALF, q + SEAM_HALF):
+                    if x0 < x < x1:
+                        xs.append(round(x, 6))
+            return sorted(set(xs))
+
+        cb.stations = stations
+        try:
+            super().build(classify_lower, classify_green)
+        finally:
+            cb.stations = orig
+
+    @staticmethod
+    def on_seam(x, q):
+        return abs(x - q) < SEAM_BAND
 
     def _inner_skins(self):
         mb = self.model.mb
@@ -35,7 +68,7 @@ class ClosedCarBody(CarBody):
                       inset=PANEL_INSET if part in self.moving_parts else 0.0)
         self.flow.skip("inner skins and perimeter returns")
 
-    def patch(self, outline, mat, face, part="", offset=0.004, rings=5, skirt_mat=None, skirt=0.004):
+    def patch(self, outline, mat, face, part="", offset=0.004, rings=3, skirt_mat=None, skirt=0.004):
         """Drape a lens/grille/plate like CarBody.patch, with a backing so it is closed."""
         mb = self.model.mb
 

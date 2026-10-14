@@ -8,157 +8,157 @@
       "node": "ventura_gt",
       "material": "paint",
       "first_triangle": 0,
-      "triangle_count": 19575
+      "triangle_count": 14487
     },
     {
       "node": "ventura_gt",
       "material": "underbody",
       "first_triangle": 0,
-      "triangle_count": 19040
+      "triangle_count": 11508
     },
     {
       "node": "ventura_gt",
       "material": "arch_liner",
       "first_triangle": 0,
-      "triangle_count": 3604
+      "triangle_count": 2036
     },
     {
-      "node": "door_R",
-      "material": "paint",
+      "node": "ventura_gt",
+      "material": "trim_black",
       "first_triangle": 0,
-      "triangle_count": 1888
-    },
-    {
-      "node": "door_L",
-      "material": "paint",
-      "first_triangle": 0,
-      "triangle_count": 1888
+      "triangle_count": 2044
     },
     {
       "node": "ventura_gt",
       "material": "gap",
       "first_triangle": 0,
-      "triangle_count": 452
+      "triangle_count": 516
+    },
+    {
+      "node": "door_R",
+      "material": "paint",
+      "first_triangle": 0,
+      "triangle_count": 1246
+    },
+    {
+      "node": "door_L",
+      "material": "paint",
+      "first_triangle": 0,
+      "triangle_count": 1246
     },
     {
       "node": "hood",
       "material": "paint",
       "first_triangle": 0,
-      "triangle_count": 4320
+      "triangle_count": 2560
     },
     {
       "node": "hatch",
       "material": "trim_black",
       "first_triangle": 0,
-      "triangle_count": 1496
+      "triangle_count": 976
     },
     {
       "node": "hatch",
       "material": "glass_dark",
       "first_triangle": 0,
-      "triangle_count": 1696
-    },
-    {
-      "node": "ventura_gt",
-      "material": "trim_black",
-      "first_triangle": 0,
-      "triangle_count": 1024
+      "triangle_count": 1152
     },
     {
       "node": "ventura_gt",
       "material": "glass_dark",
       "first_triangle": 0,
-      "triangle_count": 720
+      "triangle_count": 480
     },
     {
       "node": "door_R",
       "material": "chrome",
       "first_triangle": 0,
-      "triangle_count": 516
+      "triangle_count": 480
     },
     {
       "node": "door_R",
       "material": "trim_black",
       "first_triangle": 0,
-      "triangle_count": 140
+      "triangle_count": 84
     },
     {
       "node": "door_L",
       "material": "trim_black",
       "first_triangle": 0,
-      "triangle_count": 140
+      "triangle_count": 84
     },
     {
       "node": "door_L",
       "material": "chrome",
       "first_triangle": 0,
-      "triangle_count": 516
+      "triangle_count": 480
     },
     {
       "node": "door_R",
       "material": "glass",
       "first_triangle": 0,
-      "triangle_count": 960
+      "triangle_count": 620
     },
     {
       "node": "door_L",
       "material": "glass",
       "first_triangle": 0,
-      "triangle_count": 960
-    },
-    {
-      "node": "ventura_gt",
-      "material": "chrome",
-      "first_triangle": 0,
-      "triangle_count": 3036
+      "triangle_count": 620
     },
     {
       "node": "ventura_gt",
       "material": "glass",
       "first_triangle": 0,
-      "triangle_count": 540
+      "triangle_count": 396
     },
     {
       "node": "ventura_gt",
       "material": "grille",
       "first_triangle": 0,
-      "triangle_count": 180
+      "triangle_count": 100
+    },
+    {
+      "node": "ventura_gt",
+      "material": "chrome",
+      "first_triangle": 0,
+      "triangle_count": 5216
     },
     {
       "node": "ventura_gt",
       "material": "light_indicator_left",
       "first_triangle": 0,
-      "triangle_count": 464
+      "triangle_count": 272
     },
     {
       "node": "ventura_gt",
       "material": "light_tail",
       "first_triangle": 0,
-      "triangle_count": 1360
+      "triangle_count": 784
     },
     {
       "node": "ventura_gt",
       "material": "light_brake",
       "first_triangle": 0,
-      "triangle_count": 1280
+      "triangle_count": 768
     },
     {
       "node": "ventura_gt",
       "material": "light_reverse",
       "first_triangle": 0,
-      "triangle_count": 640
+      "triangle_count": 384
     },
     {
       "node": "ventura_gt",
       "material": "light_indicator_right",
       "first_triangle": 0,
-      "triangle_count": 464
+      "triangle_count": 272
     },
     {
       "node": "ventura_gt",
       "material": "plate",
       "first_triangle": 0,
-      "triangle_count": 216
+      "triangle_count": 120
     },
     {
       "node": "ventura_gt",
@@ -170,13 +170,13 @@
       "node": "wheel_FL",
       "material": "tyre_sidewall",
       "first_triangle": 0,
-      "triangle_count": 2048
+      "triangle_count": 2304
     },
     {
       "node": "wheel_FL",
       "material": "tyre_tread_F",
       "first_triangle": 0,
-      "triangle_count": 1920
+      "triangle_count": 2688
     },
     {
       "node": "wheel_FL",
@@ -188,7 +188,7 @@
       "node": "wheel_FL",
       "material": "rim_F",
       "first_triangle": 0,
-      "triangle_count": 540
+      "triangle_count": 1224
     },
     {
       "node": "wheel_FL",
@@ -199,6 +199,18 @@
     {
       "node": "wheel_FL",
       "material": "brake_disc",
+      "first_triangle": 0,
+      "triangle_count": 640
+    },
+    {
+      "node": "wheel_FL",
+      "material": "brake_hat",
+      "first_triangle": 0,
+      "triangle_count": 224
+    },
+    {
+      "node": "wheel_FL",
+      "material": "brake_vane",
       "first_triangle": 0,
       "triangle_count": 320
     },
@@ -206,19 +218,25 @@
       "node": "steer_FL",
       "material": "caliper",
       "first_triangle": 0,
-      "triangle_count": 252
+      "triangle_count": 156
+    },
+    {
+      "node": "steer_FL",
+      "material": "dust_shield",
+      "first_triangle": 0,
+      "triangle_count": 256
     },
     {
       "node": "wheel_FR",
       "material": "tyre_sidewall",
       "first_triangle": 0,
-      "triangle_count": 2048
+      "triangle_count": 2304
     },
     {
       "node": "wheel_FR",
       "material": "tyre_tread_F",
       "first_triangle": 0,
-      "triangle_count": 1920
+      "triangle_count": 2688
     },
     {
       "node": "wheel_FR",
@@ -230,7 +248,7 @@
       "node": "wheel_FR",
       "material": "rim_F",
       "first_triangle": 0,
-      "triangle_count": 540
+      "triangle_count": 1224
     },
     {
       "node": "wheel_FR",
@@ -241,6 +259,18 @@
     {
       "node": "wheel_FR",
       "material": "brake_disc",
+      "first_triangle": 0,
+      "triangle_count": 640
+    },
+    {
+      "node": "wheel_FR",
+      "material": "brake_hat",
+      "first_triangle": 0,
+      "triangle_count": 224
+    },
+    {
+      "node": "wheel_FR",
+      "material": "brake_vane",
       "first_triangle": 0,
       "triangle_count": 320
     },
@@ -248,19 +278,25 @@
       "node": "steer_FR",
       "material": "caliper",
       "first_triangle": 0,
-      "triangle_count": 252
+      "triangle_count": 156
+    },
+    {
+      "node": "steer_FR",
+      "material": "dust_shield",
+      "first_triangle": 0,
+      "triangle_count": 256
     },
     {
       "node": "wheel_RL",
       "material": "tyre_sidewall",
       "first_triangle": 0,
-      "triangle_count": 2048
+      "triangle_count": 2304
     },
     {
       "node": "wheel_RL",
       "material": "tyre_tread_R",
       "first_triangle": 0,
-      "triangle_count": 1920
+      "triangle_count": 2688
     },
     {
       "node": "wheel_RL",
@@ -272,7 +308,7 @@
       "node": "wheel_RL",
       "material": "rim_R",
       "first_triangle": 0,
-      "triangle_count": 540
+      "triangle_count": 1224
     },
     {
       "node": "wheel_RL",
@@ -283,6 +319,18 @@
     {
       "node": "wheel_RL",
       "material": "brake_disc",
+      "first_triangle": 0,
+      "triangle_count": 640
+    },
+    {
+      "node": "wheel_RL",
+      "material": "brake_hat",
+      "first_triangle": 0,
+      "triangle_count": 224
+    },
+    {
+      "node": "wheel_RL",
+      "material": "brake_vane",
       "first_triangle": 0,
       "triangle_count": 320
     },
@@ -290,19 +338,25 @@
       "node": "susp_RL",
       "material": "caliper",
       "first_triangle": 0,
-      "triangle_count": 252
+      "triangle_count": 156
+    },
+    {
+      "node": "susp_RL",
+      "material": "dust_shield",
+      "first_triangle": 0,
+      "triangle_count": 256
     },
     {
       "node": "wheel_RR",
       "material": "tyre_sidewall",
       "first_triangle": 0,
-      "triangle_count": 2048
+      "triangle_count": 2304
     },
     {
       "node": "wheel_RR",
       "material": "tyre_tread_R",
       "first_triangle": 0,
-      "triangle_count": 1920
+      "triangle_count": 2688
     },
     {
       "node": "wheel_RR",
@@ -314,7 +368,7 @@
       "node": "wheel_RR",
       "material": "rim_R",
       "first_triangle": 0,
-      "triangle_count": 540
+      "triangle_count": 1224
     },
     {
       "node": "wheel_RR",
@@ -326,13 +380,31 @@
       "node": "wheel_RR",
       "material": "brake_disc",
       "first_triangle": 0,
+      "triangle_count": 640
+    },
+    {
+      "node": "wheel_RR",
+      "material": "brake_hat",
+      "first_triangle": 0,
+      "triangle_count": 224
+    },
+    {
+      "node": "wheel_RR",
+      "material": "brake_vane",
+      "first_triangle": 0,
       "triangle_count": 320
     },
     {
       "node": "susp_RR",
       "material": "caliper",
       "first_triangle": 0,
-      "triangle_count": 252
+      "triangle_count": 156
+    },
+    {
+      "node": "susp_RR",
+      "material": "dust_shield",
+      "first_triangle": 0,
+      "triangle_count": 256
     },
     {
       "node": "door_L",
@@ -362,7 +434,7 @@
       "node": "ventura_gt",
       "material": "exhaust_tip",
       "first_triangle": 0,
-      "triangle_count": 288
+      "triangle_count": 576
     },
     {
       "node": "popup_L",
@@ -424,5 +496,5 @@
   ],
   "excluded": "inner skins and perimeter returns; cabin, cockpit controls, engine bay, hidden hood variants",
   "limitations": "Closed visual shells per node; arches, grille mouth and tail pipes open. Hidden hood variants and the cabin are not in the selection. Not a boolean union.",
-  "source_glb_sha256": "18701ee4f288a048f3024128213bd614d0a8cf64f57dfada8a1b8903eaade799"
+  "source_glb_sha256": "499f0233e9da882649271be73a7c9f5045e0eb20f089f601a51b051b530ae6d3"
 }
