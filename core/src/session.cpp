@@ -306,6 +306,19 @@ void Session::build_world_contents(const SessionConfig& config) {
             }
         }
         vehicle_desc_ = rg::load_vehicle(config.vehicle_json_path, options);
+        if (config.turbo_map_extension) {
+            // Start-up runs on a worker, never the main thread. An extended map is cached next to the engine maps.
+            if(config.startup) config.startup->stage.store(StartupProgress::EngineMaps,std::memory_order_relaxed);
+            const rg::TurboExtensionResult ext = rg::extend_turbo_maps(vehicle_desc_, config.vehicle_json_path, options.cache_dir,
+                                                                       *config.turbo_map_extension, &world_->job_system(),
+                                                                       config.startup ? &config.startup->cancel : nullptr);
+            throw_if_cancelled();
+            if (ext.status != rg::TurboExtensionResult::Status::NotApplicable)
+                std::fprintf(stderr, "RG_TURBO_MAP status=%s uncovered=%d->%d chokes=%d choke_kg_s=%.4f demand_kg_s=%.4f key=%016llx seconds=%.2f %s\n",
+                             rg::to_string(ext.status), ext.uncovered_steps_before, ext.uncovered_steps_after, ext.choke.chokes ? 1 : 0,
+                             ext.choke.choke_flow_kg_s, ext.choke.demand_flow_kg_s, static_cast<unsigned long long>(ext.cache_key),
+                             ext.seconds, ext.message.c_str());
+        }
         std::fprintf(stderr, "RG_ENGINE_MAP_CACHE enabled=%s generated=%zu dir=%s\n",
                      config.engine_map_cache_enabled ? "yes" : "no", generated, options.cache_dir.c_str());
     }

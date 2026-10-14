@@ -56,7 +56,7 @@ std::string fixed(double v, int decimals) {
 // The built-in default decimals per quantity (the config may override every one).
 int default_decimals(const std::string& q) {
     static const std::map<std::string, int> d = {{"bar", 1}, {"rpm", 0}, {"nm", 0},   {"kw", 0},       {"percent", 0}, {"ratio", 2}, {"mps", 1},
-                                                 {"mm", 2},  {"mm2", 0}, {"kg", 1},   {"seconds", 1}, {"degrees", 1}, {"kpa", 0},   {"plain", 2}};
+                                                 {"mm", 2},  {"mm2", 0}, {"kg", 1},   {"seconds", 1}, {"degrees", 1}, {"kpa", 0},   {"plain", 2}, {"flow", 3}};
     const auto it = d.find(q);
     return it == d.end() ? 1 : it->second;
 }
@@ -230,7 +230,7 @@ int AdvisorConfig::decimals_for(const std::string& quantity, int fallback) const
 const std::vector<std::string>& known_advice_fact_names() {
     static const std::vector<std::string> names = {
         "target", "value", "limit", "value_pct", "limit_pct", "value_kpa", "limit_kpa", "rpm", "rpm_from", "rpm_to", "range",
-        "peak", "peak_rpm", "low", "low_rpm", "reach_rpm", "drop_rpm", "current", "required_min", "required", "ratio_min", "ratio", "message", "coverage", "uncovered"};
+        "peak", "peak_rpm", "low", "low_rpm", "reach_rpm", "drop_rpm", "current", "required_min", "required", "ratio_min", "ratio", "message", "coverage", "uncovered", "choke_flow", "demand_flow", "units"};
     return names;
 }
 
@@ -671,6 +671,13 @@ std::vector<AdviceItem> build_advice(const AdviceInput& input, const AdvisorConf
         item.severity = advice_severity(issue.severity);
         item.variant = issue.severity == pd::LimitSeverity::Limiting ? "beyond_map" : "";
         std::map<std::string, std::string> facts;
+        if (input.turbo_choke && input.turbo_choke->chokes && kc->variants.count("choke") != 0) {
+            // The map was extended around the demand and the rest is the compressor's own limit: say that.
+            item.variant = "choke";
+            facts["choke_flow"] = fixed(input.turbo_choke->choke_flow_kg_s, dec(config, "flow")) + " kg/s";
+            facts["demand_flow"] = fixed(input.turbo_choke->demand_flow_kg_s, dec(config, "flow")) + " kg/s";
+            facts["units"] = std::to_string(input.turbo_choke->units);
+        }
         facts["message"] = issue.message;
         facts["coverage"] = fixed(issue.value * 100.0, dec(config, "coverage"));
         facts["uncovered"] = fixed((1.0 - issue.value) * 100.0, dec(config, "coverage"));
@@ -1045,12 +1052,23 @@ void LimitAdvisor::run() {
             maps.on_progress = [&](std::size_t done, std::size_t total) {
                 progress(2 + static_cast<int>(78 * done / std::max<std::size_t>(1, total)), "Building engine maps");
             };
-            const auto desc = rg::load_vehicle(material.vehicle_path, maps);
+            auto desc = rg::load_vehicle(material.vehicle_path, maps);
+            std::optional<TurboChoke> turbo_choke;
+            if (request.context.turbo_map_extension) {
+                // The stage map grows (once, then cached) when the engine's air demand runs past it. We are on the advisor's thread.
+                progress(80, "Extending the turbo map");
+                const TurboExtensionResult ext = extend_turbo_maps(desc, material.vehicle_path, request.context.engine_map_cache_dir,
+                                                                   *request.context.turbo_map_extension, &pool, cancel.get());
+                if (cancel->load()) continue;
+                if (ext.status != TurboExtensionResult::Status::NotApplicable) turbo_choke = ext.choke;
+                if (ext.status == TurboExtensionResult::Status::Failed) loader_warnings.push_back("turbo map extension: " + ext.message);
+            }
             maps_seconds = std::chrono::duration<double>(std::chrono::steady_clock::now() - t0).count();
             progress(82, "Sweeping the engine");
             sweep = run_advice_sweep(desc, config_, &pool, cancel.get(), component_ref_file(material.vehicle_path, "clutch"),
                                      component_ref_file(material.vehicle_path, "gearbox"));
             sweep.input.loader_warnings = std::move(loader_warnings);
+            sweep.input.turbo_choke = turbo_choke;
             items = build_advice(sweep.input, config_);
         } catch (const ps::io::GenerationCancelled&) {
             continue; // a newer request (or cancel()) took over

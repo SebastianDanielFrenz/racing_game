@@ -23,7 +23,7 @@
 
   "decimals": {
     "bar": 1, "rpm": 0, "nm": 0, "kw": 0, "percent": 0, "ratio": 2, "mps": 1,
-    "coverage": 1, "mm": 2, "mm2": 0, "kg": 1, "seconds": 1, "degrees": 1, "kpa": 0, "plain": 2
+    "coverage": 1, "mm": 2, "mm2": 0, "kg": 1, "seconds": 1, "degrees": 1, "kpa": 0, "plain": 2, "flow": 3
   },
 
   "remedy": {
@@ -43,6 +43,13 @@
           "title": "Boost target is beyond the turbo map",
           "lines": ["Boost target is set to {target}.", "The turbo map reaches it for {coverage} of the engine's air flow.", "Beyond that the turbo is extrapolated."],
           "suggestion": "A lower boost target or a larger turbo."
+        },
+        "choke": {
+          "title": "Compressor chokes at this boost",
+          "lines": ["Boost target is set to {target}.", "Each compressor passes at most {choke_flow} at this boost; the engine wants {demand_flow}.", "Above that flow the boost sags. The turbo map itself was extended to cover the rest."],
+          "suggestion": "A lower boost target or a larger turbo.",
+          "max_severity": "near",
+          "max_severity_help": "Owner decision 2026-10-14: the compressor's own choke is accepted, not a map problem; never louder than advice."
         }
       }
     }

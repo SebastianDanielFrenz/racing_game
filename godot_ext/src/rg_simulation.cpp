@@ -1,3 +1,4 @@
+#include <cstdio>
 #include "rg_simulation.h"
 
 #include "frame_convert.h"
@@ -50,6 +51,13 @@ void configure_vehicle_chassis(rg::SessionConfig& config, const VehicleOverrides
     // vehicle the file was materialised from; the filename special case below stays for
     // callers that do not (the old --vehicle-less direct-start path).
     if (!overrides.engine_map_cache_dir.empty()) config.engine_map_cache_dir = overrides.engine_map_cache_dir;
+    if (!overrides.turbo_map_extension_path.empty()) {
+        std::string err;
+        if (auto ext = rg::load_turbo_map_extension_config(overrides.turbo_map_extension_path, &err))
+            config.turbo_map_extension = std::make_shared<const rg::TurboMapExtensionConfig>(*ext);
+        else
+            std::fprintf(stderr, "RG_TURBO_MAP policy not loaded: %s\n", err.c_str());
+    }
     if (overrides.has_chassis) {
         config.chassis_mass_kg = overrides.chassis_mass_kg;
         config.chassis_half_extents = overrides.chassis_half_extents;

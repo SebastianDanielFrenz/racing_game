@@ -47,6 +47,7 @@ struct VehicleOverrides {
     ps::Vec3 chassis_half_extents{2.0, 0.4, 0.15};
     ps::real chassis_z_m = 0.6;
     std::string engine_map_cache_dir;
+    std::string turbo_map_extension_path; // "" = stage maps are used as loaded
 };
 
 class RgSimulation : public godot::Node {

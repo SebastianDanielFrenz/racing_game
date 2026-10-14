@@ -42,6 +42,7 @@
 #include "rg/npc_truck.h"
 #include "rg/npc_traffic.h"
 #include "rg/traffic_stuck.h"
+#include "rg/turbo_map_extension.h"
 #include <thread>
 #include "rg/fixed_rate_loop.h"
 #include "rg/player_mode.h"
@@ -170,6 +171,9 @@ struct SessionConfig {
     // Non-empty: the .psmaps cache directory to use (R6: a materialised garage setup lives outside
     // physics_sim's tree, so the path-derived default would put its cache in the work directory).
     std::string engine_map_cache_dir;
+    // Set: a turbo stage map the engine's air demand runs past is extended at start-up and cached under the engine map cache
+    // dir (rg/turbo_map_extension.h). Null = maps are used as loaded (tests, hash_check).
+    std::shared_ptr<const TurboMapExtensionConfig> turbo_map_extension;
     std::string vehicle_json_path;  // e.g. .../data/vehicles/car_sedan.json
     std::string surface_table_path; // e.g. .../data/surfaces/surfaces.json
 

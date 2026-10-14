@@ -26,6 +26,7 @@
 //     physics_sim's solve_remedy). The Godot layer only starts, polls and shows.
 #pragma once
 
+#include "rg/turbo_map_extension.h"
 #include "rg/vehicle_setup.h"
 
 #include "ps/drivetrain/engine_dyno.h"
@@ -172,6 +173,9 @@ struct AdviceInput {
     double target_boost_bar = std::numeric_limits<double>::quiet_NaN(); // configured, gauge; NaN = no turbo
     std::vector<ps::drivetrain::BuildIssue> build_issues; // check_turbo_stage_coverage of the engine (physics, with the policy)
     std::vector<std::string> loader_warnings;             // EngineMapOptions::warnings_out of the load
+    // Set when the load extended the turbo stage map (rg/turbo_map_extension.h): a demand still outside the extended map is the
+    // compressor's choke, reported as such (variant "choke") instead of "map too narrow"; a fully covered demand shows no item.
+    std::optional<TurboChoke> turbo_choke;
 };
 
 // Groups the findings per kind (and part field), drops what the config hides, merges contiguous rpm ranges, renders
