@@ -1333,6 +1333,8 @@ returns (D44, geo2map PR #1). A store derived before encoding 7 has no junctions
   OSM give-way and roundabout entries and implied on a lower-ranked side road off a through road (not at a merge under
   25 deg), crossings (zebra 0.5/0.5 bars, ladder, Furt = two broken 0.12 m lines, also the default at a signalised
   crossing without a pattern). Signalised junctions keep a plain box (no through overlay), as German practice does.
+- Turn arrows (turn:lanes) stand 15 m before the stretch end, or further back so their tip ends 3 m before the first
+  marking the traffic meets there (junction trim, a stop/give-way line of that direction, a crossing).
 - The vertex flags no longer fit 4 bits: the adapter packs them over COLOR.b (low 8) and COLOR.a (high 8).
 - Review tooling used: a geo2map scratch test dumping the mesh of both OSM fixtures and a Python software rasteriser
   (not committed).

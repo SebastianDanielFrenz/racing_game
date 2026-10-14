@@ -352,7 +352,28 @@ RoadVisualMesh build_road_visual(const g2m::RoadGeomTile& geometry,const g2m::Ti
    std::vector<std::string> tokens;std::size_t begin=0;
    while(true){auto end=turns.find('|',begin);tokens.push_back(turns.substr(begin,end-begin));if(end==std::string::npos)break;begin=end+1;}
    if(static_cast<int>(tokens.size())!=lane_count)return;
-   const double station=direction>0?length-15:15;
+   // The arrow (tail 2 m behind the station, tip 1.7 m ahead) stands in front of the first marking the traffic meets at
+   // the end it drives toward: the junction trim, a stop or give-way line of this direction, a crossing. 15 m before
+   // the end unless one of those reaches further back; then its tip ends kArrowGapM before it.
+   constexpr double kArrowGapM=3.0,kArrowTipM=1.7,kArrowTailM=2.0,kArrowReachM=60.0;
+   const std::size_t index=static_cast<std::size_t>(&entry-geometry.entries.data());
+   double barrier=direction>0?length:0.0;
+   const auto bar=[&](double s0,double s1){
+    if(direction>0){if(s0>length-kArrowReachM)barrier=std::min(barrier,s0);}
+    else if(s1<kArrowReachM)barrier=std::max(barrier,s1);
+   };
+   if(auto it=trims.find({entry.way_id,entry.stretch.start_ref,direction>0});it!=trims.end())
+    bar(direction>0?length-it->second:0.0,direction>0?length:it->second);
+   const bool travel_forward=direction>0;
+   for(const auto& fu:geometry.furniture) {
+    if(fu.decline!=g2m::FurnitureDecline::None||fu.entry_index!=index||fu.kind==g2m::FurnitureKind::Signal)continue;
+    const bool line=fu.kind==g2m::FurnitureKind::StopLine||fu.kind==g2m::FurnitureKind::GiveWayLine;
+    if(line&&(fu.travel==g2m::LaneDirection::Forward)!=travel_forward)continue;
+    bar(fu.station_m-fu.length_m/2,fu.station_m+fu.length_m/2);
+   }
+   for(const auto& g:give_ways)if(g.entry==index)bar(g.station-.25,g.station+.25);
+   const double station=direction>0?std::min(length-15,barrier-kArrowGapM-kArrowTipM):std::max(15.0,barrier+kArrowGapM+kArrowTipM);
+   if(direction>0?station-kArrowTailM<0:station+kArrowTailM>length)return;
    auto center=p.reference.at(station);if(!center||!owned(center->x,center->y))return;
    const auto span=span_at(entry,*layout,station);const double width=span.width(),half=width/2,centre=span.centre();
    const double lane_width=width/lanes;if(lane_width<2.4)return;
