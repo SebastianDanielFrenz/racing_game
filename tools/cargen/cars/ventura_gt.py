@@ -26,7 +26,8 @@ from cargen import controls as C
 from cargen.closed_body import ClosedCarBody
 from cargen.flow import FlowRecorder
 from cargen.wheels import Wheel, corner
-from cargen.common import materials, finish, door_card, seat_closed, cabin_shell, top_z, surface_path
+from cargen.common import (materials, finish, door_card, seat_closed, cabin_shell, top_z, surface_path, arch_lip,
+                           door_part_of, blade_path)
 from assetgen.scene import Model
 from assetgen.carbody import Panel
 from assetgen.parts import mirror  # noqa: F401  (bullet mirrors are drawn here)
@@ -80,6 +81,7 @@ def build():
             (1.45, 0.88), (1.75, 0.86), (2.05, 0.80), (X_FRONT, 0.72)],
         exp=[(X_REAR, 4.0), (-1.8, 4.5), (1.6, 4.5), (X_FRONT, 3.5)],
         end_r=(0.10, 0.18), wheels=wheels, arch_clear=0.045,
+        seams=[DOORS[0][2], DOORS[0][3], HOOD_X0, HOOD_X1], step=0.034,
         green=dict(x0=-1.90, x1=0.42,
                    zroof=[(-1.90, 0.93), (-1.6, 0.99), (-1.2, 1.08), (-0.8, 1.165), (-0.45, 1.215), (-0.15, 1.22),
                           (0.05, 1.17), (0.25, 1.04), (0.42, 0.90)],
@@ -97,14 +99,14 @@ def build():
 
     def door_border(side, x0, x1):
         def f(c, n):
-            return c[0] < x0 + 0.008 or c[0] > x1 - 0.008 or c[2] < 0.27
+            return body.on_seam(c[0], x0) or body.on_seam(c[0], x1) or c[2] < 0.27
         return f
 
     for name, side, x0, x1 in DOORS:
         body.panels.append(Panel(name, door_inside(side, x0, x1), door_border(side, x0, x1)))
     body.panels.append(Panel(
         "hood", lambda c, n: HOOD_X0 - 0.01 < c[0] < HOOD_X1 + 0.01 and body.ls > 0.70 and n[2] > 0.3,
-        lambda c, n: c[0] < HOOD_X0 + 0.012 or c[0] > HOOD_X1 - 0.012 or body.ls < 0.72))
+        lambda c, n: body.on_seam(c[0], HOOD_X0) or body.on_seam(c[0], HOOD_X1) or body.ls < 0.72))
 
     def lower(c, n, b):
         x, y, z = c
@@ -163,6 +165,28 @@ def build():
                    offset=0.003, skirt=0.0)
     body.patch(rr(0.52, 0.11, 0.01, 2, 0.0, 0.58), "plate", "rear", skirt_mat="trim_black")
     body.patch(rr(0.46, 0.10, 0.01, 2, 0.0, 0.33), "plate", "front", offset=0.006, skirt_mat="trim_black")
+    # ---- detail: grille bars and badge, fender gills, chin spoiler, flared arch lips
+    for zz in (0.525, 0.56, 0.595):
+        ys = [-0.535 + 1.07 * k / 24 for k in range(25)]
+        blade_path(m.mb, [(body.surface_x(y, zz, 1) + 0.002, y, zz) for y in ys], 0.008, 0.012, "chrome",
+                   normal=(1.0, 0.0, 0.0))
+    body.patch(circ(0.032, 20, 0.0, 0.56), "chrome", "front", offset=0.016, skirt=0.014)          # nose badge
+    body.patch(circ(0.022, 16, 0.0, 0.56), "paint", "front", offset=0.019, skirt=0.0)
+    for s in (1, -1):
+        face = "left" if s > 0 else "right"
+        body.patch(rr(0.20, 0.10, 0.02, 3, 0.70, 0.63), "trim_black", face, offset=0.002, skirt_mat="chrome")
+        for zz in (0.605, 0.63, 0.655):
+            body.patch(rr(0.18, 0.010, 0.004, 2, 0.70, zz), "chrome", face, offset=0.006, skirt=0.0)
+    ys = [-0.74 + 1.48 * k / 30 for k in range(31)]
+    blade_path(m.mb, [(body.surface_x(y, 0.33, 1) - 0.01, y, 0.305) for y in ys], 0.07, 0.016, "trim_black",
+               normal=(0.0, 0.0, 1.0))
+    ys = [-0.70 + 1.40 * k / 28 for k in range(29)]                   # rear valance under the bumper
+    blade_path(m.mb, [(body.surface_x(y, 0.40, -1) + 0.012, y, 0.375) for y in ys], 0.05, 0.05, "trim_black",
+               normal=(0.0, 0.0, 1.0))
+    for w in body.wheels:
+        for s in (1, -1):
+            arch_lip(m, body, w, s, "paint", width=0.035, proud=0.016, a0=-6.0, a1=186.0,
+                     part_of=door_part_of(DOORS, s))
     flow.mark("lamps, grille, plates")
 
     # ---- bumpers: chrome tubes wrapping round the corners, rubber over-riders
@@ -239,7 +263,8 @@ def build():
     M.cylinder(m.mb, (xf_, yf_ - 0.004, zf_), (xf_, yf_ + 0.010, zf_), 0.045, "chrome", count=24)
     # twin exhaust tips under the rear bumper
     for s in (1, -1):
-        M.lathe(m.mb, [(0.032, 0.0), (0.032, 0.22), (0.027, 0.22), (0.027, 0.0)], "exhaust_tip",
+        M.lathe(m.mb, [(0.032, 0.0), (0.032, 0.17), (0.037, 0.19), (0.038, 0.22), (0.033, 0.222), (0.029, 0.205),
+                       (0.027, 0.17), (0.027, 0.0)], "exhaust_tip",                     # rolled, flared tip
                 axis_xf=compose(translate((-1.93, s * 0.45, 0.30)), rot_axis((0, 1, 0), -math.pi / 2)), count=18,
                 closed_profile=True)
     flow.mark("handles, mirrors, wipers, fuel cap, tail pipes")
@@ -433,7 +458,7 @@ def build_cabin(m, ck, body):
     # ---- bucket seats, luggage deck behind them
     for yy in (EYE_Y, -EYE_Y):
         seat_closed(m, (-0.55, yy, 0.36), width=0.50, recline=0.36, mat="seat", accent="seat_accent", depth=0.52,
-                    height=0.14)
+                    height=0.14, bolster=0.05)
     M.rounded_box(mb, (-1.30, 0.0, 0.40), (0.70, 1.30, 0.04), 0.01, "carpet")
     for yy in (0.25, -0.25):
         M.rounded_box(mb, (-1.30, yy, 0.425), (0.66, 0.025, 0.006), 0.002, "trim_black")  # luggage straps
