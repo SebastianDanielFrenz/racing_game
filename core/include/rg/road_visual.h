@@ -4,7 +4,8 @@
 namespace rg {
 // flags (bits, read by road.gdshader): 1 lane markings, 2 edge lines, 4 solid separator, 8 fast road, 16 solid paint,
 // 32 overlay (only the paint is drawn), 64 / 128 left / right edge line broken (a junction mouth), 512 / 1024 left /
-// right edge line not drawn. The Godot adapter adds 256 for a verge vertex and splits the bits over COLOR.b and COLOR.a.
+// right edge line not drawn, 2048 paving stones (no painted lines), 4096 concrete. The Godot adapter adds 256 for a
+// verge vertex and splits the bits over COLOR.b and COLOR.a.
 // u: lateral offset from the centre of the counted lanes, v: station, width: the counted lanes' width; verge 1 = the
 // gravel strip beside the road bed (no asphalt, no paint).
 struct RoadVisualVertex { float x,y,z,u,v,width,fade,lanes,forward,flags,verge=0; };

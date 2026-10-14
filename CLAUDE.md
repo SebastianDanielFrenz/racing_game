@@ -1335,6 +1335,10 @@ returns (D44, geo2map PR #1). A store derived before encoding 7 has no junctions
   crossing without a pattern). Signalised junctions keep a plain box (no through overlay), as German practice does.
 - Turn arrows (turn:lanes) stand 15 m before the stretch end, or further back so their tip ends 3 m before the first
   marking the traffic meets there (junction trim, a stop/give-way line of that direction, a crossing).
+- Side roads closed to the public (access no/private/permissive/permit/...) never open an edge line; on a motorway or a
+  motorway/trunk link a service road opens it only when it is plain (no service=*) and meets it within 35 deg (a
+  rest-area ramp). Ribbons draw OSM surface=paving_stones/sett/cobblestone as stones without painted lines (flag 2048)
+  and concrete with 5 m slab joints (flag 4096).
 - The vertex flags no longer fit 4 bits: the adapter packs them over COLOR.b (low 8) and COLOR.a (high 8).
 - Review tooling used: a geo2map scratch test dumping the mesh of both OSM fixtures and a Python software rasteriser
   (not committed).

@@ -36,6 +36,26 @@ void fragment() {
 	float grain = sin(UV.x*29.1+UV.y*18.7)*sin(UV.x*9.2-UV.y*26.3);
 	float detail = 1.0-smoothstep(0.08,0.3,max(fwidth(UV.x),fwidth(UV.y)));
 	vec3 asphalt = vec3(0.105,0.113,0.122)+vec3(grain*0.008*detail*UV2.y);
+	if ((flags & 2048)!=0) {
+		// Paving stones (also sett, cobblestone): 0.20 x 0.10 m blocks in a running bond across the road, each a
+		// little lighter or darker, with dark joints that fade out with distance like the asphalt grain.
+		vec2 cell = vec2(UV.y/0.20, UV.x/0.10);
+		cell.x += 0.5*mod(floor(cell.y),2.0);
+		vec2 id = floor(cell);
+		vec2 f = fract(cell);
+		float shade = fract(sin(dot(id,vec2(12.9898,78.233)))*43758.5453);
+		vec3 stone = vec3(0.30,0.285,0.26)*(0.88+0.24*shade);
+		vec2 aa = max(fwidth(cell),vec2(0.02));
+		float joint = 1.0-(smoothstep(0.0,aa.x*1.5+0.04,f.x)*smoothstep(0.0,aa.x*1.5+0.04,1.0-f.x)*smoothstep(0.0,aa.y*1.5+0.08,f.y)*smoothstep(0.0,aa.y*1.5+0.08,1.0-f.y));
+		float sharp = 1.0-smoothstep(0.25,0.6,max(aa.x,aa.y));
+		asphalt = mix(vec3(0.29,0.275,0.25), mix(stone,vec3(0.16,0.15,0.14),joint*0.8), sharp);
+	} else if ((flags & 4096)!=0) {
+		// Concrete: a lighter grey slab with a transverse joint every 5 m.
+		float slab = mod(UV.y,5.0);
+		float aa = max(fwidth(UV.y),0.01);
+		float joint = 1.0-smoothstep(0.0,0.02+aa,min(slab,5.0-slab));
+		asphalt = vec3(0.36,0.36,0.345)+vec3(grain*0.01*detail*UV2.y)-vec3(0.12*joint);
+	}
 	// The gravel verge strip beside the road bed (no paint there).
 	float edge = (flags & 256)!=0 ? 1.0 : 0.0;
 	ALBEDO = mix(asphalt,vec3(0.27,0.25,0.22),edge);

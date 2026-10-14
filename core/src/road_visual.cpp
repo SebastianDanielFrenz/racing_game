@@ -101,7 +101,27 @@ namespace {
 // Lane layout of one paved stretch as the ribbon draws it (the fragment shader reads lanes, forward and the flags).
 struct LaneLayout { std::string highway,direction; bool one=false,fast=false; double width=0; int lanes=1,forward=1,flags=0; };
 enum MarkFlag : int { kMarking=1, kEdgeLines=2, kSolidSeparator=4, kFast=8, kPaint=16, kOverlay=32, kLeftEdgeBroken=64, kRightEdgeBroken=128,
-                     kLeftEdgeHidden=512, kRightEdgeHidden=1024 };
+                     kLeftEdgeHidden=512, kRightEdgeHidden=1024, kStones=2048, kConcrete=4096 };
+// Paving surface of a way (OSM surface=*) as the ribbon shader draws it: stones (paving stones, sett, cobblestone),
+// concrete, else asphalt.
+int surface_flags(const std::string& surface) {
+ if(surface.starts_with("paving_stones")||surface=="sett"||surface=="cobblestone"||surface=="unhewn_cobblestone"||surface=="grass_paver")return kStones;
+ if(surface.starts_with("concrete"))return kConcrete;
+ return 0;
+}
+// Whether a side road opens the edge line of the road it joins. Not when it is closed to the public (access no,
+// private, permissive, permit, ... - a works crossover between two ramps, an emergency gate). On a motorway or a
+// motorway/trunk link a service road opens it only when it is a plain one (no driveway, parking aisle, ...) leaving or
+// joining at a shallow angle (a rest-area ramp); one meeting it at a steep angle does not, the edge line runs on solid.
+bool opens_edge_line(const g2m::RoadGraphWay& side,const std::string& through_highway,double angle) {
+ // permissive (the owner tolerates traffic) counts as closed here: on the A 66 ramps it marks a works crossover.
+ const auto restricted=[](const std::string& v){
+  return v=="no"||v=="private"||v=="permissive"||v=="permit"||v=="agricultural"||v=="forestry"||v=="emergency"||v=="military"||v=="delivery";};
+ for(const char* k:{"access","vehicle","motor_vehicle","motorcar"})if(restricted(tag(side,k)))return false;
+ const bool fast=through_highway=="motorway"||through_highway=="motorway_link"||through_highway=="trunk_link";
+ if(!fast||tag(side,"highway")!="service")return true;
+ return tag(side,"service").empty()&&angle<35*3.14159265358979323846/180;
+}
 std::optional<LaneLayout> lane_layout(const g2m::RoadGeomEntry& entry,const g2m::RoadGraphWay& w) {
  if(!entry.profile)return {};const auto& p=*entry.profile;if(p.attributes.land_class!=g2m::LandClass::PavedRoad)return {};
  LaneLayout l;l.highway=tag(w,"highway");const auto& highway=l.highway;
@@ -122,7 +142,9 @@ std::optional<LaneLayout> lane_layout(const g2m::RoadGeomEntry& entry,const g2m:
   if(counted>0){l.lanes=std::min(counted,30);l.forward=std::clamp(forward,0,l.lanes);l.width=width;}
  }
  const bool marking=tag(w,"lane_markings")!="no"&&l.width/l.lanes>=2.4&&highway!="living_street";
- l.flags=(marking?kMarking:0)|(edge_lines?kEdgeLines:0)|(tag(w,"overtaking")=="no"?kSolidSeparator:0)|(l.fast?kFast:0);
+ const int paving=surface_flags(tag(w,"surface"));
+ // A paving-stone or cobbled road carries no painted lines.
+ l.flags=paving==kStones?paving:((marking?kMarking:0)|(edge_lines?kEdgeLines:0)|(tag(w,"overtaking")=="no"?kSolidSeparator:0)|(l.fast?kFast:0)|paving);
  return l;
 }
 const g2m::RoadGraphWay* find_way(const g2m::RoadGeomTile& geometry,std::int64_t id) {
@@ -158,7 +180,7 @@ struct Approach {
  std::size_t entry=0;bool at_end=false;double cut=0; // station of the trim line on the entry
  Pose pose{};double inward=0,width=0;                // the cut point (lane centre), heading INTO the junction, lanes' width
  Pose lead{};                                        // the lane centre 1 m outward of the cut: a through overlay starts here
- LaneLayout layout;int rank=0;bool roundabout=false;
+ LaneLayout layout;int rank=0;bool roundabout=false;const g2m::RoadGraphWay* way=nullptr;
  int in_lanes=0;double in_from=0,in_to=0;            // lanes driving into the junction and their lateral span (reference frame)
 };
 double wrap(double a) {return std::remainder(a,2*3.14159265358979323846);}
@@ -227,7 +249,7 @@ RoadVisualMesh build_road_visual(const g2m::RoadGeomTile& geometry,const g2m::Ti
    const auto& entry=geometry.entries[ap.entry_index];const auto* w=find_way(geometry,entry.way_id);if(!w||!entry.profile)continue;
    auto layout=lane_layout(entry,*w);if(!layout)continue;
    signalled=signalled||signal_entries.contains(ap.entry_index);
-   Approach a;a.entry=ap.entry_index;a.at_end=ap.at_end;a.layout=*layout;a.rank=traffic_road_rank(*w);a.roundabout=tag(*w,"junction")=="roundabout";
+   Approach a;a.entry=ap.entry_index;a.at_end=ap.at_end;a.layout=*layout;a.rank=traffic_road_rank(*w);a.roundabout=tag(*w,"junction")=="roundabout";a.way=w;
    const double length=entry.profile->reference.length_m;a.cut=std::clamp(ap.at_end?length-ap.trim_m:ap.trim_m,0.0,length);
    auto pose=reference_pose(*entry.profile,a.cut);if(!pose)continue;
    // The cut point on the centre of the counted lanes (the marking frame), and the lanes toward the junction: the
@@ -265,6 +287,10 @@ RoadVisualMesh build_road_visual(const g2m::RoadGeomTile& geometry,const g2m::Ti
    Overlay o{a,b,0,&j.rings[static_cast<std::size_t>(g2m::JunctionRingLayer::RoadBed)].vertices};
    const double dx=b.pose.x-a.pose.x,dy=b.pose.y-a.pose.y;
    for(std::size_t i=0;i<list.size();++i){if(static_cast<int>(i)==best_i||static_cast<int>(i)==best_j)continue;
+    // The side road's angle to the through road's axis (0 = it leaves or joins parallel to it; a and b point in
+    // opposite directions, so the smaller of the two deviations is the angle to the axis).
+    const double angle=std::min(std::abs(wrap(list[i].inward-a.inward)),std::abs(wrap(list[i].inward-b.inward)));
+    if(!opens_edge_line(*list[i].way,a.layout.highway,angle))continue;
     o.broken|=(dx*(list[i].pose.y-a.pose.y)-dy*(list[i].pose.x-a.pose.x))>0?kLeftEdgeBroken:kRightEdgeBroken;}
    overlays.push_back(o);
    for(const auto* x:{&a,&b}){const auto& e=geometry.entries[x->entry];continued.insert({e.way_id,e.stretch.start_ref,x->at_end});}
