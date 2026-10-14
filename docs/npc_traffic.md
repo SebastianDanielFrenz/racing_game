@@ -247,3 +247,32 @@ junction), not deadlocks; `root_cycle` 2 (a 3-cycle and a 4+-cycle at junctions 
 despawn is **not** used (`backstop=0`). A full junction right-of-way needs: per-junction reservation or priority from the
 road data (priority roads, give way/stop signs, signals, right-hand rule fallback), turning-conflict zones instead of the
 point-neighbour test, and a yield state that survives the 20 Hz decisions. Not attempted here.
+
+## Turn paths through junctions (2026-10-14)
+
+Before, a route was the lane lines of its path edges laid end to end: each edge's lane line ran to the OSM node, and
+the next one started at the node on its own lane offset. A turn therefore was a heading jump at the node, and a right
+turn hopped backwards between the two lane offsets (measured on the frankfurt_hoechst and hoechst_a66 fixtures: 1301
+of 2793 junction turns ran backwards, median tightest radius 1.4 m).
+
+`plan_traffic` now keeps the lane line of each path edge as a leg and joins them with `join_route_legs`
+(`core/include/rg/npc_traffic.h`):
+
+- Each joint is cut back on both sides by `junction_turn_cuts`: the served junction trim of that approach
+  (`RoadGeomTile::junctions`, the line where the junction surface begins) where known, otherwise half the width of
+  the road being entered + 3 m (2 m for an almost straight joint). Never less than the cut of a 4 m radius turn
+  + 2.5 m, never more than that of a 30 m radius turn + 2 m (long merge wedges).
+- On a road that bends within the cut, the cut ends where the lane has turned 20 degrees from its heading at the
+  junction; a leg always keeps 10 % of its length.
+- The two cut points are joined by a cubic Bezier tangent to both lane lines. Each handle is scaled from that side's
+  distance to the corner where the two lane lines meet, so the curve stays inside that triangle and is a circular arc
+  when the distances are equal. With no corner ahead (an S-shaped lane shift) the handles are a third of the chord.
+- The corner speed pass then sees real curvature instead of a jump.
+
+Measured on every turn through every single-node fixture junction (2793; scratch harness, not in the repo): backwards
+hops 1301 -> 4, median tightest radius 1.4 m -> 7.2 m. The remaining tight or backwards cases are road stubs a few
+metres long, where no curve fits, and loop roads returning to their own node.
+Tests: `tests/unit/test_npc_traffic.cpp` `[junction_turn]`.
+
+Still missing: junction right of way from the data (priority road, give-way/stop signs, signals). Crossing conflicts
+still use the lower-id rule above.
