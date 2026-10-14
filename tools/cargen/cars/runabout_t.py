@@ -158,12 +158,35 @@ def build():
             M.box(mb, (xb, s * 0.52, 0.49), (0.04, 0.26, 0.03), "frame")
         # splash apron between the board and the frame
         M.box(mb, ((end_f[0] + start_r[0]) / 2, s * 0.50, 0.535), (end_f[0] - start_r[0], 0.18, 0.01), "paint")
+    # ---- detail: beaded wing edges, ribbed running boards, tool box and carbide generator on the boards
+    for s in (1, -1):
+        ylo, yhi = (yf0, yf1) if s > 0 else (-yf1, -yf0)
+        for path in (pf, pr):
+            for yy in (ylo, yhi):
+                tube_path(mb, [(x, yy, z) for (x, z) in path], 0.0075, "paint", count=8)
+        for k in range(4):
+            M.rounded_box(mb, ((end_f[0] + start_r[0]) / 2, s * (TRACK / 2 - 0.08 + 0.055 * k), 0.531),
+                          (end_f[0] - start_r[0] - 0.08, 0.012, 0.008), 0.003, "frame")
+    tb = (start_r[0] + 0.30, TRACK / 2 + 0.01, 0.61)                         # tool box, left board
+    M.rounded_box(mb, tb, (0.42, 0.18, 0.17), 0.012, "paint")
+    M.rounded_box(mb, (tb[0], tb[1], tb[2] + 0.09), (0.44, 0.20, 0.02), 0.006, "paint")
+    for dx in (-0.12, 0.12):
+        M.rounded_box(mb, (tb[0] + dx, tb[1] + 0.092, tb[2] + 0.04), (0.03, 0.008, 0.05), 0.003, "brass")
+    gx = start_r[0] + 0.25                                                   # carbide gas generator, right board
+    M.cylinder(mb, (gx, -(TRACK / 2 + 0.02), 0.53), (gx, -(TRACK / 2 + 0.02), 0.84), 0.065, "brass", count=20)
+    M.ellipsoid(mb, (gx, -(TRACK / 2 + 0.02), 0.838), (0.0635, 0.0635, 0.03), "brass", count=20, rings=6)
+    for zz in (0.58, 0.79):
+        M.cylinder(mb, (gx, -(TRACK / 2 + 0.02), zz), (gx, -(TRACK / 2 + 0.02), zz + 0.012), 0.069, "frame", count=20)
     flow.mark("wings and running boards")
 
     # ---- radiator (brass shell, black core), filler cap, starting crank
     rx = XF + 0.02
     M.rounded_box(mb, (rx, 0.0, 1.05), (0.10, 0.62, 0.66), 0.03, "brass")
     M.rounded_box(mb, (rx + 0.046, 0.0, 1.03), (0.012, 0.50, 0.54), 0.01, "radiator")
+    for k in range(23):                                                        # core tubes
+        M.box(mb, (rx + 0.054, -0.23 + 0.46 * k / 22, 1.03), (0.006, 0.006, 0.50), "frame")
+    for k in range(6):                                                         # cross fins
+        M.box(mb, (rx + 0.0565, 0.0, 0.81 + 0.088 * k), (0.004, 0.48, 0.004), "radiator")
     M.cylinder(mb, (rx, 0.0, 1.38), (rx, 0.0, 1.43), 0.03, "brass", count=16)
     M.ellipsoid(mb, (rx, 0.0, 1.445), (0.02, 0.02, 0.025), "brass", count=12, rings=6)
     M.tube(mb, [(rx + 0.08, 0.0, 0.62), (rx + 0.20, 0.0, 0.62), (rx + 0.20, 0.0, 0.52), (rx + 0.24, 0.0, 0.52)],
@@ -177,7 +200,11 @@ def build():
         M.lathe(mb, [(0.0, -0.12), (0.075, -0.11), (0.095, -0.06), (0.098, 0.0), (0.0, 0.0)], "paint",
                 axis_xf=compose(translate(c), rot_axis((0, 1, 0), math.pi / 2)), count=24, closed_profile=True)
         M.cylinder(mb, (c[0] - 0.002, c[1], c[2]), (c[0] + 0.012, c[1], c[2]), 0.102, "brass", count=24)
-        M.cylinder(mb, (c[0] + 0.012, c[1], c[2]), (c[0] + 0.018, c[1], c[2]), 0.088, "light_head", count=24)
+        M.lathe(mb, [(0.0, 0.012), (0.088, 0.012), (0.086, 0.020), (0.062, 0.032), (0.030, 0.038), (0.0, 0.040)],
+                "light_head", axis_xf=compose(translate(c), rot_axis((0, 1, 0), math.pi / 2)), count=24,
+                closed_profile=True)                                          # domed lens
+        M.lathe(mb, [(0.0, 0.040), (0.012, 0.040), (0.012, 0.046), (0.0, 0.046)], "brass",
+                axis_xf=compose(translate(c), rot_axis((0, 1, 0), math.pi / 2)), count=12, closed_profile=True)
         M.tube(mb, [(c[0] - 0.05, c[1], 0.86), (c[0] - 0.05, c[1], c[2] - 0.08)], 0.010, "frame", count=8)
     flow.mark("radiator, headlamps")
 
@@ -397,9 +424,9 @@ def build_cabin(m, ck):
             "handbrake", 20.0, mat="frame", grip_mat="wood", label="handbrake", grip_r=0.016)
     # ---- buttoned leather benches
     seat_closed(m, (-0.42, 0.0, FLOOR_Z + 0.34), width=1.12, recline=0.22, mat="leather", headrest=False,
-                depth=0.46, height=0.16)
+                depth=0.46, height=0.16, pleats=6)
     seat_closed(m, (-1.02, 0.0, FLOOR_Z + 0.36), width=1.12, recline=0.24, mat="leather", headrest=False,
-                depth=0.44, height=0.16)
+                depth=0.44, height=0.16, pleats=6)
     for xs in (-0.42, -1.02):
         for k in range(5):
             for j in range(2):
