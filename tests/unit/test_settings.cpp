@@ -67,7 +67,7 @@ TEST_CASE("settings: renderer choice", "[settings][renderer]") {
     const rg::SettingDef* def = rg::find_setting("graphics.renderer");
     REQUIRE(def != nullptr);
     CHECK(def->type == rg::SettingType::Choice);
-    CHECK(def->choices == std::vector<std::string>{"mobile", "compatibility"});
+    CHECK(def->choices == std::vector<std::string>{"mobile", "compatibility", "forward_plus"});
     CHECK(std::get<std::string>(def->default_value) == "mobile");
     CHECK_FALSE(def->applies_live);
     CHECK(def->applies_on_restart);
@@ -81,6 +81,13 @@ TEST_CASE("settings: renderer choice", "[settings][renderer]") {
     rg::SettingsLoadReport report = back.load_text(s.to_json());
     CHECK(report.invalid_keys.empty());
     CHECK(back.get_string("graphics.renderer") == "compatibility");
+    CHECK_FALSE(s.set("graphics.renderer", std::string("forward+"), &err)); // the engine's display name is not a choice
+    CHECK(s.set("graphics.renderer", std::string("forward_plus"), &err));
+    rg::Settings back2;
+    CHECK(back2.load_text(s.to_json()).invalid_keys.empty());
+    CHECK(back2.get_string("graphics.renderer") == "forward_plus");
+    s.reset("graphics.renderer");
+    CHECK(s.get_string("graphics.renderer") == "mobile");
 }
 
 TEST_CASE("settings: defaults and typed reads", "[settings]") {

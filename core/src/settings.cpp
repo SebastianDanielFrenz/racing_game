@@ -82,9 +82,11 @@ std::vector<SettingDef> build_schema() {
         SettingDef r = make_choice("graphics", "renderer", "Renderer",
                                    "mobile = the Vulkan renderer (default, the one VR uses; fewer draw calls). "
                                    "compatibility = the OpenGL renderer the game used before, as a fallback for "
-                                   "drivers where Vulkan fails or looks wrong. A --rendering-method on the command line "
-                                   "wins over this setting.",
-                                   "mobile", {"mobile", "compatibility"});
+                                   "drivers where Vulkan fails or looks wrong. forward_plus = the desktop quality "
+                                   "renderer (Vulkan/D3D12; more lights per object, room for screen-space effects; "
+                                   "costs more GPU time; not for the standalone headset). A --rendering-method on the "
+                                   "command line wins over this setting.",
+                                   "mobile", {"mobile", "compatibility", "forward_plus"});
         r.applies_live = false;
         r.applies_on_restart = true;
         s.push_back(std::move(r));

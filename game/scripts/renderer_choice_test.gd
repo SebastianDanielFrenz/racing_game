@@ -12,8 +12,7 @@ func _check(ok: bool, what: String) -> void:
 
 func _init() -> void:
 	# project.godot: Mobile is the default and the override file is the one renderer_choice.gd writes.
-	_check(str(ProjectSettings.get_setting("rendering/renderer/rendering_method")) == "mobile" or
-		RendererChoice.command_line_override() or FileAccess.file_exists(RendererChoice.OVERRIDE_PATH),
+	_check(RendererChoice.started_method() == "mobile" or FileAccess.file_exists(RendererChoice.OVERRIDE_PATH),
 		"project default renderer is mobile")
 	var project := ConfigFile.new()
 	_check(project.load("res://project.godot") == OK, "project.godot parses")
@@ -26,11 +25,16 @@ func _init() -> void:
 	var cfg := ConfigFile.new()
 	_check(cfg.load(path) == OK, "override file parses")
 	_check(str(cfg.get_value("rendering", "renderer/rendering_method", "")) == "gl_compatibility", "override names gl_compatibility")
+	_check(RendererChoice.store("forward_plus", path) == "", "store forward_plus")
+	cfg = ConfigFile.new()
+	_check(cfg.load(path) == OK, "forward_plus override file parses")
+	_check(str(cfg.get_value("rendering", "renderer/rendering_method", "")) == "forward_plus", "override names forward_plus")
 	_check(RendererChoice.store("mobile", path) == "", "store mobile")
 	_check(not FileAccess.file_exists(path), "mobile removes the override file")
 	_check(RendererChoice.store("mobile", path) == "", "mobile without a file is fine")
 	_check(RendererChoice.store("vulkan", path) != "", "unknown choice refused")
 	_check(not FileAccess.file_exists(path), "refused choice writes nothing")
+	_check(RendererChoice.METHODS.keys() == ["mobile", "compatibility", "forward_plus"], "choices match rg::Settings")
 	_check(RendererChoice.report("mobile").begins_with("RG_RENDERER setting=mobile running="), "report line")
 	print("renderer_choice_test failures=%d" % _failures)
 	quit(1 if _failures > 0 else 0)
