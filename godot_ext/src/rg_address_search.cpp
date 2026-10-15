@@ -82,6 +82,15 @@ Dictionary RgAddressSearch::check_destination(double lat, double lon, const Dict
     return d;
 }
 
+Dictionary RgAddressSearch::utm_to_latlon(int zone, double easting, double northing) {
+    Dictionary d;
+    const auto p = rg::utm_to_latlon(zone, easting, northing);
+    if (!p) return d;
+    d["lat"] = p->lat;
+    d["lon"] = p->lon;
+    return d;
+}
+
 void RgAddressSearch::_bind_methods() {
     using godot::D_METHOD;
     const char* cls = "RgAddressSearch";
@@ -92,6 +101,8 @@ void RgAddressSearch::_bind_methods() {
     godot::ClassDB::bind_static_method(cls, D_METHOD("parse_response", "body"), &RgAddressSearch::parse_response);
     godot::ClassDB::bind_static_method(cls, D_METHOD("check_destination", "lat", "lon", "origin", "maximum_distance_m"),
                                        &RgAddressSearch::check_destination);
+    godot::ClassDB::bind_static_method(cls, D_METHOD("utm_to_latlon", "zone", "easting", "northing"),
+                                       &RgAddressSearch::utm_to_latlon);
 }
 
 } // namespace rg_godot

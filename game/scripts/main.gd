@@ -2068,6 +2068,19 @@ func _log_owner_mark() -> void:
 	traffic.erase("actors")
 	traffic["active"] = actors.size()
 	mark["traffic"] = traffic
+	# The coordinates for the owner: lat/lon (pasteable into a map) in the real world, session metres in the flat one.
+	# Computed before the JSON is encoded, so the mark carries them; the same text goes to the clipboard below.
+	var copy_text := "flat x %.1f y %.1f z %.1f" % [point.x, point.y, point.z]
+	if world_kind == "real_world":
+		var zone := int(origin.get("zone", 32))
+		var easting := float(origin.get("e0", 0)) + point.x
+		var northing := float(origin.get("n0", 0)) + point.y
+		copy_text = "UTM %dN E %.1f N %.1f  z %.1f m" % [zone, easting, northing, point.z]
+		if ClassDB.class_exists("RgAddressSearch"):
+			var ll: Dictionary = RgAddressSearch.utm_to_latlon(zone, easting, northing)
+			if not ll.is_empty():
+				mark["latlon"] = [ll["lat"], ll["lon"]]
+				copy_text = "%.6f, %.6f" % [ll["lat"], ll["lon"]] + "  " + copy_text
 	var encoded := JSON.stringify(mark)
 	print("RG_OWNER_MARK " + encoded)
 	var mark_path := "user://drive_marks.jsonl"
@@ -2076,3 +2089,7 @@ func _log_owner_mark() -> void:
 		file.seek_end()
 		file.store_line(encoded)
 		file.flush()
+	DisplayServer.clipboard_set(copy_text)
+	print("RG_OWNER_MARK_COPY " + copy_text)
+	if _hud != null:
+		_hud.show_message("Marked (copied): " + copy_text, 6.0)

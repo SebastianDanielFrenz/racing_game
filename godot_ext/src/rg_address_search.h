@@ -26,6 +26,8 @@ public:
     static godot::Dictionary parse_response(const godot::PackedByteArray& body);
     // origin: the world config's session_origin_utm {zone, e0, n0}. {status: "ok"|"outside_utm"|"too_far", x, y}.
     static godot::Dictionary check_destination(double lat, double lon, const godot::Dictionary& origin, double maximum_distance_m);
+    // UTM zone (north) + easting/northing in metres (false easting included) -> {lat, lon} in degrees; {} when invalid.
+    static godot::Dictionary utm_to_latlon(int zone, double easting, double northing);
 
 protected:
     static void _bind_methods();
