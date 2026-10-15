@@ -22,9 +22,10 @@ add_executable(rg_unit_tests
   test_g2m_link_smoke.cpp
   test_g2m_ps_bridge_link_smoke.cpp
   test_world_terrain.cpp
+  test_terrain_colours.cpp
   test_road_surface.cpp
-  test_road_visual_junctions.cpp
   test_road_structures.cpp
+  test_road_overpass.cpp
   test_terrain_smoothing.cpp
   test_route_road_coverage.cpp
   test_route_road_render_path.cpp

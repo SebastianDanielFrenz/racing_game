@@ -51,6 +51,11 @@
     "fallback_height_m": 8.0,
     "storey_height_m": 3.0
   },
+  "road_separation": {
+    "clearance_m": 2.5,
+    "margin_m": 3.0,
+    "approach_reach_m": 60.0
+  },
   "road_visuals": {
     "enabled": true,
     "distance_m": 2500.0,

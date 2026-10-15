@@ -106,6 +106,10 @@ struct WorldConfig {
     Lod lod;
     TerrainSmoothing terrain_smoothing;
     double road_verge_drop_m=0.06;
+    // "road_separation" block (rg::RoadSeparation): grade-separated crossings in the road patch and approach decks.
+    double road_separation_clearance_m=2.5;
+    double road_separation_margin_m=3.0;
+    double road_separation_approach_reach_m=60.0;
     PhysicsTerrainConfig physics;
     std::string surface_map; // resolved to an absolute path (see below)
     std::string palette;     // resolved to an absolute path (see below)

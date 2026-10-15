@@ -30,7 +30,8 @@ racing_game/
       world_config.h                  rg::WorldConfig, rg::load_world_config() - see "World config" below
       render_focus.h                  (2026-10-13, engine-neutral) rg::RenderFocusTracker/RenderFocusParams/rig_leads_focus: velocity-led render focus p + v_hat*min(|v|*1 s, 150 m), smoothed (tau 0.35 s); applied only while the active camera follows the car (chase/bumper/cockpit/orbit/xr_cockpit)
       terrain_stream.h                (2026-10-13) upload-throughput helpers: adaptive_upload_budget_ms (0.8 ms up to ~3 ms with the backlog), chunk_time_to_reach_s/sort_adds_by_urgency (finest level first, then time to reach), lod_coverage_ahead/grid_coverage_ahead (l0..l3_ahead_m instrumentation), chunk_surface_height/SampleWindow (visible-vs-physics ground check), reselect_distance_for_speed (reselect 64 m at >= 100 m/s)
-      terrain_view_streamer.h         rg::TerrainViewStreamer (R2.2 R8): render LOD follows a focus point - background reselect + build, key diff {added, removed}, adapter ordering contract in the header; see "Render LOD streaming (R8)" below
+      terrain_view_streamer.h         rg::TerrainViewStreamer / TerrainViewDiff (R2.2 R8): aliases of geo2map g2m::world::ViewStreamer / ViewDiff since terrain migration phase 3b (render LOD follows a focus point - background reselect + build, key diff {added, removed, replaced}, adapter ordering contract in g2m/world/view_streamer.h); see "Render LOD streaming (R8)" below
+      terrain_colours.h               (phase 3b) the game's terrain chunk colours: TerrainColourTable by class id (make_terrain_colour_table from RoadSurfaceMap: asphalt grey, dirt brown), chunk_vertex_colors (+ the height/slope ramp for every other class), apply_debug_tint (RG_TERRAIN_TINT), chunk_colour_hook = the ViewSource colour hook; test_terrain_colours.cpp [terrain_colours] pins the bytes recorded at 5a3baed
       road_classes.h                  rg::RoadSurfaceMap only (physics.road_surfaces names -> render colours; leaves in phase 7). The rest (ClassLookup/RoadSegmentsFn, road_raster_params_for_level, road_class_lattice, src_osm_tiles_for_chunk, rasterize_chunk_road_classes) lives in geo2map g2m::world (chunk_road_classes.h) since terrain migration phase 1 - see "Visible roads (R-2)" below
       route_check.h                   rg::Route + load_route() ("rg.route/1", exception-free, optional "criteria" object -> RouteCriteria), apply_route_criteria() (RouteCheckParams defaults < route file < CLI, field by field), phys_tile_index()/count_seam_crossings() (255 m physics grid, origin 0.5), sample_l0_height() (bilinear on the L0 cell-centre lattice through any tile lookup), check_route() (length, 10 m-window max/p99 grade plus a steep_stretches list above grade_report_threshold, seam crossings, elevation range, NoData, corner radius = circle through the points +-corner_window_m (10 m) along the route at every 1 m sample (waypoint-density independent) plus a tight_corners list below corner_report_radius_m, start offset vs RouteCheckParams' R5 criteria), route_matches_world(), check_route_on_world() (the same over WorldTerrain::height_tile_shared) - used by tools/route_check and the [realdata] test
       tyre_sound.h                    (perf, 2026-10-15) rg::TyreVoice/TyreSoundBank: procedural tyre roll hiss + skid squeal, interleaved per-wheel render (port of the former tyre_sound_model.gd + its GDScript mixing loop, was 2-3 ms/frame on the main thread); bound as RgTyreSound (godot_ext/src/rg_tyre_sound.*: setup/update_wheel/render, static channel_to_stereo/scaled for the Godot fallback audio path); test_tyre_sound.cpp [tyre_sound]
@@ -72,7 +73,7 @@ racing_game/
       terrain_mode.cpp                terrain_mode.h implementation
       fixed_rate_loop.cpp             FixedRateLoop implementation
       world_config.cpp                load_world_config() implementation - strict, exception-free JSON validation (see "World config" below)
-      terrain_view_streamer.cpp       TerrainViewStreamer implementation (one worker thread, one diff in flight, coalescing)
+      terrain_colours.cpp             terrain_colours.h implementation (moved from world_terrain.cpp in phase 3b; terrain_view_streamer.cpp and buildings.cpp are deleted, the code is geo2map's)
       route_check.cpp                 route_check.h implementation
       credits.cpp, settings.cpp, spawn_presets.cpp, shell_flow.cpp, camera_math.cpp, road_ahead.cpp, json_util.h   (R5) implementations of the six headers above (json_util.h: shared exception-free JSON helpers)
     CMakeLists.txt                    rg_core STATIC target
@@ -81,6 +82,7 @@ racing_game/
       register_types.h/.cpp           GDExtension entry point (rg_godot_library_init), registers RgSimulation + RgTerrainView
       rg_simulation.h/.cpp            RgSimulation : godot::Node - the one GDScript-facing class; owns one rg::Session and one rg::PlayerModeMachine; initialize_terrain() (R7) builds a terrain-mode Session on a worker thread, polled via get_init_status() - see "Godot bindings for Session terrain (R7)" and "Player modes and world switch (R9)" below; get_wheel_attachment_local/_steered/_is_front (static, from Session::vehicle_desc())/_compression/_spin_angle/_steer_angle (per-frame, from FrameSnapshot::wheels[i].state) feed vehicle_visual.gd - see "Vehicle visual (carvis)" below
       rg_render_focus.h/.cpp          (2026-10-13) RgRenderFocus : godot::RefCounted - tracker wrapper for camera_director.gd, static rig_leads_focus and grid_coverage_ahead (road/building ribbon coverage)
+      rg_ring_streamer.h/.cpp         (phase 3b) RgRingStreamer : godot::RefCounted - binding of g2m::world::RingStreamer (configure, update, next_job (any thread), accept, frame -> [{x, y, near, far, downgraded, evicted}], known_tiles, pending_jobs, oldest_wanted_age_s); road_stream.gd and building_stream.gd only run their worker thread (next_job -> build the tile) and the render nodes
       rg_steering_assist.h/.cpp, rg_address_search.h/.cpp   (2026-10-14) RgSteeringAssist (RefCounted) and RgAddressSearch (static) - conversion-only bindings of the two headers above
       rg_sky.h/.cpp                   (V1) RgSky : godot::RefCounted - rg::TimeWeather binding (initialize(sky_json, world_config), advance, get_state with Godot-frame sun/moon directions, get_menu, choose, set_local_time_h, format_temperature_c)
       rg_terrain_view.h/.cpp          RgTerrainView : godot::Node3D (PLAN.md R2.1) - LOD terrain preview seam, streamed around a focus since R8; see "Terrain preview (R2.1)", "Render LOD streaming (R8)" and "Godot bindings for Session terrain (R7)" below
@@ -275,6 +277,14 @@ release/`linux-release` preset's populated FetchContent sources. Override
 with `-DRG_G2M_DEPS_DIR=...` if that path differs on another machine; a
 `message(WARNING ...)` fires if the directory does not exist.
 
+Bumped to `a6e9947` (2026-10-15, terrain migration phase 5, geo2map design D48): the served completion's abutment walk is 200 m (was 60 m) and the second roads.geom discovery stage lists 205 m DEM/graph squares around every node of the incident bridges (`road_bridge_dependencies` gained a `walk_margin_mm` argument, default `kRoadBridgeWalkMarginMm`; tests/unit/test_road_overpass.cpp uses the default, as the deriver does). Release-id bump #2: warm the stores again. The game's `complete_road_profiles`, 20 m retry, DEM-sampler use and deck filling from game profiles are still NOT deleted: the deletion gate is the real-store probe (zero game-only entries on both regions), which has not run.
+
+Bumped to `ff39870` (2026-10-15, terrain migration phase 4, geo2map design D47): served `roads.geom` encoding 8 carries tunnel floors (provenance `TunnelFloor`, the game's DEM-floor rule) and the game's accepted-bridge anchors, so `core/src/road_structures.cpp` `complete_road_profiles` finds tunnels and those bridges/ground stretches already profiled and skips them (it completes only declined entries). It is NOT deleted yet: the owner rule asks for zero game-only differences on the real stores first (geo2map's roadcmp test shows 0 on both OSM fixtures; the real-store probe is pending). Release-id bump: the derived stores go cold for roads.geom and terrain.carved; warm them (`TerrainService::warm` or `g2m_tiler bake`) before a drive.
+
+Bumped to `7426eb8` (2026-10-15, terrain migration phase 3b: `g2m::world` ViewStreamer, RingStreamer and BuildingSet, see "Streamers and buildings moved to geo2map" below).
+
+Bumped to `2b6a6e5` (2026-10-15, terrain migration phase 3a: `g2m::world` road ribbons and structure decks, incl. the grade-separation approach decks of the overpass fix, see "Road ribbons and structure decks moved to geo2map" below).
+
 Bumped to `162f0c5` (2026-10-14, geo2map main: junction crossings PR #1 + G4 routing slices 1/2/4/5 and the LOD-settings API PR #2): `g2m_route` is linked PUBLIC into `rg_core` (route_planner.h, map_view.h); `g2m::RenderRoadLod` / `ClassLookup::lod` carry the in-game road-detail setting.
 
 Bumped to `1e18588` (G2.5a-grip G-a/G-b/G-c, 2026-09-27) to bring in road
@@ -374,8 +384,8 @@ indices, Z-up, local to `mesh.origin`), `origin_session[3]` (`mesh.origin -
 packed RGBA8 colour per vertex - a hypsometric height/slope ramp, with
 `LandClass::PavedRoad`/`UnpavedRoad` painted over it where `mesh.land_class`
 says so - see "Visible roads (R-2)" below - every other class still falls
-through to the height/slope ramp, see `world_terrain.cpp`'s
-`chunk_vertex_colors()`).
+through to the height/slope ramp, see `chunk_vertex_colors()` in
+`terrain_colours.cpp`).
 
 `RgTerrainView : godot::Node3D` (`godot_ext/src/rg_terrain_view.h/.cpp`) -
 the Godot-facing seam, mirroring `RgSimulation`'s "all engine-neutral logic
@@ -1322,7 +1332,7 @@ Vehicle definitions are retained per path in RgSimulation after successful load,
 ## Road reconstruction and terrain smoothing (2026-10-03)
 
 `core/include/rg/road_surface.h`, `road_structures.h`, `terrain_smoothing.h`
-and matching .cpp files implement game-side profile surfacing, separate bridge
+and matching .cpp files (the deck meshes are geo2map's since phase 3a, see below) implement game-side profile surfacing, separate bridge
 slabs/tunnel floors/OSM-derived highway roofs, and configurable Gaussian terrain
 smoothing. `WorldTerrain` retains an immutable raw-height cache and publishes
 the processed level-0 heights to both physics and rendering. Geometry derives
@@ -1330,6 +1340,7 @@ from immutable elev.base; structural publication has a separate short lock.
 `Session::sync_road_decks` installs nearby mesh colliders behind the gate through `rg::DeckInstaller` (S1: `deck_installer.h/.cpp`, shapes built on two own threads via physics_sim R2 `World::create_shape`, installed with `create_body(desc, handle)` in fixed (way_id, start, end) order, decks 600 m beyond the required radius prefetched, `kDeckInstallBudget` 16 per attempt, `SessionConfig::legacy_deck_install` = the old sim-thread build kept as the reference/A-B; `Session::deck_install_stats()`; tests `test_deck_installer.cpp` [deck_installer], hidden `test_deck_install_perf.cpp` [.][realdata][perf][s1]);
 `RgTerrainView::sync_road_decks` owns independently rebased structural RIDs.
 Settings and reconstruction bounds are in `docs/road_surfaces.md`.
+**Grade-separated crossings (2026-10-15):** `rg::RoadSeparation` (road_structures.h; world config block `road_separation`: clearance_m 2.5, margin_m 3.0, approach_reach_m 60) - `RoadSurfacePatch::apply` never lets a road lift (lower) terrain inside another road's footprint + margin when it is more than the clearance above (below) it, and `build_road_decks` adds inferred approach decks (`RoadDeck::start_ref` now matched too) where a ground approach of an OSM bridge still overlaps a lower road, so render ribbons and collision no longer carry the embankment onto the road underneath. Tests `tests/unit/test_road_overpass.cpp` [road_overpass] (synthetic motorway overpass, negative control, hidden `[.][realdata]` case at utm32n/2/457/5422).
 **S1 (2026-10-06):** pins physics_sim 606c428 (surface classes, N2O N2-N7, R2 prebuilt shapes, car_hyper_n2o) and geo2map_engine 072a321 (slice 9 carved layer; behaviour change: served bridge profiles end exactly at the stretch end, so `road_structures.cpp` `deck()` keeps the last station exactly - a float ulp had dropped way 32275368's deck). `data/surfaces/surfaces.json` has 13 surfaces: concrete, paving_stones, sett, cobblestone, gravel, compacted, sand added with the names of physics_sim's surface_conditions classes (wet grip applies); `core/include/rg/surface_kinds.h` maps every `g2m::SurfaceKind` to a name (Unknown -> asphalt, Water -> low_mu placeholder); values are dry [AS] numbers whose citations are UNVERIFIED (notes in each entry's source), test `test_surface_kinds.cpp` [surfaces][s1]. Nitrous: catalog entries `car_sedan_gen_n2o` and `car_hyper_n2o` (kW/Nm/kg only), `core/include/rg/nitrous_info.h` (`nitrous_info`, `nitrous_hud`: state off/ARMED/SPRAYING/PURGE/CUT, bottle kg/bar, flow g/s, kit fuel), `RgSimulation.get_vehicle_nitrous`, HUD line in `hud.gd`, action `toggle_nitrous` (pad Y, key N); spawn/HUD test `test_nitrous_spawn.cpp` [nitrous][s1] (both catalog cars spawn, HUD off -> ARMED); the armed-vs-unarmed gain measurement is done 2026-10-14: hidden `tests/unit/test_nitrous_gain.cpp` [.][nitrous][gain], table in PLAN.md; the hyper sprays only in Sport drive mode. Known physics caveat (physics_sim, not fixed here): with spray the hyper's boost can overshoot 1.8 bar to 2.0-2.4 bar and its turbo can sit on the rotor speed cap at 6000-7000 rpm.
 
 `game/scripts/b8_contact_smoke.gd` is a SceneTree test launched with
@@ -1369,18 +1380,60 @@ G3/R3 consumer design (plan only, nothing built): docs/g3_consumer_design.md - g
 
 **Gray patches over the road (2026-10-13, owner: cockpit at 428 km/h, gray where the road should be, "I can drive through the terrain").** Latent defect found and fixed; the owner's exact trigger is NOT reproduced (see below). (1) Defect: an L1/L2 tile whose road surface could not be derived (`WorldTerrain::produce_height`) returned the smoothed UNCARVED tile as Ready and kept it in the service cache and `height_cache_` for good, and `TerrainViewStreamer` never rebuilds a resident key - so such a chunk draws ground above the physics road bed (L0 physics stays carved) and hides the ribbons. Forced on real data (`RG_TERRAIN_FORCE_FALLBACK=100000`, 100 m/s on the A 5): rendered ground up to 1.0 m above the bed, 132 fallback chunks resident, a magenta band in the `RG_TERRAIN_TINT=carve` shot. (2) The old `ground_above_m` probes could not see it (they compare an L0 chunk with the L0 carved tile and skip points without a physics tile, i.e. every coarse chunk): they read 0.000 in the forced run while the real excess was 1.0 m, exactly like the owner's log. New probe `RgTerrainView.get_bed_check(px, py, dx, dy, ahead_m)` = rendered ground (highest uploaded chunk, any level) minus the physics ROAD BED centre line (`RoadSurfacePatch::bed_points`, `WorldTerrain::road_bed_points`, `rg::rendered_vs_bed`); `RG_TERRAIN_STREAM` gained `fallback_chunks fallback_tiles bed_above_max_m bed_above_p95_m bed_samples bed_worst_level bed_worst_carve`. (3) Fix: `RenderChunk::carve` (NotCarved/Carved/Fallback = worst state of the chunk's height window, `rg::chunk_window_carve`), `WorldTerrain::tile_carve/fallback_tile_count/heal_fallback_tiles` (re-carves fallback tiles from the retained uncarved tile once the road surface can be derived, replaces the `height_cache_` entry, old tile kept alive in `retired_tiles_` because chunk builds hold raw pointers), `rg::stale_fallback_chunks` picks the resident chunks built as Fallback that are carved now; `RgTerrainView::heal_tick()` (every frame, background `std::async` re-carve every 2 s while fallback tiles exist, then at most 2 chunk rebuilds per frame swapped in place by `replace_chunk_at`: upload first, free the old RIDs after, no hole). Forced run: bed_above_max 1.016 -> 0.066 m, fallback chunks 132 -> 0. (4) Debug aids: env `RG_TERRAIN_TINT=level|carve|both` (chunk colours by LOD level / carve state), `RG_TERRAIN_FORCE_FALLBACK=N` (first N coarse tiles produced as Fallback), `RG_TERRAIN_NO_HEAL=1`, stderr `RG_TERRAIN_FALLBACK ...` per fallback tile, `main.debug_hide(terrain, ribbons)` + `RgTerrainView.set_terrain_visible`; `hs_drive_test.gd` gained `--hs-route=<json>` (routes are densified to 10 m), `--hs-view=cockpit`, `--hs-hide-terrain/--hs-hide-ribbons`, `--hs-shot-t0/--hs-shot-step`, bed-probe fields in RG_HS_DONE; `data/routes/a5_corridor_probe.json` (the owner's A 5 southbound path from his log, corridor world). Unit test `tests/unit/test_terrain_carve_state.cpp` ([terrain_stream]). Heal rebuilds run off the main thread: `rg::ChunkRebuildJob` (terrain_stream.h, one batch of up to 8 keys in flight via std::async, cancel+join in release/load_preview/dtor); `heal_tick()` only swaps finished chunks in (2 per frame, key looked up again, dropped if gone or no longer Fallback) and `heal_ms` is that swap time. Unfixed/unknown: with intact data no fallback occurs on the A 5 route (5.2 km at up to 114 m/s, Compatibility and Mobile renderers: bed_above_max 0.07 m, 0 fallback tiles), so what made a road surface fail in the owner's session is unknown - the stderr `RG_ROAD_SURFACE fetch_failed` / `RG_TERRAIN_FALLBACK` lines of his console would tell. L3+ chunks (beyond ~1.3 km at 4 m/8 m grid and up) are still never carved; only the ribbon depth pull covers them.
 
+## Streamers and buildings moved to geo2map (terrain migration phase 3b, 2026-10-15)
+
+Since the geo2map pin `7426eb8` the render chunk selection and build, the render LOD streamer, the ring policy of the
+road ribbon and building streams and the building extraction are geo2map's `g2m_world`, ported statement for statement
+(libm -> `g2m::det`) and pinned in geo2map's `tests/world/test_view_streamer.cpp`, `test_ring_streamer.cpp` and
+`test_buildings.cpp` against this repo's own code and scripts at 5a3baed:
+- `rg::RenderChunk` = `g2m::world::ViewChunk`, `rg::ChunkCarve` = `g2m::world::ChunkCarve`, `rg::TerrainViewSource` =
+  `g2m::world::ViewSource` (no `surfaces` field any more: a `colour` hook), `rg::TerrainViewStreamer`/`TerrainViewDiff`,
+  `rg::select_view_keys`, `chunk_window_carve`, `TileCarveFn`, `reselect_distance_for_speed`, `chunk_time_to_reach_s`,
+  `sort_adds_by_urgency`, `changed_road_lod_levels` and `rg::Building`/`BuildingPoint`/`BuildingGround`/
+  `extract_buildings` are aliases or using-declarations. `build_render_chunks` / `build_static_view_from_lookup`
+  stay as thin wrappers (same arguments) over `g2m::world::build_view_chunks` / `build_static_view` with
+  `rg::chunk_colour_hook(surfaces)`.
+- Colours stay here: `rg/terrain_colours.h` (a table keyed by the per-vertex class id, the hypsometric ramp for the rest,
+  the RG_TERRAIN_TINT debug tint), applied on the build thread through `ViewSource::colour`; `WorldTerrain::view_source()`
+  sets it from the world's road surfaces. `test_terrain_colours.cpp` holds the colour bytes recorded before the move.
+- `road_stream.gd` / `building_stream.gd` keep their worker thread and the render nodes; which tile to build next, and
+  which to show, downgrade (buildings: near part dropped beyond ordinary + 2048 m) or evict (beyond the distance +
+  2048 m) comes from `RgRingStreamer` (`godot_ext/src/rg_ring_streamer.*`). Roads: one tier, a tile built empty stays
+  known; buildings: full within ordinary + 725 m, skyline-only within skyline + 725 m.
+- Release id unchanged (no served layer changed).
+
+## Road ribbons and structure decks moved to geo2map (terrain migration phase 3a, 2026-10-14)
+
+The ribbon mesh (everything in "Junction surfaces" and "Junction markings" below) and the structure decks (bridge
+decks, tunnel floors, inferred tunnel roofs) are built by geo2map's `g2m_world` since the geo2map pin `2b6a6e5`:
+`g2m::world::build_road_ribbons` / `add_junction_surfaces` / `RoadRibbonTile` (`g2m/world/road_ribbons.h`) and
+`g2m::world::build_road_decks` / `road_deck_height` / `RoadDeck` / `build_structure_set` (`g2m/world/road_structures.h`),
+ported statement for statement (libm -> `g2m::det`) and pinned byte for byte in geo2map's
+`tests/world/test_road_meshes.cpp` against this repo's own code at 0c027dc. `core/src/road_visual.cpp`,
+`rg/road_visual.h` and the mesh half of `road_structures.cpp` are deleted; `rg/road_structures.h` keeps
+`complete_road_profiles` (until phase 4) and aliases `rg::RoadDeck`, `rg::road_deck_height`, `rg::build_road_decks`.
+`WorldTerrain::road_visual_tile` returns a `g2m::world::RoadRibbonTile`; colours and the Godot upload
+(`RgTerrainView::get_road_visual_tile`, road.gdshader) stay here. `rg::traffic_road_rank` forwards to
+`g2m::world::road_priority_rank` (one rank table for traffic and paint). The junction-surface tests moved with the code
+(geo2map `[world][road_ribbons][junction]`). The grade-separation approach decks (overpass fix above) moved too:
+`rg::RoadSeparation` is `g2m::world::RoadSeparation` (`{clearance_m, margin_m, approach_reach_m, enabled = true}`),
+`build_road_decks(geometry, separation)` / `build_road_ribbons(..., lift, separation)`; the world config block still
+fills it in `WorldTerrain::open`, and `RoadSurfacePatch`'s own separation rule stays here (phase 4). geo2map pins the
+port against this repo's 945455a output with separation on and off. The old `RG_STRUCTURE tunnel_roof` stderr line is gone (the library does
+not print; inferred decks carry `inferred = true`). File names below refer to the geo2map port now.
+
 ## Junction surfaces (2026-10-13)
 
-`core/src/road_visual.cpp` `add_junction_surfaces` (called at the end of `build_road_visual`, public in
-`rg/road_visual.h`) draws one asphalt patch per junction the roads.geom tile owns (geo2map encoding 7
+geo2map `src/world/road_ribbons.cpp` `add_junction_surfaces` (formerly `core/src/road_visual.cpp`, called at the end of
+`build_road_ribbons`) draws one asphalt patch per junction the roads.geom tile owns (geo2map encoding 7
 `RoadGeomTile::junctions`, road bed ring; declined and `OnStructure` junctions skipped). Ear clipping of the ring, then
 every triangle cut by the terrain lattice lines (x.5 m), vertices shared, heights from the ground sampler, 4 mm above
 the ribbons so the square ribbon ends vanish; a ring with a NoData vertex is dropped whole. Ribbon lane markings end at
 the served trim (2 m ramp) where this tile owns the junction, else the old 3-11 m ramp. Rings carry geo2map's kerb
 returns (D44, geo2map PR #1). A store derived before encoding 7 has no junctions: ribbons only, as before. Test
-`tests/unit/test_road_visual_junctions.cpp` ([road_visual][junction]).
+geo2map `tests/world/test_road_meshes.cpp` ([world][road_ribbons][junction]).
 
-**Junction markings (2026-10-14).** `build_road_visual` also lays out the paint at served junctions (owner tile only):
+**Junction markings (2026-10-14).** `build_road_ribbons` (geo2map) also lays out the paint at served junctions (owner tile only):
 - Ribbons follow the served cross-section: asphalt = `carve_footprint().roadbed`, markings over the counted lanes
   (lanes/forward/width from the counted bands when a cross-section exists, else the tags), a 0.3 m gravel verge strip
   (vertex `verge`, adapter bit 256) each side. The last ribbon row sits exactly at the stretch length (it used to land

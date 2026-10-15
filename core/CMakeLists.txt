@@ -67,13 +67,11 @@ add_library(rg_core STATIC
     src/terrain_mode.cpp
     src/world_config.cpp
     src/world_terrain.cpp
-    src/buildings.cpp
-    src/road_visual.cpp
     src/road_surface.cpp
     src/terrain_smoothing.cpp
     src/road_structures.cpp
     src/fixed_rate_loop.cpp
-    src/terrain_view_streamer.cpp
+    src/terrain_colours.cpp
     src/terrain_stream.cpp
     src/render_focus.cpp
     src/steering_assist.cpp

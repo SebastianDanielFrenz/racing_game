@@ -9,8 +9,8 @@ constexpr double bin_size = 16;
 int bin(double value) { return static_cast<int>(std::floor(value / bin_size)); }
 double smooth(double t) { t=std::clamp(t,0.0,1.0); return t*t*(3-2*t); }
 }
-RoadSurfacePatch::RoadSurfacePatch(const g2m::RoadGeomTile& geometry,double verge_drop) : verge_drop_m_(verge_drop) {
-    decks=build_road_decks(geometry);
+RoadSurfacePatch::RoadSurfacePatch(const g2m::RoadGeomTile& geometry,double verge_drop,const RoadSeparation& separation) : verge_drop_m_(verge_drop),separation_(separation) {
+    decks=build_road_decks(geometry,separation);
     for(const auto& deck:decks) {
         if(deck->tunnel_floor)continue;
         const auto& m=deck->mesh;const auto rows=m.positions.size()/30;
@@ -45,7 +45,7 @@ RoadSurfacePatch::RoadSurfacePatch(const g2m::RoadGeomTile& geometry,double verg
             auto b=p.reference.at(station); auto zb=p.at(station);
             if (!b.ok() || !zb.ok()) break;
             const bool covered=std::any_of(decks.begin(),decks.end(),[&](const auto& d){
-                return d->inferred&&d->way_id==entry.way_id&&station>=d->start_station&&station<=d->end_station;
+                return d->inferred&&d->way_id==entry.way_id&&d->start_ref==entry.stretch.start_ref&&station>=d->start_station&&station<=d->end_station;
             });
             if(covered) {a=std::move(b);za=std::move(zb);continue;}
             Segment s{a.value().x,a.value().y,za.value().height_m,
@@ -80,7 +80,6 @@ std::size_t RoadSurfacePatch::apply(g2m::HeightTile& tile) const {
         const double n=static_cast<double>(tile.key.min_northing())+(y+.5)*spacing;
         const auto candidates=bins_.find({bin(e),bin(n)});
         if(candidates==bins_.end()) continue;
-        const Segment* best=nullptr; double distance=std::numeric_limits<double>::infinity(), fraction=0;
         struct Candidate { const Segment* segment; double score, fraction; };
         std::map<std::pair<std::int64_t,std::uint32_t>,Candidate> roads;
         for(auto index:candidates->second) {
@@ -94,15 +93,32 @@ std::size_t RoadSurfacePatch::apply(g2m::HeightTile& tile) const {
             const auto id=std::pair{s.way,s.start_ref};
             auto found=roads.find(id);
             if(found==roads.end() || score<found->second.score) roads.insert_or_assign(id,Candidate{&s,score,t});
-            if(score<distance || (score==distance && best && std::pair{s.way,s.start_ref}<std::pair{best->way,best->start_ref})) {
-                distance=score; best=&s; fraction=t;
+        }
+        if(roads.empty()) continue;
+        // Each nearby road's own surface height at this cell (camber, verge drop; no terrain blend yet).
+        struct Road { const Segment* segment; double score, fraction, d, z; bool protects, kept; };
+        std::vector<Road> near; near.reserve(roads.size());
+        for(const auto& [id,c]:roads) {
+            (void)id;const auto& r=*c.segment;const double d=c.score*(r.half_width+r.shoulder),lateral=std::min(d,r.half_width);
+            const double z=r.z0+(r.z1-r.z0)*c.fraction-r.crown*(std::sqrt(lateral*lateral+.25)-.5)-verge_drop_m_*smooth((d-r.half_width)/std::max(.001,r.shoulder));
+            near.push_back({&r,c.score,c.fraction,d,z,!r.tunnel&&d<=r.half_width+r.shoulder+separation_.margin_m,true});
+        }
+        // Grade separation (RoadSeparation): inside a road's protected footprint, a road more than clearance_m above it
+        // is on a structure here and must not lift the terrain, and one more than clearance_m below it (that does not
+        // protect this cell itself) must not dig into it. Where two such roads both protect the cell, the lower wins:
+        // the upper one cannot stand on ground over a road that is driven underneath.
+        for(auto& b:near) {
+            if(b.segment->tunnel) continue;
+            for(const auto& a:near) {
+                if(&a==&b||!a.protects) continue;
+                if(b.z>a.z+separation_.clearance_m||(b.z<a.z-separation_.clearance_m&&!b.protects)){b.kept=false;break;}
             }
         }
+        const Road* best=nullptr;
+        for(const auto& r:near) if(r.kept&&(!best||r.score<best->score)) best=&r; // map order: ties go to the smaller id
         if(!best) continue;
-        const auto& s=*best; const double d=distance*(s.half_width+s.shoulder);
-        // Rounded crown removes the centreline crease, while retaining camber.
-        const double camber=s.crown*(std::sqrt(std::min(d,s.half_width)*std::min(d,s.half_width)+.25)-.5);
-        const double road=s.z0+(s.z1-s.z0)*fraction-camber-verge_drop_m_*smooth((d-s.half_width)/std::max(.001,s.shoulder));
+        const auto& s=*best->segment; const double distance=best->score, d=best->d;
+        const double road=best->z;
         const double core=s.half_width+s.shoulder;
         const double weight=d<=core ? 1 : 1-smooth((d-core)/std::max(.001,s.blend));
         double height=raw/256.0+(road-raw/256.0)*weight;
@@ -112,17 +128,15 @@ std::size_t RoadSurfacePatch::apply(g2m::HeightTile& tile) const {
         // original profile away from overlapping road footprints.
         double sum=0,weights=0;
         constexpr double transition=.35;
-        for(const auto& [id,candidate]:roads) {
-            (void)id;const auto& other=*candidate.segment;
+        for(const auto& candidate:near) {
+            if(!candidate.kept) continue;
+            const auto& other=*candidate.segment;
             if(other.layer!=s.layer || other.tunnel!=s.tunnel) continue;
             const double proximity=1-smooth((candidate.score-distance)/transition);
             if(proximity<=0) continue;
-            const double od=candidate.score*(other.half_width+other.shoulder);
-            const double lateral=std::min(od,other.half_width);
-            const double oz=other.z0+(other.z1-other.z0)*candidate.fraction-other.crown*(std::sqrt(lateral*lateral+.25)-.5)-verge_drop_m_*smooth((od-other.half_width)/std::max(.001,other.shoulder));
             const double oc=other.half_width+other.shoulder;
-            const double influence=od<=oc?1:1-smooth((od-oc)/std::max(.001,other.blend));
-            sum+=proximity*(raw/256.0+(oz-raw/256.0)*influence);weights+=proximity;
+            const double influence=candidate.d<=oc?1:1-smooth((candidate.d-oc)/std::max(.001,other.blend));
+            sum+=proximity*(raw/256.0+(candidate.z-raw/256.0)*influence);weights+=proximity;
         }
         if(weights>0) height=sum/weights;
         const auto quantized=static_cast<std::int32_t>(std::llround(height*256));
