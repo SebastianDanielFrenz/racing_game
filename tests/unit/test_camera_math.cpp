@@ -9,6 +9,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <optional>
 #include <set>
 #include <string>
 #include <vector>
@@ -555,4 +556,241 @@ TEST_CASE("cockpit look: stick rates are frame independent and wheel angle honor
     CHECK_THAT(rg::steering_wheel_angle_rad(0.25,360),WithinAbs(kPi/2,1e-12));
     CHECK_THAT(rg::steering_wheel_angle_rad(-1,360),WithinAbs(-2*kPi,1e-12));
     CHECK_THAT(rg::steering_wheel_angle_rad(2,180),WithinAbs(kPi,1e-12));
+}
+
+// ------------------------------------------------------------------ drone ----
+// Golden comparison against the former GDScript drone_rig.gd, transcribed line by line below in Godot's own Y-up
+// frame (Vector3 maths written out, lerp_angle as in Godot 4). The rg_core version works in a Z-up frame; the
+// binding maps Godot (x, y, z) to (x, -z, y), done here by hand.
+namespace {
+
+struct G3 {
+    double x = 0, y = 0, z = 0;
+};
+G3 operator+(G3 a, G3 b) { return {a.x + b.x, a.y + b.y, a.z + b.z}; }
+G3 operator-(G3 a, G3 b) { return {a.x - b.x, a.y - b.y, a.z - b.z}; }
+G3 operator*(G3 a, double k) { return {a.x * k, a.y * k, a.z * k}; }
+double glen(G3 a) { return std::sqrt(a.x * a.x + a.y * a.y + a.z * a.z); }
+G3 glerp(G3 a, G3 b, double w) { return a + (b - a) * w; }
+G3 grotated_up(G3 v, double ang) { // Vector3.rotated(Vector3.UP, ang)
+    const double c = std::cos(ang), s = std::sin(ang);
+    return {v.x * c + v.z * s, v.y, -v.x * s + v.z * c};
+}
+double glerp_angle(double from, double to, double w) {
+    const double tau = 6.283185307179586;
+    const double diff = std::fmod(to - from, tau);
+    const double dist = std::fmod(2.0 * diff, tau) - diff;
+    return from + dist * w;
+}
+double gsignf(double v) { return v > 0 ? 1.0 : (v < 0 ? -1.0 : 0.0); }
+
+// The former drone_rig.gd, state and update_rig body (the ground probes are fed in by the caller).
+struct GdDrone {
+    double follow_distance_m = 12.0, height_per_distance = 0.5, look_height_m = 1.0, terrain_clearance_m = 1.0;
+    double position_lag = 4.0, orbit_deadzone = 0.2, orbit_lag = 10.0, zoom_wheel_factor = 1.15, zoom_key_rate = 1.2;
+    const double SNAP_M = 60.0, MIN_DISTANCE_M = 4.0, MAX_DISTANCE_M = 60.0;
+    double _distance_m = 12.0;
+    G3 _smoothed_pos, _smoothed_offset, position, look_at_pos;
+    bool _from_absolute = false, _initialized = false, _drain_wheel = false, looked = false;
+    double _orbit_yaw = 0.0;
+    G3 _heading{0, 0, -1};
+
+    GdDrone() { _distance_m = std::clamp(follow_distance_m, MIN_DISTANCE_M, MAX_DISTANCE_M); }
+    void activate(G3 from) {
+        _smoothed_pos = from;
+        _from_absolute = true;
+        _initialized = true;
+        _orbit_yaw = 0.0;
+        _drain_wheel = true;
+    }
+    void shift_origin(G3 d) {
+        position = position + d;
+        _smoothed_pos = _smoothed_pos + d;
+    }
+    double target_orbit_yaw(double lx, double ly, double sx, double sy) {
+        if (std::fabs(lx) > 0.5) return gsignf(lx) * 3.141592653589793 * 0.5;
+        if (ly < -0.5) return 3.141592653589793;
+        const double mag = std::min(std::sqrt(sx * sx + sy * sy), 1.0);
+        if (mag <= orbit_deadzone) return 0.0;
+        return std::atan2(sx, sy);
+    }
+    void update_zoom(double delta, double wheel, double key, bool live) {
+        if (_drain_wheel) {
+            _drain_wheel = false;
+            return;
+        }
+        if (!live) return;
+        _distance_m *= std::pow(zoom_wheel_factor, -wheel) * std::exp(-key * zoom_key_rate * delta);
+        _distance_m = std::clamp(_distance_m, MIN_DISTANCE_M, MAX_DISTANCE_M);
+    }
+    // grounds: one optional height per probe (5), in the script's probe order.
+    void update_rig(double delta, G3 target_pos, G3 basis_x, bool live, double lx, double ly, double sx, double sy,
+                    const std::vector<std::optional<double>>& grounds) {
+        const G3 fwd{basis_x.x, 0.0, basis_x.z};
+        if (glen(fwd) > 0.2) _heading = fwd * (1.0 / glen(fwd));
+        const G3 behind = _heading * (-_distance_m);
+        const G3 desired_offset = behind + G3{0, 1, 0} * (_distance_m * height_per_distance);
+        look_at_pos = target_pos + G3{0, 1, 0} * look_height_m;
+        if (_from_absolute) {
+            _smoothed_offset = _smoothed_pos - target_pos;
+            _from_absolute = false;
+        }
+        if (!_initialized || glen(_smoothed_offset - desired_offset) > SNAP_M) {
+            _smoothed_offset = desired_offset;
+            _initialized = true;
+        }
+        _smoothed_offset = glerp(_smoothed_offset, desired_offset, 1.0 - std::exp(-position_lag * delta));
+        _smoothed_pos = target_pos + _smoothed_offset;
+        double target_yaw = 0.0;
+        if (live) target_yaw = target_orbit_yaw(lx, ly, sx, sy);
+        if (orbit_lag <= 0.0) _orbit_yaw = target_yaw;
+        else _orbit_yaw = glerp_angle(_orbit_yaw, target_yaw, 1.0 - std::exp(-orbit_lag * delta));
+        position = target_pos + grotated_up(_smoothed_offset, -_orbit_yaw);
+        for (const auto& g : grounds)
+            if (g) position.y = std::max(position.y, *g + terrain_clearance_m);
+        looked = glen(position - look_at_pos) > 0.01;
+    }
+};
+
+ps::Vec3 to_core(G3 g) { return {g.x, -g.z, g.y}; }
+G3 to_godot(ps::Vec3 c) { return {c.x, c.z, -c.y}; }
+
+} // namespace
+
+TEST_CASE("drone follow matches the former GDScript rig", "[camera_math][drone][golden]") {
+    GdDrone ref;
+    rg::DroneParams p; // defaults == the script's exports
+    rg::DroneState st = rg::drone_initial_state(p);
+    CHECK_THAT(st.distance_m, WithinAbs(ref._distance_m, 0.0));
+
+    const auto probes = rg::drone_probe_offsets();
+    REQUIRE(probes.size() == 5);
+    // The script's order: ZERO, (0.3,0,0), (-0.3,0,0), (0,0,0.3), (0,0,-0.3) in Godot axes.
+    const G3 gd_probes[5] = {{0, 0, 0}, {0.3, 0, 0}, {-0.3, 0, 0}, {0, 0, 0.3}, {0, 0, -0.3}};
+    for (int i = 0; i < 5; ++i) {
+        const G3 g = to_godot(probes[static_cast<size_t>(i)]);
+        CHECK_THAT(g.x, WithinAbs(gd_probes[i].x, 1e-12));
+        CHECK_THAT(g.y, WithinAbs(gd_probes[i].y, 1e-12));
+        CHECK_THAT(g.z, WithinAbs(gd_probes[i].z, 1e-12));
+    }
+
+    ref.activate({3, 8, -20});
+    rg::drone_activate(st, to_core({3, 8, -20}));
+
+    const double dt = 1.0 / 60.0;
+    double worst = 0.0;
+    G3 car{0, 0.5, 0};
+    double car_yaw = 0.0;
+    for (int i = 0; i < 1500; ++i) {
+        const double t = i * dt;
+        // Car: accelerating drive with turns, a teleport at i == 600 (relocation, > SNAP_M) and a near-vertical
+        // forward axis (heading hold) around i == 900.
+        car_yaw += 0.4 * std::sin(t * 0.7) * dt;
+        const double speed = 5.0 + 25.0 * (0.5 + 0.5 * std::sin(t * 0.2));
+        car.x += std::cos(car_yaw) * speed * dt;
+        car.z += -std::sin(car_yaw) * speed * dt;
+        car.y = 0.5 + 0.3 * std::sin(t);
+        if (i == 600) car = car + G3{400, 0, -250};
+        G3 fwd{std::cos(car_yaw), 0.1 * std::sin(t), -std::sin(car_yaw)};
+        if (i >= 900 && i < 930) fwd = {0.05, 1.0, 0.02}; // horizontal part < 0.2: previous heading is kept
+        // Inputs: wheel/key zoom bursts, arrow-key looks, stick sweeps, camera inputs off for a stretch.
+        const bool live = !(i >= 300 && i < 360);
+        const double wheel = (i % 97 == 0) ? 2.0 : (i % 131 == 0 ? -3.0 : 0.0);
+        const double zkey = (i >= 700 && i < 760) ? 1.0 : ((i >= 760 && i < 800) ? -1.0 : 0.0);
+        double lx = 0, ly = 0, sx = 0, sy = 0;
+        if (i >= 100 && i < 160) lx = 1.0;
+        if (i >= 160 && i < 200) lx = -1.0;
+        if (i >= 200 && i < 240) ly = -1.0;
+        if (i >= 400 && i < 700) {
+            sx = 0.9 * std::sin(t);
+            sy = 0.9 * std::cos(t);
+        }
+        if (i >= 1000 && i < 1010) { sx = 0.1; sy = 0.1; } // inside the dead zone
+        if (i == 1100) { // floating-origin rebase
+            ref.shift_origin({-100, 0, 40});
+            rg::DroneState& s = st;
+            rg::drone_shift_origin(s, to_core({-100, 0, 40}));
+            car = car + G3{-100, 0, 40};
+        }
+        if (i == 1200) { // activate again from the current camera (a rig switch)
+            ref.activate(ref.position);
+            rg::drone_activate(st, to_core(ref.position));
+        }
+        std::vector<std::optional<double>> grounds(5);
+        for (int k = 0; k < 5; ++k)
+            if ((i + k) % 3 != 0) grounds[static_cast<size_t>(k)] = 4.0 + 6.0 * std::sin(0.01 * i + k); // sometimes above the camera
+
+        ref.update_zoom(dt, wheel, zkey, live);
+        ref.update_rig(dt, car, fwd, live, lx, ly, sx, sy, grounds);
+
+        rg::drone_zoom_step(st, wheel, zkey, live, dt, p);
+        rg::DroneFollowInput in;
+        in.target_pos = to_core(car);
+        in.target_forward = to_core(fwd);
+        in.key_x = lx; in.key_y = ly; in.stick_x = sx; in.stick_y = sy;
+        in.live = live;
+        const rg::DroneFrame f = rg::drone_follow_step(st, in, dt, p);
+        const double z = rg::drone_clear_terrain(f.position.z, grounds, p.terrain_clearance_m);
+        const G3 got = to_godot({f.position.x, f.position.y, z});
+        worst = std::max({worst, std::fabs(got.x - ref.position.x), std::fabs(got.y - ref.position.y),
+                          std::fabs(got.z - ref.position.z)});
+        const G3 la = to_godot(f.look_at);
+        worst = std::max({worst, std::fabs(la.x - ref.look_at_pos.x), std::fabs(la.y - ref.look_at_pos.y),
+                          std::fabs(la.z - ref.look_at_pos.z), std::fabs(st.distance_m - ref._distance_m),
+                          std::fabs(st.orbit_yaw_rad - ref._orbit_yaw)});
+        CHECK(f.has_look == ref.looked);
+        // The binding stores the position the rig actually sets (after clearance) the same way.
+        ref.position = ref.position; // clearance already applied in the reference
+    }
+    CHECK(worst < 1e-9);
+}
+
+TEST_CASE("drone follow: zoom law, snap, orbit target and terrain clearance", "[camera_math][drone]") {
+    const rg::DroneParams p;
+    rg::DroneState s = rg::drone_initial_state(p);
+    CHECK_THAT(s.distance_m, WithinAbs(12.0, 1e-12));
+    // The first zoom call after activate only drains.
+    rg::drone_activate(s, {0, 0, 5});
+    rg::drone_zoom_step(s, 5.0, 0.0, true, 0.016, p);
+    CHECK_THAT(s.distance_m, WithinAbs(12.0, 1e-12));
+    rg::drone_zoom_step(s, 1.0, 0.0, true, 0.016, p); // one tick in: distance / 1.15
+    CHECK_THAT(s.distance_m, WithinAbs(12.0 / 1.15, 1e-9));
+    rg::drone_zoom_step(s, 100.0, 0.0, true, 0.016, p);
+    CHECK_THAT(s.distance_m, WithinAbs(p.min_distance_m, 1e-12));
+    rg::drone_zoom_step(s, -100.0, 0.0, true, 0.016, p);
+    CHECK_THAT(s.distance_m, WithinAbs(p.max_distance_m, 1e-12));
+    const double d = s.distance_m;
+    rg::drone_zoom_step(s, 3.0, 1.0, false, 0.016, p); // inputs off: no zoom
+    CHECK(s.distance_m == d);
+
+    CHECK_THAT(rg::drone_target_orbit_yaw(1, 0, 0, 0, 0.2), WithinAbs(kPi / 2, 1e-12));
+    CHECK_THAT(rg::drone_target_orbit_yaw(-1, 0, 0, 0, 0.2), WithinAbs(-kPi / 2, 1e-12));
+    CHECK_THAT(rg::drone_target_orbit_yaw(0, -1, 0, 0, 0.2), WithinAbs(kPi, 1e-12));
+    CHECK(rg::drone_target_orbit_yaw(0, 0, 0.1, 0.1, 0.2) == 0.0); // dead zone
+    CHECK_THAT(rg::drone_target_orbit_yaw(0, 0, 1, 0, 0.2), WithinAbs(kPi / 2, 1e-12));
+
+    // Constant speed: zero lag (the camera stays at the same offset behind a moving target).
+    rg::DroneState t = rg::drone_initial_state(p);
+    rg::DroneFollowInput in;
+    in.target_forward = {1, 0, 0};
+    in.live = false;
+    rg::drone_hold(t);
+    ps::Vec3 first{}, last{};
+    for (int i = 0; i < 300; ++i) {
+        in.target_pos = {30.0 * i / 60.0, 0, 0};
+        const auto f = rg::drone_follow_step(t, in, 1.0 / 60.0, p);
+        if (i == 0) first = {f.position.x - in.target_pos.x, f.position.y, f.position.z};
+        last = {f.position.x - in.target_pos.x, f.position.y, f.position.z};
+    }
+    CHECK_THAT(last.x, WithinAbs(first.x, 1e-9));
+    CHECK_THAT(first.x, WithinAbs(-12.0, 1e-9));
+    CHECK_THAT(first.z, WithinAbs(6.0, 1e-9));
+    // A far jump snaps to the wanted offset at once.
+    in.target_pos = {5000, 0, 0};
+    const auto f = rg::drone_follow_step(t, in, 1.0 / 60.0, p);
+    CHECK_THAT(f.position.x, WithinAbs(5000.0 - 12.0, 1e-9));
+
+    CHECK(rg::drone_clear_terrain(2.0, {std::nullopt, 5.0, 3.0}, 1.0) == 6.0);
+    CHECK(rg::drone_clear_terrain(10.0, {1.0, std::nullopt}, 1.0) == 10.0);
+    CHECK(rg::drone_clear_terrain(2.0, {}, 1.0) == 2.0);
 }

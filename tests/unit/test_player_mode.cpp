@@ -443,3 +443,12 @@ TEST_CASE("player mode: unload_world clears the world, invalidates the load and 
     CHECK(m.finish_world_load(again, true));
     CHECK(m.effective_rules().driving_inputs_live);
 }
+
+TEST_CASE("drone_target_label names the target", "[player_mode][drone]") {
+    constexpr std::uint64_t truck = 1ull << 62;
+    CHECK(rg::drone_target_label(std::nullopt, truck, false) == "own car");
+    CHECK(rg::drone_target_label(truck, truck, false) == "NPC truck");
+    CHECK(rg::drone_target_label(std::uint64_t{17}, truck, false) == "NPC car #17");
+    CHECK(rg::drone_target_label(std::uint64_t{17}, truck, true) == "NPC lorry #17");
+    CHECK(rg::drone_target_label(truck, truck, true) == "NPC truck");
+}

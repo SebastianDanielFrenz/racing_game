@@ -1107,20 +1107,16 @@ godot::Dictionary RgSimulation::get_mode_state() {
     const std::optional<std::uint64_t> target = modes_.drone_target();
     d["drone_target_id"] = target ? static_cast<std::int64_t>(*target) : std::int64_t{-1};
     d["drone_target_own"] = !target.has_value();
-    String label("own car");
-    if (target && session_) {
-        if (*target == rg::Session::kNpcTruckVehicleId) {
-            label = String("NPC truck");
-        } else {
-            label = String("NPC car #") + String::num_int64(static_cast<std::int64_t>(*target));
-            for (const auto& actor : frame_snapshot().traffic.actors) {
-                if (actor.id == *target) {
-                    if (actor.truck) label = String("NPC lorry #") + String::num_int64(static_cast<std::int64_t>(*target));
-                    break;
-                }
+    bool target_is_lorry = false;
+    if (target && session_ && *target != rg::Session::kNpcTruckVehicleId) {
+        for (const auto& actor : frame_snapshot().traffic.actors) {
+            if (actor.id == *target) {
+                target_is_lorry = actor.truck;
+                break;
             }
         }
     }
+    const String label(rg::drone_target_label(session_ ? target : std::nullopt, rg::Session::kNpcTruckVehicleId, target_is_lorry).c_str());
     d["drone_target_label"] = label;
     return d;
 }

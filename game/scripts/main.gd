@@ -1145,9 +1145,12 @@ func _apply_mode_state() -> Dictionary:
 	if rig_name == "chase":
 		rig_name = _drive_view # chase / bumper / cockpit / orbit / cinematic
 	if _vr_active:
-		# VR keeps its own free rig for the drone view too (no XR drone rig yet).
-		# (No XR walker rig yet either: on foot the player keeps the tracked free flight.)
-		rig_name = "xr_free" if rig_name == "free" or rig_name == "drone" or rig_name == "walker" else "xr_cockpit"
+		# VR has its own drone rig (xr_drone: trails the target, the player's view is never rotated for them).
+		# (No XR walker rig yet: on foot the player keeps the tracked free flight.)
+		if rig_name == "drone":
+			rig_name = "xr_drone"
+		else:
+			rig_name = "xr_free" if rig_name == "free" or rig_name == "walker" else "xr_cockpit"
 	var drone_id := int(ms.get("drone_target_id", -1))
 	if drone_id != _drone_target_seen:
 		_drone_target_seen = drone_id
@@ -1500,19 +1503,20 @@ func _try_start_vr() -> void:
 		return
 	DisplayServer.window_set_vsync_mode(DisplayServer.VSYNC_DISABLED)
 	get_viewport().use_xr = true
-	for rig_name in ["xr_cockpit", "xr_free"]:
+	for rig_name in ["xr_cockpit", "xr_free", "xr_drone"]:
 		var rig := XROrigin3D.new()
 		rig.name = rig_name
 		rig.set_script(load("res://scripts/xr_rig.gd"))
 		rig.body_visuals = _visuals
 		rig.free_flight = rig_name == "xr_free"
+		rig.drone_follow = rig_name == "xr_drone"
 		add_child(rig)
 		_director.add_rig(rig_name, rig)
 	_vr_active = true
 	_xr_menu = load("res://scripts/xr_menu.gd").new()
 	_xr_menu.main = self
 	add_child(_xr_menu)
-	print("RG_VR active: tracked cockpit, F9 recenter; FreeCam uses tracked free flight")
+	print("RG_VR active: tracked cockpit, F9 recenter; FreeCam uses tracked free flight, drone follow trails the target (xr_drone)")
 
 # Owner bookmarks survive normal log rotation in user://drive_marks.jsonl.
 func _input(event: InputEvent) -> void:
