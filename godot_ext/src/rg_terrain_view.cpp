@@ -35,25 +35,17 @@ namespace {
 
 std::string to_std_string(const String& s) { return std::string(s.utf8().get_data()); }
 
-godot::Color unpack_rgba(std::uint32_t packed) {
-    // rg::chunk_vertex_colors' own pack_rgba layout (core/src/world_terrain.cpp):
-    // r << 24 | g << 16 | b << 8 | a, each an 8-bit channel.
-    const float r = static_cast<float>((packed >> 24) & 0xFFu) / 255.0f;
-    const float g = static_cast<float>((packed >> 16) & 0xFFu) / 255.0f;
-    const float b = static_cast<float>((packed >> 8) & 0xFFu) / 255.0f;
-    const float a = static_cast<float>(packed & 0xFFu) / 255.0f;
-    return godot::Color(r, g, b, a);
-}
-
 } // namespace
 
 RgTerrainView::~RgTerrainView() {
+    reset_packing(); // pack_job_ is declared before chunks_, which its worker reads
     cancel_heal_rebuild();
     streamer_.reset(); // cancel + join the worker before anything else goes
     free_all_uploaded();
 }
 
 void RgTerrainView::reset_chunks() {
+    reset_packing(); // the worker reads chunks_
     free_all_uploaded();
     chunks_.clear();
     index_of_.clear();
@@ -77,6 +69,7 @@ void RgTerrainView::teardown_terrain() {
     streamer_.reset(); // before terrain_: its TerrainViewSource points into it
     reset_chunks();
     terrain_.reset();
+    synthetic_.reset();
     spawn_x_session_ = 0.0;
     spawn_y_session_ = 0.0;
 }
@@ -153,9 +146,27 @@ bool RgTerrainView::load_preview(float spawn_x, float spawn_y) {
         index_of_[chunks_[i].key] = i;
     }
     bulk_loading_ = true;
+    start_packing(0);
 
     mesh_rids_.reserve(chunks_.size());
     instance_rids_.reserve(chunks_.size());
+    last_error_ = String();
+    return true;
+}
+
+bool RgTerrainView::load_synthetic_preview(double spawn_x, double spawn_y, double max_distance_m) {
+    teardown_terrain();
+    total_upload_time_ms_ = 0.0;
+    synthetic_ = std::make_unique<rg::SyntheticTerrain>(464000.0, 5559000.0);
+    g2m::mesh::LodParams params;
+    if (max_distance_m > 0.0) params.max_distance_m = max_distance_m;
+    streamer_ = std::make_unique<rg::TerrainViewStreamer>(synthetic_->view_source(params), rg::TerrainViewStreamer::Options{});
+    const auto start = std::chrono::steady_clock::now();
+    streamer_->build_initial(spawn_x, spawn_y, chunks_);
+    last_build_time_ms_ = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start).count();
+    for (std::size_t i = 0; i < chunks_.size(); ++i) index_of_[chunks_[i].key] = i;
+    bulk_loading_ = true;
+    start_packing(0);
     last_error_ = String();
     return true;
 }
@@ -425,6 +436,10 @@ godot::Dictionary RgTerrainView::get_frame_costs() const {
     d["upload_ms"] = upload_ms_this_frame_;
     d["heal_ms"] = heal_ms_this_frame_;
     d["decks_ms"] = decks_ms_this_frame_;
+    d["uploads_total"] = uploads_total_;
+    d["upload_pack_ms_total"] = upload_pack_ms_total_;       // main thread: building the surface arrays
+    d["upload_surface_ms_total"] = upload_surface_ms_total_; // main thread: mesh_add_surface_from_arrays + material
+    d["upload_instance_ms_total"] = upload_instance_ms_total_; // main thread: instance create + transform
     d["pending_work"] = static_cast<std::int64_t>((chunks_.size() - std::min(next_upload_index_, chunks_.size())) +
                                                   (diff_removed_.size() - std::min(diff_remove_next_, diff_removed_.size())));
     return d;
@@ -515,76 +530,28 @@ godot::Transform3D RgTerrainView::chunk_instance_transform(const rg::RenderChunk
     return iso_to_godot_transform(ps::Pose{chunk_origin_session}, render_origin_session);
 }
 
-void RgTerrainView::upload_one_chunk(const rg::RenderChunk& chunk) {
+void RgTerrainView::upload_one_chunk(const rg::RenderChunk& chunk, godot::Array* prepacked) {
     const auto start = std::chrono::steady_clock::now();
-
-    const std::size_t vertex_count = chunk.mesh.positions.size() / 3;
 
     godot::RenderingServer* rs = godot::RenderingServer::get_singleton();
     const godot::RID mesh_rid = rs->mesh_create();
 
-    // A chunk at the imported region's coverage edge can have real vertices
-    // but zero triangles (g2m::mesh::build_chunk leaves `indices` empty
-    // where gather_window found nothing to triangulate - confirmed present
-    // in the real home-r1 data: 24 of 488 chunks at max_distance_m=20000).
-    // Assigning an EMPTY PackedInt32Array to ARRAY_INDEX still sets
-    // Godot's own ARRAY_FORMAT_INDEX bit (the slot is non-NIL), but the
-    // resulting index count of 0 then fails RenderingServer's own
-    // mesh_create_surface_data_from_arrays validation ("index_array_len==
-    // NO_INDEX_ARRAY") - so skip the surface entirely for such a chunk
-    // rather than upload a surface with no triangles. The mesh/instance RID
-    // pair is still created below either way - upload_one_chunk always
-    // appends exactly one entry to mesh_rids_/instance_rids_ per call, and
-    // set_render_origin()/chunk_instance_transform() index chunks_ and
-    // instance_rids_ in lockstep by position, so skipping the RID pair here
-    // would desync that 1:1 correspondence for every later chunk.
-    if (vertex_count > 0 && !chunk.mesh.indices.empty()) {
-        godot::PackedVector3Array positions;
-        godot::PackedVector3Array normals;
-        godot::PackedColorArray colors;
-        positions.resize(static_cast<std::int64_t>(vertex_count));
-        normals.resize(static_cast<std::int64_t>(vertex_count));
-        colors.resize(static_cast<std::int64_t>(vertex_count));
-        for (std::size_t i = 0; i < vertex_count; ++i) {
-            // Raw chunk-local floats, UNCHANGED (Z-up, matching
-            // TerrainChunkMesh's own documented local axes) - the instance
-            // transform's basis (chunk_instance_transform, a fixed orthonormal
-            // permutation) rotates every vertex AND every normal identically
-            // when Godot renders this mesh, so no per-vertex basis-change work
-            // is needed here (PLAN.md R2.1: "RgTerrainView only uploads arrays").
-            positions[static_cast<std::int64_t>(i)] = godot::Vector3(
-                chunk.mesh.positions[3 * i], chunk.mesh.positions[3 * i + 1], chunk.mesh.positions[3 * i + 2]);
-            normals[static_cast<std::int64_t>(i)] = godot::Vector3(
-                chunk.mesh.normals[3 * i], chunk.mesh.normals[3 * i + 1], chunk.mesh.normals[3 * i + 2]);
-            colors[static_cast<std::int64_t>(i)] = unpack_rgba(chunk.rgba[i]);
-        }
-
-        godot::PackedInt32Array indices;
-        indices.resize(static_cast<std::int64_t>(chunk.mesh.indices.size()));
-        // g2m::mesh emits counter-clockwise triangles (seen from above, +Z);
-        // Godot treats CLOCKWISE as front-facing, so swap each triangle's
-        // last two indices or cull_back removes every top face (the preview
-        // then shows only the sky's ground colour plus the backs of steep
-        // slopes). The basis change itself is a proper rotation and keeps
-        // winding, so this is purely Godot's front-face convention.
-        for (std::size_t t = 0; t + 2 < chunk.mesh.indices.size(); t += 3) {
-            indices[static_cast<std::int64_t>(t)] = static_cast<std::int32_t>(chunk.mesh.indices[t]);
-            indices[static_cast<std::int64_t>(t + 1)] = static_cast<std::int32_t>(chunk.mesh.indices[t + 2]);
-            indices[static_cast<std::int64_t>(t + 2)] = static_cast<std::int32_t>(chunk.mesh.indices[t + 1]);
-        }
-
-        godot::Array arrays;
-        arrays.resize(godot::RenderingServer::ARRAY_MAX);
-        arrays[godot::RenderingServer::ARRAY_VERTEX] = positions;
-        arrays[godot::RenderingServer::ARRAY_NORMAL] = normals;
-        arrays[godot::RenderingServer::ARRAY_COLOR] = colors;
-        arrays[godot::RenderingServer::ARRAY_INDEX] = indices;
-
+    // The surface arrays (terrain_surface_pack.h): normally built on the pack worker (pack_job_), else here. A chunk at
+    // the imported region's coverage edge can have vertices but zero triangles (g2m::mesh::build_chunk leaves `indices`
+    // empty where gather_window found nothing to triangulate - 24 of 488 chunks of the real home-r1 data at 20 km):
+    // its arrays are empty and it gets no surface, because an EMPTY ARRAY_INDEX still sets Godot's ARRAY_FORMAT_INDEX
+    // bit and then fails RenderingServer's surface validation ("index_array_len==NO_INDEX_ARRAY"). The mesh/instance RID
+    // pair is still created either way - upload_one_chunk always appends exactly one entry to mesh_rids_/instance_rids_
+    // per call, and set_render_origin()/chunk_instance_transform() index chunks_ and instance_rids_ in lockstep.
+    godot::Array arrays = prepacked != nullptr ? std::move(*prepacked) : pack_chunk_surface(chunk);
+    const auto packed_at = std::chrono::steady_clock::now();
+    if (!arrays.is_empty()) {
         rs->mesh_add_surface_from_arrays(mesh_rid, godot::RenderingServer::PRIMITIVE_TRIANGLES, arrays);
         if (material_rid_.is_valid()) {
             rs->mesh_surface_set_material(mesh_rid, 0, material_rid_);
         }
     }
+    const auto surface_at = std::chrono::steady_clock::now();
 
     const godot::RID scenario = get_world_3d().is_valid() ? get_world_3d()->get_scenario() : godot::RID();
     const godot::RID instance_rid = rs->instance_create2(mesh_rid, scenario);
@@ -596,6 +563,50 @@ void RgTerrainView::upload_one_chunk(const rg::RenderChunk& chunk) {
 
     const auto end = std::chrono::steady_clock::now();
     total_upload_time_ms_ += std::chrono::duration<double, std::milli>(end - start).count();
+    const auto ms = [](auto a, auto b) { return std::chrono::duration<double, std::milli>(b - a).count(); };
+    upload_pack_ms_total_ += ms(start, packed_at);
+    upload_surface_ms_total_ += ms(packed_at, surface_at);
+    upload_instance_ms_total_ += ms(surface_at, end);
+    ++uploads_total_;
+}
+
+// Moves the surfaces the pack worker has finished into surfaces_ (main thread). Once a job's last chunk is taken its
+// thread is joined (it only has its timing store left), so chunks_ may move again.
+void RgTerrainView::drain_packed() {
+    while (pack_taken_ < pack_job_.count() && pack_taken_ < pack_job_.packed()) {
+        surfaces_.push_back(pack_job_.take(pack_taken_++));
+    }
+    if (pack_taken_ == pack_job_.count()) pack_job_.cancel_and_join();
+}
+
+bool RgTerrainView::pack_idle() {
+    drain_packed();
+    return pack_taken_ == pack_job_.count();
+}
+
+// Packs chunks_[first, chunks_.size()) on the worker. Every chunk ever appended to chunks_ goes through here, so the
+// chunks waiting for upload are exactly surfaces_ (in order) followed by the job's range.
+void RgTerrainView::start_packing(std::size_t first) {
+    pack_job_.start(chunks_.data() + first, chunks_.size() - first);
+    pack_taken_ = 0;
+}
+
+void RgTerrainView::reset_packing() {
+    pack_job_.cancel_and_join();
+    pack_job_.start(nullptr, 0);
+    pack_taken_ = 0;
+    surfaces_.clear();
+}
+
+// Uploads chunks_[next_upload_index_] if its surface is packed; false (nothing done) while the worker is still on it.
+bool RgTerrainView::upload_next_chunk() {
+    drain_packed();
+    if (surfaces_.empty()) return false;
+    godot::Array arrays = std::move(surfaces_.front());
+    surfaces_.pop_front();
+    upload_one_chunk(chunks_[next_upload_index_], &arrays);
+    ++next_upload_index_;
+    return true;
 }
 
 void RgTerrainView::sync_road_decks() {
@@ -736,7 +747,8 @@ void RgTerrainView::remove_chunk_at(std::size_t index) {
 void RgTerrainView::apply_diff(std::chrono::steady_clock::time_point frame_start) {
     // 1. Take a ready diff (only one in progress at a time - the streamer
     //    itself never has more than one). Its adds join the upload queue.
-    if (!diff_in_progress_ && streamer_ != nullptr) {
+    // A new diff is taken only while the pack worker is idle: appending its adds may move chunks_, which the worker reads.
+    if (!diff_in_progress_ && streamer_ != nullptr && pack_idle()) {
         rg::TerrainViewDiff diff;
         if (streamer_->poll(diff)) {
             diff_in_progress_ = true;
@@ -748,11 +760,13 @@ void RgTerrainView::apply_diff(std::chrono::steady_clock::time_point frame_start
             last_remove_ms_ = 0.0;
             last_diff_added_ = static_cast<std::int64_t>(diff.added.size());
             last_diff_removed_ = static_cast<std::int64_t>(diff_removed_.size());
+            const std::size_t first_add = chunks_.size();
             chunks_.reserve(chunks_.size() + diff.added.size());
             for (rg::RenderChunk& chunk : diff.added) {
                 index_of_[chunk.key] = chunks_.size();
                 chunks_.push_back(std::move(chunk));
             }
+            start_packing(first_add); // the surface arrays are built on the pack worker, uploaded below as they finish
         }
     }
 
@@ -778,8 +792,7 @@ void RgTerrainView::apply_diff(std::chrono::steady_clock::time_point frame_start
     if (bulk_loading_) {
         const std::size_t end_index =
             std::min(chunks_.size(), next_upload_index_ + static_cast<std::size_t>(upload_budget_per_frame_));
-        for (; next_upload_index_ < end_index; ++next_upload_index_) {
-            upload_one_chunk(chunks_[next_upload_index_]);
+        while (next_upload_index_ < end_index && upload_next_chunk()) {
             ++work;
         }
         if (next_upload_index_ >= chunks_.size()) {
@@ -787,8 +800,7 @@ void RgTerrainView::apply_diff(std::chrono::steady_clock::time_point frame_start
         }
     } else {
         while (next_upload_index_ < chunks_.size() && !over_budget()) {
-            upload_one_chunk(chunks_[next_upload_index_]);
-            ++next_upload_index_;
+            if (!upload_next_chunk()) break; // the next surface is still being packed: next frame
             ++work;
             ++chunks_uploaded_window_;
             ++chunks_uploaded_total_;
@@ -865,6 +877,7 @@ void RgTerrainView::_bind_methods() {
     godot::ClassDB::bind_method(D_METHOD("get_building_tile", "x", "y", "min_height", "fallback_height", "storey_height"), &RgTerrainView::get_building_tile);
     godot::ClassDB::bind_method(D_METHOD("initialize_shared", "sim"), &RgTerrainView::initialize_shared);
     godot::ClassDB::bind_method(D_METHOD("release"), &RgTerrainView::release);
+    godot::ClassDB::bind_method(D_METHOD("load_synthetic_preview", "spawn_x", "spawn_y", "max_distance_m"), &RgTerrainView::load_synthetic_preview);
     godot::ClassDB::bind_method(D_METHOD("get_spawn_x"), &RgTerrainView::get_spawn_x);
     godot::ClassDB::bind_method(D_METHOD("get_spawn_y"), &RgTerrainView::get_spawn_y);
     godot::ClassDB::bind_method(D_METHOD("load_preview", "spawn_x", "spawn_y"), &RgTerrainView::load_preview);

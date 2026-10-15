@@ -43,10 +43,12 @@
 #include <tuple>
 
 #include "rg/lod_settings.h"
+#include "rg/synthetic_terrain.h"
 #include "rg/terrain_render.h"
 #include "rg/terrain_stream.h"
 #include "rg/terrain_view_streamer.h"
 #include "rg/world_terrain.h"
+#include "terrain_surface_pack.h"
 
 #include <godot_cpp/classes/node3d.hpp>
 #include <godot_cpp/variant/basis.hpp>
@@ -58,6 +60,7 @@
 
 #include <chrono>
 #include <cstdint>
+#include <deque>
 #include <future>
 #include <map>
 #include <memory>
@@ -132,6 +135,10 @@ public:
     // runs through a fresh rg::TerrainViewStreamer's build_initial (the same
     // chunk set and order), which then streams from update_focus() on.
     bool load_preview(float spawn_x, float spawn_y);
+    // Headless benchmark scene (C9): drops any terrain, then streams rg::SyntheticTerrain (rolling hills, no map store)
+    // exactly like load_preview + update_focus stream a real world (same LodParams defaults; max_distance_m > 0
+    // overrides). The terrain-only queries (bed/ground checks, road and building tiles, decks, heal) see no terrain.
+    bool load_synthetic_preview(double spawn_x, double spawn_y, double max_distance_m);
 
     // The session-local (E - E0, N - N0, U) point every queued/uploaded
     // chunk's instance transform is currently expressed relative to (PLAN.md
@@ -272,7 +279,18 @@ private:
     void apply_diff(std::chrono::steady_clock::time_point frame_start);
     void apply_view_lod_to_terrain(); // lod_choice_ -> terrain_'s LodParams and road LOD policy
     void remove_chunk_at(std::size_t index);
-    void upload_one_chunk(const rg::RenderChunk& chunk);
+    // `prepacked`: the chunk's surface arrays from the pack worker (moved from); null = pack here (decks, swaps).
+    void upload_one_chunk(const rg::RenderChunk& chunk, godot::Array* prepacked = nullptr);
+    // Off-main-thread surface packing (C9): every chunk appended to chunks_ is packed by pack_job_; finished surfaces
+    // move to surfaces_ (for chunks_[next_upload_index_ ...], in order). See the .cpp.
+    void drain_packed();
+    bool pack_idle();
+    void start_packing(std::size_t first);
+    void reset_packing();
+    bool upload_next_chunk();
+    SurfacePackJob pack_job_;
+    std::size_t pack_taken_ = 0;
+    std::deque<godot::Array> surfaces_;
     [[nodiscard]] godot::Transform3D chunk_instance_transform(const rg::RenderChunk& chunk) const;
 
     // R2.2 R7: shared_ptr (not unique_ptr) so initialize_shared() can hold
@@ -281,6 +299,7 @@ private:
     // initialize() still owns its copy outright (refcount 1) exactly as
     // before, just via a shared_ptr now.
     std::shared_ptr<rg::WorldTerrain> terrain_;
+    std::unique_ptr<rg::SyntheticTerrain> synthetic_; // load_synthetic_preview only; outlives streamer_ (declared before it)
     // Declared AFTER terrain_ so it is destroyed (worker cancelled + joined)
     // BEFORE the WorldTerrain its TerrainViewSource points into.
     std::unique_ptr<rg::TerrainViewStreamer> streamer_;
@@ -344,6 +363,11 @@ private:
     godot::String last_error_;
     double last_build_time_ms_ = 0.0;
     double total_upload_time_ms_ = 0.0;
+    // Main-thread upload cost split (get_frame_costs; C9 measurement): since the view was created.
+    std::int64_t uploads_total_ = 0;
+    double upload_pack_ms_total_ = 0.0;
+    double upload_surface_ms_total_ = 0.0;
+    double upload_instance_ms_total_ = 0.0;
 };
 
 } // namespace rg_godot
