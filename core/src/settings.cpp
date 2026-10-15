@@ -76,6 +76,21 @@ std::vector<SettingDef> build_schema() {
     s.push_back(make_choice("graphics", "window_mode", "Window mode",
                             "Windowed, borderless full screen, or exclusive full screen.", "windowed",
                             {"windowed", "fullscreen", "exclusive_fullscreen"}));
+    {
+        // Mobile renderer (2026-10-15): the engine renderer. The choice ids are engine-neutral words; the Godot
+        // adapter maps them to its rendering methods (main.gd, user://renderer_override.cfg).
+        SettingDef r = make_choice("graphics", "renderer", "Renderer",
+                                   "mobile = the Vulkan renderer (default, the one VR uses; fewer draw calls). "
+                                   "compatibility = the OpenGL renderer the game used before, as a fallback for "
+                                   "drivers where Vulkan fails or looks wrong. forward_plus = the desktop quality "
+                                   "renderer (Vulkan/D3D12; more lights per object, room for screen-space effects; "
+                                   "costs more GPU time; not for the standalone headset). A --rendering-method on the "
+                                   "command line wins over this setting.",
+                                   "mobile", {"mobile", "compatibility", "forward_plus"});
+        r.applies_live = false;
+        r.applies_on_restart = true;
+        s.push_back(std::move(r));
+    }
     s.push_back(make_bool("graphics", "vsync", "Vertical sync", "Wait for the display refresh (no tearing).", true));
     s.push_back(make_int("graphics", "max_fps", "Maximum frame rate",
                          "Caps the render rate. 0 = unlimited. The simulation runs at its own fixed rate either way.", 0,
