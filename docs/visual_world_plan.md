@@ -189,9 +189,26 @@ look.
   grass, fallow, meadow, orchard, vineyard), 6 weighted rotations, fixed
   calendars for meadow/grass/grassland/orchard/vineyard, `field_look`,
   `rotation_crop`, `field_row_angle_deg`. Nothing renders it yet.
-- Weather menu: Clear, Partly cloudy, Overcast are applied (sky colour and light
-  level only); Rain, Snow, Hail, Thunderstorm are greyed out (no precipitation
-  visuals, no wet-grip environment in Session).
+- Weather menu: every preset is enabled. Cloud cover drives the sky; since V8
+  (below) every preset also drives the physics weather.
+- **V8 physics part (built 2026-10-14, owner answers Q1-Q4).** Clock start kept
+  (real date, 14:00, x1). Headlights follow the car's light switch (Ventura
+  `sw_lights` submits the `lights` action; the hypercar's rotary switch is posed
+  from `cabin.lights`) and the O key; no dusk auto-on. `data/world/climate.json`
+  (`rg.climate/1`, `core/include/rg/climate.h`) is the one source of the air
+  temperature: monthly mean + daily range (interpolated between month
+  midpoints), cosine with a 14:30 local-mean-solar peak, damped by cloud cover,
+  minus 6.5 K/km above the station. `rg::Session` installs a
+  `ps::environment::Environment` when `SessionConfig::weather` is set (flat and
+  terrain; Preset weather, surface conditions, wet grip; the flat ground becomes
+  a mesh tagged asphalt), pinned to that temperature; `rg::WeatherSync`
+  (`weather_sync.h`) feeds the game clock (jumps, day change, drift) and the
+  chosen preset into it. Measured (test_session_weather): one hour of 4 mm/h
+  rain -> 0.4 mm film, condition factor 0.85, braking from 25 m/s 33.4 m dry vs
+  49.4 m wet. Limits: snow adds no water film (physics W8 not yet), so snow
+  does not lower grip yet; wetting follows the 60 s environment grid, so at x1
+  a dry road takes minutes of rain to get wet; no precipitation visuals or wet
+  shader (no new Godot shaders, owner rule; UE work paused).
 - Known limits: the clock is not saved between runs; the mouse must be free
   (not captured by the cockpit view) to click the widget; UTM grid north vs true
   north is corrected, refraction is not modelled.
