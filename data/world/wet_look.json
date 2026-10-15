@@ -1,0 +1,42 @@
+{
+  "format": "rg.wet_look/1",
+  "_comment": "Wet look (core rg/wet_look.h): physics water film under the car (mm) and rain rate (mm/h) -> what the renderer shows. A road reads fully wet from a thin film already; puddles need standing water. Drop/flake density 1 at rain_full_mm_h (heavy rain); below snow_below_c the precipitation shows as snow. response_s smooths the change (the film is read under wheel 0 only, which jumps when it leaves the ground).",
+  "wet_full_mm": 0.1,
+  "puddle_start_mm": 0.3,
+  "puddle_full_mm": 1.5,
+  "rain_full_mm_h": 8.0,
+  "rain_min_mm_h": 0.05,
+  "snow_below_c": 1.0,
+  "response_s": 2.0,
+  "particles": {
+    "_comment": "Rain / snow around the active camera (game/scripts/weather_fx.gd, presentation only): at most max_drops / max_flakes particles at density 1 (scaled by the graphics.rain_density setting), emitted in a box of box_m (x, y, z half extents, y up) centred height_m above the camera; streaks are drop_size_m (width, length), falling at drop_speed_mps; flakes flake_size_m, flake_speed_mps with flake_drift_mps sideways.",
+    "max_drops": 6000,
+    "max_flakes": 3000,
+    "box_m": [
+      22.0,
+      12.0,
+      22.0
+    ],
+    "height_m": 8.0,
+    "drop_size_m": [
+      0.012,
+      0.55
+    ],
+    "drop_speed_mps": 9.0,
+    "drop_color": [
+      0.75,
+      0.78,
+      0.85,
+      0.35
+    ],
+    "flake_size_m": 0.035,
+    "flake_speed_mps": 1.2,
+    "flake_drift_mps": 0.6,
+    "flake_color": [
+      1.0,
+      1.0,
+      1.0,
+      0.85
+    ]
+  }
+}

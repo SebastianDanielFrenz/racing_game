@@ -23,7 +23,7 @@ signal thumbnail_ready(key: String)
 
 const SIZE := Vector2i(384, 216)
 const CACHE_DIR := "user://car_thumbs"
-const PALETTE_ROUGHNESS := 0.3
+const CarMaterials := preload("res://scripts/car_materials.gd")
 
 var _viewport: SubViewport
 var _world_root: Node3D
@@ -244,19 +244,6 @@ func _apply_colours(model: Node3D, paint: Color, rim: Color) -> void:
 			var std := mi.get_surface_override_material(s) as StandardMaterial3D
 			if std == null:
 				continue
-			var n := std.resource_name.to_lower()
-			if n == "paint" or n.begins_with("paint"):
-				std.vertex_color_use_as_albedo = false
-				std.albedo_texture = null
-				std.albedo_color = paint
-				std.metallic = 0.55
-				std.roughness = PALETTE_ROUGHNESS
-				std.clearcoat_enabled = true
-				std.clearcoat = 1.0
-				std.clearcoat_roughness = 0.06
-			elif n.begins_with("rim"):
-				std.vertex_color_use_as_albedo = false
-				std.albedo_texture = null
-				std.albedo_color = rim
-				std.metallic = 0.9
-				std.roughness = 0.25
+			var role := CarMaterials.role_of(std)
+			if role != "":
+				CarMaterials.style(std, role, paint if role == "paint" else (rim if role == "rim" else Color(0, 0, 0, 0)))

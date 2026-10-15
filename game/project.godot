@@ -20,6 +20,25 @@ renderer/rendering_method="gl_compatibility"
 renderer/rendering_method.mobile="gl_compatibility"
 textures/vram_compression/import_etc2_astc=true
 
+[shader_globals]
+
+rg_surface_detail={
+"type": "int",
+"value": 2
+}
+rg_origin_mod={
+"type": "vec2",
+"value": Vector2(0, 0)
+}
+rg_wetness={
+"type": "float",
+"value": 0.0
+}
+rg_puddles={
+"type": "float",
+"value": 0.0
+}
+
 [xr]
 
 openxr/enabled=false

@@ -357,5 +357,40 @@
       "modifications": "None by this attribution task",
       "evidence": "GLB JSON chunk: asset.extras"
     }
+  ],
+  "derived": [
+    {
+      "id": "generic_suv",
+      "file": "data/models/imported/generic_suv/generic_suv.glb",
+      "source_file": "lowpoly_generic_suv.glb",
+      "source_sha256": "f44f2cf6183723a2d7ff67981c53ce20194565d4708b8491852a2c2a552590f0",
+      "title": "Lowpoly Generic SUV",
+      "author": "mk2design (https://sketchfab.com/mk2design)",
+      "license": "CC-BY-4.0",
+      "modifications": "Re-oriented to the game's axes and origin, wheels re-parented under suspension/steering/spin pivots at the wheel centres, brake calipers under the steering pivots, baked ground/shadow plane removed (tools/carimport). Geometry, materials and textures otherwise unchanged.",
+      "modified_on": "2026-10-14"
+    },
+    {
+      "id": "phoenix_455",
+      "file": "data/models/imported/phoenix_455/phoenix_455.glb",
+      "source_file": "phoenix_455_71_-_low_poly_model.glb",
+      "source_sha256": "27b8591fd77ce208e2d48c5f7a87342607e3f78ba2bcffc800d5c2949377a9d8",
+      "title": "Phoenix 455 '71 - Low poly model",
+      "author": "Daniel Zhabotinsky (https://sketchfab.com/DanielZhabotinsky)",
+      "license": "CC-BY-4.0",
+      "modifications": "Re-oriented to the game's axes and origin, wheels re-parented under suspension/steering/spin pivots at the wheel centres, brake calipers under the steering pivots, baked ground/shadow plane removed (tools/carimport). Geometry, materials and textures otherwise unchanged.",
+      "modified_on": "2026-10-14"
+    },
+    {
+      "id": "toyama_xr",
+      "file": "data/models/imported/toyama_xr/toyama_xr.glb",
+      "source_file": "generic_toyama_xr_sedan.glb",
+      "source_sha256": "67e3f08ba690b912cb26b07d5a9aa5d719ebbec53158ad80976f8de613d1644e",
+      "title": "Generic Toyama XR Sedan",
+      "author": "mk2design (https://sketchfab.com/mk2design)",
+      "license": "CC-BY-4.0",
+      "modifications": "Re-oriented to the game's axes and origin, wheels re-parented under suspension/steering/spin pivots at the wheel centres, brake calipers under the steering pivots, baked ground/shadow plane removed (tools/carimport). Geometry, materials and textures otherwise unchanged.",
+      "modified_on": "2026-10-14"
+    }
   ]
 }

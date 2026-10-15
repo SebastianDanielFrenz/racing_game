@@ -1,9 +1,11 @@
 {
   "format": "rg.headlights/1",
-  "description": "Headlamp beams (game/scripts/headlights.gd): one SpotLight3D per headlamp cluster of the car rig's lights.head materials. Visual tuning [AS], Godot units (energy, metres, degrees). lights_per_car 1 merges both lamps into one spot (half the GPU passes, see the cost note in headlights.gd). Shadows off: a shadowed spot renders a shadow map every frame.",
+  "description": "Headlamp beams (game/scripts/headlights.gd): one SpotLight3D per headlamp cluster of the car rig's lights.head materials. Visual tuning [AS], Godot units (energy, metres, degrees). lights_per_car 1 merges both lamps into one spot (half the GPU passes, see the cost note in headlights.gd). Shadows off: a shadowed spot renders a shadow map every frame. tail: one red spot at the rear lamps (energy = tail lamps, brake_energy = braking); reverse: one white spot; both aimed backward and down, no shadows.",
   "lights_per_car": 2,
   "shadows": false,
   "colour": [1.0, 0.95, 0.85],
-  "dipped": {"range_m": 70.0, "angle_deg": 32.0, "angle_attenuation": 1.6, "attenuation": 0.9, "energy": 6.0, "pitch_down_deg": 2.5},
-  "main_beam": {"range_m": 160.0, "angle_deg": 22.0, "angle_attenuation": 1.4, "attenuation": 0.8, "energy": 12.0, "pitch_down_deg": 0.6}
+  "dipped": {"range_m": 70.0, "angle_deg": 32.0, "angle_attenuation": 1.6, "attenuation": 0.9, "energy": 9.0, "pitch_down_deg": 2.5},
+  "main_beam": {"range_m": 160.0, "angle_deg": 22.0, "angle_attenuation": 1.4, "attenuation": 0.8, "energy": 18.0, "pitch_down_deg": 0.6},
+  "tail": {"colour": [1.0, 0.06, 0.03], "range_m": 14.0, "angle_deg": 65.0, "angle_attenuation": 1.0, "attenuation": 1.0, "energy": 1.2, "brake_energy": 4.0, "pitch_down_deg": 18.0},
+  "reverse": {"colour": [1.0, 1.0, 1.0], "range_m": 16.0, "angle_deg": 60.0, "angle_attenuation": 1.0, "attenuation": 1.0, "energy": 3.5, "pitch_down_deg": 20.0}
 }
