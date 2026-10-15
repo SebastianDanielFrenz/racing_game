@@ -75,6 +75,7 @@ add_executable(rg_unit_tests
   test_road_ahead.cpp
   test_camera_math.cpp
   test_camera_motion.cpp
+  test_tyre_sound.cpp
   test_cinematic_obstacles.cpp
   test_render_pose.cpp
   test_deck_installer.cpp

@@ -115,6 +115,7 @@ add_library(rg_core STATIC
     src/road_ahead.cpp
     src/camera_math.cpp
     src/camera_motion.cpp
+    src/tyre_sound.cpp
     "${PS_ADAPTER_SRC_DIR}/frame_convert_core.cpp"
 )
 

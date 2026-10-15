@@ -10,6 +10,7 @@ var _mutex := Mutex.new()
 var _wake := Semaphore.new()
 var _stop := false
 var _jobs: Array = []
+var _sched: Dictionary = {} # pending {center, focus, velocity} for the worker to turn into jobs (_plan)
 var _results: Array = []
 var _known: Dictionary = {}
 var _tiles: Dictionary = {}
@@ -53,7 +54,11 @@ func _process_body(_delta: float) -> void:
 	var absolute := Vector2(focus.x, focus.y) + utm_origin
 	var center := Vector2i(floori(absolute.x/1024.0), floori(absolute.y/1024.0))
 	if center != _center:
-		_schedule(center, absolute, velocity)
+		# The plan covers the whole skyline radius (thousands of tiles, sorted): done on the worker.
+		_mutex.lock()
+		_sched = {"center":center,"focus":absolute,"velocity":velocity}
+		_mutex.unlock()
+		_wake.post()
 		_center = center
 	var skyline := float(settings.get("skyline_distance_m", 40000.0))
 	rig.camera.far = maxf(rig.camera.far, skyline + 3000.0)
@@ -79,12 +84,16 @@ func _process_body(_delta: float) -> void:
 		if distance > skyline + 2048.0:
 			tile.node.queue_free()
 			_tiles.erase(key)
+			_mutex.lock()
 			_known.erase(key)
+			_mutex.unlock()
 		elif tile.full and distance > ordinary + 2048.0:
 			tile.near.mesh = null
 			tile.full = false
+			_mutex.lock()
 			_known[key] = false
-func _schedule(center: Vector2i, focus: Vector2, velocity: Vector2 = Vector2.ZERO) -> void:
+			_mutex.unlock()
+func _plan(center: Vector2i, focus: Vector2, velocity: Vector2, known: Dictionary) -> Array:
 	var ordinary := float(settings.get("ordinary_distance_m", 2200.0))
 	var skyline := float(settings.get("skyline_distance_m", 40000.0))
 	var radius := ceili(skyline/1024.0)+1
@@ -97,21 +106,28 @@ func _schedule(center: Vector2i, focus: Vector2, velocity: Vector2 = Vector2.ZER
 			if distance > skyline+725:
 				continue
 			var full := distance <= ordinary+725
-			if _known.has(key) and (not full or bool(_known[key])):
+			if known.has(key) and (not full or bool(known[key])):
 				continue
 			var order := distance
 			if velocity.length() >= 2.0 and delta.dot(velocity.normalized()) < -1024.0:
 				order += 5000.0 # behind a fast car: after everything ahead
 			jobs.append({"key":key,"full":full,"distance":order})
 	jobs.sort_custom(func(a: Dictionary,b: Dictionary) -> bool: return a.distance>b.distance)
-	_mutex.lock()
-	_jobs = jobs
-	_mutex.unlock()
-	_wake.post()
+	return jobs
 func _worker() -> void:
 	while true:
 		_mutex.lock()
 		var stop := _stop
+		var sched: Dictionary = _sched
+		_sched = {}
+		var known: Dictionary = _known.duplicate() if not sched.is_empty() else {}
+		_mutex.unlock()
+		if not stop and not sched.is_empty():
+			var planned := _plan(sched.center, sched.focus, sched.velocity, known)
+			_mutex.lock()
+			_jobs = planned
+			_mutex.unlock()
+		_mutex.lock()
 		var job: Dictionary = {}
 		if not stop and not _jobs.is_empty() and _results.size()<4:
 			job = _jobs.pop_back()
@@ -128,7 +144,7 @@ func _worker() -> void:
 		for building: Dictionary in data.get("buildings",[]):
 			_tessellate(building,tall_arrays if float(building.height)>=threshold else near_arrays)
 		_mutex.lock()
-		_results.append({"key":job.key,"full":job.full,"origin":data.get("origin_session",Vector3.ZERO),"near":near_arrays,"tall":tall_arrays})
+		_results.append({"key":job.key,"full":job.full,"origin":data.get("origin_session",Vector3.ZERO),"near":_mesh(near_arrays),"tall":_mesh(tall_arrays)})
 		_mutex.unlock()
 func _empty_arrays() -> Array:
 	return [PackedVector3Array(),PackedVector3Array(),PackedColorArray()]
@@ -223,12 +239,14 @@ func _upload(result: Dictionary) -> void:
 	var key: Vector2i = result.key
 	if _tiles.has(key) and bool(_tiles[key].full) and not bool(result.full):
 		return
+	_mutex.lock()
 	_known[key] = result.full
+	_mutex.unlock()
 	if _tiles.has(key):
 		_tiles[key].node.queue_free()
 		_tiles.erase(key)
-	var near_mesh := _mesh(result.near)
-	var tall_mesh := _mesh(result.tall)
+	var near_mesh: ArrayMesh = result.near # built on the worker (_worker), only attached here
+	var tall_mesh: ArrayMesh = result.tall
 	if near_mesh==null and tall_mesh==null:
 		return
 	var root := Node3D.new()

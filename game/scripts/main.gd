@@ -195,6 +195,10 @@ func _ready() -> void:
 	if OS.get_environment("RG_RENDER_TIMING") != "0":
 		RenderingServer.viewport_set_measure_render_time(get_viewport().get_viewport_rid(), true) # RG_FRAME_SPIKE render_cpu/gpu_ms
 	preload("res://scripts/ui_scale.gd").apply(get_tree())
+	var probe_end := Node.new()
+	probe_end.name = "FrameProbeEnd"
+	probe_end.set_script(preload("res://scripts/frame_probe_end.gd"))
+	add_child(probe_end)
 	var user_args := OS.get_cmdline_user_args()
 	if "--bindings-test" in user_args:
 		_run_bindings_test()
@@ -1250,6 +1254,8 @@ func _frame_diag(delta: float) -> void:
 	if world_state != "running" or _simulation == null:
 		return
 	var ms := delta * 1000.0
+	if probes.has("scene_span"):
+		probes["outside"] = maxi(0, int(delta * 1000000.0) - int(probes["scene_span"])) # engine render / driver / vsync / OS
 	var process_ms: float = Performance.get_monitor(Performance.TIME_PROCESS) * 1000.0
 	_fd_frames.append(ms)
 	_fd_process_sum += process_ms
@@ -1304,6 +1310,7 @@ func _frame_diag(delta: float) -> void:
 
 func _process(delta: float) -> void:
 	var process_t0 := Time.get_ticks_usec()
+	FrameProbe.frame_start_us = process_t0
 	_process_body(delta)
 	FrameProbe.add("main", Time.get_ticks_usec() - process_t0)
 
