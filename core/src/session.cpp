@@ -68,6 +68,8 @@ const char* const kControlChannelNames[] = {
     "gear_request", // -100 means no absolute request; zero is neutral
     "transmission.selector", // reserved until automatic transmission support
     "epb", // physics owns edge detection and the parking latch
+    "assist.abs", // physics_sim assists I5 part 2: ABS on/off (>= 0.5); only a car whose assist unit has the abs block registers it
+    "assist.esc", // physics_sim assists I6: ESC mode 0 off, 1 on, 2 sport; only a car whose unit has the esc block registers it
     "nitrous_arm", // N2O arm switch, a plain 0/1 level (owner 2026-10-05; only cars with a nitrous kit declare it)
     "cabin.lights", // 0 off, 1 dipped, 2 main beam (DriverActions "lights"); visual only
 };
@@ -220,7 +222,7 @@ Session::Session(const SessionConfig& config)
     if(have_vehicle_) {
         // A drive_modes part writes the mode's TC / LC defaults into the channels itself on a mode change (assists I7c);
         // adopt_physics_channel_writes mirrors that back into this store after every step.
-        for(const char* name:{"assist.traction_control","assist.aero_control","assist.drive_mode","assist.launch_control"})
+        for(const char* name:{"assist.traction_control","assist.aero_control","assist.drive_mode","assist.launch_control","assist.abs","assist.esc"})
             control_channels_[name].store(world_->get_control(name),std::memory_order_relaxed);
     }
     install_weather();

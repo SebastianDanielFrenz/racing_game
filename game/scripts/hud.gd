@@ -72,10 +72,10 @@ func _ready() -> void:
 	add_child(_prompt_label)
 	_window_start_s = Time.get_ticks_msec() / 1000.0
 
-# "ECO / NORMAL / SPORT" for the bits of the modes a car offers.
+# "ECO / NORMAL / SPORT / RACING" for the bits of the modes a car offers.
 func _offered_drive_modes(bits: int) -> String:
 	var names := PackedStringArray()
-	for code in range(3):
+	for code in range(4):
 		if (bits >> code) & 1 != 0:
 			names.append(str(RgAssists.drive_mode_name(code)))
 	return " / ".join(names)
@@ -262,6 +262,16 @@ func _process_body(_delta: float) -> void:
 					assist_line += "   "
 				assist_line += "aero automation %s (H)" % (("on, wing target %+.0f deg" % float(controls["aero"]["aero_target_deg"])) if bool(controls["aero"]["value"]) else "off")
 			lines.append(assist_line)
+		# Stability aids (physics_sim assist unit ABS / ESC) and the electronic parking brake, each only on a car that has it.
+		var safety := PackedStringArray()
+		if bool(controls["abs"]["fitted"]):
+			safety.append(str(controls["abs"]["label"]))
+		if bool(controls["esc"]["fitted"]):
+			safety.append(str(controls["esc"]["label"]))
+		if bool(controls["epb"]["fitted"]):
+			safety.append(str(controls["epb"]["label"]) if str(controls["epb"]["label"]) != "" else "EPB released")
+		if not safety.is_empty():
+			lines.append("   ".join(safety))
 		# Drive mode (assists I7, M cycles the offered modes): the mode that runs, in its theme colour; launch control
 		# state when the car has one. The whole readout takes a light tint of the mode colour.
 		var themed_readout := false
