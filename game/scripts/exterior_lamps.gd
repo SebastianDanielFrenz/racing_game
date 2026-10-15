@@ -4,6 +4,7 @@ const DriverState := preload("res://scripts/driver_state.gd") # preloaded once: 
 var simulation: Node
 var vehicle_name: String
 var lamps: Array = []
+var lights: Node # headlights.gd driver: gets the lamp states for the rear light sources
 const ACTIONS := {"indicator_left":"indicator_left","indicator_right":"indicator_right","brake":"brake_lamp","reverse":"reverse_lamp","head":"head_lamp","tail":"tail_lamp"}
 
 static func attach_to(model: Node3D, sim: Node, car: String, path: String) -> Node:
@@ -31,7 +32,7 @@ static func attach_to(model: Node3D, sim: Node, car: String, path: String) -> No
 						by_surface[key] = {"material":copy,"kinds":[]}
 						driver.lamps.append(by_surface[key])
 					by_surface[key]["kinds"].append({"action":ACTIONS[kind],"spec":spec})
-		load("res://scripts/headlights.gd").attach_to(model,sim,car,rig)
+		driver.lights = load("res://scripts/headlights.gd").attach_to(model,sim,car,rig)
 	model.add_child(driver)
 	driver.update_lamps({}, {})
 	return driver
@@ -55,6 +56,8 @@ func update_lamps(snapshot: Dictionary, channels: Dictionary) -> void:
 			var rgb: Array = best["emissive_on"]
 			material.emission = Color(rgb[0],rgb[1],rgb[2])
 			material.emission_energy_multiplier = float(best["emissive_strength_on"])
+	if lights != null:
+		lights.set_states(states)
 
 const FrameProbe := preload("res://scripts/frame_probe.gd")
 func _process(_delta: float) -> void:
