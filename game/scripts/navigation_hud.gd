@@ -69,7 +69,9 @@ func _plan() -> void:
 	var serial: int = _nav.plan_route(float(pose.x), float(pose.y), cos(yaw), sin(yaw), _destination.x, _destination.y)
 	print("RG_ROUTE request serial=%d to=%s (%s)" % [serial, _destination, _destination_label])
 
-func _process(_delta: float) -> void:
+var _guidance_wait_s := 0.0 # guidance text and map requests at 10 Hz (perf, 2026-10-15); the car marker every frame
+
+func _process(delta: float) -> void:
 	var running: bool = main != null and main.world_state == "running" and main.world_kind == "real_world"
 	if not running:
 		if _attached or _failed:
@@ -94,6 +96,11 @@ func _process(_delta: float) -> void:
 		_minimap.radius_m = float(_nav.get_minimap_radius_m())
 		_set_shown(true)
 		_plan()
+	_minimap.set_car(car, float(pose.yaw_deg))
+	_guidance_wait_s -= delta
+	if _guidance_wait_s > 0.0:
+		return
+	_guidance_wait_s = 0.1
 	_nav.request_map(car.x, car.y, _minimap.radius_m)
 	if _nav.poll_map():
 		_minimap.set_map(_nav.get_map())
@@ -101,7 +108,6 @@ func _process(_delta: float) -> void:
 		var route: Dictionary = _nav.get_route()
 		_minimap.set_route(route.get("polyline", PackedVector2Array()))
 		print("RG_ROUTE %s length_m=%.0f duration_s=%.0f maneuvers=%d %s" % [route.status, float(route.length_m), float(route.duration_s), route.maneuvers.size(), route.message])
-	_minimap.set_car(car, float(pose.yaw_deg))
 	_label.text = _guidance_text(_nav.get_progress(car.x, car.y))
 
 func _guidance_text(progress: Dictionary) -> String:
