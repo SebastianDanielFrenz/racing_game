@@ -268,6 +268,8 @@ release/`linux-release` preset's populated FetchContent sources. Override
 with `-DRG_G2M_DEPS_DIR=...` if that path differs on another machine; a
 `message(WARNING ...)` fires if the directory does not exist.
 
+Bumped to `ff39870` (2026-10-15, terrain migration phase 4, geo2map design D47): served `roads.geom` encoding 8 carries tunnel floors (provenance `TunnelFloor`, the game's DEM-floor rule) and the game's accepted-bridge anchors, so `core/src/road_structures.cpp` `complete_road_profiles` finds tunnels and those bridges/ground stretches already profiled and skips them (it completes only declined entries). It is NOT deleted yet: the owner rule asks for zero game-only differences on the real stores first (geo2map's roadcmp test shows 0 on both OSM fixtures; the real-store probe is pending). Release-id bump: the derived stores go cold for roads.geom and terrain.carved; warm them (`TerrainService::warm` or `g2m_tiler bake`) before a drive.
+
 Bumped to `7426eb8` (2026-10-15, terrain migration phase 3b: `g2m::world` ViewStreamer, RingStreamer and BuildingSet, see "Streamers and buildings moved to geo2map" below).
 
 Bumped to `2b6a6e5` (2026-10-15, terrain migration phase 3a: `g2m::world` road ribbons and structure decks, incl. the grade-separation approach decks of the overpass fix, see "Road ribbons and structure decks moved to geo2map" below).
