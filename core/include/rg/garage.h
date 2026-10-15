@@ -35,6 +35,7 @@ struct GarageConfig {
     std::string set_path;      // data/garage/garage_set.json
     std::string engine_catalog_path; // data/engines/engine_catalog.json ("" = <repo_root>/data/engines/engine_catalog.json)
     std::string gearbox_catalog_path; // data/gearboxes/gearbox_catalog.json ("" = <repo_root>/data/gearboxes/gearbox_catalog.json)
+    std::string driveline_catalog_path; // data/drivetrains/driveline_catalog.json ("" = <repo_root>/data/drivetrains/driveline_catalog.json)
     std::string tyre_families_path; // data/tyres/families.json ("" = no tyre choice)
     std::string turbo_map_extension_path; // data/engines/turbo_map_extension.json ("" = <repo_root>/data/engines/turbo_map_extension.json if it exists, else no extension)
     std::string user_dir;      // selection and setups are saved under <user_dir>/garage/
@@ -102,6 +103,8 @@ public:
     [[nodiscard]] const std::string& selected_id() const { return selected_; }
     bool select(const std::string& id, std::string* err); // persists
     // ---- per-vehicle data ----
+    // The stats follow the car's drive layout as the setup leaves it (the working copy while that car is edited, else the
+    // saved setup on top of the preset): a drivetrain swap changes layout, driven_wheels and driveline.
     [[nodiscard]] std::optional<VehicleStats> stats(const std::string& id, std::string* err) const;
     // The engine the garage's bay view shows for this car: the edit session's installed engine while that car is
     // edited, else the car's own. nullptr when the engine is not in the store.
@@ -124,7 +127,7 @@ public:
     // with the stats of its vehicle file and the paint/rim a drive of it would use (the saved setup on top
     // of the preset overlay). The view state (group/sort/filter) lives in the model; the caller persists it
     // through CarBrowser::apply_settings / store_settings. The stats are those of the entry's vehicle file:
-    // a preset's overlay is not applied to them.
+    // a preset's overlay is not applied to them, except the drive layout, which follows a drivetrain swap (stats()).
     [[nodiscard]] CarBrowser& browser() { return browser_; }
     [[nodiscard]] const CarBrowser& browser() const { return browser_; }
     [[nodiscard]] std::vector<BrowserCar> browser_cars() const;
@@ -170,6 +173,8 @@ private:
     void remove_drive_dir();
     void engines_changed();
     std::string drop_unavailable_values();
+    // After a drive layout change: an axle differential choice for an axle the new layout does not drive returns to stock.
+    std::string drop_driveline_values();
     // The overlay with legacy engine ids resolved to keys; an engine that no longer exists is dropped (named in *notices).
     void normalise_engine_values(VehicleSetup& setup, std::vector<std::string>* notices) const;
     [[nodiscard]] VehicleSetup effective_setup_with_notices(const std::string& id, std::vector<std::string>* notices) const;

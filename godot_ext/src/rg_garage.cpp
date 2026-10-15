@@ -76,6 +76,7 @@ godot::Dictionary stats_to_dict(const rg::VehicleStats& s) {
     d["layout"] = from_std(s.layout);
     d["driven_wheels"] = static_cast<int64_t>(s.driven_wheels);
     d["wheel_count"] = static_cast<int64_t>(s.wheel_count);
+    d["driveline"] = from_std(s.driveline);
     d["gear_count"] = static_cast<int64_t>(s.gear_count);
     d["displacement_known"] = s.displacement_known;
     d["displacement_l"] = s.displacement_l;

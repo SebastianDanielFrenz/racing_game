@@ -176,6 +176,16 @@ std::unique_ptr<Garage> Garage::open(const GarageConfig& config, std::string* er
         }
         g->ctx_.gearboxes = std::shared_ptr<const GearboxCatalog>(std::move(boxes));
     }
+    {
+        const std::string cat = config.driveline_catalog_path.empty() ? config.repo_root + "/data/drivetrains/driveline_catalog.json"
+                                                                       : config.driveline_catalog_path;
+        auto lines = DrivelineCatalog::open(cat, &e);
+        if (!lines) {
+            if (err != nullptr) *err = e;
+            return nullptr;
+        }
+        g->ctx_.drivelines = std::shared_ptr<const DrivelineCatalog>(std::move(lines));
+    }
 
     // A crashed run can leave its drive materialisation behind: remove it.
     std::error_code ec;
@@ -242,9 +252,24 @@ std::optional<VehicleStats> Garage::stats(const std::string& id, std::string* er
     }
     // Presets share their base's vehicle file: one computation per file (and declared displacement).
     const std::string key = e->vehicle_path + "#" + (e->displacement_l ? std::to_string(*e->displacement_l) : std::string());
-    if (const auto it = stats_cache_.find(key); it != stats_cache_.end()) return it->second;
-    std::optional<VehicleStats> computed = compute_vehicle_stats(*e, err);
-    if (computed) stats_cache_.emplace(key, *computed); // a failure is not cached: its message is wanted every time
+    std::optional<VehicleStats> computed;
+    if (const auto it = stats_cache_.find(key); it != stats_cache_.end()) {
+        computed = it->second;
+    } else {
+        computed = compute_vehicle_stats(*e, err);
+        if (!computed) return computed; // a failure is not cached: its message is wanted every time
+        stats_cache_.emplace(key, *computed);
+    }
+    // A drivetrain swap: the layout the setup builds (only a setup that chooses a layout or a differential).
+    const VehicleSetup setup = editing() && edit_id_ == id ? working_ : effective_setup(id);
+    if (setup.values.count("drive_layout") != 0 || setup.values.count("diff_front") != 0 || setup.values.count("diff_rear") != 0) {
+        const SetupModel m = build_setup_model(*e, options_, context_for(*e), &setup);
+        if (m.error.empty() && m.driveline.driven_wheels > 0) {
+            computed->layout = m.driveline.layout;
+            computed->driven_wheels = m.driveline.driven_wheels;
+            computed->driveline = driveline_summary(m.driveline);
+        }
+    }
     return computed;
 }
 
@@ -465,6 +490,7 @@ EditResult Garage::set_option(const std::string& option_id, const SetupValue& va
     }
     revalidate();
     if (option_id == "engine_install") r.notice = drop_unavailable_values();
+    if (option_id == "drive_layout") r.notice = drop_driveline_values();
     r.validation = validation_;
     return r;
 }
@@ -508,6 +534,36 @@ std::string Garage::drop_unavailable_values() {
     }
     if (!drop.empty()) revalidate();
     return notice.empty() ? notice : "The engine does not offer: " + notice + " (back to stock).";
+}
+
+std::string Garage::drop_driveline_values() {
+    const CatalogEntry* entry = catalog_.find(edit_id_);
+    if (entry == nullptr) return {};
+    VehicleSetup probe;
+    probe.vehicle_id = edit_id_;
+    if (const auto it = working_.values.find("drive_layout"); it != working_.values.end()) probe.values["drive_layout"] = it->second;
+    const SetupModel pm = build_setup_model(*entry, options_, context_for(*entry), &probe);
+    if (!pm.error.empty()) return {}; // the layout itself does not install: revalidate() reports it
+    std::string notice;
+    bool changed = false;
+    for (const char* id : {"diff_front", "diff_rear"}) {
+        const auto it = working_.values.find(id);
+        if (it == working_.values.end() || !std::holds_alternative<std::string>(it->second)) continue;
+        const OptionView* view = nullptr;
+        for (const OptionView& v : pm.options) if (v.def.id == id) view = &v;
+        if (view == nullptr) continue;
+        const std::string& s = std::get<std::string>(it->second);
+        if (!view->available) { // that axle is no longer driven
+            working_.values.erase(it);
+            changed = true;
+            notice += (notice.empty() ? "" : ", ") + (view->def.label.empty() ? std::string(id) : view->def.label);
+        } else if (s != "stock" && std::find(view->choices.begin(), view->choices.end(), s) == view->choices.end()) {
+            working_.values.erase(it); // the new layout already fits that kind on this axle: the choice is now stock
+            changed = true;
+        }
+    }
+    if (changed) revalidate();
+    return notice.empty() ? notice : "The new layout does not drive that axle: " + notice + " (back to stock).";
 }
 
 void Garage::reset_option(const std::string& option_id) {
