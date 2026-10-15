@@ -5,6 +5,7 @@
 #include "rg/tyre_spec.h"
 #include "rg/vehicle_load.h"
 
+#include "driveline_swap_json.h"
 #include "json_util.h"
 
 #include "ps/io/vehicle_io.h"
@@ -255,6 +256,9 @@ struct Files {
     std::vector<FileDoc> electronics;
     // Parts a setup feature adds to the part-mass tree beyond what the vehicle file names (rg/part_mass.h).
     std::vector<PartAttachment> part_extras;
+    // Drivetrain swap: the driveline right after a drive layout choice (before an axle differential choice); unset =
+    // the car's own. The differential options show the axle's kind here as their stock.
+    std::optional<DrivelineInfo> layout_info;
 };
 
 bool read_doc(const std::string& path, json& out, std::string* err) {
@@ -413,9 +417,23 @@ double installed_engine_peak_torque(const Files& files, const SetupContext& ctx)
     return facts && facts->curve_peaks.known ? facts->curve_peaks.torque_nm : 0.0;
 }
 
+bool is_driveline_catalog(const SetupOptionDef& def) { return def.catalog == "drive_layouts" || def.catalog == "differentials"; }
+
+// Drivetrain swap: why the option cannot apply to the car as it stands now (its working vehicle file), or "".
+std::string driveline_fit_error(const Files& files, const SetupOptionDef& def, const SetupContext& ctx) {
+    if (!ctx.drivelines) return "the drivetrain catalogue is unavailable";
+    const DrivelineInfo info = detail::describe_driveline_json(files.vehicle.work);
+    if (!info.swappable) return "this car's driveline cannot be swapped: " + info.reason;
+    if (def.catalog == "differentials" && (def.axle == "front" ? info.front_kind : info.rear_kind).empty()) {
+        return std::string("the ") + def.axle + " axle is not driven";
+    }
+    return {};
+}
+
 // File choices are never a filesystem picker: only declared compatible IDs can resolve a path.
 bool file_choice_fits(Files& files, const SetupOptionDef& def, const CatalogEntry& entry, const SetupContext& ctx) {
     if (!entry_offers(entry, def.id)) return false;
+    if (is_driveline_catalog(def)) return driveline_fit_error(files, def, ctx).empty();
     if (def.catalog.empty()) {
         // "*" in compatible_engines: the part does not depend on the engine (e.g. the assist electronics).
         const std::string& engine = files.engine_stem;
@@ -434,6 +452,26 @@ bool file_choice_fits(Files& files, const SetupOptionDef& def, const CatalogEntr
 // Engine garage G1: a choice from the engine store ("engines") or the installed engine's fuels ("fuels").
 std::string install_catalog_part(Files& files, const SetupOptionDef& def, const CatalogEntry& entry, const SetupContext& ctx,
                                  const std::string& id) {
+    if (def.catalog == "drive_layouts") {
+        const DriveLayoutEntry* l = ctx.drivelines->find_layout(id);
+        if (l == nullptr) return def.id + ": \"" + id + "\" is not a drive layout in the catalogue";
+        const std::string e = detail::apply_layout_json(files.vehicle.work, *ctx.drivelines, *l);
+        if (!e.empty()) return def.id + ": " + e;
+        // The differentials and their shafts are rebuilt by trusted code: exempt from the whitelist like a swap package.
+        files.derived_subtrees.push_back("/powertrain/components");
+        files.derived_subtrees.push_back("/powertrain/shafts");
+        files.layout_info = detail::describe_driveline_json(files.vehicle.work);
+        return {};
+    }
+    if (def.catalog == "differentials") {
+        const DiffUnit* u = ctx.drivelines->find_differential(id);
+        if (u == nullptr) return def.id + ": \"" + id + "\" is not a differential in the catalogue";
+        int index = -1;
+        const std::string e = detail::apply_axle_diff_json(files.vehicle.work, def.axle == "front", *u, &index);
+        if (!e.empty()) return def.id + ": " + e;
+        files.derived_subtrees.push_back("/powertrain/components/" + std::to_string(index));
+        return {};
+    }
     if (def.catalog == "engines") {
         const EngineEntry* e = ctx.engines->find(id);
         if (e == nullptr) return def.id + ": \"" + id + "\" is not an engine in the garage list";
@@ -495,6 +533,11 @@ std::string install_catalog_part(Files& files, const SetupOptionDef& def, const 
 std::string install_file_part(Files& files, const SetupOptionDef& def, const CatalogEntry& entry, const SetupContext& ctx,
                               const SetupValue& value) {
     if (!std::holds_alternative<std::string>(value)) return def.id + ": needs a component ID";
+    if (is_driveline_catalog(def) && entry_offers(entry, def.id)) {
+        if (std::get<std::string>(value) == "stock") return {}; // keep the driveline as it is
+        const std::string why = driveline_fit_error(files, def, ctx);
+        if (!why.empty()) return def.id + ": " + why;
+    }
     if (!file_choice_fits(files, def, entry, ctx)) return def.id + ": not compatible with this vehicle";
     const auto& id = std::get<std::string>(value);
     if (id == "stock") return {};
@@ -1180,8 +1223,15 @@ std::optional<SetupOptionTable> parse_setup_options(const std::string& json_text
                 d.insert_if_absent = std::move(v);
             }
             detail::get_string(o, "catalog", d.catalog);
-            if (!d.catalog.empty() && d.catalog != "engines" && d.catalog != "fuels" && d.catalog != "gearboxes") {
-                return bad(where + ": \"catalog\" must be \"engines\", \"fuels\" or \"gearboxes\"");
+            if (!d.catalog.empty() && d.catalog != "engines" && d.catalog != "fuels" && d.catalog != "gearboxes" &&
+                d.catalog != "drive_layouts" && d.catalog != "differentials") {
+                return bad(where + ": \"catalog\" must be \"engines\", \"fuels\", \"gearboxes\", \"drive_layouts\" or \"differentials\"");
+            }
+            if ((d.catalog == "drive_layouts" || d.catalog == "differentials") && d.file != "vehicle") {
+                return bad(where + ": a drivetrain option edits the vehicle file");
+            }
+            if (d.catalog == "differentials" && d.axle != "front" && d.axle != "rear") {
+                return bad(where + ": a differential choice needs \"axle\": front or rear");
             }
             if (!d.catalog.empty()) {
                 if (o.contains("parts") || o.contains("compatible_engines")) {
@@ -1362,6 +1412,31 @@ std::string power_text(const EnginePeaks& p) {
 std::vector<SetupPart> parts_of(const SetupOptionDef& def, const SetupContext& ctx, const Files& files) {
     if (def.catalog.empty()) return def.parts;
     std::vector<SetupPart> out;
+    if (def.catalog == "drive_layouts") {
+        if (!ctx.drivelines) return out;
+        for (const DriveLayoutEntry& l : ctx.drivelines->layouts()) {
+            SetupPart p;
+            p.id = l.id;
+            p.label = l.name;
+            p.section = l.layout;
+            p.subtitle = l.centre ? l.layout + " · " + diff_kind_label(l.centre->kind) + " centre" : l.layout;
+            p.detail = l.description;
+            out.push_back(std::move(p));
+        }
+        return out;
+    }
+    if (def.catalog == "differentials") {
+        if (!ctx.drivelines) return out;
+        for (const DiffUnit& u : ctx.drivelines->differentials()) {
+            SetupPart p;
+            p.id = u.id;
+            p.label = u.name;
+            p.subtitle = diff_kind_label(u.kind);
+            p.detail = u.description;
+            out.push_back(std::move(p));
+        }
+        return out;
+    }
     if (def.catalog == "gearboxes") {
         if (!ctx.gearboxes) return out;
         const double peak = installed_engine_peak_torque(files, ctx);
@@ -1416,6 +1491,49 @@ std::vector<SetupPart> parts_of(const SetupOptionDef& def, const SetupContext& c
     return out;
 }
 
+// Drivetrain swap: the stock part and the choices of a layout or differential option. Stock = what the car has now
+// (the layout as delivered; a differential: the axle's unit as the chosen layout left it), never offered again.
+void driveline_choices(const SetupOptionDef& def, const SetupContext& ctx, const Files& files, OptionView& v) {
+    const std::vector<SetupPart> all = parts_of(def, ctx, files);
+    SetupPart stock;
+    stock.id = "stock";
+    std::string stock_part;
+    if (def.catalog == "drive_layouts") {
+        const DrivelineInfo base = detail::describe_driveline_json(files.vehicle.base);
+        stock.label = "Original: " + driveline_summary(base);
+        stock.section = base.layout;
+        if (ctx.drivelines && base.swappable) {
+            const DriveLayoutEntry* l = nullptr;
+            if (base.layout == "AWD") {
+                l = ctx.drivelines->awd_layout_of_centre(base.centre_kind);
+            } else {
+                for (const DriveLayoutEntry& e : ctx.drivelines->layouts()) if (e.layout == base.layout && l == nullptr) l = &e;
+            }
+            if (l != nullptr) stock_part = l->id;
+        }
+    } else {
+        const DrivelineInfo now = files.layout_info ? *files.layout_info : detail::describe_driveline_json(files.vehicle.base);
+        const std::string& kind = def.axle == "front" ? now.front_kind : now.rear_kind;
+        stock.label = kind.empty() ? std::string("Not driven") : "Original: " + diff_kind_label(kind);
+        if (ctx.drivelines && !kind.empty()) {
+            if (const DiffUnit* u = ctx.drivelines->differential_of_kind(kind)) stock_part = u->id;
+        }
+    }
+    for (const SetupPart& p : all) {
+        if (p.id != stock_part) continue;
+        stock = p; // the catalogue's card for what is fitted (the car keeps its own parameters of that kind)
+        stock.id = "stock";
+        stock.subtitle = p.subtitle.empty() ? std::string("fitted") : p.subtitle + " · fitted";
+    }
+    v.parts.push_back(stock);
+    v.choices.push_back("stock");
+    for (const SetupPart& p : all) {
+        if (p.id == stock_part) continue;
+        v.parts.push_back(p);
+        v.choices.push_back(p.id);
+    }
+}
+
 } // namespace
 
 SetupModel build_setup_model(const CatalogEntry& entry, const SetupOptionTable& table, const SetupContext& ctx, const VehicleSetup* installed) {
@@ -1446,6 +1564,7 @@ SetupModel build_setup_model(const CatalogEntry& entry, const SetupOptionTable& 
     }
     if (!load_turbo(files, &model.error)) return model;
     model.parts = part_tree_of(entry, ctx, files);
+    model.driveline = detail::describe_driveline_json(files.vehicle.work);
     for (const SetupOptionDef& def : table.options) {
         OptionView v;
         v.def = def;
@@ -1504,6 +1623,11 @@ SetupModel build_setup_model(const CatalogEntry& entry, const SetupOptionTable& 
             case OptionKind::FileChoice: {
                 v.stock = std::string("stock");
                 v.available = file_choice_fits(files, def, entry, ctx);
+                if (is_driveline_catalog(def)) {
+                    driveline_choices(def, ctx, files, v);
+                    if (v.choices.size() < 2) v.available = false;
+                    break;
+                }
                 SetupPart stock;
                 stock.id = "stock";
                 stock.label = "Original component";

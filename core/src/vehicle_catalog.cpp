@@ -1,6 +1,7 @@
 // rg/vehicle_catalog.cpp - see vehicle_catalog.h.
 #include "rg/vehicle_catalog.h"
 
+#include "driveline_swap_json.h"
 #include "json_util.h"
 
 #include <algorithm>
@@ -490,52 +491,12 @@ std::optional<VehicleStats> compute_vehicle_stats(const CatalogEntry& entry, std
     VehicleStats stats;
     stats.mass_kg = entry.chassis.mass_kg;
 
-    // Layout: the wheels that appear as "wheel:<name>" ports of any shaft are the
-    // driven ones (the powertrain builder drives exactly those).
-    std::set<std::string> driven;
-    const auto pt = vehicle->find("powertrain");
-    if (pt != vehicle->end() && pt->is_object()) {
-        const auto shafts = pt->find("shafts");
-        if (shafts != pt->end() && shafts->is_array()) {
-            for (const json& shaft : *shafts) {
-                const auto ports = shaft.is_object() ? shaft.find("ports") : shaft.end();
-                if (!shaft.is_object() || ports == shaft.end() || !ports->is_array()) continue;
-                for (const json& p : *ports) {
-                    if (!p.is_string()) continue;
-                    const std::string port = p.get<std::string>();
-                    if (port.rfind("wheel:", 0) == 0) driven.insert(port.substr(6));
-                }
-            }
-        }
-    }
-    int front_wheels = 0, rear_wheels = 0, front_driven = 0, rear_driven = 0;
-    const auto wheels = vehicle->find("wheels");
-    if (wheels != vehicle->end() && wheels->is_array()) {
-        for (const json& w : *wheels) {
-            if (!w.is_object()) continue;
-            ++stats.wheel_count;
-            std::string name;
-            detail::get_string(w, "name", name);
-            bool is_front = false;
-            detail::get_bool(w, "is_front", is_front);
-            (is_front ? front_wheels : rear_wheels) += 1;
-            if (driven.count(name) != 0) {
-                ++stats.driven_wheels;
-                (is_front ? front_driven : rear_driven) += 1;
-            }
-        }
-    }
-    if (stats.driven_wheels == 0) {
-        stats.layout = "other";
-    } else if (front_driven == front_wheels && rear_driven == rear_wheels) {
-        stats.layout = "AWD";
-    } else if (front_driven > 0 && rear_driven == 0) {
-        stats.layout = "FWD";
-    } else if (rear_driven > 0 && front_driven == 0) {
-        stats.layout = "RWD";
-    } else {
-        stats.layout = "other";
-    }
+    // Layout: the wheels that appear as "wheel:<name>" ports of any shaft are the driven ones (rg/driveline_swap.h).
+    const DrivelineInfo line = detail::describe_driveline_json(*vehicle);
+    stats.layout = line.layout;
+    stats.driven_wheels = line.driven_wheels;
+    stats.wheel_count = line.wheel_count;
+    stats.driveline = driveline_summary(line);
 
     // Gearbox: forward gears.
     const std::string gearbox_path = component_ref(*vehicle, entry.vehicle_path, "gearbox");

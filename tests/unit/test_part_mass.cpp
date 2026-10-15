@@ -3,6 +3,7 @@
 // mass, and setups/swaps changing the tree and the drive's chassis mass.
 #include "rg/garage.h"
 #include "rg/part_mass.h"
+#include "rg/driveline_swap.h"
 #include "rg/vehicle_catalog.h"
 #include "rg/vehicle_setup.h"
 
@@ -62,6 +63,10 @@ struct Fixture {
         REQUIRE(boxes != nullptr);
         ctx.gearboxes = std::shared_ptr<const rg::GearboxCatalog>(std::move(boxes));
         ctx.part_masses = std::make_shared<const rg::PartMassTable>(shipped_table());
+        auto lines = rg::DrivelineCatalog::open(kRoot + "/data/drivetrains/driveline_catalog.json", &err);
+        INFO(err);
+        REQUIRE(lines != nullptr);
+        ctx.drivelines = std::shared_ptr<const rg::DrivelineCatalog>(std::move(lines));
     }
     const rg::CatalogEntry& entry(const std::string& id) const {
         const rg::CatalogEntry* e = catalog.find(id);
@@ -408,6 +413,100 @@ TEST_CASE("part mass tree: setups and swaps change the tree and the drive's chas
     // a tuning value changes no part
     const auto spring = compile(rwd, {{"spring_front", 1.2}});
     CHECK(spring.parts.total_kg == Approx(stock.total_kg));
+}
+
+TEST_CASE("part mass tree: a drivetrain layout swap carries the conversion penalty on the catalog cars", "[part_mass][garage][drivetrain_swap]") {
+    Fixture f;
+    const rg::PartMassTable& t = *f.ctx.part_masses;
+    auto kg = [&](const char* key) { return t.find(key)->mass_kg; };
+    auto layout_tree = [&](const std::string& car, const std::string& layout) {
+        rg::VehicleSetup s;
+        s.vehicle_id = car;
+        s.values["drive_layout"] = layout;
+        rg::CompiledSetup c = rg::compile_setup(f.entry(car), f.table, f.ctx, s);
+        INFO(car + " " + layout + ": " + c.error);
+        REQUIRE(c.ok);
+        INFO(c.parts.error);
+        REQUIRE(c.parts.ok);
+        return c.parts;
+    };
+    auto diff_total = [](const rg::PartTree& tree, const char* id) {
+        const rg::PartNode* n = tree.root.find(id);
+        return n != nullptr ? n->total_kg() : 0.0;
+    };
+
+    // The front-engine RWD sedan.
+    const rg::PartTree stock = rg::stock_part_tree(f.entry("car_sedan_rwd"), f.table, f.ctx);
+    REQUIRE(stock.ok);
+    CHECK(stock.layout == "RWD");
+    CHECK(stock.root.find("drivetrain.layout_conversion") == nullptr);
+    // its own layout chosen again: no penalty
+    CHECK(layout_tree("car_sedan_rwd", "rwd").total_kg == Approx(stock.total_kg));
+    // RWD -> FWD: the rear axle and the propshaft go, the front axle comes, plus the conversion with its transfer drive
+    // and a driveline along the car (the drive still runs across the car)
+    const rg::PartTree fwd = layout_tree("car_sedan_rwd", "fwd");
+    CHECK(fwd.layout == "FWD");
+    CHECK(fwd.stock_layout == "RWD");
+    const rg::PartNode* conv = fwd.root.find("drivetrain.layout_conversion");
+    REQUIRE(conv != nullptr);
+    CHECK(conv->label == "Layout conversion (RWD to FWD)");
+    CHECK(conv->total_kg() == Approx(kg("layout_conversion") + kg("conversion_transfer") + kg("conversion_driveline")));
+    CHECK(fwd.root.find("drivetrain.rear_axle") == nullptr);
+    CHECK(fwd.root.find("drivetrain.front_axle") != nullptr);
+    CHECK(fwd.total_kg == Approx(stock.total_kg - diff_total(stock, "drivetrain.rear_axle") - kg("propshaft") +
+                                 diff_total(fwd, "drivetrain.front_axle") + conv->total_kg()));
+    CHECK(fwd.total_kg > stock.total_kg);
+    // RWD -> AWD: transfer case, front axle, the conversion with a second shaft to the front axle
+    const rg::PartTree awd = layout_tree("car_sedan_rwd", "awd_viscous");
+    CHECK(awd.layout == "AWD");
+    REQUIRE(awd.root.find("drivetrain.transfer_case") != nullptr);
+    CHECK(awd.root.find("drivetrain.transfer_case")->own_kg == Approx(kg("diff_centre_viscous")));
+    CHECK(awd.root.find("drivetrain.layout_conversion.driveline") != nullptr);
+    CHECK(awd.root.find("drivetrain.layout_conversion.transfer_drive") == nullptr);
+    CHECK(awd.total_kg == Approx(stock.total_kg + kg("diff_centre_viscous") + diff_total(awd, "drivetrain.front_axle") +
+                                 kg("layout_conversion") + kg("conversion_driveline")));
+    // the owner's comparison: the 2WD swap costs about an AWD conversion minus the axle no longer driven
+    const double awd_minus_axle = awd.total_kg - stock.total_kg - diff_total(stock, "drivetrain.rear_axle");
+    CHECK(fwd.total_kg - stock.total_kg > 0.4 * awd_minus_axle);
+    CHECK(fwd.total_kg - stock.total_kg <= awd_minus_axle);
+
+    // A FWD car made RWD (front engine): the propshaft comes from the layout rule, the conversion adds the rest.
+    const rg::PartTree city = rg::stock_part_tree(f.entry("car_city"), f.table, f.ctx);
+    REQUIRE(city.ok);
+    CHECK(city.layout == "FWD");
+    const rg::PartTree city_rwd = layout_tree("car_city", "rwd");
+    CHECK(city_rwd.root.find("drivetrain.propshaft") != nullptr);
+    CHECK(city_rwd.root.find("drivetrain.layout_conversion.transfer_drive") != nullptr);
+    CHECK(city_rwd.root.find("drivetrain.layout_conversion.driveline") == nullptr);
+    CHECK(city_rwd.total_kg > city.total_kg);
+
+    // Every layout of every swappable catalog car: a stock layout costs nothing, every other one costs mass, and the
+    // conversion shows up in the drivetrain group of the breakdown.
+    for (const rg::CatalogEntry& e : f.catalog.entries) {
+        if (!e.preset_of.empty() || !e.chassis.body_mass_kg) continue;
+        const rg::PartTree base = rg::stock_part_tree(e, f.table, f.ctx);
+        REQUIRE(base.ok);
+        for (const rg::DriveLayoutEntry& l : f.ctx.drivelines->layouts()) {
+            rg::VehicleSetup s;
+            s.vehicle_id = e.id;
+            s.values["drive_layout"] = l.id;
+            const rg::CompiledSetup c = rg::compile_setup(e, f.table, f.ctx, s);
+            if (!c.ok) continue; // a driveline the swap cannot transform (the test_drivetrain_swap cases cover which)
+            INFO(e.id + " -> " + l.id + ": " + c.parts.error);
+            REQUIRE(c.parts.ok);
+            const bool converted = c.parts.layout != base.layout;
+            CHECK((c.parts.root.find("drivetrain.layout_conversion") != nullptr) == converted);
+            if (converted) {
+                // heavier than the same car's stock driveline with its axles taken out and the new ones put in
+                const double axles_now = diff_total(c.parts, "drivetrain.front_axle") + diff_total(c.parts, "drivetrain.rear_axle") +
+                                         diff_total(c.parts, "drivetrain.transfer_case");
+                const double axles_stock = diff_total(base, "drivetrain.front_axle") + diff_total(base, "drivetrain.rear_axle") +
+                                           diff_total(base, "drivetrain.transfer_case");
+                CHECK(c.parts.total_kg > base.total_kg - axles_stock + axles_now);
+                CHECK(c.parts.root.find("drivetrain.layout_conversion")->total_kg() >= kg("layout_conversion"));
+            }
+        }
+    }
 }
 
 TEST_CASE("part mass tree: the garage view and the prepared drive use the tree", "[part_mass][garage]") {
