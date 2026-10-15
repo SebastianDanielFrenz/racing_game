@@ -36,9 +36,6 @@ int next_offered(std::uint32_t bits, int current) {
 std::uint32_t segment(int value) {
     return value >= 0 && value < 32 ? (std::uint32_t{1} << value) : 0;
 }
-std::string drive_name(int value) {
-    return value == 3 ? "RACING" : drive_mode_name(value);
-}
 } // namespace
 
 bool DriverActions::submit(ActionEvent event) {
@@ -244,8 +241,26 @@ ControlState DriverActions::state(std::string_view id, const DriverSnapshot& sna
         out.value = snapshot.drive_mode_effective;
         out.active = out.fitted;
         out.lamp_segments = out.fitted ? segment(snapshot.drive_mode_effective) : 0;
-        out.label = out.fitted ? drive_name(snapshot.drive_mode_effective) : "";
+        out.label = out.fitted ? drive_mode_name(snapshot.drive_mode_effective) : "";
         out.colour_role = out.value == 0 ? "eco" : out.value == 1 ? "normal" : out.value == 2 ? "sport" : "racing";
+    } else if (id == "abs") {
+        out.fitted = snapshot.abs_fitted;
+        out.enabled = out.fitted;
+        out.active = out.fitted && snapshot.abs_on;
+        out.value = out.active ? 1 : 0;
+        out.blink = out.active && snapshot.abs_intervening;
+        out.lamp_segments = out.active ? 1 : 0;
+        out.label = !out.fitted ? "" : !out.active ? "ABS OFF" : out.blink ? "ABS ACTIVE" : "ABS";
+        out.colour_role = !out.active ? "warning" : out.blink ? "warning" : "ok";
+    } else if (id == "esc") {
+        out.fitted = snapshot.esc_fitted;
+        out.enabled = out.fitted;
+        out.value = snapshot.esc_effective;
+        out.active = out.fitted && snapshot.esc_effective != 0;
+        out.blink = out.active && snapshot.esc_intervening;
+        out.lamp_segments = out.fitted ? segment(snapshot.esc_effective) : 0;
+        out.label = !out.fitted ? "" : !out.active ? "ESC OFF" : std::string("ESC ") + (snapshot.esc_effective == 2 ? "SPORT" : "ON") + (out.blink ? " ACTIVE" : "");
+        out.colour_role = !out.active || out.blink ? "warning" : "ok";
     } else if (id == "toggle_aero") {
         out.fitted = (snapshot.fitted_bits & kAssistBitAeroControl) != 0;
         out.enabled = out.fitted;

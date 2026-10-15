@@ -458,6 +458,11 @@
       "id": "drive_modes",
       "type": "electronics",
       "ref": "../../external/physics_sim/data/electronics/drive_modes_car_hyper_n2o.json"
+    },
+    {
+      "id": "epb",
+      "type": "electronics",
+      "ref": "../../external/physics_sim/data/electronics/epb_generic.json"
     }
   ]
 }

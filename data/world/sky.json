@@ -1,6 +1,6 @@
 {
   "format": "rg.sky/1",
-  "description": "Time of day and visual weather (rg::TimeWeather, core/include/rg/time_weather.h). location: omit to use the world config's session origin (UTM -> lat/lon). start.date: \"today\" (system clock, UTC date) or YYYY-MM-DD. rate: game seconds per real second. Lighting keys are Godot light energies by sun elevation; values are visual tuning [AS], not photometry. Weather presets with precipitation or thunder are listed but greyed out until precipitation visuals and the physics wet-grip environment are wired.",
+  "description": "Time of day and visual weather (rg::TimeWeather, core/include/rg/time_weather.h). location: omit to use the world config's session origin (UTM -> lat/lon). start.date: \"today\" (system clock, UTC date) or YYYY-MM-DD. rate: game seconds per real second. Lighting keys are Godot light energies by sun elevation; values are visual tuning [AS], not photometry. Every weather preset also drives the physics weather environment (data/world/climate.json maps the ids to physics presets; V8); a preset with precipitation or thunder that climate.json does not map stays greyed out with unwired_reason.",
   "time_zone": {"standard_offset_h": 1.0, "eu_summer_time": true},
   "start": {"date": "today", "local_time_h": 14.0},
   "rate": {"default": 1.0, "options": [0.0, 1.0, 10.0, 60.0, 600.0]},
@@ -22,7 +22,7 @@
     {"id": "thunder", "label": "Thunderstorm", "cloud_cover": 1.0, "precipitation": "rain", "thunder": true}
   ],
   "default_weather": "clear",
-  "unwired_reason": "not wired yet: no precipitation visuals, no wet-grip environment in the physics session",
+  "unwired_reason": "not wired: data/world/climate.json has no physics preset for it",
   "icon": {"partly_cloudy_min": 0.2, "overcast_min": 0.7, "night_sun_elevation_deg": -3.0},
   "lighting": {
     "moon_energy_full": 0.12,

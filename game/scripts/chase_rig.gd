@@ -50,7 +50,15 @@ func _ready() -> void:
 	camera.far = 43000.0
 	add_child(camera)
 
+# Speed effects from camera_director.gd (RgCameraMotion view "chase"): a small
+# shake (car frame, added after aiming) and FOV widening; no head motion here.
+var motion: Dictionary = {}
+var motion_view := "chase"
+var motion_enabled := true
+var _base_fov: float = 70.0
+
 func set_base_fov(base_fov_deg: float) -> void:
+	_base_fov = base_fov_deg
 	camera.fov = base_fov_deg
 
 func activate(_from: Transform3D) -> void:
@@ -107,3 +115,6 @@ func update_rig(delta: float, simulation: Node, input_map: Node, camera_input_li
 			position.y = maxf(position.y,float(ground)+terrain_clearance_m)
 	if position.distance_to(look_at_pos) > 0.01:
 		look_at(look_at_pos, Vector3.UP)
+	if motion_enabled and not motion.is_empty():
+		position += chassis_xform.basis * (motion["offset"] as Vector3)
+		camera.fov = _base_fov + float(motion["fov_extra_deg"])

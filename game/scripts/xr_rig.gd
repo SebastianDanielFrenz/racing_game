@@ -4,6 +4,12 @@ var camera: XRCamera3D
 var body_visuals: Node
 var free_flight := false
 var _recenter_down := false
+# The driver's virtual body (camera_director.gd, RgCameraMotion view
+# "xr_cockpit"): head TRANSLATION only - VR never gets a rotation, shake or FOV
+# change it did not make (rg_core forces those gains to zero).
+var motion: Dictionary = {}
+var motion_view := "xr_cockpit"
+var motion_enabled := true
 
 func _ready() -> void:
 	camera = XRCamera3D.new()
@@ -52,5 +58,7 @@ func update_rig(delta: float, simulation: Node, input_map: Node, input_live: boo
 	var eye := Vector3(-0.35, 0.38, 0.6)
 	if body_visuals != null:
 		eye = body_visuals.driver_eye_local()
+	if motion_enabled and not motion.is_empty():
+		eye += motion["offset"]
 	position = chassis * eye
 	basis = Basis.looking_at(chassis.basis.x.normalized(), chassis.basis.z.normalized())

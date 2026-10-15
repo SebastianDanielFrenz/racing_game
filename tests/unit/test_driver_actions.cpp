@@ -243,3 +243,39 @@ TEST_CASE("driver cabin: lights toggle dipped beam, Set picks main beam, project
     a.submit({"lights",rg::DriverActionKind::Hold,0}); a.submit({"lights",rg::DriverActionKind::Hold,1}); a.apply({snap,true},s); a.advance({snap,true},s,0);
     CHECK(s.get("cabin.lights")==0);
 }
+
+TEST_CASE("driver actions: ABS and ESC lamps follow the fitted state and interventions", "[driver_actions][abs][esc]") {
+    Sink sink;
+    rg::DriverSnapshot s;
+    auto abs = rg::DriverActions::state("abs", s, sink);
+    auto esc = rg::DriverActions::state("esc", s, sink);
+    CHECK_FALSE(abs.fitted);
+    CHECK_FALSE(esc.fitted);
+    CHECK(abs.label.empty());
+    CHECK(esc.label.empty());
+    s.abs_fitted = s.esc_fitted = true;
+    s.abs_on = true;
+    s.esc_effective = 1;
+    abs = rg::DriverActions::state("abs", s, sink);
+    esc = rg::DriverActions::state("esc", s, sink);
+    CHECK(abs.label == "ABS");
+    CHECK(abs.colour_role == "ok");
+    CHECK_FALSE(abs.blink);
+    CHECK(esc.label == "ESC ON");
+    s.abs_intervening = s.esc_intervening = true;
+    abs = rg::DriverActions::state("abs", s, sink);
+    esc = rg::DriverActions::state("esc", s, sink);
+    CHECK(abs.blink);
+    CHECK(abs.label == "ABS ACTIVE");
+    CHECK(esc.blink);
+    CHECK(esc.label == "ESC ON ACTIVE");
+    CHECK(esc.colour_role == "warning");
+    s.abs_on = false;
+    s.esc_effective = 0;
+    abs = rg::DriverActions::state("abs", s, sink);
+    esc = rg::DriverActions::state("esc", s, sink);
+    CHECK(abs.label == "ABS OFF");
+    CHECK_FALSE(abs.blink);
+    CHECK(esc.label == "ESC OFF");
+    CHECK_FALSE(esc.blink);
+}

@@ -4,6 +4,9 @@ class IdleSimulation extends Node:
 	func get_vehicle_gauge_info(_vehicle: String) -> Dictionary: return {}
 	func get_vehicle_powertrain(_vehicle: String) -> Dictionary: return {}
 	func is_running() -> bool: return false
+class LightsSim extends RefCounted:
+	var lights := 0.0
+	func get_control(c: String) -> float: return lights if c == "cabin.lights" else 0.0
 var failures := 0
 func check(value: bool, message: String) -> void:
 	if not value:
@@ -45,6 +48,18 @@ func run() -> void:
 	check(cockpit._materials["lamp_start_ring"][0].emission_enabled,"Running ring")
 	cockpit.update_lamps({})
 	check(not cockpit._materials["lamp_tc_led3"][0].emission_enabled,"missing telemetry stays unlit")
+	# Light switch posed from cabin.lights (O key / car switch): off 0, dipped 1.04, main beam 1.56 rad.
+	var lights_sim := LightsSim.new()
+	cockpit.update_poses(lights_sim)
+	check(absf(cockpit.pose_angle("ctl_lights")) < 1e-4,"light switch off")
+	lights_sim.lights = 1.0
+	cockpit.update_poses(lights_sim)
+	check(absf(cockpit.pose_angle("ctl_lights") - 1.04) < 1e-3,"light switch dipped (%f)" % cockpit.pose_angle("ctl_lights"))
+	lights_sim.lights = 2.0
+	cockpit.update_poses(lights_sim)
+	check(absf(cockpit.pose_angle("ctl_lights") - 1.56) < 1e-3,"light switch main beam")
+	lights_sim.lights = 0.0
+	cockpit.update_poses(lights_sim)
 	var clone := car.duplicate() as Node3D
 	root.add_child(clone)
 	await process_frame

@@ -8,6 +8,7 @@ extends Node
 
 const UPDATE_HZ := 10.0
 var sky = null # RgSky
+var simulation: Node = null # RgSimulation: fed the clock and weather (physics environment, V8) at UPDATE_HZ
 var sun: DirectionalLight3D
 var moon: DirectionalLight3D
 var environment: Environment
@@ -43,6 +44,8 @@ func setup(sky_json_path: String, world_config_path: String) -> void:
 		push_warning("sky: " + sky.get_error() + " (fixed sun kept)")
 		sky = null
 		return
+	if sky.get_climate_error() != "":
+		push_warning("sky: no physics weather: " + sky.get_climate_error())
 	environment.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
 	apply_now()
 
@@ -59,6 +62,8 @@ func _process(delta: float) -> void:
 	if _accum < 1.0 / UPDATE_HZ:
 		return
 	_accum = 0.0
+	if simulation != null and simulation.has_method("sync_weather"):
+		simulation.sync_weather() # clock jumps, day change, weather choice, temperature drift -> the Session
 	var s: Dictionary = sky.get_state()
 	_aim(sun, s["sun_direction"])
 	sun.light_energy = s["sun_energy"]

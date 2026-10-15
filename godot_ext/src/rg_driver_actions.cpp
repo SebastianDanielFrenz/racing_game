@@ -25,6 +25,12 @@ rg::DriverSnapshot convert(const godot::Dictionary& d) {
     s.epb_fitted = static_cast<bool>(d.get("epb_fitted", false));
     s.epb_state = static_cast<int>(d.get("epb_state", 0));
     s.epb_refused = static_cast<bool>(d.get("epb_refused", false));
+    s.abs_fitted = static_cast<bool>(d.get("abs_fitted", false));
+    s.abs_on = static_cast<bool>(d.get("abs_on", false));
+    s.abs_intervening = static_cast<bool>(d.get("abs_active", false));
+    s.esc_fitted = static_cast<bool>(d.get("esc_fitted", false));
+    s.esc_effective = static_cast<int>(d.get("esc_mode_effective", 0));
+    s.esc_intervening = static_cast<bool>(d.get("esc_active", false));
     s.gear = static_cast<int>(d.get("gear",0));
     s.engine_running = godot::String(d.get("engine_state", "")) == "Running";
     s.speed_mps = static_cast<double>(d.get("speed_mps",0.0));

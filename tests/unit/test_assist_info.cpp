@@ -237,9 +237,13 @@ TEST_CASE("drive mode cycle: a car without the part does nothing", "[assist][dri
     CHECK(rg::next_drive_mode(0, 1) == -1);
     CHECK(rg::next_drive_mode(0, 0) == -1);
     CHECK(rg::next_drive_mode(0, -5) == -1);
-    // Bits above the three codes are no mode.
-    CHECK(rg::next_drive_mode(0b1000, 1) == -1);
-    CHECK(rg::next_drive_mode(0b1010, 1) == 1);
+    // Bits above the four codes are no mode.
+    CHECK(rg::next_drive_mode(0b10000, 1) == -1);
+    CHECK(rg::next_drive_mode(0b10010, 1) == 1);
+    // Racing (code 3) is cycled to only when offered.
+    CHECK(rg::next_drive_mode(0b1111, 2) == 3);
+    CHECK(rg::next_drive_mode(0b1111, 3) == 0);
+    CHECK(rg::next_drive_mode(0b0111, 2) == 0);
     // Out-of-range input is treated as "before Eco".
     CHECK(rg::next_drive_mode(kAllModes, 77) == 0);
     CHECK(rg::next_drive_mode(kAllModes, -3) == 0);
@@ -249,11 +253,14 @@ TEST_CASE("drive mode: names and offered bits", "[assist][drive_mode][controls]"
     CHECK(std::string(rg::drive_mode_name(0)) == "ECO");
     CHECK(std::string(rg::drive_mode_name(1)) == "NORMAL");
     CHECK(std::string(rg::drive_mode_name(2)) == "SPORT");
-    CHECK(std::string(rg::drive_mode_name(3)) == "?");
+    CHECK(std::string(rg::drive_mode_name(3)) == "RACING");
+    CHECK(std::string(rg::drive_mode_name(4)) == "?");
     CHECK(std::string(rg::drive_mode_name(-1)) == "?");
     CHECK(rg::drive_mode_offered(kEcoSport, 2));
     CHECK_FALSE(rg::drive_mode_offered(kEcoSport, 1));
     CHECK_FALSE(rg::drive_mode_offered(kEcoSport, 3));
+    CHECK(rg::drive_mode_offered(0b1000, 3));
+    CHECK_FALSE(rg::drive_mode_offered(0b0111, 3)); // RACING only when the car's part lists it
     CHECK_FALSE(rg::drive_mode_offered(kEcoSport, -1));
 }
 
@@ -297,10 +304,11 @@ TEST_CASE("launch control lamp: hidden, off, on, armed, launching from the snaps
     CHECK(rg::assist_hud(p).lc_phase == 1);
 }
 
-TEST_CASE("game cars: car_hyper_n2o carries the drive modes part, no other game car has one", "[assist][drive_mode][vehicle_data]") {
+TEST_CASE("game cars: the hypercars carry drive modes (with RACING) and the EPB, no other game car has them", "[assist][drive_mode][vehicle_data]") {
     const ps::vehicle::VehicleDesc n2o = load_game_car("car_hyper_n2o.json");
     REQUIRE(n2o.drive_modes.has_value());
-    CHECK(n2o.drive_modes->modes_bits == kAllModes);
+    CHECK(n2o.drive_modes->modes_bits == 0b1111); // eco, normal, sport, racing (A3)
+    REQUIRE(n2o.epb.has_value());
     CHECK(n2o.drive_modes->default_mode == ps::vehicle::DriveMode::Normal);
     // The assist unit stays too (a mode only moves the TC request, it does not replace the unit).
     REQUIRE(n2o.assist_unit.has_value());
@@ -317,10 +325,19 @@ TEST_CASE("game cars: car_hyper_n2o carries the drive modes part, no other game 
     CHECK_FALSE(modes[0].nitrous_arm_allowed);
     CHECK_FALSE(modes[1].nitrous_arm_allowed);
     CHECK(modes[2].nitrous_arm_allowed);
-    // No other game car carries the part (it is car-specific: the rpm points are the hypercar's).
-    for (const char* file : {"car_hyper.json", "car_sedan.json", "car_sedan_rwd.json", "car_sedan_awd.json", "car_sedan_gen_n2o.json"}) {
+    // The racing mode: EPB applies as handbrake at speed, launch control and N2O allowed.
+    REQUIRE(modes.size() > 3);
+    CHECK(modes[3].launch_control_allowed);
+    CHECK(modes[3].nitrous_arm_allowed);
+    const ps::vehicle::VehicleDesc hyper = load_game_car("car_hyper.json");
+    REQUIRE(hyper.drive_modes.has_value());
+    CHECK(hyper.drive_modes->modes_bits == 0b1111);
+    CHECK(hyper.epb.has_value());
+    // No other game car carries the parts (they are car-specific: the rpm points are the hypercar's).
+    for (const char* file : {"car_sedan.json", "car_sedan_rwd.json", "car_sedan_awd.json", "car_sedan_gen_n2o.json"}) {
         INFO(file);
         CHECK_FALSE(load_game_car(file).drive_modes.has_value());
+        CHECK_FALSE(load_game_car(file).epb.has_value());
     }
 }
 
@@ -348,7 +365,7 @@ TEST_CASE("drive modes: a mode switch writes the TC and LC defaults into the ses
     CHECK(session.get_control("assist.launch_control") == 0.0); // Normal: launch control off
     step_n(240);
     auto pt = powertrain();
-    CHECK(pt.drive_modes_available_bits == kAllModes);
+    CHECK(pt.drive_modes_available_bits == 0b1111u);
     CHECK(pt.drive_mode_effective == 1);
     CHECK(pt.traction_mode_effective == 1);
     CHECK(session.get_control("assist.launch_control") == 0.0);
@@ -400,4 +417,40 @@ TEST_CASE("launch control toggle: flips from the channel's current value, only o
     CHECK(rg::toggled_launch_control(kLcFitted, 0.51) == 0.0);
     CHECK(rg::toggled_launch_control(rg::kAssistBitTractionControl, 0.0) == 0.0); // not fitted: nothing happens
     CHECK(rg::toggled_launch_control(0, 1.0) == 1.0);
+}
+
+TEST_CASE("ESC and ABS: mode cycle, names and the HUD state from the snapshot", "[assist][abs][esc]") {
+    CHECK(std::string(rg::esc_mode_name(0)) == "Off");
+    CHECK(std::string(rg::esc_mode_name(2)) == "Sport");
+    CHECK(std::string(rg::esc_mode_name(3)) == "?");
+    CHECK(rg::next_esc_mode(0b111, 0) == 1);
+    CHECK(rg::next_esc_mode(0b111, 2) == 0);
+    CHECK(rg::next_esc_mode(0b110, 2) == 1); // off not offered
+    CHECK(rg::next_esc_mode(0, 1) == -1);
+    CHECK(rg::toggled_abs(0, 1.0) == 1.0); // not fitted: unchanged
+    CHECK(rg::toggled_abs(rg::kAssistBitAbs, 1.0) == 0.0);
+    CHECK(rg::toggled_abs(rg::kAssistBitAbs, 0.0) == 1.0);
+
+    ps::drivetrain::PowertrainSnapshot p;
+    auto h = rg::assist_hud(p);
+    CHECK_FALSE(h.abs_fitted);
+    CHECK_FALSE(h.esc_fitted);
+    CHECK_FALSE(h.epb_fitted);
+    p.assist_fitted_bits = rg::kAssistBitAbs | rg::kAssistBitEsc | rg::kAssistBitEpb;
+    p.assist_active_bits = rg::kAssistBitAbs;
+    p.abs_active = true;
+    p.esc_active = true; // ESC itself is switched off here: bit 9 not active
+    p.esc_mode_effective = 2;
+    p.esc_modes_available_bits = 0b111;
+    p.epb_state = 2;
+    p.epb_refused = true;
+    h = rg::assist_hud(p);
+    CHECK(h.abs_fitted);
+    CHECK(h.abs_on);
+    CHECK(h.abs_intervening);
+    CHECK(h.esc_fitted);
+    CHECK(h.esc_effective == 2);
+    CHECK(h.esc_available_bits == 0b111);
+    CHECK(h.epb_state == 2);
+    CHECK(h.epb_refused);
 }

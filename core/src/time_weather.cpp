@@ -1,5 +1,7 @@
 #include "rg/time_weather.h"
 
+#include "rg/climate.h"
+
 #include "json_util.h"
 #include "rg/world_config.h"
 
@@ -244,10 +246,21 @@ void TimeController::set_local_time_h(double hours) {
     hours = std::fmod(hours, 24.0);
     if (hours < 0) hours += 24.0;
     seconds_ = hours * 3600.0;
+    ++revision_;
 }
 
 void TimeController::set_rate(double rate) {
-    if (std::isfinite(rate) && rate >= 0) rate_ = rate;
+    if (std::isfinite(rate) && rate >= 0 && rate != rate_) {
+        rate_ = rate;
+        ++revision_;
+    }
+}
+
+void TimeController::ut_instant(CivilDate& date_ut, double& ut_h) const {
+    date_ut = date_;
+    ut_h = local_time_h() - utc_offset_h();
+    if (ut_h < 0) { ut_h += 24; date_ut = add_days(date_ut, -1); }
+    if (ut_h >= 24) { ut_h -= 24; date_ut = add_days(date_ut, 1); }
 }
 
 double TimeController::utc_offset_h() const {
@@ -297,6 +310,7 @@ TimeWeather::TimeWeather(SkyConfig config, GeoLocation location) : config_(std::
 }
 
 bool TimeWeather::weather_wired(const WeatherPreset& p) const {
+    if (climate_ && climate_->weather.count(p.id)) return true;
     return p.state.precipitation == Precipitation::None && !p.state.thunder;
 }
 
@@ -318,6 +332,12 @@ TimeWeatherState TimeWeather::state() const {
     s.lighting = sky_lighting(config_.lighting, s.sun, s.moon, s.weather.cloud_cover);
     s.icon = weather_icon(s.weather, s.sun.elevation_deg, config_.icon);
     s.rate = clock_.rate();
+    if (climate_) {
+        CivilDate d;
+        double ut = 0;
+        clock_.ut_instant(d, ut);
+        s.air_temp_c = climate_station_temperature_c(*climate_, d, ut, location_.longitude_deg, s.weather.cloud_cover);
+    }
     return s;
 }
 
