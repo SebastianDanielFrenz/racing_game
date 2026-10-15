@@ -9,8 +9,9 @@ extends Node3D
 # keeps the state Dictionary between frames, follows the car with a short lag
 # and places the camera. Input comes only from input_map.gd's camera group:
 # arrow keys / right stick (or the captured mouse) turn, wheel / PageUp /
-# PageDown zoom. The one absolute position held across frames (the smoothed look-at
-# point) is shifted in shift_origin().
+# PageDown zoom. The look-at point follows the car through a smoothed
+# CAR-RELATIVE offset (zero lag at any constant speed; only changes of the
+# offset, e.g. a jump, are smoothed), so nothing absolute needs shifting.
 
 const SNAP_M := 60.0
 const FOLLOW_LAG := 8.0 # higher = snappier
@@ -21,6 +22,7 @@ var camera: Camera3D
 
 var _state: Dictionary = {}
 var _target: Vector3 = Vector3.ZERO
+var _target_rel: Vector3 = Vector3.UP # smoothed look-at point relative to the chassis origin
 var _initialized: bool = false
 
 func _ready() -> void:
@@ -40,7 +42,7 @@ func activate(_from: Transform3D) -> void:
 
 func shift_origin(delta: Vector3) -> void:
 	position += delta
-	_target += delta
+	_target += delta # recomputed from the chassis next frame anyway
 
 func update_rig(delta: float, simulation: Node, input_map: Node, input_live: bool) -> void:
 	if simulation == null or int(simulation.get_step_count()) <= 0:
@@ -49,11 +51,12 @@ func update_rig(delta: float, simulation: Node, input_map: Node, input_live: boo
 	if _state.is_empty():
 		_state = RgCameraMath.orbit_default_state()
 	var chassis: Transform3D = simulation.get_body_transform("chassis")
-	var focus: Vector3 = chassis.origin + Vector3.UP * 1.0
-	if not _initialized or _target.distance_to(focus) > SNAP_M:
-		_target = focus
+	var focus_rel := Vector3.UP * 1.0
+	if not _initialized or _target_rel.distance_to(focus_rel) > SNAP_M:
+		_target_rel = focus_rel
 		_initialized = true
-	_target = _target.lerp(focus, 1.0 - exp(-FOLLOW_LAG * delta))
+	_target_rel = _target_rel.lerp(focus_rel, 1.0 - exp(-FOLLOW_LAG * delta))
+	_target = chassis.origin + _target_rel
 
 	var input := {"look_x": 0.0, "look_y": 0.0, "zoom_steps": 0.0, "zoom_key": 0.0, "live": input_live}
 	if input_live and input_map != null:

@@ -7,6 +7,7 @@ extends RefCounted
 # main.gd takes the finished frame's costs at the start of the next frame (take_frame) and prints them next to a slow
 # frame's delta, so a hitch is attributed to a subsystem - or to "none of them" (render/GPU/driver/OS).
 static var _cur: Dictionary = {}
+static var frame_start_us := 0 # set by main.gd at the start of its _process (first of the frame)
 
 static func add(probe_name: String, usec: int) -> void:
 	_cur[probe_name] = int(_cur.get(probe_name, 0)) + usec

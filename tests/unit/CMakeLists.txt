@@ -55,6 +55,8 @@ add_executable(rg_unit_tests
   test_spawn_presets.cpp
   test_shell_flow.cpp
   test_time_weather.cpp
+  test_climate.cpp
+  test_session_weather.cpp
   test_crops.cpp
   test_controls.cpp
   test_control_capture.cpp
@@ -73,6 +75,8 @@ add_executable(rg_unit_tests
   test_car_browser_data.cpp
   test_road_ahead.cpp
   test_camera_math.cpp
+  test_camera_motion.cpp
+  test_tyre_sound.cpp
   test_cinematic_obstacles.cpp
   test_render_pose.cpp
   test_deck_installer.cpp

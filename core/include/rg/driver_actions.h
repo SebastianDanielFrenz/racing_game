@@ -20,7 +20,7 @@ struct ActionEvent {
     ActionSource source = ActionSource::Keyboard;
 };
 
-// C1 extends this game-owned state; the EPB latch belongs to physics, never here.
+// C1 extends this game-owned state; the EPB latch (and its refusal at speed) belongs to physics, never here.
 struct CabinState {
     bool auto_shift = false;
     bool horn = false;
@@ -54,6 +54,12 @@ struct DriverSnapshot {
     bool epb_fitted = false;
     int epb_state = 0; // released / latched / handbrake
     bool epb_refused = false;
+    bool abs_fitted = false;
+    bool abs_on = false;
+    bool abs_intervening = false;
+    bool esc_fitted = false;
+    int esc_effective = 0; // 0 off, 1 on, 2 sport
+    bool esc_intervening = false;
     int gear = 0;
     bool engine_running = false;
     double speed_mps = 0;

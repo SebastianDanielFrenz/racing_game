@@ -195,6 +195,10 @@ func _ready() -> void:
 	if OS.get_environment("RG_RENDER_TIMING") != "0":
 		RenderingServer.viewport_set_measure_render_time(get_viewport().get_viewport_rid(), true) # RG_FRAME_SPIKE render_cpu/gpu_ms
 	preload("res://scripts/ui_scale.gd").apply(get_tree())
+	var probe_end := Node.new()
+	probe_end.name = "FrameProbeEnd"
+	probe_end.set_script(preload("res://scripts/frame_probe_end.gd"))
+	add_child(probe_end)
 	var user_args := OS.get_cmdline_user_args()
 	if "--bindings-test" in user_args:
 		_run_bindings_test()
@@ -446,6 +450,10 @@ func _add_sun_and_sky() -> void:
 	_sky.name = "Sky"
 	add_child(_sky)
 	_sky.setup(ProjectSettings.globalize_path("res://../data/world/sky.json").simplify_path(), _world_config_path())
+	# V8: the next world load installs this sky's clock, weather and climate as the physics environment.
+	if _sky.sky != null and _simulation != null and _simulation.has_method("set_weather_source"):
+		_simulation.set_weather_source(_sky.sky)
+		_sky.simulation = _simulation
 	_weather_widget = CanvasLayer.new()
 	_weather_widget.name = "WeatherWidget"
 	_weather_widget.set_script(load("res://scripts/weather_widget.gd"))
@@ -547,6 +555,7 @@ func _build_scene(user_args: PackedStringArray) -> void:
 	var bumper := Node3D.new()
 	bumper.name = "BumperRig"
 	bumper.set_script(load("res://scripts/bumper_rig.gd"))
+	bumper.body_visuals = _visuals
 	add_child(bumper)
 	_director.add_rig("bumper", bumper)
 	var orbit := Node3D.new()
@@ -1245,6 +1254,8 @@ func _frame_diag(delta: float) -> void:
 	if world_state != "running" or _simulation == null:
 		return
 	var ms := delta * 1000.0
+	if probes.has("scene_span"):
+		probes["outside"] = maxi(0, int(delta * 1000000.0) - int(probes["scene_span"])) # engine render / driver / vsync / OS
 	var process_ms: float = Performance.get_monitor(Performance.TIME_PROCESS) * 1000.0
 	_fd_frames.append(ms)
 	_fd_process_sum += process_ms
@@ -1299,6 +1310,7 @@ func _frame_diag(delta: float) -> void:
 
 func _process(delta: float) -> void:
 	var process_t0 := Time.get_ticks_usec()
+	FrameProbe.frame_start_us = process_t0
 	_process_body(delta)
 	FrameProbe.add("main", Time.get_ticks_usec() - process_t0)
 
@@ -1914,6 +1926,8 @@ func _apply_setting(key: String) -> void:
 			Engine.max_fps = int(value)
 		"camera.fov_deg":
 			_director.set_base_fov(float(value))
+		"camera.body_motion":
+			_director.set_body_motion_strength(float(value))
 		"audio.master_volume", "audio.engine_volume", "audio.tyre_volume":
 			_apply_audio_settings()
 		"map_data.store_dir":

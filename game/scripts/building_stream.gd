@@ -16,6 +16,7 @@ var _tiles: Dictionary = {}
 # skyline_distance_m + 725 m; downgraded / evicted beyond the distance + 2048 m).
 var _ring := RgRingStreamer.new()
 var _material := StandardMaterial3D.new()
+var _placed_origin := Vector3.ZERO # the render origin every resident tile is placed against
 func _ready() -> void:
 	process_priority = 100
 	settings["ordinary_distance_m"] = clampf(float(settings.get("ordinary_distance_m",2200.0)),256.0,10000.0)
@@ -77,13 +78,16 @@ func _process_body(_delta: float) -> void:
 			tile.near.mesh = null
 		tile.near.visible = change.near
 		tile.tall.visible = change.far
+	# A new tile is placed in _upload; every tile moves only when the render origin changes (no per-frame loop over the
+	# resident tiles, which reach the 40 km skyline ring).
 	var origin: Vector3 = simulation.get_render_origin_session()
-	for key in _tiles.keys():
-		var tile: Dictionary = _tiles[key]
-		if not tile.has("placed") or tile.placed != origin: # a transform write per tile per frame is not free; only on a render-origin change or a new tile
-			var s: Vector3 = tile.origin - origin
-			tile.node.position = Vector3(-s.y, s.z, -s.x)
-			tile.placed = origin
+	if origin != _placed_origin:
+		_placed_origin = origin
+		for tile: Dictionary in _tiles.values():
+			_place(tile)
+func _place(tile: Dictionary) -> void:
+	var s: Vector3 = tile.origin - _placed_origin
+	tile.node.position = Vector3(-s.y, s.z, -s.x)
 func _worker() -> void:
 	while true:
 		_mutex.lock()
@@ -104,7 +108,8 @@ func _worker() -> void:
 		for building: Dictionary in data.get("buildings",[]):
 			_tessellate(building,tall_arrays if float(building.height)>=threshold else near_arrays)
 		_mutex.lock()
-		_results.append({"key":Vector2i(int(job.x),int(job.y)),"full":bool(job.full),"origin":data.get("origin_session",Vector3.ZERO),"near":near_arrays,"tall":tall_arrays})
+		# The meshes (format, compression, AABB) are built here, not on the main thread; _upload only attaches them.
+		_results.append({"key":Vector2i(int(job.x),int(job.y)),"full":bool(job.full),"origin":data.get("origin_session",Vector3.ZERO),"near":_mesh(near_arrays),"tall":_mesh(tall_arrays)})
 		_mutex.unlock()
 func _empty_arrays() -> Array:
 	return [PackedVector3Array(),PackedVector3Array(),PackedColorArray()]
@@ -197,7 +202,7 @@ func _mesh(arrays: Array) -> ArrayMesh:
 	return mesh
 func _upload(result: Dictionary) -> void:
 	var key: Vector2i = result.key
-	var has_content: bool = not result.near[0].is_empty() or not result.tall[0].is_empty()
+	var has_content: bool = result.near != null or result.tall != null
 	var accepted: int = _ring.accept(key.x, key.y, bool(result.full), has_content)
 	if accepted==0:
 		return
@@ -206,8 +211,8 @@ func _upload(result: Dictionary) -> void:
 		_tiles.erase(key)
 	if accepted!=2:
 		return
-	var near_mesh := _mesh(result.near)
-	var tall_mesh := _mesh(result.tall)
+	var near_mesh: ArrayMesh = result.near
+	var tall_mesh: ArrayMesh = result.tall
 	var root := Node3D.new()
 	var near_node := MeshInstance3D.new()
 	var tall_node := MeshInstance3D.new()
@@ -219,3 +224,4 @@ func _upload(result: Dictionary) -> void:
 	root.add_child(tall_node)
 	add_child(root)
 	_tiles[key] = {"node":root,"near":near_node,"tall":tall_node,"origin":result.origin,"full":result.full}
+	_place(_tiles[key])

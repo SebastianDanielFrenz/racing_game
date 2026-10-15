@@ -20,6 +20,7 @@ var _material := ShaderMaterial.new()
 var _velocity := Vector2.ZERO
 var _camera_abs := Vector2.ZERO
 var _tiles_built_total := 0
+var _placed_origin := Vector3.ZERO # the render origin every resident tile is placed against
 func _ready() -> void:
 	process_priority = 101
 	settings["distance_m"] = clampf(float(settings.get("distance_m",2500.0)),512.0,6000.0)
@@ -75,13 +76,15 @@ func _process_body(_delta: float) -> void:
 			_tiles.erase(key)
 		else:
 			_tiles[key].node.visible = change.near
+	# A new tile is placed in _upload; every tile moves only when the render origin changes (no per-frame tile loop).
 	var origin: Vector3 = simulation.get_render_origin_session()
-	for key in _tiles.keys():
-		var tile: Dictionary = _tiles[key]
-		if not tile.has("placed") or tile.placed != origin: # only on a render-origin change or a new tile
-			var s: Vector3 = tile.origin-origin
-			tile.node.position = Vector3(-s.y,s.z,-s.x)
-			tile.placed = origin
+	if origin != _placed_origin:
+		_placed_origin = origin
+		for tile: Dictionary in _tiles.values():
+			_place(tile)
+func _place(tile: Dictionary) -> void:
+	var s: Vector3 = tile.origin-_placed_origin
+	tile.node.position = Vector3(-s.y,s.z,-s.x)
 func _worker() -> void:
 	while true:
 		_mutex.lock()
@@ -97,6 +100,9 @@ func _worker() -> void:
 			continue
 		var data: Dictionary = view.get_road_visual_tile(int(job.x),int(job.y),float(settings.surface_lift_m))
 		data["key"] = Vector2i(int(job.x),int(job.y))
+		# Packing the arrays into a mesh (format, compression, AABB) is the 20-50 ms part of a tile: here, not in the
+		# main thread's _process (RenderingServer queues the GPU part for the main thread). Attaching it there is cheap.
+		data["mesh"] = _make_mesh(data)
 		_mutex.lock()
 		_results.append(data)
 		_mutex.unlock()
@@ -108,6 +114,15 @@ func _upload(data: Dictionary) -> void:
 		return
 	if _tiles.has(key):
 		_tiles[key].node.queue_free()
+	var node := MeshInstance3D.new()
+	node.mesh = data.mesh # built on the worker (_make_mesh)
+	node.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	add_child(node)
+	_tiles[key] = {"node":node,"origin":data.origin_session}
+	_place(_tiles[key])
+func _make_mesh(data: Dictionary) -> ArrayMesh:
+	if data.get("vertices",PackedVector3Array()).is_empty():
+		return null
 	var arrays: Array = []
 	arrays.resize(Mesh.ARRAY_MAX)
 	arrays[Mesh.ARRAY_VERTEX] = data.vertices
@@ -119,11 +134,7 @@ func _upload(data: Dictionary) -> void:
 	var mesh := ArrayMesh.new()
 	mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES,arrays)
 	mesh.surface_set_material(0,_material)
-	var node := MeshInstance3D.new()
-	node.mesh = mesh
-	node.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	add_child(node)
-	_tiles[key] = {"node":node,"origin":data.origin_session}
+	return mesh
 
 # {pending (queued + built but not yet uploaded), oldest_age_s (longest a wanted
 # tile has waited), ribbon_ahead_m (distance along `direction` - session XY, any

@@ -155,6 +155,14 @@ func _draw() -> void:
 			tc_label += " ACTIVE"
 		var tc_color := Color(1.0,0.65,0.15) if tc_intervening or not tc_on else Color(0.2,0.95,0.75)
 		text(tc_label,Vector2(490,266),20,tc_color)
+	if not cabin_lamps.is_empty():
+		# ABS / ESC (assist unit): green = on, amber = off or intervening (blink state comes from the shared ControlState).
+		var amber := Color(1.0,0.65,0.15)
+		var green := Color(0.2,0.95,0.75)
+		if cabin_lamps["abs"]["fitted"]:
+			text(str(cabin_lamps["abs"]["label"]),Vector2(330,330),18,green if cabin_lamps["abs"]["colour_role"] == "ok" else amber)
+		if cabin_lamps["esc"]["fitted"]:
+			text(str(cabin_lamps["esc"]["label"]),Vector2(330,354),18,green if cabin_lamps["esc"]["colour_role"] == "ok" else amber)
 	if launch_lamp > 0:
 		# Launch control (assists I4): gray = off, green = on, blinking amber = armed, solid amber = launching.
 		var lc_color := Color(0.45,0.5,0.55)

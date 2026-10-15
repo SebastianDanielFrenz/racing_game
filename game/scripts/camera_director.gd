@@ -23,6 +23,12 @@ extends Node
 #     velocity in the session frame (rg/render_focus.h). Free cam, drone and
 #     on foot get no lead. road_stream.gd / building_stream.gd read the same
 #     focus through render_focus_session() / render_velocity_session().
+#  6. before the active rig updates: the driver's virtual body and the speed
+#     effects (RgCameraMotion, data/controls/camera_motion.json) - a rig with a
+#     `motion` property gets RgCameraMotion.get_view(rig.motion_view, strength);
+#     head motion only in the cockpit views (VR: translation only), shake and
+#     FOV widening in the flat chase/bumper/cockpit views. strength = the
+#     setting camera.body_motion (set_body_motion_strength).
 # Which rig is active is decided by the mode framework (rg_core,
 # get_mode_state().camera_rig); main.gd calls set_active().
 
@@ -41,10 +47,19 @@ var _focus_session: Vector2 = Vector2.ZERO # the (led) render focus, session XY
 var _camera_session: Vector2 = Vector2.ZERO # the active camera, session XY
 var _velocity_session: Vector2 = Vector2.ZERO # the chassis velocity, session XY (0 when the rig does not lead)
 var _focus_valid: bool = false
-var lead_enabled: bool = true # --no-render-lead switches the velocity lead off (A/B measurements)
+var lead_enabled: bool = true
+var body_motion_strength: float = 1.0
+var _motion: RgCameraMotion = RgCameraMotion.new() # --no-render-lead switches the velocity lead off (A/B measurements)
 
 func _ready() -> void:
 	set_process_priority(-1000)
+	_motion.initialize(ProjectSettings.globalize_path("res://../data/controls/camera_motion.json"))
+
+func set_body_motion_strength(strength: float) -> void:
+	body_motion_strength = clampf(strength, 0.0, 1.0)
+
+func camera_motion() -> RgCameraMotion:
+	return _motion
 
 func add_rig(rig_name: String, rig: Node3D) -> void:
 	rigs[rig_name] = rig
@@ -114,6 +129,10 @@ func _process(delta: float) -> void:
 	var origin_now: Vector3 = simulation.get_world_origin_godot_position()
 	_shift_all(origin_now - _last_origin_godot)
 
+	if _motion.is_initialized():
+		_motion.update(simulation.get_camera_motion_sample(), delta)
+		if "motion" in rig:
+			rig.motion = _motion.get_view(rig.motion_view, body_motion_strength)
 	rig.update_rig(delta, simulation, input_map, camera_input_live)
 
 	var before: Vector3 = rig.global_position

@@ -19,6 +19,8 @@
 #include "rg/session.h"
 #include "rg/world_config.h"
 #include "rg/world_terrain.h"
+#include "rg/weather_sync.h"
+#include "rg_sky.h"
 
 #include <godot_cpp/classes/node.hpp>
 #include <godot_cpp/variant/dictionary.hpp>
@@ -216,9 +218,15 @@ public:
     // like get_body_transform). Without a Session the input is returned as is.
     [[nodiscard]] godot::Vector3 session_to_godot(const godot::Vector3& session_position) const;
     // {eye_local (chassis frame, ISO: x forward / y left / z up), pitch_down_deg,
-    //  fov_deg}: the bumper camera from the vehicle's own wheels
-    // (rg::bumper_eye_local); {} without a Session.
-    [[nodiscard]] godot::Dictionary get_bumper_camera() const;
+    //  fov_deg, source}: the bumper camera just ahead of the visual model's nose
+    // (rg::bumper_eye_from_model; rig_json_path = the model's .rig.json,
+    // model_offset = the model origin in the chassis frame, ISO), or from the
+    // wheels (rg::bumper_eye_local) without a rig file; {} without a Session.
+    [[nodiscard]] godot::Dictionary get_bumper_camera(const godot::String& rig_json_path = godot::String(),
+                                                      const godot::Vector3& model_offset = godot::Vector3()) const;
+    // {sim_time, velocity, forward, left, up (session frame, ISO), compression
+    // (PackedFloat64Array, m per wheel)}: the input of RgCameraMotion.update.
+    [[nodiscard]] godot::Dictionary get_camera_motion_sample() const;
     // One frame of the cinematic director (rg::CinematicDirector): {serial, cut,
     // source ("road_ahead" | "predicted_path"), side, session_x, session_y,
     // height_above_ground_m, fov_deg}; {} without a Session. The rig converts
@@ -296,6 +304,14 @@ public:
     void set_render_interpolation(bool enabled) { render_interpolation_ = enabled; }
     [[nodiscard]] godot::Dictionary get_render_diagnostics() const;
     godot::Dictionary get_aero_state() const;
+    // V8 weather: the RgSky whose clock/weather/climate the NEXT initialize()/initialize_terrain() installs as the
+    // physics environment (null = none), and the per-tick feed of its clock and weather into the running Session
+    // (sky_controller.gd calls sync_weather at its update rate; returns rg::WeatherSync::Sent bits).
+    void set_weather_source(const godot::Ref<RgSky>& sky);
+    int sync_weather();
+    // {installed, env_time_s, air_temp_c, precip_mm_h, cloud_cover, rh, lightning_per_min, wheel_surface,
+    //  wheel_water_mm, wheel_snow_mm, wheel_ice_mm, wheel_condition_factor}; {} without a Session.
+    godot::Dictionary get_weather_state() const;
     void configure_traffic(double density,double radius,double minimum,double grip,int maximum);
     void set_visible_traffic(const godot::Array& ids);
     godot::Dictionary get_traffic_state() const;
@@ -364,6 +380,10 @@ protected:
     static void _bind_methods();
 
 private:
+    godot::Ref<RgSky> weather_sky_;
+    std::shared_ptr<const rg::SessionWeather> next_weather_; // written before an init worker starts, read by it
+    rg::WeatherSync weather_sync_;
+    void prepare_weather();
     mutable std::optional<rg::FrameSnapshot> render_snapshot_;
     mutable std::uint64_t render_snapshot_frame_ = static_cast<std::uint64_t>(-1);
     const rg::FrameSnapshot& frame_snapshot() const;
