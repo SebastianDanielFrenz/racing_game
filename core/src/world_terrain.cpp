@@ -317,6 +317,7 @@ std::unique_ptr<WorldTerrain> WorldTerrain::open(const WorldConfig& config, std:
     wt->road_profiles_enabled_ = config.physics.road_surfaces.enabled;
     wt->smoothing_ = config.terrain_smoothing;
     wt->verge_drop_m_ = config.road_verge_drop_m;
+    wt->separation_ = RoadSeparation{config.road_separation_clearance_m, config.road_separation_margin_m, config.road_separation_approach_reach_m};
 
     // --- the geo2map terrain service: stores, release, in-process server and ONE worker pool ---
     // (terrain migration plan phase 2). The layer opt-ins and the attribution are what the game's own
@@ -553,7 +554,7 @@ Outcome<WorldTerrain::RoadSurface> WorldTerrain::produce_road_surface(ProductCon
     }
     auto surface = std::make_shared<RoadSurface>();
     surface->geometry = std::make_shared<const g2m::RoadGeomTile>(*geometry);
-    surface->patch = std::make_shared<RoadSurfacePatch>(*geometry, verge_drop_m_);
+    surface->patch = std::make_shared<RoadSurfacePatch>(*geometry, verge_drop_m_, separation_);
     std::fprintf(stderr, "RG_ROAD_SURFACE key=%s accepted=%zu declined=%zu separated=%zu\n", g2m::to_string(key).c_str(), surface->patch->accepted, surface->patch->declined, surface->patch->separated);
     {
         std::lock_guard<std::mutex> lock(decks_mutex_);
@@ -628,7 +629,7 @@ std::shared_ptr<const g2m::RoadGeomTile> WorldTerrain::road_geometry_at(double e
 RoadVisualMesh WorldTerrain::road_visual_tile(const g2m::TileKey& key,double lift) {
     const auto geometry=road_geometry_at(key.min_easting()+512,key.min_northing()+512);
     if(!geometry)return {};
-    return build_road_visual(*geometry,key,[this,key](double e,double n){return g2m::world::sample_height_bilinear([this](const auto& k){return height_tile_shared(k).tile.get();},key.zone,0,0,e,n);},lift);
+    return build_road_visual(*geometry,key,[this,key](double e,double n){return g2m::world::sample_height_bilinear([this](const auto& k){return height_tile_shared(k).tile.get();},key.zone,0,0,e,n);},lift,separation_);
 }
 
 std::shared_ptr<const g2m::OsmTile> WorldTerrain::source_osm_tile(const g2m::TileKey& key) {

@@ -12,7 +12,7 @@ namespace rg {
 // Bridges/tunnels and explicit declines never carve the ground underneath.
 class RoadSurfacePatch {
 public:
-    explicit RoadSurfacePatch(const g2m::RoadGeomTile& geometry,double verge_drop_m=0.0);
+    explicit RoadSurfacePatch(const g2m::RoadGeomTile& geometry,double verge_drop_m=0.0,const RoadSeparation& separation={});
     std::size_t apply(g2m::HeightTile& tile) const;
     // Debug/probe aid: every `stride`-th ground (non-tunnel) road segment start as {easting, northing, bed height}
     // (absolute UTM) appended to `out` - the physics road bed at the road centre line.
@@ -26,6 +26,7 @@ private:
     std::vector<DeckCut> deck_cuts_;
     std::map<std::pair<int,int>,std::vector<std::size_t>> cut_bins_;
     double verge_drop_m_=0;
+    RoadSeparation separation_;
     std::vector<Segment> segments_;
     std::map<std::pair<int,int>,std::vector<std::size_t>> bins_;
 };

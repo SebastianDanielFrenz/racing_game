@@ -1,5 +1,6 @@
 #pragma once
 #include "g2m/layer/road_geom_tile.h"
+#include "rg/road_structures.h"
 #include <functional>
 namespace rg {
 // flags (bits, read by road.gdshader): 1 lane markings, 2 edge lines, 4 solid separator, 8 fast road, 16 solid paint,
@@ -14,7 +15,8 @@ struct RoadVisualMesh { std::vector<RoadVisualVertex> vertices; std::vector<std:
 using RoadVisualGround = std::function<std::optional<double>(double,double)>;
 // Ribbons per paved stretch plus (owner tile only) one asphalt patch per served junction road bed ring, the through road's
 // markings continued over it, and the stop, give-way and crossing lines (OSM furniture plus implied give-way lines).
-RoadVisualMesh build_road_visual(const g2m::RoadGeomTile&,const g2m::TileKey&,const RoadVisualGround&,double lift_m);
+RoadVisualMesh build_road_visual(const g2m::RoadGeomTile&,const g2m::TileKey&,const RoadVisualGround&,double lift_m,
+                                 const RoadSeparation& separation={});
 // The junction patches alone (appended to `mesh`), in tile-local metres like build_road_visual.
 void add_junction_surfaces(RoadVisualMesh& mesh,const g2m::RoadGeomTile&,const g2m::TileKey&,const RoadVisualGround&,double lift_m);
 }

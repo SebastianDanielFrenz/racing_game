@@ -323,6 +323,7 @@ private:
     std::shared_ptr<const RoadSurface> road_surface(const g2m::TileKey& key, g2m::world::Priority priority);
     TerrainSmoothing smoothing_;
     double verge_drop_m_=0.06;
+    RoadSeparation separation_;
     std::mutex decks_mutex_;
     std::map<std::tuple<std::int64_t,int,int>,std::shared_ptr<const RoadDeck>> published_decks_;
     std::mutex graph_mutex_;
