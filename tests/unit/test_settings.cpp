@@ -55,6 +55,32 @@ TEST_CASE("settings: schema is consistent", "[settings]") {
     CHECK(rg::find_setting("nope") == nullptr);
     REQUIRE(rg::find_setting("map_data.store_dir") != nullptr);
     CHECK_FALSE(rg::find_setting("map_data.store_dir")->applies_live);
+    CHECK_FALSE(rg::find_setting("map_data.store_dir")->applies_on_restart);
+    // A restart-only setting is never live.
+    for (const rg::SettingDef& d : rg::settings_schema()) {
+        CAPTURE(d.key);
+        if (d.applies_on_restart) CHECK_FALSE(d.applies_live);
+    }
+}
+
+TEST_CASE("settings: renderer choice", "[settings][renderer]") {
+    const rg::SettingDef* def = rg::find_setting("graphics.renderer");
+    REQUIRE(def != nullptr);
+    CHECK(def->type == rg::SettingType::Choice);
+    CHECK(def->choices == std::vector<std::string>{"mobile", "compatibility"});
+    CHECK(std::get<std::string>(def->default_value) == "mobile");
+    CHECK_FALSE(def->applies_live);
+    CHECK(def->applies_on_restart);
+    CHECK(def->shown);
+    rg::Settings s;
+    std::string err;
+    CHECK(s.get_string("graphics.renderer") == "mobile");
+    CHECK_FALSE(s.set("graphics.renderer", std::string("gl_compatibility"), &err)); // engine names are not choices
+    CHECK(s.set("graphics.renderer", std::string("compatibility"), &err));
+    rg::Settings back;
+    rg::SettingsLoadReport report = back.load_text(s.to_json());
+    CHECK(report.invalid_keys.empty());
+    CHECK(back.get_string("graphics.renderer") == "compatibility");
 }
 
 TEST_CASE("settings: defaults and typed reads", "[settings]") {

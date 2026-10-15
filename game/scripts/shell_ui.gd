@@ -497,7 +497,9 @@ func _setting_row(def: Dictionary) -> Control:
 		row.add_child(value_label)
 		_setting_displays[key] = value_label
 	var help: String = str(def["help"])
-	if not bool(def["applies_live"]):
+	if bool(def.get("applies_on_restart", false)):
+		help += " (applies when the game is started again)"
+	elif not bool(def["applies_live"]):
 		help += " (applies when the next world loads)"
 	holder.add_child(_label(help, 13, HORIZONTAL_ALIGNMENT_LEFT, true))
 	var note := _label("", 13, HORIZONTAL_ALIGNMENT_LEFT)
