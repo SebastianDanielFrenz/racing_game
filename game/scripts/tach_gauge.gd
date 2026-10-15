@@ -165,7 +165,13 @@ func _existing_assist_lamp_states() -> Array:
 		out.append({"name": row["name"], "state": GaugeLogic.lamp_state(true, row["active"], false)})
 	return out
 
+# _draw runs in the deferred canvas redraw after every _process (not inside the _process probe): timed on its own.
 func _draw() -> void:
+	var probe_t0 := Time.get_ticks_usec()
+	_draw_body()
+	FrameProbe.add("tach_draw", Time.get_ticks_usec() - probe_t0)
+
+func _draw_body() -> void:
 	if _simulation == null or vehicle_name == "" or _gauge_info.is_empty() or _last_pt.is_empty():
 		return
 

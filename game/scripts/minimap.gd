@@ -1,4 +1,5 @@
 extends Control
+const FrameProbe := preload("res://scripts/frame_probe.gd")
 # R4 minimap (thin): draws the polylines of RgNavigation's map view-model and
 # the planned route, heading-up around the car. No logic: the geometry, its
 # LOD (in-game "Map detail" setting) and the route all come from rg_core.
@@ -30,7 +31,13 @@ func set_car(session_xy: Vector2, yaw_deg: float) -> void:
 	_yaw_rad = deg_to_rad(yaw_deg)
 	queue_redraw()
 
+# _draw runs in the deferred canvas redraw after every _process (not inside the _process probe): timed on its own.
 func _draw() -> void:
+	var probe_t0 := Time.get_ticks_usec()
+	_draw_body()
+	FrameProbe.add("minimap_draw", Time.get_ticks_usec() - probe_t0)
+
+func _draw_body() -> void:
 	var centre := size * 0.5
 	var r: float = min(size.x, size.y) * 0.5
 	draw_rect(Rect2(Vector2.ZERO, size), Color(0.05, 0.06, 0.08, 0.7))

@@ -430,6 +430,16 @@ void RgTerrainView::set_terrain_visible(bool visible) {
     }
 }
 
+void RgTerrainView::set_cast_shadows(bool on) {
+    cast_shadows_ = on;
+    godot::RenderingServer* rs = godot::RenderingServer::get_singleton();
+    if (rs == nullptr) return;
+    const auto setting = on ? godot::RenderingServer::SHADOW_CASTING_SETTING_ON : godot::RenderingServer::SHADOW_CASTING_SETTING_OFF;
+    for (const godot::RID& rid : instance_rids_) {
+        if (rid.is_valid()) rs->instance_geometry_set_cast_shadows_setting(rid, setting);
+    }
+}
+
 // Main-thread cost of this node's last _process, split into its three parts (RG_FRAME_SPIKE line in main.gd).
 godot::Dictionary RgTerrainView::get_frame_costs() const {
     godot::Dictionary d;
@@ -556,6 +566,7 @@ void RgTerrainView::upload_one_chunk(const rg::RenderChunk& chunk, godot::Array*
     const godot::RID scenario = get_world_3d().is_valid() ? get_world_3d()->get_scenario() : godot::RID();
     const godot::RID instance_rid = rs->instance_create2(mesh_rid, scenario);
     if (!terrain_visible_) rs->instance_set_visible(instance_rid, false);
+    if (!cast_shadows_) rs->instance_geometry_set_cast_shadows_setting(instance_rid, godot::RenderingServer::SHADOW_CASTING_SETTING_OFF);
     rs->instance_set_transform(instance_rid, chunk_instance_transform(chunk));
 
     mesh_rids_.push_back(mesh_rid);
@@ -910,6 +921,8 @@ void RgTerrainView::_bind_methods() {
     godot::ClassDB::bind_method(D_METHOD("get_bed_check", "px", "py", "dx", "dy", "ahead_m", "max_samples"), &RgTerrainView::get_bed_check, DEFVAL(800));
     godot::ClassDB::bind_method(D_METHOD("set_terrain_visible", "visible"), &RgTerrainView::set_terrain_visible);
     godot::ClassDB::bind_method(D_METHOD("get_terrain_visible"), &RgTerrainView::get_terrain_visible);
+    godot::ClassDB::bind_method(D_METHOD("set_cast_shadows", "on"), &RgTerrainView::set_cast_shadows);
+    godot::ClassDB::bind_method(D_METHOD("get_cast_shadows"), &RgTerrainView::get_cast_shadows);
     godot::ClassDB::bind_method(D_METHOD("take_report_stats"), &RgTerrainView::take_report_stats);
     godot::ClassDB::bind_method(D_METHOD("get_frame_costs"), &RgTerrainView::get_frame_costs);
     godot::ClassDB::bind_method(D_METHOD("godot_to_session", "godot_pos"), &RgTerrainView::godot_to_session);

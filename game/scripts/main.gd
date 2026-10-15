@@ -121,6 +121,16 @@ var _fd_probe_max: Dictionary = {}
 var _fd_process_sum := 0.0
 var _fd_process_max := 0.0
 var _fd_last_report_ms := 0
+# Render A/B (frame-time diagnosis 2026-10-15): env RG_PERF_AB=<feature> switches one feature off and on again every
+# RG_PERF_AB_S seconds (default 5) while a world runs, and RG_FRAME_STATS carries ab=<feature>:on|off, so one log
+# compares the same scene with and without it. Features: shadows (sun shadow), terrain_shadows (terrain chunks drawn
+# into the sun's shadow splits), 3d (the main viewport's whole 3D render), terrain, roads, buildings, car, hud, audio
+# (vehicle_audio _process), sky (sky background -> clear colour).
+var _ab_feature := ""
+var _ab_period_ms := 5000
+var _ab_off := false
+var _ab_switched_ms := 0
+var _ab_saved_bg := -1
 var _spawn_reported: bool = false
 
 # --- shell (R5) ---
@@ -189,6 +199,10 @@ func _ready() -> void:
 	# Window close is handled in _notification: the audio players are stopped and the
 	# audio thread given time to release their generator playbacks before quitting.
 	get_tree().set_auto_accept_quit(false)
+	_ab_feature = OS.get_environment("RG_PERF_AB").strip_edges().to_lower()
+	var ab_s := OS.get_environment("RG_PERF_AB_S")
+	if ab_s.is_valid_float() and float(ab_s) >= 1.0:
+		_ab_period_ms = int(float(ab_s) * 1000.0)
 	var spike_env := OS.get_environment("RG_FRAME_SPIKE_MS")
 	if spike_env.is_valid_float() and float(spike_env) > 0.0:
 		_fd_spike_s = float(spike_env) / 1000.0
@@ -1245,10 +1259,14 @@ func _forward_driving(live: bool, delta: float) -> void:
 # one (all of its _process calls, the render and the vsync wait), so the probes taken now (FrameProbe, frame_probe.gd)
 # belong to the frame that took `delta`.
 #  RG_FRAME_SPIKE  one line per frame over RG_FRAME_SPIKE_MS (default 50): delta_ms, ticks, process_ms (Godot's own
-#     TIME_PROCESS monitor of that frame), render_cpu_ms / render_gpu_ms (main viewport; gpu 0 when the driver gives no
+#     TIME_PROCESS monitor: the LONGEST process+draw of the last whole second, refreshed once a second - not this
+#     frame, and not an average; the ph_* probes below are the per-frame split), render_cpu_ms / render_gpu_ms (main viewport; gpu 0 when the driver gives no
 #     timer), terrain_* (RgTerrainView per-frame costs), probes = the nodes' own _process costs, largest first. A spike
 #     whose probes sum to a few ms while delta is large was spent OUTSIDE the scripts (render, GPU, driver, OS).
-#  RG_FRAME_STATS  once per second: fps, frame ms avg/p99/max, frames over 25 / 50 ms, per probe avg/max ms.
+#  RG_FRAME_STATS  once per second: fps, frame ms avg/p99/max, frames over 25 / 50 ms, draw calls / objects /
+#     primitives of the last frame, vsync mode / max_fps / window size, per probe avg/max ms. Probes besides the
+#     nodes' own: scene_span, outside and the engine phases ph_loop / ph_physics / ph_pre / ph_post / ph_draw /
+#     render_cpu / render_gpu (frame_probe_end.gd explains each).
 func _frame_diag(delta: float) -> void:
 	var probes: Dictionary = FrameProbe.take_frame()
 	if world_state != "running" or _simulation == null:
@@ -1299,14 +1317,64 @@ func _frame_diag(delta: float) -> void:
 		for k in _fd_probe_sum:
 			pk.append("%s=%.2f/%.1f" % [k, float(_fd_probe_sum[k]) / n, float(_fd_probe_max[k])])
 		pk.sort()
-		print("RG_FRAME_STATS frames=%d fps=%d frame_ms_avg=%.1f p99=%.1f max=%.1f over25=%d over50=%d process_ms_avg=%.1f process_ms_max=%.1f probes_avg/max_ms=[%s]" % [
+		# draw_calls/objects/primitives: the last drawn frame's totals over every viewport (Godot's own monitors);
+		# vsync/max_fps/size: what the window actually runs with, so a log names its own settings.
+		var win := get_window()
+		var ab := "" if _ab_feature == "" else " ab=%s:%s" % [_ab_feature, "off" if _ab_off else "on"]
+		print("RG_FRAME_STATS frames=%d fps=%d frame_ms_avg=%.1f p99=%.1f max=%.1f over25=%d over50=%d process_ms_avg=%.1f process_ms_max=%.1f draw_calls=%d objects=%d primitives=%d vsync=%d max_fps=%d size=%dx%d%s probes_avg/max_ms=[%s]" % [
 			n, int(Engine.get_frames_per_second()), sum / n, sorted[mini(n - 1, int(ceil(0.99 * n)) - 1)], sorted[n - 1], over25, over50,
-			_fd_process_sum / n, _fd_process_max, ", ".join(pk)])
+			_fd_process_sum / n, _fd_process_max,
+			int(Performance.get_monitor(Performance.RENDER_TOTAL_DRAW_CALLS_IN_FRAME)),
+			int(Performance.get_monitor(Performance.RENDER_TOTAL_OBJECTS_IN_FRAME)),
+			int(Performance.get_monitor(Performance.RENDER_TOTAL_PRIMITIVES_IN_FRAME)),
+			int(DisplayServer.window_get_vsync_mode()), Engine.max_fps, win.size.x, win.size.y, ab, ", ".join(pk)])
 	_fd_frames.clear()
 	_fd_probe_sum.clear()
 	_fd_probe_max.clear()
 	_fd_process_sum = 0.0
 	_fd_process_max = 0.0
+	if _ab_feature != "" and now - _ab_switched_ms >= _ab_period_ms:
+		_ab_switched_ms = now
+		_ab_off = not _ab_off
+		_perf_ab_apply(_ab_feature, _ab_off)
+		print("RG_PERF_AB %s -> %s" % [_ab_feature, "off" if _ab_off else "on"])
+
+# Switches one render feature for the RG_PERF_AB comparison (diagnosis only; nothing else calls it).
+func _perf_ab_apply(feature: String, off: bool) -> void:
+	match feature:
+		"shadows":
+			if _sky != null and _sky.sun != null:
+				_sky.sun.shadow_enabled = not off
+		"3d":
+			get_viewport().disable_3d = off
+		"terrain":
+			if _world_view != null:
+				_world_view.set_terrain_visible(not off)
+		"terrain_shadows":
+			if _world_view != null:
+				_world_view.set_cast_shadows(not off)
+		"roads":
+			if _roads != null:
+				_roads.visible = not off
+		"buildings":
+			if _buildings != null:
+				_buildings.visible = not off
+		"car":
+			if _visuals != null:
+				_visuals.visible = not off
+		"hud":
+			if _hud != null:
+				_hud.visible = not off
+		"audio":
+			if _vehicle_audio != null:
+				_vehicle_audio.set_process(not off)
+		"sky":
+			if _sky != null and _sky.environment != null:
+				if _ab_saved_bg < 0:
+					_ab_saved_bg = _sky.environment.background_mode
+				_sky.environment.background_mode = Environment.BG_COLOR if off else _ab_saved_bg
+		_:
+			push_warning("RG_PERF_AB: unknown feature '%s'" % feature)
 
 func _process(delta: float) -> void:
 	var process_t0 := Time.get_ticks_usec()

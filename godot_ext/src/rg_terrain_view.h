@@ -224,6 +224,10 @@ public:
     // Hides / shows every uploaded terrain chunk (debug: look at the ribbons without the ground, or the reverse).
     void set_terrain_visible(bool visible);
     [[nodiscard]] bool get_terrain_visible() const { return terrain_visible_; }
+    // Whether the terrain chunks cast shadows (default on; RG_PERF_AB=terrain_shadows switches it to measure the cost
+    // of drawing the terrain into the sun's shadow splits). Applies to every uploaded chunk and every later upload.
+    void set_cast_shadows(bool on);
+    [[nodiscard]] bool get_cast_shadows() const { return cast_shadows_; }
     // Window statistics since the last call, then cleared: {upload_ms_avg,
     // upload_ms_max, frames, chunks_uploaded, chunk_latency_p95_ms,
     // chunk_latency_max_ms, budget_ms_avg}. Meant for a 1 Hz log line.
@@ -323,6 +327,7 @@ private:
     std::int64_t chunks_uploaded_total_ = 0;
     double ground_check_max_m_ = -1000.0;
     bool terrain_visible_ = true;
+    bool cast_shadows_ = true;
     // Re-carving of Fallback tiles (road surface was missing when the coarse tile was built) and the rebuild of the
     // resident chunks built from them; see heal_tick().
     void heal_tick();

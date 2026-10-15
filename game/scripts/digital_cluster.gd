@@ -117,7 +117,13 @@ func small_dial(center: Vector2, value: String, title: String, fraction: float, 
 	text(value,center+Vector2(0,3),28)
 	text(title,center+Vector2(0,25),15,Color(0.5,0.7,0.82))
 
+# _draw runs in the deferred canvas redraw after every _process (not inside the _process probe): timed on its own.
 func _draw() -> void:
+	var probe_t0 := Time.get_ticks_usec()
+	_draw_body()
+	FrameProbe.add("cluster_draw", Time.get_ticks_usec() - probe_t0)
+
+func _draw_body() -> void:
 	draw_rect(Rect2(0,0,1024,400),Color(0.008,0.016,0.026))
 	var blue := Color(0.5,0.7,0.82)
 	var has_fuel := capacity>0 and density>0
