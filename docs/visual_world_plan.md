@@ -255,12 +255,21 @@ scene exposure, not with day/night switches on the lamps.
   (`CameraAttributesPractical.auto_exposure_*`) can replace or blend with the
   sky value through `combine_exposure`. Cockpit/dash lamps and unshaded
   materials are not exposure-scaled yet.
-- **Automatic headlamps** (`rg::DriverActions`, `CabinConfig::auto_lights_*`
-  from headlights.json `auto`): dipped beam on below 1000 lux for 2 s, off above
+- **Headlamp switch** (`rg::LightMode`, owner answer on PR #17): the lights key
+  (O) and the cockpit light switch cycle Auto -> On -> Off -> Auto; Auto is the
+  default and is persisted (hidden setting `cabin.light_mode`, kept across a
+  vehicle change). On = dipped beam, Off = no lamps; main beam stays its own
+  choice (Set 2). Channel `cabin.light_mode`, projection `light_mode`
+  ("AUTO"/"ON"/"OFF"), lights label "AUTO", "AUTO LIGHTS", ...; HUD line and an
+  AUTO lamp on the tach.
+- **Automatic headlamps** (Auto; `CabinConfig::auto_lights_*` from
+  headlights.json `auto`): dipped beam on below 1000 lux for 2 s, off above
   7000 lux for 10 s (UN R48 6.2.7.6 thresholds, recalled, unverified); the first
-  reading decides at once. A manual choice (O key, cockpit switch) holds until
-  the sensor's decision next changes; main beam is kept while it stays dark.
+  reading decides at once; main beam is kept while it stays dark. The thresholds
+  are universal (owner): one pair for every car and every weather, nothing
+  overrides them; rain or overcast only lower the illuminance the sensor reads
+  (overcast midsummer noon ~32000 lux stays off).
 - **Tests.** `test_exposure.cpp` ([exposure]), `test_driver_actions.cpp`
-  ([auto_lights]), `visual_world_test.gd` (lamp energies follow the exposure).
+  ([auto_lights]), `test_settings.cpp`, `cockpit_test.gd`, `visual_world_test.gd` (lamp energies follow the exposure).
   Shots: `game/scripts/lights_exposure_shots.gd` with the states that
   `rg_unit_tests "[exposure_shots]"` writes.

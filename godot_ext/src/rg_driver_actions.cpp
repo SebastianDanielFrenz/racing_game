@@ -87,6 +87,11 @@ godot::Array RgDriverActions::advance(const godot::Dictionary& snapshot, const g
 void RgDriverActions::discard_pending() { actions_.discard_pending(); }
 void RgDriverActions::configure_auto_shift(bool enabled) { actions_.configure_auto_shift(enabled); }
 bool RgDriverActions::get_auto_shift() const { return actions_.cabin().auto_shift; }
+void RgDriverActions::set_light_mode(const godot::String& name) {
+    rg::LightMode mode;
+    if (rg::parse_light_mode(name.utf8().get_data(), mode)) actions_.set_light_mode(mode);
+}
+godot::String RgDriverActions::get_light_mode() const { return godot::String(rg::light_mode_name(actions_.light_mode())); }
 godot::Dictionary RgDriverActions::state(const godot::String& id, const godot::Dictionary& snapshot, const godot::Dictionary& channels) {
     const Sink sink(channels);
     const auto s = rg::DriverActions::state(id.utf8().get_data(), convert(snapshot), sink);
@@ -113,6 +118,8 @@ void RgDriverActions::_bind_methods() {
     ClassDB::bind_method(D_METHOD("discard_pending"), &RgDriverActions::discard_pending);
     ClassDB::bind_method(D_METHOD("configure_auto_shift", "enabled"), &RgDriverActions::configure_auto_shift);
     ClassDB::bind_method(D_METHOD("get_auto_shift"), &RgDriverActions::get_auto_shift);
+    ClassDB::bind_method(D_METHOD("set_light_mode", "mode"), &RgDriverActions::set_light_mode);
+    ClassDB::bind_method(D_METHOD("get_light_mode"), &RgDriverActions::get_light_mode);
     ClassDB::bind_static_method("RgDriverActions", D_METHOD("state", "id", "snapshot", "channels"), &RgDriverActions::state);
     BIND_ENUM_CONSTANT(PRESS); BIND_ENUM_CONSTANT(RELEASE); BIND_ENUM_CONSTANT(SET); BIND_ENUM_CONSTANT(HOLD);
     BIND_ENUM_CONSTANT(KEYBOARD); BIND_ENUM_CONSTANT(PAD); BIND_ENUM_CONSTANT(HUD); BIND_ENUM_CONSTANT(COCKPIT_MOUSE);

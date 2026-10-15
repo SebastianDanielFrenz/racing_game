@@ -72,6 +72,7 @@ const char* const kControlChannelNames[] = {
     "assist.esc", // physics_sim assists I6: ESC mode 0 off, 1 on, 2 sport; only a car whose unit has the esc block registers it
     "nitrous_arm", // N2O arm switch, a plain 0/1 level (owner 2026-10-05; only cars with a nitrous kit declare it)
     "cabin.lights", // 0 off, 1 dipped, 2 main beam (DriverActions "lights"); visual only
+    "cabin.light_mode", // headlamp switch 0 auto, 1 on, 2 off (DriverActions "lights"); visual only
 };
 const std::size_t kControlChannelCount = sizeof(kControlChannelNames) / sizeof(kControlChannelNames[0]);
 

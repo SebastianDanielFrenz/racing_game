@@ -14,6 +14,14 @@ namespace rg {
 enum class DriverActionKind { Press, Release, Set, Hold };
 enum class ActionSource { Keyboard, Pad, Hud, CockpitMouse, VrPoke, VrGrab, VrRay, Script };
 
+// Headlamp switch position (the "lights" action cycles Auto -> On -> Off -> Auto).
+// Auto: dipped beam follows the light sensor (CabinConfig auto_lights_*); On: dipped
+// beam (main beam stays its own choice, Set 2); Off: no lamps. Channel cabin.light_mode
+// carries the numeric value (0 auto, 1 on, 2 off).
+enum class LightMode { Auto = 0, On = 1, Off = 2 };
+const char* light_mode_name(LightMode mode); // "auto", "on", "off"
+bool parse_light_mode(std::string_view name, LightMode& out);
+
 struct ActionEvent {
     std::string id;
     DriverActionKind kind = DriverActionKind::Press;
@@ -31,6 +39,7 @@ struct CabinState {
     bool hazard = false;
     int indicator = 0;
     int lights = 0; // 0 off, 1 dipped, 2 main beam ("lights" action; channel cabin.lights)
+    LightMode light_mode = LightMode::Auto; // the switch position; survives a vehicle change (configure_auto_shift)
     int wipers = 0;
     double auto_crank_elapsed_s = 0;
     // Automatic headlamps (light sensor): the sensor's last decision and how
@@ -107,12 +116,13 @@ struct CabinConfig {
     double indicator_arm_deg = 0;
     double indicator_cancel_deg = 0;
     double brake_lamp_threshold = 0;
-    // Automatic headlamps ("AUTO" switch position, the default when enabled):
-    // dipped beam on once the sensor reads below on_lux for on_delay_s, off once
-    // it reads above off_lux for off_delay_s (hysteresis: on_lux <= off_lux).
-    // The first reading decides at once (a night spawn starts with lights on).
-    // A manual lights action (O key, cockpit switch) is obeyed and holds until
-    // the sensor's decision next changes; main beam is kept while it stays dark.
+    // Automatic headlamps (LightMode::Auto, the default switch position): dipped
+    // beam on once the sensor reads below on_lux for on_delay_s, off once it reads
+    // above off_lux for off_delay_s (hysteresis: on_lux <= off_lux). The first
+    // reading decides at once (a night spawn starts with lights on). Universal:
+    // one pair of thresholds for every car and every weather (weather only
+    // changes the illuminance the sensor reads). Main beam is kept while dark.
+    // auto_lights false: no sensor, Auto holds whatever the lamps were.
     bool auto_lights = false;
     double auto_lights_on_lux = 0;
     double auto_lights_off_lux = 0;
@@ -129,7 +139,16 @@ public:
     void discard_pending();
     void configure_cabin(const CabinConfig& config);
     void advance(const VehicleContext& context, ChannelSink& channels, double dt);
-    void configure_auto_shift(bool enabled) { cabin_ = CabinState{}; cabin_.auto_shift = enabled; }
+    // A vehicle change resets the cabin; the headlamp switch position is the player's and is kept.
+    void configure_auto_shift(bool enabled) {
+        const LightMode mode = cabin_.light_mode;
+        cabin_ = CabinState{};
+        cabin_.auto_shift = enabled;
+        cabin_.light_mode = mode;
+    }
+    // The persisted switch position (settings cabin.light_mode, restored at start-up).
+    void set_light_mode(LightMode mode);
+    LightMode light_mode() const { return cabin_.light_mode; }
     const CabinState& cabin() const { return cabin_; }
     std::size_t pending_count() const { return pending_.size(); }
 
@@ -141,6 +160,7 @@ private:
     CabinConfig config_;
     bool cabin_configured_ = false;
     void update_auto_lights(double lux, double dt);
+    void apply_light_mode();
     std::array<bool, 14> held_{};
     std::vector<ActionEvent> pending_;
 };

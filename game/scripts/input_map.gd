@@ -449,6 +449,14 @@ func get_starter() -> bool:
 func get_auto_shift() -> bool:
 	return driver_actions.get_auto_shift()
 
+# Headlamp switch position "auto" | "on" | "off" (rg::LightMode; the lights key cycles it). main.gd
+# restores it from the hidden setting cabin.light_mode and saves it when it changes.
+func get_light_mode() -> String:
+	return str(driver_actions.get_light_mode())
+
+func set_light_mode(mode: String) -> void:
+	driver_actions.set_light_mode(mode)
+
 func consume_shift_up_count() -> int:
 	var n := _shift_up_count
 	_shift_up_count = 0

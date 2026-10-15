@@ -134,9 +134,18 @@ void DriverActions::apply(const VehicleContext& context, ChannelSink& sink) {
             cabin_.indicator_turned = false; cabin_.blink_elapsed_s = 0;
         } else if (index == 12) cabin_.horn = event.value != 0;
         else if (index == 13) {
-            // Press toggles dipped beam; Set picks 0 off, 1 dipped, 2 main beam.
-            if (event.kind == DriverActionKind::Set) cabin_.lights = std::clamp(static_cast<int>(std::lround(event.value)), 0, 2);
-            else cabin_.lights = cabin_.lights == 0 ? 1 : 0;
+            // Press cycles the switch Auto -> On -> Off -> Auto. Set picks a position:
+            // < 0 auto, 0 off, 1 on (dipped), 2 on with main beam.
+            if (event.kind == DriverActionKind::Set) {
+                const long v = std::lround(event.value);
+                if (v < 0) cabin_.light_mode = LightMode::Auto;
+                else if (v == 0) { cabin_.light_mode = LightMode::Off; cabin_.lights = 0; }
+                else { cabin_.light_mode = LightMode::On; cabin_.lights = v >= 2 ? 2 : 1; }
+            } else {
+                cabin_.light_mode = cabin_.light_mode == LightMode::Auto ? LightMode::On
+                                  : cabin_.light_mode == LightMode::On ? LightMode::Off : LightMode::Auto;
+            }
+            apply_light_mode();
         }
     }
     discard_pending();
@@ -191,7 +200,40 @@ void DriverActions::advance(const VehicleContext& context, ChannelSink& sink, do
     sink.set("cabin.brake_lamp",sink.get("brake") > config_.brake_lamp_threshold ? 1 : 0);
     sink.set("cabin.horn",cabin_.horn ? 1 : 0);
     update_auto_lights(context.snapshot.ambient_lux, dt);
+    apply_light_mode();
     sink.set("cabin.lights",cabin_.lights);
+    sink.set("cabin.light_mode",static_cast<int>(cabin_.light_mode));
+}
+
+const char* light_mode_name(LightMode mode) {
+    switch (mode) {
+    case LightMode::Auto: return "auto";
+    case LightMode::On: return "on";
+    case LightMode::Off: return "off";
+    }
+    return "auto";
+}
+
+bool parse_light_mode(std::string_view name, LightMode& out) {
+    for (LightMode m : {LightMode::Auto, LightMode::On, LightMode::Off})
+        if (name == light_mode_name(m)) { out = m; return true; }
+    return false;
+}
+
+void DriverActions::set_light_mode(LightMode mode) {
+    cabin_.light_mode = mode;
+    apply_light_mode();
+}
+
+void DriverActions::apply_light_mode() {
+    switch (cabin_.light_mode) {
+    case LightMode::Off: cabin_.lights = 0; break;
+    case LightMode::On: cabin_.lights = std::max(cabin_.lights, 1); break;
+    case LightMode::Auto:
+        if (config_.auto_lights && cabin_.light_sensor_valid)
+            cabin_.lights = cabin_.light_sensor_dark ? std::max(cabin_.lights, 1) : 0;
+        break;
+    }
 }
 
 void DriverActions::update_auto_lights(double lux, double dt) {
@@ -199,7 +241,6 @@ void DriverActions::update_auto_lights(double lux, double dt) {
     auto decide = [&](bool dark) {
         cabin_.light_sensor_dark = dark;
         cabin_.light_sensor_timer_s = 0;
-        cabin_.lights = dark ? std::max(cabin_.lights, 1) : 0;
     };
     if (!cabin_.light_sensor_valid) {
         cabin_.light_sensor_valid = true;
@@ -233,7 +274,18 @@ ControlState DriverActions::state(std::string_view id, const DriverSnapshot& sna
         out.active = id == "main_beam" ? out.value >= 2 : out.value != 0;
         out.lamp_segments = out.active ? 1 : 0;
         out.label = out.value >= 2 ? "MAIN BEAM" : out.value != 0 ? "LIGHTS" : "";
+        if (sink.get("cabin.light_mode") == static_cast<int>(LightMode::Auto))
+            out.label = out.label.empty() ? "AUTO" : "AUTO " + out.label;
         out.colour_role = !out.active ? "off" : out.value >= 2 ? "info" : "ok";
+    } else if (id == "light_mode") {
+        out.fitted = true; out.enabled = true;
+        out.value = sink.get("cabin.light_mode");
+        const auto mode = static_cast<LightMode>(std::clamp(static_cast<int>(std::lround(out.value)), 0, 2));
+        out.active = mode == LightMode::Auto;
+        out.lamp_state = static_cast<int>(mode);
+        out.lamp_segments = mode == LightMode::Auto ? 1 : 0;
+        out.label = mode == LightMode::Auto ? "AUTO" : mode == LightMode::On ? "ON" : "OFF";
+        out.colour_role = mode == LightMode::Auto ? "info" : mode == LightMode::On ? "ok" : "off";
     } else if (id == "park") {
         out.fitted = snapshot.park_fitted;
         out.enabled = out.fitted;

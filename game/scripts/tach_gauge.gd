@@ -159,6 +159,8 @@ func _existing_assist_lamp_states() -> Array:
 		{"name": "BLIP", "active": bool(_last_pt.get("assist_auto_blip", false))},
 		{"name": "SHIFT", "active": bool(_last_pt.get("assist_auto_shift", false))},
 		{"name": "RUMBLE", "active": rumble_on},
+		# Headlamp switch in AUTO (channel cabin.light_mode 0, rg::LightMode::Auto).
+		{"name": "AUTO", "active": _simulation != null and _simulation.has_method("get_control") and int(_simulation.get_control("cabin.light_mode")) == 0},
 	]
 	var out := []
 	for row in table:

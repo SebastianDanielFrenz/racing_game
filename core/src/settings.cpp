@@ -129,6 +129,12 @@ std::vector<SettingDef> build_schema() {
         d.default_value = std::string();
         s.push_back(hidden(std::move(d)));
     }
+    // Headlamp switch position (rg::LightMode, the lights action cycles it): persisted like the
+    // auto-shift preference survives, not shown on the settings screen.
+    SettingDef light = make_choice("cabin", "light_mode", "Headlamp switch", "", "auto", {"auto", "on", "off"});
+    light.shown = false;
+    light.help = "Headlamp switch position: auto (light sensor), on (dipped beam) or off. The lights key cycles it.";
+    s.push_back(std::move(light));
     return s;
 }
 
