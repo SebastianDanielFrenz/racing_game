@@ -61,11 +61,12 @@ namespace {
 // Lane layout of one paved stretch as the ribbon draws it (the fragment shader reads lanes, forward and the flags).
 struct LaneLayout { std::string highway,direction; bool one=false,fast=false; double width=0; int lanes=1,forward=1,flags=0; };
 enum MarkFlag : int { kMarking=1, kEdgeLines=2, kSolidSeparator=4, kFast=8, kPaint=16, kOverlay=32, kLeftEdgeBroken=64, kRightEdgeBroken=128,
-                     kLeftEdgeHidden=512, kRightEdgeHidden=1024, kStones=2048, kConcrete=4096, kUnpaved=8192 };
-// Paving surface of a way (OSM surface=*) as the ribbon shader draws it: stones (paving stones, sett, cobblestone),
-// concrete, else asphalt.
+                     kLeftEdgeHidden=512, kRightEdgeHidden=1024, kStones=2048, kConcrete=4096, kUnpaved=8192, kSett=16384 };
+// Paving surface of a way (OSM surface=*) as the ribbon shader draws it: stones (paving stones; sett and cobblestone
+// also carry kSett, natural stone), concrete, else asphalt.
 int surface_flags(const std::string& surface) {
- if(surface.starts_with("paving_stones")||surface=="sett"||surface=="cobblestone"||surface=="unhewn_cobblestone"||surface=="grass_paver")return kStones;
+ if(surface=="sett"||surface=="cobblestone"||surface=="unhewn_cobblestone")return kStones|kSett;
+ if(surface.starts_with("paving_stones")||surface=="grass_paver")return kStones;
  if(surface.starts_with("concrete"))return kConcrete;
  return 0;
 }
@@ -104,7 +105,7 @@ std::optional<LaneLayout> lane_layout(const g2m::RoadGeomEntry& entry,const g2m:
  const bool marking=tag(w,"lane_markings")!="no"&&l.width/l.lanes>=2.4&&highway!="living_street";
  const int paving=surface_flags(tag(w,"surface"));
  // A paving-stone or cobbled road carries no painted lines.
- l.flags=paving==kStones?paving:((marking?kMarking:0)|(edge_lines?kEdgeLines:0)|(tag(w,"overtaking")=="no"?kSolidSeparator:0)|(l.fast?kFast:0)|paving);
+ l.flags=(paving&kStones)!=0?paving:((marking?kMarking:0)|(edge_lines?kEdgeLines:0)|(tag(w,"overtaking")=="no"?kSolidSeparator:0)|(l.fast?kFast:0)|paving);
  return l;
 }
 const g2m::RoadGraphWay* find_way(const g2m::RoadGeomTile& geometry,std::int64_t id) {

@@ -55,6 +55,7 @@ add_executable(rg_unit_tests
   test_shell_flow.cpp
   test_time_weather.cpp
   test_climate.cpp
+  test_wet_look.cpp
   test_session_weather.cpp
   test_crops.cpp
   test_controls.cpp

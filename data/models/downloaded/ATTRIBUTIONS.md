@@ -34,3 +34,18 @@ Attributions below were extracted from the original GLB files. Files are unchang
 Only CC BY models are included. The six downloaded CC BY-NC / CC BY-NC-SA models remain outside this directory.
 
 These are source assets for later conversion and rigging; they are not yet installed as drivable garage vehicles.
+
+## Modified copies in the game
+
+`tools/carimport` turns some of these models into rigged game models under `data/models/imported/<id>/`. Each is a
+modified version of the original: re-oriented to the game's axes and origin, wheels re-parented under
+suspension/steering/spin pivots at the wheel centres, brake calipers moved under the steering pivots, the baked
+ground/shadow plane removed. Geometry, materials and textures are otherwise unchanged. The record per file (source
+hash, date) is the `derived` list in `attributions.json`; the GLB itself carries the credit in `asset.copyright` and
+`asset.extras`, and the game's credits screen lists it (`data/credits.json`, `model_<id>`).
+
+| Game model | Original | Creator | Licence |
+| --- | --- | --- | --- |
+| `imported/toyama_xr/toyama_xr.glb` | [Generic Toyama XR Sedan](https://sketchfab.com/3d-models/generic-toyama-xr-sedan-a161542c38ac44fca3b1c283f6d986bb) | [mk2design](https://sketchfab.com/mk2design) | CC BY 4.0, modified |
+| `imported/generic_suv/generic_suv.glb` | [Lowpoly Generic SUV](https://sketchfab.com/3d-models/lowpoly-generic-suv-edc994ad28ed438cb365c0e0389ac177) | [mk2design](https://sketchfab.com/mk2design) | CC BY 4.0, modified |
+| `imported/phoenix_455/phoenix_455.glb` | [Phoenix 455 '71 - Low poly model](https://sketchfab.com/3d-models/phoenix-455-71-low-poly-model-955edc733c6d44fabc0ad7c246a15896) | [Daniel Zhabotinsky](https://sketchfab.com/DanielZhabotinsky) | CC BY 4.0, modified |

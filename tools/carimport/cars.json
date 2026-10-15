@@ -1,0 +1,532 @@
+{
+  "format": "rg.carimport/1",
+  "note": "One entry per imported car: source GLB in data/models/downloaded/, output id (data/models/imported/<id>/<id>.glb + .rig.json). forward/up: source-world axes when the automatic guess must be overridden. brake_parts: regex on node paths of parts that steer with the wheel but do not spin (calipers); they go under steer_<corner> (front) or susp_<corner> (rear) and are not part of the wheel. vehicle: the game vehicle file written from `base` with the model's wheel positions and the given tyre (one spec, or front/rear). materials: regexes on source material names renamed to paint / rim for the garage and drive colours (paint_tint_texture: a white-body copy of an atlas paint map, the paint keeps that map and paint_tint_factor as its colour, named paint_tinted). lights.rules: lamp triangles by node path / material regex and an ISO box (x, y, z [min, max] m, output frame, triangle centroid), first rule wins; kind indicator splits left/right by side; lights.required: kinds the check insists on. driver_eye: {at: ISO point} or {steering: node regex, offset: from the steering wheel's bbox centre}. light_look: emission colour and strength per lamp kind (the numbers of the cargen cars).",
+  "cars": [
+    {
+      "id": "toyama_xr",
+      "source": "generic_toyama_xr_sedan.glb",
+      "title": "Toyama XR",
+      "forward": "+z",
+      "up": "+y",
+      "brake_parts": "caliper",
+      "vehicle": {
+        "name": "car_toyama_xr",
+        "base": "data/vehicles/car_sedan.json",
+        "out": "data/vehicles/car_toyama_xr.json",
+        "tyre_spec": {
+          "compound": "road",
+          "width_mm": 225,
+          "aspect": 50,
+          "rim_in": 17
+        }
+      },
+      "materials": {
+        "paint": "^Body_Paint$",
+        "rim": "^Body_Alloy$"
+      },
+      "lights": {
+        "rules": [
+          {
+            "kind": "head",
+            "material": "^Body_Glass$",
+            "x": [
+              1.7,
+              9
+            ]
+          },
+          {
+            "kind": "reverse",
+            "material": "^Body_Glass$",
+            "x": [
+              -9,
+              -1.75
+            ],
+            "z": [
+              0,
+              0.95
+            ]
+          },
+          {
+            "kind": "brake",
+            "material": "^Body_Glass_Red$"
+          },
+          {
+            "kind": "indicator",
+            "material": "^Body_Glass_Orange$"
+          }
+        ],
+        "required": [
+          "head",
+          "brake",
+          "indicator_left",
+          "indicator_right"
+        ]
+      },
+      "driver_eye": {
+        "at": [
+          -0.3,
+          0.37,
+          1.15
+        ]
+      }
+    },
+    {
+      "id": "generic_suv",
+      "source": "lowpoly_generic_suv.glb",
+      "title": "Generic SUV",
+      "forward": "+z",
+      "up": "+y",
+      "brake_parts": "caliper",
+      "vehicle": {
+        "name": "car_generic_suv",
+        "base": "data/vehicles/car_sedan_awd.json",
+        "out": "data/vehicles/car_generic_suv.json",
+        "tyre_spec": {
+          "compound": "road",
+          "width_mm": 235,
+          "aspect": 65,
+          "rim_in": 18
+        }
+      },
+      "materials": {
+        "paint": "^Body$",
+        "paint_tint_texture": "^Texture$",
+        "paint_tint_factor": [
+          0.62,
+          0.02,
+          0.02,
+          1.0
+        ]
+      },
+      "lights": {
+        "rules": [
+          {
+            "kind": "head",
+            "material": "^Glass$",
+            "x": [
+              1.85,
+              9
+            ],
+            "z": [
+              0,
+              1.0
+            ]
+          },
+          {
+            "kind": "brake",
+            "material": "^Glass$",
+            "x": [
+              -9,
+              -1.95
+            ],
+            "z": [
+              0,
+              1.15
+            ]
+          }
+        ],
+        "required": [
+          "head",
+          "brake"
+        ]
+      },
+      "driver_eye": {
+        "at": [
+          -0.15,
+          0.38,
+          1.35
+        ]
+      }
+    },
+    {
+      "id": "phoenix_455",
+      "source": "phoenix_455_71_-_low_poly_model.glb",
+      "title": "Phoenix 455",
+      "forward": "+x",
+      "up": "+y",
+      "brake_parts": "caliper",
+      "vehicle": {
+        "name": "car_phoenix_455",
+        "base": "data/vehicles/car_gt70.json",
+        "out": "data/vehicles/car_phoenix_455.json",
+        "tyre_spec": {
+          "front": {
+            "compound": "belted",
+            "width_mm": 215,
+            "aspect": 60,
+            "rim_in": 15
+          },
+          "rear": {
+            "compound": "belted",
+            "width_mm": 225,
+            "aspect": 60,
+            "rim_in": 15
+          }
+        }
+      },
+      "materials": {
+        "paint": "_Bodymat$"
+      },
+      "lights": {
+        "rules": [
+          {
+            "kind": "head",
+            "node": "_Headlights_UCB"
+          },
+          {
+            "kind": "brake",
+            "node": "_Brakelights\\d*_UCB"
+          },
+          {
+            "kind": "indicator",
+            "node": "_Blinkers_UCB"
+          },
+          {
+            "kind": "reverse",
+            "node": "_Reverse_UCB"
+          }
+        ],
+        "required": [
+          "head",
+          "brake",
+          "indicator_left",
+          "indicator_right",
+          "reverse"
+        ]
+      },
+      "driver_eye": {
+        "steering": "Steering_Wheel",
+        "offset": [
+          -0.42,
+          0.0,
+          0.27
+        ]
+      }
+    },
+    {
+      "id": "ace_11",
+      "source": "ace_11_-_low_poly_model.glb",
+      "title": "Ace 11",
+      "forward": "+x",
+      "up": "+y",
+      "brake_parts": "caliper",
+      "materials": {
+        "paint": "_[Bb]odymat$"
+      },
+      "lights": {
+        "rules": [
+          {
+            "kind": "head",
+            "node": "_Headlights_UCB"
+          },
+          {
+            "kind": "brake",
+            "node": "_Brakelights\\d*_UCB"
+          },
+          {
+            "kind": "indicator",
+            "node": "_Blinkers_UCB"
+          },
+          {
+            "kind": "reverse",
+            "node": "_Reverse_UCB"
+          }
+        ],
+        "required": [
+          "head",
+          "brake",
+          "indicator_left",
+          "indicator_right",
+          "reverse"
+        ]
+      },
+      "driver_eye": {
+        "steering": "Steering_Wheel",
+        "offset": [
+          -0.42,
+          0.0,
+          0.27
+        ]
+      },
+      "vehicle": {
+        "name": "car_ace_11",
+        "base": "data/vehicles/car_city.json",
+        "out": "data/vehicles/car_ace_11.json",
+        "tyre_spec": {
+          "compound": "economy",
+          "width_mm": 185,
+          "aspect": 60,
+          "rim_in": 15
+        }
+      }
+    },
+    {
+      "id": "fairheaven_lt80",
+      "source": "fairheaven_lt_80_-_low_poly_model.glb",
+      "title": "Fairheaven LT 80",
+      "forward": "+x",
+      "up": "+y",
+      "brake_parts": "caliper",
+      "materials": {
+        "paint": "_[Bb]odymat$"
+      },
+      "lights": {
+        "rules": [
+          {
+            "kind": "head",
+            "node": "_Headlights_UCB"
+          },
+          {
+            "kind": "brake",
+            "node": "_Brakelights\\d*_UCB"
+          },
+          {
+            "kind": "indicator",
+            "node": "_Blinkers_UCB"
+          },
+          {
+            "kind": "reverse",
+            "node": "_Reverse_UCB"
+          }
+        ],
+        "required": [
+          "head",
+          "brake",
+          "reverse"
+        ]
+      },
+      "driver_eye": {
+        "steering": "Steering_Wheel",
+        "offset": [
+          -0.42,
+          0.0,
+          0.27
+        ]
+      },
+      "vehicle": {
+        "name": "car_fairheaven_lt80",
+        "base": "data/vehicles/car_sedan_rwd.json",
+        "out": "data/vehicles/car_fairheaven_lt80.json",
+        "tyre_spec": {
+          "compound": "belted",
+          "width_mm": 205,
+          "aspect": 60,
+          "rim_in": 15
+        }
+      }
+    },
+    {
+      "id": "kiri_86",
+      "source": "kiri_86_-_low_poly_model.glb",
+      "title": "Kiri 86",
+      "forward": "+x",
+      "up": "+y",
+      "brake_parts": "caliper",
+      "materials": {
+        "paint": "_[Bb]odymat$"
+      },
+      "lights": {
+        "rules": [
+          {
+            "kind": "head",
+            "node": "_Headlights_UCB"
+          },
+          {
+            "kind": "brake",
+            "node": "_Brakelights\\d*_UCB"
+          },
+          {
+            "kind": "indicator",
+            "node": "_Blinkers_UCB"
+          },
+          {
+            "kind": "reverse",
+            "node": "_Reverse_UCB"
+          }
+        ],
+        "required": [
+          "head",
+          "brake",
+          "indicator_left",
+          "indicator_right",
+          "reverse"
+        ]
+      },
+      "driver_eye": {
+        "steering": "Steering_Wheel",
+        "offset": [
+          -0.42,
+          0.0,
+          0.27
+        ]
+      },
+      "vehicle": {
+        "name": "car_kiri_86",
+        "base": "data/vehicles/car_sedan_rwd.json",
+        "out": "data/vehicles/car_kiri_86.json",
+        "tyre_spec": {
+          "compound": "touring",
+          "width_mm": 185,
+          "aspect": 60,
+          "rim_in": 14
+        }
+      }
+    },
+    {
+      "id": "lct_3000",
+      "source": "lct_3000_95_-_low_poly_model.glb",
+      "title": "LCT 3000",
+      "forward": "+x",
+      "up": "+y",
+      "brake_parts": "caliper",
+      "materials": {
+        "paint": "_[Bb]odymat$"
+      },
+      "lights": {
+        "rules": [
+          {
+            "kind": "head",
+            "node": "_Headlights_UCB"
+          },
+          {
+            "kind": "brake",
+            "node": "_Brakelights\\d*_UCB"
+          },
+          {
+            "kind": "indicator",
+            "node": "_Blinkers_UCB"
+          },
+          {
+            "kind": "reverse",
+            "node": "_Reverse_UCB"
+          }
+        ],
+        "required": [
+          "head",
+          "brake",
+          "indicator_left",
+          "indicator_right",
+          "reverse"
+        ]
+      },
+      "driver_eye": {
+        "steering": "Steering_Wheel",
+        "offset": [
+          -0.42,
+          0.0,
+          0.27
+        ]
+      },
+      "vehicle": {
+        "name": "car_lct_3000",
+        "base": "data/vehicles/car_sedan_awd.json",
+        "out": "data/vehicles/car_lct_3000.json",
+        "tyre_spec": {
+          "compound": "road",
+          "width_mm": 225,
+          "aspect": 70,
+          "rim_in": 16
+        }
+      }
+    },
+    {
+      "id": "shvan_92",
+      "source": "shvan_92_-_low_poly_model.glb",
+      "title": "Shvan 92",
+      "forward": "+x",
+      "up": "+y",
+      "brake_parts": "caliper",
+      "materials": {
+        "paint": "_[Bb]odymat$"
+      },
+      "lights": {
+        "rules": [
+          {
+            "kind": "head",
+            "node": "_Headlights_UCB"
+          },
+          {
+            "kind": "brake",
+            "node": "_Brakelights\\d*_UCB"
+          },
+          {
+            "kind": "indicator",
+            "node": "_Blinkers_UCB"
+          },
+          {
+            "kind": "reverse",
+            "node": "_Reverse_UCB"
+          }
+        ],
+        "required": [
+          "head",
+          "brake",
+          "indicator_left",
+          "indicator_right",
+          "reverse"
+        ]
+      },
+      "driver_eye": {
+        "steering": "Steering_Wheel",
+        "offset": [
+          -0.42,
+          0.0,
+          0.27
+        ]
+      },
+      "vehicle": {
+        "name": "car_shvan_92",
+        "base": "data/vehicles/car_sedan_rwd.json",
+        "out": "data/vehicles/car_shvan_92.json",
+        "tyre_spec": {
+          "compound": "road",
+          "width_mm": 215,
+          "aspect": 70,
+          "rim_in": 16
+        }
+      }
+    }
+  ],
+  "light_look": {
+    "head": {
+      "emissive_on": [
+        1.0,
+        0.95,
+        0.85
+      ],
+      "emissive_strength_on": 8.0
+    },
+    "tail": {
+      "emissive_on": [
+        1.0,
+        0.03,
+        0.02
+      ],
+      "emissive_strength_on": 2.0
+    },
+    "brake": {
+      "emissive_on": [
+        1.0,
+        0.02,
+        0.01
+      ],
+      "emissive_strength_on": 8.0
+    },
+    "indicator": {
+      "emissive_on": [
+        1.0,
+        0.5,
+        0.0
+      ],
+      "emissive_strength_on": 6.0
+    },
+    "reverse": {
+      "emissive_on": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "emissive_strength_on": 5.0
+    }
+  }
+}
