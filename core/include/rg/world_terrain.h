@@ -14,6 +14,7 @@
 #include "rg/buildings.h"
 #include "g2m/world/road_ribbons.h"
 #include "rg/road_surface.h"
+#include "rg/terrain_colours.h"
 #include "rg/terrain_render.h"
 #include "rg/world_config.h"
 
@@ -25,6 +26,7 @@
 #include "g2m/world/chunk_road_classes.h"
 #include "g2m/world/terrain_service.h"
 #include "g2m/world/tile_fetch.h"
+#include "g2m/world/view_streamer.h"
 
 #include <array>
 #include <atomic>
@@ -41,94 +43,25 @@
 
 namespace rg {
 
-// The carve state of one height tile (a ChunkCarve value as uint8_t); `ctx` is the WorldTerrain.
-using TileCarveFn = std::uint8_t (*)(void* ctx, const g2m::TileKey&);
+// The render chunk selection and build moved to geo2map (g2m/world/view_streamer.h, terrain migration phase 3b).
+using g2m::world::TileCarveFn;
+using g2m::world::chunk_window_carve;
+using g2m::world::select_view_keys;
+// Everything a selection + build needs (LOD params, session origin, height/class lookups, carve state, colour hook,
+// road LOD). WorldTerrain::view_source() returns one over itself with the game's colours (rg::chunk_colour_hook).
+using TerrainViewSource = g2m::world::ViewSource;
 
-// The worst carve state over the height tiles a chunk's halo window touches (what RenderChunk::carve is built from).
-ChunkCarve chunk_window_carve(const g2m::mesh::ChunkKey& key, void* ctx, TileCarveFn fn);
-
-// Testable seam, independent of the Server/TileStore stack entirely (PLAN.md
-// R2.1 acceptance: "build_static_view over a synthetic in-memory store" -
-// tests/unit/test_world_terrain.cpp uses a plain std::map<TileKey,
-// HeightTile> as `ctx`/`lookup` here, no TileStore/Server/geo2map decode
-// machinery needed at all). WorldTerrain::build_static_view (below) is a
-// thin wrapper calling this with its own height_tile() as the lookup.
-//
-// (cam_x, cam_y) are SESSION-LOCAL metres (rg::WorldConfig::spawn's own
-// frame: x east of e0, y north of n0); e0/n0 are the session origin's own
-// UTM easting/northing (rg::WorldConfig::session_origin_utm). Builds every
-// selected chunk (g2m::mesh::select_chunks, then gather_window + build_chunk
-// per chunk) using up to `thread_count` std::thread workers (1 = no threads
-// spawned, runs on the caller's thread); `out` is resized to
-// `select_chunks`'s own key count and each worker writes directly into its
-// assigned index, so the result is byte-identical for any thread_count >= 1
-// (PLAN.md R2.1 acceptance: "same output for 1 vs N threads") - select_chunks'
-// own sort order is therefore also `out`'s final order.
-// `class_lookup` (R-2, roads_plan.md): a null (default) g2m::world::ClassLookup builds
-// every chunk exactly as before this parameter existed (byte-identical
-// output - see g2m/world/chunk_road_classes.h's ClassLookup comment); a real one
-// rasterises OSM road classes onto each chunk's vertices.
-// `surfaces` (G2.5a-grip R-b): resolves a rasterised LandClass to a surface
-// NAME for chunk_vertex_colors - a default-constructed RoadSurfaceMap
-// matches this repo's pre-existing hardcoded paved/unpaved colours exactly
-// (byte-identical output to before this parameter existed).
+// Thin wrappers over g2m::world::build_view_chunks / build_static_view with the game's colours
+// (rg::chunk_colour_hook(surfaces)) - the argument lists the game's callers and tests have used since R2.1/R8.
+// Byte-identical for any thread_count >= 1; `cancel` checked before each chunk (false = `out` partial).
 void build_static_view_from_lookup(double cam_x, double cam_y, const g2m::mesh::LodParams& params, double e0,
                                    double n0, g2m::mesh::TileLookup lookup, void* ctx, unsigned thread_count,
                                    std::vector<RenderChunk>& out, const g2m::world::ClassLookup& class_lookup = {},
                                    const RoadSurfaceMap& surfaces = {}, TileCarveFn carve_state = nullptr);
-
-// The two halves build_static_view_from_lookup is made of (R2.2 R8 split
-// them out so rg::TerrainViewStreamer can select, diff by key, and then build
-// ONLY the chunks that are new):
-//
-// select_view_keys: g2m::mesh::select_chunks around the session-local point
-// (cam_x, cam_y) - `out` in select_chunks' own order (level desc, cy, cx).
-void select_view_keys(double cam_x, double cam_y, const g2m::mesh::LodParams& params, double e0, double n0,
-                      std::vector<g2m::mesh::ChunkKey>& out);
-
-// build_render_chunks: builds one RenderChunk per key into `out` (resized to
-// keys.size(), out[i] <-> keys[i]) with up to `thread_count` workers, each
-// writing only its own indices - byte-identical for any thread_count >= 1.
-// `cancel` (optional): checked before each chunk; once it reads true the
-// remaining chunks are skipped and the function returns false (`out` is then
-// partially built and must be discarded). Returns true when every chunk was
-// built.
-// `class_lookup` (R-2, roads_plan.md): see build_static_view_from_lookup's
-// own comment above - null (default) is byte-identical to before this
-// parameter existed. `surfaces` (G2.5a-grip R-b): ditto, see that function's
-// own comment.
 bool build_render_chunks(const std::vector<g2m::mesh::ChunkKey>& keys, g2m::mesh::TileLookup lookup, void* ctx,
                          double e0, double n0, unsigned thread_count, std::vector<RenderChunk>& out,
                          const std::atomic<bool>* cancel = nullptr, const g2m::world::ClassLookup& class_lookup = {},
                          const RoadSurfaceMap& surfaces = {}, TileCarveFn carve_state = nullptr);
-
-// Everything a chunk selection + build needs, bundled: the LOD params, the
-// session origin (e0, n0) and the tile lookup. `lookup(ctx, key)` must be
-// safe to call from several threads at once (WorldTerrain::height_tile is;
-// so is the tests' synthetic store) and `ctx` must outlive whoever holds this
-// struct. WorldTerrain::view_source() returns one over itself.
-struct TerrainViewSource {
-    g2m::mesh::LodParams params;
-    double e0 = 0.0;
-    double n0 = 0.0;
-    g2m::mesh::TileLookup lookup = nullptr;
-    void* ctx = nullptr;
-    // R-2 (roads_plan.md): null = every chunk built exactly as before this
-    // field existed (byte-identical output). WorldTerrain::view_source()
-    // populates a real one over the same WorldTerrain.
-    g2m::world::ClassLookup class_lookup{};
-    // G2.5a-grip R-b: default-constructed = byte-identical to before this
-    // field existed. WorldTerrain::view_source() populates this from the
-    // WorldConfig::PhysicsTerrainConfig::road_surfaces this WorldTerrain was
-    // opened with.
-    RoadSurfaceMap surfaces{};
-    // How a height tile was carved (a ChunkCarve value); null = every chunk reports NotCarved. A chunk's RenderChunk::carve
-    // is the worst state over the tiles its height window touches. WorldTerrain::view_source() populates it.
-    TileCarveFn carve_state = nullptr;
-    // The render road LOD policy (in-game setting, rg/lod_settings.h) that class_lookup.lod points at; holding it
-    // here keeps that pointer valid for every copy of this struct. Null = g2m::default_render_road_lod().
-    std::shared_ptr<const g2m::RenderRoadLod> road_lod;
-};
 
 class WorldTerrain {
 public:

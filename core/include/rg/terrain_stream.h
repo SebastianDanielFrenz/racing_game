@@ -5,9 +5,8 @@
 //
 //   adaptive_upload_budget_ms   per-frame upload time budget: base when idle,
 //                               rising with the backlog and with the speed.
-//   chunk_time_to_reach_s /     order of a diff's added chunks: what the car
-//   sort_adds_by_urgency        reaches first is uploaded first (finest level
-//                               first within a time bin).
+//   chunk_time_to_reach_s /     order of a diff's added chunks (geo2map's,
+//   sort_adds_by_urgency        g2m/world/view_streamer.h, named here too).
 //   lod_coverage_ahead          how far ahead of the car the ground is covered
 //                               by chunks of level <= k (the L0/L1 "ahead"
 //                               numbers of the RG_TERRAIN_STREAM log line).
@@ -48,35 +47,11 @@ struct UploadBudgetParams {
                                                const UploadBudgetParams& params = {});
 
 // ---------------------------------------------------------------------------
-// Reselect distance
+// Reselect distance and diff order: geo2map's (g2m/world/view_streamer.h, terrain migration phase 3b)
 // ---------------------------------------------------------------------------
-// How far the focus must move before the streamer starts the next selection.
-// The finest level reaches range0 around the focus, so the L0 coverage ahead of
-// a car oscillates between (lead + range0) right after a diff and
-// (lead + range0 - reselect) just before the next one: at speed the base distance
-// is shrunk linearly to `min_fraction` of it between `speed_lo_mps` and
-// `speed_hi_mps` (more, smaller diffs; each costs ~150 ms on the build threads).
-// Speed 0 (no velocity given) is the base distance, so callers without a
-// velocity are unchanged.
-[[nodiscard]] double reselect_distance_for_speed(double base_m, double speed_mps, double min_fraction = 0.5,
-                                                 double speed_lo_mps = 40.0, double speed_hi_mps = 100.0);
-
-// ---------------------------------------------------------------------------
-// Diff order
-// ---------------------------------------------------------------------------
-// Seconds until the car at (px, py) (session-local) moving with (vx, vy)
-// reaches the chunk's footprint: distance ahead along the velocity (lateral
-// gap folded in) over speed. A chunk BEHIND the car gets 1000 s plus its
-// distance (uploaded after everything ahead). Below 2 m/s of speed there is no
-// direction: the plain distance to the footprint over 2 m/s.
-[[nodiscard]] double chunk_time_to_reach_s(const g2m::mesh::ChunkKey& key, double e0, double n0, double px, double py,
-                                           double vx, double vy);
-
-// Order for uploading `added`: time bins of 0.25 s, then finer level first,
-// then time, then key (deterministic). Callers without a velocity simply do
-// not call it and keep the key order.
-void sort_adds_by_urgency(std::vector<RenderChunk>& added, double e0, double n0, double px, double py, double vx,
-                          double vy);
+using g2m::world::chunk_time_to_reach_s;
+using g2m::world::reselect_distance_for_speed;
+using g2m::world::sort_adds_by_urgency;
 
 // ---------------------------------------------------------------------------
 // Coverage ahead

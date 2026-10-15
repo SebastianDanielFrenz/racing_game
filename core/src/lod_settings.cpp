@@ -243,14 +243,4 @@ g2m::route::MapConfig map_config_for(const LodChoice& choice) {
     return config;
 }
 
-std::vector<int> changed_road_lod_levels(const g2m::RenderRoadLod* a, const g2m::RenderRoadLod* b, int max_level) {
-    const g2m::RenderRoadLod& pa = a != nullptr ? *a : g2m::default_render_road_lod();
-    const g2m::RenderRoadLod& pb = b != nullptr ? *b : g2m::default_render_road_lod();
-    std::vector<int> out;
-    for (int level = 0; level <= max_level; ++level) {
-        if (g2m::render_road_lod_key(pa, level) != g2m::render_road_lod_key(pb, level)) out.push_back(level);
-    }
-    return out;
-}
-
 } // namespace rg

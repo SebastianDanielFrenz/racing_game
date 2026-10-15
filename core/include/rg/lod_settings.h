@@ -14,6 +14,8 @@
 // Every default reproduces the behaviour before these settings existed.
 #pragma once
 
+#include "g2m/world/view_streamer.h"
+
 #include "rg/settings.h"
 
 #include "g2m/layer/osm_roads.h"
@@ -73,6 +75,6 @@ std::shared_ptr<const g2m::RenderRoadLod> road_lod_for(const LodSettingsSpec* sp
 // g2m::route::default_map_config() with detail_scale = choice.map_detail (clamped to geo2map's 0.05..20).
 g2m::route::MapConfig map_config_for(const LodChoice& choice);
 // Chunk levels 0..max_level whose road-class content differs between two policies (null = default).
-std::vector<int> changed_road_lod_levels(const g2m::RenderRoadLod* a, const g2m::RenderRoadLod* b, int max_level);
+using g2m::world::changed_road_lod_levels; // geo2map's since terrain migration phase 3b (g2m/world/view_streamer.h)
 
 } // namespace rg
