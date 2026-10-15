@@ -263,3 +263,21 @@ at d2d43f6. Evidence: out/adaptive_pressure_tests.log (65 native assertions),
 out/adaptive_pressure_regression.log (1288 existing control/cache assertions),
 out/adaptive_game_hardware_tests.log (57 hardware/domain assertions) and
 out/adaptive_setup_tests.log (structural checks through 30 bar requested boost).
+
+## Part masses (2026-10-15)
+
+Owner on PR #19: each part has its own mass, a parent carries the cumulative mass of its children, and swaps change the
+car's mass through the parts. `rg/part_mass.h` builds the tree from data only (the vehicle file as the setup leaves it,
+the engine and gearbox catalogues' `mass_kg`, `data/vehicles/part_masses.json`, the catalog's per-car
+`chassis.body_mass_kg`); the drive's chassis mass is the tree's total (physics carries no part as a mass of its own:
+wheel_mass is spin inertia only). Body masses are chosen so every stock car keeps its previous chassis mass.
+
+A drivetrain layout other than the stock one carries a penalty (owner: "the drivetrain needs to run across the entire
+car, like in an AWD setup"): the new axle's differential and half shafts and an AWD transfer case come from the file;
+the `layout_conversion` node adds 15 kg of mounting hardware, an 18 kg transfer drive for a 2WD result, and a 14 kg
+driveline along the car where the new layout has no more propshafts than the stock one. Front-engine examples on the
+synthetic car: FWD -> RWD +45 kg, RWD -> FWD +35 kg, FWD -> AWD +87 kg (with a viscous centre / Torsen rear). All
+figures are [AS].
+
+The garage shows it under Chassis -> Weight (`RgGarage.get_mass_breakdown(id)`: total, change against stock, body and
+groups, the drivetrain's parts).

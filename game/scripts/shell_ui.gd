@@ -1107,13 +1107,40 @@ func _draw_upgrades() -> void:
 		return
 	if top == "Chassis":
 		if _garage_path.size() == 1:
-			_draw_tiles(["Weight reduction", "Aero", "Suspension & brakes"],["Weight reduction"])
+			_draw_tiles(["Weight", "Weight reduction", "Aero", "Suspension & brakes"],["Weight reduction"])
+		elif _garage_path[1] == "Weight":
+			_draw_mass_breakdown()
 		elif _garage_path[1] == "Aero":
 			_draw_tiles(["Front diffuser", "Rear wing"],["Front diffuser", "Rear wing"])
 		else:
 			_draw_tuning_link()
 		return
 	_draw_tuning_link()
+
+# The part-mass tree of the car being edited (RgGarage.get_mass_breakdown): total, change against stock, the body and
+# one row per group, then the drivetrain's parts (a layout conversion shows up there).
+func _draw_mass_breakdown() -> void:
+	var info: Dictionary = garage.get_mass_breakdown(garage.get_edit_id())
+	var box := VBoxContainer.new()
+	box.name = "MassBreakdown"
+	_option_box.add_child(box)
+	if not bool(info.get("ok", false)):
+		box.add_child(_label("Weight not available: " + str(info.get("error", "")), 14, HORIZONTAL_ALIGNMENT_LEFT, true))
+		return
+	var total := float(info["total_kg"])
+	var delta := total - float(info.get("stock_kg", total))
+	var head := "Total %.0f kg" % total
+	if absf(delta) >= 0.5:
+		head += "  (%+.0f kg vs stock)" % delta
+	box.add_child(_label(head, 16, HORIZONTAL_ALIGNMENT_LEFT))
+	for group in info["groups"]:
+		box.add_child(_label("%s  %.0f kg" % [str(group["label"]), float(group["kg"])], 14, HORIZONTAL_ALIGNMENT_LEFT))
+	box.add_child(_label("Drivetrain parts", 16, HORIZONTAL_ALIGNMENT_LEFT))
+	for part in info["parts"]:
+		var id := str(part["id"])
+		if not id.begins_with("drivetrain.") or int(part["depth"]) > 3: continue
+		var indent := "    ".repeat(int(part["depth"]) - 2)
+		box.add_child(_label("%s%s  %.0f kg" % [indent, str(part["label"]), float(part["total_kg"])], 14, HORIZONTAL_ALIGNMENT_LEFT, true))
 
 # G1: what the engine/fuel choice changed (fuel, clutch, shift points, weight) and what an engine change reset.
 func _draw_swap_summary() -> void:

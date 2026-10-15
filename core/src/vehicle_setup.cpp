@@ -253,6 +253,8 @@ struct Files {
     std::vector<std::string> derived_subtrees;
     // Electronics parts the swap package re-targeted (a launch rpm outside the new engine's idle..limiter band).
     std::vector<FileDoc> electronics;
+    // Parts a setup feature adds to the part-mass tree beyond what the vehicle file names (rg/part_mass.h).
+    std::vector<PartAttachment> part_extras;
 };
 
 bool read_doc(const std::string& path, json& out, std::string* err) {
@@ -748,6 +750,42 @@ std::string apply_swap(Files& files, const CatalogEntry& entry, const SetupConte
 }
 
 // Wheels of an axle: {name, index, radius, width}.
+// The part-mass tree of the files as they stand (rg/part_mass.h).
+PartTree part_tree_of(const CatalogEntry& entry, const SetupContext& ctx, const Files& files) {
+    PartTree t;
+    if (!ctx.part_masses) {
+        t.error = "no part mass table";
+        return t;
+    }
+    if (!entry.chassis.body_mass_kg) {
+        t.error = entry.id + ": the catalog gives no chassis.body_mass_kg";
+        return t;
+    }
+    PartTreeInput in;
+    in.body_kg = *entry.chassis.body_mass_kg;
+    in.vehicle_json = files.vehicle.work.dump();
+    in.vehicle_dir = dir_of(files.vehicle.path);
+    in.engine_bay = entry.engine_bay;
+    if (files.engine) {
+        const EngineEntry* e = files.swapped ? &*files.swapped : (ctx.engines ? ctx.engines->find_by_file(files.engine->path) : nullptr);
+        if (e != nullptr && e->mass_kg > 0.0) {
+            in.engine = PartRef{e->name, e->mass_kg, "engine catalogue"};
+        } else {
+            double kg = 0.0;
+            detail::get_number(files.engine->work, "mass_kg", kg);
+            in.engine = PartRef{e != nullptr ? e->name : stem_of_path(files.engine->path), kg, "engine file mass_kg"};
+        }
+    }
+    if (files.gearbox) {
+        const GearboxEntry* g = ctx.gearboxes ? ctx.gearboxes->find_by_file(files.gearbox->path) : nullptr;
+        if (g != nullptr) in.gearbox = PartRef{g->name, g->mass_kg, "gearbox catalogue"};
+        else in.gearbox = PartRef{stem_of_path(files.gearbox->path), 0.0, ""};
+    }
+    in.extras = files.part_extras;
+    in.stock_vehicle_json = files.vehicle.base.dump();
+    return build_part_tree(*ctx.part_masses, in);
+}
+
 struct WheelInfo {
     std::string name;
     std::size_t index = 0;
@@ -1407,6 +1445,7 @@ SetupModel build_setup_model(const CatalogEntry& entry, const SetupOptionTable& 
         }
     }
     if (!load_turbo(files, &model.error)) return model;
+    model.parts = part_tree_of(entry, ctx, files);
     for (const SetupOptionDef& def : table.options) {
         OptionView v;
         v.def = def;
@@ -1564,6 +1603,16 @@ bool set_number(Target& t, double value) {
 } // namespace
 
 bool setup_values_equal(const SetupValue& a, const SetupValue& b) { return values_equal(a, b); }
+
+PartTree stock_part_tree(const CatalogEntry& entry, const SetupOptionTable& table, const SetupContext& ctx) {
+    SetupModel m = build_setup_model(entry, table, ctx);
+    if (!m.error.empty()) {
+        PartTree t;
+        t.error = m.error;
+        return t;
+    }
+    return std::move(m.parts);
+}
 
 CompiledSetup compile_setup_internal(const CatalogEntry& entry, const SetupOptionTable& table, const SetupContext& ctx,
                                      const VehicleSetup& setup, Files& files);
@@ -1903,6 +1952,7 @@ CompiledSetup compile_setup_internal(const CatalogEntry& entry, const SetupOptio
         const json patch = make_merge_patch(f.base, f.work);
         if (!(patch.is_object() && patch.empty())) out.patches[basename_key("electronics", f)] = patch_text(patch);
     }
+    out.parts = part_tree_of(entry, ctx, files);
     out.ok = true;
     return out;
 }

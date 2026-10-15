@@ -257,6 +257,15 @@ std::optional<VehicleCatalog> parse_vehicle_catalog(const std::string& json_text
                 return std::nullopt;
             }
             detail::get_string(*chassis, "source", e.chassis.source);
+            if (chassis->contains("body_mass_kg")) {
+                double body = 0.0;
+                if (!detail::get_number(*chassis, "body_mass_kg", body) || !(body > 10.0) || !(body < e.chassis.mass_kg)) {
+                    fail(err, where, "chassis.body_mass_kg must be a number above 10 and below chassis.mass_kg");
+                    return std::nullopt;
+                }
+                e.chassis.body_mass_kg = body;
+                detail::get_string(*chassis, "body_mass_source", e.chassis.body_mass_source);
+            }
             if (detail::get_string(v, "engine_bay", e.engine_bay) &&
                 e.engine_bay != "front" && e.engine_bay != "mid" && e.engine_bay != "rear") {
                 fail(err, where, "\"engine_bay\" must be front, mid or rear");

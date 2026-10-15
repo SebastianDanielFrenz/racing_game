@@ -35,6 +35,7 @@
 
 #include "rg/engine_store.h"
 #include "rg/gearbox_catalog.h"
+#include "rg/part_mass.h"
 #include "rg/turbo_map_extension.h"
 #include "rg/slider_map.h"
 #include "rg/vehicle_catalog.h"
@@ -162,6 +163,10 @@ struct SetupContext {
     // Turbo stage map extension policy (rg/turbo_map_extension.h): when set, a load that finds the engine's air demand outside
     // the stage map extends and caches the map under engine_map_cache_dir. nullptr = maps are used as they are.
     std::shared_ptr<const TurboMapExtensionConfig> turbo_map_extension;
+    // Base part masses (data/vehicles/part_masses.json, rg/part_mass.h). With it and the entry's body mass, every
+    // model / compiled setup carries the car's part-mass tree and the drive takes its chassis mass from it.
+    // nullptr = no tree: the drive uses the catalog chassis mass plus the engine swap's delta.
+    std::shared_ptr<const PartMassTable> part_masses;
 };
 
 // One option as the configurator shows it, for one vehicle.
@@ -214,6 +219,9 @@ struct SetupModel {
     double chassis_mass_delta_kg = 0.0;
     std::string engine_title;    // the installed engine's display name ("" = the car's own)
     std::string engine_key;      // the installed engine's EngineStore key (the car's own too); "" = not in the store
+    // The part-mass tree of the car with the `installed` part choices (engine, gearbox ...); !parts.ok without a part
+    // mass table or a body mass (parts.error says why).
+    PartTree parts;
 };
 // Builds the option views of an entry from its files.
 SetupModel build_setup_model(const CatalogEntry& entry, const SetupOptionTable& table, const SetupContext& ctx,
@@ -232,6 +240,9 @@ struct CompiledSetup {
     std::vector<std::string> swap_lines;         // one line each, for the player (fuel kept/changed, clutch, mass ...)
     double chassis_mass_delta_kg = 0.0;          // added to the catalog chassis mass for the drive
     std::string engine_title;                    // the installed engine's display name ("" = the car's own)
+    // The part-mass tree of the car as this setup leaves it (rg/part_mass.h). When parts.ok, the drive's chassis mass
+    // is parts.chassis_kg (chassis_mass_delta_kg above is then only the engine line of swap_lines).
+    PartTree parts;
 };
 CompiledSetup compile_setup(const CatalogEntry& entry, const SetupOptionTable& table, const SetupContext& ctx,
                             const VehicleSetup& setup);
@@ -284,6 +295,9 @@ public:
 private:
     std::string path_;
 };
+
+// The part-mass tree of the stock car (no setup), !ok without ctx.part_masses or a body mass.
+PartTree stock_part_tree(const CatalogEntry& entry, const SetupOptionTable& table, const SetupContext& ctx);
 
 // Equality of two option values (numbers within 1e-9), used to drop a value set back to stock.
 bool setup_values_equal(const SetupValue& a, const SetupValue& b);

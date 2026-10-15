@@ -33,7 +33,11 @@ namespace rg {
 using SetupValue = std::variant<double, bool, std::string, std::vector<double>>;
 
 struct VehicleChassis {
-    double mass_kg = 1500.0;
+    double mass_kg = 1500.0; // the stock car's chassis body mass (the part-mass tree of the stock car sums to it)
+    // The body alone (shell, interior, glass, wiring ...): the root of the part-mass tree (rg/part_mass.h). Chosen so
+    // that the stock tree sums to mass_kg. None = no tree: the drive uses mass_kg plus the engine swap's delta.
+    std::optional<double> body_mass_kg;
+    std::string body_mass_source;
     std::array<double, 3> half_extents{2.0, 0.4, 0.15}; // chassis collision box, ISO (x fwd, y left, z up)
     double spawn_z_m = 0.6;                              // chassis height above the ground at spawn
     std::string source;                                  // where the numbers come from
