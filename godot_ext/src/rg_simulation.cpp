@@ -711,6 +711,29 @@ int RgSimulation::sync_weather() {
     return weather_sync_.sync(*tw, frame_snapshot().weather, *session_);
 }
 
+godot::String RgSimulation::load_wet_look(const godot::String& path) {
+    std::string err;
+    auto cfg = rg::load_wet_look_config(std::string(path.utf8().get_data()), &err);
+    if (!cfg) return godot::String::utf8(err.c_str());
+    wet_look_ = rg::WetLookFilter(*cfg);
+    return godot::String();
+}
+
+godot::Dictionary RgSimulation::get_wet_look(double dt_s) {
+    double water = 0.0, precip = 0.0, temp = 15.0;
+    if (session_) {
+        const rg::WeatherSnapshot& w = frame_snapshot().weather;
+        if (w.installed) { water = w.wheel_water_mm; precip = w.precip_mm_h; temp = w.air_temp_c; }
+    }
+    const rg::WetLook& v = wet_look_.update(water, precip, temp, dt_s);
+    godot::Dictionary d;
+    d["wetness"] = v.wetness;
+    d["puddles"] = v.puddles;
+    d["drops"] = v.drops;
+    d["flakes"] = v.flakes;
+    return d;
+}
+
 godot::Dictionary RgSimulation::get_weather_state() const {
     godot::Dictionary d;
     if (!session_) return d;
@@ -1347,6 +1370,8 @@ void RgSimulation::_bind_methods() {
     godot::ClassDB::bind_method(D_METHOD("set_weather_source", "sky"), &RgSimulation::set_weather_source);
     godot::ClassDB::bind_method(D_METHOD("sync_weather"), &RgSimulation::sync_weather);
     godot::ClassDB::bind_method(D_METHOD("get_weather_state"), &RgSimulation::get_weather_state);
+    godot::ClassDB::bind_method(D_METHOD("load_wet_look", "path"), &RgSimulation::load_wet_look);
+    godot::ClassDB::bind_method(D_METHOD("get_wet_look", "dt_s"), &RgSimulation::get_wet_look);
     godot::ClassDB::bind_method(D_METHOD("configure_traffic","density","radius","minimum","grip","maximum"), &RgSimulation::configure_traffic);
     godot::ClassDB::bind_method(D_METHOD("set_visible_traffic","ids"), &RgSimulation::set_visible_traffic);
     godot::ClassDB::bind_method(D_METHOD("update_traffic_render", "cars", "trucks", "planes", "report_visibility"), &RgSimulation::update_traffic_render);

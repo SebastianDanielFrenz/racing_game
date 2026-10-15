@@ -20,6 +20,7 @@
 #include "rg/world_config.h"
 #include "rg/world_terrain.h"
 #include "rg/weather_sync.h"
+#include "rg/wet_look.h"
 #include "rg_sky.h"
 
 #include <godot_cpp/classes/node.hpp>
@@ -312,6 +313,11 @@ public:
     // {installed, env_time_s, air_temp_c, precip_mm_h, cloud_cover, rh, lightning_per_min, wheel_surface,
     //  wheel_water_mm, wheel_snow_mm, wheel_ice_mm, wheel_condition_factor}; {} without a Session.
     godot::Dictionary get_weather_state() const;
+    // Wet look (rg/wet_look.h): load_wet_look(data/world/wet_look.json) -> "" or the loader error; get_wet_look(dt)
+    // advances the smoothing filter on the current weather snapshot -> {wetness, puddles, drops, flakes} (all 0 with no
+    // Session or no physics weather).
+    godot::String load_wet_look(const godot::String& path);
+    godot::Dictionary get_wet_look(double dt_s);
     void configure_traffic(double density,double radius,double minimum,double grip,int maximum);
     void set_visible_traffic(const godot::Array& ids);
     godot::Dictionary get_traffic_state() const;
@@ -383,6 +389,7 @@ private:
     godot::Ref<RgSky> weather_sky_;
     std::shared_ptr<const rg::SessionWeather> next_weather_; // written before an init worker starts, read by it
     rg::WeatherSync weather_sync_;
+    rg::WetLookFilter wet_look_;
     void prepare_weather();
     mutable std::optional<rg::FrameSnapshot> render_snapshot_;
     mutable std::uint64_t render_snapshot_frame_ = static_cast<std::uint64_t>(-1);

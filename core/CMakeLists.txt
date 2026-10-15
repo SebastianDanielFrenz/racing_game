@@ -91,6 +91,7 @@ add_library(rg_core STATIC
     src/sky.cpp
     src/time_weather.cpp
     src/climate.cpp
+    src/wet_look.cpp
     src/weather_sync.cpp
     src/crops.cpp
     src/control_binding.cpp

@@ -69,6 +69,11 @@ constexpr float kRidgeHeightM = 880.0f;
 constexpr float kPavedR = 0.30f, kPavedG = 0.30f, kPavedB = 0.32f;
 constexpr float kUnpavedR = 0.36f, kUnpavedG = 0.28f, kUnpavedB = 0.16f;
 constexpr std::string_view kAsphaltName = "asphalt";
+// Alpha carries the vertex kind for terrain.gdshader's detail textures (never opacity): 1 natural ground (grass/dirt/
+// rock picked from the ramp colour and the slope), 0 road (paved or unpaved told apart by the paint colour: the dirt
+// brown is far redder than the asphalt grey). Two values only, so the interpolation across a road edge never passes
+// through a third kind. The debug tint is drawn with the detail textures off (main.gd), its alpha is 1.
+constexpr float kKindNatural = 1.0f, kKindRoad = 0.0f;
 constexpr std::string_view kDirtName = "dirt";
 
 void chunk_vertex_colors(const g2m::mesh::TerrainChunkMesh& mesh, const RoadSurfaceMap& surfaces,
@@ -82,11 +87,11 @@ void chunk_vertex_colors(const g2m::mesh::TerrainChunkMesh& mesh, const RoadSurf
             if (land_class == g2m::LandClass::PavedRoad || land_class == g2m::LandClass::UnpavedRoad) {
                 const std::string& name = surfaces.name_for(land_class);
                 if (name == kAsphaltName) {
-                    rgba[i] = pack_rgba(kPavedR, kPavedG, kPavedB, 1.0f);
+                    rgba[i] = pack_rgba(kPavedR, kPavedG, kPavedB, kKindRoad);
                     continue;
                 }
                 if (name == kDirtName) {
-                    rgba[i] = pack_rgba(kUnpavedR, kUnpavedG, kUnpavedB, 1.0f);
+                    rgba[i] = pack_rgba(kUnpavedR, kUnpavedG, kUnpavedB, kKindRoad);
                     continue;
                 }
                 // An unrecognised name falls through to the height ramp
@@ -115,7 +120,7 @@ void chunk_vertex_colors(const g2m::mesh::TerrainChunkMesh& mesh, const RoadSurf
         g += (kRockG - g) * rock;
         b += (kRockB - b) * rock;
 
-        rgba[i] = pack_rgba(r, g, b, 1.0f);
+        rgba[i] = pack_rgba(r, g, b, kKindNatural);
     }
 }
 
@@ -152,7 +157,7 @@ void apply_debug_tint(RenderChunk& chunk) {
         const float r = static_cast<float>((px >> 24) & 0xff) / 255.0f, g = static_cast<float>((px >> 16) & 0xff) / 255.0f,
                     b = static_cast<float>((px >> 8) & 0xff) / 255.0f;
         const float shade = 0.5f + 0.5f * (0.299f * r + 0.587f * g + 0.114f * b);
-        px = pack_rgba(c[0] * shade, c[1] * shade, c[2] * shade, 1.0f);
+        px = pack_rgba(c[0] * shade, c[1] * shade, c[2] * shade, kKindNatural);
     }
 }
 

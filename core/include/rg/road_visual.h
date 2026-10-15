@@ -5,7 +5,7 @@ namespace rg {
 // flags (bits, read by road.gdshader): 1 lane markings, 2 edge lines, 4 solid separator, 8 fast road, 16 solid paint,
 // 32 overlay (only the paint is drawn), 64 / 128 left / right edge line broken (a junction mouth), 512 / 1024 left /
 // right edge line not drawn, 2048 paving stones (no painted lines), 4096 concrete, 8192 unpaved (a junction patch
-// piece at a track's mouth, drawn like the terrain's dirt). The Godot adapter adds 256 for a verge vertex and splits the
+// piece at a track's mouth, drawn like the terrain's dirt), 16384 with 2048: sett / cobblestone (natural stone). The Godot adapter adds 256 for a verge vertex and splits the
 // bits over COLOR.b and COLOR.a.
 // u: lateral offset from the centre of the counted lanes, v: station, width: the counted lanes' width; verge 1 = the
 // gravel strip beside the road bed (no asphalt, no paint).

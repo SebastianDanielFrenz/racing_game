@@ -366,6 +366,102 @@
       "attribution_required": true,
       "in_game": true,
       "note": "data/models/imported/toyama_xr/toyama_xr.glb: Re-oriented to the game's axes and origin, wheels re-parented under suspension/steering/spin pivots at the wheel centres, brake calipers under the steering pivots, baked ground/shadow plane removed (tools/carimport). Geometry, materials and textures otherwise unchanged. Source file generic_toyama_xr_sedan.glb (sha256 67e3f08ba690...)."
+    },
+    {
+      "id": "texture_asphalt013",
+      "kind": "assets",
+      "name": "Surface texture set Asphalt013 (asphalt)",
+      "provider": "ambientCG (https://ambientcg.com/view?id=Asphalt013)",
+      "licence": "CC0 1.0 Universal",
+      "licence_url": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "attribution_text": "Texture Asphalt013 from ambientCG.com, licensed under CC0 1.0 Universal",
+      "attribution_required": false,
+      "in_game": true,
+      "note": "data/textures/asphalt/Asphalt013_1K_*.jpg: colour, OpenGL normal and roughness maps resized to 1024 px (DirectX normals converted to OpenGL). ambientCG publishes every asset under CC0; attribution is optional and kept for provenance. The ambientCG hosts are not reachable from the build container, so the original files were taken byte for byte from a public mirror of the unmodified ambientCG download: github.com/Calinou/godot-cmvalley@40ad117 ambientcg/."
+    },
+    {
+      "id": "texture_concrete012",
+      "kind": "assets",
+      "name": "Surface texture set Concrete012 (concrete)",
+      "provider": "ambientCG (https://ambientcg.com/view?id=Concrete012)",
+      "licence": "CC0 1.0 Universal",
+      "licence_url": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "attribution_text": "Texture Concrete012 from ambientCG.com, licensed under CC0 1.0 Universal",
+      "attribution_required": false,
+      "in_game": true,
+      "note": "data/textures/concrete/Concrete012_1K_*.jpg: colour, OpenGL normal and roughness maps resized to 1024 px (DirectX normals converted to OpenGL). ambientCG publishes every asset under CC0; attribution is optional and kept for provenance. The ambientCG hosts are not reachable from the build container, so the original files were taken byte for byte from a public mirror of the unmodified ambientCG download: github.com/Calinou/godot-cmvalley@40ad117 ambientcg/."
+    },
+    {
+      "id": "texture_gravel011",
+      "kind": "assets",
+      "name": "Surface texture set Gravel011 (gravel)",
+      "provider": "ambientCG (https://ambientcg.com/view?id=Gravel011)",
+      "licence": "CC0 1.0 Universal",
+      "licence_url": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "attribution_text": "Texture Gravel011 from ambientCG.com, licensed under CC0 1.0 Universal",
+      "attribution_required": false,
+      "in_game": true,
+      "note": "data/textures/gravel/Gravel011_1K_*.jpg: colour, OpenGL normal and roughness maps resized to 1024 px (DirectX normals converted to OpenGL). ambientCG publishes every asset under CC0; attribution is optional and kept for provenance. The ambientCG hosts are not reachable from the build container, so the original files were taken byte for byte from a public mirror of the unmodified ambientCG download: github.com/Calinou/godot-cmvalley@40ad117 ambientcg/."
+    },
+    {
+      "id": "texture_grass004",
+      "kind": "assets",
+      "name": "Surface texture set Grass004 (grass)",
+      "provider": "ambientCG (https://ambientcg.com/view?id=Grass004)",
+      "licence": "CC0 1.0 Universal",
+      "licence_url": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "attribution_text": "Texture Grass004 from ambientCG.com, licensed under CC0 1.0 Universal",
+      "attribution_required": false,
+      "in_game": true,
+      "note": "data/textures/grass/Grass004_1K_*.jpg: colour, OpenGL normal and roughness maps resized to 1024 px (DirectX normals converted to OpenGL). ambientCG publishes every asset under CC0; attribution is optional and kept for provenance. The ambientCG hosts are not reachable from the build container, so the original files were taken byte for byte from a public mirror of the unmodified ambientCG download: github.com/Calinou/godot-cmvalley@40ad117 ambientcg/."
+    },
+    {
+      "id": "texture_rock030",
+      "kind": "assets",
+      "name": "Surface texture set Rock030 (rock)",
+      "provider": "ambientCG (https://ambientcg.com/view?id=Rock030)",
+      "licence": "CC0 1.0 Universal",
+      "licence_url": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "attribution_text": "Texture Rock030 from ambientCG.com, licensed under CC0 1.0 Universal",
+      "attribution_required": false,
+      "in_game": true,
+      "note": "data/textures/rock/Rock030_1K_*.jpg: colour, OpenGL normal and roughness maps resized to 1024 px (DirectX normals converted to OpenGL). ambientCG publishes every asset under CC0; attribution is optional and kept for provenance. The ambientCG hosts are not reachable from the build container, so the original files were taken byte for byte from a public mirror of the unmodified ambientCG download: github.com/Calinou/godot-cmvalley@40ad117 ambientcg/."
+    },
+    {
+      "id": "texture_pavingstones123",
+      "kind": "assets",
+      "name": "Surface texture set PavingStones123 (paving stones)",
+      "provider": "ambientCG (https://ambientcg.com/view?id=PavingStones123)",
+      "licence": "CC0 1.0 Universal",
+      "licence_url": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "attribution_text": "Texture PavingStones123 from ambientCG.com, licensed under CC0 1.0 Universal",
+      "attribution_required": false,
+      "in_game": true,
+      "note": "data/textures/paving_stones/PavingStones123_1K_*.jpg: colour, OpenGL normal and roughness maps resized to 1024 px (DirectX normals converted to OpenGL). ambientCG publishes every asset under CC0; attribution is optional and kept for provenance. The ambientCG hosts are not reachable from the build container, so the original files were taken byte for byte from a public mirror of the unmodified ambientCG download: github.com/Calinou/godot-reprojection-demo@f096b92 ambientcg/."
+    },
+    {
+      "id": "texture_ground054",
+      "kind": "assets",
+      "name": "Surface texture set Ground054 (dirt)",
+      "provider": "ambientCG (https://ambientcg.com/view?id=Ground054)",
+      "licence": "CC0 1.0 Universal",
+      "licence_url": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "attribution_text": "Texture Ground054 from ambientCG.com, licensed under CC0 1.0 Universal",
+      "attribution_required": false,
+      "in_game": true,
+      "note": "data/textures/dirt/Ground054_1K_*.jpg: colour, OpenGL normal and roughness maps resized to 1024 px (DirectX normals converted to OpenGL). ambientCG publishes every asset under CC0; attribution is optional and kept for provenance. The ambientCG hosts are not reachable from the build container, so the original files were taken byte for byte from a public mirror of the unmodified ambientCG download: github.com/Calinou/godot-reprojection-demo@f096b92 ambientcg/."
+    },
+    {
+      "id": "texture_pavingstones048",
+      "kind": "assets",
+      "name": "Surface texture set PavingStones048 (sett)",
+      "provider": "ambientCG (https://ambientcg.com/view?id=PavingStones048)",
+      "licence": "CC0 1.0 Universal",
+      "licence_url": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "attribution_text": "Texture PavingStones048 from ambientCG.com, licensed under CC0 1.0 Universal",
+      "attribution_required": false,
+      "in_game": true,
+      "note": "data/textures/sett/PavingStones048_1K_*.jpg: colour, OpenGL normal and roughness maps resized to 1024 px (DirectX normals converted to OpenGL). ambientCG publishes every asset under CC0; attribution is optional and kept for provenance. The ambientCG hosts are not reachable from the build container, so the original files were taken byte for byte from a public mirror of the unmodified ambientCG download: github.com/HenriMichelonEsimed/godot-correction-TD@cb515f2 game/assets/textures/architecture/PavingStones048/."
     }
   ]
 }

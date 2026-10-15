@@ -1,4 +1,5 @@
 extends Node
+const SurfaceMaterials := preload("res://scripts/surface_materials.gd")
 # game/scripts/camera_director.gd — owns the camera rigs (chase_rig.gd,
 # free_rig.gd; later drone/seat/walker/XR rigs) and the floating-origin
 # bookkeeping every rig shares. Process priority -1000 (PHYS-008): it runs
@@ -147,6 +148,7 @@ func _process(delta: float) -> void:
 		var render_origin: Vector3 = simulation.get_render_origin_session()
 		if _pushed_render_origin == null or render_origin != _pushed_render_origin:
 			terrain_view.set_render_origin(render_origin)
+			SurfaceMaterials.set_render_origin(render_origin)
 			_pushed_render_origin = render_origin
 		var focus: Vector3 = terrain_view.godot_to_session(rig.camera.global_position)
 		var pose: Dictionary = simulation.get_chassis_session_pose()
