@@ -72,6 +72,7 @@ add_library(rg_core STATIC
     src/road_structures.cpp
     src/fixed_rate_loop.cpp
     src/terrain_colours.cpp
+    src/synthetic_terrain.cpp
     src/terrain_stream.cpp
     src/render_focus.cpp
     src/steering_assist.cpp
