@@ -84,6 +84,16 @@ std::vector<SettingDef> build_schema() {
                             "Ground and road textures. off = plain colours (cheapest), low = colour textures, high = "
                             "colour and relief (normal) textures, wet-road reflections.",
                             "high", {"off", "low", "high"}));
+    // perf (2026-10-15): both default to the look before they existed.
+    s.push_back(make_choice("graphics", "shadow_quality", "Sun shadows",
+                            "high = four shadow cascades to 300 m, terrain casts (the full look). medium = two "
+                            "cascades. low = two cascades to 150 m, terrain does not cast. off = no sun shadows. "
+                            "Each cascade draws every shadow caster again.",
+                            "high", {"off", "low", "medium", "high"}));
+    s.push_back(make_float("graphics", "render_scale", "3D resolution scale",
+                           "Renders the 3D world at this share of the window resolution and scales it up; menus and "
+                           "the HUD stay sharp. 1 = native. Helps when the graphics card is the limit (4K).",
+                           1.0, 0.5, 1.0, 0.05));
     s.push_back(make_float("graphics", "rain_density", "Rain drops",
                            "Density of the falling rain and snow around the camera. 0 = none (the road still gets wet).",
                            1.0, 0.0, 1.0, 0.1));

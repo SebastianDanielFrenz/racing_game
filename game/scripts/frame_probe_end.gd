@@ -22,8 +22,13 @@ var _t_phys := 0
 var _t_proc := 0
 var _t_scripts_end := 0
 var _t_pre := 0
+# false (main.gd: RG_RENDER_TIMING=0 or --render-thread separate): only scene_span; the draw signals are not used (with
+# a separate render thread they fire on that thread and the render-time reads would sync it with the main thread).
+var draw_phases := true
 func _ready() -> void:
 	process_priority = 100000
+	if not draw_phases:
+		return
 	get_tree().physics_frame.connect(_on_physics_frame)
 	get_tree().process_frame.connect(_on_process_frame)
 	RenderingServer.frame_pre_draw.connect(_on_pre_draw)
