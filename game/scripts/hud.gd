@@ -186,6 +186,12 @@ func _process_body(_delta: float) -> void:
 				"grounded" if bool(foot.get("grounded", false)) else "airborne",
 				"  (no ground loaded: holding)" if bool(foot.get("hold", false)) else "",
 				float(foot.get("enter_distance_m", 0.0))])
+	if str(mode.get("mode", "")) == "fpv_drone":
+		var fpv: Dictionary = _simulation.get_fpv_state()
+		if not fpv.is_empty():
+			lines.append("FPV drone: speed %.1f m/s  height %.1f m  rotor load %.0f%%%s   (WASD move, E/Space up, Q/Ctrl down, arrows yaw/pitch)" % [
+				float(fpv.get("speed", 0.0)), float(fpv.get("height_agl_m", 0.0)), 100.0 * float(fpv.get("activity", 0.0)),
+				"  (no ground loaded: holding height)" if bool(fpv.get("hold", false)) else ""])
 	if str(mode.get("mode", "")) == "drone_follow":
 		lines.append("drone target: %s   (N / D-pad right: next target, wheel / PgUp / PgDn: zoom)" % mode.get("drone_target_label", "own car"))
 	lines.append(_simulation.get_build_info())

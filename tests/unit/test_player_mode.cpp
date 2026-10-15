@@ -110,9 +110,10 @@ TEST_CASE("player mode: transitions", "[player_mode]") {
     CHECK(m.request_mode(rg::PlayerMode::FreeCam) == rg::PlayerModeMachine::Result::Changed);
     CHECK(m.mode() == rg::PlayerMode::FreeCam);
     CHECK(m.revision() > r0);
-    // cycle: drive -> free_cam -> drone_follow -> on_foot -> drive, skipping the reserved Cockpit
+    // cycle: drive -> free_cam -> drone_follow -> on_foot -> fpv_drone -> drive, skipping the reserved Cockpit
     CHECK(m.cycle_mode() == rg::PlayerMode::DroneFollow);
     CHECK(m.cycle_mode() == rg::PlayerMode::OnFoot);
+    CHECK(m.cycle_mode() == rg::PlayerMode::FpvDrone);
     CHECK(m.cycle_mode() == rg::PlayerMode::Drive);
     CHECK(m.cycle_mode() == rg::PlayerMode::FreeCam);
     CHECK(m.cycle_mode() == rg::PlayerMode::DroneFollow);
@@ -149,11 +150,13 @@ TEST_CASE("player mode: getting out needs a nearly stopped car", "[player_mode][
 
     // The cycle skips OnFoot while the car is moving (and counts it): it never gets stuck.
     rg::PlayerModeMachine c(rg::PlayerMode::DroneFollow);
-    CHECK(c.cycle_mode(15.0) == rg::PlayerMode::Drive);
+    CHECK(c.cycle_mode(15.0) == rg::PlayerMode::FpvDrone);
     CHECK(c.get_out_refusals() == 1);
+    CHECK(c.cycle_mode(15.0) == rg::PlayerMode::Drive);
     CHECK(c.cycle_mode(15.0) == rg::PlayerMode::FreeCam);
     CHECK(c.cycle_mode(15.0) == rg::PlayerMode::DroneFollow);
     CHECK(c.cycle_mode(0.0) == rg::PlayerMode::OnFoot);
+    CHECK(c.cycle_mode(0.0) == rg::PlayerMode::FpvDrone);
     CHECK(c.cycle_mode(0.0) == rg::PlayerMode::Drive);
     CHECK(c.get_out_refusals() == 1);
 
@@ -451,4 +454,30 @@ TEST_CASE("drone_target_label names the target", "[player_mode][drone]") {
     CHECK(rg::drone_target_label(std::uint64_t{17}, truck, false) == "NPC car #17");
     CHECK(rg::drone_target_label(std::uint64_t{17}, truck, true) == "NPC lorry #17");
     CHECK(rg::drone_target_label(truck, truck, true) == "NPC truck");
+}
+
+TEST_CASE("player mode: fpv_drone parks the car and routes the flying inputs", "[player_mode][fpv]") {
+    const rg::ModeRules r = rg::rules_for(rg::PlayerMode::FpvDrone);
+    CHECK(r.implemented);
+    CHECK(r.vehicle_control == rg::VehicleControl::Unattended);
+    CHECK_FALSE(r.driving_inputs_live);
+    CHECK_FALSE(r.walking_inputs_live);
+    CHECK(r.flying_inputs_live);
+    CHECK(r.camera_rig == rg::CameraRig::Fpv);
+    CHECK(std::string(rg::to_string(rg::PlayerMode::FpvDrone)) == "fpv_drone");
+    // only fpv_drone has flying inputs
+    for (int i = 0; i < rg::kPlayerModeCount; ++i) {
+        const auto m = static_cast<rg::PlayerMode>(i);
+        CHECK(rg::rules_for(m).flying_inputs_live == (m == rg::PlayerMode::FpvDrone));
+    }
+    rg::PlayerModeMachine m(rg::PlayerMode::Drive);
+    // Not speed-gated: a moving car just brakes unattended.
+    CHECK(m.request_mode(rg::PlayerMode::FpvDrone, 30.0) == rg::PlayerModeMachine::Result::Changed);
+    // No world ready: the flying inputs are masked like the driving and walking ones.
+    CHECK_FALSE(m.effective_rules().flying_inputs_live);
+    const auto serial = m.begin_world_load(rg::WorldKind::Flat);
+    CHECK(m.finish_world_load(serial, true));
+    CHECK(m.effective_rules().flying_inputs_live);
+    CHECK(m.request_mode(rg::PlayerMode::Drive) == rg::PlayerModeMachine::Result::Changed);
+    CHECK_FALSE(m.effective_rules().flying_inputs_live);
 }

@@ -23,6 +23,8 @@ racing_game/
     include/rg/
       session.h                       rg::Session, SessionConfig (optional `terrain`, optional `startup`), FrameSnapshot, WheelSnapshot, StreamingStatus, kControlChannelNames[]/kControlChannelCount; R9: StartupProgress/SessionCancelled, set_vehicle_control, request_relocate/request_reset_to_spawn, make_session(); R9b: set_followed_vehicle/followed_vehicle/followed_loss (drone-follow second physics interest point), kNpcTruckVehicleId, StreamingStatus followed_id/followed_lost/followed_lost_id/interest_points - see "Session terrain mode (R4)" and "Player modes and world switch (R9)" below
       player_mode.h                   rg::PlayerMode/ModeRules/rules_for(mode, drone_target)/PlayerModeMachine (incl. set_drone_target)/DroneCandidate/next_drone_target/unattended_controls (R9/R9b, engine-neutral mode state machine) - see "Player modes and world switch (R9)" below
+      fpv_drone.h                     (FPV drone, engine-neutral, no Jolt body) rg::FpvDrone: kinematic flyer - six-axis input in the yaw frame (right/up/forward), yaw and pitch rates, max speed, accel/decel limits, ground clamp through an `FpvGroundProbe` (Session casts a World ray down; no ground loaded = height held), no roll/wind/stabilisation; FpvDroneConfig loaded from data/controls/fpv_drone.json (`flight` block, rg.fpv_drone/1, strict) - see "FPV drone" below
+      fpv_drone_sound.h               rg::FpvRotorVoice/FpvAudioConfig: procedural quadcopter rotor buzz (4 detuned rotors, blade-pass harmonics + air noise; idle hum, pitch and level rise with FpvDroneState::activity), `audio` block of the same json; bound as RgFpvSound (godot_ext/src/rg_fpv_sound.*), fed by game/scripts/fpv_audio.gd
       walker.h                        (R9c, engine-neutral, no Jolt/Godot type) rg::WalkerController (kinematic capsule body in the ps::World, own collision with collide_shape_into/ray_cast: walk 1.4 / run 5 m/s, gravity, jump, 15 cm step-up, 45 deg slope limit, snap-down 0.3 m, hold when no ground is loaded), WalkerConfig/WalkerInput/WalkerState, OrientedRect + vehicle_footprint() (the own car's wheel/chassis footprint the walker is blocked by - the thin physical chassis box is ignored), within_enter_range(), select_spawn_spot() (driver side, passenger side, rear, front, above the roof) - see "On foot (R9c)" below
       terrain_mode.h                  rg::TerrainModeConfig (SessionConfig::terrain), rg::HeightTileSharedFetch (g2m::phys::IHeightTileFetch over a HeightTileFetchFn - WorldTerrain::height_tile_shared), make_terrain_mode(WorldConfig, WorldTerrain) + a pure (WorldConfig, SessionFrame, fetch) overload
       drive_script.h                  rg::DriveScript (header-only, Godot-free): tick-indexed sample-and-hold control events in DRIVE ticks (since spawn) plus an optional per-tick controller hook (the R5 autopilot's extension point); Session::set_drive_script
@@ -779,9 +781,10 @@ rigs, the input mapping and the HUD.
 | `drone_follow`, NPC target | yes | unattended | - | live | `drone` |
 | `cockpit` | reserved | - | - | - | `seat` |
 | `on_foot` (R9c) | yes | unattended | - (walking inputs live) | live (look) | `walker` |
+| `fpv_drone` | yes | unattended | - (flying inputs live) | - (yaw/pitch are flying inputs) | `fpv` |
 
 - `request_mode` refuses an unimplemented mode; `cycle_mode` skips them.
-  Cycle order: drive -> free_cam -> drone_follow -> on_foot -> drive. Getting
+  Cycle order: drive -> free_cam -> drone_follow -> on_foot -> fpv_drone -> drive. Getting
   out is gated on the car speed (`kGetOutMaxSpeedMps` 2.0): the speed-aware
   `request_mode(mode, speed)` answers `Result::Refused` (counted in
   `get_out_refusals()`), `cycle_mode(speed)` skips on_foot; the binding passes
@@ -860,6 +863,41 @@ Keys (`input_map.gd`; the HUD shows a one-line summary):
 | auto-shift toggle (starts on) | F5 | D-pad left |
 | free cam: move / up / down / fast | WASD / E, Space / Q, Ctrl / Shift | left stick / RB, RT / LB, LT / L3 |
 | look (both rigs) | arrows; right mouse button captures the mouse, Esc releases | right stick |
+
+## FPV drone
+
+A pilotable first-person quadcopter, deliberately simple (owner, PR #20): kinematic, no real physics model, no wind, no
+roll, no stabilisation logic. Engine-neutral logic in `rg_core`; GDScript only forwards input and draws.
+
+- `rg/fpv_drone.h`/`fpv_drone.cpp`: `FpvDrone::step(FpvDroneInput, dt, FpvGroundProbe)`. Input: move right/up/forward in the
+  drone's YAW frame (forward is horizontal whatever the pitch), yaw (+ = left) and pitch (+ = nose up), each -1..1. Velocity
+  moves toward the wanted velocity with `accel_mps2` (speeding up) / `decel_mps2` (slowing, reversing); `max_speed_mps`
+  horizontal and `max_vertical_speed_mps`; yaw/pitch rates follow the input with an exponential response, pitch is limited
+  (`pitch_limit_deg`), the yaw wraps. Ground: the probe returns the ground height below (x, y) looking down from the
+  highest of old/new height + `ground_probe_up_m`; the centre never goes below ground + `ground_clearance_m` (vertical
+  speed zeroed, `on_ground`); no ground loaded (probe = nullopt) holds the height (`hold`) but still moves sideways. No
+  side collision with buildings or cars (only the ray below, which also lands on the car roof). `FpvDroneState::activity`
+  (0..1: acceleration, deceleration, turning) drives the audio. Tuning: `data/controls/fpv_drone.json` (`flight` and
+  `audio` blocks, strict loader `load_fpv_drone_config`).
+- `Session`: `request_fpv_spawn()` (above the chassis by `spawn_height_above_car_m`, facing along it, after the terrain gate)
+  / `request_fpv_despawn()`, `set_fpv_input()`, `fpv_counters()`, `fpv_active()`, `FrameSnapshot::fpv`. Stepped in
+  `step_once` next to the walker (`update_fpv`, ray = `World::backend().ray_cast`). Like the walker, the drone is physics
+  interest point `kPlayerInterestId` and the parked car `kParkedCarInterestId`; `traffic_anchor()` is the drone.
+- Mode: `PlayerMode::FpvDrone` (`rules_for`: car Unattended, driving inputs off, `flying_inputs_live`, rig `fpv`), never
+  speed-gated. Bound in `RgSimulation` (`set_fpv_input(right, up, forward, yaw, pitch)`, `get_fpv_state()`,
+  `set_fpv_drone_config(path)`, `get_mode_state().flying_inputs_live`); `apply_mode_to_session` spawns/despawns on a mode
+  change like the walker.
+- Controls: no new action ids. The camera group's actions are live in `fpv_drone` too (`actions.json`, mode bit
+  `kModeFpvDrone`): `cam_move_x/z/y` = right/forward/up (WASD + E,Space / Q,Ctrl; left stick + RB/LB or triggers),
+  `cam_look_x/y` = yaw/pitch (arrows; right stick). `main.gd _forward_flying`.
+- Presentation: `game/scripts/fpv_rig.gd` (camera at the drone, rotation = yaw about Y, pitch about X, never roll, FOV 100),
+  HUD line (speed, height, rotor load), `game/scripts/fpv_audio.gd` + `RgFpvSound` (`rg/fpv_drone_sound.h`: four detuned
+  rotors, a blade-pass hum with harmonics plus air noise; idle hum, pitch 150 -> 420 Hz and level rise with activity,
+  slower fall-off). VR keeps `xr_free` for this mode (no XR flyer rig).
+- Tests: `test_fpv_drone.cpp` [fpv] (max speed, accel/decel limits, yaw frame, pitch limit/no tilt of the thrust, yaw/pitch
+  rates, ground clamp, hold without ground, no tunnelling, determinism, config, rotor sound), `test_session_fpv.cpp`
+  (flat Session, worker-count determinism), `test_session_terrain.cpp` [fpv] (interest points, hills), `-Cameras`
+  section 6 (switch matrix, flying, leaving removes the drone), `test_player_mode.cpp`.
 
 ## On foot (R9c)
 

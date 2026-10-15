@@ -182,6 +182,18 @@ public:
     void request_walker_enter();
     [[nodiscard]] godot::Dictionary get_walker_state() const;
 
+    // --- FPV drone (PlayerMode "fpv_drone", rg/fpv_drone.h, rg::Session's kinematic flyer). The mode machine decides
+    // WHEN (set_player_mode("fpv_drone") / cycle_player_mode()); this object forwards the lifecycle to the Session
+    // (spawn above the car on entering, despawn on leaving). Input is plain values, the flight model is in rg_core.
+    //  set_fpv_drone_config(path): data/controls/fpv_drone.json; returns "" or the error. Before the world loads.
+    //  set_fpv_input: move_right / move_up / move_forward / yaw (+ = left) / pitch (+ = nose up), each in [-1, 1].
+    //  get_fpv_state: {active, position (Godot, origin-relative), velocity (Godot), facing (Godot horizontal unit
+    //   vector), yaw_rad (ISO), pitch_rad, speed, accel, activity (0..1, rotor load), on_ground, hold, height_agl_m};
+    //   {} while no drone exists.
+    godot::String set_fpv_drone_config(const godot::String& path);
+    void set_fpv_input(double move_right, double move_up, double move_forward, double yaw, double pitch);
+    [[nodiscard]] godot::Dictionary get_fpv_state() const;
+
     // --- Shell (R5, rg_simulation_shell.cpp) ---
     // Back to "no world": cancels and joins an init in flight, stops and
     // destroys the Session (sim thread, streaming, engine audio), resets the
@@ -497,6 +509,8 @@ private:
     void reuse_vehicle_definition(rg::SessionConfig& config) const;
     void remember_vehicle_definition(const rg::SessionConfig& config, const rg::Session& session);
     std::string rolling_resistance_model_ = "quadratic";
+    rg::FpvDroneConfig fpv_config_{};      // set_fpv_drone_config; copied into every new Session
+    bool fpv_wanted_ = false;              // last FPV spawn/despawn request sent to the Session (per Session)
     std::string aero_map_selection_path_;
     std::string cached_vehicle_path_;
     std::shared_ptr<const ps::vehicle::VehicleDesc> cached_vehicle_definition_;

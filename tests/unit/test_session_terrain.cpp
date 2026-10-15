@@ -1188,7 +1188,7 @@ TEST_CASE("session terrain: on foot, the walker is point 0, the parked car stays
     run.run = true;
     session.set_walker_input(run);
     const rg::WalkerState& w = session.walker_controller()->state();
-    double worst_below = 0.0;
+    double worst_below = 1e9;
     int holds = 0;
     for (int k = 0; k < 14000; ++k) {
         session.step();
@@ -1248,4 +1248,61 @@ TEST_CASE("session terrain: an on-foot session is worker-count deterministic", "
     const auto other = run(4);
     CHECK(other.first == reference.first);
     CHECK(other.second == reference.second);
+}
+
+// --- FPV drone: like the walker, the flyer is physics interest point 0 and the parked car the second ---
+
+TEST_CASE("session terrain: FPV drone is point 0, the parked car stays resident as point 1, ground clamp follows the hills",
+          "[session_terrain][fpv]") {
+    auto fetch = std::make_shared<SyntheticFetch>();
+    rg::SessionConfig config = terrain_config(1, fetch, 100.0, 50.0, 4);
+    config.terrain->physics.radius_m = 120.0;
+    rg::Session session(config);
+    session.set_drive_script(hold_still_script());
+    for (int k = 0; k < 480; ++k) session.step();
+    CHECK(session.last_interest_points().size() == 1);
+    const ps::Vec3 car = session.world().get_pose(session.chassis_body()).position;
+
+    session.request_fpv_spawn();
+    session.step();
+    REQUIRE(session.fpv_active());
+    session.step();
+    {
+        const auto points = session.last_interest_points();
+        REQUIRE(points.size() == 2);
+        CHECK(points[0].id == rg::Session::kPlayerInterestId);
+        CHECK(points[1].id == rg::Session::kParkedCarInterestId);
+        CHECK(points[1].x == Catch::Approx(car.x).margin(0.1));
+        CHECK(points[1].y == Catch::Approx(car.y).margin(0.1));
+    }
+
+    // Fly east at low height for 10 s, hugging the ground: never below the terrain, never "no ground".
+    rg::FpvDroneInput in;
+    in.move_forward = 1.0;
+    in.move_up = -1.0;
+    session.set_fpv_input(in);
+    const rg::FpvDroneState& d = session.fpv_drone().state();
+    double worst_below = 1e9;
+    int holds = 0;
+    for (int k = 0; k < 2400; ++k) {
+        session.step();
+        worst_below = std::min(worst_below, d.position.z - synthetic_height_m(d.position.x, d.position.y));
+        if (d.hold) ++holds;
+    }
+    CHECK(d.position.x > car.x + 150.0); // far outside the car's own 120 m square
+    CHECK(worst_below >= 0.0);           // never sank into the terrain
+    CHECK(holds == 0);
+    const auto points = session.last_interest_points();
+    REQUIRE(points.size() == 2);
+    CHECK(points[0].x == Catch::Approx(d.position.x).margin(0.5));
+    CHECK(points[1].x == Catch::Approx(car.x).margin(0.1));
+    CHECK(session.world().terrain_starved_tile_count() == 0);
+    CHECK(session.streaming_status().fill_misses == 0);
+    CHECK(session.streaming_status().falls == 0);
+
+    session.request_fpv_despawn();
+    session.step();
+    session.step();
+    CHECK(session.last_interest_points().size() == 1);
+    CHECK(session.last_interest_points()[0].x == Catch::Approx(car.x).margin(0.1));
 }

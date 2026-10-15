@@ -619,6 +619,7 @@ void Session::finish_relocation() {
                             : ps::drivetrain::EngineState::Running;
     world_->reset_vehicle(vehicle_id_, opts);
     if (walker_ && walker_->active()) walker_->halt(); // the priming ticks above stepped the World
+    if (fpv_.active()) fpv_.halt();
     status_.relocations.fetch_add(1, std::memory_order_relaxed);
 }
 
@@ -654,6 +655,14 @@ std::span<const g2m::phys::InterestPoint> Session::physics_interest_points() {
         const ps::Vec3 feet = walker_->state().feet;
         const ps::Vec3 wv = walker_->state().velocity;
         out.push_back(g2m::phys::InterestPoint{kPlayerInterestId, feet.x, feet.y, wv.x, wv.y, t.config.physics.radius_m});
+        out.push_back(g2m::phys::InterestPoint{kParkedCarInterestId, x, y, vx, vy, t.config.physics.radius_m});
+        return out;
+    }
+    if (fpv_.active()) {
+        // FPV drone: like the walker, the flyer is point 0 and the parked car point 1.
+        const ps::Vec3 fp = fpv_.state().position;
+        const ps::Vec3 fv = fpv_.state().velocity;
+        out.push_back(g2m::phys::InterestPoint{kPlayerInterestId, fp.x, fp.y, fv.x, fv.y, t.config.physics.radius_m});
         out.push_back(g2m::phys::InterestPoint{kParkedCarInterestId, x, y, vx, vy, t.config.physics.radius_m});
         return out;
     }
@@ -843,6 +852,7 @@ bool Session::step_once(bool from_loop) {
     // On foot (R9c): a pending get-out/get-in is handled here, past the gate and
     // any relocation, so a spawn only ever happens with the car's terrain resident.
     process_walker_request();
+    process_fpv_request();
     apply_weather_requests();
 
     if (have_vehicle_ && drive_script_) {
@@ -863,6 +873,7 @@ bool Session::step_once(bool from_loop) {
         update_traffic();
         check_followed_alive(); // despawned at its route end / truck removed this tick
         update_walker();
+        update_fpv();
         if(weather_installed_) {
             // V8: the environment provides the air (World refuses set_ambient/set_aero_environment); report what it computed last tick.
             const ps::environment::VehicleAir air=world_->vehicle_air(vehicle_id_);
@@ -1206,6 +1217,7 @@ FrameSnapshot Session::capture_frame_snapshot() const {
         out.car_x=walker_footprint_.cx;out.car_y=walker_footprint_.cy;out.car_half_x=walker_footprint_.half_x;out.car_half_y=walker_footprint_.half_y;
         out.car_yaw_rad=ps::math::atan2(walker_footprint_.sin_yaw,walker_footprint_.cos_yaw);
     }
+    if(fpv_.active())snap.fpv=fpv_.state();
     snap.aero.environment = environment_sample_;
     snap.weather = capture_weather();
     const auto& aero=world_->vehicle_aero_telemetry(vehicle_id_);
@@ -1436,6 +1448,7 @@ OrientedRect Session::own_car_footprint() const {
 
 ps::Vec3 Session::traffic_anchor() const {
     if (walker_ && walker_->active()) return walker_->state().feet;
+    if (fpv_.active()) return fpv_.state().position;
     return world_->get_pose(chassis_body_).position;
 }
 
@@ -1519,6 +1532,70 @@ void Session::process_walker_request() {
             break;
         default: break;
     }
+}
+
+// ---------------------------------------------------------------------------
+// FPV drone (rg/fpv_drone.h)
+// ---------------------------------------------------------------------------
+
+void Session::set_fpv_input(const FpvDroneInput& input) {
+    std::lock_guard<std::mutex> lock(fpv_input_mutex_);
+    fpv_input_ = input;
+}
+
+Session::FpvCounters Session::fpv_counters() const {
+    FpvCounters c;
+    c.spawned = fpv_spawned_.load(std::memory_order_acquire);
+    c.despawned = fpv_despawned_.load(std::memory_order_acquire);
+    c.spawn_failed = fpv_spawn_failed_.load(std::memory_order_acquire);
+    return c;
+}
+
+void Session::process_fpv_request() {
+    const int request = fpv_request_.exchange(0, std::memory_order_acq_rel);
+    if (request == 0) return;
+    switch (request) {
+        case 1: {
+            if (fpv_.active()) break;
+            if (!have_vehicle_) {
+                fpv_spawn_failed_.fetch_add(1, std::memory_order_release);
+                break;
+            }
+            const ps::Pose pose = world_->get_pose(chassis_body_);
+            const ps::Vec3 fwd = pose.orientation.rotate(ps::Vec3::unit_x());
+            const double yaw = ps::math::atan2(fwd.y, fwd.x);
+            fpv_ = FpvDrone(config_.fpv_drone);
+            fpv_.spawn(pose.position + ps::Vec3{0.0, 0.0, config_.fpv_drone.spawn_height_above_car_m}, yaw);
+            fpv_active_.store(true, std::memory_order_release);
+            fpv_spawned_.fetch_add(1, std::memory_order_release);
+            break;
+        }
+        case 3:
+            if (fpv_.active()) {
+                fpv_.despawn();
+                fpv_active_.store(false, std::memory_order_release);
+                fpv_despawned_.fetch_add(1, std::memory_order_release);
+            }
+            break;
+        default: break;
+    }
+}
+
+void Session::update_fpv() {
+    if (!fpv_.active()) return;
+    FpvDroneInput input;
+    {
+        std::lock_guard<std::mutex> lock(fpv_input_mutex_);
+        input = fpv_input_;
+    }
+    // The ground below the drone: a ray straight down through the World from z_top (terrain, decks, the cars).
+    const FpvGroundProbe probe = [this](double x, double y, double z_top) -> std::optional<double> {
+        constexpr double kProbeDistanceM = 6000.0;
+        const ps::RayCastHit hit = world_->backend().ray_cast(ps::Vec3{x, y, z_top}, ps::Vec3{0.0, 0.0, -1.0}, kProbeDistanceM);
+        if (!hit.hit) return std::nullopt;
+        return hit.point.z;
+    };
+    fpv_.step(input, 1.0 / config_.tick_rate_hz, probe);
 }
 
 void Session::update_walker() {

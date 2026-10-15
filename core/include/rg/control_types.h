@@ -20,8 +20,9 @@ enum ControlMode : std::uint32_t {
     kModeDroneFollow = 1u << 2,
     kModeOnFoot = 1u << 3,
     kModeMenu = 1u << 4,
+    kModeFpvDrone = 1u << 5,
 };
-inline constexpr std::uint32_t kModeInWorld = kModeDrive | kModeFreeCam | kModeDroneFollow | kModeOnFoot;
+inline constexpr std::uint32_t kModeInWorld = kModeDrive | kModeFreeCam | kModeDroneFollow | kModeOnFoot | kModeFpvDrone;
 
 enum class DeviceClass { Keyboard, Mouse, Gamepad, Wheel, Generic };
 

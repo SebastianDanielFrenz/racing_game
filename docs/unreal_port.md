@@ -371,3 +371,10 @@ Each milestone ends with a UE automation test that mirrors the matching smoke te
 | Q8 | Input: keep `rg::Controls` as the binding authority (UE only provides raw device states) or move bindings to Enhanced Input mapping contexts generated from `data/controls`? | **Keep `rg::Controls`** (controls screen, saved `controls.json`, calibration and device memory stay identical); Enhanced Input only as the raw key/axis source. |
 | Q9 | Does Godot keep running in parallel until UE parity, and do new features land in both? | **Yes until M4**; new gameplay goes to rg_core only, Godot presentation is frozen except fixes. |
 | Q10 | VR in the first UE milestone set? | **No, last** (M6); OpenXR in UE is a separate risk. |
+
+### FPV drone (2026-10-15)
+
+`rg::FpvDrone` (`rg/fpv_drone.h`) and `rg::FpvRotorVoice` (`rg/fpv_drone_sound.h`) are engine-neutral: the flight model, ground
+clamp (a probe function; the Session supplies a World ray), the rotor synthesis and the config loader are in rg_core, so a UE port
+only needs a camera at `FrameSnapshot::fpv`, the input mapping (camera-group axes) and an audio sink for the mono 48 kHz buffer.
+Presentation files: `fpv_rig.gd`, `fpv_audio.gd`, the HUD line. No new leak.
