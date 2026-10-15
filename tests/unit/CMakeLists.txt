@@ -24,6 +24,7 @@ add_executable(rg_unit_tests
   test_world_terrain.cpp
   test_terrain_colours.cpp
   test_road_surface.cpp
+  test_underpass_decks.cpp
   test_road_structures.cpp
   test_road_overpass.cpp
   test_terrain_smoothing.cpp
