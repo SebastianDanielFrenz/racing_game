@@ -146,7 +146,7 @@ func _process_body(delta: float) -> void:
   _visibility_elapsed = 0.0
  _diagnostic_elapsed += delta
  _render_max_ms = maxf(_render_max_ms, float(state.get("render_ms", 0.0)))
- if _diagnostic_elapsed >= 5.0:
+ if _diagnostic_elapsed >= 5.0 and FrameProbe.enabled: # RG_PERF=1 only (main.gd)
   print("RG_TRAFFIC_RENDER active=%d rendered=%d max_ms=%.3f" % [state.get("active",0),state.get("rendered",0),_render_max_ms])
   _diagnostic_elapsed = 0.0
   _render_max_ms = 0.0

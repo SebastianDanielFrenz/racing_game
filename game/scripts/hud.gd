@@ -71,6 +71,17 @@ func _ready() -> void:
 	_prompt_label.visible = false
 	add_child(_prompt_label)
 	_window_start_s = Time.get_ticks_msec() / 1000.0
+	visibility_changed.connect(_on_visibility_changed)
+
+# The line labels exist only while the HUD is shown: a hidden HUD (menus, after a world unload) leaves the node count
+# as it was before the drive (shell_flow_test / garage_test compare it).
+func _on_visibility_changed() -> void:
+	if visible:
+		return
+	for line in _line_labels:
+		line.queue_free()
+	_line_labels.clear()
+	_text_updated_s = -1.0
 
 # "ECO / NORMAL / SPORT / RACING" for the bits of the modes a car offers.
 func _offered_drive_modes(bits: int) -> String:
@@ -118,6 +129,42 @@ func reset_tick_window() -> void:
 	_window_start_s = Time.get_ticks_msec() / 1000.0
 	_window_start_ticks = 0
 
+# One Label per read-out line (perf, 2026-10-15): setting a Label's text re-shapes all of its text, so one ~30-line
+# label re-shaped every line 20 times a second although most lines did not change. Each line now has its own child
+# Label of "Readout", placed at the line pitch the single label used, and its text is only set when it changed.
+var _line_labels: Array[Label] = []
+var _line_pitch := 0.0
+var _line_colour: Variant = null # the drive-mode tint, or null = the theme's colour
+
+func _set_lines(lines: PackedStringArray) -> void:
+	if _line_pitch == 0.0:
+		_line_pitch = _label.get_theme_font("font").get_height(_label.get_theme_font_size("font_size")) + _label.get_theme_constant("line_spacing")
+	while _line_labels.size() < lines.size():
+		var line := Label.new()
+		line.position = Vector2(0.0, _line_labels.size() * _line_pitch)
+		line.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		line.add_theme_font_size_override("font_size", _label.get_theme_font_size("font_size"))
+		line.add_theme_color_override("font_outline_color", _label.get_theme_color("font_outline_color"))
+		line.add_theme_constant_override("outline_size", _label.get_theme_constant("outline_size"))
+		if _line_colour != null:
+			line.add_theme_color_override("font_color", _line_colour)
+		_label.add_child(line)
+		_line_labels.append(line)
+	for i in range(_line_labels.size()):
+		var text: String = lines[i] if i < lines.size() else ""
+		if _line_labels[i].text != text:
+			_line_labels[i].text = text
+
+func _set_line_colour(colour: Variant) -> void:
+	if colour == _line_colour:
+		return
+	_line_colour = colour
+	for line in _line_labels:
+		if colour == null:
+			line.remove_theme_color_override("font_color")
+		else:
+			line.add_theme_color_override("font_color", colour)
+
 const FrameProbe := preload("res://scripts/frame_probe.gd")
 const HUD_TEXT_PERIOD_S := 0.05
 var _text_updated_s := -1.0
@@ -159,7 +206,7 @@ func _process_body(_delta: float) -> void:
 
 	# The debug read-out is ~30 lines of changing numbers: setting Label.text re-shapes all of it, and the mode / streaming
 	# / powertrain dictionaries below are copied from native each time. 20 Hz is plenty for text (render stutter, 2026-10-14).
-	if now_s - _text_updated_s < HUD_TEXT_PERIOD_S:
+	if now_s - _text_updated_s < HUD_TEXT_PERIOD_S or not visible:
 		return
 	_text_updated_s = now_s
 
@@ -277,10 +324,10 @@ func _process_body(_delta: float) -> void:
 		var themed_readout := false
 		if bool(controls["dm"]["fitted"]):
 			lines.append("drive mode %s (M)   offered: %s" % [str(controls["dm"]["label"]), _offered_drive_modes(int(assist_pt.get("drive_modes_available_bits", 0)))])
-			_label.add_theme_color_override("font_color", DriveModeTheme.accent_state(controls["dm"], Color.WHITE).lerp(Color.WHITE, 0.55))
+			_set_line_colour(DriveModeTheme.accent_state(controls["dm"], Color.WHITE).lerp(Color.WHITE, 0.55))
 			themed_readout = true
 		if not themed_readout:
-			_label.remove_theme_color_override("font_color")
+			_set_line_colour(null)
 		if bool(controls["lc"]["fitted"]):
 			lines.append("launch control: %s" % str(controls["lc"]["label"]))
 		# Nitrous (physics_sim N2O): only a car with a kit (car_sedan_gen_n2o, car_hyper_n2o) has this line.
@@ -314,4 +361,4 @@ func _process_body(_delta: float) -> void:
 	else:
 		lines.append("(no vehicle spawned)")
 
-	_label.text = "\n".join(lines)
+	_set_lines(lines)

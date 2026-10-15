@@ -22,6 +22,7 @@ var _car := Vector2.ZERO
 var _yaw_rad := 0.0
 var _layer: _MapLayer
 var _marker: _CarMarker
+var _mesh: ArrayMesh
 
 const ROAD_COLOURS := [Color(0.55, 0.55, 0.55), Color(0.85, 0.85, 0.85), Color(1.0, 0.8, 0.35)]
 const ROUTE_COLOUR := Color(0.25, 0.65, 1.0)
@@ -97,11 +98,86 @@ func _place_layer() -> void:
 	_layer.transform = Transform2D(x_axis, y_axis, origin)
 
 # Called by _MapLayer._draw: widths are in session metres, so they come out in pixels after the layer's scale.
+# Every line goes into ONE triangle mesh with vertex colours (one draw call): each draw_polyline is its own canvas
+# draw call in the GL Compatibility renderer, ~1400 per frame on a real-world map (owner's 4K log, 2026-10-15).
 func _draw_lines(layer: Node2D) -> void:
 	var s: float = max(_scale(), 1e-6)
+	var verts := PackedVector2Array()
+	var colours := PackedColorArray()
 	for line in _lines:
 		var rank: int = int(line["rank"])
 		var colour: Color = ROAD_COLOURS[0] if rank < 4 else (ROAD_COLOURS[1] if rank < 7 else ROAD_COLOURS[2])
-		layer.draw_polyline(line["points"], colour, (1.0 + rank * 0.25) / s)
+		_strip(line["points"], colour, (1.0 + rank * 0.25) / s, verts, colours)
 	if _route.size() >= 2:
-		layer.draw_polyline(_route, ROUTE_COLOUR, 3.0 / s)
+		_strip(_route, ROUTE_COLOUR, 3.0 / s, verts, colours)
+	if verts.is_empty():
+		return
+	var arrays := []
+	arrays.resize(Mesh.ARRAY_MAX)
+	arrays[Mesh.ARRAY_VERTEX] = verts
+	arrays[Mesh.ARRAY_COLOR] = colours
+	# Held by the minimap: the canvas command only references the mesh, which must outlive the recorded draw.
+	_mesh = ArrayMesh.new()
+	_mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
+	layer.draw_mesh(_mesh, null)
+
+# Port of Godot's canvas_item_add_polyline strip (width > 0, not antialiased; renderer_canvas_cull.cpp): clamped miter
+# joints (|1/sin| <= 3), end offsets from the first / last non-zero segment, closed lines joined at the seam.
+static func _strip(points: PackedVector2Array, colour: Color, width: float, verts: PackedVector2Array, colours: PackedColorArray) -> void:
+	var n := points.size()
+	if n < 2:
+		return
+	var loop := points[0].is_equal_approx(points[n - 1])
+	var first_dir := Vector2.ZERO
+	for i in range(1, n):
+		first_dir = (points[i] - points[i - 1]).normalized()
+		if not first_dir.is_zero_approx():
+			break
+	var last_dir := Vector2.ZERO
+	for i in range(n - 1, 0, -1):
+		last_dir = (points[i] - points[i - 1]).normalized()
+		if not last_dir.is_zero_approx():
+			break
+	var left := PackedVector2Array()
+	var right := PackedVector2Array()
+	left.resize(n)
+	right.resize(n)
+	var prev_dir := Vector2.ZERO
+	for i in n:
+		var dir := prev_dir
+		if i < n - 1:
+			dir = (points[i + 1] - points[i]).normalized()
+			if dir.is_zero_approx():
+				dir = prev_dir
+		if i == 0 and loop:
+			prev_dir = last_dir
+		elif i == n - 1 and loop:
+			prev_dir = first_dir
+		var base: Vector2
+		if i == 0 and not loop:
+			base = first_dir.orthogonal()
+		elif i == n - 1 and not loop:
+			base = last_dir.orthogonal()
+		else:
+			base = _edge_offset(dir, prev_dir)
+		var offset := base * (width * 0.5)
+		left[i] = points[i] + offset
+		right[i] = points[i] - offset
+		prev_dir = dir
+	for i in n - 1:
+		verts.append_array([left[i], right[i], left[i + 1], right[i], right[i + 1], left[i + 1]])
+		for k in 6:
+			colours.append(colour)
+
+static func _edge_offset(dir: Vector2, prev_dir: Vector2) -> Vector2:
+	var length := 1.0
+	var bisector := (prev_dir * dir.length() - dir * prev_dir.length()).normalized()
+	var angle := atan2(bisector.cross(prev_dir), bisector.dot(prev_dir))
+	var sin_angle := sin(angle)
+	if not is_zero_approx(sin_angle) and not dir.is_equal_approx(prev_dir):
+		length = clampf(1.0 / sin_angle, -3.0, 3.0)
+	else:
+		bisector = dir.orthogonal()
+	if bisector.is_zero_approx():
+		bisector = dir.orthogonal()
+	return bisector * length
