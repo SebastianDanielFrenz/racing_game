@@ -50,6 +50,16 @@ static func _in(node: Node3D, ancestor: Node) -> Transform3D:
 		n = n.get_parent()
 	return t
 
+# Instances with different visibility ranges (car_lods.gd) never share a merged mesh.
+static func _range_key(gi: GeometryInstance3D) -> String:
+	return "%.3f/%.3f/%.3f/%.3f" % [gi.visibility_range_begin, gi.visibility_range_begin_margin, gi.visibility_range_end, gi.visibility_range_end_margin]
+
+static func _copy_range(from: GeometryInstance3D, to: GeometryInstance3D) -> void:
+	to.visibility_range_begin = from.visibility_range_begin
+	to.visibility_range_begin_margin = from.visibility_range_begin_margin
+	to.visibility_range_end = from.visibility_range_end
+	to.visibility_range_end_margin = from.visibility_range_end_margin
+
 static func _uniform(b: Basis) -> bool:
 	var s := b.get_scale()
 	return absf(s.x - s.y) < 1e-4 * absf(s.x) and absf(s.x - s.z) < 1e-4 * absf(s.x)
@@ -122,9 +132,9 @@ static func _shadow_proxies(root: Node3D, moving: Dictionary, cockpit_nodes: Dic
 			continue
 		casters.append(mi)
 		for p in parts:
-			var key := "%d|%d|%d" % [group.get_instance_id(), p[1], mi.layers]
+			var key := "%d|%d|%d|%s" % [group.get_instance_id(), p[1], mi.layers, _range_key(mi)]
 			if not proxies.has(key):
-				proxies[key] = {"group": group, "cull": p[1], "layers": mi.layers, "tool": SurfaceTool.new(), "surfaces": 0}
+				proxies[key] = {"group": group, "cull": p[1], "layers": mi.layers, "range": mi, "tool": SurfaceTool.new(), "surfaces": 0}
 				proxy_order.append(key)
 			proxies[key]["tool"].append_from(mi.mesh, p[0], xform)
 			proxies[key]["surfaces"] += 1
@@ -142,6 +152,7 @@ static func _shadow_proxies(root: Node3D, moving: Dictionary, cockpit_nodes: Dic
 		proxy.mesh = mesh
 		proxy.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_SHADOWS_ONLY
 		proxy.layers = p["layers"]
+		_copy_range(p["range"], proxy)
 		(p["group"] as Node3D).add_child(proxy)
 		report["shadow_surfaces_proxied"] += p["surfaces"]
 		report["shadow_proxies"] += 1
@@ -204,10 +215,10 @@ static func merge(root: Node3D, rig_path: String, cockpit_path: String = "", all
 				report["kept_surfaces"] += 1
 				continue
 			var source := mesh.surface_get_material(s)
-			var key := "%d|%d|%s|%d|%d|%d" % [group.get_instance_id(), source.get_instance_id() if source != null else 0,
-				std.resource_name, mesh.surface_get_format(s), mi.cast_shadow, mi.layers]
+			var key := "%d|%d|%s|%d|%d|%d|%s" % [group.get_instance_id(), source.get_instance_id() if source != null else 0,
+				std.resource_name, mesh.surface_get_format(s), mi.cast_shadow, mi.layers, _range_key(mi)]
 			if not groups.has(key):
-				groups[key] = {"material": mat, "group": group, "cast_shadow": mi.cast_shadow, "layers": mi.layers, "items": []}
+				groups[key] = {"material": mat, "group": group, "cast_shadow": mi.cast_shadow, "layers": mi.layers, "range": mi, "items": []}
 				order.append(key)
 			groups[key]["items"].append([mesh, s, xform, mi])
 
@@ -221,9 +232,9 @@ static func merge(root: Node3D, rig_path: String, cockpit_path: String = "", all
 		if items.size() < 2:
 			report["kept_surfaces"] += 1
 			continue
-		var out_key := "%d|%d|%d" % [g["group"].get_instance_id(), g["cast_shadow"], g["layers"]]
+		var out_key := "%d|%d|%d|%s" % [g["group"].get_instance_id(), g["cast_shadow"], g["layers"], _range_key(g["range"])]
 		if not outputs.has(out_key):
-			outputs[out_key] = {"group": g["group"], "cast_shadow": g["cast_shadow"], "layers": g["layers"], "mesh": ArrayMesh.new()}
+			outputs[out_key] = {"group": g["group"], "cast_shadow": g["cast_shadow"], "layers": g["layers"], "range": g["range"], "mesh": ArrayMesh.new()}
 			output_order.append(out_key)
 		var st := SurfaceTool.new()
 		for it in items:
@@ -247,6 +258,7 @@ static func merge(root: Node3D, rig_path: String, cockpit_path: String = "", all
 			out.set_surface_override_material(i, out.mesh.surface_get_material(i))
 		out.cast_shadow = o["cast_shadow"]
 		out.layers = o["layers"]
+		_copy_range(o["range"], out)
 		(o["group"] as Node3D).add_child(out)
 
 	# What is left of each touched mesh: its unmerged surfaces, with the materials they showed (lamp copies included,

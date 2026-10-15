@@ -94,6 +94,16 @@ std::vector<SettingDef> build_schema() {
                            "Renders the 3D world at this share of the window resolution and scales it up; menus and "
                            "the HUD stay sharp. 1 = native. Helps when the graphics card is the limit (4K).",
                            1.0, 0.5, 1.0, 0.05));
+    {
+        SettingDef lod = make_choice("graphics", "car_lod", "Car detail at a distance",
+                                     "full = every car model at full detail at any distance (the full look). high / "
+                                     "medium / low = cars whose model has coarser LOD files switch to them beyond the "
+                                     "model's own distances for that tier (high: 15 m and 60 m for the shipped cars); "
+                                     "small details such as plate text drop out first. Applies when a car is loaded.",
+                                     "full", {"full", "high", "medium", "low"});
+        lod.applies_live = false;
+        s.push_back(lod);
+    }
     s.push_back(make_float("graphics", "rain_density", "Rain drops",
                            "Density of the falling rain and snow around the camera. 0 = none (the road still gets wet).",
                            1.0, 0.0, 1.0, 0.1));

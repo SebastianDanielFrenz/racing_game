@@ -2181,6 +2181,8 @@ func _apply_setting(key: String) -> void:
 			SurfaceMaterials.set_detail("off" if OS.get_environment("RG_TERRAIN_TINT") != "" else str(value))
 		"graphics.shadow_quality", "graphics.render_scale":
 			_apply_graphics_quality()
+		"graphics.car_lod":
+			preload("res://scripts/car_lods.gd").tier = str(value) # used at the next car load (car_lods.gd)
 		"graphics.rain_density":
 			if _weather_fx != null:
 				_weather_fx.density = float(value)

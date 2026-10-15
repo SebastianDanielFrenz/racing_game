@@ -127,6 +127,11 @@ func _load_model() -> void:
 	# A pure axis permutation (determinant +1: an even permutation of the
 	# three axes), so this never mirrors the mesh.
 	_model_root.transform.basis = Basis(Vector3(0, 1, 0), Vector3(0, 0, 1), Vector3(1, 0, 0))
+	# Coarser LODs of the car by camera distance where the rig lists them and the graphics.car_lod setting asks for
+	# them (car_lods.gd; default "full" = none).
+	var lod_parts: int = preload("res://scripts/car_lods.gd").attach(_model_root, model_absolute_path)
+	if lod_parts > 0:
+		print("rg_godot vehicle_visual.gd: %d LOD parts for %s" % [lod_parts, model_absolute_path.get_file()])
 	if model_absolute_path.get_file() == "car_hyper.glb":
 		load("res://scripts/cockpit_common.gd").attach_to(_model_root,simulation,vehicle_name,model_absolute_path)
 		var cluster := Node3D.new()
