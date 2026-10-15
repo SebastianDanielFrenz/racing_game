@@ -964,6 +964,7 @@ func _render_thread_mode() -> String:
 func _bench_synthetic_terrain() -> void:
 	if OS.get_environment("RG_BENCH_SURFACES") != "":
 		get_tree().create_timer(3.0).timeout.connect(_print_surface_census)
+		get_tree().create_timer(4.0).timeout.connect(_print_viewport_census)
 	var drop := OS.get_environment("RG_BENCH_SYNTHETIC_TERRAIN")
 	if drop.is_empty():
 		return
@@ -978,6 +979,48 @@ func _bench_synthetic_terrain() -> void:
 # holds mesh surfaces (MeshInstance3D only; RenderingServer-direct terrain is counted by RgTerrainView): visible mesh
 # instances, surfaces (= draw calls in the colour pass), surfaces whose instance casts sun shadows (drawn again per
 # cascade they touch) and triangles. Names the draw-call budget per feature.
+# RG_BENCH_SURFACES: draw calls per viewport (3D visible / shadow / canvas), and the same with the root viewport's 3D
+# switched off (RG_PERF_AB "3d"), so the draw calls that are not the 3D world are attributed.
+func _print_viewport_census() -> void:
+	for pass_name in ["3d_on", "3d_off"]:
+		get_viewport().disable_3d = pass_name == "3d_off"
+		for i in 3:
+			await get_tree().process_frame
+		var ports: Array = [get_viewport()]
+		ports.append_array(get_tree().root.find_children("*", "SubViewport", true, false))
+		for vp in ports:
+			var v := vp as Viewport
+			var mode := -1 if v == get_viewport() else int((v as SubViewport).render_target_update_mode)
+			print("RG_VIEWPORTS %s %s size=%s update=%d disable_3d=%s visible_dc=%d shadow_dc=%d canvas_dc=%d canvas_prims=%d" % [
+				pass_name, str(v.get_path()), str(v.get_visible_rect().size), mode, str(v.disable_3d),
+				v.get_render_info(Viewport.RENDER_INFO_TYPE_VISIBLE, Viewport.RENDER_INFO_DRAW_CALLS_IN_FRAME),
+				v.get_render_info(Viewport.RENDER_INFO_TYPE_SHADOW, Viewport.RENDER_INFO_DRAW_CALLS_IN_FRAME),
+				v.get_render_info(Viewport.RENDER_INFO_TYPE_CANVAS, Viewport.RENDER_INFO_DRAW_CALLS_IN_FRAME),
+				v.get_render_info(Viewport.RENDER_INFO_TYPE_CANVAS, Viewport.RENDER_INFO_PRIMITIVES_IN_FRAME)])
+		print("RG_VIEWPORTS %s total_dc=%d" % [pass_name, int(Performance.get_monitor(Performance.RENDER_TOTAL_DRAW_CALLS_IN_FRAME))])
+	get_viewport().disable_3d = false
+	# Canvas draw calls per CanvasLayer (hide it for a few frames, read the difference) and every visible canvas item that
+	# covers at least a quarter of the window (full-screen fill cost at 4K).
+	var root_vp := get_viewport()
+	var base := root_vp.get_render_info(Viewport.RENDER_INFO_TYPE_CANVAS, Viewport.RENDER_INFO_DRAW_CALLS_IN_FRAME)
+	for layer in get_tree().root.find_children("*", "CanvasLayer", true, false):
+		var cl := layer as CanvasLayer
+		if not cl.visible or cl.get_viewport() != root_vp:
+			continue
+		cl.visible = false
+		for i in 3:
+			await get_tree().process_frame
+		var without := root_vp.get_render_info(Viewport.RENDER_INFO_TYPE_CANVAS, Viewport.RENDER_INFO_DRAW_CALLS_IN_FRAME)
+		cl.visible = true
+		for i in 3:
+			await get_tree().process_frame
+		print("RG_CANVAS_LAYER %s layer=%d canvas_dc=%d" % [str(cl.get_path()), cl.layer, base - without])
+	var area := root_vp.get_visible_rect().get_area()
+	for item in get_tree().root.find_children("*", "Control", true, false):
+		var c := item as Control
+		if c.is_visible_in_tree() and c.get_viewport() == root_vp and c.get_global_rect().get_area() >= area * 0.25:
+			print("RG_CANVAS_BIG %s class=%s rect=%s material=%s" % [str(c.get_path()), c.get_class(), str(c.get_global_rect()), str(c.material)])
+
 func _print_surface_census() -> void:
 	var rows := {}
 	var stack: Array = [[self, ""]]
