@@ -9,6 +9,7 @@
 #include "rg_assists.h"
 #include "rg_driver_actions.h"
 #include "rg_camera_math.h"
+#include "rg_tyre_sound.h"
 #include "rg_controls.h"
 #include "rg_garage.h"
 #include "rg_address_search.h"
@@ -47,6 +48,7 @@ void initialize_rg_godot_module(ModuleInitializationLevel p_level) {
     ClassDB::register_class<rg_godot::RgControls>();
     ClassDB::register_class<rg_godot::RgGarage>();
     ClassDB::register_class<rg_godot::RgCameraMath>();
+    ClassDB::register_class<rg_godot::RgTyreSound>();
     ClassDB::register_class<rg_godot::RgAssists>();
     ClassDB::register_class<rg_godot::RgDriverActions>();
     ClassDB::register_class<rg_godot::RgTerrainView>();

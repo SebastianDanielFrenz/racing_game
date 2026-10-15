@@ -112,6 +112,7 @@ add_library(rg_core STATIC
     src/turbo_map_extension.cpp
     src/road_ahead.cpp
     src/camera_math.cpp
+    src/tyre_sound.cpp
     "${PS_ADAPTER_SRC_DIR}/frame_convert_core.cpp"
 )
 
