@@ -179,9 +179,26 @@ func _apply_tyre_widths() -> void:
 				if not wheel.has_meta("stock_width_scale"):
 					wheel.set_meta("stock_width_scale",wheel.scale.x)
 				var front: bool = str(corner).begins_with("F")
-				var reference: float = (0.265 if front else 0.325) if str(garage.get_vehicle(str(id)).get("model_path", "")).get_file() == "car_hyper.glb" else 0.225
+				var model_path := str(garage.get_vehicle(str(id)).get("model_path", ""))
+				var reference: float = (0.265 if front else 0.325) if model_path.get_file() == "car_hyper.glb" else 0.225
+				reference = float(_rig_wheel_widths(model_path).get("wheel_" + corner, reference))
 				var width: float = widths.x if front else widths.y
 				wheel.scale.x = float(wheel.get_meta("stock_width_scale")) * width / reference if width > 0.0 else float(wheel.get_meta("stock_width_scale"))
+
+# Modelled wheel widths of a rig with "wheel_width_scale": "rig" (imported models), else {}.
+var _rig_width_cache := {}
+func _rig_wheel_widths(model_path: String) -> Dictionary:
+	if not _rig_width_cache.has(model_path):
+		var out := {}
+		var rig_path := model_path.get_basename() + ".rig.json"
+		if model_path != "" and FileAccess.file_exists(rig_path):
+			var rig = JSON.parse_string(FileAccess.get_file_as_string(rig_path))
+			if rig is Dictionary and rig.get("wheel_width_scale", "") == "rig":
+				for node in rig.get("nodes", []):
+					if node.has("wheel"):
+						out[node["name"]] = float(node["wheel"].get("tyre_width", node["wheel"]["width"]))
+		_rig_width_cache[model_path] = out
+	return _rig_width_cache[model_path]
 
 func go_to_area(area_id: String, instant: bool = false) -> void:
 	garage.camera_go_to(area_id, instant)

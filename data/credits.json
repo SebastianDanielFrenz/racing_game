@@ -330,6 +330,42 @@
       "attribution_required": false,
       "in_game": true,
       "note": "Placeholder art; replaced as the game's own art arrives."
+    },
+    {
+      "id": "model_generic_suv",
+      "kind": "assets",
+      "name": "Car model \"Lowpoly Generic SUV\" (modified)",
+      "provider": "mk2design (https://sketchfab.com/mk2design)",
+      "licence": "CC BY 4.0",
+      "licence_url": "https://creativecommons.org/licenses/by/4.0/",
+      "attribution_text": "\"Lowpoly Generic SUV\" by mk2design, https://sketchfab.com/3d-models/lowpoly-generic-suv-edc994ad28ed438cb365c0e0389ac177, licensed CC BY 4.0; modified (re-rigged and re-oriented for the game)",
+      "attribution_required": true,
+      "in_game": true,
+      "note": "data/models/imported/generic_suv/generic_suv.glb: Re-oriented to the game's axes and origin, wheels re-parented under suspension/steering/spin pivots at the wheel centres, brake calipers under the steering pivots, baked ground/shadow plane removed (tools/carimport). Geometry, materials and textures otherwise unchanged. Source file lowpoly_generic_suv.glb (sha256 f44f2cf61837...)."
+    },
+    {
+      "id": "model_phoenix_455",
+      "kind": "assets",
+      "name": "Car model \"Phoenix 455 '71 - Low poly model\" (modified)",
+      "provider": "Daniel Zhabotinsky (https://sketchfab.com/DanielZhabotinsky)",
+      "licence": "CC BY 4.0",
+      "licence_url": "https://creativecommons.org/licenses/by/4.0/",
+      "attribution_text": "\"Phoenix 455 '71 - Low poly model\" by Daniel Zhabotinsky, https://sketchfab.com/3d-models/phoenix-455-71-low-poly-model-955edc733c6d44fabc0ad7c246a15896, licensed CC BY 4.0; modified (re-rigged and re-oriented for the game)",
+      "attribution_required": true,
+      "in_game": true,
+      "note": "data/models/imported/phoenix_455/phoenix_455.glb: Re-oriented to the game's axes and origin, wheels re-parented under suspension/steering/spin pivots at the wheel centres, brake calipers under the steering pivots, baked ground/shadow plane removed (tools/carimport). Geometry, materials and textures otherwise unchanged. Source file phoenix_455_71_-_low_poly_model.glb (sha256 27b8591fd77c...)."
+    },
+    {
+      "id": "model_toyama_xr",
+      "kind": "assets",
+      "name": "Car model \"Generic Toyama XR Sedan\" (modified)",
+      "provider": "mk2design (https://sketchfab.com/mk2design)",
+      "licence": "CC BY 4.0",
+      "licence_url": "https://creativecommons.org/licenses/by/4.0/",
+      "attribution_text": "\"Generic Toyama XR Sedan\" by mk2design, https://sketchfab.com/3d-models/generic-toyama-xr-sedan-a161542c38ac44fca3b1c283f6d986bb, licensed CC BY 4.0; modified (re-rigged and re-oriented for the game)",
+      "attribution_required": true,
+      "in_game": true,
+      "note": "data/models/imported/toyama_xr/toyama_xr.glb: Re-oriented to the game's axes and origin, wheels re-parented under suspension/steering/spin pivots at the wheel centres, brake calipers under the steering pivots, baked ground/shadow plane removed (tools/carimport). Geometry, materials and textures otherwise unchanged. Source file generic_toyama_xr_sedan.glb (sha256 67e3f08ba690...)."
     }
   ]
 }
