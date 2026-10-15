@@ -12,7 +12,7 @@
 
 #include "rg/road_classes.h"
 #include "rg/buildings.h"
-#include "rg/road_visual.h"
+#include "g2m/world/road_ribbons.h"
 #include "rg/road_surface.h"
 #include "rg/terrain_render.h"
 #include "rg/world_config.h"
@@ -173,7 +173,7 @@ public:
     // existing g2m types - R4 adapts it to g2m::phys::IHeightTileFetch once
     // that interface exists in the pinned geo2map_engine submodule.
     std::shared_ptr<const g2m::OsmTile> source_osm_tile(const g2m::TileKey& key); // background consumers only
-    RoadVisualMesh road_visual_tile(const g2m::TileKey& key,double lift_m);
+    g2m::world::RoadRibbonTile road_visual_tile(const g2m::TileKey& key,double lift_m);
     std::vector<Building> buildings_tile(const g2m::TileKey& key,double min_height,double fallback_height,double storey_height);
     // `priority` is what a still-missing tile is requested at (a tile already cached returns at once):
     // Render for presentation callers, the physics priority (physics_priority()) for the physics fetch.

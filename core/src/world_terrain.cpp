@@ -626,10 +626,10 @@ std::shared_ptr<const g2m::RoadGeomTile> WorldTerrain::road_geometry_at(double e
     return surface?surface->geometry:nullptr; // null geometry: no road tile there (uncovered / rejected)
 }
 
-RoadVisualMesh WorldTerrain::road_visual_tile(const g2m::TileKey& key,double lift) {
+g2m::world::RoadRibbonTile WorldTerrain::road_visual_tile(const g2m::TileKey& key,double lift) {
     const auto geometry=road_geometry_at(key.min_easting()+512,key.min_northing()+512);
     if(!geometry)return {};
-    return build_road_visual(*geometry,key,[this,key](double e,double n){return g2m::world::sample_height_bilinear([this](const auto& k){return height_tile_shared(k).tile.get();},key.zone,0,0,e,n);},lift,separation_);
+    return g2m::world::build_road_ribbons(*geometry,key,[this,key](double e,double n){return g2m::world::sample_height_bilinear([this](const auto& k){return height_tile_shared(k).tile.get();},key.zone,0,0,e,n);},lift,separation_);
 }
 
 std::shared_ptr<const g2m::OsmTile> WorldTerrain::source_osm_tile(const g2m::TileKey& key) {
