@@ -23,6 +23,7 @@
 #pragma once
 
 #include "rg/engine_store.h"
+#include "rg/part_mass.h"
 
 #include <optional>
 #include <string>
@@ -56,6 +57,13 @@ struct TurboKitConfig {
     double intercooler_effectiveness = 0.75;
     bool compressible_exhaust = true;
     double kp = 1.0, ki_per_s = 1.0, kd_s = 0.05, actuator_tau_s = 0.1;
+    // part masses (rg/part_mass.h): a kit's turbos, exhaust manifolds and charge-air side, all [AS] in turbo_kits.json
+    double turbo_anchor_kg = 11.0;       // one anchor-size turbo with its housings
+    double turbo_scale_exponent = 2.0;   // turbo mass = anchor x scale^exponent, at least turbo_min_kg
+    double turbo_min_kg = 5.0;
+    double manifold_kg_per_turbo = 8.0;  // exhaust manifold, downpipe, wastegate, oil and water lines
+    double intercooler_kg = 10.0;        // intercooler and charge piping for a single
+    double intercooler_kg_per_extra_turbo = 2.0;
     std::vector<TurboKitSpec> kits;
     [[nodiscard]] const TurboKitSpec* find(const std::string& id) const;
 };
@@ -97,6 +105,10 @@ std::string turbo_kit_detail(const TurboKitConfig& config, const TurboKitSpec& s
 // is there already. Returns the configuration's absolute path, "" + *err on failure.
 std::string write_turbo_kit(const TurboKitConfig& config, const TurboKitSpec& spec, const TurboKitSizing& sizing,
                             const std::string& engine_name, const std::string& cache_dir, std::string* err);
+
+// The kit's parts for the car's part-mass tree: one "turbo_kit" node (own mass 0) under "engine" with the turbo(s),
+// the exhaust side and the charge-air side as children. Turbo mass follows the sized wheel (sizing.scale).
+PartAttachment turbo_kit_parts(const TurboKitConfig& config, const TurboKitSpec& spec, const TurboKitSizing& sizing);
 
 // The engine-file edits of the conversion: grid_p_im_kpa for the kit target (kPa), nullopt + *err if the physics helper
 // refuses the engine's axis.

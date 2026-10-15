@@ -33,6 +33,20 @@
       "source": "physics_sim turbo configuration templates (gains per unit of target_boost_bar)."
     }
   },
+  "masses": {
+    "source": "[AS] part masses of a kit for the car's part-mass tree (rg/part_mass.h, under the engine): estimated, not cited. They are added to the drive's chassis mass with the kit.",
+    "turbo_anchor_kg": 11.0,
+    "turbo_anchor_source": "[AS] a GTX3582R-class turbo (the anchor) with compressor and turbine housings, about 10-12 kg (recalled).",
+    "turbo_scale_exponent": 2.0,
+    "turbo_scale_exponent_source": "[AS] mass x scale^2 rather than ^3: housings, flanges and the bearing cartridge do not shrink with the wheel the way a solid body would; a half-size wheel gives ~2.8 kg, so turbo_min_kg holds small units at a plausible 5 kg.",
+    "turbo_min_kg": 5.0,
+    "manifold_kg_per_turbo": 8.0,
+    "manifold_source": "[AS] per turbo: a cast or tubular exhaust manifold, downpipe, external or internal wastegate, oil feed/drain and water lines, 6-10 kg (recalled).",
+    "intercooler_kg": 10.0,
+    "intercooler_source": "[AS] a front-mount air-to-air intercooler with its charge pipes, couplers and blow-off valve, 8-12 kg (recalled).",
+    "intercooler_kg_per_extra_turbo": 2.0,
+    "intercooler_per_extra_source": "[AS] a twin's second compressor needs its own inlet pipe and a Y-pipe into the shared intercooler, about 2 kg."
+  },
   "kits": [
     {
       "id": "street_single",

@@ -175,6 +175,20 @@ std::optional<TurboKitConfig> load_turbo_kit_config(const std::string& path, con
         !read_num(*bc, "actuator_tau_s", c.actuator_tau_s, 0.0, 10.0, bw, err)) {
         return std::nullopt;
     }
+    const auto masses = root->find("masses");
+    if (masses == root->end() || !masses->is_object()) {
+        fail(err, path, "\"masses\" object is missing");
+        return std::nullopt;
+    }
+    const std::string mw = path + " masses";
+    if (!read_num(*masses, "turbo_anchor_kg", c.turbo_anchor_kg, 1.0, 50.0, mw, err) ||
+        !read_num(*masses, "turbo_scale_exponent", c.turbo_scale_exponent, 0.0, 3.0, mw, err) ||
+        !read_num(*masses, "turbo_min_kg", c.turbo_min_kg, 0.0, 50.0, mw, err) ||
+        !read_num(*masses, "manifold_kg_per_turbo", c.manifold_kg_per_turbo, 0.0, 50.0, mw, err) ||
+        !read_num(*masses, "intercooler_kg", c.intercooler_kg, 0.0, 50.0, mw, err) ||
+        !read_num(*masses, "intercooler_kg_per_extra_turbo", c.intercooler_kg_per_extra_turbo, 0.0, 50.0, mw, err)) {
+        return std::nullopt;
+    }
     const auto kits = root->find("kits");
     if (kits == root->end() || !kits->is_array() || kits->empty()) {
         fail(err, path, "\"kits\" must be a non-empty array");
@@ -369,6 +383,38 @@ std::optional<std::vector<double>> turbo_kit_grid_kpa(const EngineFacts& facts, 
         if (err != nullptr) *err = "boost_grid_p_im failed";
     }
     return std::nullopt;
+}
+
+PartAttachment turbo_kit_parts(const TurboKitConfig& config, const TurboKitSpec& spec, const TurboKitSizing& sizing) {
+    PartAttachment a;
+    a.parent_id = "engine";
+    a.node.id = "turbo_kit";
+    a.node.key = "turbo_kit";
+    a.node.label = spec.label;
+    a.node.source = "turbo_kits.json kit " + spec.id;
+    const std::string base = a.parent_id + "." + a.node.id;
+    auto leaf = [&](const std::string& id, const std::string& label, double kg, const std::string& source) {
+        PartNode n;
+        n.id = base + "." + id;
+        n.key = "turbo_kit";
+        n.label = label;
+        n.own_kg = kg;
+        n.source = source;
+        a.node.children.push_back(std::move(n));
+    };
+    const double s = sizing.scale > 0.0 ? sizing.scale : 1.0;
+    const double turbo_kg = std::max(config.turbo_min_kg, config.turbo_anchor_kg * std::pow(s, config.turbo_scale_exponent));
+    for (int i = 0; i < spec.count; ++i) {
+        const std::string n = spec.count > 1 ? std::to_string(i + 1) : std::string();
+        leaf("turbo" + n, spec.count > 1 ? "Turbocharger " + n : std::string("Turbocharger"), turbo_kg,
+             "turbo_kits.json masses: anchor turbo x wheel scale^exponent");
+        leaf("exhaust" + n, spec.count > 1 ? "Exhaust manifold and downpipe " + n : std::string("Exhaust manifold and downpipe"),
+             config.manifold_kg_per_turbo, "turbo_kits.json masses manifold_kg_per_turbo");
+    }
+    leaf("intercooler", "Intercooler and charge piping",
+         config.intercooler_kg + config.intercooler_kg_per_extra_turbo * std::max(0, spec.count - 1),
+         "turbo_kits.json masses intercooler_kg");
+    return a;
 }
 
 } // namespace rg

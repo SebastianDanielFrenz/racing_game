@@ -571,6 +571,7 @@ std::string install_catalog_part(Files& files, const SetupOptionDef& def, const 
         if (sizing.compression_ratio < facts->compression_ratio) work["cycle"]["compression_ratio"] = sizing.compression_ratio;
         files.kit_label = spec->label;
         files.kit_torque_factor = sizing.torque_factor;
+        files.part_extras.push_back(turbo_kit_parts(*ctx.turbo_kits, *spec, sizing));
         return {};
     }
     if (def.catalog == "fuels") {

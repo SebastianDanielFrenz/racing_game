@@ -13,6 +13,10 @@
 #include "ps/io/vehicle_io.h"
 #include "ps/jobs/job_system.h"
 
+#include "rg/part_mass.h"
+#include <nlohmann/json.hpp>
+#include <fstream>
+#include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/matchers/catch_matchers_string.hpp>
 
@@ -26,6 +30,7 @@
 
 namespace {
 namespace fs = std::filesystem;
+using Catch::Approx;
 using Catch::Matchers::ContainsSubstring;
 const std::string kRoot = RG_SOURCE_DIR;
 
@@ -349,6 +354,64 @@ TEST_CASE("turbo kits: the garage drops a kit when an engine that cannot take on
 }
 
 // Each kit engine makes more power with the street kit than without it, at the same rpm (engine dyno, Sketch maps).
+TEST_CASE("turbo kits: a kit's turbos, exhaust and intercooler join the car's part-mass tree", "[turbo_kit][part_mass]") {
+    Fixture f;
+    std::string err;
+    auto table = rg::load_part_mass_table(kRoot + "/data/vehicles/part_masses.json", &err);
+    INFO(err);
+    REQUIRE(table.has_value());
+    f.ctx.part_masses = std::make_shared<const rg::PartMassTable>(*table);
+    const rg::TurboKitConfig& cfg = *f.ctx.turbo_kits;
+
+    // The parts of one kit: turbo mass follows the sized wheel, the plumbing is per turbo / per kit.
+    rg::TurboKitSizing sizing;
+    sizing.scale = 1.0;
+    const rg::TurboKitSpec* twin = cfg.find("sport_twin");
+    REQUIRE(twin != nullptr);
+    const rg::PartAttachment a = rg::turbo_kit_parts(cfg, *twin, sizing);
+    CHECK(a.parent_id == "engine");
+    CHECK(a.node.children.size() == 5); // 2 turbos, 2 exhaust sides, 1 intercooler
+    CHECK(a.node.total_kg() == Approx(2 * cfg.turbo_anchor_kg + 2 * cfg.manifold_kg_per_turbo + cfg.intercooler_kg +
+                                      cfg.intercooler_kg_per_extra_turbo));
+    sizing.scale = 0.1; // a tiny wheel: held at the minimum
+    CHECK(rg::turbo_kit_parts(cfg, *twin, sizing).node.children.front().own_kg == Approx(cfg.turbo_min_kg));
+
+    // Through the garage files: the city car with each single kit.
+    const rg::CatalogEntry& city = f.entry("car_city");
+    const rg::PartTree stock = rg::stock_part_tree(city, f.table, f.ctx);
+    INFO(stock.error);
+    REQUIRE(stock.ok);
+    CHECK(stock.root.find("engine.turbo_kit") == nullptr);
+    double street_kg = 0.0;
+    for (const char* kit : {"street_single", "sport_single"}) {
+        const rg::CompiledSetup c = rg::compile_setup(city, f.table, f.ctx, setup_of("car_city", {{"turbo_kit", std::string(kit)}}));
+        INFO(std::string(kit) + ": " + c.error + " " + c.parts.error);
+        REQUIRE(c.ok);
+        REQUIRE(c.parts.ok);
+        const rg::PartNode* node = c.parts.root.find("engine.turbo_kit");
+        REQUIRE(node != nullptr);
+        CHECK(node->label == cfg.find(kit)->label);
+        CHECK(node->children.size() == 3);
+        CHECK(node->total_kg() >= cfg.turbo_min_kg + cfg.manifold_kg_per_turbo + cfg.intercooler_kg);
+        CHECK(c.parts.total_kg == Approx(stock.total_kg + node->total_kg()));
+        CHECK(c.parts.chassis_kg == Approx(c.parts.total_kg).margin(0.001));
+        if (std::string(kit) == "street_single") street_kg = node->total_kg();
+        else CHECK(node->total_kg() >= street_kg); // more boost: a larger wheel, never lighter
+    }
+
+    // Loader: the masses block is required.
+    std::ifstream in(kRoot + "/data/engines/turbo_kits.json", std::ios::binary);
+    nlohmann::json doc = nlohmann::json::parse(in);
+    doc.erase("masses");
+    const fs::path dir = fs::temp_directory_path() / "rg_turbo_kit_masses";
+    fs::create_directories(dir);
+    const std::string p = (dir / "kits.json").generic_string();
+    std::ofstream(p, std::ios::binary) << doc.dump();
+    CHECK_FALSE(rg::load_turbo_kit_config(p, kRoot, &err).has_value());
+    CHECK_THAT(err, ContainsSubstring("masses"));
+    fs::remove_all(dir);
+}
+
 TEST_CASE("turbo kits: a kit engine makes more power at the same rpm", "[turbo_kit][dyno][long]") {
     Fixture f;
     ps::jobs::JobSystem pool(2);
