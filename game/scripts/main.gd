@@ -127,8 +127,16 @@ var _fd_last_report_ms := 0
 # RG_PERF_AB_S seconds (default 5) while a world runs, and RG_FRAME_STATS carries ab=<feature>:on|off, so one log
 # compares the same scene with and without it. Features: shadows (sun shadow), terrain_shadows (terrain chunks drawn
 # into the sun's shadow splits), 3d (the main viewport's whole 3D render), terrain, roads, buildings, car, hud, audio
-# (vehicle_audio _process), sky (sky background -> clear colour).
+# (vehicle_audio _process), sky (sky background -> clear colour), navigation (minimap + guidance layer), traffic (NPC
+# traffic visuals). RG_PERF_AB may name several features separated by commas, or "all": they are measured one after
+# the other (feature 1 on, off, feature 2 on, off, ...) and repeat; tools/perf_summary.py prints the on/off table.
 var _ab_feature := ""
+var _perf := false # RG_PERF=1 (or RG_PERF_AB / RG_BENCH_SURFACES): frame probes, render timers, 1 Hz perf lines
+var _render_timing := true # viewport render times + draw-phase probes (off with RG_RENDER_TIMING=0 or a separate render thread)
+var _ab_list := PackedStringArray()
+var _ab_index := 0
+const AB_ALL := ["3d", "shadows", "terrain_shadows", "terrain", "roads", "buildings", "car", "traffic", "hud", "navigation", "sky", "audio"]
+var _traffic_visual: Node
 var _ab_period_ms := 5000
 var _ab_off := false
 var _ab_switched_ms := 0
@@ -201,20 +209,34 @@ func _ready() -> void:
 	# Window close is handled in _notification: the audio players are stopped and the
 	# audio thread given time to release their generator playbacks before quitting.
 	get_tree().set_auto_accept_quit(false)
-	_ab_feature = OS.get_environment("RG_PERF_AB").strip_edges().to_lower()
+	var ab_env := OS.get_environment("RG_PERF_AB").strip_edges().to_lower()
+	for f in (",".join(AB_ALL) if ab_env == "all" else ab_env).split(",", false):
+		_ab_list.append(f.strip_edges())
+	_ab_feature = _ab_list[0] if not _ab_list.is_empty() else ""
 	var ab_s := OS.get_environment("RG_PERF_AB_S")
 	if ab_s.is_valid_float() and float(ab_s) >= 1.0:
 		_ab_period_ms = int(float(ab_s) * 1000.0)
+	# Performance diagnostics are opt-in (owner, 2026-10-15: no cost in a normal game): RG_PERF=1 turns on the frame
+	# probes, the GPU/CPU render timers, frame_probe_end.gd and the 1 Hz RG_FRAME_STATS / RG_TERRAIN_STREAM /
+	# RG_ROAD_STREAM / RG_TRAFFIC_RENDER lines; RG_PERF_AB and RG_BENCH_SURFACES imply it. Without it only RG_FRAME_SPIKE
+	# stays (a delta comparison per frame; the line then has no probe or render-timer fields).
+	_perf = OS.get_environment("RG_PERF") == "1" or not _ab_list.is_empty() or OS.get_environment("RG_BENCH_SURFACES") != ""
+	FrameProbe.enabled = _perf
 	var spike_env := OS.get_environment("RG_FRAME_SPIKE_MS")
 	if spike_env.is_valid_float() and float(spike_env) > 0.0:
 		_fd_spike_s = float(spike_env) / 1000.0
-	if OS.get_environment("RG_RENDER_TIMING") != "0":
+	# With --render-thread separate, reading the render times (and the draw signals' phase split) would make the main
+	# thread wait for the render thread every frame, i.e. undo the overlap; there frame_ms is the measure.
+	_render_timing = _perf and OS.get_environment("RG_RENDER_TIMING") != "0" and _render_thread_mode() != "separate"
+	if _render_timing:
 		RenderingServer.viewport_set_measure_render_time(get_viewport().get_viewport_rid(), true) # RG_FRAME_SPIKE render_cpu/gpu_ms
 	preload("res://scripts/ui_scale.gd").apply(get_tree())
-	var probe_end := Node.new()
-	probe_end.name = "FrameProbeEnd"
-	probe_end.set_script(preload("res://scripts/frame_probe_end.gd"))
-	add_child(probe_end)
+	if _perf:
+		var probe_end := Node.new()
+		probe_end.name = "FrameProbeEnd"
+		probe_end.set_script(preload("res://scripts/frame_probe_end.gd"))
+		probe_end.set("draw_phases", _render_timing)
+		add_child(probe_end)
 	var user_args := OS.get_cmdline_user_args()
 	if "--bindings-test" in user_args:
 		_run_bindings_test()
@@ -539,6 +561,7 @@ func _build_scene(user_args: PackedStringArray) -> void:
 	add_child(truck_visual)
 	add_child(_input_map)
 	var traffic := preload("res://scripts/npc_traffic.gd").new()
+	_traffic_visual = traffic
 	traffic.simulation = _simulation
 	add_child(traffic)
 
@@ -932,8 +955,116 @@ func _finish_flat_load() -> void:
 	ready_sim_time = 0.0
 	_overlay.hide_overlay()
 	_visuals.on_session_ready()
+	_bench_synthetic_terrain()
 	print("RG_WORLD ready world=flat")
 	_world_running()
+
+# The --render-thread command-line choice (safe = rendering on the main thread, the default; separate = own thread).
+func _render_thread_mode() -> String:
+	var args := OS.get_cmdline_args()
+	var i := args.find("--render-thread")
+	return args[i + 1] if i >= 0 and i + 1 < args.size() else "safe"
+
+# Bench only (perf, 2026-10-15): RG_BENCH_SYNTHETIC_TERRAIN=<metres> streams the synthetic rolling-hills terrain
+# (RgTerrainView.load_synthetic_preview, the game's LOD defaults, 20 km) around the flat-world car, lowered by that many
+# metres so it stays under the ground box. Gives a no-map-store scene with the real world's terrain draw calls and
+# primitives plus the car and HUD, for RG_FRAME_STATS / RG_PERF_AB runs on any machine. No physics behind it.
+func _bench_synthetic_terrain() -> void:
+	if OS.get_environment("RG_BENCH_SURFACES") != "":
+		get_tree().create_timer(3.0).timeout.connect(_print_surface_census)
+		get_tree().create_timer(4.0).timeout.connect(_print_viewport_census)
+	var drop := OS.get_environment("RG_BENCH_SYNTHETIC_TERRAIN")
+	if drop.is_empty():
+		return
+	var pose: Dictionary = _simulation.get_chassis_session_pose()
+	_world_view.set_material(_terrain_material.get_rid())
+	_world_view.load_synthetic_preview(float(pose.get("x", 0.0)), float(pose.get("y", 0.0)), 20000.0)
+	_world_view.set_render_origin(Vector3(0.0, 0.0, float(drop)))
+	_director.set_terrain_view(_world_view)
+	print("RG_BENCH synthetic terrain chunks=%d vertices=%d drop_m=%s" % [_world_view.get_chunk_count(), _world_view.get_total_vertex_count(), drop])
+
+# RG_BENCH_SURFACES=1 (bench only): 3 s after a flat world is ready, prints one RG_SURFACES line per scene node that
+# holds mesh surfaces (MeshInstance3D only; RenderingServer-direct terrain is counted by RgTerrainView): visible mesh
+# instances, surfaces (= draw calls in the colour pass), surfaces whose instance casts sun shadows (drawn again per
+# cascade they touch) and triangles. Names the draw-call budget per feature.
+# RG_BENCH_SURFACES: draw calls per viewport (3D visible / shadow / canvas), and the same with the root viewport's 3D
+# switched off (RG_PERF_AB "3d"), so the draw calls that are not the 3D world are attributed.
+func _print_viewport_census() -> void:
+	for pass_name in ["3d_on", "3d_off"]:
+		get_viewport().disable_3d = pass_name == "3d_off"
+		for i in 3:
+			await get_tree().process_frame
+		var ports: Array = [get_viewport()]
+		ports.append_array(get_tree().root.find_children("*", "SubViewport", true, false))
+		for vp in ports:
+			var v := vp as Viewport
+			var mode := -1 if v == get_viewport() else int((v as SubViewport).render_target_update_mode)
+			print("RG_VIEWPORTS %s %s size=%s update=%d disable_3d=%s visible_dc=%d shadow_dc=%d canvas_dc=%d canvas_prims=%d" % [
+				pass_name, str(v.get_path()), str(v.get_visible_rect().size), mode, str(v.disable_3d),
+				v.get_render_info(Viewport.RENDER_INFO_TYPE_VISIBLE, Viewport.RENDER_INFO_DRAW_CALLS_IN_FRAME),
+				v.get_render_info(Viewport.RENDER_INFO_TYPE_SHADOW, Viewport.RENDER_INFO_DRAW_CALLS_IN_FRAME),
+				v.get_render_info(Viewport.RENDER_INFO_TYPE_CANVAS, Viewport.RENDER_INFO_DRAW_CALLS_IN_FRAME),
+				v.get_render_info(Viewport.RENDER_INFO_TYPE_CANVAS, Viewport.RENDER_INFO_PRIMITIVES_IN_FRAME)])
+		print("RG_VIEWPORTS %s total_dc=%d" % [pass_name, int(Performance.get_monitor(Performance.RENDER_TOTAL_DRAW_CALLS_IN_FRAME))])
+	get_viewport().disable_3d = false
+	# Canvas draw calls per CanvasLayer (hide it for a few frames, read the difference) and every visible canvas item that
+	# covers at least a quarter of the window (full-screen fill cost at 4K).
+	var root_vp := get_viewport()
+	var base := root_vp.get_render_info(Viewport.RENDER_INFO_TYPE_CANVAS, Viewport.RENDER_INFO_DRAW_CALLS_IN_FRAME)
+	for layer in get_tree().root.find_children("*", "CanvasLayer", true, false):
+		var cl := layer as CanvasLayer
+		if not cl.visible or cl.get_viewport() != root_vp:
+			continue
+		cl.visible = false
+		for i in 3:
+			await get_tree().process_frame
+		var without := root_vp.get_render_info(Viewport.RENDER_INFO_TYPE_CANVAS, Viewport.RENDER_INFO_DRAW_CALLS_IN_FRAME)
+		cl.visible = true
+		for i in 3:
+			await get_tree().process_frame
+		print("RG_CANVAS_LAYER %s layer=%d canvas_dc=%d" % [str(cl.get_path()), cl.layer, base - without])
+	var area := root_vp.get_visible_rect().get_area()
+	for item in get_tree().root.find_children("*", "Control", true, false):
+		var c := item as Control
+		if c.is_visible_in_tree() and c.get_viewport() == root_vp and c.get_global_rect().get_area() >= area * 0.25:
+			print("RG_CANVAS_BIG %s class=%s rect=%s material=%s" % [str(c.get_path()), c.get_class(), str(c.get_global_rect()), str(c.material)])
+
+func _print_surface_census() -> void:
+	var rows := {}
+	var stack: Array = [[self, ""]]
+	while not stack.is_empty():
+		var item: Array = stack.pop_back()
+		var node: Node = item[0]
+		var group: String = item[1]
+		if node is VisualInstance3D and not (node as VisualInstance3D).is_visible_in_tree():
+			continue
+		if node is CanvasItem and not (node as CanvasItem).is_visible_in_tree():
+			continue
+		if node is MeshInstance3D and (node as MeshInstance3D).mesh != null:
+			var mi := node as MeshInstance3D
+			var r: Array = rows.get(group, [0, 0, 0, 0])
+			var n := mi.mesh.get_surface_count()
+			r[0] += 1
+			r[1] += n
+			if mi.cast_shadow != GeometryInstance3D.SHADOW_CASTING_SETTING_OFF:
+				r[2] += n
+			for i in n:
+				var arrays := mi.mesh.surface_get_arrays(i) if mi.mesh is ArrayMesh else []
+				if arrays.size() > Mesh.ARRAY_INDEX and arrays[Mesh.ARRAY_INDEX] != null and (arrays[Mesh.ARRAY_INDEX] as PackedInt32Array).size() > 0:
+					r[3] += (arrays[Mesh.ARRAY_INDEX] as PackedInt32Array).size() / 3
+				elif arrays.size() > Mesh.ARRAY_VERTEX and arrays[Mesh.ARRAY_VERTEX] != null:
+					r[3] += (arrays[Mesh.ARRAY_VERTEX] as PackedVector3Array).size() / 3
+			rows[group] = r
+		for c in node.get_children():
+			var g: String = group
+			if node == self:
+				g = str(c.name)
+			elif group.count("/") < 1 and node.get_parent() == self:
+				g = group + "/" + str(c.name)
+			stack.append([c, g])
+	for g in rows:
+		var r: Array = rows[g]
+		print("RG_SURFACES %s instances=%d surfaces=%d shadow_surfaces=%d triangles=%d" % [g, r[0], r[1], r[2], r[3]])
 
 # First tick after start(): the snapshot now holds the spawned chassis, so the
 # terrain view can be built around it.
@@ -1013,7 +1144,8 @@ func _report() -> void:
 	print(status_line("RG_DRIVE t=%.1f" % (sim_t - ready_sim_time)))
 	_save_drive_location()
 	_report_tick_spikes()
-	_report_streams()
+	if _perf:
+		_report_streams()
 
 # Render-stream health at speed (owner complaint 2026-10-13: at 400-580 km/h the
 # terrain does not resolve in time, the road is not visible far ahead). One line
@@ -1159,7 +1291,9 @@ func _apply_mode_state() -> Dictionary:
 
 # One of the F6 / F7 / F10 panels is open (they own the keyboard and the mouse).
 func _panel_open() -> bool:
-	return get_tree().get_nodes_in_group("seat_adjustment_open").size() > 0 or get_tree().get_nodes_in_group("traffic_settings_open").size() > 0 or get_tree().get_nodes_in_group("address_teleport_open").size() > 0
+	# Called several times a frame: first-node lookups, no group arrays built (perf, 2026-10-15).
+	var tree := get_tree()
+	return tree.get_first_node_in_group("seat_adjustment_open") != null or tree.get_first_node_in_group("traffic_settings_open") != null or tree.get_first_node_in_group("address_teleport_open") != null
 
 # Messages for what the mode framework refused, and a log line per mode change
 # (a get-in changes the mode without any key press of the cycle).
@@ -1284,6 +1418,10 @@ func _frame_diag(delta: float) -> void:
 	if world_state != "running" or _simulation == null:
 		return
 	var ms := delta * 1000.0
+	if not _perf:
+		if delta > _fd_spike_s:
+			print("RG_FRAME_SPIKE delta_ms=%.1f ticks=%d (RG_PERF=1 adds the probes)" % [ms, int(_simulation.get_step_count())])
+		return
 	if probes.has("scene_span"):
 		probes["outside"] = maxi(0, int(delta * 1000000.0) - int(probes["scene_span"])) # engine render / driver / vsync / OS
 	var process_ms: float = Performance.get_monitor(Performance.TIME_PROCESS) * 1000.0
@@ -1308,7 +1446,8 @@ func _frame_diag(delta: float) -> void:
 				float(c.get("upload_ms", 0.0)), float(c.get("heal_ms", 0.0)), float(c.get("decks_ms", 0.0)), int(c.get("pending_work", 0))]
 		print("RG_FRAME_SPIKE delta_ms=%.1f ticks=%d process_ms=%.1f render_cpu_ms=%.1f render_gpu_ms=%.1f%s probes=[%s]" % [
 			ms, int(_simulation.get_step_count()), process_ms,
-			RenderingServer.viewport_get_measured_render_time_cpu(vp), RenderingServer.viewport_get_measured_render_time_gpu(vp),
+			RenderingServer.viewport_get_measured_render_time_cpu(vp) if _render_timing else -1.0,
+			RenderingServer.viewport_get_measured_render_time_gpu(vp) if _render_timing else -1.0,
 			tv, ", ".join(parts)])
 	var now := Time.get_ticks_msec()
 	if now - _fd_last_report_ms < 1000:
@@ -1333,13 +1472,14 @@ func _frame_diag(delta: float) -> void:
 		# vsync/max_fps/size: what the window actually runs with, so a log names its own settings.
 		var win := get_window()
 		var ab := "" if _ab_feature == "" else " ab=%s:%s" % [_ab_feature, "off" if _ab_off else "on"]
-		print("RG_FRAME_STATS frames=%d fps=%d frame_ms_avg=%.1f p99=%.1f max=%.1f over25=%d over50=%d process_ms_avg=%.1f process_ms_max=%.1f draw_calls=%d objects=%d primitives=%d vsync=%d max_fps=%d size=%dx%d%s probes_avg/max_ms=[%s]" % [
+		print("RG_FRAME_STATS frames=%d fps=%d frame_ms_avg=%.1f p99=%.1f max=%.1f over25=%d over50=%d process_ms_avg=%.1f process_ms_max=%.1f draw_calls=%d objects=%d primitives=%d vsync=%d max_fps=%d size=%dx%d renderer=%s/%s render_thread=%s%s probes_avg/max_ms=[%s]" % [
 			n, int(Engine.get_frames_per_second()), sum / n, sorted[mini(n - 1, int(ceil(0.99 * n)) - 1)], sorted[n - 1], over25, over50,
 			_fd_process_sum / n, _fd_process_max,
 			int(Performance.get_monitor(Performance.RENDER_TOTAL_DRAW_CALLS_IN_FRAME)),
 			int(Performance.get_monitor(Performance.RENDER_TOTAL_OBJECTS_IN_FRAME)),
 			int(Performance.get_monitor(Performance.RENDER_TOTAL_PRIMITIVES_IN_FRAME)),
-			int(DisplayServer.window_get_vsync_mode()), Engine.max_fps, win.size.x, win.size.y, ab, ", ".join(pk)])
+			int(DisplayServer.window_get_vsync_mode()), Engine.max_fps, win.size.x, win.size.y,
+			RenderingServer.get_current_rendering_method(), RenderingServer.get_current_rendering_driver_name(), _render_thread_mode(), ab, ", ".join(pk)])
 	_fd_frames.clear()
 	_fd_probe_sum.clear()
 	_fd_probe_max.clear()
@@ -1347,8 +1487,14 @@ func _frame_diag(delta: float) -> void:
 	_fd_process_max = 0.0
 	if _ab_feature != "" and now - _ab_switched_ms >= _ab_period_ms:
 		_ab_switched_ms = now
-		_ab_off = not _ab_off
-		_perf_ab_apply(_ab_feature, _ab_off)
+		if _ab_off and _ab_list.size() > 1:
+			_perf_ab_apply(_ab_feature, false) # back on, then the next feature's "on" period
+			_ab_off = false
+			_ab_index = (_ab_index + 1) % _ab_list.size()
+			_ab_feature = _ab_list[_ab_index]
+		else:
+			_ab_off = not _ab_off
+			_perf_ab_apply(_ab_feature, _ab_off)
 		print("RG_PERF_AB %s -> %s" % [_ab_feature, "off" if _ab_off else "on"])
 
 # Switches one render feature for the RG_PERF_AB comparison (diagnosis only; nothing else calls it).
@@ -1377,6 +1523,12 @@ func _perf_ab_apply(feature: String, off: bool) -> void:
 		"hud":
 			if _hud != null:
 				_hud.visible = not off
+		"navigation":
+			if _navigation != null:
+				_navigation.visible = not off
+		"traffic":
+			if _traffic_visual != null:
+				_traffic_visual.visible = not off
 		"audio":
 			if _vehicle_audio != null:
 				_vehicle_audio.set_process(not off)
@@ -1986,6 +2138,26 @@ func set_drive_view(view: String) -> void:
 	if _simulation != null:
 		_simulation.set_road_ahead_wanted(view == "cinematic")
 
+# Sun shadows and 3D resolution scale (perf, 2026-10-15). The defaults (high, 1.0) are the look before these settings
+# existed: four PSSM cascades to 300 m with terrain casting, native resolution. Also re-applied when a world's terrain
+# view starts (the terrain's cast flag lives on its instances).
+func _apply_graphics_quality() -> void:
+	if _shell == null:
+		return
+	var q := str(_shell.get_setting("graphics.shadow_quality"))
+	var sun: DirectionalLight3D = _sky.sun if _sky != null else null
+	if sun != null:
+		sun.shadow_enabled = q != "off"
+		sun.directional_shadow_mode = DirectionalLight3D.SHADOW_PARALLEL_4_SPLITS if q == "high" else DirectionalLight3D.SHADOW_PARALLEL_2_SPLITS
+		sun.directional_shadow_max_distance = 150.0 if q == "low" else 300.0
+	if _world_view != null and _world_view.has_method("set_cast_shadows"):
+		_world_view.set_cast_shadows(q == "high" or q == "medium")
+	if not _vr_active:
+		var vp := get_viewport()
+		var scale := float(_shell.get_setting("graphics.render_scale"))
+		vp.scaling_3d_mode = Viewport.SCALING_3D_MODE_BILINEAR
+		vp.scaling_3d_scale = clampf(scale, 0.5, 1.0)
+
 # One setting's effect, read back from RgShell (the value there is already
 # validated and clamped by rg::Settings). Called at start-up for every setting
 # and whenever the settings screen changes one.
@@ -2007,6 +2179,10 @@ func _apply_setting(key: String) -> void:
 		"graphics.surface_detail":
 			# The debug chunk tint (RG_TERRAIN_TINT) is only visible as plain colours.
 			SurfaceMaterials.set_detail("off" if OS.get_environment("RG_TERRAIN_TINT") != "" else str(value))
+		"graphics.shadow_quality", "graphics.render_scale":
+			_apply_graphics_quality()
+		"graphics.car_lod":
+			preload("res://scripts/car_lods.gd").tier = str(value) # used at the next car load (car_lods.gd)
 		"graphics.rain_density":
 			if _weather_fx != null:
 				_weather_fx.density = float(value)

@@ -27,6 +27,18 @@ returns one level at a time; the root opens the save-and-exit prompt. Upgrades:
   drops it back to stock with a notice. The card shows kind, focus, gear type, gear count, first/last
   ratio and rating. The N2O shot and extra boost are not counted against the rating (the list describes
   the engine as catalogued).
+- Upgrades → Swaps → Drivetrain (2026-10-15): change the drive layout and the axle differentials. Layout cards
+  are grouped FWD / RWD / AWD (AWD with an open, viscous or locked centre; physics_sim has no Torsen/LSD centre yet); below them one card row per
+  DRIVEN axle offers open, clutch LSD, Torsen, viscous or locked. The first card of each list is what the car has now
+  (the layout as delivered; for a differential: the axle's unit as the chosen layout left it). Catalogue:
+  data/drivetrains/driveline_catalog.json (rg.driveline_catalog/1); the transform is generic code
+  (rg/driveline_swap.h): the new axle units copy the car's own (ratio, efficiency, inertia, kind), so the gearing does
+  not change and the final drive slider scales the new units. No engine-position rule: every car whose driveline is
+  one gearbox output into one or two axle differentials takes every layout; a transfer case or anything else greys
+  the tile out. A layout change that stops driving an axle returns that axle's differential choice to stock with a
+  notice. Every layout stays offered, FWD <-> RWD included (owner on PR #19). A swap that runs the driveline the length
+  of the car (an AWD conversion, FWD <-> RWD) carries a weight penalty: the part-mass tree (see "Part masses" below)
+  adds the new axle hardware and a layout-conversion node. The stats (vehicle select, car browser) follow the setup's layout.
 
 Compound installs preserve each axle's width. Dimension installs preserve each
 axle's compound. All applies the chosen property to both axles, offering only
@@ -288,3 +300,21 @@ at d2d43f6. Evidence: out/adaptive_pressure_tests.log (65 native assertions),
 out/adaptive_pressure_regression.log (1288 existing control/cache assertions),
 out/adaptive_game_hardware_tests.log (57 hardware/domain assertions) and
 out/adaptive_setup_tests.log (structural checks through 30 bar requested boost).
+
+## Part masses (2026-10-15)
+
+Owner on PR #19: each part has its own mass, a parent carries the cumulative mass of its children, and swaps change the
+car's mass through the parts. `rg/part_mass.h` builds the tree from data only (the vehicle file as the setup leaves it,
+the engine and gearbox catalogues' `mass_kg`, `data/vehicles/part_masses.json`, the catalog's per-car
+`chassis.body_mass_kg`); the drive's chassis mass is the tree's total (physics carries no part as a mass of its own:
+wheel_mass is spin inertia only). Body masses are chosen so every stock car keeps its previous chassis mass.
+
+A drivetrain layout other than the stock one carries a penalty (owner: "the drivetrain needs to run across the entire
+car, like in an AWD setup"): the new axle's differential and half shafts and an AWD transfer case come from the file;
+the `layout_conversion` node adds 15 kg of mounting hardware, an 18 kg transfer drive for a 2WD result, and a 14 kg
+driveline along the car where the new layout has no more propshafts than the stock one. Front-engine examples on the
+synthetic car: FWD -> RWD +45 kg, RWD -> FWD +35 kg, FWD -> AWD +87 kg (with a viscous centre / Torsen rear). All
+figures are [AS].
+
+The garage shows it under Chassis -> Weight (`RgGarage.get_mass_breakdown(id)`: total, change against stock, body and
+groups, the drivetrain's parts).

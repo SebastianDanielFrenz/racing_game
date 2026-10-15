@@ -34,8 +34,10 @@
 #pragma once
 
 #include "rg/engine_store.h"
+#include "rg/driveline_swap.h"
 #include "rg/gearbox_catalog.h"
 #include "rg/turbo_kit.h"
+#include "rg/part_mass.h"
 #include "rg/turbo_map_extension.h"
 #include "rg/slider_map.h"
 #include "rg/vehicle_catalog.h"
@@ -98,11 +100,15 @@ struct SetupOptionDef {
     // has no turbo of its own: the kit is sized for that engine and written to the cache, the engine's
     // default_forced_induction, manifold-pressure grid and (when above the kit ceiling) compression ratio are set. The
     // option is unavailable, with OptionView::unavailable_reason, on an engine that cannot take one.
+    // Drivetrain swap (rg/driveline_swap.h, data/drivetrains/driveline_catalog.json): "drive_layouts" = the layouts
+    // (FWD / RWD / AWD with a centre kind; ids = the catalogue ids), "differentials" = the axle differential units for
+    // the axle named by `axle` (front | rear; offered only while that axle is driven). Both transform the vehicle file's
+    // driveline in code (never a file reference) and are offered only on a car whose driveline the swap understands.
     std::string catalog;
     std::vector<std::string> compatible_engines; // original engine stems, an explicit game fitment list; "*" = any engine
     std::string part_format; // required referenced file format
     bool no_turbo_override = false; // default engine turbo must not shadow a vehicle override
-    std::string axle;                  // TyreChoice: "front" | "rear"
+    std::string axle;                  // TyreChoice and the "differentials" catalog: "front" | "rear"
     // Scale only (garage numeric inputs): the option is shown and typed in ABSOLUTE units (rpm, bar, ms) on a linear or
     // logarithmic slider, derived from the stock value of its first target leaf; min/max/step are then not authored and the
     // allowed factor range is abs_min/stock .. abs_max/stock (widened to contain 1). See rg/slider_map.h.
@@ -164,11 +170,17 @@ struct SetupContext {
     std::shared_ptr<const EngineStore> engines;
     // The gearbox list the "gearboxes" catalog option reads. nullptr = that option is unavailable.
     std::shared_ptr<const GearboxCatalog> gearboxes;
+    // The drive layouts and differentials the "drive_layouts"/"differentials" options read. nullptr = unavailable.
+    std::shared_ptr<const DrivelineCatalog> drivelines;
     // Turbo stage map extension policy (rg/turbo_map_extension.h): when set, a load that finds the engine's air demand outside
     // the stage map extends and caches the map under engine_map_cache_dir. nullptr = maps are used as they are.
     std::shared_ptr<const TurboMapExtensionConfig> turbo_map_extension;
     // The garage turbo kits the "turbo_kits" catalog option offers (rg/turbo_kit.h). nullptr = that option is unavailable.
     std::shared_ptr<const TurboKitConfig> turbo_kits;
+    // Base part masses (data/vehicles/part_masses.json, rg/part_mass.h). With it and the entry's body mass, every
+    // model / compiled setup carries the car's part-mass tree and the drive takes its chassis mass from it.
+    // nullptr = no tree: the drive uses the catalog chassis mass plus the engine swap's delta.
+    std::shared_ptr<const PartMassTable> part_masses;
 };
 
 // One option as the configurator shows it, for one vehicle.
@@ -222,6 +234,11 @@ struct SetupModel {
     double chassis_mass_delta_kg = 0.0;
     std::string engine_title;    // the installed engine's display name ("" = the car's own)
     std::string engine_key;      // the installed engine's EngineStore key (the car's own too); "" = not in the store
+    // The part-mass tree of the car with the `installed` part choices (engine, gearbox ...); !parts.ok without a part
+    // mass table or a body mass (parts.error says why).
+    PartTree parts;
+    // The driveline with the installed choices (a drivetrain swap included): what the stats show.
+    DrivelineInfo driveline;
 };
 // Builds the option views of an entry from its files.
 SetupModel build_setup_model(const CatalogEntry& entry, const SetupOptionTable& table, const SetupContext& ctx,
@@ -240,6 +257,9 @@ struct CompiledSetup {
     std::vector<std::string> swap_lines;         // one line each, for the player (fuel kept/changed, clutch, mass ...)
     double chassis_mass_delta_kg = 0.0;          // added to the catalog chassis mass for the drive
     std::string engine_title;                    // the installed engine's display name ("" = the car's own)
+    // The part-mass tree of the car as this setup leaves it (rg/part_mass.h). When parts.ok, the drive's chassis mass
+    // is parts.chassis_kg (chassis_mass_delta_kg above is then only the engine line of swap_lines).
+    PartTree parts;
 };
 CompiledSetup compile_setup(const CatalogEntry& entry, const SetupOptionTable& table, const SetupContext& ctx,
                             const VehicleSetup& setup);
@@ -292,6 +312,9 @@ public:
 private:
     std::string path_;
 };
+
+// The part-mass tree of the stock car (no setup), !ok without ctx.part_masses or a body mass.
+PartTree stock_part_tree(const CatalogEntry& entry, const SetupOptionTable& table, const SetupContext& ctx);
 
 // Equality of two option values (numbers within 1e-9), used to drop a value set back to stock.
 bool setup_values_equal(const SetupValue& a, const SetupValue& b);

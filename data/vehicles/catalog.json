@@ -14,6 +14,8 @@
       "engine_bay": "mid",
       "chassis": {
         "mass_kg": 1500.0,
+        "body_mass_kg": 918.951575,
+        "body_mass_source": "[AS] the body (shell, interior, glass, wiring, seats ...) of the part-mass tree (rg/part_mass.h): chosen so that the stock part tree (engine and gearbox catalogue figures, the vehicle file's wheel masses, data/vehicles/part_masses.json for the rest) sums to the previous chassis mass of 1500 kg, so the stock car keeps its mass.",
         "half_extents": [
           2.0,
           0.4,
@@ -69,6 +71,8 @@
       "engine_bay": "front",
       "chassis": {
         "mass_kg": 1500.0,
+        "body_mass_kg": 1039.60126,
+        "body_mass_source": "[AS] the body (shell, interior, glass, wiring, seats ...) of the part-mass tree (rg/part_mass.h): chosen so that the stock part tree (engine and gearbox catalogue figures, the vehicle file's wheel masses, data/vehicles/part_masses.json for the rest) sums to the previous chassis mass of 1500 kg, so the stock car keeps its mass.",
         "half_extents": [
           2.0,
           0.4,
@@ -117,6 +121,8 @@
       "engine_bay": "front",
       "chassis": {
         "mass_kg": 1500.0,
+        "body_mass_kg": 1087.60126,
+        "body_mass_source": "[AS] the body (shell, interior, glass, wiring, seats ...) of the part-mass tree (rg/part_mass.h): chosen so that the stock part tree (engine and gearbox catalogue figures, the vehicle file's wheel masses, data/vehicles/part_masses.json for the rest) sums to the previous chassis mass of 1500 kg, so the stock car keeps its mass.",
         "half_extents": [
           2.0,
           0.4,
@@ -165,6 +171,8 @@
       "engine_bay": "front",
       "chassis": {
         "mass_kg": 1500.0,
+        "body_mass_kg": 1033.60126,
+        "body_mass_source": "[AS] the body (shell, interior, glass, wiring, seats ...) of the part-mass tree (rg/part_mass.h): chosen so that the stock part tree (engine and gearbox catalogue figures, the vehicle file's wheel masses, data/vehicles/part_masses.json for the rest) sums to the previous chassis mass of 1500 kg, so the stock car keeps its mass.",
         "half_extents": [
           2.0,
           0.4,
@@ -211,6 +219,8 @@
       "engine_bay": "front",
       "chassis": {
         "mass_kg": 1500.0,
+        "body_mass_kg": 1069.56526,
+        "body_mass_source": "[AS] the body (shell, interior, glass, wiring, seats ...) of the part-mass tree (rg/part_mass.h): chosen so that the stock part tree (engine and gearbox catalogue figures, the vehicle file's wheel masses, data/vehicles/part_masses.json for the rest) sums to the previous chassis mass of 1500 kg, so the stock car keeps its mass.",
         "half_extents": [
           2.0,
           0.4,
@@ -257,6 +267,8 @@
       "engine_bay": "mid",
       "chassis": {
         "mass_kg": 1500.0,
+        "body_mass_kg": 906.647575,
+        "body_mass_source": "[AS] the body (shell, interior, glass, wiring, seats ...) of the part-mass tree (rg/part_mass.h): chosen so that the stock part tree (engine and gearbox catalogue figures, the vehicle file's wheel masses, data/vehicles/part_masses.json for the rest) sums to the previous chassis mass of 1500 kg, so the stock car keeps its mass.",
         "half_extents": [
           2.0,
           0.4,
@@ -319,6 +331,8 @@
       },
       "chassis": {
         "mass_kg": 852.0,
+        "body_mass_kg": 518.8716,
+        "body_mass_source": "[AS] the body (shell, interior, glass, wiring, seats ...) of the part-mass tree (rg/part_mass.h): chosen so that the stock part tree (engine and gearbox catalogue figures, the vehicle file's wheel masses, data/vehicles/part_masses.json for the rest) sums to the previous chassis mass of 852 kg, so the stock car keeps its mass.",
         "half_extents": [
           1.6,
           0.5,
@@ -376,6 +390,8 @@
       },
       "chassis": {
         "mass_kg": 1282.0,
+        "body_mass_kg": 756.742,
+        "body_mass_source": "[AS] the body (shell, interior, glass, wiring, seats ...) of the part-mass tree (rg/part_mass.h): chosen so that the stock part tree (engine and gearbox catalogue figures, the vehicle file's wheel masses, data/vehicles/part_masses.json for the rest) sums to the previous chassis mass of 1282 kg, so the stock car keeps its mass.",
         "half_extents": [
           2.1,
           0.5,
@@ -434,6 +450,8 @@
       },
       "chassis": {
         "mass_kg": 644.0,
+        "body_mass_kg": 220.6028,
+        "body_mass_source": "[AS] the body (shell, interior, glass, wiring, seats ...) of the part-mass tree (rg/part_mass.h): chosen so that the stock part tree (engine and gearbox catalogue figures, the vehicle file's wheel masses, data/vehicles/part_masses.json for the rest) sums to the previous chassis mass of 644 kg, so the stock car keeps its mass.",
         "half_extents": [
           1.5,
           0.4,
@@ -448,7 +466,7 @@
       },
       "setup": {
         "options_note": "every option but brake_bias: the car has rear brakes only (no front corner to bias towards)",
-        "options": ["final_drive", "gear_ratios", "clutch_capacity", "brake_force", "spring_front", "spring_rear", "damper_front", "damper_rear", "arb_front", "arb_rear", "tyre_front", "tyre_rear", "assist_auto_clutch", "assist_auto_blip", "assist_auto_shift", "assist_unit", "paint", "rim", "folding_top", "engine_rev_limit", "engine_throttle_response", "engine_install", "fuel", "gearbox_install", "turbo_install", "turbo_install_n2o", "turbo_kit", "turbo_boost_target", "nitrous_install_hyper", "nitrous_install_sedan"],
+        "options": ["final_drive", "gear_ratios", "clutch_capacity", "brake_force", "spring_front", "spring_rear", "damper_front", "damper_rear", "arb_front", "arb_rear", "tyre_front", "tyre_rear", "assist_auto_clutch", "assist_auto_blip", "assist_auto_shift", "assist_unit", "paint", "rim", "folding_top", "engine_rev_limit", "engine_throttle_response", "engine_install", "fuel", "gearbox_install", "drive_layout", "diff_front", "diff_rear", "turbo_install", "turbo_install_n2o", "turbo_kit", "turbo_boost_target", "nitrous_install_hyper", "nitrous_install_sedan"],
         "tyre_fitment": {
           "front": {
             "rims_in": [
@@ -484,6 +502,8 @@
       "engine_bay": "front",
       "chassis": {
         "mass_kg": 1500.0,
+        "body_mass_kg": 1039.60126,
+        "body_mass_source": "[AS] the body (shell, interior, glass, wiring, seats ...) of the part-mass tree (rg/part_mass.h): chosen so that the stock part tree (engine and gearbox catalogue figures, the vehicle file's wheel masses, data/vehicles/part_masses.json for the rest) sums to the previous chassis mass of 1500 kg, so the stock car keeps its mass.",
         "half_extents": [
           2.0,
           0.4,
@@ -532,6 +552,8 @@
       "engine_bay": "front",
       "chassis": {
         "mass_kg": 1500.0,
+        "body_mass_kg": 1033.60126,
+        "body_mass_source": "[AS] the body (shell, interior, glass, wiring, seats ...) of the part-mass tree (rg/part_mass.h): chosen so that the stock part tree (engine and gearbox catalogue figures, the vehicle file's wheel masses, data/vehicles/part_masses.json for the rest) sums to the previous chassis mass of 1500 kg, so the stock car keeps its mass.",
         "half_extents": [
           2.0,
           0.4,
@@ -578,6 +600,8 @@
       "engine_bay": "front",
       "chassis": {
         "mass_kg": 1282.0,
+        "body_mass_kg": 756.742,
+        "body_mass_source": "[AS] the body (shell, interior, glass, wiring, seats ...) of the part-mass tree (rg/part_mass.h): chosen so that the stock part tree (engine and gearbox catalogue figures, the vehicle file's wheel masses, data/vehicles/part_masses.json for the rest) sums to the previous chassis mass of 1282 kg, so the stock car keeps its mass.",
         "half_extents": [
           2.1,
           0.5,

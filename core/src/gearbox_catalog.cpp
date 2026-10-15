@@ -101,6 +101,8 @@ std::unique_ptr<GearboxCatalog> GearboxCatalog::open(const std::string& catalog_
         if (!one_of(e.synchro, {"cone", "dog"})) return fail(where + "\"synchro\" must be cone or dog");
         detail::get_string(row, "description", e.description);
         if (!detail::get_number(row, "rating_nm", e.rating_nm) || !(e.rating_nm > 0.0)) return fail(where + "\"rating_nm\" must be a number > 0");
+        if (!detail::get_number(row, "mass_kg", e.mass_kg) || !(e.mass_kg > 0.0) || !(e.mass_kg < 1000.0)) return fail(where + "\"mass_kg\" must be a number in (0, 1000)");
+        detail::get_string(row, "mass_source", e.mass_source);
         std::string file;
         if (!detail::get_string(row, "file", file) || file.empty()) return fail(where + "\"file\" missing");
         e.file = resolve_from(repo_root, file);

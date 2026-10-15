@@ -71,6 +71,32 @@
 .PARAMETER -DryRun
     Print what would happen and do nothing - no build, no launch.
 
+.PARAMETER -Renderer
+    Godot rendering method for this run: compat (default, the project
+    setting gl_compatibility), mobile or forward_plus. Forwarded as
+    --rendering-method; the frame-time lines (RG_FRAME_STATS) name the
+    renderer and driver that actually ran. mobile/forward_plus run on
+    Vulkan (or D3D12 with -Driver d3d12); see the perf PR's renderer notes.
+
+.PARAMETER -Driver
+    Godot rendering driver: opengl3 (compat only), vulkan, d3d12. Default:
+    whatever Godot picks for the chosen renderer (vulkan for mobile and
+    forward_plus).
+
+.PARAMETER -RenderThread
+    Godot render thread model: safe (default, rendering on the main thread
+    after the scripts) or separate (the RenderingServer runs on its own
+    thread, so draw-call submission overlaps the next frame's scripts).
+    Forwarded as --render-thread.
+
+.PARAMETER -Perf
+    Turn on the performance diagnostics for this run (env RG_PERF=1 for the
+    child only): frame probes, GPU/CPU render timers and the 1 Hz
+    RG_FRAME_STATS / RG_TERRAIN_STREAM / RG_ROAD_STREAM lines that
+    tools/perf_summary.py reads. Off by default (no cost in a normal game).
+    -Renderer, -Driver and -RenderThread imply it; so do RG_PERF_AB and
+    RG_BENCH_SURFACES when set in the environment.
+
 .PARAMETER -Preset
     CMake preset to build (default 'relwithdebinfo' - a debug build makes
     ps_core/rg_core/geo2map physics roughly 10x slower, which turns the
@@ -99,9 +125,19 @@ $Preset    = 'relwithdebinfo'
 $GodotArgs = New-Object System.Collections.Generic.List[string]
 $sawSeparator = $false
 $expectPresetValue = $false
+$Renderer  = ''
+$Driver    = ''
+$expectRendererValue = $false
+$expectDriverValue = $false
+$RenderThread = ''
+$Perf = $false
+$expectRenderThreadValue = $false
 
 foreach ($a in $args) {
     if ($expectPresetValue) { $Preset = $a; $expectPresetValue = $false; continue }
+    if ($expectRendererValue) { $Renderer = $a.ToLower(); $expectRendererValue = $false; continue }
+    if ($expectDriverValue) { $Driver = $a.ToLower(); $expectDriverValue = $false; continue }
+    if ($expectRenderThreadValue) { $RenderThread = $a.ToLower(); $expectRenderThreadValue = $false; continue }
     if ($sawSeparator) { $GodotArgs.Add($a); continue }
     switch -Regex ($a) {
         '^--?SkipBuild$' { $SkipBuild = $true; continue }
@@ -111,7 +147,11 @@ foreach ($a in $args) {
         '^--?Drive$'     { $Drive     = $true; continue }
         '^--?VR$'        { $VR        = $true; continue }
         '^--?DryRun$'    { $DryRun    = $true; continue }
+        '^--?Perf$'      { $Perf      = $true; continue }
         '^--?Preset$'    { $expectPresetValue = $true; continue }
+        '^--?Renderer$'  { $expectRendererValue = $true; continue }
+        '^--?Driver$'    { $expectDriverValue = $true; continue }
+        '^--?RenderThread$' { $expectRenderThreadValue = $true; continue }
         '^--$'           { $sawSeparator = $true; continue }
         default          { $GodotArgs.Add($a) }
     }
@@ -237,6 +277,31 @@ $launchArgs = New-Object System.Collections.Generic.List[string]
 $launchArgs.Add('--path')
 $launchArgs.Add($gameDir)
 
+# -Renderer / -Driver (perf, 2026-10-15): compare the three Godot renderers on the same scene.
+$renderMethod = switch ($Renderer) {
+    ''             { '' }
+    'compat'       { 'gl_compatibility' }
+    'gl_compatibility' { 'gl_compatibility' }
+    'mobile'       { 'mobile' }
+    'forward_plus' { 'forward_plus' }
+    'forward+'     { 'forward_plus' }
+    default        { throw "-Renderer must be compat, mobile or forward_plus (got '$Renderer')" }
+}
+if ($Driver -and $Driver -notin @('opengl3', 'vulkan', 'd3d12')) { throw "-Driver must be opengl3, vulkan or d3d12 (got '$Driver')" }
+if ($renderMethod -and -not $VR) { $launchArgs.Add('--rendering-method'); $launchArgs.Add($renderMethod) }
+if ($Driver -and -not $VR) { $launchArgs.Add('--rendering-driver'); $launchArgs.Add($Driver) }
+if ($RenderThread) {
+    if ($RenderThread -notin @('safe', 'separate')) { throw "-RenderThread must be safe or separate (got '$RenderThread')" }
+    $launchArgs.Add('--render-thread'); $launchArgs.Add($RenderThread)
+}
+
+# -Perf (or a perf comparison option): performance diagnostics on for the child (RG_PERF=1, main.gd).
+$perfSet = $false
+if (($Perf -or $Renderer -or $Driver -or $RenderThread) -and $env:RG_PERF -ne '1') {
+    $env:RG_PERF = '1'; $perfSet = $true
+    Write-Host "perf diagnostics on (RG_PERF=1)"
+}
+
 if ($VR -and -not $Editor) {
     foreach ($xrArg in @('--xr-mode', 'on', '--rendering-method', 'mobile', '--rendering-driver', 'vulkan')) { $launchArgs.Add($xrArg) }
 }
@@ -259,10 +324,12 @@ Write-Host "$godotExe $($launchArgsArr -join ' ')"
 if ($DryRun) {
     Write-Host "`n(dry run - not launching Godot)" -ForegroundColor Yellow
     if ($vrSetWorldConfig) { Remove-Item Env:RG_WORLD_CONFIG }
+    if ($perfSet) { Remove-Item Env:RG_PERF }
     exit 0
 }
 
 & $godotExe @launchArgsArr
 $godotExit = $LASTEXITCODE
 if ($vrSetWorldConfig) { Remove-Item Env:RG_WORLD_CONFIG }
+if ($perfSet) { Remove-Item Env:RG_PERF }
 exit $godotExit
