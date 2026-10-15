@@ -266,10 +266,62 @@
    }
   }
  ],
- "sockets": [],
+ "sockets": [
+  {
+   "name": "socket_driver_eye",
+   "parent": "generic_suv",
+   "position": [
+    -0.15,
+    0.38,
+    1.35
+   ],
+   "note": "driver eye point (camera)"
+  }
+ ],
+ "lights": {
+  "head": {
+   "emissive_on": [
+    1.0,
+    0.95,
+    0.85
+   ],
+   "emissive_strength_on": 8.0,
+   "materials": [
+    "light_head"
+   ]
+  },
+  "tail": {
+   "emissive_on": [
+    1.0,
+    0.03,
+    0.02
+   ],
+   "emissive_strength_on": 2.0,
+   "materials": [
+    "light_brake"
+   ]
+  },
+  "brake": {
+   "emissive_on": [
+    1.0,
+    0.02,
+    0.01
+   ],
+   "emissive_strength_on": 8.0,
+   "materials": [
+    "light_brake"
+   ]
+  }
+ },
+ "materials": {
+  "renamed": [
+   "paint"
+  ],
+  "note": "Source materials renamed for the garage / drive colours (paint, paint_tinted, rim) per tools/carimport/cars.json \"materials\"."
+ },
  "notes": [
   "Wheels found by node names.",
   "wheel_width_scale \"rig\": vehicle_visual.gd / garage_scene.gd scale a wheel by physics tyre width / the rig wheel's tyre_width (the stock tyre the art stands for, else its modelled width), so the stock tyre keeps the art unscaled.",
-  "No lights, cockpit or engine bay data: the source model has no such structure."
+  "Lamps: triangles picked by tools/carimport/cars.json \"lights\" rules (node, material, ISO box) moved onto light_* material copies; no cockpit controls or engine bay data."
  ]
 }

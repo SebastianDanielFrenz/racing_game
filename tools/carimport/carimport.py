@@ -130,6 +130,124 @@ class Builder:
         return js, bytes(self.bin)
 
 
+LIGHT_KINDS = ("head", "tail", "brake", "indicator_left", "indicator_right", "reverse")
+
+
+def _in_range(v, rng):
+    return np.ones(len(v), bool) if rng is None else (v >= rng[0]) & (v <= rng[1])
+
+
+def split_lamps(b, car, n, mesh_index, iso_of, lamp_mats):
+    """Moves the lamp triangles of one body mesh onto their own primitives with a light_<kind> material copy.
+
+    cars.json "lights": rules {kind, node (regex on the node path), material (regex on the source material name),
+    x/y/z ([min, max] metres, ISO, output frame, on the triangle centroid)}; kind "indicator" splits into
+    indicator_left / indicator_right by the centroid's side. The first matching rule takes a triangle. Returns the
+    (possibly new) mesh index."""
+    rules = car.get("lights", {}).get("rules", [])
+    if not rules or any(p.get("mode", 4) != 4 for p in b.js["meshes"][mesh_index]["primitives"]):
+        return mesh_index
+    src = b.js["meshes"][mesh_index]
+    prims, changed = [], False
+    for pi, p in enumerate(src["primitives"]):
+        wp, tris, mat = n.prims[pi]
+        mat_name = b.js["materials"][mat]["name"] if mat is not None else ""
+        cen = iso_of(wp)[tris].mean(1)
+        kind = np.full(len(tris), "", object)
+        for r in rules:
+            if r.get("node") and not re.search(r["node"], n.path, re.I):
+                continue
+            if r.get("material") and not re.search(r["material"], mat_name, re.I):
+                continue
+            m = (kind == "") & _in_range(cen[:, 0], r.get("x")) & _in_range(cen[:, 1], r.get("y")) \
+                & _in_range(cen[:, 2], r.get("z"))
+            if r["kind"] == "indicator":
+                kind[m & (cen[:, 1] >= 0)] = "indicator_left"
+                kind[m & (cen[:, 1] < 0)] = "indicator_right"
+            else:
+                kind[m] = r["kind"]
+        if not (kind != "").any():
+            prims.append(p)
+            continue
+        changed = True
+        for k in [""] + sorted(set(kind) - {""}):
+            sel = tris[kind == k]
+            if len(sel) == 0:
+                continue
+            q = copy.deepcopy(p)
+            q["indices"] = b.index_accessor(sel)
+            if k:
+                q["material"] = lamp_material(b, k, mat, lamp_mats)
+            prims.append(q)
+    if not changed:
+        return mesh_index
+    b.js["meshes"].append({"name": src.get("name", "") + "_lamps", "primitives": prims})
+    return len(b.js["meshes"]) - 1
+
+
+def lamp_material(b, kind, src_mat, lamp_mats):
+    """One light_<kind>[_<n>] copy per (kind, source material); a textured source keeps its colour map and gets it
+    as emissive map too, so a lit lamp shows the lamp texture (exterior_lamps.gd sets the colour and strength)."""
+    key = (kind, src_mat)
+    if key not in lamp_mats:
+        m = copy.deepcopy(b.js["materials"][src_mat]) if src_mat is not None else {}
+        same = [k for k in lamp_mats if k[0] == kind]
+        m["name"] = f"light_{kind}" + (f"_{len(same) + 1}" if same else "")
+        tex = m.get("pbrMetallicRoughness", {}).get("baseColorTexture")
+        if tex is not None:
+            m["emissiveTexture"] = copy.deepcopy(tex)
+        m["emissiveFactor"] = [0.0, 0.0, 0.0]
+        b.js["materials"].append(m)
+        lamp_mats[key] = len(b.js["materials"]) - 1
+    return lamp_mats[key]
+
+
+def rename_materials(b, car):
+    """cars.json "materials": paint / rim regexes on the source material names -> materials named "paint" /
+    "rim" (the names the garage and vehicle_visual.gd recolour). "paint_tint_texture": regex of a material whose
+    colour map is a white-body copy of the paint's map (atlas cars): the paint takes that map and a colour factor
+    equal to the original paint's mean colour over it, and is named "paint_tinted" (recolouring keeps the map)."""
+    spec = car.get("materials", {})
+    renamed = {}
+    mats = b.js["materials"]
+    for role in ("paint", "rim"):
+        rx = spec.get(role)
+        if not rx:
+            continue
+        for i, m in enumerate(mats):
+            if i in renamed or not re.search(rx, m.get("name", ""), re.I):
+                continue
+            renamed[i] = role
+            m["name"] = role if role == "rim" or not spec.get("paint_tint_texture") else "paint_tinted"
+    tint = spec.get("paint_tint_texture")
+    if tint:
+        white = [m for m in mats if re.search(tint, m.get("name", ""), re.I)]
+        for i, role in renamed.items():
+            if role != "paint" or not white:
+                continue
+            pbr = mats[i].setdefault("pbrMetallicRoughness", {})
+            wpbr = white[0].get("pbrMetallicRoughness", {})
+            if "baseColorTexture" in wpbr:
+                pbr["baseColorTexture"] = copy.deepcopy(wpbr["baseColorTexture"])
+                pbr["baseColorFactor"] = spec.get("paint_tint_factor", [1.0, 1.0, 1.0, 1.0])
+    return renamed
+
+
+def driver_eye(car, nodes, iso_of):
+    """socket_driver_eye (ISO, output frame): cars.json "driver_eye" {"at": [x, y, z]} or {"steering": regex of the
+    steering wheel node, "offset": [dx, dy, dz] from its centre}."""
+    spec = car.get("driver_eye")
+    if not spec:
+        return None
+    if "at" in spec:
+        return np.asarray(spec["at"], float)
+    sw = [n for n in nodes if re.search(spec["steering"], n.path, re.I)]
+    if not sw:
+        raise SystemExit(f"{car['id']}: steering wheel node /{spec['steering']}/ not found for the driver eye")
+    pts = iso_of(np.concatenate([n.points() for n in sw]))
+    return 0.5 * (pts.min(0) + pts.max(0)) + np.asarray(spec["offset"], float)
+
+
 def build(car):
     src = os.path.join(SRC_DIR, car["source"])
     js, bin_, nodes = analyze.load(src)
@@ -171,6 +289,11 @@ def build(car):
         return m
 
     b = Builder(js, bin_)
+    lamp_mats = {}
+
+    def iso_of(world_points):
+        return frame.to_iso(world_points) - origin
+
     wheel_parts = {}   # source node index -> {corner: {prim: tris}} or "whole" -> corner
     for c, w in wheels.items():
         for node, sel in w.parts:
@@ -192,7 +315,8 @@ def build(car):
             continue
         wp = wheel_parts.get(n.index)
         if wp is None:
-            body_children.append(b.add_node({"name": n.name, "mesh": n.mesh, "matrix": col_major(world_out)}))
+            mesh = split_lamps(b, car, n, n.mesh, iso_of, lamp_mats)
+            body_children.append(b.add_node({"name": n.name, "mesh": mesh, "matrix": col_major(world_out)}))
             continue
         if "whole" in wp:
             c = wp["whole"]
@@ -229,6 +353,10 @@ def build(car):
             susp_children = [wheel] + corner_children[c]["steer"]
         root_children.append(b.add_node({"name": f"susp_{c}", "translation": [float(v) for v in P @ pivot[c]],
                                          "children": susp_children}))
+    eye = driver_eye(car, nodes, iso_of)
+    if eye is not None:
+        root_children.append(b.add_node({"name": "socket_driver_eye", "translation": [float(v) for v in P @ eye]}))
+    renamed = rename_materials(b, car)
     root = b.add_node({"name": car["id"], "children": root_children})
 
     src_sha = sha256(src)
@@ -241,12 +369,17 @@ def build(car):
         "extras": dict(ex, source_file=car["source"], source_sha256=src_sha,
                        modifications="Axes and origin normalised to the physics_sim.rig/1 frame, wheels re-parented "
                                      "under susp_/steer_/wheel_ pivots at the wheel centres, brake calipers under "
-                                     "the steer/susp pivots, baked ground/shadow plane removed. Geometry, materials "
-                                     "and textures otherwise unchanged."),
+                                     "the steer/susp pivots, baked ground/shadow plane removed, lamp triangles moved "
+                                     "to light_* material copies, body paint / rim materials renamed, a driver eye "
+                                     "socket added. Geometry and textures otherwise unchanged."),
     }
     out_js, out_bin = b.finish(root, asset)
+    lamps = {}
+    for (kind, _), mi in sorted(lamp_mats.items(), key=lambda kv: kv[1]):
+        lamps.setdefault(kind, []).append(out_js["materials"][mi]["name"])
     return dict(js=out_js, bin=out_bin, frame=frame, method=method, pivot=pivot, radius=radius, width=width,
-                dropped=[n.name for n in dropped], src_sha=src_sha, extras=ex)
+                dropped=[n.name for n in dropped], src_sha=src_sha, extras=ex, lamps=lamps, eye=eye,
+                renamed=sorted(set(renamed.values())))
 
 
 def bounds_iso(js, bin_, under=None):
@@ -286,7 +419,20 @@ def tyre_width(car, corner):
     return {"tyre_width": spec["width_mm"] / 1000.0}
 
 
-def write_rig(car, r, path):
+def rig_lights(car, r, look):
+    """The rig "lights" block (exterior_lamps.gd / headlights.gd) for the light_* materials the import made; tail
+    falls back to the brake lamps' materials (one bulb, two levels) when the model has no separate tail lamp."""
+    lamps = dict(r["lamps"])
+    if "tail" not in lamps and "brake" in lamps:
+        lamps["tail"] = list(lamps["brake"])
+    out = {}
+    for kind in LIGHT_KINDS:
+        if kind in lamps:
+            out[kind] = dict(look[kind.split("_")[0]], materials=lamps[kind])
+    return out
+
+
+def write_rig(car, r, path, look):
     js, bin_ = r["js"], r["bin"]
     lo, hi = bounds_iso(js, bin_)
     nodes = [{"name": car["id"], "parent": None, "pivot": [0.0, 0.0, 0.0],
@@ -324,12 +470,18 @@ def write_rig(car, r, path):
         "wheel_width_scale": "rig",
         "overall_bounds": nodes[0]["bounds_local"],
         "nodes": nodes,
-        "sockets": [],
+        "sockets": ([{"name": "socket_driver_eye", "parent": car["id"],
+                      "position": [round(float(v), 4) for v in r["eye"]], "note": "driver eye point (camera)"}]
+                    if r["eye"] is not None else []),
+        "lights": rig_lights(car, r, look),
+        "materials": {"renamed": r["renamed"], "note": "Source materials renamed for the garage / drive colours "
+                      "(paint, paint_tinted, rim) per tools/carimport/cars.json \"materials\"."},
         "notes": [f"Wheels found by {r['method']}.",
                   "wheel_width_scale \"rig\": vehicle_visual.gd / garage_scene.gd scale a wheel by physics tyre "
                   "width / the rig wheel's tyre_width (the stock tyre the art stands for, else its modelled width), "
                   "so the stock tyre keeps the art unscaled.",
-                  "No lights, cockpit or engine bay data: the source model has no such structure."],
+                  "Lamps: triangles picked by tools/carimport/cars.json \"lights\" rules (node, material, ISO box) "
+                  "moved onto light_* material copies; no cockpit controls or engine bay data."],
     }
     with open(path, "w") as f:
         json.dump(rig, f, indent=1)
@@ -405,6 +557,19 @@ def check(car):
                 fails.append(f"{c}: {n['name']} is not at its parent's pivot")
     if ground and max(abs(g) for g in ground) > PIVOT_TOL_M:
         fails.append(f"wheel bottoms {np.round(ground, 3)} not on the ground plane")
+    mat_names = {m.get("name") for m in js.get("materials", [])}
+    for kind, spec in rig.get("lights", {}).items():
+        missing = [m for m in spec.get("materials", []) if m not in mat_names]
+        if missing:
+            fails.append(f"lights.{kind}: materials {missing} not in the glb")
+    for kind in car.get("lights", {}).get("required", []):
+        if kind not in rig.get("lights", {}):
+            fails.append(f"lights.{kind}: no lamp triangles matched")
+    for role in car.get("materials", {}):
+        if role in ("paint", "rim") and not any(n == role or n.startswith(role + "_") for n in mat_names):
+            fails.append(f"material role {role}: no material renamed")
+    if car.get("driver_eye") and not any(n.get("name") == "socket_driver_eye" for n in js["nodes"]):
+        fails.append("socket_driver_eye missing")
     a = js.get("asset", {})
     ex = a.get("extras", {})
     if not (ex.get("author") and "CC-BY" in ex.get("license", "") and ex.get("source_sha256") and a.get("copyright")):
@@ -436,8 +601,9 @@ def record_attribution(car, r):
         "license": "CC-BY-4.0",
         "modifications": "Re-oriented to the game's axes and origin, wheels re-parented under suspension/steering/"
                          "spin pivots at the wheel centres, brake calipers under the steering pivots, baked "
-                         "ground/shadow plane removed (tools/carimport). Geometry, materials and textures otherwise "
-                         "unchanged.",
+                         "ground/shadow plane removed, lamp triangles moved to light_* material copies, paint/rim "
+                         "materials renamed, driver eye socket added (tools/carimport). Geometry and textures "
+                         "otherwise unchanged.",
         "modified_on": datetime.date.today().isoformat(),
     })
     att["derived"] = sorted(derived, key=lambda e: e["id"])
@@ -451,7 +617,9 @@ def main():
     ap.add_argument("ids", nargs="*")
     ap.add_argument("--check", action="store_true", help="only check the written files")
     a = ap.parse_args()
-    cars = json.load(open(CONFIG))["cars"]
+    config = json.load(open(CONFIG))
+    cars = config["cars"]
+    look = config["light_look"]
     if a.ids:
         cars = [c for c in cars if c["id"] in a.ids]
     bad = 0
@@ -461,13 +629,14 @@ def main():
             d = os.path.join(OUT_DIR, car["id"])
             os.makedirs(d, exist_ok=True)
             glb.write(os.path.join(d, car["id"] + ".glb"), r["js"], r["bin"])
-            write_rig(car, r, os.path.join(d, car["id"] + ".rig.json"))
+            write_rig(car, r, os.path.join(d, car["id"] + ".rig.json"), look)
             write_vehicle(car, r)
             record_attribution(car, r)
             piv = r["pivot"]
             print(f"{car['id']}: wheels by {r['method']}, frame {r['frame'].describe()}, dropped {r['dropped']}, "
                   f"wheelbase {0.5 * (piv['FL'][0] + piv['FR'][0] - piv['RL'][0] - piv['RR'][0]):.3f} m, "
-                  f"track {piv['FL'][1] - piv['FR'][1]:.3f} m, wheel r {np.mean(list(r['radius'].values())):.3f} m")
+                  f"track {piv['FL'][1] - piv['FR'][1]:.3f} m, wheel r {np.mean(list(r['radius'].values())):.3f} m, "
+                  f"lamps {sorted(r['lamps'])}, renamed {r['renamed']}, eye {None if r['eye'] is None else np.round(r['eye'], 3).tolist()}")
         fails = check(car)
         print(f"{car['id']}: check {'PASS' if not fails else 'FAIL'}" + "".join(f"\n  - {f}" for f in fails))
         bad += bool(fails)

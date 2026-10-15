@@ -1,0 +1,360 @@
+{
+ "format": "physics_sim.rig/1",
+ "model": "shvan_92.glb",
+ "title": "Shvan 92",
+ "description": "Imported from the CC BY model \"Shvan '92 - Low poly model\" (shvan_92_-_low_poly_model.glb) by tools/carimport.",
+ "frame": "ISO 8855: x forward, y left, z up; metres; radians. The .glb itself uses glTF axes (+Y up, +Z forward, +X left): gltf(x,y,z) = iso(y,z,x).",
+ "origin": "Ground plane below the wheel centres (mean wheel bottom), x = 0 midway between the axles, y = 0 midway between the wheels.",
+ "rest_pose": "All node rotations are identity at rest; a node's origin is its joint pivot. Joint values are offsets from the rest pose (0 = as modelled).",
+ "source": {
+  "file": "shvan_92_-_low_poly_model.glb",
+  "sha256": "5f817b226678e538f6cae3622589911dd264882409d8533e06aed51719d826cc",
+  "title": "Shvan '92 - Low poly model",
+  "author": "Daniel Zhabotinsky (https://sketchfab.com/DanielZhabotinsky)",
+  "license": "CC-BY-4.0 (http://creativecommons.org/licenses/by/4.0/)",
+  "url": "https://sketchfab.com/3d-models/shvan-92-low-poly-model-09d718c9cf72401b8534d265a06a803f"
+ },
+ "wheel_width_scale": "rig",
+ "overall_bounds": {
+  "min": [
+   -2.6577,
+   -1.1813,
+   -0.0064
+  ],
+  "max": [
+   2.2414,
+   1.1674,
+   1.9226
+  ]
+ },
+ "nodes": [
+  {
+   "name": "shvan_92",
+   "parent": null,
+   "pivot": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "bounds_local": {
+    "min": [
+     -2.6577,
+     -1.1813,
+     -0.0064
+    ],
+    "max": [
+     2.2414,
+     1.1674,
+     1.9226
+    ]
+   }
+  },
+  {
+   "name": "susp_FL",
+   "parent": "shvan_92",
+   "pivot": [
+    1.5676,
+    0.829,
+    0.3564
+   ],
+   "joint": {
+    "type": "prismatic",
+    "axis": [
+     0,
+     0,
+     1
+    ],
+    "min": -0.08,
+    "max": 0.08,
+    "note": "wheel travel (bump +)"
+   }
+  },
+  {
+   "name": "steer_FL",
+   "parent": "susp_FL",
+   "pivot": [
+    1.5676,
+    0.829,
+    0.3564
+   ],
+   "joint": {
+    "type": "revolute",
+    "axis": [
+     0,
+     0,
+     1
+    ],
+    "min": -0.6,
+    "max": 0.6,
+    "note": "road-wheel steer angle, + = left"
+   }
+  },
+  {
+   "name": "wheel_FL",
+   "parent": "steer_FL",
+   "pivot": [
+    1.5676,
+    0.829,
+    0.3564
+   ],
+   "joint": {
+    "type": "continuous",
+    "axis": [
+     0,
+     1,
+     0
+    ],
+    "note": "wheel spin, + = rolling forward"
+   },
+   "wheel": {
+    "radius": 0.3503,
+    "width": 0.2701,
+    "side": "left",
+    "tyre_width": 0.215
+   }
+  },
+  {
+   "name": "susp_FR",
+   "parent": "shvan_92",
+   "pivot": [
+    1.5676,
+    -0.829,
+    0.3443
+   ],
+   "joint": {
+    "type": "prismatic",
+    "axis": [
+     0,
+     0,
+     1
+    ],
+    "min": -0.08,
+    "max": 0.08,
+    "note": "wheel travel (bump +)"
+   }
+  },
+  {
+   "name": "steer_FR",
+   "parent": "susp_FR",
+   "pivot": [
+    1.5676,
+    -0.829,
+    0.3443
+   ],
+   "joint": {
+    "type": "revolute",
+    "axis": [
+     0,
+     0,
+     1
+    ],
+    "min": -0.6,
+    "max": 0.6,
+    "note": "road-wheel steer angle, + = left"
+   }
+  },
+  {
+   "name": "wheel_FR",
+   "parent": "steer_FR",
+   "pivot": [
+    1.5676,
+    -0.829,
+    0.3443
+   ],
+   "joint": {
+    "type": "continuous",
+    "axis": [
+     0,
+     1,
+     0
+    ],
+    "note": "wheel spin, + = rolling forward"
+   },
+   "wheel": {
+    "radius": 0.3503,
+    "width": 0.2701,
+    "side": "right",
+    "tyre_width": 0.215
+   }
+  },
+  {
+   "name": "susp_RL",
+   "parent": "shvan_92",
+   "pivot": [
+    -1.5676,
+    0.829,
+    0.3564
+   ],
+   "joint": {
+    "type": "prismatic",
+    "axis": [
+     0,
+     0,
+     1
+    ],
+    "min": -0.08,
+    "max": 0.08,
+    "note": "wheel travel (bump +)"
+   }
+  },
+  {
+   "name": "wheel_RL",
+   "parent": "susp_RL",
+   "pivot": [
+    -1.5676,
+    0.829,
+    0.3564
+   ],
+   "joint": {
+    "type": "continuous",
+    "axis": [
+     0,
+     1,
+     0
+    ],
+    "note": "wheel spin, + = rolling forward"
+   },
+   "wheel": {
+    "radius": 0.3503,
+    "width": 0.2701,
+    "side": "left",
+    "tyre_width": 0.215
+   }
+  },
+  {
+   "name": "susp_RR",
+   "parent": "shvan_92",
+   "pivot": [
+    -1.5676,
+    -0.829,
+    0.3443
+   ],
+   "joint": {
+    "type": "prismatic",
+    "axis": [
+     0,
+     0,
+     1
+    ],
+    "min": -0.08,
+    "max": 0.08,
+    "note": "wheel travel (bump +)"
+   }
+  },
+  {
+   "name": "wheel_RR",
+   "parent": "susp_RR",
+   "pivot": [
+    -1.5676,
+    -0.829,
+    0.3443
+   ],
+   "joint": {
+    "type": "continuous",
+    "axis": [
+     0,
+     1,
+     0
+    ],
+    "note": "wheel spin, + = rolling forward"
+   },
+   "wheel": {
+    "radius": 0.3503,
+    "width": 0.2701,
+    "side": "right",
+    "tyre_width": 0.215
+   }
+  }
+ ],
+ "sockets": [
+  {
+   "name": "socket_driver_eye",
+   "parent": "shvan_92",
+   "position": [
+    0.7197,
+    0.4022,
+    1.4561
+   ],
+   "note": "driver eye point (camera)"
+  }
+ ],
+ "lights": {
+  "head": {
+   "emissive_on": [
+    1.0,
+    0.95,
+    0.85
+   ],
+   "emissive_strength_on": 8.0,
+   "materials": [
+    "light_head"
+   ]
+  },
+  "tail": {
+   "emissive_on": [
+    1.0,
+    0.03,
+    0.02
+   ],
+   "emissive_strength_on": 2.0,
+   "materials": [
+    "light_brake"
+   ]
+  },
+  "brake": {
+   "emissive_on": [
+    1.0,
+    0.02,
+    0.01
+   ],
+   "emissive_strength_on": 8.0,
+   "materials": [
+    "light_brake"
+   ]
+  },
+  "indicator_left": {
+   "emissive_on": [
+    1.0,
+    0.5,
+    0.0
+   ],
+   "emissive_strength_on": 6.0,
+   "materials": [
+    "light_indicator_left"
+   ]
+  },
+  "indicator_right": {
+   "emissive_on": [
+    1.0,
+    0.5,
+    0.0
+   ],
+   "emissive_strength_on": 6.0,
+   "materials": [
+    "light_indicator_right"
+   ]
+  },
+  "reverse": {
+   "emissive_on": [
+    1.0,
+    1.0,
+    1.0
+   ],
+   "emissive_strength_on": 5.0,
+   "materials": [
+    "light_reverse"
+   ]
+  }
+ },
+ "materials": {
+  "renamed": [
+   "paint"
+  ],
+  "note": "Source materials renamed for the garage / drive colours (paint, paint_tinted, rim) per tools/carimport/cars.json \"materials\"."
+ },
+ "notes": [
+  "Wheels found by node names.",
+  "wheel_width_scale \"rig\": vehicle_visual.gd / garage_scene.gd scale a wheel by physics tyre width / the rig wheel's tyre_width (the stock tyre the art stands for, else its modelled width), so the stock tyre keeps the art unscaled.",
+  "Lamps: triangles picked by tools/carimport/cars.json \"lights\" rules (node, material, ISO box) moved onto light_* material copies; no cockpit controls or engine bay data."
+ ]
+}
