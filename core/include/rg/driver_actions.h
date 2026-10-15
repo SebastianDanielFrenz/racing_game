@@ -4,6 +4,7 @@
 
 #include <array>
 #include <cstdint>
+#include <limits>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -32,6 +33,11 @@ struct CabinState {
     int lights = 0; // 0 off, 1 dipped, 2 main beam ("lights" action; channel cabin.lights)
     int wipers = 0;
     double auto_crank_elapsed_s = 0;
+    // Automatic headlamps (light sensor): the sensor's last decision and how
+    // long the opposite condition has held. Not valid until the first reading.
+    bool light_sensor_valid = false;
+    bool light_sensor_dark = false;
+    double light_sensor_timer_s = 0;
 };
 
 // Adapter-neutral view of the published snapshot; requested channels are read
@@ -64,6 +70,9 @@ struct DriverSnapshot {
     bool engine_running = false;
     double speed_mps = 0;
     double steering_wheel_deg = 0;
+    // Light sensor reading (horizontal illuminance, lux; rg::SkyLighting::illuminance_lux).
+    // NaN = no reading: the automatic headlamps hold their state.
+    double ambient_lux = std::numeric_limits<double>::quiet_NaN();
 };
 
 struct VehicleContext {
@@ -98,6 +107,17 @@ struct CabinConfig {
     double indicator_arm_deg = 0;
     double indicator_cancel_deg = 0;
     double brake_lamp_threshold = 0;
+    // Automatic headlamps ("AUTO" switch position, the default when enabled):
+    // dipped beam on once the sensor reads below on_lux for on_delay_s, off once
+    // it reads above off_lux for off_delay_s (hysteresis: on_lux <= off_lux).
+    // The first reading decides at once (a night spawn starts with lights on).
+    // A manual lights action (O key, cockpit switch) is obeyed and holds until
+    // the sensor's decision next changes; main beam is kept while it stays dark.
+    bool auto_lights = false;
+    double auto_lights_on_lux = 0;
+    double auto_lights_off_lux = 0;
+    double auto_lights_on_delay_s = 0;
+    double auto_lights_off_delay_s = 0;
 };
 
 class DriverActions {
@@ -120,6 +140,7 @@ private:
     CabinState cabin_;
     CabinConfig config_;
     bool cabin_configured_ = false;
+    void update_auto_lights(double lux, double dt);
     std::array<bool, 14> held_{};
     std::vector<ActionEvent> pending_;
 };

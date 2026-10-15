@@ -1,5 +1,6 @@
 extends Node
 const DriverState := preload("res://scripts/driver_state.gd") # preloaded once: this is called several times per frame
+const LightExposure := preload("res://scripts/light_exposure.gd")
 # game/scripts/input_map.gd — the input layer (a plain GDScript node, not a
 # C++ class like physics_sim's PsInputMap - see this repo's CLAUDE.md). It
 # only READS devices; WHAT an input means is the player's configuration, owned
@@ -164,6 +165,14 @@ var cabin_config: Dictionary = {}
 func _ready() -> void:
 	var cfg = JSON.parse_string(FileAccess.get_file_as_string(ProjectSettings.globalize_path("res://../data/controls/cabin.json")))
 	if cfg is Dictionary:
+		# Automatic headlamps: data/world/headlights.json "auto" (the light sensor reads light_exposure.gd).
+		var auto: Dictionary = load("res://scripts/headlights.gd").load_config().get("auto", {})
+		if bool(auto.get("enabled", false)):
+			cfg["auto_lights"] = true
+			cfg["auto_lights_on_lux"] = float(auto.get("on_lux", 0.0))
+			cfg["auto_lights_off_lux"] = float(auto.get("off_lux", 0.0))
+			cfg["auto_lights_on_delay_s"] = float(auto.get("on_delay_s", 0.0))
+			cfg["auto_lights_off_delay_s"] = float(auto.get("off_delay_s", 0.0))
 		cabin_config = cfg
 		driver_actions.configure_cabin(cfg)
 	if controls == null:
@@ -568,6 +577,8 @@ func advance_cabin(sim: Node, snapshot: Dictionary, delta: float, enabled: bool,
 	var context := snapshot.duplicate()
 	context["speed_mps"] = sim.get_body_speed_mps("chassis")
 	context["steering_wheel_deg"] = rad_to_deg(sim.get_wheel_steer_angle(vehicle_name,0)) * float(cabin_config["steering_ratio"]) if cabin_config.has("steering_ratio") else 0.0
+	if is_finite(LightExposure.ambient_lux):
+		context["ambient_lux"] = LightExposure.ambient_lux
 	var values: Dictionary = DriverState.channels(sim)
 	for write in driver_actions.advance(context,values,enabled,delta):
 		sim.set_control(write["channel"],float(write["value"]))

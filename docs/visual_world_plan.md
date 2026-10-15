@@ -194,7 +194,8 @@ look.
 - **V8 physics part (built 2026-10-14, owner answers Q1-Q4).** Clock start kept
   (real date, 14:00, x1). Headlights follow the car's light switch (Ventura
   `sw_lights` submits the `lights` action; the hypercar's rotary switch is posed
-  from `cabin.lights`) and the O key; no dusk auto-on. `data/world/climate.json`
+  from `cabin.lights`) and the O key; automatic headlamps since 2026-10-15
+  (below). `data/world/climate.json`
   (`rg.climate/1`, `core/include/rg/climate.h`) is the one source of the air
   temperature: monthly mean + daily range (interpolated between month
   midpoints), cosine with a 14:30 local-mean-solar peak, damped by cloud cover,
@@ -212,3 +213,54 @@ look.
 - Known limits: the clock is not saved between runs; the mouse must be free
   (not captured by the cockpit view) to click the widget; UTM grid north vs true
   north is corrected, refraction is not modelled.
+
+## Automatic headlamps and exposure (2026-10-15, owner comment on PR #5)
+
+Owner: headlights should come on by themselves at night; brake lamps should not
+glow in daylight but show clearly at night; headlights should be visible by day
+without lighting the road. Done with constant physical lamp intensities and a
+scene exposure, not with day/night switches on the lamps.
+
+- **Illuminance.** `rg::SkyLighting::illuminance_lux` (horizontal lux): per
+  lighting key in `data/world/sky.json` (0.002 starlit night, 3.4 at -6 deg,
+  600 sun on the horizon, 15k/55k/100k at 10/30/60 deg; textbook-order values,
+  recalled, unverified), log-interpolated, x (1 - 0.8 cover^1.5) for clouds
+  (~0.3 overcast), plus moonlight (0.25 lux full moon at the zenith).
+- **Exposure** (`core/include/rg/exposure.h`): display = luminance (cd/m2) x
+  key x pi / A, A = adapted illuminance clamped to [50, 150000] lux and
+  adapted in log space (tau 1.5 s; a clock jump or weather choice snaps).
+  Night exposure 0.094, noon ~4.7e-5 (about 2000x apart). `TimeWeather::sample()`
+  carries it; `RgSky.get_state()` reports `illuminance_lux`, `exposure`,
+  `adapted_lux`, `night_exposure`. `combine_exposure()` is the seam for a
+  renderer-measured exposure (geometric blend).
+- **Lamps** (`data/world/headlights.json`, `game/scripts/light_exposure.gd`):
+  spots in candela (dipped 15 kcd, main 60 kcd, tail 12 cd, brake 150 cd,
+  reverse 300 cd), lenses in cd/m2 (head 40k, indicators 25k, reverse 10k,
+  brake 8k, tail 800), all x exposure. At night the beams light the road and
+  the red lenses saturate (clipped per colour peak so they stay red); at noon a
+  beam adds <1 % to the daylight on the road, the brake lens shows a dim red
+  (display ~0.38, a sunlit white surface ~1.5) and the tail lens is dark;
+  head/indicator lenses stay lit. Rear spots fall off as inverse square.
+  Godot spots have no beam pattern: the beams keep a flatter falloff
+  (`attenuation` 0.9/0.8) anchored so the illuminance at `reference_m` is exact.
+- **Renderer.** Measured with a probe scene (2026-10-15): in gl_compatibility
+  `Environment.tonemap_exposure` scales light energies correctly but sky and
+  emission values far above 1 clip before the exposure (a 1000x sky at exposure
+  0.001 renders white); the Mobile renderer clipped the whole scene at large
+  values. So the sky keeps its tuned look at environment exposure 1 and only the
+  lamps are multiplied by the exposure - identical on screen for the linear
+  tonemap. For an HDR path (Forward+ float buffers, later HDR output): scale the
+  sun/sky/ambient by 1/exposure and set the camera exposure to `exposure`
+  instead of scaling the lamps; on Mobile a measured auto exposure
+  (`CameraAttributesPractical.auto_exposure_*`) can replace or blend with the
+  sky value through `combine_exposure`. Cockpit/dash lamps and unshaded
+  materials are not exposure-scaled yet.
+- **Automatic headlamps** (`rg::DriverActions`, `CabinConfig::auto_lights_*`
+  from headlights.json `auto`): dipped beam on below 1000 lux for 2 s, off above
+  7000 lux for 10 s (UN R48 6.2.7.6 thresholds, recalled, unverified); the first
+  reading decides at once. A manual choice (O key, cockpit switch) holds until
+  the sensor's decision next changes; main beam is kept while it stays dark.
+- **Tests.** `test_exposure.cpp` ([exposure]), `test_driver_actions.cpp`
+  ([auto_lights]), `visual_world_test.gd` (lamp energies follow the exposure).
+  Shots: `game/scripts/lights_exposure_shots.gd` with the states that
+  `rg_unit_tests "[exposure_shots]"` writes.

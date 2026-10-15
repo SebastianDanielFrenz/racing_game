@@ -150,6 +150,11 @@ void DriverActions::configure_cabin(const CabinConfig& c) {
         c.indicator_cancel_deg < 0 || c.indicator_arm_deg <= c.indicator_cancel_deg ||
         !std::isfinite(c.brake_lamp_threshold) || c.brake_lamp_threshold < 0 || c.brake_lamp_threshold > 1)
         throw std::invalid_argument("invalid cabin control configuration");
+    if (c.auto_lights &&
+        (!std::isfinite(c.auto_lights_on_lux) || !std::isfinite(c.auto_lights_off_lux) || c.auto_lights_on_lux <= 0 ||
+         c.auto_lights_off_lux < c.auto_lights_on_lux || !std::isfinite(c.auto_lights_on_delay_s) ||
+         !std::isfinite(c.auto_lights_off_delay_s) || c.auto_lights_on_delay_s < 0 || c.auto_lights_off_delay_s < 0))
+        throw std::invalid_argument("invalid automatic headlamp configuration (0 < on_lux <= off_lux, delays >= 0)");
     config_ = c;
     cabin_configured_ = true;
 }
@@ -185,7 +190,27 @@ void DriverActions::advance(const VehicleContext& context, ChannelSink& sink, do
     sink.set("cabin.indicator_right",lit && (cabin_.hazard || cabin_.indicator < 0) ? 1 : 0);
     sink.set("cabin.brake_lamp",sink.get("brake") > config_.brake_lamp_threshold ? 1 : 0);
     sink.set("cabin.horn",cabin_.horn ? 1 : 0);
+    update_auto_lights(context.snapshot.ambient_lux, dt);
     sink.set("cabin.lights",cabin_.lights);
+}
+
+void DriverActions::update_auto_lights(double lux, double dt) {
+    if (!config_.auto_lights || !std::isfinite(lux)) return;
+    auto decide = [&](bool dark) {
+        cabin_.light_sensor_dark = dark;
+        cabin_.light_sensor_timer_s = 0;
+        cabin_.lights = dark ? std::max(cabin_.lights, 1) : 0;
+    };
+    if (!cabin_.light_sensor_valid) {
+        cabin_.light_sensor_valid = true;
+        decide(lux < config_.auto_lights_on_lux);
+        return;
+    }
+    const bool flip = cabin_.light_sensor_dark ? lux > config_.auto_lights_off_lux : lux < config_.auto_lights_on_lux;
+    if (!flip) { cabin_.light_sensor_timer_s = 0; return; }
+    cabin_.light_sensor_timer_s += dt;
+    const double delay = cabin_.light_sensor_dark ? config_.auto_lights_off_delay_s : config_.auto_lights_on_delay_s;
+    if (cabin_.light_sensor_timer_s >= delay) decide(!cabin_.light_sensor_dark);
 }
 
 ControlState DriverActions::state(std::string_view id, const DriverSnapshot& snapshot, const ChannelSink& sink) {

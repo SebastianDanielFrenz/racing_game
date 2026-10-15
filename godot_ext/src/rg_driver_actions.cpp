@@ -35,6 +35,7 @@ rg::DriverSnapshot convert(const godot::Dictionary& d) {
     s.engine_running = godot::String(d.get("engine_state", "")) == "Running";
     s.speed_mps = static_cast<double>(d.get("speed_mps",0.0));
     s.steering_wheel_deg = static_cast<double>(d.get("steering_wheel_deg",0.0));
+    if (d.has("ambient_lux")) s.ambient_lux = static_cast<double>(d.get("ambient_lux", s.ambient_lux));
     return s;
 }
 class Sink final : public rg::ChannelSink {
@@ -71,6 +72,11 @@ void RgDriverActions::configure_cabin(const godot::Dictionary& d) {
     c.indicator_arm_deg = d.get("indicator_arm_deg",c.indicator_arm_deg);
     c.indicator_cancel_deg = d.get("indicator_cancel_deg",c.indicator_cancel_deg);
     c.brake_lamp_threshold = d.get("brake_lamp_threshold",c.brake_lamp_threshold);
+    c.auto_lights = d.get("auto_lights",c.auto_lights);
+    c.auto_lights_on_lux = d.get("auto_lights_on_lux",c.auto_lights_on_lux);
+    c.auto_lights_off_lux = d.get("auto_lights_off_lux",c.auto_lights_off_lux);
+    c.auto_lights_on_delay_s = d.get("auto_lights_on_delay_s",c.auto_lights_on_delay_s);
+    c.auto_lights_off_delay_s = d.get("auto_lights_off_delay_s",c.auto_lights_off_delay_s);
     try { actions_.configure_cabin(c); } catch (const std::exception& e) { ERR_PRINT(e.what()); }
 }
 godot::Array RgDriverActions::advance(const godot::Dictionary& snapshot, const godot::Dictionary& channels, bool enabled, double dt) {
