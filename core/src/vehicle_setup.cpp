@@ -1611,6 +1611,13 @@ SetupModel build_setup_model(const CatalogEntry& entry, const SetupOptionTable& 
                     if (norm_path(part.path) == original) continue;
                     v.parts.push_back(part);
                     v.choices.push_back(part.id);
+                    // Physical fit is the one thing that turns an engine away: it stays listed and says why.
+                    const EngineEntry* engine = def.catalog == "engines" && ctx.engines ? ctx.engines->find(part.id) : nullptr;
+                    if (engine == nullptr) continue;
+                    const FitResult fit = check_fit(entry, *engine);
+                    std::string why;
+                    for (const std::string& r : fit.reasons) why += (why.empty() ? "" : "; ") + r;
+                    if (!why.empty()) v.parts.back().detail += (v.parts.back().detail.empty() ? "" : " · ") + std::string("Does not fit: ") + why;
                 }
                 if (v.choices.size() < 2) v.available = false;
                 if (def.catalog == "gearboxes" && ctx.gearboxes) {
