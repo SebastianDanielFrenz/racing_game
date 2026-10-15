@@ -85,14 +85,22 @@ Findings:
 | `car_toyama_xr` | `imported/toyama_xr` (Generic Toyama XR Sedan, mk2design) | `car_sedan.json` (3.0 I6, FWD) | 2.524 / 1.518 | road 225/50 R17 | no interior |
 | `car_generic_suv` | `imported/generic_suv` (Lowpoly Generic SUV, mk2design) | `car_sedan_awd.json` (2.0 I4, AWD) | 2.860 / 1.555 | road 235/65 R18 | spawn 7 cm higher |
 | `car_phoenix_455` | `imported/phoenix_455` (Phoenix 455 '71, Daniel Zhabotinsky) | `car_gt70.json` (5.0 V8, RWD LSD) | 2.741 / 1.712 | belted 215/225/60 R15 | interior, opening parts not rigged |
+| `car_ace_11` | `imported/ace_11` (Ace '11, Daniel Zhabotinsky) | `car_city.json` (Pico 1.0 I3, FWD) | 2.405 / 1.410 | economy 185/60 R15 | interior |
+| `car_fairheaven_lt80` | `imported/fairheaven_lt80` (Fairheaven LT '80, Daniel Zhabotinsky) | `car_sedan_rwd.json` (2.0 I4, RWD) | 2.652 / 1.464 | belted 205/60 R15 | interior |
+| `car_kiri_86` | `imported/kiri_86` (Kiri '86, Daniel Zhabotinsky) | `car_sedan_rwd.json` (2.0 I4, RWD) | 2.459 / 1.422 | touring 185/60 R14 | interior |
+| `car_lct_3000` | `imported/lct_3000` (LCT 3000 '95, Daniel Zhabotinsky) | `car_sedan_awd.json` (2.0 I4, AWD) | 3.345 / 1.888 | road 225/70 R16 | interior |
+| `car_shvan_92` | `imported/shvan_92` (Shvan '92, Daniel Zhabotinsky) | `car_sedan_rwd.json` (2.0 I4, RWD) | 3.135 / 1.658 | road 215/70 R16 | interior |
 
-Their vehicle files are `data/vehicles/car_toyama_xr.json`, `car_generic_suv.json`, `car_phoenix_455.json`
-(written by the importer). Chassis mass and box are the base car's. Known gaps: the source materials are not named
-`paint`/`rim`, so the garage paint and rim colours do not change these cars; no head/tail lamp emission or
-headlight beams (no `lights` block); cockpit view has no driver eye socket (the generic fallback applies).
-
-The other fictional candidates (Ace, Fairheaven, Kiri, LCT, Shvan) import the same way: add an entry to
-`cars.json` with a base vehicle and tyre, then a catalog entry and a credit.
+Their vehicle files are `data/vehicles/car_<id>.json` (written by the importer). Chassis mass and box are the base
+car's. Since 2026-10-15 cars.json also names, per car, the paint/rim materials (renamed `paint`/`rim`, or
+`paint_tinted` with an atlas texture), the lamp lenses (`lights`: node/material regex plus an optional ISO box per kind;
+copied onto `light_<kind>` materials that the rig's `lights` block names, emission = the base texture) and the driver
+eye (`at` or the steering wheel node plus an offset -> `socket_driver_eye`). Fairheaven has no indicator lenses; the
+Generic SUV has head and brake lenses only. **The GLBs are Git LFS and were not pushed from the cloud session: run
+`python3 tools/carimport/carimport.py` on a machine with LFS to regenerate all eight** (until then the old GLBs show
+no lamp emission, and the paint colour only applies where the material was already named paint). The five new
+cars' catalog entries wait in `tools/carimport/catalog_pending.json` (the catalog refuses a missing model file);
+insert them into `data/vehicles/catalog.json` after regenerating.
 
 ## Owner decision needed: brand models
 

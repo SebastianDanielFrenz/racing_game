@@ -12,29 +12,49 @@ static func attach_to(model: Node3D, sim: Node, car: String, path: String) -> No
 	driver.vehicle_name = car
 	var rig = JSON.parse_string(FileAccess.get_file_as_string(path.get_basename()+".rig.json"))
 	if rig is Dictionary:
-		for kind in ACTIONS:
-			var spec: Dictionary = rig.get("lights",{}).get(kind,{})
-			for node in model.find_children("*","MeshInstance3D",true,false):
-				for surface in range(node.mesh.get_surface_count()):
-					var material = node.get_active_material(surface)
-					if material is StandardMaterial3D and material.resource_name in spec.get("materials",[]):
+		# One material copy per surface; a material named by several kinds (tail and brake
+		# often share one lens) lists them all and shows the strongest active one.
+		var by_surface := {}
+		for node in model.find_children("*","MeshInstance3D",true,false):
+			for surface in range(node.mesh.get_surface_count()):
+				var material = node.get_active_material(surface)
+				if not material is StandardMaterial3D:
+					continue
+				for kind in ACTIONS:
+					var spec: Dictionary = rig.get("lights",{}).get(kind,{})
+					if not material.resource_name in spec.get("materials",[]):
+						continue
+					var key := str(node.get_instance_id()) + ":" + str(surface)
+					if not by_surface.has(key):
 						var copy = material.duplicate()
 						node.set_surface_override_material(surface,copy)
-						driver.lamps.append({"material":copy,"action":ACTIONS[kind],"spec":spec})
+						by_surface[key] = {"material":copy,"kinds":[]}
+						driver.lamps.append(by_surface[key])
+					by_surface[key]["kinds"].append({"action":ACTIONS[kind],"spec":spec})
 		load("res://scripts/headlights.gd").attach_to(model,sim,car,rig)
 	model.add_child(driver)
 	driver.update_lamps({}, {})
 	return driver
 
 func update_lamps(snapshot: Dictionary, channels: Dictionary) -> void:
+	var states := {}
 	for lamp in lamps:
-		var state: Dictionary = RgDriverActions.state(lamp["action"],snapshot,channels)
-		var on: bool = state["active"]
-		var rgb: Array = lamp["spec"]["emissive_on"]
+		var best: Dictionary = {}
+		for k in lamp["kinds"]:
+			var action: String = k["action"]
+			if not states.has(action):
+				states[action] = RgDriverActions.state(action,snapshot,channels)["active"]
+			if states[action] and (best.is_empty() or float(k["spec"]["emissive_strength_on"]) > float(best["emissive_strength_on"])):
+				best = k["spec"]
 		var material: StandardMaterial3D = lamp["material"]
-		material.emission_enabled = on
-		material.emission = Color(rgb[0],rgb[1],rgb[2]) if on else Color.BLACK
-		material.emission_energy_multiplier = float(lamp["spec"]["emissive_strength_on"]) if on else 0.0
+		material.emission_enabled = not best.is_empty()
+		if best.is_empty():
+			material.emission = Color.BLACK
+			material.emission_energy_multiplier = 0.0
+		else:
+			var rgb: Array = best["emissive_on"]
+			material.emission = Color(rgb[0],rgb[1],rgb[2])
+			material.emission_energy_multiplier = float(best["emissive_strength_on"])
 
 const FrameProbe := preload("res://scripts/frame_probe.gd")
 func _process(_delta: float) -> void:

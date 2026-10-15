@@ -356,6 +356,66 @@
       "note": "data/models/imported/phoenix_455/phoenix_455.glb: Re-oriented to the game's axes and origin, wheels re-parented under suspension/steering/spin pivots at the wheel centres, brake calipers under the steering pivots, baked ground/shadow plane removed (tools/carimport). Geometry, materials and textures otherwise unchanged. Source file phoenix_455_71_-_low_poly_model.glb (sha256 27b8591fd77c...)."
     },
     {
+      "id": "model_ace_11",
+      "kind": "assets",
+      "name": "Car model \"Ace '11 - Low Poly model\" (modified)",
+      "provider": "Daniel Zhabotinsky (https://sketchfab.com/DanielZhabotinsky)",
+      "licence": "CC BY 4.0",
+      "licence_url": "https://creativecommons.org/licenses/by/4.0/",
+      "attribution_text": "\"Ace '11 - Low Poly model\" by Daniel Zhabotinsky, https://sketchfab.com/3d-models/ace-11-low-poly-model-055ff8a21b8d4d279debca089e2fafcd, licensed CC BY 4.0; modified (re-rigged and re-oriented for the game)",
+      "attribution_required": true,
+      "in_game": true,
+      "note": "data/models/imported/ace_11/ace_11.glb: Re-oriented to the game's axes and origin, wheels re-parented under suspension/steering/spin pivots at the wheel centres, brake calipers under the steering pivots, baked ground/shadow plane removed, lamp lenses split onto light_* materials, body material renamed paint, driver eye socket added (tools/carimport). Geometry and textures otherwise unchanged. Source file ace_11_-_low_poly_model.glb (sha256 076823a82e8f...)."
+    },
+    {
+      "id": "model_fairheaven_lt80",
+      "kind": "assets",
+      "name": "Car model \"Fairheaven LT '80 - Low poly model\" (modified)",
+      "provider": "Daniel Zhabotinsky (https://sketchfab.com/DanielZhabotinsky)",
+      "licence": "CC BY 4.0",
+      "licence_url": "https://creativecommons.org/licenses/by/4.0/",
+      "attribution_text": "\"Fairheaven LT '80 - Low poly model\" by Daniel Zhabotinsky, https://sketchfab.com/3d-models/fairheaven-lt-80-low-poly-model-e2678da920cc4be68dbc193727919ffb, licensed CC BY 4.0; modified (re-rigged and re-oriented for the game)",
+      "attribution_required": true,
+      "in_game": true,
+      "note": "data/models/imported/fairheaven_lt80/fairheaven_lt80.glb: Re-oriented to the game's axes and origin, wheels re-parented under suspension/steering/spin pivots at the wheel centres, brake calipers under the steering pivots, baked ground/shadow plane removed, lamp lenses split onto light_* materials, body material renamed paint, driver eye socket added (tools/carimport). Geometry and textures otherwise unchanged. Source file fairheaven_lt_80_-_low_poly_model.glb (sha256 c392e59dc22d...)."
+    },
+    {
+      "id": "model_kiri_86",
+      "kind": "assets",
+      "name": "Car model \"Kiri '86 - Low poly model\" (modified)",
+      "provider": "Daniel Zhabotinsky (https://sketchfab.com/DanielZhabotinsky)",
+      "licence": "CC BY 4.0",
+      "licence_url": "https://creativecommons.org/licenses/by/4.0/",
+      "attribution_text": "\"Kiri '86 - Low poly model\" by Daniel Zhabotinsky, https://sketchfab.com/3d-models/kiri-86-low-poly-model-5c17c582ef9549798f694b660feea42a, licensed CC BY 4.0; modified (re-rigged and re-oriented for the game)",
+      "attribution_required": true,
+      "in_game": true,
+      "note": "data/models/imported/kiri_86/kiri_86.glb: Re-oriented to the game's axes and origin, wheels re-parented under suspension/steering/spin pivots at the wheel centres, brake calipers under the steering pivots, baked ground/shadow plane removed, lamp lenses split onto light_* materials, body material renamed paint, driver eye socket added (tools/carimport). Geometry and textures otherwise unchanged. Source file kiri_86_-_low_poly_model.glb (sha256 234a81a5d68a...)."
+    },
+    {
+      "id": "model_lct_3000",
+      "kind": "assets",
+      "name": "Car model \"LCT 3000 '95 - Low poly model\" (modified)",
+      "provider": "Daniel Zhabotinsky (https://sketchfab.com/DanielZhabotinsky)",
+      "licence": "CC BY 4.0",
+      "licence_url": "https://creativecommons.org/licenses/by/4.0/",
+      "attribution_text": "\"LCT 3000 '95 - Low poly model\" by Daniel Zhabotinsky, https://sketchfab.com/3d-models/lct-3000-95-low-poly-model-663a0953c038434a918cb85725c88ffa, licensed CC BY 4.0; modified (re-rigged and re-oriented for the game)",
+      "attribution_required": true,
+      "in_game": true,
+      "note": "data/models/imported/lct_3000/lct_3000.glb: Re-oriented to the game's axes and origin, wheels re-parented under suspension/steering/spin pivots at the wheel centres, brake calipers under the steering pivots, baked ground/shadow plane removed, lamp lenses split onto light_* materials, body material renamed paint, driver eye socket added (tools/carimport). Geometry and textures otherwise unchanged. Source file lct_3000_95_-_low_poly_model.glb (sha256 df7b96fe65a4...)."
+    },
+    {
+      "id": "model_shvan_92",
+      "kind": "assets",
+      "name": "Car model \"Shvan '92 - Low poly model\" (modified)",
+      "provider": "Daniel Zhabotinsky (https://sketchfab.com/DanielZhabotinsky)",
+      "licence": "CC BY 4.0",
+      "licence_url": "https://creativecommons.org/licenses/by/4.0/",
+      "attribution_text": "\"Shvan '92 - Low poly model\" by Daniel Zhabotinsky, https://sketchfab.com/3d-models/shvan-92-low-poly-model-09d718c9cf72401b8534d265a06a803f, licensed CC BY 4.0; modified (re-rigged and re-oriented for the game)",
+      "attribution_required": true,
+      "in_game": true,
+      "note": "data/models/imported/shvan_92/shvan_92.glb: Re-oriented to the game's axes and origin, wheels re-parented under suspension/steering/spin pivots at the wheel centres, brake calipers under the steering pivots, baked ground/shadow plane removed, lamp lenses split onto light_* materials, body material renamed paint, driver eye socket added (tools/carimport). Geometry and textures otherwise unchanged. Source file shvan_92_-_low_poly_model.glb (sha256 5f817b226678...)."
+    },
+    {
       "id": "model_toyama_xr",
       "kind": "assets",
       "name": "Car model \"Generic Toyama XR Sedan\" (modified)",

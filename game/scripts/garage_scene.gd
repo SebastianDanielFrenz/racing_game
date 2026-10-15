@@ -23,7 +23,7 @@ extends CanvasLayer
 
 const LAYER_REAL := 1
 const LAYER_MIRROR := 2
-const PALETTE_ROUGHNESS := 0.3
+const CarMaterials := preload("res://scripts/car_materials.gd")
 
 var garage: Node # RgGarage, set by main.gd before add_child
 var vehicle_id: String = ""
@@ -807,14 +807,6 @@ func _unique_materials(model: Node) -> void:
 			copy.resource_name = src.resource_name
 			mi.set_surface_override_material(s, copy)
 
-func _material_role(mat: Material) -> String:
-	var n := mat.resource_name.to_lower()
-	if n == "paint" or n.begins_with("paint"):
-		return "paint"
-	if n.begins_with("rim"):
-		return "rim"
-	return ""
-
 func _apply_colours() -> void:
 	if not _cars.has(vehicle_id):
 		return
@@ -827,21 +819,7 @@ func _apply_colours() -> void:
 			var mat := mi.get_surface_override_material(s)
 			if not mat is StandardMaterial3D:
 				continue
-			var std := mat as StandardMaterial3D
-			var role := _material_role(std)
-			if role == "paint":
-				std.vertex_color_use_as_albedo = false
-				std.albedo_texture = null
-				std.albedo_color = _paint
-				std.metallic = 0.55
-				std.roughness = PALETTE_ROUGHNESS
-				std.clearcoat_enabled = true
-				std.clearcoat = 1.0
-				std.clearcoat_roughness = 0.06
-			elif role == "rim":
-				std.vertex_color_use_as_albedo = false
-				std.albedo_texture = null
-				std.albedo_color = _rim
-				std.metallic = 0.9
-				std.roughness = 0.25
+			var role := CarMaterials.role_of(mat)
+			if role != "":
+				CarMaterials.style(mat as StandardMaterial3D, role, _paint if role == "paint" else (_rim if role == "rim" else Color(0, 0, 0, 0)))
 
