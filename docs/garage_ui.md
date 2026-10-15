@@ -36,7 +36,9 @@ returns one level at a time; the root opens the save-and-exit prompt. Upgrades:
   not change and the final drive slider scales the new units. No engine-position rule: every car whose driveline is
   one gearbox output into one or two axle differentials takes every layout; a transfer case or anything else greys
   the tile out. A layout change that stops driving an axle returns that axle's differential choice to stock with a
-  notice. No mass is added for an AWD conversion. The stats (vehicle select, car browser) follow the setup's layout.
+  notice. Every layout stays offered, FWD <-> RWD included (owner on PR #19). A swap that runs the driveline the length
+  of the car (an AWD conversion, FWD <-> RWD) carries a weight penalty; that mass comes in through the per-part mass
+  work (branch claude/part-mass), not through this code. The stats (vehicle select, car browser) follow the setup's layout.
 
 Compound installs preserve each axle's width. Dimension installs preserve each
 axle's compound. All applies the chosen property to both axles, offering only
