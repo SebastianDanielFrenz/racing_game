@@ -152,10 +152,14 @@ SwapPackage derive_swap_package(const SwapCar& car, const SwapEngine& engine, co
 }
 
 FitResult check_fit(const CatalogEntry& car, const EngineEntry& engine) {
+    if (!engine.envelope_mm) return FitResult{};
+    return check_fit_size(car, *engine.envelope_mm);
+}
+
+FitResult check_fit_size(const CatalogEntry& car, const std::array<double, 3>& env) {
     FitResult r;
-    if (!car.engine_bay_envelope || !engine.envelope_mm) return r;
+    if (!car.engine_bay_envelope) return r;
     const EngineBayEnvelope& bay = *car.engine_bay_envelope;
-    const std::array<double, 3>& env = *engine.envelope_mm;
     const bool transverse = bay.crank_axis == 'y';
     const double room[3] = {transverse ? bay.size_mm[1] : bay.size_mm[0], transverse ? bay.size_mm[0] : bay.size_mm[1],
                             bay.size_mm[2]};

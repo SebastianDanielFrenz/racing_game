@@ -107,5 +107,7 @@ struct FitResult {
     std::vector<std::string> reasons; // empty when allowed
 };
 FitResult check_fit(const CatalogEntry& car, const EngineEntry& engine);
+// The same for any box (mm, x along the crank): the engine with a turbo kit fitted (rg/turbo_kit.h turbo_kit_envelope_mm).
+FitResult check_fit_size(const CatalogEntry& car, const std::array<double, 3>& size_mm);
 
 } // namespace rg

@@ -27,6 +27,7 @@ namespace {
 
 constexpr double kGasConstantAir = 287.05; // J/(kg K)
 constexpr double kGamma = 1.4;
+constexpr double kPi = 3.14159265358979323846;
 
 bool fail(std::string* err, const std::string& path, const std::string& msg) {
     if (err != nullptr) *err = path + ": " + msg;
@@ -97,6 +98,17 @@ bool write_once(const std::string& path, const std::string& text, std::string* e
 const TurboKitSpec* TurboKitConfig::find(const std::string& id) const {
     for (const TurboKitSpec& k : kits) if (k.id == id) return &k;
     return nullptr;
+}
+
+const ChargePipingSpec* TurboKitConfig::find_piping(const std::string& id) const {
+    for (const ChargePipingSpec& p : piping) if (p.id == id) return &p;
+    return nullptr;
+}
+
+double TurboKitBuild::total_mass_kg() const {
+    double m = 0.0;
+    for (const TurboKitPart& p : parts) m += p.mass_kg * p.count;
+    return m;
 }
 
 std::optional<TurboKitConfig> load_turbo_kit_config(const std::string& path, const std::string& repo_root, std::string* err) {
@@ -175,20 +187,6 @@ std::optional<TurboKitConfig> load_turbo_kit_config(const std::string& path, con
         !read_num(*bc, "actuator_tau_s", c.actuator_tau_s, 0.0, 10.0, bw, err)) {
         return std::nullopt;
     }
-    const auto masses = root->find("masses");
-    if (masses == root->end() || !masses->is_object()) {
-        fail(err, path, "\"masses\" object is missing");
-        return std::nullopt;
-    }
-    const std::string mw = path + " masses";
-    if (!read_num(*masses, "turbo_anchor_kg", c.turbo_anchor_kg, 1.0, 50.0, mw, err) ||
-        !read_num(*masses, "turbo_scale_exponent", c.turbo_scale_exponent, 0.0, 3.0, mw, err) ||
-        !read_num(*masses, "turbo_min_kg", c.turbo_min_kg, 0.0, 50.0, mw, err) ||
-        !read_num(*masses, "manifold_kg_per_turbo", c.manifold_kg_per_turbo, 0.0, 50.0, mw, err) ||
-        !read_num(*masses, "intercooler_kg", c.intercooler_kg, 0.0, 50.0, mw, err) ||
-        !read_num(*masses, "intercooler_kg_per_extra_turbo", c.intercooler_kg_per_extra_turbo, 0.0, 50.0, mw, err)) {
-        return std::nullopt;
-    }
     const auto kits = root->find("kits");
     if (kits == root->end() || !kits->is_array() || kits->empty()) {
         fail(err, path, "\"kits\" must be a non-empty array");
@@ -210,18 +208,73 @@ std::optional<TurboKitConfig> load_turbo_kit_config(const std::string& path, con
             fail(err, kw, "\"label\" is required");
             return std::nullopt;
         }
-        double count = 0, mincyl = 1;
-        if (!read_num(k, "count", count, 1.0, 2.0, kw, err) || !read_num(k, "target_boost_bar", s.target_boost_bar, 0.1, 3.0, kw, err) ||
-            !read_num(k, "min_cylinders", mincyl, 1.0, 16.0, kw, err)) {
+        double count = 0;
+        if (!read_num(k, "count", count, 1.0, 4.0, kw, err) || !read_num(k, "target_boost_bar", s.target_boost_bar, 0.1, 3.0, kw, err)) {
             return std::nullopt;
         }
-        if (count != std::floor(count) || mincyl != std::floor(mincyl)) {
-            fail(err, kw, "\"count\" and \"min_cylinders\" must be whole numbers");
+        if (count != std::floor(count)) {
+            fail(err, kw, "\"count\" must be a whole number");
             return std::nullopt;
         }
         s.count = static_cast<int>(count);
-        s.min_cylinders = static_cast<int>(mincyl);
         c.kits.push_back(std::move(s));
+    }
+    const auto geo = root->find("envelope");
+    const auto mass = root->find("mass");
+    const auto lim = root->find("limits");
+    if (geo == root->end() || !geo->is_object() || mass == root->end() || !mass->is_object() || lim == root->end() || !lim->is_object()) {
+        fail(err, path, "\"envelope\", \"mass\" and \"limits\" objects are required");
+        return std::nullopt;
+    }
+    const std::string gw = path + " envelope", mw = path + " mass", lw = path + " limits";
+    if (!read_num(*geo, "unit_length_per_exducer", c.unit_length_per_exducer, 1.0, 6.0, gw, err) ||
+        !read_num(*geo, "unit_length_add_mm", c.unit_length_add_mm, 0.0, 300.0, gw, err) ||
+        !read_num(*geo, "unit_diameter_per_exducer", c.unit_diameter_per_exducer, 1.0, 5.0, gw, err) ||
+        !read_num(*geo, "unit_gap_mm", c.unit_gap_mm, 0.0, 200.0, gw, err) ||
+        !read_num(*geo, "pipe_velocity_m_s", c.pipe_velocity_m_s, 10.0, 200.0, gw, err) ||
+        !read_num(*geo, "unit_side_protrusion", c.unit_side_protrusion, 0.0, 1.0, gw, err) ||
+        !read_num(*mass, "unit_mass_fixed_kg", c.unit_mass_fixed_kg, 0.0, 50.0, mw, err) ||
+        !read_num(*mass, "unit_mass_scaled_kg", c.unit_mass_scaled_kg, 0.0, 100.0, mw, err) ||
+        !read_num(*mass, "hot_side_mass_per_unit_kg", c.hot_side_mass_per_unit_kg, 0.0, 50.0, mw, err) ||
+        !read_num(*mass, "intercooler_area_m2_per_kg_s", c.intercooler_area_m2_per_kg_s, 0.01, 5.0, mw, err) ||
+        !read_num(*mass, "intercooler_depth_m", c.intercooler_depth_m, 0.01, 0.3, mw, err) ||
+        !read_num(*mass, "intercooler_density_kg_m3", c.intercooler_density_kg_m3, 50.0, 3000.0, mw, err) ||
+        !read_num(*mass, "piping_length_base_m", c.piping_length_base_m, 0.1, 10.0, mw, err) ||
+        !read_num(*mass, "piping_length_per_extra_unit_m", c.piping_length_per_extra_unit_m, 0.0, 5.0, mw, err) ||
+        !read_num(*lim, "max_shaft_speed_factor", c.max_shaft_speed_factor, 1.0, 2.0, lw, err)) {
+        return std::nullopt;
+    }
+    const auto piping = root->find("piping");
+    if (piping == root->end() || !piping->is_array() || piping->empty()) {
+        fail(err, path, "\"piping\" must be a non-empty array");
+        return std::nullopt;
+    }
+    std::set<std::string> pids;
+    for (const json& p : *piping) {
+        ChargePipingSpec ps;
+        if (!p.is_object() || !detail::get_string(p, "id", ps.id) || !lower_snake(ps.id) || !pids.insert(ps.id).second) {
+            fail(err, path, "every piping entry needs a unique lower_snake \"id\"");
+            return std::nullopt;
+        }
+        const std::string pw = path + " piping \"" + ps.id + "\"";
+        if (!detail::get_string(p, "label", ps.label) || ps.label.empty()) {
+            fail(err, pw, "\"label\" is required");
+            return std::nullopt;
+        }
+        detail::get_string(p, "source", ps.source);
+        if (!read_num(p, "rated_bar", ps.rated_bar, 0.1, 100.0, pw, err) || !read_num(p, "burst_bar", ps.burst_bar, 0.1, 200.0, pw, err) ||
+            !read_num(p, "wall_mm", ps.wall_mm, 0.3, 20.0, pw, err) || !read_num(p, "density_kg_m3", ps.density_kg_m3, 100.0, 20000.0, pw, err)) {
+            return std::nullopt;
+        }
+        if (!(ps.burst_bar > ps.rated_bar)) {
+            fail(err, pw, "\"burst_bar\" must be above \"rated_bar\"");
+            return std::nullopt;
+        }
+        c.piping.push_back(std::move(ps));
+    }
+    if (!detail::get_string(*root, "default_piping", c.default_piping) || c.find_piping(c.default_piping) == nullptr) {
+        fail(err, path, "\"default_piping\" must name a piping entry");
+        return std::nullopt;
     }
     return c;
 }
@@ -241,13 +294,6 @@ std::string turbo_kit_refusal(const EngineFacts& f, const std::string& name) {
     }
     if (f.rotary) return who + " is a rotary engine; the turbo kit rule sizes piston engines only.";
     if (!(f.displacement_l > 0.0) || !f.cycle) return who + " has no swept volume to size a turbo from.";
-    return {};
-}
-
-std::string turbo_kit_spec_refusal(const TurboKitSpec& spec, const EngineFacts& facts) {
-    if (facts.cylinders < spec.min_cylinders) {
-        return spec.label + " needs at least " + std::to_string(spec.min_cylinders) + " cylinders (one turbo per bank)";
-    }
     return {};
 }
 
@@ -297,14 +343,84 @@ TurboKitSizing size_turbo_kit(const TurboKitConfig& config, const TurboKitSpec& 
     z.reference_head_bar = a_head;
     z.compression_ratio = std::min(facts.compression_ratio, config.max_compression_ratio);
     z.torque_factor = pr;
+    z.max_shaft_rpm = z.reference_rpm * config.max_shaft_speed_factor;
+    z.unit_length_mm = config.unit_length_per_exducer * z.exducer_mm + config.unit_length_add_mm;
+    z.unit_diameter_mm = config.unit_diameter_per_exducer * z.exducer_mm;
+    // charge pipe per unit: the unit's share of the demand at charge density and pipe_velocity_m_s
+    const double area = (z.demand_kg_s / spec.count) / (rho * config.pipe_velocity_m_s);
+    z.pipe_diameter_mm = 1000.0 * std::sqrt(4.0 * area / kPi);
+    z.unit_mass_kg = config.unit_mass_fixed_kg + config.unit_mass_scaled_kg * s * s2;
+    z.hot_side_mass_kg = config.hot_side_mass_per_unit_kg * spec.count;
+    z.intercooler_area_m2 = config.intercooler_area_m2_per_kg_s * z.demand_kg_s;
+    z.intercooler_mass_kg = z.intercooler_area_m2 * config.intercooler_depth_m * config.intercooler_density_kg_m3;
     z.ok = true;
     return z;
+}
+
+std::array<double, 3> turbo_kit_envelope_mm(const TurboKitConfig& config, int count, const TurboKitSizing& z,
+                                            const std::array<double, 3>& engine_mm, bool v_layout) {
+    const int sides = v_layout && count > 1 ? 2 : 1;
+    const int per_row = (count + sides - 1) / sides;
+    const double row_len = per_row * z.unit_length_mm + (per_row - 1) * config.unit_gap_mm;
+    std::array<double, 3> out = engine_mm;
+    out[0] = std::max(engine_mm[0], row_len);
+    out[1] = engine_mm[1] + sides * config.unit_side_protrusion * z.unit_diameter_mm;
+    out[2] = std::max(engine_mm[2], z.unit_diameter_mm);
+    return out;
+}
+
+TurboKitBuild describe_turbo_kit(const TurboKitConfig& config, const TurboKitSpec& spec, const TurboKitSizing& z,
+                                 const ChargePipingSpec& piping) {
+    TurboKitBuild b;
+    b.spec = spec;
+    b.sizing = z;
+    b.piping = piping;
+    b.piping_length_m = config.piping_length_base_m + config.piping_length_per_extra_unit_m * (spec.count - 1);
+    char buf[300];
+    TurboKitPart unit;
+    unit.id = "turbo_unit";
+    unit.label = "Turbocharger";
+    unit.count = spec.count;
+    unit.mass_kg = z.unit_mass_kg;
+    std::snprintf(buf, sizeof(buf), "[AS] %.1f kg fixed (housings, bearing) + %.1f kg x s^3 (s = %.3f, wheel-diameter ratio to the anchor)",
+                  config.unit_mass_fixed_kg, config.unit_mass_scaled_kg, z.scale);
+    unit.mass_source = buf;
+    unit.limits["max_shaft_rpm"] = z.max_shaft_rpm;
+    b.parts.push_back(unit);
+    TurboKitPart hot;
+    hot.id = "hot_side";
+    hot.label = "Exhaust manifold and downpipe";
+    hot.count = spec.count;
+    hot.mass_kg = config.hot_side_mass_per_unit_kg;
+    hot.mass_source = "[AS] cast/tubular manifold and downpipe per turbo";
+    b.parts.push_back(hot);
+    TurboKitPart ic;
+    ic.id = "intercooler";
+    ic.label = "Intercooler";
+    ic.mass_kg = z.intercooler_mass_kg;
+    std::snprintf(buf, sizeof(buf), "[AS] front-mount core %.3f m2 (%.2f m2 per kg/s of %.3f kg/s) x %.0f mm x %.0f kg/m3",
+                  z.intercooler_area_m2, config.intercooler_area_m2_per_kg_s, z.demand_kg_s, config.intercooler_depth_m * 1000.0,
+                  config.intercooler_density_kg_m3);
+    ic.mass_source = buf;
+    b.parts.push_back(ic);
+    TurboKitPart pipe;
+    pipe.id = "charge_piping";
+    pipe.label = piping.label + " charge piping";
+    const double d = z.pipe_diameter_mm / 1000.0, wall = piping.wall_mm / 1000.0;
+    pipe.mass_kg = kPi * (d + wall) * wall * piping.density_kg_m3 * b.piping_length_m;
+    std::snprintf(buf, sizeof(buf), "[AS] %.2f m of %.0f mm pipe, %.1f mm wall at %.0f kg/m3 (%s)", b.piping_length_m, z.pipe_diameter_mm,
+                  piping.wall_mm, piping.density_kg_m3, piping.id.c_str());
+    pipe.mass_source = buf;
+    pipe.limits["rated_bar"] = piping.rated_bar;
+    pipe.limits["burst_bar"] = piping.burst_bar;
+    b.parts.push_back(pipe);
+    return b;
 }
 
 std::string turbo_kit_detail(const TurboKitConfig& config, const TurboKitSpec& spec, const TurboKitSizing& z) {
     (void)config;
     char buf[200];
-    std::snprintf(buf, sizeof(buf), "%d x %.0f/%.0f mm compressor · %.2f kg/s per unit · %.1f bar target · sized for this engine",
+    std::snprintf(buf, sizeof(buf), "%d x %.0f/%.0f mm compressor · %.2f kg/s per unit · %.1f bar start target · sized for this engine",
                   spec.count, z.exducer_mm * 0.805, z.exducer_mm, z.max_mass_flow_kg_s, spec.target_boost_bar);
     return buf;
 }
@@ -385,35 +501,26 @@ std::optional<std::vector<double>> turbo_kit_grid_kpa(const EngineFacts& facts, 
     return std::nullopt;
 }
 
-PartAttachment turbo_kit_parts(const TurboKitConfig& config, const TurboKitSpec& spec, const TurboKitSizing& sizing) {
+PartAttachment turbo_kit_parts(const TurboKitBuild& build) {
     PartAttachment a;
     a.parent_id = "engine";
     a.node.id = "turbo_kit";
     a.node.key = "turbo_kit";
-    a.node.label = spec.label;
-    a.node.source = "turbo_kits.json kit " + spec.id;
+    a.node.label = build.spec.label;
+    a.node.source = "turbo_kits.json kit " + build.spec.id + " (sized for this engine)";
     const std::string base = a.parent_id + "." + a.node.id;
-    auto leaf = [&](const std::string& id, const std::string& label, double kg, const std::string& source) {
-        PartNode n;
-        n.id = base + "." + id;
-        n.key = "turbo_kit";
-        n.label = label;
-        n.own_kg = kg;
-        n.source = source;
-        a.node.children.push_back(std::move(n));
-    };
-    const double s = sizing.scale > 0.0 ? sizing.scale : 1.0;
-    const double turbo_kg = std::max(config.turbo_min_kg, config.turbo_anchor_kg * std::pow(s, config.turbo_scale_exponent));
-    for (int i = 0; i < spec.count; ++i) {
-        const std::string n = spec.count > 1 ? std::to_string(i + 1) : std::string();
-        leaf("turbo" + n, spec.count > 1 ? "Turbocharger " + n : std::string("Turbocharger"), turbo_kg,
-             "turbo_kits.json masses: anchor turbo x wheel scale^exponent");
-        leaf("exhaust" + n, spec.count > 1 ? "Exhaust manifold and downpipe " + n : std::string("Exhaust manifold and downpipe"),
-             config.manifold_kg_per_turbo, "turbo_kits.json masses manifold_kg_per_turbo");
+    for (const TurboKitPart& part : build.parts) {
+        for (int i = 1; i <= part.count; ++i) {
+            const std::string n = part.count > 1 ? std::to_string(i) : std::string();
+            PartNode leaf;
+            leaf.id = base + "." + part.id + (n.empty() ? "" : "_" + n);
+            leaf.key = "turbo_kit";
+            leaf.label = part.label + (n.empty() ? "" : " " + n);
+            leaf.own_kg = part.mass_kg;
+            leaf.source = part.mass_source;
+            a.node.children.push_back(std::move(leaf));
+        }
     }
-    leaf("intercooler", "Intercooler and charge piping",
-         config.intercooler_kg + config.intercooler_kg_per_extra_turbo * std::max(0, spec.count - 1),
-         "turbo_kits.json masses intercooler_kg");
     return a;
 }
 

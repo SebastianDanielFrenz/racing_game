@@ -153,25 +153,76 @@ N2O swap screen captured in out/garage_induction_ready_shots/induction_types.png
 Owner on PR #5: "Turbos cannot be fitted yet to many engines." The option `turbo_kit` (setup_options.json, catalog
 `turbo_kits`, group "Turbo system") fits a turbo system to the INSTALLED engine when it is a simulated engine with a cycle
 block and no turbo of its own (pico, ventura, runabout, the demo pipe I4, the A25A; also after an engine swap into any
-car). No per-engine turbo files: `rg::size_turbo_kit` (core/include/rg/turbo_kit.h) sizes the turbo from the engine's air
-demand at the limiter and the kit's target (charge density after compression at the anchor efficiency and the
-intercooler, x swept volume x rpm/120 x VE 0.9, / turbo count, x flow margin 1.4) and scales physics_sim's anchor
-`hyper_turbo_approx.json` at constant tip speed (flow, throat, wastegate, shaft loss x s^2, rpm / s, inertia x s^5,
-efficiencies by a log rule). Kits in `data/engines/turbo_kits.json` (rg.turbo_kits/1): Street (single, 0.5 bar), Sport
-(single, 1.0 bar), Twin-turbo (1.0 bar, six cylinders and up). The generated hardware and configuration files are
-content-addressed under `<engine map cache>/turbo_kits/`.
+car). The generated hardware and configuration files are content-addressed under `<engine map cache>/turbo_kits/`.
 
 Installing a kit sets the engine's `default_forced_induction` to the generated configuration, its
 `cycle.grid_p_im_kpa` to `ps::drivetrain::boost_grid_p_im(cycle, target)` and lowers a compression ratio above 10.0 to
 10.0 (physics_sim engine.md "Adding or removing forced induction"; knock, lambda and spark stay the physics' own
-models). The boost slider (`turbo_boost_target`) then edits the kit's target like any turbo. The swap package treats a kit
-like a torque increase: the clutch rule (1.5 x peak) uses peak x the charge pressure ratio, and the gearbox notice counts
-the boosted torque. Torque-curve engines, already-turbocharged engines, rotaries and lift-family engines are refused:
-`OptionView::unavailable_reason` (RgGarage `unavailable_reason`) says why, and Engine -> Turbo / Swaps -> Forced
-induction show that text instead of hiding the tile. Changing to an engine that cannot take a kit drops it
-(`Garage::drop_unavailable_values`). The engine bay fit (`check_fit`) does not include the turbo yet (no envelope data).
-Tests: tests/unit/test_turbo_kit.cpp `[turbo_kit]`; the dyno comparison (kit vs NA at the same rpm) is
-`[turbo_kit][dyno][long]`.
+models). The swap package treats a kit like a torque increase: the clutch rule (1.5 x peak) uses peak x the charge
+pressure ratio, and the gearbox notice counts the boosted torque. Torque-curve engines, already-turbocharged engines,
+rotaries and lift-family engines are refused: `OptionView::unavailable_reason` (RgGarage `unavailable_reason`) says why,
+and Engine -> Turbo / Swaps -> Forced induction show that text instead of hiding the tile. Changing to an engine that
+cannot take a kit drops it (`Garage::drop_unavailable_values`).
+
+### Sizing logic (owner on PR #21: count and boost are free choices)
+
+The kits in `data/engines/turbo_kits.json` (rg.turbo_kits/1) are shortcuts for a turbo COUNT and a STARTING boost:
+Street (1, 0.5 bar), Sport (1, 1.0 bar), Twin-turbo (2, 1.0 bar), Quad-turbo (4, 1.0 bar). Any count goes on any eligible
+engine (no cylinder rule); the boost slider (`turbo_boost_target`) then moves the target freely. One rule, applied to the
+final target (compile re-sizes the kit after the slider: `CompiledSetup::turbo_kit`):
+
+1. Air demand of the whole engine at the limiter: charge density (ambient compressed to the target at the anchor's
+   efficiency, then the intercooler at 0.75 effectiveness) x swept volume x limiter rpm / 120 x VE 0.9.
+2. Split over N turbos: each compressor must flow demand / N x 1.4 (flow margin: no choke at the limiter, no late spool).
+3. Each unit = physics_sim's anchor `hyper_turbo_approx.json` (GTX3582R class, 82 mm exducer) scaled at constant tip
+   speed, s = sqrt(flow / anchor flow), clamped to [0.3, 1.6]: flow, throat, wastegate, shaft loss x s^2, reference rpm / s,
+   rotor inertia x s^5, efficiencies anchor + 0.127 ln s. More turbos = smaller, faster, quicker-spooling, less efficient
+   units; a quad on a 1.0 L three reaches the 0.3 clamp (four 25 mm units, slightly oversized).
+4. Envelope per unit from its exducer D: 2.6 D + 60 mm long, 2.2 D across. The units sit in a row along the crank on the
+   exhaust side (a V engine with more than one: split over both banks); the row sets the length when longer than the
+   engine; width grows by 0.5 x 2.2 D per side (the turbo takes the NA exhaust manifold's place, which the engine envelope
+   already holds). `rg::check_fit_size` holds engine + kit against the car's `engine_bay_envelope`; a kit that does not
+   fit is refused on install ("... does not fit Pico (556 mm long, the bay takes 500 mm)") and its card says so first.
+   The charge pipe and the front-mounted intercooler are not in the box.
+5. Masses ([AS], `mass` block): turbo unit 2.0 kg + 7.5 kg x s^3; exhaust manifold and downpipe 3 kg per turbo;
+   intercooler core 0.45 m^2 per kg/s of demand x 76 mm x 650 kg/m^3; charge piping 1.8 m (+0.6 m per extra turbo) of a
+   pipe sized for 60 m/s at charge density, wall and density from the material. `rg::turbo_kit_parts` puts them under the
+   engine of the part-mass tree (`engine.turbo_kit.*`), so the drive's chassis mass follows the kit.
+
+Measured (Sketch maps, engine dyno at the same rpm): Street kit on every kit engine x1.30 to x1.61 power at 0.43-0.49 bar;
+the Quad on the pico at 1.0 bar 88 kW at 5650 rpm against 54 kW NA (x1.63), rotor ~212 000 rpm (rated 460 000).
+
+### Charge piping
+
+Option `charge_piping` (catalog `charge_piping`, offered wherever a kit can go): Plastic (comes with the kit, rated 1.5 bar,
+bursts near 3 bar), Aluminium (3 / 8 bar), Stainless steel (5 / 15 bar), each with wall, density and an [AS] source. The
+setup check reports boost above the rating; the setup still saves.
+
+### Damage model data
+
+Limits are recorded as data now and only WARNED about by the setup check (limit advisor, game-side build rules in
+`data/garage/advisor.json`), nothing fails in the simulation yet:
+
+| Rule | Value | Limit (data) | Severity |
+|---|---|---|---|
+| `ChargePipingPressure` | max(boost target, sweep charge pressure) | piping `rated_bar` / `burst_bar` (turbo_kits.json `piping`) | Near from 90 %, warning above rated, critical (variant `burst`) at burst |
+| `TurboShaftSpeed` | sweep rotor speed (one rotor) | kit `max_shaft_rpm` = reference rpm x `limits.max_shaft_speed_factor` 1.15 | Near from 90 %, warning above |
+| `MeanPistonSpeed` | 2 x stroke x top sweep rpm | advisor.json `part_limits.max_mean_piston_speed_m_s` 25 | Near from 90 %, warning above |
+
+How a future damage model reads them: `CompiledSetup::turbo_kit` (a `TurboKitBuild`) lists each fitted part
+(`TurboKitPart`: id, count, mass, `limits` map - `max_shaft_rpm` on `turbo_unit`, `rated_bar` / `burst_bar` on
+`charge_piping`), and the advisor's `AdviceInput` carries the same figures (`set_part_limits`). A damage model would run
+on the stepping thread against the live `PowertrainState` (turbo_rpm, boost) instead of the dyno sweep, use the same
+numbers as thresholds (rated = wear starts, burst = the part fails: boost leak / turbo failure), and its outcome would be
+the engine and turbo telemetry the HUD already shows. Knock is the physics' own model already (ECU and knock limit);
+overheating has the engine thermal model's temperatures but no limits yet.
+
+Open questions for the owner: whether the charge pipe and intercooler should count against the bay (needs a bay model of
+the gaps), whether metal piping should cost anything besides mass, and whether a burst should later be a part the player
+replaces.
+
+Tests: tests/unit/test_turbo_kit.cpp `[turbo_kit]`; the dyno comparisons (kit vs NA at the same rpm, the quad on the
+pico) are `[turbo_kit][dyno][long]`.
 
 ## Live engine dyno (2026-10-08)
 

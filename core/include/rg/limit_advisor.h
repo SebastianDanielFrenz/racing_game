@@ -90,7 +90,7 @@ struct AdvisorConfig {
     std::map<std::string, int> decimals; // quantity name -> decimals (missing = the built-in default)
     std::vector<std::string> solve_points = {"worst", "last"};
     std::vector<AdviceKindConfig> kinds; // file order = the order of equal-severity items
-    // Static build-rule issues (ps::drivetrain::BuildIssue, today TurboStageMapCoverage) shown after the sweep findings of
+    // Static build-rule issues (ps::drivetrain::BuildIssue TurboStageMapCoverage, and the game's part limits above) shown after the sweep findings of
     // equal severity; same text/variant/min_severity vocabulary as `kinds`. The variant "beyond_map" is used for Limiting.
     std::vector<AdviceKindConfig> build_rules;
     // Engine-map loader warnings (EngineMapOptions::warnings_out) passed through as lines of ONE advice item
@@ -103,6 +103,12 @@ struct AdvisorConfig {
     // `limit_policy` in the file names the policy file (relative to the advisor file); load_advisor_config loads it.
     std::string policy_file;
     ps::drivetrain::LimitPolicy policy;
+    // Part limits (damage-model data, docs/garage_ui.md "Damage model data"): the game-side build rules ChargePipingPressure,
+    // TurboShaftSpeed and MeanPistonSpeed. A value at `part_near_fraction` x its rating or above is Near, above the
+    // rating Limiting, at a burst figure (piping) Exceeded. `max_mean_piston_speed_m_s` is the one engine-wide figure
+    // ("part_limits" in the file); the piping and turbo figures come with the parts (rg/turbo_kit.h).
+    double part_near_fraction = 0.9;
+    double max_mean_piston_speed_m_s = 25.0;
 
     [[nodiscard]] const AdviceKindConfig* find(ps::drivetrain::LimitKind kind) const;
     [[nodiscard]] const AdviceKindConfig* find_rule(const std::string& rule_name) const;
@@ -176,7 +182,16 @@ struct AdviceInput {
     // Set when the load extended the turbo stage map (rg/turbo_map_extension.h): a demand still outside the extended map is the
     // compressor's choke, reported as such (variant "choke") instead of "map too narrow"; a fully covered demand shows no item.
     std::optional<TurboChoke> turbo_choke;
+    // Part limits of the fitted parts (NaN = no such part): a garage turbo kit's charge piping and rotor (CompiledSetup::
+    // turbo_kit), and the engine's stroke for the mean piston speed (run_advice_sweep; 0 = unknown).
+    double piping_rated_bar = std::numeric_limits<double>::quiet_NaN();
+    double piping_burst_bar = std::numeric_limits<double>::quiet_NaN();
+    std::string piping_label;
+    double turbo_max_shaft_rpm = std::numeric_limits<double>::quiet_NaN();
+    double stroke_m = 0.0;
 };
+// Fills the part-limit fields of `input` from a compiled setup's turbo kit (no kit = left NaN).
+void set_part_limits(AdviceInput& input, const CompiledSetup& compiled);
 
 // Groups the findings per kind (and part field), drops what the config hides, merges contiguous rpm ranges, renders
 // the templates; worst severity first (then the config's kind order, then rpm).

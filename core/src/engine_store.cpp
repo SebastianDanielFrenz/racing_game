@@ -288,6 +288,7 @@ std::unique_ptr<EngineStore> EngineStore::open(const std::string& catalog_path, 
                 mm[i] = (*size)[i].get<double>();
             }
             e.envelope_mm = mm;
+            detail::get_string(*env, "layout", e.envelope_layout);
             const fs::path glb = fs::path(e.envelope_path).parent_path() / (e.id + ".glb");
             std::error_code gec;
             if (fs::is_regular_file(glb, gec)) e.model_path = glb.generic_string();

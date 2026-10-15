@@ -57,6 +57,7 @@ struct EngineEntry {
     // (rg.engine_envelope/1, tools/cargen/engine_mesh.py); a user engine takes its default's. None = unknown size.
     std::optional<std::array<double, 3>> envelope_mm;
     std::string envelope_path; // absolute; "" without one
+    std::string envelope_layout; // the envelope file's "layout": "inline" | "v" | "rotary" ("" = unknown)
     std::string model_path;    // absolute .glb of the generated mesh (next to the envelope); "" without one
     EnginePeaks catalog_peaks; // measured once for cycle engines (a curve engine's are read from the file)
     std::vector<std::string> aliases; // legacy ids, defaults only

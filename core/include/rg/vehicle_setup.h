@@ -260,6 +260,9 @@ struct CompiledSetup {
     // The part-mass tree of the car as this setup leaves it (rg/part_mass.h). When parts.ok, the drive's chassis mass
     // is parts.chassis_kg (chassis_mass_delta_kg above is then only the engine line of swap_lines).
     PartTree parts;
+    // A garage turbo kit (catalog "turbo_kits"), sized for the FINAL boost target (the boost slider re-sizes it), with
+    // its charge piping, parts, masses and limits (the part-mass tree and the limit advisor read it); unset = no kit.
+    std::optional<TurboKitBuild> turbo_kit;
 };
 CompiledSetup compile_setup(const CatalogEntry& entry, const SetupOptionTable& table, const SetupContext& ctx,
                             const VehicleSetup& setup);

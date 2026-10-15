@@ -4,6 +4,7 @@
 #include "rg/engine_store.h"
 #include "rg/engine_swap.h"
 #include "rg/garage.h"
+#include "rg/limit_advisor.h"
 #include "rg/turbo_kit.h"
 #include "rg/vehicle_load.h"
 #include "rg/vehicle_setup.h"
@@ -223,10 +224,214 @@ TEST_CASE("turbo kits: the sizing rule scales the anchor with the engine's air d
         last_flow = a.max_mass_flow_kg_s;
     }
     CHECK(last_flow > 0.0);
-    // The twin needs six cylinders; a 3-cylinder is refused with the reason.
-    rg::EngineFacts three;
-    three.cylinders = 3;
-    CHECK_THAT(rg::turbo_kit_spec_refusal(*c.find("sport_twin"), three), ContainsSubstring("6 cylinders"));
+    // Any count on any eligible engine: a quad on the 1.0 L three splits the air four ways - each unit gets a quarter of
+    // the flow, a smaller wheel (s ~ 1/sqrt(4), down to min_scale), a higher shaft speed and a lighter rotor.
+    const auto pico = rg::read_engine_facts(f.store->find("default:pico_i3_1l0_na")->file, nullptr);
+    REQUIRE(pico.has_value());
+    const rg::TurboKitSizing one = rg::size_turbo_kit(c, sport, *pico, pico->limiter_rpm);
+    const rg::TurboKitSizing four = rg::size_turbo_kit(c, *c.find("quad"), *pico, pico->limiter_rpm);
+    REQUIRE(one.ok);
+    REQUIRE(four.ok);
+    CHECK(four.demand_kg_s == Approx(one.demand_kg_s)); // same engine, same target: the same air
+    CHECK(four.flow_per_turbo_kg_s == Approx(one.flow_per_turbo_kg_s / 4.0));
+    CHECK(four.scale < one.scale);
+    CHECK(four.scale >= c.min_scale);
+    CHECK(four.reference_rpm > one.reference_rpm);
+    CHECK(four.rotor_inertia_kgm2 < one.rotor_inertia_kgm2);
+    CHECK(four.max_shaft_rpm == Approx(four.reference_rpm * c.max_shaft_speed_factor));
+    CHECK(four.unit_mass_kg < one.unit_mass_kg);
+    CHECK(four.unit_diameter_mm < one.unit_diameter_mm);
+    WARN("pico single: " << one.exducer_mm << " mm, " << one.unit_mass_kg << " kg; quad: 4 x " << four.exducer_mm << " mm, "
+                         << four.unit_mass_kg << " kg each, " << four.reference_rpm << " rpm");
+}
+
+TEST_CASE("turbo kits: the engine with its turbos must fit the engine bay", "[turbo_kit]") {
+    Fixture f;
+    const rg::TurboKitConfig& c = *f.ctx.turbo_kits;
+    const rg::EngineEntry* pico = f.store->find("default:pico_i3_1l0_na");
+    REQUIRE(pico != nullptr);
+    REQUIRE(pico->envelope_mm.has_value());
+    const auto facts = rg::read_engine_facts(pico->file, nullptr);
+    REQUIRE(facts.has_value());
+    // The envelope rule: units in a row along the crank on the exhaust side, the charge pipe beside them.
+    const rg::TurboKitSizing quad = rg::size_turbo_kit(c, *c.find("quad"), *facts, facts->limiter_rpm);
+    const auto box = rg::turbo_kit_envelope_mm(c, 4, quad, *pico->envelope_mm, false);
+    CHECK(box[0] == Approx(std::max((*pico->envelope_mm)[0], 4 * quad.unit_length_mm + 3 * c.unit_gap_mm)));
+    CHECK(box[1] == Approx((*pico->envelope_mm)[1] + c.unit_side_protrusion * quad.unit_diameter_mm));
+    // A V engine splits its turbos over both banks: a shorter row, wider overall.
+    const auto vbox = rg::turbo_kit_envelope_mm(c, 4, quad, *pico->envelope_mm, true);
+    CHECK(vbox[0] <= box[0]);
+    CHECK(vbox[1] > box[1]);
+    for (const auto& [car, kit] : std::vector<std::pair<std::string, std::string>>{
+             {"car_city", "street_single"}, {"car_city", "quad"}, {"car_gt70", "quad"}, {"car_runabout", "quad"}}) {
+        const rg::TurboKitSizing z = rg::size_turbo_kit(c, *c.find(kit), *facts, facts->limiter_rpm);
+        const auto b = rg::turbo_kit_envelope_mm(c, c.find(kit)->count, z, *pico->envelope_mm, false);
+        const rg::FitResult fit = rg::check_fit_size(f.entry(car), b);
+        WARN(car << " + pico + " << kit << ": " << b[0] << " x " << b[1] << " x " << b[2] << " mm -> "
+                 << (fit.allowed ? std::string("fits") : fit.reasons.front()));
+    }
+    // A quad on the pico fits the GT's long bay. Its row of four is longer than the engine: a bay with room for the engine
+    // but not for the row refuses it, naming the dimension; the single still fits there.
+    const rg::CompiledSetup gt = rg::compile_setup(f.entry("car_gt70"), f.table, f.ctx,
+                                                   setup_of("car_gt70", {{"engine_install", std::string("default:pico_i3_1l0_na")}, {"turbo_kit", std::string("quad")}}));
+    INFO(gt.error);
+    CHECK(gt.ok);
+    REQUIRE(gt.turbo_kit.has_value());
+    CHECK(gt.turbo_kit->spec.count == 4);
+    CHECK(gt.turbo_kit->envelope_mm[0] == Approx(box[0]));
+    rg::CatalogEntry tight = f.entry("car_city");
+    REQUIRE(tight.engine_bay_envelope.has_value());
+    REQUIRE(tight.engine_bay_envelope->crank_axis == 'y');
+    tight.engine_bay_envelope->size_mm[1] = (*pico->envelope_mm)[0] + 20.0; // room along the crank: the engine + 20 mm
+    REQUIRE(box[0] > tight.engine_bay_envelope->size_mm[1]);
+    const rg::CompiledSetup city = rg::compile_setup(tight, f.table, f.ctx, setup_of("car_city", {{"turbo_kit", std::string("quad")}}));
+    CHECK_FALSE(city.ok);
+    CHECK_THAT(city.error, ContainsSubstring("does not fit"));
+    CHECK_THAT(city.error, ContainsSubstring("mm long"));
+    const rg::CompiledSetup single = rg::compile_setup(tight, f.table, f.ctx, setup_of("car_city", {{"turbo_kit", std::string("street_single")}}));
+    INFO(single.error);
+    CHECK(single.ok);
+    // The garage card of the quad says why before the player picks it.
+    const rg::SetupModel m = rg::build_setup_model(tight, f.table, f.ctx);
+    const rg::OptionView* v = view_of(m, "turbo_kit");
+    REQUIRE(v != nullptr);
+    bool quad_card = false;
+    for (const rg::SetupPart& p : v->parts) {
+        if (p.id != "quad") continue;
+        quad_card = true;
+        CHECK_THAT(p.detail, ContainsSubstring("does not fit the engine bay"));
+    }
+    CHECK(quad_card);
+}
+
+TEST_CASE("turbo kits: the boost slider re-sizes the kit for the target actually set", "[turbo_kit]") {
+    Fixture f;
+    const rg::CompiledSetup start = rg::compile_setup(f.entry("car_gt70"), f.table, f.ctx, setup_of("car_gt70", {{"turbo_kit", std::string("sport_single")}}));
+    INFO(start.error);
+    REQUIRE(start.ok);
+    REQUIRE(start.turbo_kit.has_value());
+    const rg::CompiledSetup more = rg::compile_setup(f.entry("car_gt70"), f.table, f.ctx,
+                                                     setup_of("car_gt70", {{"turbo_kit", std::string("sport_single")}, {"turbo_boost_target", 1.8}}));
+    INFO(more.error);
+    REQUIRE(more.ok);
+    REQUIRE(more.turbo_kit.has_value());
+    CHECK(more.turbo_kit->spec.target_boost_bar == Approx(1.8 * start.turbo_kit->spec.target_boost_bar));
+    CHECK(more.turbo_kit->sizing.demand_kg_s > start.turbo_kit->sizing.demand_kg_s);
+    CHECK(more.turbo_kit->sizing.exducer_mm > start.turbo_kit->sizing.exducer_mm);
+    CHECK(more.turbo_kit->sizing.torque_factor > start.turbo_kit->sizing.torque_factor);
+    // The regenerated configuration carries the new target, so no turbo-file patch is left over.
+    CHECK(more.patches.count("turbo") == 0);
+    // It loads.
+    const Loaded l = load_setup(f, f.entry("car_gt70"), setup_of("car_gt70", {{"turbo_kit", std::string("sport_single")}, {"turbo_boost_target", 1.8}}));
+    INFO(l.error);
+    REQUIRE(l.ok);
+    const auto* sim = sim_engine(l.desc);
+    REQUIRE(sim != nullptr);
+    REQUIRE(sim->turbo_pair.has_value());
+    CHECK(sim->turbo_pair->target_boost_pa / 1.0e5 == Approx(1.8 * start.turbo_kit->spec.target_boost_bar).margin(1e-6));
+}
+
+TEST_CASE("turbo kits: charge piping is a part, its rating is advisor data", "[turbo_kit][limit_advisor]") {
+    Fixture f;
+    const rg::TurboKitConfig& c = *f.ctx.turbo_kits;
+    REQUIRE(c.find_piping("plastic") != nullptr);
+    REQUIRE(c.find_piping("aluminium") != nullptr);
+    REQUIRE(c.find_piping("steel") != nullptr);
+    CHECK(c.default_piping == "plastic");
+    for (const rg::ChargePipingSpec& p : c.piping) {
+        INFO(p.id);
+        CHECK(p.burst_bar > p.rated_bar);
+        CHECK_THAT(p.source, ContainsSubstring("[AS]"));
+    }
+    CHECK(c.find_piping("plastic")->rated_bar < c.find_piping("aluminium")->rated_bar);
+    CHECK(c.find_piping("aluminium")->rated_bar < c.find_piping("steel")->rated_bar);
+    // The option: offered with a kit-capable engine, stock = the kit's plastic.
+    const rg::SetupModel m = rg::build_setup_model(f.entry("car_gt70"), f.table, f.ctx);
+    const rg::OptionView* v = view_of(m, "charge_piping");
+    REQUIRE(v != nullptr);
+    CHECK(v->available);
+    CHECK_THAT(v->parts.front().label, ContainsSubstring("Plastic"));
+    CHECK(v->choices.size() == 3);
+    const rg::OptionView* hv = view_of(rg::build_setup_model(f.entry("car_hyper"), f.table, f.ctx), "charge_piping");
+    REQUIRE(hv != nullptr);
+    CHECK_FALSE(hv->available); // its own twin turbo: no kit, no kit piping
+    // Compiled: the choice reaches the build; metal piping is heavier.
+    const auto kit_with = [&](const char* piping) {
+        const rg::CompiledSetup s = rg::compile_setup(f.entry("car_gt70"), f.table, f.ctx,
+                                                      setup_of("car_gt70", {{"turbo_kit", std::string("sport_single")}, {"charge_piping", std::string(piping)}}));
+        INFO(s.error);
+        REQUIRE(s.ok);
+        REQUIRE(s.turbo_kit.has_value());
+        return *s.turbo_kit;
+    };
+    const rg::TurboKitBuild plastic = kit_with("stock");
+    const rg::TurboKitBuild steel = kit_with("steel");
+    CHECK(plastic.piping.id == "plastic");
+    CHECK(steel.piping.id == "steel");
+    const auto piping_kg = [](const rg::TurboKitBuild& b) {
+        for (const rg::TurboKitPart& p : b.parts) if (p.id == "charge_piping") return p.mass_kg;
+        return 0.0;
+    };
+    CHECK(piping_kg(steel) > piping_kg(plastic));
+    CHECK(steel.total_mass_kg() > plastic.total_mass_kg());
+
+    // The advisor: the piping's rating against the boost (no sweep needed: the target alone).
+    std::string err;
+    const auto adv = rg::load_advisor_config(kRoot + "/data/garage/advisor.json", &err);
+    INFO(err);
+    REQUIRE(adv.has_value());
+    const auto items_for = [&](const rg::TurboKitBuild& b, double target) {
+        rg::CompiledSetup cs;
+        cs.turbo_kit = b;
+        rg::AdviceInput in;
+        rg::set_part_limits(in, cs);
+        in.target_boost_bar = target;
+        return rg::build_advice(in, *adv);
+    };
+    const auto find = [](const std::vector<rg::AdviceItem>& items, const std::string& name) -> const rg::AdviceItem* {
+        for (const rg::AdviceItem& i : items) if (i.rule_name == name) return &i;
+        return nullptr;
+    };
+    CHECK(find(items_for(plastic, 1.0), "ChargePipingPressure") == nullptr); // well under 1.5 bar
+    const auto over = items_for(plastic, 2.0);
+    const rg::AdviceItem* warn = find(over, "ChargePipingPressure");
+    REQUIRE(warn != nullptr);
+    CHECK(warn->severity == rg::AdviceSeverity::Warning);
+    CHECK(warn->option_id == "charge_piping");
+    REQUIRE_FALSE(warn->lines.empty());
+    CHECK_THAT(warn->lines.front(), ContainsSubstring("2.0 bar"));
+    CHECK_THAT(warn->lines.front(), ContainsSubstring("Plastic charge piping"));
+    const rg::AdviceItem* burst = find(items_for(plastic, 3.5), "ChargePipingPressure");
+    REQUIRE(burst != nullptr);
+    CHECK(burst->variant == "burst");
+    CHECK(burst->severity == rg::AdviceSeverity::Critical);
+    CHECK(find(items_for(steel, 2.0), "ChargePipingPressure") == nullptr);
+    // ... and the setup still compiles and saves: the advisor only warns.
+    const rg::CompiledSetup high = rg::compile_setup(f.entry("car_gt70"), f.table, f.ctx,
+                                                     setup_of("car_gt70", {{"turbo_kit", std::string("sport_single")}, {"turbo_boost_target", 2.5}}));
+    INFO(high.error);
+    CHECK(high.ok);
+
+    // Rotor speed and mean piston speed from the sweep points.
+    rg::AdviceInput in;
+    rg::CompiledSetup cs;
+    cs.turbo_kit = plastic;
+    rg::set_part_limits(in, cs);
+    in.target_boost_bar = 1.0;
+    in.stroke_m = 0.09;
+    ps::drivetrain::DynoPoint p;
+    p.rpm = 9000.0; // 27 m/s with a 90 mm stroke
+    p.turbo_rpm = 1.2 * plastic.sizing.max_shaft_rpm;
+    p.charge_boost_bar = 1.0;
+    in.points.push_back(p);
+    const auto items = rg::build_advice(in, *adv);
+    const rg::AdviceItem* shaft = find(items, "TurboShaftSpeed");
+    REQUIRE(shaft != nullptr);
+    CHECK(shaft->severity == rg::AdviceSeverity::Warning);
+    const rg::AdviceItem* piston = find(items, "MeanPistonSpeed");
+    REQUIRE(piston != nullptr);
+    CHECK(piston->severity == rg::AdviceSeverity::Warning);
+    CHECK_THAT(piston->lines.front(), ContainsSubstring("27.0 m/s"));
 }
 
 TEST_CASE("turbo kits: every kit engine loads validate-only with a kit fitted (own car and via an engine swap)", "[turbo_kit]") {
@@ -268,8 +473,7 @@ TEST_CASE("turbo kits: the garage shows why a kit cannot be fitted", "[turbo_kit
         REQUIRE(v != nullptr);
         CHECK(v->available);
         CHECK(v->unavailable_reason.empty());
-        CHECK(v->choices.size() >= 2); // stock + the single kits (a 4-cylinder gets no twin)
-        for (const auto& c : v->choices) CHECK(c != "sport_twin");
+        CHECK(v->choices.size() >= 2); // stock + every kit (any count on any eligible engine; fit is checked on install)
     }
     {
         // A torque-curve engine: unavailable, with the reason.
@@ -363,18 +567,27 @@ TEST_CASE("turbo kits: a kit's turbos, exhaust and intercooler join the car's pa
     f.ctx.part_masses = std::make_shared<const rg::PartMassTable>(*table);
     const rg::TurboKitConfig& cfg = *f.ctx.turbo_kits;
 
-    // The parts of one kit: turbo mass follows the sized wheel, the plumbing is per turbo / per kit.
-    rg::TurboKitSizing sizing;
-    sizing.scale = 1.0;
+    // The parts of one kit: one per turbo (mass follows the sized wheel), one exhaust side per turbo, the intercooler
+    // (sized by the air flow) and the charge piping (length by the turbo count, mass by the material).
+    const auto facts = rg::read_engine_facts(f.store->find("default:ventura_v8_5l0_na")->file, nullptr);
+    REQUIRE(facts.has_value());
     const rg::TurboKitSpec* twin = cfg.find("sport_twin");
     REQUIRE(twin != nullptr);
-    const rg::PartAttachment a = rg::turbo_kit_parts(cfg, *twin, sizing);
+    const rg::TurboKitSizing sizing = rg::size_turbo_kit(cfg, *twin, *facts, facts->limiter_rpm);
+    REQUIRE(sizing.ok);
+    const rg::TurboKitBuild build = rg::describe_turbo_kit(cfg, *twin, sizing, *cfg.find_piping("plastic"));
+    const rg::PartAttachment a = rg::turbo_kit_parts(build);
     CHECK(a.parent_id == "engine");
-    CHECK(a.node.children.size() == 5); // 2 turbos, 2 exhaust sides, 1 intercooler
-    CHECK(a.node.total_kg() == Approx(2 * cfg.turbo_anchor_kg + 2 * cfg.manifold_kg_per_turbo + cfg.intercooler_kg +
-                                      cfg.intercooler_kg_per_extra_turbo));
-    sizing.scale = 0.1; // a tiny wheel: held at the minimum
-    CHECK(rg::turbo_kit_parts(cfg, *twin, sizing).node.children.front().own_kg == Approx(cfg.turbo_min_kg));
+    CHECK(a.node.children.size() == 6); // 2 turbos, 2 exhaust sides, 1 intercooler, 1 charge piping
+    CHECK(a.node.total_kg() == Approx(build.total_mass_kg()));
+    CHECK(build.total_mass_kg() == Approx(2 * sizing.unit_mass_kg + 2 * cfg.hot_side_mass_per_unit_kg + sizing.intercooler_mass_kg +
+                                          build.parts.back().mass_kg));
+    for (const rg::PartNode& n : a.node.children) {
+        INFO(n.id);
+        CHECK(n.own_kg > 0.0);
+        CHECK_THAT(n.source, ContainsSubstring("[AS]"));
+    }
+    CHECK(sizing.unit_mass_kg == Approx(cfg.unit_mass_fixed_kg + cfg.unit_mass_scaled_kg * std::pow(sizing.scale, 3.0)));
 
     // Through the garage files: the city car with each single kit.
     const rg::CatalogEntry& city = f.entry("car_city");
@@ -391,24 +604,26 @@ TEST_CASE("turbo kits: a kit's turbos, exhaust and intercooler join the car's pa
         const rg::PartNode* node = c.parts.root.find("engine.turbo_kit");
         REQUIRE(node != nullptr);
         CHECK(node->label == cfg.find(kit)->label);
-        CHECK(node->children.size() == 3);
-        CHECK(node->total_kg() >= cfg.turbo_min_kg + cfg.manifold_kg_per_turbo + cfg.intercooler_kg);
+        CHECK(node->children.size() == 4);
+        CHECK(node->total_kg() > cfg.unit_mass_fixed_kg + cfg.hot_side_mass_per_unit_kg);
+        REQUIRE(c.turbo_kit.has_value());
+        CHECK(node->total_kg() == Approx(c.turbo_kit->total_mass_kg()));
         CHECK(c.parts.total_kg == Approx(stock.total_kg + node->total_kg()));
         CHECK(c.parts.chassis_kg == Approx(c.parts.total_kg).margin(0.001));
         if (std::string(kit) == "street_single") street_kg = node->total_kg();
         else CHECK(node->total_kg() >= street_kg); // more boost: a larger wheel, never lighter
     }
 
-    // Loader: the masses block is required.
+    // Loader: the mass block is required.
     std::ifstream in(kRoot + "/data/engines/turbo_kits.json", std::ios::binary);
     nlohmann::json doc = nlohmann::json::parse(in);
-    doc.erase("masses");
+    doc.erase("mass");
     const fs::path dir = fs::temp_directory_path() / "rg_turbo_kit_masses";
     fs::create_directories(dir);
     const std::string p = (dir / "kits.json").generic_string();
     std::ofstream(p, std::ios::binary) << doc.dump();
     CHECK_FALSE(rg::load_turbo_kit_config(p, kRoot, &err).has_value());
-    CHECK_THAT(err, ContainsSubstring("masses"));
+    CHECK_THAT(err, ContainsSubstring("mass"));
     fs::remove_all(dir);
 }
 
@@ -446,4 +661,46 @@ TEST_CASE("turbo kits: a kit engine makes more power at the same rpm", "[turbo_k
         // At the top of the band the kit is at full boost: clearly more.
         CHECK(rt.points.back().power_kw > 1.15 * rn.points.back().power_kw);
     }
+}
+
+// Owner on PR #21: "slap a quad turbo on a 1.0l 3 cylinder engine, if that would fit in the engine bay". The pico with the
+// quad kit in the GT's bay: four tiny units (min_scale) on 1 L. It loads, makes boost and more power than without.
+TEST_CASE("turbo kits: a quad on the 1.0 L three makes boost on the dyno", "[turbo_kit][dyno][long]") {
+    Fixture f;
+    ps::jobs::JobSystem pool(2);
+    const auto setup = [](bool kit) {
+        std::vector<std::pair<std::string, rg::SetupValue>> v{{"engine_install", std::string("default:pico_i3_1l0_na")}};
+        if (kit) v.push_back({"turbo_kit", std::string("quad")});
+        return setup_of("car_gt70", v);
+    };
+    const Loaded na = load_setup(f, f.entry("car_gt70"), setup(false), &pool);
+    INFO(na.error);
+    REQUIRE(na.ok);
+    const Loaded q = load_setup(f, f.entry("car_gt70"), setup(true), &pool);
+    INFO(q.error);
+    REQUIRE(q.ok);
+    const ps::drivetrain::ComponentParams* pna = nullptr;
+    const ps::drivetrain::ComponentParams* pq = nullptr;
+    const auto* sna = sim_engine(na.desc, &pna);
+    const auto* sq = sim_engine(q.desc, &pq);
+    REQUIRE(sna != nullptr);
+    REQUIRE(sq != nullptr);
+    REQUIRE(sq->turbo_pair.has_value());
+    ps::drivetrain::DynoSweepSpec spec;
+    const double lim = sna->limiter.rpm;
+    for (double frac : {0.55, 0.75, 0.9}) spec.rpm.push_back(std::round(frac * lim / 50.0) * 50.0);
+    spec.max_settle_s = 8.0;
+    spec.turbo_count = 4;
+    const auto rn = ps::drivetrain::run_dyno_sweep(*pna, nullptr, spec, &pool);
+    const auto rq = ps::drivetrain::run_dyno_sweep(*pq, nullptr, spec, &pool);
+    REQUIRE(rn.points.size() == spec.rpm.size());
+    REQUIRE(rq.points.size() == spec.rpm.size());
+    for (std::size_t i = 0; i < spec.rpm.size(); ++i) {
+        WARN("pico quad @ " << spec.rpm[i] << " rpm: NA " << rn.points[i].power_kw << " kW, quad " << rq.points[i].power_kw << " kW (x"
+                            << rq.points[i].power_kw / rn.points[i].power_kw << "), boost " << rq.points[i].boost_bar << " bar, rotor "
+                            << rq.points[i].turbo_rpm << " rpm (rated " << q.compiled.turbo_kit->sizing.max_shaft_rpm << ")");
+        CHECK(std::isfinite(rq.points[i].power_kw));
+    }
+    CHECK(rq.points.back().boost_bar > 0.5);
+    CHECK(rq.points.back().power_kw > 1.3 * rn.points.back().power_kw);
 }

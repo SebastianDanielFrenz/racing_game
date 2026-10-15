@@ -1061,6 +1061,21 @@ func _draw_turbo_kit(kit: Dictionary) -> void:
 		_buttons["part:turbo_kit:" + str(part["id"])] = card
 		card.pressed.connect(func(): _edit_option("turbo_kit",str(part["id"])); _draw_garage_options())
 		if installed or _garage_preferred == null: _garage_preferred = card
+	# Charge piping (plastic / aluminium / steel): its rating is what the setup check holds the boost against.
+	var piping := _garage_option("charge_piping")
+	if not piping.is_empty() and str(kit["value"]) != "stock":
+		_option_box.add_child(_label("Charge piping",16,HORIZONTAL_ALIGNMENT_LEFT,true))
+		var pgrid := GridContainer.new()
+		pgrid.columns = 2
+		_option_box.add_child(pgrid)
+		for part in piping["parts"]:
+			var fitted := str(part["id"]) == str(piping["value"])
+			var shown: Dictionary = part.duplicate()
+			shown["size"] = str(part.get("detail", ""))
+			var pcard := _make_component_card(shown,"INSTALLED" if fitted else "Install")
+			pgrid.add_child(pcard)
+			_buttons["part:charge_piping:" + str(part["id"])] = pcard
+			pcard.pressed.connect(func(): _edit_option("charge_piping",str(part["id"])); _draw_garage_options())
 	_draw_swap_summary()
 	_focus_garage.call_deferred()
 

@@ -653,6 +653,20 @@
       "help": "Fit a turbo system to an engine that has none: the turbo, intercooler and wastegate are sized for the installed engine's air flow (data/engines/turbo_kits.json), the boost map is regenerated and a compression ratio above 10:1 is lowered. Boost pressure is adjusted separately in Tuning. Torque-curve engines cannot take a kit; the garage says why."
     },
     {
+      "id": "charge_piping",
+      "label": "Charge piping",
+      "group": "Turbo system",
+      "area": "engine",
+      "kind": "file_choice",
+      "catalog": "charge_piping",
+      "file": "engine",
+      "part_format": "physics_sim.turbo_configuration/1",
+      "pointers": [
+        "/default_forced_induction"
+      ],
+      "help": "The pipes and couplers from the compressor through the intercooler to the throttle. A kit comes with plastic piping rated for street boost; aluminium and steel take more pressure and weigh more. The setup check warns when the boost target is above the piping's rating (data/engines/turbo_kits.json); nothing breaks yet."
+    },
+    {
       "id": "turbo_boost_target",
       "label": "Boost target",
       "group": "Turbo calibration",
