@@ -131,6 +131,7 @@ struct VehicleStats {
     std::string layout;               // "FWD" | "RWD" | "AWD" | "other"
     int driven_wheels = 0;
     int wheel_count = 0;
+    std::string driveline;            // "RWD · Torsen rear" (rg::driveline_summary); the layout alone for a driveline the swap does not read
     int gear_count = 0;               // forward gears of the gearbox file
     // Displacement in litres: computed from the engine file's cylinders x bore x stroke
     // when it has them, else the catalog entry's own figure, else unknown ("-" in the UI).

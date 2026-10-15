@@ -1,0 +1,29 @@
+{
+  "format": "rg.driveline_catalog/1",
+  "source": "Drivetrain swap (owner on PR #5, 2026-10-15: 'Drivetrain swaps are not yet available'). The garage's drive layouts and differential units. A layout swap is a generic transform of the vehicle file's driveline (rg/driveline_swap.h): the gearbox output keeps its shaft (and anything else on it, such as a park pawl), the old differentials and their shafts are removed, and the new ones are built from the car's OWN axle differential (ratio, efficiency, carrier inertia, axis and kind are copied, so overall gearing does not change) - nothing here is per car. Every differential kind is one physics_sim already simulates (ps::drivetrain::DifferentialKind: open, locked, viscous, clutch_lsd, torsen; 'active' is not implemented there). Numbers: the centre unit (ratio 1.0, lossless, carrier inertia 0.01 kg*m^2, axis along x) is the one physics_sim's car_sedan_awd.json uses. Axle clutch LSD = the preload and ramp factors of data/vehicles/car_gt70.json (60 N*m, 0.35 drive / 0.20 coast). Axle Torsen TBR 2.5 = physics_sim's car_hyper.json. Centre kinds are open, viscous and locked only: physics_sim (I4) builds clutch LSD and Torsen as LEAF differentials only and refuses them as a centre (powertrain.cpp, 'centre LSD/Torsen is not supported in I4'); a non-open centre must also be lossless, so the swap sets its efficiency to 1.0. Viscous coefficients [AS]: a road-car viscous LSD passes roughly 150-250 N*m at 100 rpm (10.5 rad/s) wheel speed difference, i.e. 15-25 N*m*s/rad - 20 taken for an axle; a viscous centre coupling is sized for the whole axle torque, 40 taken. Locked = an unconditional spool (omega_L == omega_R); a locked centre is a part-time 4WD transfer with no centre differential and binds in tight corners on grip, which is the expected behaviour. No mass change is applied here: the owner (PR #19) wants a weight penalty for any swap that runs the driveline the length of the car (an AWD conversion, FWD <-> RWD); it comes in through the per-part mass work, not this catalogue.",
+  "centre_unit": { "ratio": 1.0, "efficiency": 1.0, "carrier_inertia_kgm2": 0.01, "carrier_axis_local": [1, 0, 0] },
+  "layouts": [
+    { "id": "fwd", "name": "Front-wheel drive", "layout": "FWD",
+      "description": "The engine drives the front wheels through one axle differential; the rear wheels roll free." },
+    { "id": "rwd", "name": "Rear-wheel drive", "layout": "RWD",
+      "description": "The engine drives the rear wheels through one axle differential; the front wheels only steer." },
+    { "id": "awd_open", "name": "AWD, open centre", "layout": "AWD", "centre": { "kind": "open" },
+      "description": "Permanent all-wheel drive with an open centre differential: a fixed 50/50 torque split, but one spinning axle takes all the drive." },
+    { "id": "awd_viscous", "name": "AWD, viscous centre", "layout": "AWD", "centre": { "kind": "viscous", "viscous_nm_s_rad": 40.0 },
+      "description": "Open centre plus a viscous coupling: when one axle starts to spin faster, the coupling passes torque to the other." },
+    { "id": "awd_locked", "name": "AWD, locked centre", "layout": "AWD", "centre": { "kind": "locked" },
+      "description": "Both axles turn at the same speed (part-time 4WD). Strongest traction off-road; the drivetrain binds in tight turns on grippy roads." }
+  ],
+  "differentials": [
+    { "id": "open", "name": "Open differential", "kind": "open",
+      "description": "Equal torque left and right; an unloaded wheel spins and limits the drive of the other." },
+    { "id": "clutch_lsd", "name": "Clutch-type LSD", "kind": "clutch_lsd", "preload_nm": 60.0, "ramp": { "drive_factor": 0.35, "coast_factor": 0.2 },
+      "description": "Clutch packs with a preload and ramps lock the axle more under power than off it." },
+    { "id": "torsen", "name": "Torsen", "kind": "torsen", "torque_bias_ratio": 2.5,
+      "description": "Torque-sensing gear differential: the wheel with grip takes up to 2.5 times the torque of the other." },
+    { "id": "viscous", "name": "Viscous LSD", "kind": "viscous", "viscous_nm_s_rad": 20.0,
+      "description": "A viscous coupling between the wheels passes torque in proportion to their speed difference." },
+    { "id": "locked", "name": "Locked (spool)", "kind": "locked",
+      "description": "Both wheels always turn together: full traction, strong understeer in tight corners." }
+  ]
+}

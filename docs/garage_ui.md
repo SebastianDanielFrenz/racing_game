@@ -27,6 +27,18 @@ returns one level at a time; the root opens the save-and-exit prompt. Upgrades:
   drops it back to stock with a notice. The card shows kind, focus, gear type, gear count, first/last
   ratio and rating. The N2O shot and extra boost are not counted against the rating (the list describes
   the engine as catalogued).
+- Upgrades → Swaps → Drivetrain (2026-10-15): change the drive layout and the axle differentials. Layout cards
+  are grouped FWD / RWD / AWD (AWD with an open, viscous or locked centre; physics_sim has no Torsen/LSD centre yet); below them one card row per
+  DRIVEN axle offers open, clutch LSD, Torsen, viscous or locked. The first card of each list is what the car has now
+  (the layout as delivered; for a differential: the axle's unit as the chosen layout left it). Catalogue:
+  data/drivetrains/driveline_catalog.json (rg.driveline_catalog/1); the transform is generic code
+  (rg/driveline_swap.h): the new axle units copy the car's own (ratio, efficiency, inertia, kind), so the gearing does
+  not change and the final drive slider scales the new units. No engine-position rule: every car whose driveline is
+  one gearbox output into one or two axle differentials takes every layout; a transfer case or anything else greys
+  the tile out. A layout change that stops driving an axle returns that axle's differential choice to stock with a
+  notice. Every layout stays offered, FWD <-> RWD included (owner on PR #19). A swap that runs the driveline the length
+  of the car (an AWD conversion, FWD <-> RWD) carries a weight penalty; that mass comes in through the per-part mass
+  work (branch claude/part-mass), not through this code. The stats (vehicle select, car browser) follow the setup's layout.
 
 Compound installs preserve each axle's width. Dimension installs preserve each
 axle's compound. All applies the chosen property to both axles, offering only
