@@ -34,130 +34,6 @@ namespace rg {
 
 namespace {
 
-std::uint32_t pack_rgba(float r, float g, float b, float a) {
-    auto to_u8 = [](float v) {
-        return static_cast<std::uint8_t>(std::clamp(v, 0.0f, 1.0f) * 255.0f + 0.5f);
-    };
-    return (static_cast<std::uint32_t>(to_u8(r)) << 24) | (static_cast<std::uint32_t>(to_u8(g)) << 16) |
-           (static_cast<std::uint32_t>(to_u8(b)) << 8) | static_cast<std::uint32_t>(to_u8(a));
-}
-
-// Hypsometric ramp (PLAN.md R2.1: "valley green, ridge brown/grey"), blended
-// toward a grey rock colour by slope, since no LandClass exists before G2.5
-// (every ClassWindow is Unknown). Height bounds match physics_sim's own
-// documented range for this project's home-region terrain (physics_sim's
-// CLAUDE.md, "Terrain tile system": "real-world 90-880 m ASL terrain") - the
-// Taunus ridge / Main valley home region spans roughly this range.
-constexpr float kValleyHeightM = 90.0f;
-constexpr float kRidgeHeightM = 880.0f;
-
-// Road colours (R-2, roads_plan.md: "paved grey (0.30, 0.30, 0.32), unpaved
-// brown (pick a sensible value and say which)"). Chosen: a mid dirt-track
-// brown, (0.36, 0.28, 0.16) - readably distinct from both the paved grey
-// above and the hypsometric ramp's own ridge-brown (0.45, 0.34, 0.22) below
-// (darker and more saturated, so an unpaved road doesn't blend into bare
-// rock/ridge terrain at a glance).
-//
-// G2.5a-grip R-b: these two colours are now keyed by the RESOLVED SURFACE
-// NAME (via `surfaces`, an rg::RoadSurfaceMap), not directly by LandClass -
-// "asphalt" gets the paved colour, "dirt" the unpaved one, and any other
-// configured name (a future data/surfaces/surfaces.json addition this map
-// has not yet been taught to render specially) falls through to the height
-// ramp below, same as an unpaved/paved-but-unrecognised name always did.
-// RoadSurfaceMap's own defaults ("asphalt"/"dirt") mean a WorldConfig with no
-// "physics.road_surfaces" block still renders these exact bytes.
-constexpr float kPavedR = 0.30f, kPavedG = 0.30f, kPavedB = 0.32f;
-constexpr float kUnpavedR = 0.36f, kUnpavedG = 0.28f, kUnpavedB = 0.16f;
-constexpr std::string_view kAsphaltName = "asphalt";
-constexpr std::string_view kDirtName = "dirt";
-
-void chunk_vertex_colors(const g2m::mesh::TerrainChunkMesh& mesh, const RoadSurfaceMap& surfaces,
-                         std::vector<std::uint32_t>& rgba) {
-    const std::size_t vertex_count = mesh.positions.size() / 3;
-    const bool has_land_class = mesh.land_class.size() == vertex_count;
-    rgba.assign(vertex_count, 0);
-    for (std::size_t i = 0; i < vertex_count; ++i) {
-        if (has_land_class) {
-            const auto land_class = static_cast<g2m::LandClass>(mesh.land_class[i]);
-            if (land_class == g2m::LandClass::PavedRoad || land_class == g2m::LandClass::UnpavedRoad) {
-                const std::string& name = surfaces.name_for(land_class);
-                if (name == kAsphaltName) {
-                    rgba[i] = pack_rgba(kPavedR, kPavedG, kPavedB, 1.0f);
-                    continue;
-                }
-                if (name == kDirtName) {
-                    rgba[i] = pack_rgba(kUnpavedR, kUnpavedG, kUnpavedB, 1.0f);
-                    continue;
-                }
-                // An unrecognised name falls through to the height ramp
-                // below - no colour table exists for an arbitrary surface
-                // name yet.
-            }
-        }
-
-        const float height_m = mesh.positions[3 * i + 2];
-        const float nz = mesh.normals[3 * i + 2];
-
-        const float t_height =
-            std::clamp((height_m - kValleyHeightM) / (kRidgeHeightM - kValleyHeightM), 0.0f, 1.0f);
-        constexpr float kValleyR = 0.20f, kValleyG = 0.42f, kValleyB = 0.18f; // valley green
-        constexpr float kRidgeR = 0.45f, kRidgeG = 0.34f, kRidgeB = 0.22f;    // ridge brown
-        float r = kValleyR + (kRidgeR - kValleyR) * t_height;
-        float g = kValleyG + (kRidgeG - kValleyG) * t_height;
-        float b = kValleyB + (kRidgeB - kValleyB) * t_height;
-
-        // 0 = flat (normal straight up), 1 = vertical face.
-        const float slope = std::clamp(1.0f - nz, 0.0f, 1.0f);
-        // Blend to rock/grey above ~14 degrees, fully rock by ~45 degrees.
-        const float rock = std::clamp((slope - 0.25f) / 0.5f, 0.0f, 1.0f);
-        constexpr float kRockR = 0.42f, kRockG = 0.40f, kRockB = 0.38f;
-        r += (kRockR - r) * rock;
-        g += (kRockG - g) * rock;
-        b += (kRockB - b) * rock;
-
-        rgba[i] = pack_rgba(r, g, b, 1.0f);
-    }
-}
-
-// Debug aid (kept): env RG_TERRAIN_TINT = level | carve | both recolours the terrain chunks so a screenshot shows what
-// was built. level: one colour per LOD level (L0 red, L1 orange, L2 yellow, L3 green, L4 cyan, L5 blue, L6 violet);
-// carve: carved with the road surface = green, Fallback (uncarved because the road surface was missing) = magenta,
-// level not carved = blue; both: the two blended. Read once; unset = the normal colours.
-int terrain_tint_mode() {
-    static const int mode = []() {
-        const char* v = std::getenv("RG_TERRAIN_TINT");
-        if (v == nullptr) return 0;
-        const std::string s(v);
-        if (s == "level") return 1;
-        if (s == "carve") return 2;
-        if (s == "both") return 3;
-        return 0;
-    }();
-    return mode;
-}
-
-void apply_debug_tint(RenderChunk& chunk) {
-    const int mode = terrain_tint_mode();
-    if (mode == 0) return;
-    static const float kLevel[7][3] = {{1.0f, 0.1f, 0.1f}, {1.0f, 0.55f, 0.1f}, {1.0f, 0.95f, 0.1f}, {0.2f, 0.9f, 0.2f},
-                                       {0.1f, 0.9f, 0.9f}, {0.2f, 0.3f, 1.0f}, {0.7f, 0.2f, 0.9f}};
-    const float* lv = kLevel[std::min<int>(chunk.key.level, 6)];
-    float cv[3] = {0.2f, 0.3f, 1.0f};
-    if (chunk.carve == ChunkCarve::Carved) { cv[0] = 0.1f; cv[1] = 0.8f; cv[2] = 0.2f; }
-    if (chunk.carve == ChunkCarve::Fallback) { cv[0] = 1.0f; cv[1] = 0.0f; cv[2] = 1.0f; }
-    float c[3];
-    for (int k = 0; k < 3; ++k) c[k] = mode == 1 ? lv[k] : mode == 2 ? cv[k] : 0.5f * (lv[k] + cv[k]);
-    // Keep a hint of the real shading (the original vertex colour) so relief stays readable.
-    for (auto& px : chunk.rgba) {
-        const float r = static_cast<float>((px >> 24) & 0xff) / 255.0f, g = static_cast<float>((px >> 16) & 0xff) / 255.0f,
-                    b = static_cast<float>((px >> 8) & 0xff) / 255.0f;
-        const float shade = 0.5f + 0.5f * (0.299f * r + 0.587f * g + 0.114f * b);
-        px = pack_rgba(c[0] * shade, c[1] * shade, c[2] * shade, 1.0f);
-    }
-}
-
-// The worst carve state over the height tiles the chunk's halo window touches (gather_window: chunk samples
-// 64*c - 1 .. 64*c + 65 of its level, 256 samples per tile).
 // RG_TERRAIN_FORCE_FALLBACK=N: the first N coarse tiles are produced as Fallback (test aid, read once).
 std::atomic<int>& force_fallback_counter() {
     static std::atomic<int> left = []() {
@@ -168,45 +44,6 @@ std::atomic<int>& force_fallback_counter() {
 }
 int force_fallback_budget() { return force_fallback_counter().load(std::memory_order_relaxed); }
 bool force_fallback_take() { return force_fallback_counter().fetch_sub(1, std::memory_order_relaxed) > 0; }
-
-ChunkCarve window_carve(const g2m::mesh::ChunkKey& key, void* ctx, TileCarveFn fn) {
-    if (fn == nullptr) return ChunkCarve::NotCarved;
-    const auto tile_index = [](std::int64_t sample) { return g2m::floor_div(sample, 256); };
-    ChunkCarve worst = ChunkCarve::NotCarved;
-    for (std::int64_t ty = tile_index(64LL * key.cy - 1); ty <= tile_index(64LL * key.cy + 65); ++ty)
-        for (std::int64_t tx = tile_index(64LL * key.cx - 1); tx <= tile_index(64LL * key.cx + 65); ++tx) {
-            const g2m::TileKey tk{key.zone, key.level, static_cast<std::int32_t>(tx), static_cast<std::int32_t>(ty)};
-            const auto state = static_cast<ChunkCarve>(fn(ctx, tk));
-            if (state == ChunkCarve::Fallback) return ChunkCarve::Fallback;
-            if (state == ChunkCarve::Carved) worst = ChunkCarve::Carved;
-        }
-    return worst;
-}
-
-void build_one_chunk(const g2m::mesh::ChunkKey& key, g2m::mesh::TileLookup lookup, void* ctx, double e0, double n0,
-                     const g2m::world::ClassLookup& class_lookup, const RoadSurfaceMap& surfaces, TileCarveFn carve_state,
-                     RenderChunk& out_chunk) {
-    g2m::mesh::HeightWindow window;
-    g2m::mesh::gather_window(key, lookup, ctx, window);
-    // After the gather: every tile of the window has been produced now, so its state is final for THIS build.
-    out_chunk.carve = window_carve(key, ctx, carve_state);
-    if (class_lookup.fn == nullptr) {
-        // Byte-identical to the pre-R-2 code path (roads_plan.md R-2: "null
-        // lookup = byte-identical output") - the literal same call, not a
-        // zero-initialized ClassWindow passed by address.
-        g2m::mesh::build_chunk(key, window, /*classes=*/nullptr, out_chunk.mesh);
-    } else {
-        g2m::mesh::ClassWindow classes;
-        g2m::world::rasterize_chunk_road_classes(key, class_lookup, classes);
-        g2m::mesh::build_chunk(key, window, &classes, out_chunk.mesh);
-    }
-    out_chunk.key = key;
-    out_chunk.origin_session[0] = out_chunk.mesh.origin[0] - e0;
-    out_chunk.origin_session[1] = out_chunk.mesh.origin[1] - n0;
-    out_chunk.origin_session[2] = out_chunk.mesh.origin[2];
-    chunk_vertex_colors(out_chunk.mesh, surfaces, out_chunk.rgba);
-    apply_debug_tint(out_chunk);
-}
 
 const g2m::HeightTile* world_terrain_lookup(void* ctx, const g2m::TileKey& key) {
     return static_cast<WorldTerrain*>(ctx)->height_tile(key);
@@ -223,67 +60,37 @@ std::shared_ptr<const std::vector<g2m::RoadSegment>> world_terrain_road_class_lo
 
 } // namespace
 
-ChunkCarve chunk_window_carve(const g2m::mesh::ChunkKey& key, void* ctx, TileCarveFn fn) { return window_carve(key, ctx, fn); }
-
-void select_view_keys(double cam_x, double cam_y, const g2m::mesh::LodParams& params, double e0, double n0,
-                      std::vector<g2m::mesh::ChunkKey>& out) {
-    g2m::mesh::select_chunks(cam_x + e0, cam_y + n0, params, out);
+namespace {
+g2m::world::ViewSource wrapper_source(g2m::mesh::TileLookup lookup, void* ctx, double e0, double n0,
+                                      const g2m::world::ClassLookup& class_lookup, const RoadSurfaceMap& surfaces,
+                                      TileCarveFn carve_state) {
+    g2m::world::ViewSource source;
+    source.e0 = e0;
+    source.n0 = n0;
+    source.lookup = lookup;
+    source.ctx = ctx;
+    source.class_lookup = class_lookup;
+    source.carve_state = carve_state;
+    source.colour = chunk_colour_hook(surfaces);
+    return source;
 }
+} // namespace
 
 bool build_render_chunks(const std::vector<g2m::mesh::ChunkKey>& keys, g2m::mesh::TileLookup lookup, void* ctx,
                          double e0, double n0, unsigned thread_count, std::vector<RenderChunk>& out,
                          const std::atomic<bool>* cancel, const g2m::world::ClassLookup& class_lookup,
                          const RoadSurfaceMap& surfaces, TileCarveFn carve_state) {
-    out.clear();
-    out.resize(keys.size());
-    if (keys.empty()) {
-        return true;
-    }
-    auto cancelled = [cancel]() { return cancel != nullptr && cancel->load(std::memory_order_relaxed); };
-
-    const unsigned n_threads = std::max(1u, std::min(thread_count, static_cast<unsigned>(keys.size())));
-    if (n_threads <= 1) {
-        for (std::size_t i = 0; i < keys.size(); ++i) {
-            if (cancelled()) {
-                return false;
-            }
-            build_one_chunk(keys[i], lookup, ctx, e0, n0, class_lookup, surfaces, carve_state, out[i]);
-        }
-        return !cancelled();
-    }
-
-    const std::size_t total = keys.size();
-    const std::size_t per_thread = (total + n_threads - 1) / n_threads;
-    std::vector<std::thread> workers;
-    workers.reserve(n_threads);
-    for (unsigned t = 0; t < n_threads; ++t) {
-        const std::size_t begin = static_cast<std::size_t>(t) * per_thread;
-        if (begin >= total) {
-            break;
-        }
-        const std::size_t end = std::min(total, begin + per_thread);
-        workers.emplace_back([&keys, &out, &cancelled, lookup, ctx, e0, n0, &class_lookup, &surfaces, carve_state, begin, end]() {
-            for (std::size_t i = begin; i < end; ++i) {
-                if (cancelled()) {
-                    return;
-                }
-                build_one_chunk(keys[i], lookup, ctx, e0, n0, class_lookup, surfaces, carve_state, out[i]);
-            }
-        });
-    }
-    for (std::thread& w : workers) {
-        w.join();
-    }
-    return !cancelled();
+    return g2m::world::build_view_chunks(keys, wrapper_source(lookup, ctx, e0, n0, class_lookup, surfaces, carve_state),
+                                         thread_count, out, cancel);
 }
 
 void build_static_view_from_lookup(double cam_x, double cam_y, const g2m::mesh::LodParams& params, double e0,
                                    double n0, g2m::mesh::TileLookup lookup, void* ctx, unsigned thread_count,
                                    std::vector<RenderChunk>& out, const g2m::world::ClassLookup& class_lookup,
                                    const RoadSurfaceMap& surfaces, TileCarveFn carve_state) {
-    std::vector<g2m::mesh::ChunkKey> keys;
-    select_view_keys(cam_x, cam_y, params, e0, n0, keys);
-    build_render_chunks(keys, lookup, ctx, e0, n0, thread_count, out, /*cancel=*/nullptr, class_lookup, surfaces, carve_state);
+    g2m::world::ViewSource source = wrapper_source(lookup, ctx, e0, n0, class_lookup, surfaces, carve_state);
+    source.params = params;
+    g2m::world::build_static_view(cam_x, cam_y, source, thread_count, out);
 }
 
 WorldTerrain::~WorldTerrain() = default;
@@ -792,7 +599,7 @@ TerrainViewSource WorldTerrain::view_source() {
     source.ctx = this;
     source.road_lod = render_road_lod();
     source.class_lookup = g2m::world::ClassLookup{&world_terrain_road_class_lookup, this, source.road_lod.get()};
-    source.surfaces = road_surfaces_;
+    source.colour = chunk_colour_hook(road_surfaces_);
     source.carve_state = &world_terrain_carve_state;
     return source;
 }

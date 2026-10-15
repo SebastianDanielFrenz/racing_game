@@ -9,11 +9,12 @@ var _thread := Thread.new()
 var _mutex := Mutex.new()
 var _wake := Semaphore.new()
 var _stop := false
-var _jobs: Array = []
 var _results: Array = []
-var _known: Dictionary = {}
 var _tiles: Dictionary = {}
-var _center := Vector2i(2147483647, 2147483647)
+# Which tiles to build at which tier, show, downgrade and drop: geo2map's
+# RingStreamer (full within ordinary_distance_m + 725 m, skyline-only within
+# skyline_distance_m + 725 m; downgraded / evicted beyond the distance + 2048 m).
+var _ring := RgRingStreamer.new()
 var _material := StandardMaterial3D.new()
 func _ready() -> void:
 	process_priority = 100
@@ -22,6 +23,7 @@ func _ready() -> void:
 	settings["skyline_min_height_m"] = clampf(float(settings.get("skyline_min_height_m",50.0)),10.0,1000.0)
 	settings["fallback_height_m"] = clampf(float(settings.get("fallback_height_m",8.0)),1.0,100.0)
 	settings["storey_height_m"] = clampf(float(settings.get("storey_height_m",3.0)),1.0,10.0)
+	_ring.configure({"full_m":float(settings.ordinary_distance_m),"far_m":float(settings.skyline_distance_m),"empty_keeps_resident":false})
 	_material.vertex_color_use_as_albedo = true
 	_material.roughness = 1.0
 	_material.cull_mode = BaseMaterial3D.CULL_DISABLED
@@ -29,7 +31,6 @@ func _ready() -> void:
 func shutdown() -> void:
 	_mutex.lock()
 	_stop = true
-	_jobs.clear()
 	_mutex.unlock()
 	_wake.post()
 	if _thread.is_started():
@@ -51,10 +52,8 @@ func _process_body(_delta: float) -> void:
 	var focus := Vector3(led.x, led.y, cam.z)
 	var velocity: Vector2 = director.render_velocity_session() if director.render_focus_valid() else Vector2.ZERO
 	var absolute := Vector2(focus.x, focus.y) + utm_origin
-	var center := Vector2i(floori(absolute.x/1024.0), floori(absolute.y/1024.0))
-	if center != _center:
-		_schedule(center, absolute, velocity)
-		_center = center
+	if _ring.update(absolute.x, absolute.y, velocity.x, velocity.y):
+		_wake.post()
 	var skyline := float(settings.get("skyline_distance_m", 40000.0))
 	rig.camera.far = maxf(rig.camera.far, skyline + 3000.0)
 	_mutex.lock()
@@ -65,56 +64,33 @@ func _process_body(_delta: float) -> void:
 	if not result.is_empty():
 		_upload(result)
 		_wake.post()
+	for change: Dictionary in _ring.frame(absolute.x, absolute.y):
+		var key := Vector2i(int(change.x), int(change.y))
+		if not _tiles.has(key):
+			continue
+		var tile: Dictionary = _tiles[key]
+		if change.evicted:
+			tile.node.queue_free()
+			_tiles.erase(key)
+			continue
+		if change.downgraded:
+			tile.near.mesh = null
+		tile.near.visible = change.near
+		tile.tall.visible = change.far
 	var origin: Vector3 = simulation.get_render_origin_session()
-	var ordinary := float(settings.get("ordinary_distance_m", 2200.0))
 	for key in _tiles.keys():
 		var tile: Dictionary = _tiles[key]
 		if not tile.has("placed") or tile.placed != origin: # a transform write per tile per frame is not free; only on a render-origin change or a new tile
 			var s: Vector3 = tile.origin - origin
 			tile.node.position = Vector3(-s.y, s.z, -s.x)
 			tile.placed = origin
-		var distance: float = (Vector2(tile.origin.x+512, tile.origin.y+512)-Vector2(focus.x,focus.y)).length()
-		tile.near.visible = distance <= ordinary + 725.0
-		tile.tall.visible = distance <= skyline + 725.0
-		if distance > skyline + 2048.0:
-			tile.node.queue_free()
-			_tiles.erase(key)
-			_known.erase(key)
-		elif tile.full and distance > ordinary + 2048.0:
-			tile.near.mesh = null
-			tile.full = false
-			_known[key] = false
-func _schedule(center: Vector2i, focus: Vector2, velocity: Vector2 = Vector2.ZERO) -> void:
-	var ordinary := float(settings.get("ordinary_distance_m", 2200.0))
-	var skyline := float(settings.get("skyline_distance_m", 40000.0))
-	var radius := ceili(skyline/1024.0)+1
-	var jobs: Array = []
-	for y in range(center.y-radius, center.y+radius+1):
-		for x in range(center.x-radius, center.x+radius+1):
-			var key := Vector2i(x,y)
-			var delta := Vector2(x*1024+512,y*1024+512)-focus
-			var distance := delta.length()
-			if distance > skyline+725:
-				continue
-			var full := distance <= ordinary+725
-			if _known.has(key) and (not full or bool(_known[key])):
-				continue
-			var order := distance
-			if velocity.length() >= 2.0 and delta.dot(velocity.normalized()) < -1024.0:
-				order += 5000.0 # behind a fast car: after everything ahead
-			jobs.append({"key":key,"full":full,"distance":order})
-	jobs.sort_custom(func(a: Dictionary,b: Dictionary) -> bool: return a.distance>b.distance)
-	_mutex.lock()
-	_jobs = jobs
-	_mutex.unlock()
-	_wake.post()
 func _worker() -> void:
 	while true:
 		_mutex.lock()
 		var stop := _stop
 		var job: Dictionary = {}
-		if not stop and not _jobs.is_empty() and _results.size()<4:
-			job = _jobs.pop_back()
+		if not stop and _results.size()<4:
+			job = _ring.next_job()
 		_mutex.unlock()
 		if stop:
 			return
@@ -122,13 +98,13 @@ func _worker() -> void:
 			_wake.wait()
 			continue
 		var threshold := float(settings.get("skyline_min_height_m",50.0))
-		var data: Dictionary = view.get_building_tile(job.key.x,job.key.y,0.0 if job.full else threshold,float(settings.get("fallback_height_m",8.0)),float(settings.get("storey_height_m",3.0)))
+		var data: Dictionary = view.get_building_tile(int(job.x),int(job.y),0.0 if job.full else threshold,float(settings.get("fallback_height_m",8.0)),float(settings.get("storey_height_m",3.0)))
 		var near_arrays := _empty_arrays()
 		var tall_arrays := _empty_arrays()
 		for building: Dictionary in data.get("buildings",[]):
 			_tessellate(building,tall_arrays if float(building.height)>=threshold else near_arrays)
 		_mutex.lock()
-		_results.append({"key":job.key,"full":job.full,"origin":data.get("origin_session",Vector3.ZERO),"near":near_arrays,"tall":tall_arrays})
+		_results.append({"key":Vector2i(int(job.x),int(job.y)),"full":bool(job.full),"origin":data.get("origin_session",Vector3.ZERO),"near":near_arrays,"tall":tall_arrays})
 		_mutex.unlock()
 func _empty_arrays() -> Array:
 	return [PackedVector3Array(),PackedVector3Array(),PackedColorArray()]
@@ -221,16 +197,17 @@ func _mesh(arrays: Array) -> ArrayMesh:
 	return mesh
 func _upload(result: Dictionary) -> void:
 	var key: Vector2i = result.key
-	if _tiles.has(key) and bool(_tiles[key].full) and not bool(result.full):
+	var has_content: bool = not result.near[0].is_empty() or not result.tall[0].is_empty()
+	var accepted: int = _ring.accept(key.x, key.y, bool(result.full), has_content)
+	if accepted==0:
 		return
-	_known[key] = result.full
 	if _tiles.has(key):
 		_tiles[key].node.queue_free()
 		_tiles.erase(key)
+	if accepted!=2:
+		return
 	var near_mesh := _mesh(result.near)
 	var tall_mesh := _mesh(result.tall)
-	if near_mesh==null and tall_mesh==null:
-		return
 	var root := Node3D.new()
 	var near_node := MeshInstance3D.new()
 	var tall_node := MeshInstance3D.new()

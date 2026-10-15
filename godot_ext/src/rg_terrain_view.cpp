@@ -709,8 +709,7 @@ void RgTerrainView::heal_tick() {
     const rg::TerrainViewSource source = terrain_->view_source();
     heal_job_.start(std::move(keys), [source](const std::vector<g2m::mesh::ChunkKey>& k, std::vector<rg::RenderChunk>& out,
                                               const std::atomic<bool>* cancel) {
-        return rg::build_render_chunks(k, source.lookup, source.ctx, source.e0, source.n0, 1, out, cancel, source.class_lookup,
-                                       source.surfaces, source.carve_state);
+        return g2m::world::build_view_chunks(k, source, 1, out, cancel);
     });
 }
 
