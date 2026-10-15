@@ -89,6 +89,14 @@
     thread, so draw-call submission overlaps the next frame's scripts).
     Forwarded as --render-thread.
 
+.PARAMETER -Perf
+    Turn on the performance diagnostics for this run (env RG_PERF=1 for the
+    child only): frame probes, GPU/CPU render timers and the 1 Hz
+    RG_FRAME_STATS / RG_TERRAIN_STREAM / RG_ROAD_STREAM lines that
+    tools/perf_summary.py reads. Off by default (no cost in a normal game).
+    -Renderer, -Driver and -RenderThread imply it; so do RG_PERF_AB and
+    RG_BENCH_SURFACES when set in the environment.
+
 .PARAMETER -Preset
     CMake preset to build (default 'relwithdebinfo' - a debug build makes
     ps_core/rg_core/geo2map physics roughly 10x slower, which turns the
@@ -122,6 +130,7 @@ $Driver    = ''
 $expectRendererValue = $false
 $expectDriverValue = $false
 $RenderThread = ''
+$Perf = $false
 $expectRenderThreadValue = $false
 
 foreach ($a in $args) {
@@ -138,6 +147,7 @@ foreach ($a in $args) {
         '^--?Drive$'     { $Drive     = $true; continue }
         '^--?VR$'        { $VR        = $true; continue }
         '^--?DryRun$'    { $DryRun    = $true; continue }
+        '^--?Perf$'      { $Perf      = $true; continue }
         '^--?Preset$'    { $expectPresetValue = $true; continue }
         '^--?Renderer$'  { $expectRendererValue = $true; continue }
         '^--?Driver$'    { $expectDriverValue = $true; continue }
@@ -285,6 +295,13 @@ if ($RenderThread) {
     $launchArgs.Add('--render-thread'); $launchArgs.Add($RenderThread)
 }
 
+# -Perf (or a perf comparison option): performance diagnostics on for the child (RG_PERF=1, main.gd).
+$perfSet = $false
+if (($Perf -or $Renderer -or $Driver -or $RenderThread) -and $env:RG_PERF -ne '1') {
+    $env:RG_PERF = '1'; $perfSet = $true
+    Write-Host "perf diagnostics on (RG_PERF=1)"
+}
+
 if ($VR -and -not $Editor) {
     foreach ($xrArg in @('--xr-mode', 'on', '--rendering-method', 'mobile', '--rendering-driver', 'vulkan')) { $launchArgs.Add($xrArg) }
 }
@@ -307,10 +324,12 @@ Write-Host "$godotExe $($launchArgsArr -join ' ')"
 if ($DryRun) {
     Write-Host "`n(dry run - not launching Godot)" -ForegroundColor Yellow
     if ($vrSetWorldConfig) { Remove-Item Env:RG_WORLD_CONFIG }
+    if ($perfSet) { Remove-Item Env:RG_PERF }
     exit 0
 }
 
 & $godotExe @launchArgsArr
 $godotExit = $LASTEXITCODE
 if ($vrSetWorldConfig) { Remove-Item Env:RG_WORLD_CONFIG }
+if ($perfSet) { Remove-Item Env:RG_PERF }
 exit $godotExit

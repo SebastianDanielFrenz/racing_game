@@ -131,6 +131,7 @@ var _fd_last_report_ms := 0
 # traffic visuals). RG_PERF_AB may name several features separated by commas, or "all": they are measured one after
 # the other (feature 1 on, off, feature 2 on, off, ...) and repeat; tools/perf_summary.py prints the on/off table.
 var _ab_feature := ""
+var _perf := false # RG_PERF=1 (or RG_PERF_AB / RG_BENCH_SURFACES): frame probes, render timers, 1 Hz perf lines
 var _render_timing := true # viewport render times + draw-phase probes (off with RG_RENDER_TIMING=0 or a separate render thread)
 var _ab_list := PackedStringArray()
 var _ab_index := 0
@@ -215,20 +216,27 @@ func _ready() -> void:
 	var ab_s := OS.get_environment("RG_PERF_AB_S")
 	if ab_s.is_valid_float() and float(ab_s) >= 1.0:
 		_ab_period_ms = int(float(ab_s) * 1000.0)
+	# Performance diagnostics are opt-in (owner, 2026-10-15: no cost in a normal game): RG_PERF=1 turns on the frame
+	# probes, the GPU/CPU render timers, frame_probe_end.gd and the 1 Hz RG_FRAME_STATS / RG_TERRAIN_STREAM /
+	# RG_ROAD_STREAM / RG_TRAFFIC_RENDER lines; RG_PERF_AB and RG_BENCH_SURFACES imply it. Without it only RG_FRAME_SPIKE
+	# stays (a delta comparison per frame; the line then has no probe or render-timer fields).
+	_perf = OS.get_environment("RG_PERF") == "1" or not _ab_list.is_empty() or OS.get_environment("RG_BENCH_SURFACES") != ""
+	FrameProbe.enabled = _perf
 	var spike_env := OS.get_environment("RG_FRAME_SPIKE_MS")
 	if spike_env.is_valid_float() and float(spike_env) > 0.0:
 		_fd_spike_s = float(spike_env) / 1000.0
 	# With --render-thread separate, reading the render times (and the draw signals' phase split) would make the main
 	# thread wait for the render thread every frame, i.e. undo the overlap; there frame_ms is the measure.
-	_render_timing = OS.get_environment("RG_RENDER_TIMING") != "0" and _render_thread_mode() != "separate"
+	_render_timing = _perf and OS.get_environment("RG_RENDER_TIMING") != "0" and _render_thread_mode() != "separate"
 	if _render_timing:
 		RenderingServer.viewport_set_measure_render_time(get_viewport().get_viewport_rid(), true) # RG_FRAME_SPIKE render_cpu/gpu_ms
 	preload("res://scripts/ui_scale.gd").apply(get_tree())
-	var probe_end := Node.new()
-	probe_end.name = "FrameProbeEnd"
-	probe_end.set_script(preload("res://scripts/frame_probe_end.gd"))
-	probe_end.set("draw_phases", _render_timing)
-	add_child(probe_end)
+	if _perf:
+		var probe_end := Node.new()
+		probe_end.name = "FrameProbeEnd"
+		probe_end.set_script(preload("res://scripts/frame_probe_end.gd"))
+		probe_end.set("draw_phases", _render_timing)
+		add_child(probe_end)
 	var user_args := OS.get_cmdline_user_args()
 	if "--bindings-test" in user_args:
 		_run_bindings_test()
@@ -1136,7 +1144,8 @@ func _report() -> void:
 	print(status_line("RG_DRIVE t=%.1f" % (sim_t - ready_sim_time)))
 	_save_drive_location()
 	_report_tick_spikes()
-	_report_streams()
+	if _perf:
+		_report_streams()
 
 # Render-stream health at speed (owner complaint 2026-10-13: at 400-580 km/h the
 # terrain does not resolve in time, the road is not visible far ahead). One line
@@ -1409,6 +1418,10 @@ func _frame_diag(delta: float) -> void:
 	if world_state != "running" or _simulation == null:
 		return
 	var ms := delta * 1000.0
+	if not _perf:
+		if delta > _fd_spike_s:
+			print("RG_FRAME_SPIKE delta_ms=%.1f ticks=%d (RG_PERF=1 adds the probes)" % [ms, int(_simulation.get_step_count())])
+		return
 	if probes.has("scene_span"):
 		probes["outside"] = maxi(0, int(delta * 1000000.0) - int(probes["scene_span"])) # engine render / driver / vsync / OS
 	var process_ms: float = Performance.get_monitor(Performance.TIME_PROCESS) * 1000.0

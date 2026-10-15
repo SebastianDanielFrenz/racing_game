@@ -8,6 +8,8 @@ probes: scene_span, ph_post, ph_draw, render_cpu, render_gpu, ...). For a run wi
 prints one row per feature: frame ms and the main phases with the feature on and off, and the saving. The first
 line after every switch is dropped (it straddles the switch). --skip-s drops the first seconds after the world
 starts (loading, shader compiles).
+
+The lines exist only in a run with RG_PERF=1 (tools/run.ps1 -Perf), RG_PERF_AB or RG_BENCH_SURFACES set.
 """
 import re
 import statistics
@@ -62,7 +64,7 @@ def main():
         skip = int(sys.argv[sys.argv.index("--skip-s") + 1])
     rows = parse(sys.argv[1])[skip:]
     if not rows:
-        print("no RG_FRAME_STATS lines (after skipping %d)" % skip)
+        print("no RG_FRAME_STATS lines (after skipping %d); the run needs RG_PERF=1 (tools/run.ps1 -Perf)" % skip)
         return 1
     plain = [r for r in rows if r["ab"] is None or r["ab"][1] == "on"]
     print("lines: %d (first %d skipped), renderer %s" % (len(rows), skip, ", ".join(sorted({r["renderer"] for r in rows}))))
