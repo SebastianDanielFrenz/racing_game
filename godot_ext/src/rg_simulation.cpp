@@ -1259,7 +1259,9 @@ void RgSimulation::_bind_methods() {
     godot::ClassDB::bind_method(D_METHOD("set_road_ahead_wanted", "wanted"), &RgSimulation::set_road_ahead_wanted);
     godot::ClassDB::bind_method(D_METHOD("get_chassis_session_pose"), &RgSimulation::get_chassis_session_pose);
     godot::ClassDB::bind_method(D_METHOD("session_to_godot", "session_position"), &RgSimulation::session_to_godot);
-    godot::ClassDB::bind_method(D_METHOD("get_bumper_camera"), &RgSimulation::get_bumper_camera);
+    godot::ClassDB::bind_method(D_METHOD("get_bumper_camera", "rig_json_path", "model_offset"),
+                                &RgSimulation::get_bumper_camera, DEFVAL(String()), DEFVAL(godot::Vector3()));
+    godot::ClassDB::bind_method(D_METHOD("get_camera_motion_sample"), &RgSimulation::get_camera_motion_sample);
     godot::ClassDB::bind_method(D_METHOD("update_cinematic", "delta"), &RgSimulation::update_cinematic);
     godot::ClassDB::bind_method(D_METHOD("reset_cinematic"), &RgSimulation::reset_cinematic);
     godot::ClassDB::bind_method(D_METHOD("start"), &RgSimulation::start);

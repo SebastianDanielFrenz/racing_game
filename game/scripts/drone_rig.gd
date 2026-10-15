@@ -9,8 +9,10 @@ extends Node3D
 # from RgSimulation.get_drone_target_transform() (the player's own chassis, a
 # traffic car or the NPC truck - rg_core's mode machine decides which, this
 # rig only displays; the call is cheap, never the whole traffic list).
-#  - lag: exponential, snaps after a jump of more than SNAP_M (a relocation, or
-#    a target switch to a far-away vehicle);
+#  - lag: exponential on the TARGET-RELATIVE offset (zero lag at any constant
+#    speed, only offset changes - heading, zoom, the fly-in - are smoothed);
+#    snaps after a jump of more than SNAP_M (a relocation, or a target switch
+#    to a far-away vehicle);
 #  - orbit: from the right-stick POSITION or the arrow keys, like chase_rig.gd;
 #  - zoom: the trailing distance (the height scales with it) from the mouse
 #    wheel and PageUp/PageDown, clamped to MIN_DISTANCE_M..MAX_DISTANCE_M;
@@ -34,7 +36,9 @@ const MAX_DISTANCE_M := 60.0
 
 var camera: Camera3D
 var _distance_m: float = 12.0
-var _smoothed_pos: Vector3 = Vector3.ZERO
+var _smoothed_pos: Vector3 = Vector3.ZERO # absolute, only until the first update after activate()
+var _smoothed_offset: Vector3 = Vector3.ZERO # camera - target, smoothed
+var _from_absolute: bool = false
 var _initialized: bool = false
 var _orbit_yaw: float = 0.0 # radians, + = looking right of the target's heading
 var _heading: Vector3 = Vector3.FORWARD # last horizontal heading of the target (Godot space)
@@ -53,6 +57,7 @@ func _ready() -> void:
 # (the exponential lag; a jump beyond SNAP_M snaps instead).
 func activate(from: Transform3D) -> void:
 	_smoothed_pos = from.origin
+	_from_absolute = true
 	_initialized = true
 	_orbit_yaw = 0.0
 	_drain_wheel = true # wheel ticks made while another rig was active must not zoom this one
@@ -105,13 +110,17 @@ func update_rig(delta: float, simulation: Node, input_map: Node, camera_input_li
 	if fwd.length() > 0.2:
 		_heading = fwd.normalized()
 	var behind := -_heading * _distance_m
-	var desired_pos := target_pos + behind + Vector3.UP * (_distance_m * height_per_distance)
+	var desired_offset := behind + Vector3.UP * (_distance_m * height_per_distance)
 	var look_at_pos := target_pos + Vector3.UP * look_height_m
 
-	if not _initialized or _smoothed_pos.distance_to(desired_pos) > SNAP_M:
-		_smoothed_pos = desired_pos
+	if _from_absolute:
+		_smoothed_offset = _smoothed_pos - target_pos
+		_from_absolute = false
+	if not _initialized or _smoothed_offset.distance_to(desired_offset) > SNAP_M:
+		_smoothed_offset = desired_offset
 		_initialized = true
-	_smoothed_pos = _smoothed_pos.lerp(desired_pos, 1.0 - exp(-position_lag * delta))
+	_smoothed_offset = _smoothed_offset.lerp(desired_offset, 1.0 - exp(-position_lag * delta))
+	_smoothed_pos = target_pos + _smoothed_offset
 
 	var target_yaw := 0.0
 	if camera_input_live and input_map != null:
@@ -120,8 +129,7 @@ func update_rig(delta: float, simulation: Node, input_map: Node, camera_input_li
 		_orbit_yaw = target_yaw
 	else:
 		_orbit_yaw = lerp_angle(_orbit_yaw, target_yaw, 1.0 - exp(-orbit_lag * delta))
-	var offset := _smoothed_pos - target_pos
-	position = target_pos + offset.rotated(Vector3.UP, -_orbit_yaw)
+	position = target_pos + _smoothed_offset.rotated(Vector3.UP, -_orbit_yaw)
 	# Terrain clearance after lag AND orbit (either can put the camera below
 	# rising terrain); probe the near-plane footprint like chase_rig.gd.
 	for probe in [Vector3.ZERO, Vector3(0.3, 0, 0), Vector3(-0.3, 0, 0), Vector3(0, 0, 0.3), Vector3(0, 0, -0.3)]:

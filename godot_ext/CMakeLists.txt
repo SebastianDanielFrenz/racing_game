@@ -19,6 +19,7 @@ add_library(rg_godot SHARED
   src/rg_garage.cpp
   src/rg_garage_browser.cpp
   src/rg_camera_math.cpp
+  src/rg_camera_motion.cpp
   src/rg_render_focus.cpp
   src/rg_steering_assist.cpp
   src/rg_address_search.cpp
