@@ -1,9 +1,9 @@
 // Ground ribbons under an overpass (owner report 2026-10-14, utm32n/2/457/5422, E 468936 N 5552913): the motorway
 // ribbon beneath an overpass formed metre-scale spikes. Synthetic scene through the real pipeline: OSM -> geo2map
-// roads.geom (served options) -> rg::complete_road_profiles -> rg::RoadSurfacePatch on L0 -> rg::build_road_visual.
+// roads.geom (served options) -> rg::complete_road_profiles -> rg::RoadSurfacePatch on L0 -> g2m::world::build_road_ribbons (geo2map, phase 3a).
 #include "rg/road_surface.h"
 #include "rg/road_structures.h"
-#include "rg/road_visual.h"
+#include "g2m/world/road_ribbons.h"
 #include "rg/world_config.h"
 #include "rg/world_terrain.h"
 #include "g2m/core/geo/utm.h"
@@ -142,7 +142,7 @@ std::unique_ptr<Built> build(const OverpassScene& s, const rg::RoadSeparation& s
 }
 
 // Triangles as "x y z" lines (absolute UTM), three per triangle, for tools/road_mesh_plot.py.
-void dump_mesh(const rg::RoadVisualMesh& mesh, const std::string& path) {
+void dump_mesh(const g2m::world::RoadRibbonTile& mesh, const std::string& path) {
     FILE* f = std::fopen(path.c_str(), "w"); if (!f) return;
     for (std::size_t i = 0; i + 2 < mesh.indices.size(); i += 3)
         for (int k = 0; k < 3; ++k) {
@@ -152,7 +152,7 @@ void dump_mesh(const rg::RoadVisualMesh& mesh, const std::string& path) {
     std::fclose(f);
 }
 struct SpikeStats { std::size_t triangles = 0, spiky = 0; double worst = 0, worst_e = 0, worst_n = 0; };
-SpikeStats spikes(const rg::RoadVisualMesh& mesh, double radius_m, double threshold_m) {
+SpikeStats spikes(const g2m::world::RoadRibbonTile& mesh, double radius_m, double threshold_m) {
     SpikeStats s;
     for (std::size_t i = 0; i + 2 < mesh.indices.size(); i += 3) {
         const auto& a = mesh.vertices[static_cast<std::size_t>(mesh.indices[i])];
@@ -177,7 +177,7 @@ TEST_CASE("Overpass: the road under a short OSM bridge keeps its own surface", "
         OverpassScene s; s.bridge_half_m = half; s.approach_layer = alayer;
         auto b = build(s);
         const auto lookup = [&](const g2m::TileKey& k) -> const g2m::HeightTile* { auto it = b->carved.find(k); return it == b->carved.end() ? nullptr : it->second.get(); };
-        const auto mesh = rg::build_road_visual(b->geometry, kTile, [&](double e, double n) { return g2m::world::sample_height_bilinear(lookup, kZone, 0, 0, e, n); }, .018);
+        const auto mesh = g2m::world::build_road_ribbons(b->geometry, kTile, [&](double e, double n) { return g2m::world::sample_height_bilinear(lookup, kZone, 0, 0, e, n); }, .018);
         const auto st = spikes(mesh, 300, 1.0);
         CAPTURE(st.spiky, st.worst, st.worst_e, st.worst_n);
         CHECK(st.triangles > 1000);
@@ -220,7 +220,7 @@ TEST_CASE("Overpass: without grade separation the short span spikes", "[road_ove
     rg::RoadSeparation off; off.clearance_m = 1e9; off.margin_m = 0; off.approach_reach_m = 0;
     auto b = build(s, off);
     const auto lookup = [&](const g2m::TileKey& k) -> const g2m::HeightTile* { auto it = b->carved.find(k); return it == b->carved.end() ? nullptr : it->second.get(); };
-    const auto mesh = rg::build_road_visual(b->geometry, kTile, [&](double e, double n) { return g2m::world::sample_height_bilinear(lookup, kZone, 0, 0, e, n); }, .018, off);
+    const auto mesh = g2m::world::build_road_ribbons(b->geometry, kTile, [&](double e, double n) { return g2m::world::sample_height_bilinear(lookup, kZone, 0, 0, e, n); }, .018, off);
     const auto st = spikes(mesh, 300, 1.0);
     CAPTURE(st.worst);
     CHECK(st.spiky > 50);

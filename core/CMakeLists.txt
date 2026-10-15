@@ -68,7 +68,6 @@ add_library(rg_core STATIC
     src/world_config.cpp
     src/world_terrain.cpp
     src/buildings.cpp
-    src/road_visual.cpp
     src/road_surface.cpp
     src/terrain_smoothing.cpp
     src/road_structures.cpp
