@@ -10,7 +10,7 @@ Copy tools/install_linux.sh to the device as a file. It is self-contained; it ca
 bash install_linux.sh
 ```
 
-Requires native Linux ARM64, a C++20 compiler with modern libstdc++, CMake >= 3.25, Ninja, Git+Git LFS, Python >= 3.9, curl, unzip and standard Linux coreutils/flock. Default game mode is OpenXR VR; use --desktop for a monitor. Existing Steam installations normally supply graphics runtime dependencies. For a writable Debian/Ubuntu/Arch OS, --install-deps installs build tools with sudo. The installer never unlocks a read-only SteamOS root; its build tools must already be provided by a suitable development environment.
+Requires native Linux ARM64, a C++20 compiler with modern libstdc++, CMake >= 3.25, Ninja, Git, Python >= 3.9, curl, unzip and standard Linux coreutils/flock. If Git LFS is missing, the installer downloads pinned official Git LFS 3.7.1 ARM64, verifies its SHA256 and installs only its binary in .local-install/tools/bin. That directory is added to PATH for installation/update operations; no SteamOS root change is required. Default game mode is OpenXR VR; use --desktop for a monitor. Existing Steam installations normally supply graphics runtime dependencies. For a writable Debian/Ubuntu/Arch OS, --install-deps installs build tools with sudo. The installer never unlocks a read-only SteamOS root; its build tools must already be provided by a suitable development environment.
 
 ```bash
 bash install_linux.sh --desktop --jobs 2

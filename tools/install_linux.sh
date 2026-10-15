@@ -85,9 +85,26 @@ LOG="$STATE_DIR/install-$(date +%Y%m%d-%H%M%S).log"
 exec > >(tee -a "$LOG") 2>&1
 echo "Install log: $LOG"
 trap 'echo "Installation failed at line $LINENO; log: $LOG" >&2' ERR
+mkdir -p "$STATE_DIR/tools/bin"
+export PATH="$STATE_DIR/tools/bin:$PATH"
 if ((!STEAM_ONLY)); then
     for program in cmake ninja curl unzip c++; do command -v "$program" >/dev/null || die "Missing $program (see --install-deps)"; done
-    git lfs version >/dev/null || die "Git LFS is required (see --install-deps)."
+    if ! git lfs version >/dev/null 2>&1; then
+        echo "Installing Git LFS 3.7.1 ARM64 locally (SteamOS is not modified)."
+        lfs_archive="$STATE_DIR/git-lfs-linux-arm64-v3.7.1.tar.gz"
+        curl --fail --location --retry 3 https://github.com/git-lfs/git-lfs/releases/download/v3.7.1/git-lfs-linux-arm64-v3.7.1.tar.gz -o "$lfs_archive"
+        printf '%s  %s\n' 73a9c90eeb4312133a63c3eaee0c38c019ea7bfa0953d174809d25b18588dd8d "$lfs_archive" | sha256sum --check
+        python3 - "$lfs_archive" "$STATE_DIR/tools/bin/git-lfs" <<'LFS'
+import os,pathlib,sys,tarfile
+target=pathlib.Path(sys.argv[2])
+with tarfile.open(sys.argv[1],'r:gz') as archive:
+    matches=[member for member in archive.getmembers() if member.isfile() and pathlib.PurePosixPath(member.name).name=='git-lfs']
+    if len(matches)!=1: raise SystemExit('Unexpected Git LFS archive layout')
+    with archive.extractfile(matches[0]) as source:
+        temp=target.with_suffix('.new'); temp.write_bytes(source.read()); temp.chmod(0o755); os.replace(temp,target)
+LFS
+        git lfs version
+    fi
     cmake --version | head -n 1
     printf '%s\n' '#include <atomic>' '#include <memory>' '#include <charconv>' 'int main(){ std::atomic<std::shared_ptr<int>> p; double d; const char s[]="1.25"; return std::from_chars(s,s+4,d).ec != std::errc{}; }' > "$STATE_DIR/compiler-check.cpp"
     "${CXX:-c++}" -std=c++20 "$STATE_DIR/compiler-check.cpp" -o "$STATE_DIR/compiler-check"
