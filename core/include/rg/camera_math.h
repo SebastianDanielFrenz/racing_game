@@ -70,10 +70,29 @@ struct BumperParams {
     double height_above_ground_m = 0.55;   // low, bumper height
     double pitch_down_deg = 1.5;           // looks very slightly down the road
     double fov_deg = 80.0;
+    double nose_margin_m = 0.05;           // model-based eye: this far ahead of the model's nose
 };
 
-// The bumper camera position in the chassis frame.
+// The bumper camera position in the chassis frame (wheel-based fallback: used
+// only when the car's model bounds are unknown).
 ps::Vec3 bumper_eye_local(const VehicleBounds& bounds, const BumperParams& params = {});
+
+// The visual model's extent, read from its rig file (physics_sim.rig/1
+// "overall_bounds", model frame: ISO axes, z = 0 the ground) plus an optional
+// per-car override, the socket "socket_bumper_camera" (model frame).
+struct ModelBounds {
+    ps::Vec3 min{}, max{};
+    std::optional<ps::Vec3> bumper_socket;
+};
+std::optional<ModelBounds> load_model_bounds(const std::string& rig_json_path, std::string* err = nullptr);
+
+// The bumper eye from the model: the socket if the rig has one, else just ahead
+// of the nose (max x + nose_margin_m), centred, height_above_ground_m above the
+// model's ground but at most half the model's height. model_offset = where the
+// model's origin sits in the chassis frame (the visual's alignment offset).
+// Always outside the body, whatever the wheelbase/overhang.
+ps::Vec3 bumper_eye_from_model(const ModelBounds& model, const ps::Vec3& model_offset,
+                               const BumperParams& params = {});
 
 // --------------------------------------------------------------- orbit -----
 

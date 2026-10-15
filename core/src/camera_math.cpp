@@ -1,6 +1,8 @@
 // rg/camera_math.cpp - see camera_math.h.
 #include "rg/camera_math.h"
 
+#include "json_util.h"
+
 #include <algorithm>
 #include <cmath>
 
@@ -71,6 +73,49 @@ VehicleBounds vehicle_bounds(const ps::vehicle::VehicleDesc& desc) {
 ps::Vec3 bumper_eye_local(const VehicleBounds& bounds, const BumperParams& params) {
     return ps::Vec3{bounds.front_axle_x + params.forward_of_front_axle_m, 0.0,
                     bounds.ground_z + params.height_above_ground_m};
+}
+
+std::optional<ModelBounds> load_model_bounds(const std::string& rig_json_path, std::string* err) {
+    auto fail = [&](const std::string& m) -> std::optional<ModelBounds> {
+        if (err) *err = m;
+        return std::nullopt;
+    };
+    const auto text = detail::read_text_file(rig_json_path);
+    if (!text) return fail("cannot read " + rig_json_path);
+    const auto root = detail::parse_json(*text);
+    if (!root || !root->is_object()) return fail(rig_json_path + ": not a JSON object");
+    auto vec = [](const detail::json& a, ps::Vec3& out) {
+        if (!a.is_array() || a.size() != 3) return false;
+        for (const auto& v : a)
+            if (!v.is_number()) return false;
+        out = ps::Vec3{a[0].get<double>(), a[1].get<double>(), a[2].get<double>()};
+        return true;
+    };
+    ModelBounds b;
+    const auto ob = root->find("overall_bounds");
+    if (ob == root->end() || !ob->is_object() || !ob->contains("min") || !ob->contains("max") ||
+        !vec((*ob)["min"], b.min) || !vec((*ob)["max"], b.max) || !(b.max.x > b.min.x) || !(b.max.z > b.min.z))
+        return fail(rig_json_path + ": overall_bounds {min, max} missing or invalid");
+    const auto sockets = root->find("sockets");
+    if (sockets != root->end() && sockets->is_array()) {
+        for (const auto& s : *sockets) {
+            if (!s.is_object()) continue;
+            std::string name;
+            if (!detail::get_string(s, "name", name) || name != "socket_bumper_camera") continue;
+            ps::Vec3 p;
+            if (!s.contains("position") || !vec(s["position"], p))
+                return fail(rig_json_path + ": socket_bumper_camera has no valid position");
+            b.bumper_socket = p;
+        }
+    }
+    return b;
+}
+
+ps::Vec3 bumper_eye_from_model(const ModelBounds& model, const ps::Vec3& model_offset, const BumperParams& params) {
+    if (model.bumper_socket) return model_offset + *model.bumper_socket;
+    const double height = std::min(params.height_above_ground_m, 0.5 * (model.max.z - model.min.z));
+    const double centre_y = 0.5 * (model.min.y + model.max.y);
+    return model_offset + ps::Vec3{model.max.x + params.nose_margin_m, centre_y, model.min.z + height};
 }
 
 // ----------------------------------------------------------------- orbit ---

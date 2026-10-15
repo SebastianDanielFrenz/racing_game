@@ -1,14 +1,19 @@
 // rg/time_weather.h - time of day and weather state for the visual world
 // (sun/moon light, sky colours, the top-right weather/time widget and its
 // menu). Engine-neutral: the Godot adapter (RgSky) only converts. Config:
-// data/world/sky.json (rg.sky/1). Weather here is VISUAL state only (cloud
-// cover -> sky/light); precipitation and thunder are listed but not wired
-// (no precipitation visuals, no wet-grip environment installed in Session).
+// data/world/sky.json (rg.sky/1). Cloud cover drives sky/light; with a
+// climate (set_climate, data/world/climate.json) every preset also drives the
+// physics weather environment (rg::WeatherSync -> Session, V8: rain, snow,
+// hail, thunder, wet grip) and the air temperature is derived from date, time
+// and location (rg/climate.h).
 #pragma once
 
 #include "rg/sky.h"
 
 #include <array>
+#include <cstdint>
+#include <memory>
+#include <limits>
 #include <optional>
 #include <string>
 #include <vector>
@@ -16,6 +21,7 @@
 namespace rg {
 
 struct WorldConfig;
+struct ClimateConfig;
 
 using Rgb = std::array<double, 3>;
 
@@ -103,8 +109,12 @@ public:
     TimeController(CivilDate local_date, double local_time_h, double rate, TimeZoneRule zone);
     void advance(double real_dt_s);
     void set_local_time_h(double hours); // same day, wrapped into [0, 24)
-    void set_date(CivilDate date) { date_ = date; }
+    void set_date(CivilDate date) { date_ = date; ++revision_; }
     void set_rate(double rate);          // < 0 or non-finite ignored
+    // Counts set_local_time_h/set_date/set_rate calls (clock jumps and rate changes, not advance()).
+    std::uint64_t revision() const { return revision_; }
+    // The UT instant of the local clock.
+    void ut_instant(CivilDate& date_ut, double& ut_h) const;
     double rate() const { return rate_; }
     const CivilDate& local_date() const { return date_; }
     double local_time_h() const { return seconds_ / 3600.0; }
@@ -116,6 +126,7 @@ private:
     double seconds_ = 12 * 3600.0;
     double rate_ = 1;
     TimeZoneRule zone_;
+    std::uint64_t revision_ = 0;
 };
 
 struct SkyMenuItem {
@@ -140,6 +151,8 @@ struct TimeWeatherState {
     std::string weather_id, weather_label;
     WeatherIcon icon = WeatherIcon::Sun;
     double rate = 1;
+    // Derived air temperature at the climate station (rg/climate.h); NaN without a climate.
+    double air_temp_c = std::numeric_limits<double>::quiet_NaN();
 };
 
 // Session-frame (UTM grid: x east, y north, z up) unit direction towards a
@@ -151,19 +164,24 @@ public:
     TimeWeather(SkyConfig config, GeoLocation location);
     void advance(double real_dt_s) { clock_.advance(real_dt_s); }
     TimeController& clock() { return clock_; }
+    const TimeController& clock() const { return clock_; }
     const SkyConfig& config() const { return config_; }
     const GeoLocation& location() const { return location_; }
     TimeWeatherState state() const;
     std::vector<SkyMenuItem> menu() const;
     // Applies a menu item; false for an unknown or disabled id.
     bool choose(const std::string& id);
+    // A preset is wired when it is dry (sky only) or the climate maps it to a physics weather preset.
     bool weather_wired(const WeatherPreset& preset) const;
+    void set_climate(std::shared_ptr<const ClimateConfig> climate) { climate_ = std::move(climate); }
+    const std::shared_ptr<const ClimateConfig>& climate() const { return climate_; }
 
 private:
     SkyConfig config_;
     GeoLocation location_;
     TimeController clock_;
     std::size_t weather_ = 0;
+    std::shared_ptr<const ClimateConfig> climate_;
 };
 
 // "15 °C" (rounded) from kelvin; "-- °C" when not finite.

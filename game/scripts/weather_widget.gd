@@ -3,9 +3,11 @@ extends CanvasLayer
 # air temperature at the car. Click it for the time/weather menu. Which icon,
 # which menu items and which are greyed out (with the reason) come from
 # rg::TimeWeather through RgSky (sky_controller.gd's `sky`); this script only
-# draws and forwards. Temperature: RgSimulation.get_aero_state().temperature_k
-# (the environment model's air temperature at the car; it does not follow
-# the time of day yet).
+# draws and forwards. Temperature: the air at the car (RgSimulation
+# get_weather_state().air_temp_c / get_aero_state().temperature_k: with the
+# physics weather installed both are the climate.json temperature from date,
+# time and location, lifted to the car's altitude), else RgSky's own
+# air_temp_c (no world loaded).
 
 const BG := Color(0.08, 0.09, 0.11, 1.0)
 var sky_controller: Node
@@ -102,10 +104,11 @@ func _process(delta: float) -> void:
 	_icon.icon = s["icon"]
 	_time_label.text = s["clock_text"]
 	var temperature := "-- °C"
-	if simulation != null and simulation.has_method("get_aero_state"):
-		var aero: Dictionary = simulation.get_aero_state()
-		if aero.has("temperature_k"):
-			temperature = sky.format_temperature_c(float(aero["temperature_k"]))
+	var aero: Dictionary = simulation.get_aero_state() if simulation != null and simulation.has_method("get_aero_state") else {}
+	if aero.has("temperature_k"):
+		temperature = sky.format_temperature_c(float(aero["temperature_k"]))
+	elif s.has("air_temp_c") and not is_nan(float(s["air_temp_c"])):
+		temperature = sky.format_temperature_c(float(s["air_temp_c"]) + 273.15)
 	_info_label.text = "%s  %s  %s" % [temperature, s["weather_label"], s["date_text"]]
 	if _menu.visible and not _slider_guard and _slider != null:
 		_slider_guard = true

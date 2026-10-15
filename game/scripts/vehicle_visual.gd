@@ -76,6 +76,13 @@ func get_cockpit() -> Node3D:
 func model_loaded() -> bool:
 	return _load_ok
 
+# [rig_json_path, the model origin in the chassis frame (ISO)]: the inputs of
+# RgSimulation.get_bumper_camera (the eye sits ahead of the model's own nose).
+func bumper_camera_inputs() -> Array:
+	if not _load_ok or _model_root == null:
+		return ["", Vector3.ZERO]
+	return [model_absolute_path.get_basename() + ".rig.json", global_transform.affine_inverse() * _model_root.global_position]
+
 # carvis steering-proof fix (2026-09-27): the steer_<corner> node's own local
 # Y rotation, exactly as _process below last set it (or 0.0 if that wheel has
 # no steer node/is not steered) - read back by drive_tour.gd for poses.txt so

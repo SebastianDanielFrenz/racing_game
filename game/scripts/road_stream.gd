@@ -119,18 +119,15 @@ func _worker() -> void:
 			continue
 		var data: Dictionary = view.get_road_visual_tile(job.key.x,job.key.y,float(settings.surface_lift_m))
 		data["key"] = job.key
+		# Packing the arrays into a mesh (format, compression, AABB) is the 20-50 ms part of a tile: do it here, not in
+		# the main thread's _process. Attaching the finished mesh there is cheap.
+		data["mesh"] = _make_mesh(data)
 		_mutex.lock()
 		_results.append(data)
 		_mutex.unlock()
-func _upload(data: Dictionary) -> void:
-	var key: Vector2i = data.key
-	_known[key] = true
-	_wanted_since.erase(key)
-	_tiles_built_total += 1
+func _make_mesh(data: Dictionary) -> ArrayMesh:
 	if data.get("vertices",PackedVector3Array()).is_empty():
-		return
-	if _tiles.has(key):
-		_tiles[key].node.queue_free()
+		return null
 	var arrays: Array = []
 	arrays.resize(Mesh.ARRAY_MAX)
 	arrays[Mesh.ARRAY_VERTEX] = data.vertices
@@ -142,6 +139,17 @@ func _upload(data: Dictionary) -> void:
 	var mesh := ArrayMesh.new()
 	mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES,arrays)
 	mesh.surface_set_material(0,_material)
+	return mesh
+func _upload(data: Dictionary) -> void:
+	var key: Vector2i = data.key
+	_known[key] = true
+	_wanted_since.erase(key)
+	_tiles_built_total += 1
+	var mesh: ArrayMesh = data.get("mesh")
+	if mesh == null:
+		return
+	if _tiles.has(key):
+		_tiles[key].node.queue_free()
 	var node := MeshInstance3D.new()
 	node.mesh = mesh
 	node.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF

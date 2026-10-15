@@ -38,6 +38,7 @@
 #include "rg/channel_mirror.h"
 #include "rg/deck_installer.h"
 #include "rg/drive_script.h"
+#include "rg/climate.h"
 #include "rg/environment.h"
 #include "rg/npc_truck.h"
 #include "rg/npc_traffic.h"
@@ -187,6 +188,22 @@ struct SessionConfig {
     // Start-up progress/cancellation (R2.2 R9, terrain mode only; see
     // StartupProgress). Null = none.
     std::shared_ptr<StartupProgress> startup;
+
+    // V8 weather: when set, a ps::environment::Environment (Preset weather, surface conditions, wet grip) is installed
+    // in the World in flat and terrain mode, and it - not `environment` above - provides the air. The flat ground then
+    // becomes a mesh tagged with weather->ground_surface (an untagged box gets no wet grip). Null = none: every hash
+    // stays as before.
+    std::shared_ptr<const SessionWeather> weather;
+};
+
+// V8: the physics weather as of the last tick (WeatherSnapshot::installed false = no environment).
+struct WeatherSnapshot {
+    bool installed = false;
+    double env_time_s = 0, time_scale = 0;
+    double air_temp_c = 0, precip_mm_h = 0, cloud_cover = 0, rh = 0, lightning_per_min = 0;
+    // The surface under wheel 0 (empty when it has no contact or no surface id) and its condition.
+    std::string wheel_surface;
+    double wheel_water_mm = 0, wheel_snow_mm = 0, wheel_ice_mm = 0, wheel_condition_factor = 1;
 };
 
 struct WheelSnapshot {
@@ -245,6 +262,7 @@ struct FrameSnapshot {
     std::vector<WheelSnapshot> wheels;
     ps::drivetrain::PowertrainSnapshot powertrain{};
     AeroSnapshot aero;
+    WeatherSnapshot weather;
     TruckSnapshot truck;
     TrafficSnapshot traffic;
     g2m::RoadSpeedMatch road_speed_limit{};
@@ -382,6 +400,16 @@ public:
     [[nodiscard]] bool paused() const { return paused_.load(std::memory_order_relaxed); }
     // The cinematic camera wants FrameSnapshot::road_ahead. Off by default so a
     // session that never asks does no road tracing and allocates nothing.
+    // V8 weather (no-ops without SessionConfig::weather). Thread-safe: applied on the stepping thread at the next tick.
+    // set_weather replaces the manual weather (all overrides cleared, the preset ramps in over ramp_s);
+    // set_environment_clock jumps the environment clock (env seconds, rg::env_clock_point) and its scale and
+    // locks the calendar to fixed_day_index.
+    void set_weather(const ps::environment::WeatherPresetDesc& preset, double ramp_s);
+    void set_environment_clock(double env_s, int fixed_day_index, double time_scale);
+    bool weather_installed() const { return weather_installed_; }
+    // The weather now, read on the caller's thread: only while the real-time loop is NOT running (tests); the loop
+    // publishes the same in FrameSnapshot::weather.
+    WeatherSnapshot weather_state() const { return capture_weather(); }
     void set_road_ahead_wanted(bool wanted) { road_ahead_wanted_.store(wanted, std::memory_order_relaxed); }
     [[nodiscard]] FixedRateLoop::LoopStats loop_stats() const { return loop_.stats(); }
 
@@ -732,6 +760,9 @@ private:
     // request (after the gate and any relocation); update: one controller tick
     // before World::step; spawn_walker places the body.
     void process_walker_request();
+    void install_weather();
+    void apply_weather_requests();
+    WeatherSnapshot capture_weather() const;
     void update_walker();
     void spawn_walker();
     void remove_walker();
@@ -783,6 +814,15 @@ private:
     double truck_station_=0,truck_speed_=0;
     SessionConfig config_;
     EnvironmentSample environment_sample_;
+    bool weather_installed_ = false;
+    int weather_day_ = -1;
+    struct WeatherRequests {
+        std::optional<std::pair<ps::environment::WeatherPresetDesc, double>> preset;
+        std::optional<std::tuple<double, int, double>> clock;
+    };
+    std::mutex weather_mutex_;
+    WeatherRequests weather_requests_;
+    std::atomic<bool> weather_pending_{false};
     std::shared_ptr<ps::io::SurfaceTable> surface_table_;
     std::unique_ptr<ps::World> world_;
     // Built lazily by sync_road_decks; declared after world_ so it is destroyed first (its workers call into the World).

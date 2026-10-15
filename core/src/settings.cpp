@@ -82,6 +82,10 @@ std::vector<SettingDef> build_schema() {
                          0.0, 360.0, 10.0));
     s.push_back(make_float("camera", "fov_deg", "Field of view",
                            "Vertical field of view of the driving cameras, in degrees.", 70.0, 50.0, 110.0, 1.0));
+    s.push_back(make_float("camera", "body_motion", "Driver body motion",
+                           "How strongly the driver's head moves with the car's forces in the cockpit views (VR "
+                           "included). 0 = off, 1 = full.",
+                           1.0, 0.0, 1.0, 0.05));
     s.push_back(make_float("audio", "master_volume", "Master volume", "Scales every sound.", 1.0, 0.0, 1.0, 0.05));
     s.push_back(make_float("audio", "engine_volume", "Engine volume", "Engine sound level, before the master volume.",
                            1.0, 0.0, 1.0, 0.05));
