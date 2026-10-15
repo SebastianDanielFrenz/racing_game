@@ -483,7 +483,7 @@ def write_rig(car, r, path, look):
                   "Lamps: triangles picked by tools/carimport/cars.json \"lights\" rules (node, material, ISO box) "
                   "moved onto light_* material copies; no cockpit controls or engine bay data."],
     }
-    with open(path, "w") as f:
+    with open(path, "w", encoding="utf-8") as f:
         json.dump(rig, f, indent=1)
         f.write("\n")
     return rig
@@ -493,7 +493,7 @@ def write_vehicle(car, r):
     v = car.get("vehicle")
     if not v:
         return None
-    base = json.load(open(os.path.join(REPO, v["base"])))
+    base = json.load(open(os.path.join(REPO, v["base"]), encoding="utf-8"))
     out = copy.deepcopy(base)
     out["name"] = v["name"]
     piv = r["pivot"]
@@ -519,7 +519,7 @@ def write_vehicle(car, r):
                      f"{tyre_text(v['tyre_spec'])} (model wheel radius {np.mean(list(r['radius'].values())):.3f} m). Everything else is the base "
                      f"file's. Base source: " + str(base.get("source", "")))
     path = os.path.join(REPO, v["out"])
-    with open(path, "w") as f:
+    with open(path, "w", encoding="utf-8") as f:
         json.dump(out, f, indent=2)
         f.write("\n")
     return out
@@ -530,7 +530,7 @@ def check(car):
     fails = []
     d = os.path.join(OUT_DIR, car["id"])
     js, bin_ = glb.read(os.path.join(d, car["id"] + ".glb"))
-    rig = json.load(open(os.path.join(d, car["id"] + ".rig.json")))
+    rig = json.load(open(os.path.join(d, car["id"] + ".rig.json"), encoding="utf-8"))
     names = {n.get("name") for n in js["nodes"]}
     ground = []
     for c in analyze.CORNERS:
@@ -576,7 +576,7 @@ def check(car):
         fails.append("attribution / licence / source hash missing from asset")
     v = car.get("vehicle")
     if v:
-        veh = json.load(open(os.path.join(REPO, v["out"])))
+        veh = json.load(open(os.path.join(REPO, v["out"]), encoding="utf-8"))
         for w in veh["wheels"]:
             model_r = [n["wheel"]["radius"] for n in rig["nodes"] if n["name"] == f"wheel_{w['name']}"][0]
             if abs(tyre_radius_m(w["tyre_spec"]) - model_r) > TYRE_TOL_M:
@@ -588,7 +588,7 @@ def check(car):
 
 
 def record_attribution(car, r):
-    att = json.load(open(ATTRIB))
+    att = json.load(open(ATTRIB, encoding="utf-8"))
     derived = [e for e in att.get("derived", []) if e.get("id") != car["id"]]
     ex = r["extras"]
     derived.append({
@@ -607,7 +607,7 @@ def record_attribution(car, r):
         "modified_on": datetime.date.today().isoformat(),
     })
     att["derived"] = sorted(derived, key=lambda e: e["id"])
-    with open(ATTRIB, "w") as f:
+    with open(ATTRIB, "w", encoding="utf-8") as f:
         json.dump(att, f, indent=2, ensure_ascii=False)
         f.write("\n")
 
@@ -617,7 +617,7 @@ def main():
     ap.add_argument("ids", nargs="*")
     ap.add_argument("--check", action="store_true", help="only check the written files")
     a = ap.parse_args()
-    config = json.load(open(CONFIG))
+    config = json.load(open(CONFIG, encoding="utf-8"))
     cars = config["cars"]
     look = config["light_look"]
     if a.ids:
