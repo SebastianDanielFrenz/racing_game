@@ -5,6 +5,7 @@
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/catch_approx.hpp>
 #include <algorithm>
+#include <cmath>
 namespace {
 // One straight 512 m paved ground road along y = 128.5, 100 m at station 0 rising 5 %.
 g2m::RoadGeomTile geometry(bool with_underpass) {
@@ -73,4 +74,38 @@ TEST_CASE("Terrain above an underpass deck is cut below its slab like a bridge",
         CHECK(at(*t,x)<=100+.05*(x+.5)-.45);
     }
     CHECK(at(*t,0,10)==Catch::Approx(130));
+}
+
+TEST_CASE("No ground carve reaches into an underpass deck past the 1 m wall fade (D59)", "[road_surface][deck][underpass]") {
+    // The 1 m carve segments beside the deck are capsules: without the deck end planes their round ends and blend
+    // (5 m + 1 m + 5 m here) painted the road onto the cutting up to 11 m inside the deck.
+    const rg::RoadSurfacePatch patch(geometry(true));
+    auto t=terrain(90);REQUIRE(patch.apply(*t)>0);
+    for(int y=108;y<=148;++y) for(int x=201;x<=238;++x) {   // cell centres x+0.5 in [201.5, 238.5]: past both fades
+        INFO("x="<<x<<" y="<<y);
+        CHECK(at(*t,x,y)==Catch::Approx(90));
+    }
+}
+
+TEST_CASE("The carved approach meets the underpass deck without a step (D59)", "[road_surface][deck][underpass]") {
+    const rg::RoadSurfacePatch patch(geometry(true));
+    REQUIRE(patch.decks.size()==1);
+    const auto& d=*patch.decks.front();
+    auto t=terrain(90);REQUIRE(patch.apply(*t)>0);
+    // The last full-weight cell before each plane carries the road profile; the deck top at the plane continues it.
+    // Bound: the profile's own change over one 1 m carve segment (5 % x 1 m; the segment ending on the deck start is
+    // covered, so the cell there takes the previous segment's end height) plus the 1/256 m quantisation and 1 cm.
+    const double bound=.05*1+1.0/256+.01;
+    const auto top_start=rg::road_deck_height(d,200,0),top_end=rg::road_deck_height(d,240,0);
+    REQUIRE(top_start);REQUIRE(top_end);
+    CHECK(std::abs(at(*t,199)-*top_start)<=bound);
+    CHECK(std::abs(at(*t,240)-*top_end)<=bound);
+    for(int y=123;y<=133;++y) {   // inside the 6 m core (half width + shoulder) of the road at y = 128.5
+        INFO("y="<<y);
+        CHECK(std::abs(at(*t,198,y)-(100+.05*198.5))<=.01);
+        CHECK(std::abs(at(*t,241,y)-(100+.05*241.5))<=.01);
+        // Through the fade the carve only falls from the road to the cutting: no overshoot either way.
+        for(int x:{199,200,239,240}) { CHECK(at(*t,x,y)<=100+.05*(x+.5)+.01); CHECK(at(*t,x,y)>=90-.01); }
+        CHECK(at(*t,200,y)<=at(*t,199,y)+1e-9);CHECK(at(*t,239,y)<=at(*t,240,y)+1e-9);
+    }
 }

@@ -8,6 +8,9 @@ namespace {
 constexpr double bin_size = 16;
 int bin(double value) { return static_cast<int>(std::floor(value / bin_size)); }
 double smooth(double t) { t=std::clamp(t,0.0,1.0); return t*t*(3-2*t); }
+// geo2map D59 (terrain_carve.cpp kUnderpassWallFadeM): past an underpass deck's end plane a carve segment's weight
+// fades to zero over this distance, so the cutting under the deck keeps steep walls.
+constexpr double kUnderpassWallFadeM = 1.0;
 }
 RoadSurfacePatch::RoadSurfacePatch(const g2m::RoadGeomTile& geometry,double verge_drop,const RoadSeparation& separation) : verge_drop_m_(verge_drop),separation_(separation) {
     decks=build_road_decks(geometry,separation);
@@ -25,7 +28,8 @@ RoadSurfacePatch::RoadSurfacePatch(const g2m::RoadGeomTile& geometry,double verg
                 for(int x=bin(std::min(cut.x0,cut.x1)-radius);x<=bin(std::max(cut.x0,cut.x1)+radius);++x)cut_bins_[{x,y}].push_back(index);
         }
     }
-    for (const auto& entry : geometry.entries) {
+    for (std::size_t entry_index=0;entry_index<geometry.entries.size();++entry_index) {
+        const auto& entry=geometry.entries[entry_index];
         if (!entry.profile) { ++declined; continue; }
         const auto& p = *entry.profile;
         int layer=0;
@@ -40,6 +44,15 @@ RoadSurfacePatch::RoadSurfacePatch(const g2m::RoadGeomTile& geometry,double verg
         auto a=p.reference.at(0); auto za=p.at(0);
         if (!a.ok() || !za.ok()) continue;
         ++accepted;
+        // End planes of this entry's served underpass decks (D59): {start station, start plane, end station, end plane}.
+        struct Span { double start, end; DeckPlane at_start, at_end; };
+        std::vector<Span> spans;
+        for(const auto& u:geometry.underpasses) {
+            if(u.entry_index!=entry_index) continue;
+            const auto ps=p.reference.at(u.start_m),pe=p.reference.at(u.end_m);if(!ps.ok()||!pe.ok()) continue;
+            spans.push_back({u.start_m,u.end_m,{true,ps.value().x,ps.value().y,std::cos(ps.value().heading),std::sin(ps.value().heading)},
+                {true,pe.value().x,pe.value().y,-std::cos(pe.value().heading),-std::sin(pe.value().heading)}});
+        }
         for (int i=1;i<=count;++i) {
             const double station = p.reference.length_m*i/count;
             auto b=p.reference.at(station); auto zb=p.at(station);
@@ -48,11 +61,17 @@ RoadSurfacePatch::RoadSurfacePatch(const g2m::RoadGeomTile& geometry,double verg
                 return d->inferred&&d->way_id==entry.way_id&&d->start_ref==entry.stretch.start_ref&&station>=d->start_station&&station<=d->end_station;
             });
             if(covered) {a=std::move(b);za=std::move(zb);continue;}
+            // The piece's deck planes: the nearest underpass deck ending before this station and the nearest starting after it.
+            DeckPlane lo{false,0,0,0,0},hi{false,0,0,0,0};double lo_end=-1,hi_start=std::numeric_limits<double>::infinity();
+            for(const auto& span:spans) {
+                if(span.end<station&&span.end>lo_end) {lo_end=span.end;lo=span.at_end;}
+                if(span.start>station&&span.start<hi_start) {hi_start=span.start;hi=span.at_start;}
+            }
             Segment s{a.value().x,a.value().y,za.value().height_m,
                 b.value().x,b.value().y,zb.value().height_m,
                 p.attributes.width_mm/2000.0,p.attributes.shoulder_mm/1000.0,
                 p.attributes.blend_mm/1000.0,p.attributes.crown_per_mille/1000.0,
-                entry.way_id,entry.stretch.start_ref,layer,p.attributes.tunnel};
+                entry.way_id,entry.stretch.start_ref,layer,p.attributes.tunnel,lo,hi};
             const double radius=s.half_width+s.shoulder+s.blend;
             const auto index=segments_.size(); segments_.push_back(s);
             for(int y=bin(std::min(s.y0,s.y1)-radius);y<=bin(std::max(s.y0,s.y1)+radius);++y)
@@ -80,7 +99,7 @@ std::size_t RoadSurfacePatch::apply(g2m::HeightTile& tile) const {
         const double n=static_cast<double>(tile.key.min_northing())+(y+.5)*spacing;
         const auto candidates=bins_.find({bin(e),bin(n)});
         if(candidates==bins_.end()) continue;
-        struct Candidate { const Segment* segment; double score, fraction; };
+        struct Candidate { const Segment* segment; double score, fraction, wall; };
         std::map<std::pair<std::int64_t,std::uint32_t>,Candidate> roads;
         for(auto index:candidates->second) {
             const auto& s=segments_[index]; const double dx=s.x1-s.x0,dy=s.y1-s.y0;
@@ -88,20 +107,25 @@ std::size_t RoadSurfacePatch::apply(g2m::HeightTile& tile) const {
             const double t=std::clamp(((e-s.x0)*dx+(n-s.y0)*dy)/length2,0.0,1.0);
             const double d=std::hypot(e-s.x0-t*dx,n-s.y0-t*dy);
             if(d>s.half_width+s.shoulder+s.blend) continue;
+            // D59: no carve past a served underpass deck's end plane (a 1 m fade keeps the carve continuous).
+            double past=0;
+            for(const auto* plane:{&s.deck_lo,&s.deck_hi}) if(plane->on) past=std::max(past,(e-plane->x)*plane->nx+(n-plane->y)*plane->ny);
+            if(past>=kUnderpassWallFadeM) continue;
+            const double wall=1-smooth(past/kUnderpassWallFadeM);
             // Normalised distance gives a wider carriageway its proper footprint.
             const double score=d/(s.half_width+s.shoulder);
             const auto id=std::pair{s.way,s.start_ref};
             auto found=roads.find(id);
-            if(found==roads.end() || score<found->second.score) roads.insert_or_assign(id,Candidate{&s,score,t});
+            if(found==roads.end() || score<found->second.score) roads.insert_or_assign(id,Candidate{&s,score,t,wall});
         }
         if(roads.empty()) continue;
         // Each nearby road's own surface height at this cell (camber, verge drop; no terrain blend yet).
-        struct Road { const Segment* segment; double score, fraction, d, z; bool protects, kept; };
+        struct Road { const Segment* segment; double score, fraction, d, z, wall; bool protects, kept; };
         std::vector<Road> near; near.reserve(roads.size());
         for(const auto& [id,c]:roads) {
             (void)id;const auto& r=*c.segment;const double d=c.score*(r.half_width+r.shoulder),lateral=std::min(d,r.half_width);
             const double z=r.z0+(r.z1-r.z0)*c.fraction-r.crown*(std::sqrt(lateral*lateral+.25)-.5)-verge_drop_m_*smooth((d-r.half_width)/std::max(.001,r.shoulder));
-            near.push_back({&r,c.score,c.fraction,d,z,!r.tunnel&&d<=r.half_width+r.shoulder+separation_.margin_m,true});
+            near.push_back({&r,c.score,c.fraction,d,z,c.wall,!r.tunnel&&d<=r.half_width+r.shoulder+separation_.margin_m,true});
         }
         // Grade separation (RoadSeparation): inside a road's protected footprint, a road more than clearance_m above it
         // is on a structure here and must not lift the terrain, and one more than clearance_m below it (that does not
@@ -120,7 +144,7 @@ std::size_t RoadSurfacePatch::apply(g2m::HeightTile& tile) const {
         const auto& s=*best->segment; const double distance=best->score, d=best->d;
         const double road=best->z;
         const double core=s.half_width+s.shoulder;
-        const double weight=d<=core ? 1 : 1-smooth((d-core)/std::max(.001,s.blend));
+        const double weight=(d<=core ? 1 : 1-smooth((d-core)/std::max(.001,s.blend)))*best->wall;
         double height=raw/256.0+(road-raw/256.0)*weight;
         // Nearest-road ownership is discontinuous where ramps merge. Blend
         // the nearest sample from each road across that ownership boundary,
@@ -135,7 +159,7 @@ std::size_t RoadSurfacePatch::apply(g2m::HeightTile& tile) const {
             const double proximity=1-smooth((candidate.score-distance)/transition);
             if(proximity<=0) continue;
             const double oc=other.half_width+other.shoulder;
-            const double influence=candidate.d<=oc?1:1-smooth((candidate.d-oc)/std::max(.001,other.blend));
+            const double influence=(candidate.d<=oc?1:1-smooth((candidate.d-oc)/std::max(.001,other.blend)))*candidate.wall;
             sum+=proximity*(raw/256.0+(candidate.z-raw/256.0)*influence);weights+=proximity;
         }
         if(weights>0) height=sum/weights;
