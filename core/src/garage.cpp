@@ -167,6 +167,23 @@ std::unique_ptr<Garage> Garage::open(const GarageConfig& config, std::string* er
         }
     }
     {
+        // Garage turbo kits (rg/turbo_kit.h): optional file, strict when present.
+        std::string path = config.turbo_kits_path;
+        if (path.empty()) {
+            const std::string dflt = config.repo_root + "/data/engines/turbo_kits.json";
+            std::error_code ec;
+            if (fs::is_regular_file(fs::path(dflt), ec)) path = dflt;
+        }
+        if (!path.empty()) {
+            auto cfg = load_turbo_kit_config(path, config.repo_root, &e);
+            if (!cfg) {
+                if (err != nullptr) *err = e;
+                return nullptr;
+            }
+            g->ctx_.turbo_kits = std::make_shared<const TurboKitConfig>(*cfg);
+        }
+    }
+    {
         const std::string cat = config.gearbox_catalog_path.empty() ? config.repo_root + "/data/gearboxes/gearbox_catalog.json"
                                                                      : config.gearbox_catalog_path;
         auto boxes = GearboxCatalog::open(cat, config.repo_root, &e);

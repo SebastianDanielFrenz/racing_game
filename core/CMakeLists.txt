@@ -112,6 +112,7 @@ add_library(rg_core STATIC
     src/garage_dyno.cpp
     src/limit_advisor.cpp
     src/turbo_map_extension.cpp
+    src/turbo_kit.cpp
     src/road_ahead.cpp
     src/camera_math.cpp
     src/camera_motion.cpp

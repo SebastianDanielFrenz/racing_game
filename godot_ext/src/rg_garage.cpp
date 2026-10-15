@@ -335,6 +335,7 @@ godot::Array RgGarage::get_options() const {
         d["max"] = v.max;
         d["step"] = v.def.step;
         d["available"] = v.available;
+        d["unavailable_reason"] = from_std(v.unavailable_reason);
         d["stock"] = value_to_variant(v.stock);
         const rg::SetupValue cur = garage_->current_value(v.def.id);
         d["value"] = value_to_variant(cur);

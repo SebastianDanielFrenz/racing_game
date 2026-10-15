@@ -1031,6 +1031,38 @@ func _garage_option(id: String) -> Dictionary:
 			return opt
 	return {}
 
+# The turbo kit option (core turbo_kit.h) whether it is available or not: an unavailable one carries the reason.
+func _turbo_kit_option() -> Dictionary:
+	for opt in garage.get_options():
+		if str(opt["id"]) == "turbo_kit" and (bool(opt["available"]) or not str(opt.get("unavailable_reason", "")).is_empty()):
+			return opt
+	return {}
+
+# Turbo kits for an engine without a turbo of its own: generic cards, or the reason none can be fitted.
+func _draw_turbo_kit(kit: Dictionary) -> void:
+	if not bool(kit["available"]):
+		var why := _label(str(kit.get("unavailable_reason", "")),16,HORIZONTAL_ALIGNMENT_LEFT,true)
+		why.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		_option_box.add_child(why)
+		return
+	var note := _label("Turbo, intercooler and wastegate sized for the installed engine.",13,HORIZONTAL_ALIGNMENT_LEFT,true)
+	note.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_option_box.add_child(note)
+	var grid := GridContainer.new()
+	grid.columns = 2
+	_option_box.add_child(grid)
+	for part in kit["parts"]:
+		var installed := str(part["id"]) == str(kit["value"])
+		var presentation: Dictionary = part.duplicate()
+		presentation["size"] = str(part.get("detail", ""))
+		var card := _make_component_card(presentation,"INSTALLED" if installed else "Install")
+		grid.add_child(card)
+		_buttons["part:turbo_kit:" + str(part["id"])] = card
+		card.pressed.connect(func(): _edit_option("turbo_kit",str(part["id"])); _draw_garage_options())
+		if installed or _garage_preferred == null: _garage_preferred = card
+	_draw_swap_summary()
+	_focus_garage.call_deferred()
+
 func _draw_upgrades() -> void:
 	_option_box.add_child(_label(" / ".join(_garage_path) if not _garage_path.is_empty() else "Upgrade categories",20,HORIZONTAL_ALIGNMENT_LEFT))
 	if _garage_path.is_empty():
@@ -1049,7 +1081,7 @@ func _draw_upgrades() -> void:
 		if _garage_path.size() == 1:
 			var disabled: Array = ["Camshaft"]
 			if _garage_option("engine_install").is_empty(): disabled.append("Engine")
-			if _garage_option("turbo_install").is_empty() and _garage_option("turbo_install_n2o").is_empty(): disabled.append("Turbo")
+			if _garage_option("turbo_install").is_empty() and _garage_option("turbo_install_n2o").is_empty() and _turbo_kit_option().is_empty(): disabled.append("Turbo")
 			if top == "Swaps":
 				var no_fuel: bool = _garage_option("fuel").is_empty()
 				_draw_tiles(["Engine", "Fuel", "Forced induction", "Drivetrain"], [] + (["Engine"] if disabled.has("Engine") else []) + (["Fuel"] if no_fuel else []) + (["Forced induction"] if disabled.has("Turbo") else []))
@@ -1065,6 +1097,9 @@ func _draw_upgrades() -> void:
 		if _garage_path[1] == "N2O":
 			opt = _garage_option("nitrous_install_hyper")
 			if opt.is_empty(): opt = _garage_option("nitrous_install_sedan")
+		if opt.is_empty() and _garage_path[1] in ["Turbo", "Forced induction"] and not _turbo_kit_option().is_empty():
+			_draw_turbo_kit(_turbo_kit_option())
+			return
 		if opt.is_empty(): return
 		if top == "Swaps" and _garage_path[1] == "Forced induction":
 			_draw_induction_swaps(opt)

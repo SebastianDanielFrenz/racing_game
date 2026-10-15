@@ -136,6 +136,31 @@ Verification: 195 garage checks and 80 native assertions across four engine-part
 cases passed. Logs: out/garage_induction_final.log, out/garage_induction_polish_unit.log.
 N2O swap screen captured in out/garage_induction_ready_shots/induction_types.png.
 
+## Turbo kits for engines without a turbo (2026-10-15)
+
+Owner on PR #5: "Turbos cannot be fitted yet to many engines." The option `turbo_kit` (setup_options.json, catalog
+`turbo_kits`, group "Turbo system") fits a turbo system to the INSTALLED engine when it is a simulated engine with a cycle
+block and no turbo of its own (pico, ventura, runabout, the demo pipe I4, the A25A; also after an engine swap into any
+car). No per-engine turbo files: `rg::size_turbo_kit` (core/include/rg/turbo_kit.h) sizes the turbo from the engine's air
+demand at the limiter and the kit's target (charge density after compression at the anchor efficiency and the
+intercooler, x swept volume x rpm/120 x VE 0.9, / turbo count, x flow margin 1.4) and scales physics_sim's anchor
+`hyper_turbo_approx.json` at constant tip speed (flow, throat, wastegate, shaft loss x s^2, rpm / s, inertia x s^5,
+efficiencies by a log rule). Kits in `data/engines/turbo_kits.json` (rg.turbo_kits/1): Street (single, 0.5 bar), Sport
+(single, 1.0 bar), Twin-turbo (1.0 bar, six cylinders and up). The generated hardware and configuration files are
+content-addressed under `<engine map cache>/turbo_kits/`.
+
+Installing a kit sets the engine's `default_forced_induction` to the generated configuration, its
+`cycle.grid_p_im_kpa` to `ps::drivetrain::boost_grid_p_im(cycle, target)` and lowers a compression ratio above 10.0 to
+10.0 (physics_sim engine.md "Adding or removing forced induction"; knock, lambda and spark stay the physics' own
+models). The boost slider (`turbo_boost_target`) then edits the kit's target like any turbo. The swap package treats a kit
+like a torque increase: the clutch rule (1.5 x peak) uses peak x the charge pressure ratio, and the gearbox notice counts
+the boosted torque. Torque-curve engines, already-turbocharged engines, rotaries and lift-family engines are refused:
+`OptionView::unavailable_reason` (RgGarage `unavailable_reason`) says why, and Engine -> Turbo / Swaps -> Forced
+induction show that text instead of hiding the tile. Changing to an engine that cannot take a kit drops it
+(`Garage::drop_unavailable_values`). The engine bay fit (`check_fit`) does not include the turbo yet (no envelope data).
+Tests: tests/unit/test_turbo_kit.cpp `[turbo_kit]`; the dyno comparison (kit vs NA at the same rpm) is
+`[turbo_kit][dyno][long]`.
+
 ## Live engine dyno (2026-10-08)
 
 The dyno chart is anchored at the bottom of the left performance panel, outside

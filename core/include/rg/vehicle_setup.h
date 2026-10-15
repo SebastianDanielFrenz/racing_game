@@ -35,6 +35,7 @@
 
 #include "rg/engine_store.h"
 #include "rg/gearbox_catalog.h"
+#include "rg/turbo_kit.h"
 #include "rg/turbo_map_extension.h"
 #include "rg/slider_map.h"
 #include "rg/vehicle_catalog.h"
@@ -93,6 +94,10 @@ struct SetupOptionDef {
     // "gearboxes" = the rg::GearboxCatalog (data/gearboxes/gearbox_catalog.json), offered when the box's torque rating
     // covers the installed engine's peak torque; ids = the catalogue ids. An engine choice also derives the swap
     // package (engine_swap.h); all of them ignore compatible_engines.
+    // "turbo_kits" = the garage turbo kits (rg/turbo_kit.h, data/engines/turbo_kits.json) for the INSTALLED engine when it
+    // has no turbo of its own: the kit is sized for that engine and written to the cache, the engine's
+    // default_forced_induction, manifold-pressure grid and (when above the kit ceiling) compression ratio are set. The
+    // option is unavailable, with OptionView::unavailable_reason, on an engine that cannot take one.
     std::string catalog;
     std::vector<std::string> compatible_engines; // original engine stems, an explicit game fitment list; "*" = any engine
     std::string part_format; // required referenced file format
@@ -162,12 +167,15 @@ struct SetupContext {
     // Turbo stage map extension policy (rg/turbo_map_extension.h): when set, a load that finds the engine's air demand outside
     // the stage map extends and caches the map under engine_map_cache_dir. nullptr = maps are used as they are.
     std::shared_ptr<const TurboMapExtensionConfig> turbo_map_extension;
+    // The garage turbo kits the "turbo_kits" catalog option offers (rg/turbo_kit.h). nullptr = that option is unavailable.
+    std::shared_ptr<const TurboKitConfig> turbo_kits;
 };
 
 // One option as the configurator shows it, for one vehicle.
 struct OptionView {
     SetupOptionDef def;                // pointers already replaced by the entry's override
     bool available = true;             // false: the entry does not offer it, or its pointers match nothing
+    std::string unavailable_reason;    // !available on an offered option: why, in the player's words ("" = nothing to say)
     double min = 1.0;                  // effective range (Scale/ScaleList: factor; BrakeBias: front share)
     double max = 1.0;
     SetupValue stock;                  // the value that changes nothing

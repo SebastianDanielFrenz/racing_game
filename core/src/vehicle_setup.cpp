@@ -253,6 +253,9 @@ struct Files {
     std::vector<std::string> derived_subtrees;
     // Electronics parts the swap package re-targeted (a launch rpm outside the new engine's idle..limiter band).
     std::vector<FileDoc> electronics;
+    // A garage turbo kit fitted to an engine without a turbo (catalog "turbo_kits"): its label and torque factor.
+    std::string kit_label;
+    double kit_torque_factor = 1.0;
 };
 
 bool read_doc(const std::string& path, json& out, std::string* err) {
@@ -411,6 +414,34 @@ double installed_engine_peak_torque(const Files& files, const SetupContext& ctx)
     return facts && facts->curve_peaks.known ? facts->curve_peaks.torque_nm : 0.0;
 }
 
+// Why no garage turbo kit can go on the installed engine ("" = one can).
+std::string turbo_kit_blocker(const Files& files, const SetupContext& ctx) {
+    if (!ctx.turbo_kits) return "No turbo kits are available.";
+    if (!files.engine) return "This car has no engine.";
+    std::string err;
+    const auto facts = read_engine_facts(files.engine->path, &err);
+    if (!facts) return err;
+    std::string name;
+    if (files.swapped) {
+        name = files.swapped->name;
+    } else if (ctx.engines) {
+        if (const EngineEntry* e = ctx.engines->find_by_file(files.engine->path)) name = e->name;
+    }
+    std::string why = turbo_kit_refusal(*facts, name);
+    if (!why.empty()) return why;
+    // The car's own vehicle file names a turbo for its engine (the slot override wins over the engine's default). An
+    // engine swap drops that override with the old engine (apply_swap), so it only counts on the car's own engine.
+    const int idx = component_index(files.vehicle.work, "engine");
+    if (idx >= 0 && !files.swapped) {
+        std::string fi;
+        if (detail::get_string(files.vehicle.work["powertrain"]["components"][static_cast<std::size_t>(idx)], "forced_induction", fi) &&
+            !fi.empty() && fi != "none") {
+            return "This car's engine is turbocharged already: choose its turbo hardware under Turbo.";
+        }
+    }
+    return {};
+}
+
 // File choices are never a filesystem picker: only declared compatible IDs can resolve a path.
 bool file_choice_fits(Files& files, const SetupOptionDef& def, const CatalogEntry& entry, const SetupContext& ctx) {
     if (!entry_offers(entry, def.id)) return false;
@@ -419,6 +450,8 @@ bool file_choice_fits(Files& files, const SetupOptionDef& def, const CatalogEntr
         const std::string& engine = files.engine_stem;
         const bool any_engine = std::find(def.compatible_engines.begin(), def.compatible_engines.end(), "*") != def.compatible_engines.end();
         if (!any_engine && std::find(def.compatible_engines.begin(), def.compatible_engines.end(), engine) == def.compatible_engines.end()) return false;
+    } else if (def.catalog == "turbo_kits") {
+        return turbo_kit_blocker(files, ctx).empty();
     } else if (def.catalog == "gearboxes" ? !ctx.gearboxes : !ctx.engines) {
         return false;
     }
@@ -477,6 +510,29 @@ std::string install_catalog_part(Files& files, const SetupOptionDef& def, const 
         if (!load_aux(files.vehicle.work, dir_of(files.vehicle.path), "gearbox", files.gearbox, &err)) return err;
         return {};
     }
+    if (def.catalog == "turbo_kits") {
+        const TurboKitSpec* spec = ctx.turbo_kits->find(id);
+        if (spec == nullptr) return def.id + ": \"" + id + "\" is not a turbo kit";
+        std::string err;
+        const auto facts = read_engine_facts(files.engine->path, &err);
+        if (!facts) return err;
+        const std::string spec_why = turbo_kit_spec_refusal(*spec, *facts);
+        if (!spec_why.empty()) return def.id + ": " + spec_why;
+        const TurboKitSizing sizing = size_turbo_kit(*ctx.turbo_kits, *spec, *facts, facts->limiter_rpm);
+        if (!sizing.ok) return def.id + ": " + sizing.error;
+        const std::string cache = !ctx.engine_map_cache_dir.empty() ? ctx.engine_map_cache_dir : ctx.work_root;
+        const std::string config_path = write_turbo_kit(*ctx.turbo_kits, *spec, sizing, stem_of_path(files.engine->path), cache, &err);
+        if (config_path.empty()) return def.id + ": " + err;
+        const auto grid = turbo_kit_grid_kpa(*facts, spec->target_boost_bar, &err);
+        if (!grid) return def.id + ": " + err;
+        json& work = files.engine->work;
+        work["default_forced_induction"] = norm_path(config_path);
+        work["cycle"]["grid_p_im_kpa"] = *grid;
+        if (sizing.compression_ratio < facts->compression_ratio) work["cycle"]["compression_ratio"] = sizing.compression_ratio;
+        files.kit_label = spec->label;
+        files.kit_torque_factor = sizing.torque_factor;
+        return {};
+    }
     if (def.catalog == "fuels") {
         if (!files.engine) return def.id + ": the car has no engine";
         std::string err;
@@ -493,7 +549,11 @@ std::string install_catalog_part(Files& files, const SetupOptionDef& def, const 
 std::string install_file_part(Files& files, const SetupOptionDef& def, const CatalogEntry& entry, const SetupContext& ctx,
                               const SetupValue& value) {
     if (!std::holds_alternative<std::string>(value)) return def.id + ": needs a component ID";
-    if (!file_choice_fits(files, def, entry, ctx)) return def.id + ": not compatible with this vehicle";
+    if (def.catalog == "turbo_kits" && std::get<std::string>(value) == "stock") return {}; // no kit: nothing to check
+    if (!file_choice_fits(files, def, entry, ctx)) {
+        if (def.catalog == "turbo_kits" && entry_offers(entry, def.id)) return def.id + ": " + turbo_kit_blocker(files, ctx);
+        return def.id + ": not compatible with this vehicle";
+    }
     const auto& id = std::get<std::string>(value);
     if (id == "stock") return {};
     if (!def.catalog.empty()) return install_catalog_part(files, def, entry, ctx, id);
@@ -573,7 +633,7 @@ const char* const kEngineSlotKeys[] = {"ecu", "cam", "forced_induction", "instal
 // "" when fine (also when nothing was swapped or chosen: `pkg` stays empty), else the broken rule.
 std::string apply_swap(Files& files, const CatalogEntry& entry, const SetupContext& ctx, SwapPackage& pkg) {
     pkg = SwapPackage{};
-    if (!files.swapped && files.fuel_choice.empty()) return {};
+    if (!files.swapped && files.fuel_choice.empty() && files.kit_label.empty()) return {};
     if (!ctx.engines || !files.engine) return entry.id + ": no engine list to derive a swap from";
     json& veh = files.vehicle.work;
     if (!veh.contains("powertrain") || !veh["powertrain"].contains("components") || !veh["powertrain"]["components"].is_array()) {
@@ -614,7 +674,11 @@ std::string apply_swap(Files& files, const CatalogEntry& entry, const SetupConte
     eng.has_thermal = facts->has_thermal;
     for (const FuelFact& f : facts->fuels) eng.fuels.push_back(f.name);
 
-    pkg = derive_swap_package(car, eng, SwapChoices{files.fuel_choice}, files.swapped.has_value());
+    SwapChoices choices;
+    choices.fuel = files.fuel_choice;
+    choices.turbo_kit = files.kit_label;
+    choices.boost_torque_factor = files.kit_torque_factor;
+    pkg = derive_swap_package(car, eng, choices, files.swapped.has_value());
     if (!pkg.ok) return entry.id + ": " + pkg.error;
     // A launch rpm is a second rev limit of the old engine: one outside the new engine's idle..limiter band is moved
     // to 60 % of the new limiter (at least idle + 300 rpm), else the loader rejects the car.
@@ -650,11 +714,14 @@ std::string apply_swap(Files& files, const CatalogEntry& entry, const SetupConte
         }
     }
     // The car's current gearbox is not turned away by an engine swap, but the player is told when it is too weak.
-    if (files.swapped && ctx.gearboxes && files.gearbox && eng.peak_torque_nm > 0.0) {
+    // A turbo kit counts with its estimated torque factor.
+    const double boosted_peak = eng.peak_torque_nm * (files.kit_label.empty() ? 1.0 : std::max(1.0, files.kit_torque_factor));
+    if ((files.swapped || !files.kit_label.empty()) && ctx.gearboxes && files.gearbox && boosted_peak > 0.0) {
         const GearboxEntry* g = ctx.gearboxes->find_by_file(files.gearbox->path);
-        if (g != nullptr && !check_gearbox_rating(*g, eng.peak_torque_nm).empty()) {
-            char buf[160];
-            std::snprintf(buf, sizeof(buf), "Gearbox: %s is rated %.0f N*m but this engine makes %.0f N*m - install a stronger one", g->name.c_str(), g->rating_nm, eng.peak_torque_nm);
+        if (g != nullptr && !check_gearbox_rating(*g, boosted_peak).empty()) {
+            char buf[200];
+            std::snprintf(buf, sizeof(buf), "Gearbox: %s is rated %.0f N*m but this engine makes %s%.0f N*m - install a stronger one", g->name.c_str(), g->rating_nm,
+                          files.kit_label.empty() ? "" : "about ", boosted_peak);
             pkg.lines.push_back(buf);
         }
     }
@@ -1142,8 +1209,12 @@ std::optional<SetupOptionTable> parse_setup_options(const std::string& json_text
                 d.insert_if_absent = std::move(v);
             }
             detail::get_string(o, "catalog", d.catalog);
-            if (!d.catalog.empty() && d.catalog != "engines" && d.catalog != "fuels" && d.catalog != "gearboxes") {
-                return bad(where + ": \"catalog\" must be \"engines\", \"fuels\" or \"gearboxes\"");
+            if (!d.catalog.empty() && d.catalog != "engines" && d.catalog != "fuels" && d.catalog != "gearboxes" &&
+                d.catalog != "turbo_kits") {
+                return bad(where + ": \"catalog\" must be \"engines\", \"fuels\", \"gearboxes\" or \"turbo_kits\"");
+            }
+            if (d.catalog == "turbo_kits" && (d.file != "engine" || d.part_format != "physics_sim.turbo_configuration/1")) {
+                return bad(where + ": a turbo_kits option edits the engine file with physics_sim.turbo_configuration/1 parts");
             }
             if (!d.catalog.empty()) {
                 if (o.contains("parts") || o.contains("compatible_engines")) {
@@ -1344,6 +1415,24 @@ std::vector<SetupPart> parts_of(const SetupOptionDef& def, const SetupContext& c
         }
         return out;
     }
+    if (def.catalog == "turbo_kits") {
+        if (!ctx.turbo_kits || !files.engine) return out;
+        const auto facts = read_engine_facts(files.engine->path, nullptr);
+        if (!facts || !turbo_kit_refusal(*facts, {}).empty()) return out;
+        for (const TurboKitSpec& k : ctx.turbo_kits->kits) {
+            if (!turbo_kit_spec_refusal(k, *facts).empty()) continue;
+            const TurboKitSizing z = size_turbo_kit(*ctx.turbo_kits, k, *facts, facts->limiter_rpm);
+            if (!z.ok) continue;
+            SetupPart p;
+            p.id = k.id;
+            p.label = k.label;
+            p.path = "turbo_kit:" + k.id; // generated on install, never a stock file
+            p.image = k.count > 1 ? "res://assets/components/engines/turbo_twin.png" : "res://assets/components/engines/turbo_single.png";
+            p.detail = turbo_kit_detail(*ctx.turbo_kits, k, z);
+            out.push_back(std::move(p));
+        }
+        return out;
+    }
     if (!ctx.engines) return out;
     if (def.catalog == "engines") {
         for (const EngineEntry& e : ctx.engines->list()) {
@@ -1489,6 +1578,10 @@ SetupModel build_setup_model(const CatalogEntry& entry, const SetupOptionTable& 
                     v.choices.push_back(part.id);
                 }
                 if (v.choices.size() < 2) v.available = false;
+                if (def.catalog == "turbo_kits") {
+                    v.parts.front().label = "No turbo (as built)";
+                    if (!v.available && entry_offers(entry, def.id)) v.unavailable_reason = turbo_kit_blocker(files, ctx);
+                }
                 if (def.catalog == "gearboxes" && ctx.gearboxes) {
                     for (const GearboxSection& sec : ctx.gearboxes->sections()) if (!sec.has_entries) v.coming_soon.push_back(sec.label);
                 }
@@ -1884,6 +1977,12 @@ CompiledSetup compile_setup_internal(const CatalogEntry& entry, const SetupOptio
         // This generator policy is constructed above, never supplied by a
         // player option. Check every remaining edit against the normal list.
         if (adaptive_pressure && std::string(kind) == "engine") whitelist_base["cycle"]["pressure_sampling"] = f.work["cycle"]["pressure_sampling"];
+        // The turbo kit conversion (install_catalog_part, trusted code driven by the turbo_kits option) sets these.
+        if (!files.kit_label.empty() && std::string(kind) == "engine") {
+            whitelist_base["default_forced_induction"] = f.work["default_forced_induction"];
+            whitelist_base["cycle"]["grid_p_im_kpa"] = f.work["cycle"]["grid_p_im_kpa"];
+            if (f.work["cycle"].contains("compression_ratio")) whitelist_base["cycle"]["compression_ratio"] = f.work["cycle"]["compression_ratio"];
+        }
         const std::string violation = whitelist_violation_in(whitelist_base.dump(), patch_text(patch), patterns,
                                                               is_vehicle ? files.derived_subtrees : std::vector<std::string>{});
         if (!violation.empty()) {

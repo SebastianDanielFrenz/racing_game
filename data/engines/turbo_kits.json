@@ -1,0 +1,59 @@
+{
+  "format": "rg.turbo_kits/1",
+  "source": "Garage turbo kits for engines that have no turbo (owner on PR #5, 2026-10-15: 'Turbos cannot be fitted yet to many engines'). One rule, no per-engine files: rg::size_turbo_kit (core/src/turbo_kit.cpp) sizes each kit from the engine's own swept volume and limiter rpm and scales the anchor turbo at constant tip speed, the hardware-family method of physics_sim docs/data_formats/turbo.md. The conversion (boost grid, compression ratio ceiling) is physics_sim docs/data_formats/engine.md 'Adding or removing forced induction'.",
+  "anchor_hardware": "external/physics_sim/data/turbos/hyper_turbo_approx.json",
+  "anchor_exducer_mm": 82.0,
+  "anchor_exducer_source": "GTX3582R Gen II class compressor wheel 66/82 mm (the anchor file's rotor_inertia_source); only used for the card text.",
+  "cache_subdir": "turbo_kits",
+  "sizing": {
+    "volumetric_efficiency": 0.9,
+    "volumetric_efficiency_source": "[AS] a street engine near its power peak; the demand is an upper estimate at the limiter.",
+    "flow_margin": 1.4,
+    "flow_margin_source": "[AS] compressor max flow 40 % above the engine's peak need: room before choke at the limiter without the lag of a much larger wheel.",
+    "ambient_pressure_kpa": 101.325,
+    "ambient_temperature_k": 288.15,
+    "efficiency_log_slope": 0.127,
+    "efficiency_log_slope_source": "[AS] efficiency = anchor 0.80 + 0.127 ln(s): a wheel half the anchor's size reaches ~0.71 (small passenger-car turbos peak at 0.70-0.75), clamped to [efficiency_min, anchor].",
+    "efficiency_min": 0.70,
+    "wastegate_to_throat": 3.0,
+    "wastegate_to_throat_source": "physics_sim turbo templates: wastegate port 3.0 x the turbine throat (a single on a small engine; the anchor's twin uses 2.36).",
+    "min_scale": 0.3,
+    "max_scale": 1.6
+  },
+  "conversion": {
+    "max_compression_ratio": 10.0,
+    "max_compression_ratio_source": "physics_sim engine.md: a converted engine keeps the compression ratio at or below 10.5 (check_buildable's forced-induction ceiling); 10.0 leaves knock margin on E5 [AS]. Engines below it keep theirs.",
+    "intercooler_effectiveness": 0.75,
+    "compressible_exhaust": true,
+    "boost_control": {
+      "kp": 1.0,
+      "ki_per_s": 1.0,
+      "kd_s": 0.05,
+      "actuator_tau_s": 0.1,
+      "source": "physics_sim turbo configuration templates (gains per unit of target_boost_bar)."
+    }
+  },
+  "kits": [
+    {
+      "id": "street_single",
+      "label": "Street turbo kit",
+      "count": 1,
+      "target_boost_bar": 0.5,
+      "min_cylinders": 1
+    },
+    {
+      "id": "sport_single",
+      "label": "Sport turbo kit",
+      "count": 1,
+      "target_boost_bar": 1.0,
+      "min_cylinders": 1
+    },
+    {
+      "id": "sport_twin",
+      "label": "Twin-turbo kit",
+      "count": 2,
+      "target_boost_bar": 1.0,
+      "min_cylinders": 6
+    }
+  ]
+}

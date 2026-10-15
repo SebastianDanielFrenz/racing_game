@@ -123,6 +123,17 @@ EngineFacts facts_of(const ps::drivetrain::ComponentParams& params, bool* ok) {
         f.limiter_rpm = sim->limiter.rpm;
         f.mass_kg = sim->mass_kg;
         for (const auto& fuel : sim->fuels) f.fuels.push_back({fuel.name, fuel.lhv_j_kg / 1.0e6, fuel.density_kg_m3});
+        f.has_turbo = sim->turbo_pair.has_value();
+        f.rotary = sim->architecture == ps::drivetrain::EngineArchitecture::Rotary;
+        f.lift_family = sim->has_lift_family() || (sim->cycle && !sim->cycle->lift_family.empty());
+        if (sim->cycle) {
+            const ps::drivetrain::CycleModelDesc& c = *sim->cycle;
+            f.has_cycle = true;
+            f.cylinders = c.cylinders;
+            f.compression_ratio = c.compression_ratio;
+            f.displacement_l = kPi / 4.0 * c.bore_m * c.bore_m * c.stroke_m * c.cylinders * 1000.0;
+            f.cycle = std::make_shared<const ps::drivetrain::CycleModelDesc>(c);
+        }
     } else {
         *ok = false;
     }

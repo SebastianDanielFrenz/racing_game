@@ -594,6 +594,20 @@
       ]
     },
     {
+      "id": "turbo_kit",
+      "label": "Turbo kit",
+      "group": "Turbo system",
+      "area": "engine",
+      "kind": "file_choice",
+      "catalog": "turbo_kits",
+      "file": "engine",
+      "part_format": "physics_sim.turbo_configuration/1",
+      "pointers": [
+        "/default_forced_induction"
+      ],
+      "help": "Fit a turbo system to an engine that has none: the turbo, intercooler and wastegate are sized for the installed engine's air flow (data/engines/turbo_kits.json), the boost map is regenerated and a compression ratio above 10:1 is lowered. Boost pressure is adjusted separately in Tuning. Torque-curve engines cannot take a kit; the garage says why."
+    },
+    {
       "id": "turbo_boost_target",
       "label": "Boost target",
       "group": "Turbo calibration",
