@@ -46,8 +46,9 @@ func _open_spatial(rate: int, channels: int) -> RefCounted:
 	var backend: RefCounted = ClassDB.instantiate("PsSpatialAudio")
 	backend.set_reference_distance_m(8.0)
 	backend.set_reflections_gain(0.15)
+	var t0 := Time.get_ticks_usec()
 	var opened: bool = backend.open(rate, channels)
-	print("RG_AUDIO ", backend.get_status())
+	print("RG_AUDIO ", backend.get_status(), " open_ms=%.1f" % ((Time.get_ticks_usec() - t0) / 1000.0))
 	if not opened:
 		backend.close()
 		return null
@@ -68,6 +69,7 @@ func _player(rate: int, point: Vector3) -> AudioStreamPlayer3D:
 
 func _initialize_audio() -> void:
 	_initialized = true
+	var init_t0 := Time.get_ticks_usec()
 	if not "--no-tyre-audio" in OS.get_cmdline_user_args():
 		_wheel_count = simulation.get_vehicle_wheel_count(vehicle_name)
 		tyre_bank = RgTyreSound.new()
@@ -85,8 +87,10 @@ func _initialize_audio() -> void:
 			if tyre_spatial == null:
 				for point in tyre_points:
 					fallback_players.append(_player(RATE, point))
+	var tyres_ms := (Time.get_ticks_usec() - init_t0) / 1000.0
+	var voice_t0 := Time.get_ticks_usec()
 	var voice: Dictionary = simulation.start_engine_audio()
-	print("RG_AUDIO engine voice: ", voice.get("reason", "unknown"))
+	print("RG_AUDIO engine voice: ", voice.get("reason", "unknown"), " start_ms=%.1f tyres_ms=%.1f" % [(Time.get_ticks_usec() - voice_t0) / 1000.0, tyres_ms])
 	if voice.get("active", false):
 		engine_rate = int(voice.rate)
 		engine_points = simulation.get_engine_audio_positions()
