@@ -1,11 +1,11 @@
 {
   "format": "rg.camera_motion/1",
-  "source": "Driver virtual body for the cockpit cameras (core/include/rg/camera_motion.h). The head is a damped spring-mass on the seat per car axis, driven by the chassis acceleration in the car frame (gravity not included, so a constant velocity or a slope gives no offset). Static eye deflection = deflection_m_per_mps2 x acceleration (braking at 1 g moves the eye ~6 cm toward the wheel), soft-limited to limit_m; pitch/roll follow the deflection. All numbers [AS] tuning values, the owner tunes them. The user setting camera.body_motion (0..1, default 1 = full) scales head translation and rotation. Per view gains: head motion only in the cockpit views (owner rule, PR #5); the VR cockpit never rotates the view, has no shake and no FOV change.",
+  "source": "Driver virtual body for the cockpit cameras (core/include/rg/camera_motion.h). The head is a damped spring-mass on the seat per car axis, driven by the chassis acceleration in the car frame (gravity not included, so a constant velocity or a slope gives no offset). Static eye deflection = deflection_m_per_mps2 x acceleration (braking at 1 g moves the eye ~6 cm toward the wheel), soft-limited to limit_m; pitch/roll follow the deflection. All numbers [AS] tuning values, the owner tunes them. Owner drive feedback 2026-10-15 (PR #5): sideways movement way down (lateral deflection 0.005 -> 0.0015, limit 0.07 -> 0.025), front-back a bit down (0.006 -> 0.0045, limit 0.08 -> 0.06), up-down slightly down (vertical 0.003 -> 0.0025, limit 0.04 -> 0.035, shake amplitude 0.003 -> 0.0025, max 0.012 -> 0.010). The user setting camera.body_motion (0..1, default 1 = full) scales head translation and rotation. Per view gains: head motion only in the cockpit views (owner rule, PR #5); the VR cockpit never rotates the view, has no shake and no FOV change.",
   "head": {
     "frequency_hz": [1.4, 1.2, 2.2],
     "damping_ratio": [0.55, 0.5, 0.35],
-    "deflection_m_per_mps2": [0.006, 0.005, 0.003],
-    "limit_m": [0.08, 0.07, 0.04],
+    "deflection_m_per_mps2": [0.0045, 0.0015, 0.0025],
+    "limit_m": [0.06, 0.025, 0.035],
     "pitch_deg_per_m": 40.0,
     "roll_deg_per_m": 40.0,
     "rotation_limit_deg": 3.0,
@@ -15,10 +15,10 @@
   "speed_shake": {
     "start_speed_mps": 15.0,
     "full_speed_mps": 100.0,
-    "amplitude_m": 0.003,
+    "amplitude_m": 0.0025,
     "roughness_gain_s_per_m": 4.0,
     "roughness_filter_hz": 4.0,
-    "max_amplitude_m": 0.012,
+    "max_amplitude_m": 0.010,
     "frequencies_hz": [11.3, 17.9, 23.7]
   },
   "speed_fov": {
