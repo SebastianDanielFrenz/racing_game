@@ -928,8 +928,6 @@ godot::Dictionary RgSimulation::get_vehicle_powertrain(const String& vehicle_nam
         park_fitted = park_fitted || std::holds_alternative<ps::drivetrain::ParkLockDesc>(component.params);
     d["park_lock_fitted"] = park_fitted;
     d["park_lock_engaged"] = p.park_lock_engaged != 0;
-    // Current imported physics has no EPB component; reserve the state contract.
-    d["epb_fitted"] = false;
     d["gear"] = static_cast<int>(p.gear);
     d["gear_target"] = static_cast<int>(p.gear_target);
     d["shift_phase"] = String(shift_phase_name(p.shift_phase));
@@ -958,6 +956,19 @@ godot::Dictionary RgSimulation::get_vehicle_powertrain(const String& vehicle_nam
     d["traction_mode_requested"] = a.tc_requested;
     d["traction_mode_effective"] = a.tc_effective;
     d["traction_mode_name"] = String(rg::traction_mode_name(a.tc_effective));
+    // Electronic parking brake (Q3 / I8) and ABS / ESC (I5 part 2 / I6): fitted bits, switched state, interventions.
+    d["epb_fitted"] = a.epb_fitted;
+    d["epb_state"] = a.epb_state;
+    d["epb_refused"] = a.epb_refused;
+    d["abs_fitted"] = a.abs_fitted;
+    d["abs_on"] = a.abs_on;
+    d["abs_active"] = a.abs_intervening;
+    d["esc_fitted"] = a.esc_fitted;
+    d["esc_modes_available_bits"] = static_cast<int>(a.esc_available_bits);
+    d["esc_mode_requested"] = a.esc_requested;
+    d["esc_mode_effective"] = a.esc_effective;
+    d["esc_mode_name"] = String(rg::esc_mode_name(a.esc_effective));
+    d["esc_active"] = a.esc_intervening;
     d["aero_control_fitted"] = a.aero_fitted;
     d["aero_control_active"] = a.aero_active;
     d["aero_control_target_deg"] = a.aero_target_deg;
