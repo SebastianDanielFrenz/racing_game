@@ -365,7 +365,7 @@ TEST_CASE("drive modes: a mode switch writes the TC and LC defaults into the ses
     CHECK(session.get_control("assist.launch_control") == 0.0); // Normal: launch control off
     step_n(240);
     auto pt = powertrain();
-    CHECK(pt.drive_modes_available_bits == kAllModes);
+    CHECK(pt.drive_modes_available_bits == 0b1111u);
     CHECK(pt.drive_mode_effective == 1);
     CHECK(pt.traction_mode_effective == 1);
     CHECK(session.get_control("assist.launch_control") == 0.0);
