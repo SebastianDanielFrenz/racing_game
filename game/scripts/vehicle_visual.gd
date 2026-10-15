@@ -173,6 +173,13 @@ func _load_model() -> void:
 					_rig_wheel_width[node["name"]] = float(node["wheel"].get("tyre_width", node["wheel"]["width"]))
 	_load_ok = true
 	apply_colours()
+	# Draw calls (perf, 2026-10-15): bake the parts that never move on their own into one surface per material and
+	# take the sun shadow off small cockpit parts (car_mesh_merge.gd). RG_CAR_MERGE=0 keeps the model as loaded.
+	if OS.get_environment("RG_CAR_MERGE") != "0":
+		var merged: Dictionary = preload("res://scripts/car_mesh_merge.gd").merge(_model_root, rig_path, cockpit_json)
+		print("rg_godot vehicle_visual.gd: merged %d static surfaces into %d, kept %d, %d small cockpit parts without shadow, %d shadow surfaces in %d proxies" % [
+			merged["merged_surfaces"], merged["merged_into"], merged["kept_surfaces"], merged["small_parts_shadow_off"],
+			merged["shadow_surfaces_proxied"], merged["shadow_proxies"]])
 	print("rg_godot vehicle_visual.gd: loaded model ", model_absolute_path)
 
 # Paints the model's `paint` and `rim_*` materials with the setup's colours and styles paint,
