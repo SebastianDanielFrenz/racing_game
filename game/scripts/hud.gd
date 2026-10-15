@@ -71,6 +71,17 @@ func _ready() -> void:
 	_prompt_label.visible = false
 	add_child(_prompt_label)
 	_window_start_s = Time.get_ticks_msec() / 1000.0
+	visibility_changed.connect(_on_visibility_changed)
+
+# The line labels exist only while the HUD is shown: a hidden HUD (menus, after a world unload) leaves the node count
+# as it was before the drive (shell_flow_test / garage_test compare it).
+func _on_visibility_changed() -> void:
+	if visible:
+		return
+	for line in _line_labels:
+		line.queue_free()
+	_line_labels.clear()
+	_text_updated_s = -1.0
 
 # "ECO / NORMAL / SPORT / RACING" for the bits of the modes a car offers.
 func _offered_drive_modes(bits: int) -> String:
@@ -195,7 +206,7 @@ func _process_body(_delta: float) -> void:
 
 	# The debug read-out is ~30 lines of changing numbers: setting Label.text re-shapes all of it, and the mode / streaming
 	# / powertrain dictionaries below are copied from native each time. 20 Hz is plenty for text (render stutter, 2026-10-14).
-	if now_s - _text_updated_s < HUD_TEXT_PERIOD_S:
+	if now_s - _text_updated_s < HUD_TEXT_PERIOD_S or not visible:
 		return
 	_text_updated_s = now_s
 
