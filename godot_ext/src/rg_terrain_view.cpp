@@ -629,7 +629,7 @@ void RgTerrainView::sync_road_decks() {
         DeckInstance instance;instance.chunk.mesh=deck->mesh;
         instance.chunk.origin_session[0]=deck->mesh.origin[0]-terrain_->frame().e0_m();
         instance.chunk.origin_session[1]=deck->mesh.origin[1]-terrain_->frame().n0_m();
-        instance.chunk.rgba.assign(deck->mesh.positions.size()/3,deck->land_class==g2m::LandClass::PavedRoad?0x4c4c52ffu:0x5c4729ffu);
+        instance.chunk.rgba.assign(deck->mesh.positions.size()/3,deck->land_class==g2m::LandClass::PavedRoad?0x4c4c5200u:0x5c472900u);
         upload_one_chunk(instance.chunk);
         instance.mesh=mesh_rids_.back();instance.instance=instance_rids_.back();
         mesh_rids_.pop_back();instance_rids_.pop_back();

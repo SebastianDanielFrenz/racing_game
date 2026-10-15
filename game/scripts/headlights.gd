@@ -4,7 +4,9 @@ extends Node
 # (<model>.rig.json lights.head.materials; no lamp sockets exist in the rigs),
 # aimed forward and slightly down. On/off and dipped/main beam follow the
 # shared DriverActions projection ("head_lamp", "main_beam" <- cabin.lights).
-# Beam numbers: data/world/headlights.json.
+# Beam numbers: data/world/headlights.json. Rear: one red SpotLight3D at the midpoint of the tail/brake lamp
+# materials (dim for the tail lamps, stronger while braking) and one white one at the reverse lamps, aimed
+# backward and down; their on/off states are pushed by exterior_lamps.gd (set_states).
 #
 # Cost (gl_compatibility): every visible SpotLight3D adds one more draw pass
 # for each object inside its range (terrain chunks, road ribbons, the car);
@@ -17,7 +19,10 @@ var simulation: Node
 var vehicle_name: String
 var spots: Array[SpotLight3D] = []
 var config: Dictionary = {}
+var rear_spots := {} # "tail" / "reverse" -> SpotLight3D
 var _level := -1
+var _states := {}
+var _rear_key := ""
 
 # model: the glTF root (model space: +Z forward, +X left, +Y up).
 static func attach_to(model: Node3D, sim: Node, car: String, rig: Dictionary) -> Node:
@@ -41,12 +46,41 @@ static func attach_to(model: Node3D, sim: Node, car: String, rig: Dictionary) ->
 		spot.visible = false
 		model.add_child(spot)
 		driver.spots.append(spot)
+	for kind in ["tail", "reverse"]:
+		var spec: Dictionary = driver.config.get(kind, {})
+		var lamp_kind := "brake" if kind == "tail" else "reverse"
+		var rear_materials: Array = rig.get("lights", {}).get(lamp_kind, {}).get("materials", [])
+		if kind == "tail":
+			for m in rig.get("lights", {}).get("tail", {}).get("materials", []):
+				if not m in rear_materials:
+					rear_materials.append(m)
+		var rear: Array = lamp_clusters(model, rear_materials, true)
+		if spec.is_empty() or rear.is_empty():
+			continue
+		var centre := Vector3.ZERO
+		for c in rear:
+			centre += c
+		var rear_spot := SpotLight3D.new()
+		rear_spot.name = "RearLampSpot_" + kind
+		rear_spot.position = centre / rear.size()
+		rear_spot.shadow_enabled = false
+		var rear_rgb: Array = spec.get("colour", [1.0, 0.1, 0.05])
+		rear_spot.light_color = Color(rear_rgb[0], rear_rgb[1], rear_rgb[2])
+		rear_spot.spot_range = float(spec.get("range_m", 12.0))
+		rear_spot.spot_angle = float(spec.get("angle_deg", 60.0))
+		rear_spot.spot_angle_attenuation = float(spec.get("angle_attenuation", 1.0))
+		rear_spot.spot_attenuation = float(spec.get("attenuation", 1.0))
+		var pitch := deg_to_rad(float(spec.get("pitch_down_deg", 15.0)))
+		rear_spot.basis = Basis.looking_at(Vector3(0.0, -sin(pitch), -cos(pitch)), Vector3.UP)
+		rear_spot.visible = false
+		model.add_child(rear_spot)
+		driver.rear_spots[kind] = rear_spot
 	model.add_child(driver)
 	return driver
 
 # Front-face centres of the lamp geometry, one per side (x > 0 left, x < 0
 # right), in model space. Empty when the rig names no head lamp material.
-static func lamp_clusters(model: Node3D, materials: Array) -> Array:
+static func lamp_clusters(model: Node3D, materials: Array, rear := false) -> Array:
 	var sides := {1: [], -1: []}
 	var inverse := model.global_transform.affine_inverse() if model.is_inside_tree() else Transform3D.IDENTITY
 	for node in model.find_children("*", "MeshInstance3D", true, false):
@@ -69,12 +103,12 @@ static func lamp_clusters(model: Node3D, materials: Array) -> Array:
 		if points.is_empty():
 			continue
 		var sum := Vector3.ZERO
-		var front := -INF
+		var front := INF if rear else -INF
 		for p in points:
 			sum += p
-			front = max(front, p.z)
+			front = min(front, p.z) if rear else max(front, p.z)
 		var centre: Vector3 = sum / points.size()
-		centre.z = front + 0.02 # just ahead of the lens, outside the body
+		centre.z = front + (-0.02 if rear else 0.02) # just outside the lens, beyond the body
 		out.append(centre)
 	return out
 
@@ -102,6 +136,23 @@ func set_level(level: int) -> void:
 		spot.spot_attenuation = float(beam.get("attenuation", 1.0))
 		spot.light_energy = float(beam.get("energy", 4.0))
 		spot.basis = Basis.looking_at(direction, Vector3.UP)
+
+# states: lamp action -> bool ("tail_lamp", "brake_lamp", "reverse_lamp"), from exterior_lamps.gd.
+func set_states(states: Dictionary) -> void:
+	_states = states
+	_update_rear()
+
+func _update_rear() -> void:
+	var tail = rear_spots.get("tail")
+	if tail != null:
+		var spec: Dictionary = config.get("tail", {})
+		var braking: bool = bool(_states.get("brake_lamp", false))
+		tail.visible = braking or bool(_states.get("tail_lamp", false))
+		tail.light_energy = float(spec.get("brake_energy", 2.0)) if braking else float(spec.get("energy", 0.6))
+	var reverse = rear_spots.get("reverse")
+	if reverse != null:
+		reverse.visible = bool(_states.get("reverse_lamp", false))
+		reverse.light_energy = float(config.get("reverse", {}).get("energy", 2.0))
 
 func _process(_delta: float) -> void:
 	if simulation == null or spots.is_empty() or not simulation.has_method("get_control"):

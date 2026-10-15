@@ -1,4 +1,5 @@
 extends Node3D
+const SurfaceMaterials := preload("res://scripts/surface_materials.gd")
 const DriverState := preload("res://scripts/driver_state.gd") # preloaded once: this is called several times per frame
 # game/scripts/main.gd — the one game scene (R2.2 R9), built procedurally in
 # _ready() rather than hand-authored as a .tscn (a script-built scene stays in
@@ -105,6 +106,7 @@ var _director: Node
 var _hud: Node
 var _sky: Node            # sky_controller.gd
 var _weather_widget: CanvasLayer # weather_widget.gd (top right)
+var _weather_fx: Node3D          # weather_fx.gd (wet look, rain / snow)
 var _overlay: Node
 var _visuals: Node
 var _roads: Node3D
@@ -362,6 +364,7 @@ func _build_terrain_preview_scene() -> void:
 	# visible at all (Godot's default material ignores vertex COLOR).
 	_terrain_material = ShaderMaterial.new()
 	_terrain_material.shader = load("res://shaders/terrain.gdshader")
+	SurfaceMaterials.shared().apply_terrain(_terrain_material)
 	terrain_view.set_material(_terrain_material.get_rid())
 
 	var spawn_x: float = terrain_view.get_spawn_x()
@@ -387,6 +390,7 @@ func _build_terrain_preview_scene() -> void:
 	# this one home region, roughly 90-880 m ASL, is still far below float
 	# precision concerns at these chunk sizes).
 	terrain_view.set_render_origin(Vector3(roundf(spawn_x), roundf(spawn_y), 0.0))
+	SurfaceMaterials.set_render_origin(Vector3(roundf(spawn_x), roundf(spawn_y), 0.0))
 
 	# --- lighting + sky (same minimal setup as _build_scene's, standalone
 	# here since this branch never calls _build_scene) ---
@@ -474,6 +478,12 @@ func _add_sun_and_sky() -> void:
 	_weather_widget.sky_controller = _sky
 	_weather_widget.simulation = _simulation
 	add_child(_weather_widget)
+	# Wet road look + rain / snow particles (weather_fx.gd, rg/wet_look.h).
+	if _simulation != null and _simulation.has_method("get_wet_look"):
+		_weather_fx = load("res://scripts/weather_fx.gd").new()
+		_weather_fx.name = "WeatherFx"
+		_weather_fx.simulation = _simulation
+		add_child(_weather_fx)
 
 func get_sky_controller() -> Node:
 	return _sky
@@ -611,6 +621,7 @@ func _build_scene(user_args: PackedStringArray) -> void:
 	add_child(_world_view)
 	_terrain_material = ShaderMaterial.new()
 	_terrain_material.shader = load("res://shaders/terrain.gdshader")
+	SurfaceMaterials.shared().apply_terrain(_terrain_material)
 
 	# --- HUD (debug text + streaming banner) ---
 	_hud = CanvasLayer.new()
@@ -934,6 +945,7 @@ func _attach_world_view() -> void:
 		return
 	_world_view.set_material(_terrain_material.get_rid())
 	_world_view.set_render_origin(_simulation.get_render_origin_session())
+	SurfaceMaterials.set_render_origin(_simulation.get_render_origin_session())
 	var chassis := chassis_session_position()
 	if not _world_view.load_preview(chassis.x, chassis.y):
 		_load_failed("RgTerrainView.load_preview: %s" % _world_view.get_last_error())
@@ -1992,6 +2004,12 @@ func _apply_setting(key: String) -> void:
 				DisplayServer.window_set_vsync_mode(DisplayServer.VSYNC_ENABLED if bool(value) else DisplayServer.VSYNC_DISABLED)
 		"graphics.max_fps":
 			Engine.max_fps = int(value)
+		"graphics.surface_detail":
+			# The debug chunk tint (RG_TERRAIN_TINT) is only visible as plain colours.
+			SurfaceMaterials.set_detail("off" if OS.get_environment("RG_TERRAIN_TINT") != "" else str(value))
+		"graphics.rain_density":
+			if _weather_fx != null:
+				_weather_fx.density = float(value)
 		"camera.fov_deg":
 			_director.set_base_fov(float(value))
 		"camera.body_motion":

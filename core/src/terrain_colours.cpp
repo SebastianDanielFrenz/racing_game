@@ -60,16 +60,22 @@ int terrain_tint_mode() {
 
 } // namespace
 
+// Alpha carries the vertex kind for terrain.gdshader's detail textures (never opacity): 1 natural ground (grass/dirt/
+// rock picked from the ramp colour and the slope), 0 road (paved or unpaved told apart by the paint colour: the dirt
+// brown is far redder than the asphalt grey). Two values only, so the interpolation across a road edge never passes
+// through a third kind. The debug tint is drawn with the detail textures off (main.gd), its alpha is 1.
+constexpr float kKindRoad = 0.0f;
+
 TerrainColourTable make_terrain_colour_table(const RoadSurfaceMap& surfaces) {
     TerrainColourTable table;
     for (const g2m::LandClass land_class : {g2m::LandClass::PavedRoad, g2m::LandClass::UnpavedRoad}) {
         const auto id = static_cast<std::uint8_t>(land_class);
         const std::string& name = surfaces.name_for(land_class);
         if (name == kAsphaltName) {
-            table.rgba[id] = pack_rgba(kPavedR, kPavedG, kPavedB, 1.0f);
+            table.rgba[id] = pack_rgba(kPavedR, kPavedG, kPavedB, kKindRoad);
             table.set[id] = true;
         } else if (name == kDirtName) {
-            table.rgba[id] = pack_rgba(kUnpavedR, kUnpavedG, kUnpavedB, 1.0f);
+            table.rgba[id] = pack_rgba(kUnpavedR, kUnpavedG, kUnpavedB, kKindRoad);
             table.set[id] = true;
         }
     }

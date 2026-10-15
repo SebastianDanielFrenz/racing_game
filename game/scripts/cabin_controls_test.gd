@@ -47,13 +47,13 @@ func run() -> void:
 	lamps.update_lamps({},values)
 	var lit := 0
 	for lamp in lamps.lamps:
-		if lamp["action"] in ["indicator_left","indicator_right"]:
+		if _acts(lamp).any(func(a): return a in ["indicator_left","indicator_right"]):
 			check(lamp["material"].emission_enabled,"actual indicator material glows")
 			lit += 1
 	check(lit>=2,"both real indicator materials present")
 	lamps.update_lamps({"gear":-1},{"cabin.brake_lamp":1.0})
 	for lamp in lamps.lamps:
-		if lamp["action"] in ["brake_lamp","reverse_lamp"]: check(lamp["material"].emission_enabled,"brake/reverse glow")
+		if _acts(lamp).any(func(a): return a in ["brake_lamp","reverse_lamp"]): check(lamp["material"].emission_enabled,"brake/reverse glow")
 	if "--capture" in OS.get_cmdline_user_args():
 		lamps.update_lamps({},values)
 		var camera := Camera3D.new()
@@ -78,3 +78,6 @@ func run() -> void:
 	await process_frame
 	print("RG_CABIN_CONTROLS_TEST failures=%d" % failures)
 	quit(1 if failures else 0)
+
+static func _acts(lamp: Dictionary) -> Array:
+	return lamp["kinds"].map(func(k): return k["action"])

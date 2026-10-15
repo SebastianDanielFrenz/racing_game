@@ -1,0 +1,38 @@
+{
+  "format": "rg.surface_textures/1",
+  "_comment": "Ground and road texture sets (CC0, ambientCG; data/credits.json texture_*). Engine-neutral: each layer names its colour / OpenGL normal / roughness maps; the renderer builds its texture arrays from them. tile_m = metres one texture repeat covers (a power of two, so the floating-origin offset can be taken modulo 1024 m). tint multiplies the colour map (the source sets are photographed brighter than a worn road). roughness = the layer's base roughness (the roughness maps are kept for engines that sample them). normal_strength scales the relief. Godot: game/scripts/surface_materials.gd, terrain.gdshader, road.gdshader.",
+  "texture_size": 1024,
+  "layers": [
+    {"id": "asphalt", "color": "asphalt/Asphalt013_1K_Color.jpg", "normal": "asphalt/Asphalt013_1K_NormalGL.jpg", "roughness_map": "asphalt/Asphalt013_1K_Roughness.jpg", "tile_m": 4.0, "tint": [0.75, 0.75, 0.77], "roughness": 0.88, "normal_strength": 0.5},
+    {"id": "concrete", "color": "concrete/Concrete012_1K_Color.jpg", "normal": "concrete/Concrete012_1K_NormalGL.jpg", "roughness_map": "concrete/Concrete012_1K_Roughness.jpg", "tile_m": 4.0, "tint": [0.8, 0.8, 0.82], "roughness": 0.8, "normal_strength": 0.6},
+    {"id": "paving_stones", "color": "paving_stones/PavingStones123_1K_Color.jpg", "normal": "paving_stones/PavingStones123_1K_NormalGL.jpg", "roughness_map": "paving_stones/PavingStones123_1K_Roughness.jpg", "tile_m": 2.0, "tint": [0.75, 0.75, 0.75], "roughness": 0.75, "normal_strength": 1.0},
+    {"id": "sett", "color": "sett/PavingStones048_1K_Color.jpg", "normal": "sett/PavingStones048_1K_NormalGL.jpg", "roughness_map": "sett/PavingStones048_1K_Roughness.jpg", "tile_m": 2.0, "tint": [0.8, 0.8, 0.8], "roughness": 0.75, "normal_strength": 1.0},
+    {"id": "gravel", "color": "gravel/Gravel011_1K_Color.jpg", "normal": "gravel/Gravel011_1K_NormalGL.jpg", "roughness_map": "gravel/Gravel011_1K_Roughness.jpg", "tile_m": 2.0, "tint": [0.7, 0.68, 0.64], "roughness": 0.92, "normal_strength": 1.0},
+    {"id": "grass", "color": "grass/Grass004_1K_Color.jpg", "normal": "grass/Grass004_1K_NormalGL.jpg", "roughness_map": "grass/Grass004_1K_Roughness.jpg", "tile_m": 4.0, "tint": [0.78, 0.82, 0.8], "roughness": 0.95, "normal_strength": 0.7},
+    {"id": "dirt", "color": "dirt/Ground054_1K_Color.jpg", "normal": "dirt/Ground054_1K_NormalGL.jpg", "roughness_map": "dirt/Ground054_1K_Roughness.jpg", "tile_m": 4.0, "tint": [0.62, 0.55, 0.5], "roughness": 0.93, "normal_strength": 0.8},
+    {"id": "rock", "color": "rock/Rock030_1K_Color.jpg", "normal": "rock/Rock030_1K_NormalGL.jpg", "roughness_map": "rock/Rock030_1K_Roughness.jpg", "tile_m": 8.0, "tint": [1.0, 0.98, 0.95], "roughness": 0.85, "normal_strength": 1.0}
+  ],
+  "terrain": {
+    "_comment": "Natural ground (vertex kind 1): grass where the ramp colour is green (green minus red above greenness[0] blends in, fully grass at greenness[1]), dirt elsewhere, rock where the slope (1 - normal up) passes rock_slope[0], fully rock at rock_slope[1]. Paved / unpaved road vertices take paved / unpaved. macro: a second, large-scale lookup of the macro layer that varies the brightness by +-macro_strength so the repeats do not show. Beyond detail_far_m only the layers' mean colours are drawn (no texture lookups).",
+    "grass": "grass", "dirt": "dirt", "rock": "rock", "paved": "asphalt", "unpaved": "gravel",
+    "greenness": [-0.02, 0.12],
+    "rock_slope": [0.18, 0.4],
+    "macro_layer": "dirt", "macro_tile_m": 128.0, "macro_strength": 0.22,
+    "detail_far_m": 600.0
+  },
+  "road": {
+    "_comment": "Ribbon surfaces by road_visual.h flag: asphalt (none), concrete (4096), paving_stones (2048), sett (2048 + 16384: sett, cobblestone), unpaved (8192), verge (the gravel strip). Beyond detail_far_m the mean colour only.",
+    "asphalt": "asphalt", "concrete": "concrete", "paving_stones": "paving_stones", "sett": "sett", "unpaved": "gravel", "verge": "gravel",
+    "detail_far_m": 400.0
+  },
+  "flat_ground": {
+    "_comment": "The flat test world's ground (one physics surface): this layer, with a painted grid of grid_line_width_m lines every grid_spacing_m metres.",
+    "layer": "asphalt", "grid_spacing_m": 50.0, "grid_line_width_m": 0.15
+  },
+  "wet": {
+    "_comment": "Wet look (core rg/wet_look.h maps the physics water film and rain to wetness, puddles and drop density; these are the shading numbers): a fully wet surface keeps darken x its colour and its roughness drops to wet_roughness (natural ground: grass, soil and rock only to ground_wet_roughness, specular ground_wet_specular); puddles (flat spots picked by a large-scale noise, puddle_cover of the area at full puddles) are near mirrors (puddle_roughness) and darker still.",
+    "darken": 0.62, "wet_roughness": 0.18, "wet_specular": 0.5,
+    "ground_wet_roughness": 0.6, "ground_wet_specular": 0.3,
+    "puddle_roughness": 0.04, "puddle_darken": 0.45, "puddle_tile_m": 16.0, "puddle_cover": 0.35, "puddle_spread": 0.1
+  }
+}

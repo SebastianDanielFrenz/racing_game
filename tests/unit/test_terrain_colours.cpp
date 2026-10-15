@@ -3,7 +3,8 @@
 // migration phase 3b moved the chunk build into geo2map (g2m::world::build_view_chunks with a colour hook), so the
 // colours the game paints through the hook are byte-identical to the ones it painted itself. The pins were recorded
 // at 5a3baed (rg::build_static_view_from_lookup); the same bytes come out of the wrapper and of geo2map's
-// build_static_view with rg::chunk_colour_hook.
+// build_static_view with rg::chunk_colour_hook. Re-pinned when the road colours' alpha became the vertex kind (0 =
+// road) for terrain.gdshader's detail textures (PR #7); RGB is unchanged.
 #include "rg/world_terrain.h"
 
 #include <catch2/catch_test_macros.hpp>
@@ -123,13 +124,13 @@ TEST_CASE("terrain chunk colours are pinned", "[world_terrain][terrain_colours]"
     const Hashes standard = colours(rg::RoadSurfaceMap{});
     CHECK(standard.chunks == 62);
     CHECK(standard.road_vertices > 0);
-    CHECK(standard.rgba == 0x1a6d42798596abbfull);
+    CHECK(standard.rgba == 0xec6138b77a54c13full);
     rg::RoadSurfaceMap other;
     other.paved = "concrete"; // an unknown name falls through to the height ramp
     other.unpaved = "asphalt";
     const Hashes renamed = colours(other);
     CHECK(renamed.chunks == standard.chunks);
-    CHECK(renamed.rgba == 0x4053da4791cd7653ull);
+    CHECK(renamed.rgba == 0x227269903ab9a087ull);
     CHECK(colours(rg::RoadSurfaceMap{}, true).rgba == standard.rgba);
     CHECK(colours(other, true).rgba == renamed.rgba);
 }

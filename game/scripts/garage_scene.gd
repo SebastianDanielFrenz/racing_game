@@ -23,7 +23,7 @@ extends CanvasLayer
 
 const LAYER_REAL := 1
 const LAYER_MIRROR := 2
-const PALETTE_ROUGHNESS := 0.3
+const CarMaterials := preload("res://scripts/car_materials.gd")
 
 var garage: Node # RgGarage, set by main.gd before add_child
 var vehicle_id: String = ""
@@ -179,9 +179,26 @@ func _apply_tyre_widths() -> void:
 				if not wheel.has_meta("stock_width_scale"):
 					wheel.set_meta("stock_width_scale",wheel.scale.x)
 				var front: bool = str(corner).begins_with("F")
-				var reference: float = (0.265 if front else 0.325) if str(garage.get_vehicle(str(id)).get("model_path", "")).get_file() == "car_hyper.glb" else 0.225
+				var model_path := str(garage.get_vehicle(str(id)).get("model_path", ""))
+				var reference: float = (0.265 if front else 0.325) if model_path.get_file() == "car_hyper.glb" else 0.225
+				reference = float(_rig_wheel_widths(model_path).get("wheel_" + corner, reference))
 				var width: float = widths.x if front else widths.y
 				wheel.scale.x = float(wheel.get_meta("stock_width_scale")) * width / reference if width > 0.0 else float(wheel.get_meta("stock_width_scale"))
+
+# Modelled wheel widths of a rig with "wheel_width_scale": "rig" (imported models), else {}.
+var _rig_width_cache := {}
+func _rig_wheel_widths(model_path: String) -> Dictionary:
+	if not _rig_width_cache.has(model_path):
+		var out := {}
+		var rig_path := model_path.get_basename() + ".rig.json"
+		if model_path != "" and FileAccess.file_exists(rig_path):
+			var rig = JSON.parse_string(FileAccess.get_file_as_string(rig_path))
+			if rig is Dictionary and rig.get("wheel_width_scale", "") == "rig":
+				for node in rig.get("nodes", []):
+					if node.has("wheel"):
+						out[node["name"]] = float(node["wheel"].get("tyre_width", node["wheel"]["width"]))
+		_rig_width_cache[model_path] = out
+	return _rig_width_cache[model_path]
 
 func go_to_area(area_id: String, instant: bool = false) -> void:
 	garage.camera_go_to(area_id, instant)
@@ -790,14 +807,6 @@ func _unique_materials(model: Node) -> void:
 			copy.resource_name = src.resource_name
 			mi.set_surface_override_material(s, copy)
 
-func _material_role(mat: Material) -> String:
-	var n := mat.resource_name.to_lower()
-	if n == "paint" or n.begins_with("paint"):
-		return "paint"
-	if n.begins_with("rim"):
-		return "rim"
-	return ""
-
 func _apply_colours() -> void:
 	if not _cars.has(vehicle_id):
 		return
@@ -810,21 +819,7 @@ func _apply_colours() -> void:
 			var mat := mi.get_surface_override_material(s)
 			if not mat is StandardMaterial3D:
 				continue
-			var std := mat as StandardMaterial3D
-			var role := _material_role(std)
-			if role == "paint":
-				std.vertex_color_use_as_albedo = false
-				std.albedo_texture = null
-				std.albedo_color = _paint
-				std.metallic = 0.55
-				std.roughness = PALETTE_ROUGHNESS
-				std.clearcoat_enabled = true
-				std.clearcoat = 1.0
-				std.clearcoat_roughness = 0.06
-			elif role == "rim":
-				std.vertex_color_use_as_albedo = false
-				std.albedo_texture = null
-				std.albedo_color = _rim
-				std.metallic = 0.9
-				std.roughness = 0.25
+			var role := CarMaterials.role_of(mat)
+			if role != "":
+				CarMaterials.style(mat as StandardMaterial3D, role, _paint if role == "paint" else (_rim if role == "rim" else Color(0, 0, 0, 0)))
 

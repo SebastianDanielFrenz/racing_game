@@ -1,4 +1,5 @@
 extends Node3D
+const SurfaceMaterials := preload("res://scripts/surface_materials.gd")
 # CPU road geometry on a worker; rendering resources on the main thread.
 var view: Node
 var simulation: Node
@@ -27,6 +28,7 @@ func _ready() -> void:
 	settings["surface_lift_m"] = clampf(float(settings.get("surface_lift_m",.018)),.005,.04)
 	_ring.configure({"full_m":float(settings.distance_m),"empty_keeps_resident":true})
 	_material.shader = preload("res://shaders/road.gdshader")
+	SurfaceMaterials.shared().apply_road(_material)
 	_material.set_shader_parameter("line_width_m",clampf(float(settings.get("line_width_m",.15)),.08,.3))
 	_thread.start(_worker)
 func shutdown() -> void:

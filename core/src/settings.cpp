@@ -80,6 +80,13 @@ std::vector<SettingDef> build_schema() {
     s.push_back(make_int("graphics", "max_fps", "Maximum frame rate",
                          "Caps the render rate. 0 = unlimited. The simulation runs at its own fixed rate either way.", 0,
                          0.0, 360.0, 10.0));
+    s.push_back(make_choice("graphics", "surface_detail", "Surface detail",
+                            "Ground and road textures. off = plain colours (cheapest), low = colour textures, high = "
+                            "colour and relief (normal) textures, wet-road reflections.",
+                            "high", {"off", "low", "high"}));
+    s.push_back(make_float("graphics", "rain_density", "Rain drops",
+                           "Density of the falling rain and snow around the camera. 0 = none (the road still gets wet).",
+                           1.0, 0.0, 1.0, 0.1));
     s.push_back(make_float("camera", "fov_deg", "Field of view",
                            "Vertical field of view of the driving cameras, in degrees.", 70.0, 50.0, 110.0, 1.0));
     s.push_back(make_float("camera", "body_motion", "Driver body motion",
