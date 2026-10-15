@@ -69,4 +69,9 @@ struct Destination {
 // Projects (lat, lon) into the session frame of a world whose origin is (zone N, e0, n0) and checks it.
 Destination check_destination(double lat, double lon, int utm_zone, double e0, double n0, double maximum_distance_m);
 
+// The inverse of the forward projection above for a northern-hemisphere zone: UTM easting/northing in metres (false
+// easting included) -> WGS84 lat/lon in degrees (the owner's debug marks, pasted as "lat, lon"). std::nullopt for a zone
+// outside 1..60 or non-finite input.
+std::optional<GeoPoint> utm_to_latlon(int utm_zone, double easting, double northing);
+
 } // namespace rg

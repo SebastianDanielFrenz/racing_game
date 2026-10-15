@@ -172,4 +172,11 @@ Destination check_destination(double lat, double lon, int utm_zone, double e0, d
     return d;
 }
 
+std::optional<GeoPoint> utm_to_latlon(int utm_zone, double easting, double northing) {
+    if (!std::isfinite(easting) || !std::isfinite(northing) || utm_zone < 1 || utm_zone > 60) return std::nullopt;
+    static const g2m::geo::Utm utm(g2m::geo::kWGS84);
+    const g2m::geo::TmReverse r = utm.reverse(g2m::geo::UtmZone{utm_zone, g2m::geo::Hemisphere::North}, easting, northing);
+    return GeoPoint{r.lat, r.lon};
+}
+
 } // namespace rg
