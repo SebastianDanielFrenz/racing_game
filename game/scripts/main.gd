@@ -1387,6 +1387,7 @@ func _forward_driving(live: bool, delta: float) -> void:
 		if write["channel"] == "ignition": _input_map.sync_ignition(float(write["value"]))
 		if write["channel"] == "assist.drive_mode": drive_mode_change = roundi(write["value"])
 	_input_map.advance_cabin(_simulation,pt,delta,true,VEHICLE_NAME)
+	_save_light_mode_if_changed()
 	if drive_mode_change >= 0 and _hud != null:
 		var requested := pt.duplicate()
 		requested["drive_mode_effective"] = drive_mode_change
@@ -2140,6 +2141,17 @@ func set_drive_view(view: String) -> void:
 	if _simulation != null:
 		_simulation.set_road_ahead_wanted(view == "cinematic")
 
+# The headlamp switch (auto/on/off, the lights key cycles it) persists like a setting: saved when it changes.
+var _saved_light_mode := ""
+func _save_light_mode_if_changed() -> void:
+	if _shell == null or _input_map == null:
+		return
+	var mode: String = _input_map.get_light_mode()
+	if mode != _saved_light_mode:
+		_saved_light_mode = mode
+		_shell.set_setting("cabin.light_mode", mode)
+		_shell.save_settings()
+
 # Sun shadows and 3D resolution scale (perf, 2026-10-15). The defaults (high, 1.0) are the look before these settings
 # existed: four PSSM cascades to 300 m with terrain casting, native resolution. Also re-applied when a world's terrain
 # view starts (the terrain's cast flag lives on its instances).
@@ -2166,6 +2178,10 @@ func _apply_graphics_quality() -> void:
 func _apply_setting(key: String) -> void:
 	var value: Variant = _shell.get_setting(key)
 	match key:
+		"cabin.light_mode":
+			if _input_map != null:
+				_input_map.set_light_mode(str(value))
+			_saved_light_mode = str(value)
 		"graphics.window_mode":
 			var mode := DisplayServer.WINDOW_MODE_WINDOWED
 			if str(value) == "fullscreen":

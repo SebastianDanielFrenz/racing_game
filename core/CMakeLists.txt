@@ -89,6 +89,7 @@ add_library(rg_core STATIC
     src/shell_flow.cpp
     src/sky.cpp
     src/time_weather.cpp
+    src/exposure.cpp
     src/climate.cpp
     src/wet_look.cpp
     src/weather_sync.cpp

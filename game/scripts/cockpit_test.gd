@@ -32,6 +32,7 @@ class FakeActions:
 	extends RefCounted
 	var sim: Node
 	var events: Array = []
+	var light_mode := 0 # 0 auto (a daylit stand-in: lamps off), 1 on, 2 off - the rg::LightMode cycle
 	func submit(id: String, kind: int, value: float, source: int) -> bool:
 		events.append({"id": id, "kind": kind, "value": value, "source": source})
 		match id:
@@ -39,7 +40,12 @@ class FakeActions:
 			"indicator_left": sim.controls["cabin.indicator"] = 1.0 if value != 0.0 else 0.0
 			"indicator_right": sim.controls["cabin.indicator"] = -1.0 if value != 0.0 else 0.0
 			"horn": sim.controls["cabin.horn"] = 1.0 if (kind == 2 and value != 0.0) else 0.0
-			"lights": sim.controls["cabin.lights"] = value
+			"lights":
+				if kind == 0: # Press cycles auto -> on -> off -> auto
+					light_mode = (light_mode + 1) % 3
+					sim.controls["cabin.lights"] = 1.0 if light_mode == 1 else 0.0
+				else:
+					sim.controls["cabin.lights"] = value
 		return true
 	func state(id: String, _snapshot: Dictionary, channels: Dictionary) -> Dictionary:
 		return {"active": float(channels.get("cabin." + id, 0.0)) != 0.0}
@@ -238,7 +244,7 @@ func _test_shared_switches(ck: Node3D, sim: FakeSim, spec: Dictionary, name: Str
 		elif ch == "lights":
 			fake.events.clear()
 			check(ck.activate(node, 1), "%s: %s clicks" % [name, node])
-			check(fake.events.size() == 1 and fake.events[0] == {"id": "lights", "kind": 2, "value": 1.0, "source": 3}, "%s: light switch click submits lights Set 1 from the cockpit mouse (%s)" % [name, fake.events])
+			check(fake.events.size() == 1 and fake.events[0] == {"id": "lights", "kind": 0, "value": 1.0, "source": 3}, "%s: light switch click submits a lights Press (the auto/on/off cycle) from the cockpit mouse (%s)" % [name, fake.events])
 			check(ck.get_cosmetic("lights") == true, name + ": light switch follows the projection (on)")
 			sim.controls["cabin.lights"] = 2.0 # O key held for main beam: still on
 			check(ck.get_cosmetic("lights") == true, name + ": light switch shows on for main beam")
@@ -246,7 +252,7 @@ func _test_shared_switches(ck: Node3D, sim: FakeSim, spec: Dictionary, name: Str
 			check(ck.get_cosmetic("lights") == false, name + ": light switch follows a change made elsewhere")
 			ck.activate(node, 1)
 			ck.activate(node, 1)
-			check(fake.events[-1]["value"] == 0.0 and ck.get_cosmetic("lights") == false, name + ": second click switches the lights off")
+			check(fake.events.size() == 3 and fake.events[-1]["kind"] == 0 and ck.get_cosmetic("lights") == false, name + ": two more clicks cycle on -> off -> auto (daylight: off)")
 		elif ch == "indicator":
 			fake.events.clear()
 			ck.activate(node, 1) # off -> left
