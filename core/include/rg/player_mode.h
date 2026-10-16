@@ -53,6 +53,7 @@
 #include <cstdint>
 #include <optional>
 #include <span>
+#include <string>
 #include <string_view>
 
 namespace rg {
@@ -139,6 +140,12 @@ struct DroneCandidate {
 [[nodiscard]] std::optional<std::uint64_t> next_drone_target(std::optional<std::uint64_t> current,
                                                              std::span<const DroneCandidate> candidates,
                                                              double ref_x, double ref_y, double max_range_m);
+
+// The HUD label of a drone target: "own car" (nullopt), "NPC truck" (the id of the NPC truck), "NPC lorry #n" (a
+// traffic actor that is a lorry) or "NPC car #n". `npc_truck_id` is Session::kNpcTruckVehicleId; `is_lorry` is the
+// traffic actor's own flag (only consulted for ids other than the truck).
+[[nodiscard]] std::string drone_target_label(std::optional<std::uint64_t> target, std::uint64_t npc_truck_id,
+                                             bool is_lorry);
 
 class PlayerModeMachine {
 public:
