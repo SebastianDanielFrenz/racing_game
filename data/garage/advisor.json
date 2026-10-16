@@ -151,7 +151,50 @@
           "suggestion": ""
         }
       }
+    },
+    "CoolantTemperature": {
+      "option": "cooling_radiator",
+      "option_help": "Damage-model data: how long the coolant takes to reach the car's overheat warning at constant full power on a hot day, from the warm spawn state (rg::transient_thermal, the physics model's own two-lump time history with its heat capacities; check settings in data/cooling_systems/cooling_upgrades.json). Never = clean, later than thermal_time.critical_within_s = a warning, sooner = critical. The engine block (head gasket, cylinder head) takes the damage; the radiator, fan and block cooling options carry the heat off. More fuel burned (a turbo kit, more boost, N2O) means more heat.",
+      "title": "The coolant overheats under sustained full power",
+      "lines": [
+        "At {rpm} and full power the coolant reaches the {limit} warning after about {time} on a {ambient} day with {air_speed} of air through the radiator (it would settle at {value}).",
+        "The engine block takes the damage when it is held there."
+      ],
+      "suggestion": "A bigger radiator, a stronger fan or more block cooling, or less boost; or lift before {time} of full power.",
+      "variants": {
+        "burst": {
+          "title": "The coolant overheats within a minute",
+          "lines": [
+            "At {rpm} and full power the coolant reaches the {limit} warning after only about {time} on a {ambient} day with {air_speed} of air through the radiator (it would settle at {value}).",
+            "The engine block takes the damage when it is held there."
+          ]
+        }
+      }
+    },
+    "OilTemperature": {
+      "option": "cooling_oil_cooler",
+      "option_help": "Damage-model data: how long the oil takes to reach the check's oil limit (cooling_upgrades.json check.oil_limit_c) at constant full power on a hot day, from the warm spawn state (rg::transient_thermal). Hot oil thins and the bearings (crankshaft) wear. An oil cooler removes heat in proportion to the air speed.",
+      "title": "The oil runs too hot under sustained full power",
+      "lines": [
+        "At {rpm} and full power the oil reaches {limit} after about {time} on a {ambient} day with {air_speed} of air (it would settle at {value}).",
+        "The crankshaft bearings take the damage when it is held there."
+      ],
+      "suggestion": "An oil cooler or a bigger one; or lift before {time} of full power.",
+      "variants": {
+        "burst": {
+          "title": "The oil runs too hot within a minute",
+          "lines": [
+            "At {rpm} and full power the oil reaches {limit} after only about {time} on a {ambient} day with {air_speed} of air (it would settle at {value}).",
+            "The crankshaft bearings take the damage when it is held there."
+          ]
+        }
+      }
     }
+  },
+
+  "thermal_time": {
+    "critical_within_s": 60.0,
+    "source": "Owner answer on PR #28 (option C): the cooling check reports the time to the coolant / oil limit at constant full power, from the warm spawn state, not only the steady temperature. A limit reached after more than critical_within_s is a warning (the car can do a long pull, not minutes of it), within it critical; a setup whose temperatures settle below the limit is clean."
   },
 
   "loader_warnings": {

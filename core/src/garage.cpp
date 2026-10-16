@@ -208,6 +208,23 @@ std::unique_ptr<Garage> Garage::open(const GarageConfig& config, std::string* er
         }
     }
     {
+        // Cooling system upgrades (rg/cooling_upgrades.h): optional file, strict when present.
+        std::string path = config.cooling_upgrades_path;
+        if (path.empty()) {
+            const std::string dflt = config.repo_root + "/data/cooling_systems/cooling_upgrades.json";
+            std::error_code ec;
+            if (fs::is_regular_file(fs::path(dflt), ec)) path = dflt;
+        }
+        if (!path.empty()) {
+            auto cfg = load_cooling_upgrades(path, &e);
+            if (!cfg) {
+                if (err != nullptr) *err = e;
+                return nullptr;
+            }
+            g->ctx_.cooling_upgrades = std::make_shared<const CoolingUpgradeConfig>(*cfg);
+        }
+    }
+    {
         // Base part masses (rg/part_mass.h): optional file, strict when present.
         std::string path = config.part_masses_path;
         if (path.empty()) {

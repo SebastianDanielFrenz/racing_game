@@ -819,6 +819,10 @@
           "detail": "Nominal 19 kW shot"
         }
       ]
-    }
+    },
+    {"id": "cooling_radiator", "label": "Radiator", "group": "Cooling", "area": "engine", "kind": "file_choice", "catalog": "cooling_upgrades", "cooling_part": "radiator", "file": "vehicle", "part_format": "rg.cooling_upgrades/1", "pointers": ["/cooling_system"], "help": "Radiator grades scale the car's own radiator: frontal area, heat exchange per area and, for the race grade, the ram air coefficient (data/cooling_systems/cooling_upgrades.json). A bigger radiator lowers the steady coolant temperature when the engine burns more fuel (a turbo kit, a higher boost target, N2O). It weighs more: the part-mass tree gets a node under the cooling system."},
+    {"id": "cooling_fan", "label": "Cooling fan", "group": "Cooling", "area": "engine", "kind": "file_choice", "catalog": "cooling_upgrades", "cooling_part": "fan", "file": "vehicle", "part_format": "rg.cooling_upgrades/1", "pointers": ["/cooling_system"], "help": "A stronger fan moves more air through the radiator when the car is slow; above about 10 m/s the ram air is faster than the fan and the fan changes nothing. It also switches on a few degrees earlier."},
+    {"id": "cooling_oil_cooler", "label": "Oil cooler", "group": "Cooling", "area": "engine", "kind": "file_choice", "catalog": "cooling_upgrades", "cooling_part": "oil_cooler", "file": "vehicle", "part_format": "rg.cooling_upgrades/1", "pointers": ["/cooling_system"], "help": "An oil-to-air cooler adds heat rejection from the oil that grows with the speed of the air, per litre of displacement. The thermostat only regulates the coolant, so a cooler is the way to keep a hard-driven engine's oil down."},
+    {"id": "cooling_block_cooling", "label": "Block cooling", "group": "Cooling", "area": "engine", "kind": "file_choice", "catalog": "cooling_upgrades", "cooling_part": "block_cooling", "file": "vehicle", "part_format": "rg.cooling_upgrades/1", "pointers": ["/cooling_system"], "help": "The engine thermal model has no water-jacket geometry, so the block is cooled by what it does have: a stronger coolant pump, more coolant in the block (slower to heat up, same steady state) and a thermostat that opens earlier. The setup check names the engine block as the part at risk when the coolant runs hotter than its limit."}
   ]
 }

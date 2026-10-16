@@ -76,6 +76,7 @@ add_executable(rg_unit_tests
   test_engine_garage.cpp
   test_turbo_kit.cpp
   test_engine_internals.cpp
+  test_cooling_upgrades.cpp
   test_engine_bore.cpp
   test_gearbox_swap.cpp
   test_part_mass.cpp
