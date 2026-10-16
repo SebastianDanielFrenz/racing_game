@@ -29,6 +29,7 @@
 
 #include <nlohmann/json.hpp>
 
+#include <limits>
 #include <map>
 #include <optional>
 #include <string>
@@ -75,8 +76,10 @@ struct CoolingCheckConfig {
     double max_rpm_fraction_of_limiter = 0.0; // > 0: sweep points above this share of the rev limiter are not checked
     double power_band = 0.95;              // only sweep points with at least this share of the peak power are checked
     double friction_power_fraction = 0.09; // friction heat as a share of the shaft power
-    double near_margin_k = 5.0;            // advice from this far below a limit
-    double exceeded_margin_k = 10.0;       // critical from this far above a limit
+    // The transient (transient_thermal): simulated from the warm spawn state for at most transient_horizon_s at a step of
+    // transient_step_s. How soon a limit is reached grades the item (advisor.json thermal_time).
+    double transient_horizon_s = 1800.0;
+    double transient_step_s = 0.25;
     double oil_limit_c = 135.0;
     std::string source;
 };
@@ -146,5 +149,22 @@ struct SteadyThermal {
 // time history. `wall_heat_w` = wall_heat_fraction x the fuel power, `friction_heat_w` the friction power.
 SteadyThermal steady_thermal(const ps::drivetrain::EngineThermalConfig& config, double engine_rpm, double wall_heat_w,
                              double friction_heat_w, double ambient_c, double ram_speed_m_s);
+
+// ---- time to the limit (the setup check, owner answer on PR #28: option C) ------------------------------------------------
+
+struct ThermalTransient {
+    // Seconds of constant full power until the coolant / oil first reaches its limit; NaN = not within the horizon (or the
+    // temperatures settle below it first).
+    double coolant_limit_s = std::numeric_limits<double>::quiet_NaN();
+    double oil_limit_s = std::numeric_limits<double>::quiet_NaN();
+    double end_coolant_c = 0.0, end_oil_c = 0.0; // where the run stopped
+};
+// The physics model's own time history (physics_sim engine_thermal.cpp step(): the two lumps with their heat capacities,
+// backward Euler, thermostat wax lag + play, fan hysteresis, eps-NTU radiator) at a constant rpm, heat input and ram air, started
+// from the warm spawn state (coolant a quarter into the thermostat band, oil at its reference temperature, fan off). Stops when
+// both limits are reached, when both lumps have settled, or after `horizon_s`.
+ThermalTransient transient_thermal(const ps::drivetrain::EngineThermalConfig& config, double engine_rpm, double wall_heat_w,
+                                   double friction_heat_w, double ambient_c, double ram_speed_m_s, double coolant_limit_c,
+                                   double oil_limit_c, double horizon_s, double step_s);
 
 } // namespace rg

@@ -382,21 +382,26 @@ cooler) and the vehicle's engine thermal override (block cooling).
 * **Availability.** The options are offered on every car with a cooling_system; a car without one gets the option unavailable with
   the reason. Each `SetupPart` carries `fits` / `fit_reason` (a grade the engine's file cannot work on, e.g. a per-litre grade
   without a displacement); the garage hides a non-fitting tile unless "show all" is on.
-* **Setup check.** `CoolantTemperature` / `OilTemperature` rules (advisor.json build_rules): the setup check computes the steady
-  state of the physics model (`rg::steady_thermal`, the same two-lump / eps-NTU / thermostat / fan balance) for the sweep points
-  up to 0.9 x the rev limiter and within 5 % of the peak power of those (a car tops out in its top gear below the limiter), on a 30 C day with the ram air that power holds (11 m/s x cbrt(kW)). Advice from 5 K under
-  the limit, a warning above it, critical from 10 K above. The limit is the car's own `warnings.overheat_c` (coolant) or 135 C
-  (oil). Items name `damage_part` (`engine_block` for the coolant, `crankshaft` for the oil film) and the option that fixes it
-  (`cooling_radiator`, `cooling_oil_cooler`). Nothing is clamped.
-* **Stock cars.** Every catalog car except the two hypercars is clean. The hypercars (car_hyper 135 C coolant / 145 C oil,
-  car_hyper_n2o 164 / 187 C) are flagged critical: the steady state of their full dyno power at top-speed air is above the
-  limits. That is by design, not a bug: data/cooling_systems/hyper.json sizes the radiator for a 60 s pull at top speed, not for
-  minutes of it. With the race radiator and race oil cooler the hypercar's check is clean (`[.][cooling][long]`).
-* **Measured.** car_hyper, 35 C, full throttle 170 s to 413 km/h: stock coolant 117.1 C / oil 123.2 C at the end, race
-  radiator + race oil cooler 93.9 C / 93.0 C. `steady_thermal` at the end of the run predicts 117.3 C (stock) and 94.1 C
-  (race): the estimate agrees with the simulation within 0.3 K on the coolant. The run is not itself a steady state at full
-  dyno power (the strip ends first), so the check's 135 C for the stock hypercar is the estimator at the dyno's fuel flow, not a
-  simulated number.
+* **Setup check.** `CoolantTemperature` / `OilTemperature` rules (advisor.json build_rules). Owner answer on PR #28
+  (option C): the check reports the TIME to the limit at constant full power, not only the steady temperature.
+  `rg::transient_thermal` runs the physics model's own two-lump time history (the engine thermal file's heat capacities,
+  backward Euler, thermostat wax lag and play, fan hysteresis, eps-NTU radiator) from the warm spawn state, for the sweep
+  points up to 0.9 x the rev limiter and within 5 % of the peak power of those (a car tops out in its top gear below the
+  limiter), on a 30 C day with the ram air that power holds (11 m/s x cbrt(kW)); step 0.25 s, horizon 1800 s
+  (cooling_upgrades.json check). The soonest point counts: never reached = clean, reached after more than
+  `thermal_time.critical_within_s` (60 s, advisor.json) = a warning, sooner = critical. The text names the time, the rpm, the
+  air speed and the steady temperature it would settle at (`rg::steady_thermal`). The limit is the car's own
+  `warnings.overheat_c` (coolant) or 135 C (oil). Items name `damage_part` (`engine_block` for the coolant, `crankshaft` for
+  the oil film) and the option that fixes it (`cooling_radiator`, `cooling_oil_cooler`). Nothing is clamped.
+* **Stock cars.** Every catalog car is clean except the nitrous hypercar. data/cooling_systems/hyper.json was upsized
+  for this check (owner on PR #28: 1.4 m2 of radiator core, UA_ref 7200 W/K, ram 0.22, fan 7 m/s, oil cooler 1.0 W/K per
+  m/s): stock car_hyper settles at 99.6 C coolant / 120.4 C oil and reaches neither limit (the first sizing reached 118 C
+  after 16 s and settled at 134.5 C: critical). car_hyper_n2o shares the cooling system and the dyno sweep sprays without
+  end: it settles at 119.6 C and reaches 118 C after 10 s (critical; the thermostat lag overshoots the steady figure), the oil
+  135 C after 107 s; a real shot lasts 35 s.
+* **Measured.** car_hyper, 35 C, full throttle 170 s to 413 km/h: stock coolant 96.2 C / oil 110.8 C at the end (first
+  sizing 117.1 / 123.2 C), race radiator + race oil cooler 93.9 C / 89.3 C. `steady_thermal` at the end of the run predicts
+  96.2 C (stock) and 93.5 C (race). ISA 15 C: peak 99.2 C during the pull, plateau 89-95 C.
 
 Tests: tests/unit/test_cooling_upgrades.cpp `[cooling]` (table, options on every car, materialised files, mass sum, steady check,
 advisor items); `[.][cooling][long]` runs the measurements above and the check on every stock car.

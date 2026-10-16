@@ -267,8 +267,8 @@ std::optional<CoolingUpgradeConfig> parse_cooling_upgrades(const std::string& js
             {"power_band", &c.check.power_band, 0.0, 1.0},
             {"max_rpm_fraction_of_limiter", &c.check.max_rpm_fraction_of_limiter, 0.0, 1.0},
             {"friction_power_fraction", &c.check.friction_power_fraction, 0.0, 0.5},
-            {"near_margin_k", &c.check.near_margin_k, 0.0, 50.0},
-            {"exceeded_margin_k", &c.check.exceeded_margin_k, 0.0, 100.0},
+            {"transient_horizon_s", &c.check.transient_horizon_s, 10.0, 7200.0},
+            {"transient_step_s", &c.check.transient_step_s, 0.01, 2.0},
             {"oil_limit_c", &c.check.oil_limit_c, 80.0, 200.0},
         };
         for (const Field& f : fields) {
@@ -439,6 +439,16 @@ double effectiveness(double ntu, double cr) {
     if (cr < 1e-9) return 1.0 - std::exp(-ntu);
     return 1.0 - std::exp((1.0 / cr) * std::pow(ntu, 0.22) * (std::exp(-cr * std::pow(ntu, 0.78)) - 1.0));
 }
+
+// engine_thermal.cpp radiator_conductance: eps x C_min of the radiator at these mass flows.
+double radiator_g(const ps::drivetrain::CoolingSystemDesc& c, const ps::drivetrain::EngineThermalDesc& e, double m_air, double m_coolant) {
+    if (!(m_air > 0.0) || !(m_coolant > 0.0)) return 0.0;
+    const double c_a = m_air * kCpAir;
+    const double c_c = m_coolant * e.coolant_cp_j_kg_k;
+    const double ua = c.radiator.ua_ref_w_k * std::pow(m_air / c.radiator.air_mass_flow_ref_kg_s, c.radiator.ua_exponent);
+    const double c_min = std::min(c_a, c_c), c_max = std::max(c_a, c_c);
+    return effectiveness(ua / c_min, c_min / c_max) * c_min;
+}
 } // namespace
 
 SteadyThermal steady_thermal(const ps::drivetrain::EngineThermalConfig& cfg, double rpm, double wall_w, double fric_w, double ambient_c,
@@ -464,14 +474,7 @@ SteadyThermal steady_thermal(const ps::drivetrain::EngineThermalConfig& cfg, dou
         const double v_face = std::max(c.radiator.ram_coefficient * ram, fan ? c.fan.face_velocity_m_s : 0.0);
         const double m_air = rho_air * c.radiator.frontal_area_m2 * v_face;
         const double m_coolant = x * pump_l_min / 60000.0 * e.coolant_density_kg_m3;
-        double g_rad = 0.0;
-        if (m_air > 0.0 && m_coolant > 0.0) {
-            const double c_a = m_air * kCpAir;
-            const double c_c = m_coolant * e.coolant_cp_j_kg_k;
-            const double ua = c.radiator.ua_ref_w_k * std::pow(m_air / c.radiator.air_mass_flow_ref_kg_s, c.radiator.ua_exponent);
-            const double c_min = std::min(c_a, c_c), c_max = std::max(c_a, c_c);
-            g_rad = effectiveness(ua / c_min, c_min / c_max) * c_min;
-        }
+        const double g_rad = radiator_g(c, e, m_air, m_coolant);
         const double to = (q_o + g_oc * te + g_oa * ta) / (g_oc + g_oa);
         return State{te, to, g_rad, x};
     };
@@ -498,6 +501,70 @@ SteadyThermal steady_thermal(const ps::drivetrain::EngineThermalConfig& cfg, dou
     out.radiator_w = s.g_rad * (s.te - ta);
     out.fan_on = fan_on;
     out.thermostat_opening = s.x;
+    return out;
+}
+
+ThermalTransient transient_thermal(const ps::drivetrain::EngineThermalConfig& cfg, double rpm, double wall_w, double fric_w, double ambient_c,
+                                   double ram_mps, double coolant_limit_c, double oil_limit_c, double horizon_s, double step_s) {
+    namespace pd = ps::drivetrain;
+    const pd::EngineThermalDesc& e = cfg.engine;
+    const pd::CoolingSystemDesc& c = cfg.cooling;
+    ThermalTransient out;
+    const double ta = ambient_c + pd::kCelsiusToKelvin;
+    const double ram = std::max(0.0, ram_mps);
+    const double dt = step_s;
+    // Heat per step, split as engine_thermal.cpp step() does.
+    const double q_e = (wall_w + (1.0 - e.friction_to_oil_fraction) * fric_w) * dt;
+    const double q_o = e.friction_to_oil_fraction * fric_w * dt;
+    const double g_ba = e.block_air_w_k + e.block_air_w_k_per_m_s * ram;
+    const double g_oa = e.oil_air_w_k + (e.oil_air_w_k_per_m_s + c.oil_cooler_air_w_k_per_m_s) * ram;
+    const double g_oc = e.oil_capacity_j_k / e.oil_coolant_time_constant_s;
+    const double rho_air = kPressurePa / (kGasConstantAir * ta);
+    const double pump_l_min = e.pump_l_min_per_krpm * (std::max(0.0, rpm) / 1000.0);
+    const double coolant_limit_k = coolant_limit_c + pd::kCelsiusToKelvin;
+    const double oil_limit_k = oil_limit_c + pd::kCelsiusToKelvin;
+
+    // The warm spawn state (engine_thermal.cpp's constructor): coolant a quarter into the thermostat's opening band, oil at
+    // its reference temperature, wax and play at the coolant, fan off.
+    double te = e.thermostat.open_k + 0.25 * (e.thermostat.full_open_k - e.thermostat.open_k);
+    double to = e.oil.reference_temperature_k;
+    double wax = te, play = te;
+    bool fan = false;
+    const long steps = static_cast<long>(std::ceil(horizon_s / dt));
+    int quiet = 0;
+    for (long i = 1; i <= steps; ++i) {
+        // 1. Thermostat (wax lag, play, opening) and 2. fan hysteresis, both from the old engine temperature.
+        const double a_wax = dt / e.thermostat.time_constant_s;
+        wax = (wax + a_wax * te) / (1.0 + a_wax);
+        const double half = 0.5 * e.thermostat.hysteresis_k;
+        play = std::clamp(play, wax - half, wax + half);
+        const double x = std::clamp((play - e.thermostat.open_k) / (e.thermostat.full_open_k - e.thermostat.open_k), 0.0, 1.0);
+        fan = fan ? !(te <= c.fan.off_k) : te >= c.fan.on_k;
+        // 3. Conductances.
+        const double v_face = std::max(c.radiator.ram_coefficient * ram, fan ? c.fan.face_velocity_m_s : 0.0);
+        const double g_rad = radiator_g(c, e, rho_air * c.radiator.frontal_area_m2 * v_face, x * pump_l_min / 60000.0 * e.coolant_density_kg_m3);
+        // 4. Backward Euler of the two lumps.
+        const double a11 = e.engine_capacity_j_k + dt * (g_rad + g_ba + g_oc);
+        const double a12 = -dt * g_oc;
+        const double a22 = e.oil_capacity_j_k + dt * (g_oa + g_oc);
+        const double b1 = e.engine_capacity_j_k * te + q_e + dt * (g_rad + g_ba) * ta;
+        const double b2 = e.oil_capacity_j_k * to + q_o + dt * g_oa * ta;
+        const double det = a11 * a22 - a12 * a12;
+        const double te_new = (b1 * a22 - a12 * b2) / det;
+        const double to_new = (a11 * b2 - a12 * b1) / det;
+        const double moved = std::max(std::abs(te_new - te), std::abs(to_new - to));
+        te = te_new;
+        to = to_new;
+        const double t = static_cast<double>(i) * dt;
+        if (!std::isfinite(out.coolant_limit_s) && te >= coolant_limit_k) out.coolant_limit_s = t;
+        if (!std::isfinite(out.oil_limit_s) && to >= oil_limit_k) out.oil_limit_s = t;
+        if (std::isfinite(out.coolant_limit_s) && std::isfinite(out.oil_limit_s)) break;
+        // Settled (both lumps move less than 1 mK per minute for a minute): neither limit will be reached.
+        quiet = moved < 1.0e-3 * dt / 60.0 ? quiet + 1 : 0;
+        if (static_cast<double>(quiet) * dt > 60.0) break;
+    }
+    out.end_coolant_c = te - pd::kCelsiusToKelvin;
+    out.end_oil_c = to - pd::kCelsiusToKelvin;
     return out;
 }
 

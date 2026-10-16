@@ -15,6 +15,7 @@
 #include "rg/vehicle_load.h"
 #include "rg/vehicle_setup.h"
 
+#include "ps/jobs/job_system.h"
 #include "ps/world/world.h"
 
 #include <catch2/catch_approx.hpp>
@@ -219,6 +220,36 @@ TEST_CASE("cooling: a bigger radiator and an oil cooler move the setup check's s
     CHECK(oil1 < oil0 - 2.0);
 }
 
+TEST_CASE("cooling: the time to the limit follows the physics model's lumps and ends at its steady state", "[cooling][limit_advisor]") {
+    Fixture f;
+    const rg::CatalogEntry& hyper = f.entry("car_hyper");
+    rg::ScopedWorkDir d(f.ctx.work_root, "transient");
+    const rg::MaterialisedSetup m = rg::materialise_setup(hyper, f.table, f.ctx, setup_of("car_hyper", {}), d.path());
+    const ps::vehicle::VehicleDesc v = load_materialised(m);
+    REQUIRE(v.powertrain.thermal.has_value());
+    const auto& th = *v.powertrain.thermal;
+    // Far above the limits: both reached, the coolant with more heat sooner; a finer step agrees within a second.
+    const rg::ThermalTransient hot = rg::transient_thermal(th, 7000.0, 1400e3, 100e3, 30.0, 110.0, 118.0, 135.0, 1800.0, 0.25);
+    const rg::ThermalTransient hotter = rg::transient_thermal(th, 7000.0, 1800e3, 100e3, 30.0, 110.0, 118.0, 135.0, 1800.0, 0.25);
+    const rg::ThermalTransient fine = rg::transient_thermal(th, 7000.0, 1400e3, 100e3, 30.0, 110.0, 118.0, 135.0, 1800.0, 1.0 / 240.0);
+    std::printf("COOLING transient (car_hyper stock, 1400 kW wall + 100 kW friction, 30 C, 110 m/s): coolant 118 C after %.1f s (1/240 s step %.1f s), oil 135 C after %.1f s\n",
+                hot.coolant_limit_s, fine.coolant_limit_s, hot.oil_limit_s);
+    REQUIRE(std::isfinite(hot.coolant_limit_s));
+    REQUIRE(std::isfinite(hotter.coolant_limit_s));
+    CHECK(hotter.coolant_limit_s < hot.coolant_limit_s);
+    CHECK(std::abs(fine.coolant_limit_s - hot.coolant_limit_s) < 1.0);
+    // The lumps set the pace: from the warm start (coolant ~91 C) the engine lump needs at least C x 27 K / heat in.
+    const double warm_c = th.engine.thermostat.open_k + 0.25 * (th.engine.thermostat.full_open_k - th.engine.thermostat.open_k) - 273.15;
+    CHECK(hot.coolant_limit_s > th.engine.engine_capacity_j_k * (118.0 - warm_c) / 1500e3);
+    // Below the limits: never reached, and the run ends where steady_thermal says it settles.
+    const rg::ThermalTransient cool = rg::transient_thermal(th, 5000.0, 300e3, 40e3, 30.0, 60.0, 118.0, 135.0, 7200.0, 0.25);
+    const rg::SteadyThermal st = rg::steady_thermal(th, 5000.0, 300e3, 40e3, 30.0, 60.0);
+    CHECK_FALSE(std::isfinite(cool.coolant_limit_s));
+    CHECK_FALSE(std::isfinite(cool.oil_limit_s));
+    CHECK(std::abs(cool.end_coolant_c - st.coolant_c) < 0.2);
+    CHECK(std::abs(cool.end_oil_c - st.oil_c) < 0.5);
+}
+
 TEST_CASE("cooling: the setup check warns about a coolant or oil temperature above the limit and names the part", "[cooling][limit_advisor]") {
     std::string err;
     auto adv = rg::load_advisor_config(kRoot + "/data/garage/advisor.json", &err);
@@ -237,18 +268,17 @@ TEST_CASE("cooling: the setup check warns about a coolant or oil temperature abo
         for (const rg::AdviceItem& i : v) if (i.rule_name == name) return &i;
         return nullptr;
     };
-    // cool: nothing
+    // never reaches the limit: nothing (whatever the steady figure says)
     in.coolant_peak_c = 100.0;
     in.oil_peak_c = 110.0;
     CHECK(find(rg::build_advice(in, *adv), "CoolantTemperature") == nullptr);
     CHECK(find(rg::build_advice(in, *adv), "OilTemperature") == nullptr);
-    // 3 K under the limit: advice; 4 K over: a warning; 15 K over: critical
-    in.coolant_peak_c = 115.0;
-    const rg::AdviceItem* near = find(rg::build_advice(in, *adv), "CoolantTemperature");
-    REQUIRE(near != nullptr);
-    CHECK(near->severity == rg::AdviceSeverity::Advice);
+    // reached after 150 s: a warning; within 60 s (advisor.json thermal_time.critical_within_s): critical
+    REQUIRE(adv->thermal_critical_within_s == 60.0);
     in.coolant_peak_c = 122.0;
+    in.coolant_limit_time_s = 150.0;
     in.oil_peak_c = 150.0;
+    in.oil_limit_time_s = 42.0;
     const auto items = rg::build_advice(in, *adv);
     const rg::AdviceItem* hot = find(items, "CoolantTemperature");
     REQUIRE(hot != nullptr);
@@ -256,12 +286,19 @@ TEST_CASE("cooling: the setup check warns about a coolant or oil temperature abo
     CHECK(hot->damage_part == "engine_block");
     CHECK(hot->option_id == "cooling_radiator");
     REQUIRE_FALSE(hot->lines.empty());
-    CHECK_THAT(hot->lines.front(), ContainsSubstring("122"));
+    CHECK_THAT(hot->lines.front(), ContainsSubstring("after about 150 s"));
     CHECK_THAT(hot->lines.front(), ContainsSubstring("118"));
+    CHECK_THAT(hot->lines.front(), ContainsSubstring("122"));
     const rg::AdviceItem* oil = find(items, "OilTemperature");
     REQUIRE(oil != nullptr);
     CHECK(oil->severity == rg::AdviceSeverity::Critical);
+    CHECK_THAT(oil->lines.front(), ContainsSubstring("40 s"));
     CHECK(oil->option_id == "cooling_oil_cooler");
+    // exactly at the threshold is still critical, just past it a warning
+    in.oil_limit_time_s = 60.0;
+    CHECK(find(rg::build_advice(in, *adv), "OilTemperature")->severity == rg::AdviceSeverity::Critical);
+    in.oil_limit_time_s = 61.0;
+    CHECK(find(rg::build_advice(in, *adv), "OilTemperature")->severity == rg::AdviceSeverity::Warning);
     CHECK_FALSE(oil->damage_part.empty());
 }
 
@@ -372,7 +409,7 @@ TEST_CASE("cooling: a bigger radiator and oil cooler run the coolant cooler on t
     CHECK(race.oil_c < stock.oil_c - 1.0);
 }
 
-TEST_CASE("cooling: the setup check on every stock car; only the hypercars sustain more than their radiator holds", "[.][cooling][long][limit_advisor]") {
+TEST_CASE("cooling: the setup check on every stock car; the stock hypercar holds full power, only the nitrous one runs out", "[.][cooling][long][limit_advisor]") {
     Fixture f;
     std::string err;
     auto adv = rg::load_advisor_config(kRoot + "/data/garage/advisor.json", &err);
@@ -410,10 +447,36 @@ TEST_CASE("cooling: the setup check on every stock car; only the hypercars susta
         for (const rg::AdviceItem& i : items)
             std::printf("COOLING check %s: [%s] %s\n", e.id.c_str(), rg::to_string(i.severity), i.lines.empty() ? "" : i.lines.front().c_str());
         if (items.empty()) std::printf("COOLING check %s: clean\n", e.id.c_str());
-        // The hypercars are designed for a 60 s pull at top speed (data/cooling_systems/hyper.json), not for minutes of it: the
-        // steady state of full power at top-speed air is above their limits. Every other car must be clean.
-        if (e.id != "car_hyper" && e.id != "car_hyper_n2o") CHECK(items.empty());
+        // Owner on PR #28: the stock hypercar is clean or at most a plain warning (data/cooling_systems/hyper.json is sized for
+        // it). The nitrous hypercar shares that cooling system and is not sized for an endless shot. Every other car is clean.
+        if (e.id == "car_hyper") {
+            for (const rg::AdviceItem& i : items) CHECK(i.severity != rg::AdviceSeverity::Critical);
+        } else if (e.id != "car_hyper_n2o") {
+            CHECK(items.empty());
+        }
     }
+    // The figures behind the hypercar items (also when clean): soonest time to each limit and the steady temperature.
+    const auto figures = [&](const rg::CatalogEntry& e, const rg::VehicleSetup& setup, const char* label) {
+        rg::ScopedWorkDir d(f.ctx.work_root, "figures");
+        const rg::MaterialisedSetup m = rg::materialise_setup(e, f.table, f.ctx, setup, d.path());
+        REQUIRE(m.ok);
+        ps::io::EngineMapOptions maps;
+        maps.quality = ps::drivetrain::MapQuality::Sketch;
+        maps.cache_dir = f.ctx.engine_map_cache_dir;
+        const ps::vehicle::VehicleDesc desc = rg::load_vehicle(m.vehicle_path, maps);
+        ps::jobs::JobSystem pool(2);
+        rg::AdviceSweep sweep = rg::run_advice_sweep(desc, *adv, &pool, nullptr);
+        rg::set_thermal_limits(sweep.input, desc, f.ctx.cooling_upgrades->check, m.compiled);
+        const auto when = [](double t) { return std::isfinite(t) ? std::to_string(static_cast<int>(std::lround(t))) + " s" : std::string("never"); };
+        std::printf("COOLING figures %s: coolant settles %.1f C (limit %.0f C) at %.0f rpm, reached %s; oil settles %.1f C (limit %.0f C) at %.0f rpm, reached %s\n",
+                    label, sweep.input.coolant_peak_c, sweep.input.coolant_limit_c, sweep.input.coolant_peak_rpm, when(sweep.input.coolant_limit_time_s).c_str(),
+                    sweep.input.oil_peak_c, sweep.input.oil_limit_c, sweep.input.oil_peak_rpm, when(sweep.input.oil_limit_time_s).c_str());
+    };
+    REQUIRE(f.ctx.cooling_upgrades != nullptr);
+    const rg::VehicleSetup race_cooling_hyper = setup_of("car_hyper", {{"cooling_radiator", std::string("race_ducted")}, {"cooling_oil_cooler", std::string("race")}});
+    figures(f.entry("car_hyper"), setup_of("car_hyper", {}), "car_hyper stock");
+    figures(f.entry("car_hyper"), race_cooling_hyper, "car_hyper race radiator + oil cooler");
+    figures(f.entry("car_hyper_n2o"), setup_of("car_hyper_n2o", {}), "car_hyper_n2o stock");
     // The race radiator and oil cooler take the hypercar's coolant item away.
     const rg::CatalogEntry& hyper = f.entry("car_hyper");
     const auto fixed = check_of(hyper, setup_of("car_hyper", {{"cooling_radiator", std::string("race_ducted")}, {"cooling_oil_cooler", std::string("race")}}));

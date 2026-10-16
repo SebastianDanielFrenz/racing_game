@@ -154,56 +154,47 @@
     },
     "CoolantTemperature": {
       "option": "cooling_radiator",
-      "option_help": "Damage-model data: the steady coolant temperature of full power on a hot day (rg::steady_thermal, the physics model's own balance; check settings in data/cooling_systems/cooling_upgrades.json) against the car's overheat warning. The engine block (head gasket, cylinder head) takes the damage; the radiator, fan and block cooling options carry the heat off. More fuel burned (a turbo kit, more boost, N2O) means more heat. Nothing overheats in the damage sense yet; the dashboard warning is the physics' own.",
-      "title": "The coolant would overheat",
+      "option_help": "Damage-model data: how long the coolant takes to reach the car's overheat warning at constant full power on a hot day, from the warm spawn state (rg::transient_thermal, the physics model's own two-lump time history with its heat capacities; check settings in data/cooling_systems/cooling_upgrades.json). Never = clean, later than thermal_time.critical_within_s = a warning, sooner = critical. The engine block (head gasket, cylinder head) takes the damage; the radiator, fan and block cooling options carry the heat off. More fuel burned (a turbo kit, more boost, N2O) means more heat.",
+      "title": "The coolant overheats under sustained full power",
       "lines": [
-        "At {rpm} and full power the coolant settles at {value} on a {ambient} day with {air_speed} of air through the radiator; the warning is at {limit}.",
-        "The engine block would take the damage (not simulated yet)."
+        "At {rpm} and full power the coolant reaches the {limit} warning after about {time} on a {ambient} day with {air_speed} of air through the radiator (it would settle at {value}).",
+        "The engine block takes the damage when it is held there."
       ],
-      "suggestion": "A bigger radiator, a stronger fan or more block cooling, or less boost.",
+      "suggestion": "A bigger radiator, a stronger fan or more block cooling, or less boost; or lift before {time} of full power.",
       "variants": {
-        "near": {
-          "title": "The coolant gets close to overheating",
-          "lines": [
-            "At {rpm} and full power the coolant settles at {value} on a {ambient} day with {air_speed} of air through the radiator; the warning is at {limit}."
-          ],
-          "suggestion": ""
-        },
         "burst": {
-          "title": "The coolant would boil over",
+          "title": "The coolant overheats within a minute",
           "lines": [
-            "At {rpm} and full power the coolant would settle at {value} on a {ambient} day with {air_speed} of air through the radiator, far above the warning at {limit}.",
-            "The engine block would take the damage (not simulated yet)."
+            "At {rpm} and full power the coolant reaches the {limit} warning after only about {time} on a {ambient} day with {air_speed} of air through the radiator (it would settle at {value}).",
+            "The engine block takes the damage when it is held there."
           ]
         }
       }
     },
     "OilTemperature": {
       "option": "cooling_oil_cooler",
-      "option_help": "Damage-model data: the steady oil temperature of full power on a hot day against the check's oil limit (cooling_upgrades.json check.oil_limit_c). Hot oil thins and the bearings (crankshaft) wear. An oil cooler removes heat in proportion to the air speed.",
-      "title": "The oil would run too hot",
+      "option_help": "Damage-model data: how long the oil takes to reach the check's oil limit (cooling_upgrades.json check.oil_limit_c) at constant full power on a hot day, from the warm spawn state (rg::transient_thermal). Hot oil thins and the bearings (crankshaft) wear. An oil cooler removes heat in proportion to the air speed.",
+      "title": "The oil runs too hot under sustained full power",
       "lines": [
-        "At {rpm} and full power the oil settles at {value} on a {ambient} day with {air_speed} of air; the limit is {limit}.",
-        "The crankshaft bearings would take the damage (not simulated yet)."
+        "At {rpm} and full power the oil reaches {limit} after about {time} on a {ambient} day with {air_speed} of air (it would settle at {value}).",
+        "The crankshaft bearings take the damage when it is held there."
       ],
-      "suggestion": "An oil cooler or a bigger one.",
+      "suggestion": "An oil cooler or a bigger one; or lift before {time} of full power.",
       "variants": {
-        "near": {
-          "title": "The oil gets close to its limit",
-          "lines": [
-            "At {rpm} and full power the oil settles at {value} on a {ambient} day with {air_speed} of air; the limit is {limit}."
-          ],
-          "suggestion": ""
-        },
         "burst": {
-          "title": "The oil would run far too hot",
+          "title": "The oil runs too hot within a minute",
           "lines": [
-            "At {rpm} and full power the oil would settle at {value} on a {ambient} day with {air_speed} of air, far above the limit of {limit}.",
-            "The crankshaft bearings would take the damage (not simulated yet)."
+            "At {rpm} and full power the oil reaches {limit} after only about {time} on a {ambient} day with {air_speed} of air (it would settle at {value}).",
+            "The crankshaft bearings take the damage when it is held there."
           ]
         }
       }
     }
+  },
+
+  "thermal_time": {
+    "critical_within_s": 60.0,
+    "source": "Owner answer on PR #28 (option C): the cooling check reports the time to the coolant / oil limit at constant full power, from the warm spawn state, not only the steady temperature. A limit reached after more than critical_within_s is a warning (the car can do a long pull, not minutes of it), within it critical; a setup whose temperatures settle below the limit is clean."
   },
 
   "loader_warnings": {

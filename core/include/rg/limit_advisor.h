@@ -112,6 +112,9 @@ struct AdvisorConfig {
     // engine without internals data.
     double part_near_fraction = 0.9;
     double max_mean_piston_speed_m_s = 25.0;
+    // "thermal_time" (owner answer on PR #28): a coolant / oil limit reached at constant full power within this many seconds
+    // of the warm spawn state is critical, later a warning, never = clean.
+    double thermal_critical_within_s = 60.0;
 
     [[nodiscard]] const AdviceKindConfig* find(ps::drivetrain::LimitKind kind) const;
     [[nodiscard]] const AdviceKindConfig* find_rule(const std::string& rule_name) const;
@@ -203,14 +206,17 @@ struct AdviceInput {
     std::string piston_speed_part, piston_speed_kind, piston_speed_kind_label, piston_speed_option;
     double valve_float_rpm = std::numeric_limits<double>::quiet_NaN();
     std::string valve_part, valve_option;
-    // Cooling check (rg/cooling_upgrades.h steady_thermal, set by set_thermal_limits): the hottest steady coolant / oil
-    // temperature of the sweep at full power on the check's day and air speed, and the limits (the car's own overheat warning
-    // for the coolant, the check's oil limit). NaN = no check (a car without the thermal model, a torque-curve engine).
+    // Cooling check (rg/cooling_upgrades.h transient_thermal + steady_thermal, set by set_thermal_limits): for the sweep's
+    // full-power points on the check's day and air speed, the SOONEST time from the warm spawn state to the coolant / oil
+    // limit (*_limit_time_s, NaN = never reached: clean) with that point's rpm, air speed and steady temperature
+    // (*_peak_c, what it would settle at), and the limits (the car's own overheat warning for the coolant, the check's oil
+    // limit). coolant_limit_c / oil_limit_c NaN = no check (a car without the thermal model, a torque-curve engine).
+    double coolant_limit_time_s = std::numeric_limits<double>::quiet_NaN(), oil_limit_time_s = std::numeric_limits<double>::quiet_NaN();
     double coolant_peak_c = std::numeric_limits<double>::quiet_NaN(), coolant_limit_c = std::numeric_limits<double>::quiet_NaN();
     double coolant_peak_rpm = 0.0;
     double oil_peak_c = std::numeric_limits<double>::quiet_NaN(), oil_limit_c = std::numeric_limits<double>::quiet_NaN();
     double oil_peak_rpm = 0.0;
-    double thermal_ambient_c = 0.0, thermal_air_speed_m_s = 0.0, coolant_air_speed_m_s = 0.0, oil_air_speed_m_s = 0.0, thermal_near_margin_k = 5.0, thermal_exceeded_margin_k = 10.0;
+    double thermal_ambient_c = 0.0, thermal_air_speed_m_s = 0.0, coolant_air_speed_m_s = 0.0, oil_air_speed_m_s = 0.0;
     std::string radiator_part, oil_cooler_part;               // installed grade labels ("stock radiator")
     std::string radiator_option, oil_cooler_option;           // the garage options that swap them
     // A bored block (EngineInternalsBuild::bore): the wall left between two cylinders and the [AS] safe figure (NaN = not
