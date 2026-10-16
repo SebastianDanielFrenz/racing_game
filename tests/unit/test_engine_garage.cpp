@@ -344,6 +344,24 @@ TEST_CASE("engine fit: the generated envelopes against the measured bays", "[eng
     CHECK_FALSE(i6_in_hyper.allowed);
     REQUIRE(i6_in_hyper.reasons.size() == 1);
     CHECK(i6_in_hyper.reasons[0] == "801 mm long, the bay takes 700 mm");
+    // the Big Bay variant of the city car takes every engine the plain car takes plus the fours, the rotary and the Ventura
+    // V8; the hypercar's V8 (939 mm wide) and the long I6 stay out
+    const rg::CatalogEntry& big = f.entry("car_city_bigbay");
+    int city_fits = 0, big_fits = 0;
+    for (const rg::EngineEntry& e : f.store->list()) {
+        INFO(e.key);
+        const bool in_city = rg::check_fit(*city, e).allowed, in_big = rg::check_fit(big, e).allowed;
+        if (in_city) CHECK(in_big);
+        city_fits += in_city ? 1 : 0;
+        big_fits += in_big ? 1 : 0;
+    }
+    CHECK(city_fits == 1);
+    CHECK(big_fits >= 7);
+    CHECK(rg::check_fit(big, *v8).allowed);
+    CHECK_FALSE(rg::check_fit(big, *i6).allowed);
+    CHECK_FALSE(rg::check_fit(big, *hyper_v8).allowed);
+    CHECK(big.vehicle_path == city->vehicle_path); // no new car file
+    CHECK(big.model_path == city->model_path);     // no new art
 }
 
 TEST_CASE("engine swap: the car's own engine changes nothing", "[engine_garage][engine_swap]") {

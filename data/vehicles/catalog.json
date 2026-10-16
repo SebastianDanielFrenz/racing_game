@@ -19,7 +19,7 @@
           711
         ],
         "crank_axis": "x",
-        "source": "external/physics_sim/data/models/car_hyper/car_hyper.glb, mid engine: from the cabin bulkhead (x -1.05, rear end of the cabin carpet) to the rear end of the art's engine/transaxle block (x -2.20, material engine) less 0.45 m for the transaxle behind the engine [AS] = 700 mm; between the rear tyres' inner faces (|y| 0.663) less 0.18 m each side = 966 mm; from the flat underbody (z 0.10) + 0.05 m [AS] to the inner skin of the engine_cover node (z 0.861) = 711 mm"
+        "source": "external/physics_sim/data/models/car_hyper/car_hyper.glb, mid engine: from the cabin bulkhead (x -1.05, rear end of the cabin carpet) to the rear end of the art's engine/transaxle block (x -2.20, material engine) less 0.45 m for the transaxle (gearbox + differential, inline with the crank) [AS] = 700 mm; the rear axle (x -1.35) lies at the front end of that block and nothing outside the block (diffuser below, exhaust behind) has room for a gearbox, so the transaxle shares the block length with the engine; between the rear tyres' inner faces (|y| 0.663) less 0.18 m each side = 966 mm; from the flat underbody (z 0.10) + 0.05 m [AS] to the inner skin of the engine_cover node (z 0.861) = 711 mm"
       },
       "chassis": {
         "mass_kg": 1500.0,
@@ -307,7 +307,7 @@
           711
         ],
         "crank_axis": "x",
-        "source": "the car_hyper bay (same art): external/physics_sim/data/models/car_hyper/car_hyper.glb, mid engine: from the cabin bulkhead (x -1.05, rear end of the cabin carpet) to the rear end of the art's engine/transaxle block (x -2.20, material engine) less 0.45 m for the transaxle behind the engine [AS] = 700 mm; between the rear tyres' inner faces (|y| 0.663) less 0.18 m each side = 966 mm; from the flat underbody (z 0.10) + 0.05 m [AS] to the inner skin of the engine_cover node (z 0.861) = 711 mm"
+        "source": "the car_hyper bay (same art): external/physics_sim/data/models/car_hyper/car_hyper.glb, mid engine: from the cabin bulkhead (x -1.05, rear end of the cabin carpet) to the rear end of the art's engine/transaxle block (x -2.20, material engine) less 0.45 m for the transaxle (gearbox + differential, inline with the crank) [AS] = 700 mm; the rear axle (x -1.35) lies at the front end of that block and nothing outside the block (diffuser below, exhaust behind) has room for a gearbox, so the transaxle shares the block length with the engine; between the rear tyres' inner faces (|y| 0.663) less 0.18 m each side = 966 mm; from the flat underbody (z 0.10) + 0.05 m [AS] to the inner skin of the engine_cover node (z 0.861) = 711 mm"
       },
       "chassis": {
         "mass_kg": 1500.0,
@@ -370,6 +370,63 @@
         ],
         "crank_axis": "y",
         "source": "data/models/pico/pico.rig.json engine_bay.box_m (620 x 900 x 560 mm under the closed hood), less 330 mm of its width for the transaxle at the left end of a transverse engine [AS]: the engine itself has 570 mm along the crank"
+      },
+      "chassis": {
+        "mass_kg": 852.0,
+        "half_extents": [
+          1.6,
+          0.5,
+          0.12
+        ],
+        "spawn_z_m": 0.55,
+        "source": "sprung mass of data/vehicles/car_city.json (900 kg kerb minus four 12 kg wheels); collision box inside the body, centred on the CoG; spawn height = CoG height + 3 cm [AS]"
+      },
+      "visual": {
+        "paint": "#d8473a",
+        "rim": "#b8bcc2"
+      },
+      "setup": {
+        "tyre_fitment": {
+          "front": {
+            "rims_in": [
+              14,
+              15
+            ],
+            "min_width_mm": 145,
+            "max_width_mm": 185,
+            "width_step_mm": 10,
+            "diameter_tolerance_mm": 12
+          },
+          "rear": {
+            "rims_in": [
+              14,
+              15
+            ],
+            "min_width_mm": 145,
+            "max_width_mm": 185,
+            "width_step_mm": 10,
+            "diameter_tolerance_mm": 12
+          }
+        }
+      }
+    },
+    {
+      "id": "car_city_bigbay",
+      "title": "Pico Big Bay",
+      "subtitle": "City car with a bigger engine bay",
+      "description": "The Pico with a longer, wider front clip and a raised hood, so the engine bay takes a transverse four, a rotary or a compact V8 as well as its own three-cylinder. Same car otherwise: 1.0 litre three-cylinder as standard, five-speed manual, front-wheel drive.",
+      "body_type": "hatchback",
+      "vehicle": "data/vehicles/car_city.json",
+      "model": "data/models/pico/pico.glb",
+      "engine_bay": "front",
+      "engine_bay_envelope": {
+        "size_mm": [
+          700,
+          700,
+          660
+        ],
+        "crank_axis": "y",
+        "source": "variant of car_city: reuses data/models/pico/pico.glb and data/vehicles/car_city.json unchanged (no new art, the garage and the drive show the plain Pico body). Declared bay [AS]: data/models/pico/pico.rig.json engine_bay.box_m (620 x 900 x 560 mm) with the front clip 80 mm longer (700 mm fore-aft), 130 mm wider (1030 mm across: wider wings, the track and suspension in the physics unchanged) and the hood raised 100 mm (660 mm tall, a hood bulge), less the same 330 mm transaxle at the left end of the transverse engine as car_city = 700 mm along the crank. Mass and drag stay those of car_city."
       },
       "chassis": {
         "mass_kg": 852.0,
