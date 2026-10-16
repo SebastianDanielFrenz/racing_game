@@ -282,4 +282,72 @@ private:
     CinematicStats stats_;
 };
 
+// ------------------------------------------------------------------ drone ----
+
+// The DroneFollow camera (R9b, docs/unreal_port.md leak #10): trails a target vehicle from above and behind. All the
+// decisions - the orbit yaw wanted by the look input, the zoom law, the target-relative lag, the snap after a jump and
+// the terrain clearance - are made here; drone_rig.gd only forwards input, places the Camera3D and probes the ground.
+//
+// Frame: a right-handed Z-up frame (x, y horizontal, z up) in the render/session orientation of the caller. The Godot
+// binding maps Godot (x, y, z) to (x, -z, y), a proper rotation, so a rotation about Godot UP is a rotation about +z
+// here. Positions are absolute in the caller's (floating-origin) frame; offsets are camera minus target.
+struct DroneParams {
+    double follow_distance_m = 12.0;   // horizontal distance behind the target (the default zoom)
+    double height_per_distance = 0.5;  // follow height = distance * this
+    double look_height_m = 1.0;        // the look-at point above the target origin
+    double terrain_clearance_m = 1.0;
+    double position_lag = 4.0;         // higher = snappier; the lag acts on the target-relative offset
+    double orbit_deadzone = 0.2;       // right-stick deflection below this is no orbit
+    double orbit_lag = 10.0;           // higher = snappier; <= 0 = no smoothing
+    double zoom_wheel_factor = 1.15;   // distance factor per wheel tick
+    double zoom_key_rate = 1.2;        // e-folds per second while the zoom key is held
+    double snap_m = 60.0;              // a wanted-offset jump beyond this snaps instead of easing
+    double min_distance_m = 4.0;
+    double max_distance_m = 60.0;
+};
+
+struct DroneState {
+    double distance_m = 12.0;
+    double orbit_yaw_rad = 0.0;   // + = looking to the right of the target's heading
+    ps::Vec3 offset{};            // smoothed camera - target
+    ps::Vec3 smoothed_pos{};      // absolute; only read right after drone_activate
+    double heading_x = 0.0;       // last horizontal heading of the target (unit)
+    double heading_y = 1.0;       // initial: Godot FORWARD (0, 0, -1) in this frame
+    bool from_absolute = false;
+    bool initialized = false;
+    bool drain_wheel = false;
+};
+
+struct DroneFollowInput {
+    ps::Vec3 target_pos{};
+    ps::Vec3 target_forward{};  // the target's forward axis (any length; only its horizontal part is used)
+    double key_x = 0.0, key_y = 0.0;      // arrow-key look (see drone_target_orbit_yaw)
+    double stick_x = 0.0, stick_y = 0.0;  // right-stick position
+    bool live = true;                     // camera inputs enabled
+};
+
+struct DroneFrame {
+    ps::Vec3 position{};  // before the terrain clearance
+    ps::Vec3 look_at{};
+    bool has_look = false; // false when the camera is within 1 cm of the look-at point
+};
+
+DroneState drone_initial_state(const DroneParams& p = {});
+// Start from where the previous camera was; the exponential lag flies to the drone position.
+void drone_activate(DroneState& s, const ps::Vec3& from_position);
+void drone_shift_origin(DroneState& s, const ps::Vec3& delta);
+// No simulation this frame: the next follow step starts over.
+void drone_hold(DroneState& s);
+// Orbit yaw wanted by the look input: arrow left/right = +-90 deg, arrow down = 180 deg, else the stick direction
+// (atan2(x, y)) past the dead zone, else 0.
+double drone_target_orbit_yaw(double key_x, double key_y, double stick_x, double stick_y, double deadzone);
+// Zoom from wheel ticks and the zoom key. The first call after drone_activate only drains (ticks made while another
+// rig was active must not zoom this one); not live = no zoom.
+void drone_zoom_step(DroneState& s, double wheel_steps, double zoom_key, bool live, double dt, const DroneParams& p = {});
+DroneFrame drone_follow_step(DroneState& s, const DroneFollowInput& in, double dt, const DroneParams& p = {});
+// Ground probes around the camera (the near-plane footprint): offsets from the position, 5 entries.
+std::vector<ps::Vec3> drone_probe_offsets();
+// The camera height after the clearance: max(z, ground + clearance) over every probe that found ground (nullopt = none).
+double drone_clear_terrain(double z, const std::vector<std::optional<double>>& grounds, double clearance_m);
+
 } // namespace rg
