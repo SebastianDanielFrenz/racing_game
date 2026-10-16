@@ -674,9 +674,10 @@ std::shared_ptr<const std::vector<g2m::RoadSegment>> WorldTerrain::road_segments
     return kNoRoads; // Failed: "no roads" is a valid, non-fatal answer for the render path
 }
 
-std::shared_ptr<const g2m::TerrainClassTile> WorldTerrain::terrain_class_tile(const g2m::TileKey& key) {
+std::shared_ptr<const g2m::TerrainClassTile> WorldTerrain::terrain_class_tile(
+    const g2m::TileKey& key, g2m::world::Priority priority) {
     if (auto hit = service_->peek_terrain_class(key)) return hit;
-    auto ticket = service_->terrain_class(key, g2m::world::Priority::Render);
+    auto ticket = service_->terrain_class(key, priority);
     if (!wait_ticket(ticket)) return nullptr;
     switch (ticket.state()) {
         case g2m::world::TileState::Ready:

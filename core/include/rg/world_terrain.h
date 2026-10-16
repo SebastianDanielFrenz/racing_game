@@ -172,14 +172,14 @@ public:
     [[nodiscard]] int carve_max_level() const { return carve_max_level_; }
     void set_carve_max_level(int level) { carve_max_level_ = level < 0 ? 0 : (level > 2 ? 2 : level); }
 
-    // True when the render class window is read from the served g2m.terrain.class layer (WorldConfig::
-    // render_classes_served); view_source() and build_static_view() then set ViewSource::terrain_classes and the
-    // OSM road raster is not run. Physics grip is unchanged (still the OSM raster).
+    // True when render and (with road_surfaces enabled) physics grip use the served g2m.terrain.class layer. The
+    // layer is built from the same roads.geom cross-sections as the visible road ribbons; the legacy OSM raster is
+    // retained only for world configs that explicitly select render_classes="osm".
     [[nodiscard]] bool served_terrain_class() const { return served_terrain_class_; }
-    // The decoded g2m.terrain.class tile `key` (blocking, render priority, from a non-pool thread; the service
-    // caches it). Null when the layer is not in the release, the tile is absent (outside coverage) or failed (a
-    // failure is reported once per call on stderr); the chunk window is then all-Unknown.
-    [[nodiscard]] std::shared_ptr<const g2m::TerrainClassTile> terrain_class_tile(const g2m::TileKey& key);
+    // The decoded g2m.terrain.class tile `key` (blocking, from a non-pool thread; the service caches it). Null when
+    // the layer is not in the release, the tile is absent (outside coverage) or failed (reported once per call).
+    [[nodiscard]] std::shared_ptr<const g2m::TerrainClassTile> terrain_class_tile(
+        const g2m::TileKey& key, g2m::world::Priority priority = g2m::world::Priority::Render);
 
     [[nodiscard]] const g2m::mesh::LodParams& lod_params() const { return lod_params_; }
     void set_lod_params(const g2m::mesh::LodParams& params) { lod_params_ = params; }

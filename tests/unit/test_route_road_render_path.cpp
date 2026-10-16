@@ -25,14 +25,17 @@
 #include "g2m/core/tile_key.h"
 #include "g2m/layer/osm_roads.h"
 #include "g2m/mesh/terrain_chunk.h"
+#include "g2m/world/road_ribbons.h"
 
 #include <catch2/catch_test_macros.hpp>
 
+#include <array>
 #include <chrono>
 #include <cmath>
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
+#include <filesystem>
 #include <memory>
 #include <optional>
 #include <string>
@@ -283,4 +286,191 @@ TEST_CASE("route road render path: the four road_shots.gd targets keep road land
             CHECK(r.road_vertices > 0);
         }
     }
+}
+
+namespace {
+
+struct IncidentProbePoint {
+    double e, n, z, heading_deg;
+    int marker;
+    double sim_time;
+};
+
+bool point_in_triangle(double x, double y, const g2m::world::RoadRibbonVertex& a,
+                       const g2m::world::RoadRibbonVertex& b, const g2m::world::RoadRibbonVertex& c,
+                       double expected_z) {
+    const double abx=b.x-a.x, aby=b.y-a.y, acx=c.x-a.x, acy=c.y-a.y;
+    const double area=abx*acy-aby*acx;
+    if(std::abs(area)<1e-8) return false;
+    const double apx=x-a.x, apy=y-a.y;
+    const double u=(apx*acy-apy*acx)/area, v=(abx*apy-aby*apx)/area;
+    const double w=1.0-u-v;
+    if(u < -1e-5 || v < -1e-5 || w < -1e-5) return false;
+    const double z=w*a.z+u*b.z+v*c.z;
+    return std::abs(z-expected_z)<5.0;
+}
+
+bool paved_ribbon_at(const g2m::world::RoadRibbonTile& mesh, double e, double n, double z) {
+    const double x=e-mesh.key.min_easting(), y=n-mesh.key.min_northing();
+    for(std::size_t i=0;i+2<mesh.indices.size();i+=3) {
+        const auto& a=mesh.vertices[static_cast<std::size_t>(mesh.indices[i])];
+        const auto& b=mesh.vertices[static_cast<std::size_t>(mesh.indices[i+1])];
+        const auto& c=mesh.vertices[static_cast<std::size_t>(mesh.indices[i+2])];
+        const int flags=static_cast<int>(std::lround(a.flags));
+        // Painted lines/arrows and the gravel verge are drawables too, but do
+        // not represent the paved contact surface. Junction asphalt is emitted
+        // with flags=0; unpaved pieces carry bit 8192.
+        if((flags&16)!=0 || (flags&8192)!=0 || a.verge>0.5f || b.verge>0.5f || c.verge>0.5f) continue;
+        if(point_in_triangle(x,y,a,b,c,z)) return true;
+    }
+    return false;
+}
+
+struct PhysicsRoadSample { bool paved=false; double nearest_paved_edge_m=1e9; };
+
+PhysicsRoadSample physics_paved_at(rg::WorldTerrain& terrain, g2m::geo::UtmZone zone, double e, double n) {
+    const auto key=g2m::tile_key_at(zone,2,e,n);
+    if(!key) return {};
+    const auto segs=terrain.road_segments(*key);
+    if(!segs || segs->empty()) return {};
+    const std::int64_t ec=std::llround(e), nc=std::llround(n); // physics cell centers are integer UTM metres
+    const g2m::Lattice lattice{ec*1000,nc*1000,1000,1,1};
+    std::uint8_t land=static_cast<std::uint8_t>(g2m::LandClass::Unknown);
+    std::uint8_t surface=static_cast<std::uint8_t>(g2m::SurfaceKind::Unknown);
+    g2m::rasterize_road_segments(*segs,lattice,g2m::RasterParams{.min_rank=0,.min_half_width_mm=710},
+                                 std::span<std::uint8_t>(&land,1),std::span<std::uint8_t>(&surface,1));
+    // The incident world's road-mode grip LUT maps every PavedRoad segment
+    // to the asphalt surface id (including OSM paving-stone tags).
+    PhysicsRoadSample sample;
+    sample.paved=land==static_cast<std::uint8_t>(g2m::LandClass::PavedRoad);
+    const double px=ec*1000.0,py=nc*1000.0;
+    for(const auto& seg:*segs) {
+        if(seg.land_class!=g2m::LandClass::PavedRoad) continue;
+        const double ax=static_cast<double>(seg.a.x),ay=static_cast<double>(seg.a.y);
+        const double bx=static_cast<double>(seg.b.x),by=static_cast<double>(seg.b.y);
+        const double dx=bx-ax,dy=by-ay,len2=dx*dx+dy*dy;
+        const double t=len2>0?std::clamp(((px-ax)*dx+(py-ay)*dy)/len2,0.0,1.0):0.0;
+        const double d=std::hypot(px-(ax+t*dx),py-(ay+t*dy))/1000.0;
+        sample.nearest_paved_edge_m=std::min(sample.nearest_paved_edge_m,
+            std::max(0.0,d-std::max(710.0,static_cast<double>(seg.half_width_mm))/1000.0));
+    }
+    return sample;
+}
+
+bool served_class_paved_at(rg::WorldTerrain& terrain, g2m::geo::UtmZone zone, double e, double n) {
+    const std::int64_t ec=std::llround(e), nc=std::llround(n);
+    const auto key=g2m::tile_key_at(zone,0,static_cast<double>(ec),static_cast<double>(nc));
+    if(!key) return false;
+    const auto tile=terrain.terrain_class_tile(*key);
+    if(!tile || tile->key!=*key) return false;
+    const int i=static_cast<int>(ec-key->min_easting()),j=static_cast<int>(nc-key->min_northing());
+    if(i<0||j<0||i>=g2m::kTerrainClassSamples||j>=g2m::kTerrainClassSamples) return false;
+    return tile->land_class[g2m::TerrainClassTile::index(i,j)]==static_cast<std::uint8_t>(g2m::LandClass::PavedRoad);
+}
+
+} // namespace
+
+TEST_CASE("corridor incident samples: served geometry classes reduce raw OSM grip/visual disagreement",
+          "[.][realdata][terrain][road-parity]") {
+    static constexpr IncidentProbePoint points[] = {
+        {461770.841,5555456.676,251.235,-33.5,1,72.1}, {461814.334,5555427.904,250.565,-33.5,1,73.1},
+        {461865.335,5555394.158,249.696,-33.5,1,74.1}, {461924.909,5555351.560,248.526,-33.5,1,75.1},
+        {461983.939,5555304.668,247.229,-33.5,1,76.1},
+        {465468.046,5552451.984,131.305,163.7,2,152.2}, {465447.418,5552458.038,131.527,163.7,2,153.2},
+        {465420.467,5552465.849,131.842,163.7,2,154.2}, {465384.589,5552476.276,132.277,163.7,2,155.2},
+        {465340.639,5552489.031,132.848,163.7,2,156.2},
+        {463658.495,5553285.490,175.346,133.3,3,198.3}, {463603.260,5553344.065,177.036,133.3,3,199.3},
+        {463552.796,5553407.267,178.742,133.3,3,200.3}, {463506.090,5553476.867,180.409,133.3,3,201.3},
+        {463458.800,5553552.557,182.262,133.3,3,202.3},
+        {464287.764,5552910.887,159.985,154.2,4,258.4}, {464238.977,5552934.536,161.273,154.2,4,259.4},
+        {464182.720,5552962.556,162.708,154.2,4,260.4}, {464117.253,5552996.000,164.339,154.2,4,261.4},
+        {464045.598,5553033.447,166.031,154.2,4,262.4},
+        // Latest user-marked incident, sampled before the first split-grip
+        // wheel state: asphalt at t=62..64, with the owner marker at 64.8667.
+        {465269.234,5552517.079,133.976,160.9,5,62.1},
+        {465229.483,5552530.844,134.631,160.9,5,63.1},
+        {465181.770,5552547.229,135.473,160.9,5,64.1},
+        {465147.723,5552559.482,136.119,160.9,5,64.8667},
+        // Stationary marker at the Unterliederbach spawn before the user
+        // reproduced a right pull; chassis heading is the configured spawn yaw.
+        {466758.462,5551413.982,109.571,161.9,6,108.7542},
+    };
+    std::string err;
+    auto config=rg::load_world_config(std::string(RG_SOURCE_DIR)+"/data/world/world_config_rhein_main_corridor.json",&err);
+    INFO(err);
+    REQUIRE(config.has_value());
+    // The served class layer uses the same road geometry/cross-sections as
+    // the visible ribbons; test it as a candidate shared source for tire grip.
+    config->render_classes_served=true;
+    // Avoid writes to the shared baked cache while a player may be using it.
+    const auto temp=std::filesystem::temp_directory_path()/(
+        "rg_tc_incident_road_parity_"+std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()));
+    REQUIRE(std::filesystem::create_directory(temp));
+    config->derived_store.dir=temp.string();
+    auto terrain=rg::WorldTerrain::open(*config,&err);
+    INFO(err);
+    REQUIRE(terrain!=nullptr);
+    const g2m::geo::UtmZone zone{32,g2m::geo::Hemisphere::North};
+    int samples=0,mismatches=0,drawn_but_grass=0,grip_but_not_drawn=0,class_mismatches=0;
+    for(const auto& p:points) {
+        const auto key=g2m::tile_key_at(zone,2,p.e,p.n);
+        REQUIRE(key.has_value());
+        const auto ribbon=terrain->road_visual_tile(*key,0.018);
+        const double h=p.heading_deg*3.14159265358979323846/180.0;
+        const double nx=-std::sin(h),ny=std::cos(h);
+        for(const double offset : {-1.4,-0.85,-0.8,0.0,0.8,0.825,1.4}) {
+            const double e=p.e+nx*offset,n=p.n+ny*offset;
+            // Physics selects its material from the integer-metre cell centre.
+            // Compare the visible road at that same quantized contact point.
+            const double cell_e=std::round(e),cell_n=std::round(n);
+            const bool draw=paved_ribbon_at(ribbon,cell_e,cell_n,p.z-0.5);
+            const PhysicsRoadSample physics=physics_paved_at(*terrain,zone,e,n);
+            const bool grip=physics.paved;
+            const bool class_grip=served_class_paved_at(*terrain,zone,e,n);
+            ++samples;
+            if(draw!=grip) {
+                ++mismatches;
+                if(draw) ++drawn_but_grass; else ++grip_but_not_drawn;
+                std::printf("TC_ROAD_PARITY mismatch mark=%d t=%.1f offset=%+.1fm UTM=(%.3f,%.3f) drawn_paved=%d physics_paved=%d nearest_raw_paved_edge_m=%.2f ribbon_vertices=%zu\n",
+                            p.marker,p.sim_time,offset,cell_e,cell_n,draw?1:0,grip?1:0,physics.nearest_paved_edge_m,ribbon.vertices.size());
+            }
+            if(draw!=class_grip) {
+                ++class_mismatches;
+                std::printf("TC_ROAD_CLASS mismatch mark=%d t=%.1f offset=%+.1fm UTM=(%.3f,%.3f) drawn_paved=%d served_class_paved=%d\n",
+                            p.marker,p.sim_time,offset,cell_e,cell_n,draw?1:0,class_grip?1:0);
+            }
+        }
+        if(p.marker==6) {
+            static constexpr std::array<double,4> local_x{1.566,1.566,-1.134,-1.134};
+            static constexpr std::array<double,4> local_y{0.85,-0.85,0.825,-0.825};
+            static constexpr std::array<const char*,4> reported{"asphalt","grass","asphalt","asphalt"};
+            const double c=std::cos(h),s=std::sin(h);
+            for(std::size_t wheel=0;wheel<local_x.size();++wheel) {
+                const double wx=p.e+c*local_x[wheel]-s*local_y[wheel];
+                const double wy=p.n+s*local_x[wheel]+c*local_y[wheel];
+                const double cell_e=std::round(wx),cell_n=std::round(wy);
+                const bool draw=paved_ribbon_at(ribbon,cell_e,cell_n,p.z-0.5);
+                const PhysicsRoadSample physics=physics_paved_at(*terrain,zone,wx,wy);
+                const bool class_grip=served_class_paved_at(*terrain,zone,wx,wy);
+                ++samples;
+                if(draw!=physics.paved) ++mismatches;
+                if(draw!=class_grip) ++class_mismatches;
+                std::printf("TC_ROAD_WHEEL mark=6 wheel=%s offset=(%.3f,%.3f) cell=(%.0f,%.0f) reported=%s ribbon_paved=%d raw_physics_paved=%d served_class_paved=%d nearest_raw_paved_edge_m=%.2f\n",
+                            std::array<const char*,4>{"FL","FR","RL","RR"}[wheel],local_x[wheel],local_y[wheel],cell_e,cell_n,
+                            reported[wheel],draw?1:0,physics.paved?1:0,class_grip?1:0,physics.nearest_paved_edge_m);
+            }
+        }
+    }
+    std::printf("TC_ROAD_PARITY summary samples=%d raw_osm_mismatch=%d drawn_paved_physics_grass=%d physics_paved_not_drawn=%d served_class_mismatch=%d\n",
+                samples,mismatches,drawn_but_grass,grip_but_not_drawn,class_mismatches);
+    // The legacy raster is expected to disagree at the measured road-bed
+    // boundaries; the shared geometry classes must materially reduce that
+    // disagreement. Remaining class/ribbon differences are edge quantization
+    // (mesh vertices sit at +0.5m while class/physics cells use integer nodes).
+    CHECK(drawn_but_grass > 0);
+    CHECK(grip_but_not_drawn == 0);
+    CHECK(class_mismatches * 2 < mismatches);
+    terrain.reset();
+    std::error_code ec;
+    std::filesystem::remove_all(temp,ec);
 }
