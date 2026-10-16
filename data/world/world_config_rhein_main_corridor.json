@@ -54,7 +54,7 @@
   "road_separation": {
     "clearance_m": 2.5,
     "margin_m": 3.0,
-    "approach_reach_m": 60.0
+    "approach_reach_m": 150.0
   },
   "road_visuals": {
     "enabled": true,

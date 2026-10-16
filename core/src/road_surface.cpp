@@ -1,4 +1,5 @@
 #include "rg/road_surface.h"
+#include "g2m/layer/road_surface.h"
 #include <algorithm>
 #include <cmath>
 #include <charconv>
@@ -20,9 +21,12 @@ RoadSurfacePatch::RoadSurfacePatch(const g2m::RoadGeomTile& geometry,double verg
         for(std::size_t i=1;i<rows;++i) {
             const auto a=(i-1)*15+6,b=i*15+6;
             const double total=deck->end_station-deck->start_station;
+            const double half_width=(std::hypot(m.positions[a-6]-m.positions[a+6],m.positions[a-5]-m.positions[a+7])+
+                std::hypot(m.positions[b-6]-m.positions[b+6],m.positions[b-5]-m.positions[b+7]))*.25;
+            const auto f=deck->cross_section?g2m::carve_footprint(*deck->cross_section,deck->start_station+total*(i-.5)/(rows-1)):g2m::CarveFootprint{};
             DeckCut cut{m.origin[0]+m.positions[a],m.origin[1]+m.positions[a+1],m.positions[a+2],
                 m.origin[0]+m.positions[b],m.origin[1]+m.positions[b+1],m.positions[b+2],
-                deck->half_width,deck->crown,total*(i-1)/(rows-1),total};
+                half_width,deck->crown,total*(i-1)/(rows-1),total,f.crown,(f.roadbed_left+f.roadbed_right)*.5-f.crown_pivot,deck->cross_section.has_value()};
             const auto index=deck_cuts_.size();deck_cuts_.push_back(cut);const double radius=cut.half_width+1;
             for(int y=bin(std::min(cut.y0,cut.y1)-radius);y<=bin(std::max(cut.y0,cut.y1)+radius);++y)
                 for(int x=bin(std::min(cut.x0,cut.x1)-radius);x<=bin(std::max(cut.x0,cut.x1)+radius);++x)cut_bins_[{x,y}].push_back(index);
@@ -67,11 +71,21 @@ RoadSurfacePatch::RoadSurfacePatch(const g2m::RoadGeomTile& geometry,double verg
                 if(span.end<station&&span.end>lo_end) {lo_end=span.end;lo=span.at_end;}
                 if(span.start>station&&span.start<hi_start) {hi_start=span.start;hi=span.at_start;}
             }
-            Segment s{a.value().x,a.value().y,za.value().height_m,
-                b.value().x,b.value().y,zb.value().height_m,
-                p.attributes.width_mm/2000.0,p.attributes.shoulder_mm/1000.0,
+            // The served ribbon can be asymmetric and wider than the tag-derived attribute width (placement,
+            // join tapers and motorway shoulders). Carve and protect that same bed, centred on its own footprint.
+            std::optional<g2m::CarveFootprint> footprint;
+            double offset=0,half=p.attributes.width_mm/2000.0,shoulder=p.attributes.shoulder_mm/1000.0;
+            if(entry.cross_section) {
+                footprint=g2m::carve_footprint(*entry.cross_section,station-p.reference.length_m/count*.5);
+                offset=(footprint->roadbed_left+footprint->roadbed_right)*.5;
+                half=(footprint->roadbed_left-footprint->roadbed_right)*.5;
+                shoulder=std::max(footprint->outer_left-footprint->roadbed_left,footprint->roadbed_right-footprint->outer_right);
+            }
+            Segment s{a.value().x-std::sin(a.value().heading)*offset,a.value().y+std::cos(a.value().heading)*offset,za.value().height_m,
+                b.value().x-std::sin(b.value().heading)*offset,b.value().y+std::cos(b.value().heading)*offset,zb.value().height_m,
+                half,shoulder,
                 p.attributes.blend_mm/1000.0,p.attributes.crown_per_mille/1000.0,
-                entry.way_id,entry.stretch.start_ref,layer,p.attributes.tunnel,lo,hi};
+                entry.way_id,entry.stretch.start_ref,layer,p.attributes.tunnel,lo,hi,footprint,offset};
             const double radius=s.half_width+s.shoulder+s.blend;
             const auto index=segments_.size(); segments_.push_back(s);
             for(int y=bin(std::min(s.y0,s.y1)-radius);y<=bin(std::max(s.y0,s.y1)+radius);++y)
@@ -124,7 +138,14 @@ std::size_t RoadSurfacePatch::apply(g2m::HeightTile& tile) const {
         std::vector<Road> near; near.reserve(roads.size());
         for(const auto& [id,c]:roads) {
             (void)id;const auto& r=*c.segment;const double d=c.score*(r.half_width+r.shoulder),lateral=std::min(d,r.half_width);
-            const double z=r.z0+(r.z1-r.z0)*c.fraction-r.crown*(std::sqrt(lateral*lateral+.25)-.5)-verge_drop_m_*smooth((d-r.half_width)/std::max(.001,r.shoulder));
+            double z=r.z0+(r.z1-r.z0)*c.fraction-r.crown*(std::sqrt(lateral*lateral+.25)-.5)-verge_drop_m_*smooth((d-r.half_width)/std::max(.001,r.shoulder));
+            if(r.footprint) {
+                const auto& f=*r.footprint;
+                const double signed_d=((r.x1-r.x0)*(n-r.y0)-(r.y1-r.y0)*(e-r.x0))>=0?d:-d;
+                const double t=std::clamp(r.reference_offset+signed_d,f.outer_right,f.outer_left);
+                z=r.z0+(r.z1-r.z0)*c.fraction+g2m::road_crown_m(f.crown,r.crown,t-f.crown_pivot,.5)
+                    -g2m::road_crown_m(f.crown,r.crown,-f.crown_pivot,.5)+g2m::road_verge_m(f,t,verge_drop_m_);
+            }
             near.push_back({&r,c.score,c.fraction,d,z,c.wall,!r.tunnel&&d<=r.half_width+r.shoulder+separation_.margin_m,true});
         }
         // Grade separation (RoadSeparation): inside a road's protected footprint, a road more than clearance_m above it
@@ -135,7 +156,19 @@ std::size_t RoadSurfacePatch::apply(g2m::HeightTile& tile) const {
             if(b.segment->tunnel) continue;
             for(const auto& a:near) {
                 if(&a==&b||!a.protects) continue;
-                if(b.z>a.z+separation_.clearance_m||(b.z<a.z-separation_.clearance_m&&!b.protects)){b.kept=false;break;}
+                if(b.z>a.z+separation_.clearance_m){b.kept=false;break;}
+                if(b.z<a.z-separation_.clearance_m) {
+                    // A lower road's blend must return to the embankment before the upper road's protected bed.
+                    // Dropping it outright at core + margin cuts a metre-grid staircase into a parallel slip road:
+                    // adjacent cells alternate between the excavated lower blend and the untouched upper bed.
+                    const double bc=b.segment->half_width+b.segment->shoulder;
+                    const double ac=a.segment->half_width+a.segment->shoulder;
+                    const double margin=std::max(.001,separation_.margin_m);
+                    const double lower_fade=1-smooth((b.d-bc)/margin);
+                    const double upper_weight=1-smooth((a.d-ac)/margin);
+                    b.wall*=1-upper_weight*(1-lower_fade);
+                    if(b.wall<=0){b.kept=false;break;}
+                }
             }
         }
         const Road* best=nullptr;
@@ -179,7 +212,12 @@ std::size_t RoadSurfacePatch::apply(g2m::HeightTile& tile) const {
             const double lateral=std::abs((e-c.x0)*dy-(n-c.y0)*dx)/std::sqrt(l2);
             if(lateral>c.half_width+1)continue;
             const double station=c.from+t*std::sqrt(l2),edge=std::min(station,c.total-station);
-            const double top=c.z0+(c.z1-c.z0)*t-c.crown*(std::sqrt(lateral*lateral+.25)-.5);
+            double top=c.z0+(c.z1-c.z0)*t-c.crown*(std::sqrt(lateral*lateral+.25)-.5);
+            if(c.canonical) {
+                const double signed_t=(dx*(n-c.y0)-dy*(e-c.x0))/std::sqrt(l2);
+                top=c.z0+(c.z1-c.z0)*t+g2m::road_crown_m(c.crown_kind,c.crown,c.crown_offset+signed_t,.5)
+                    -g2m::road_crown_m(c.crown_kind,c.crown,c.crown_offset,.5);
+            }
             ceiling=std::min(ceiling,top-.55*smooth(edge/4.0));
         }
         const auto quantized=static_cast<std::int32_t>(std::floor(ceiling*256));
