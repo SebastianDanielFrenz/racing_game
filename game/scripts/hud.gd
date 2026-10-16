@@ -352,7 +352,8 @@ func _process_body(_delta: float) -> void:
 			if str(n2o.get("cut_reason", "")) != "":
 				n2o_line += "   safety cut: %s" % str(n2o.get("cut_reason", ""))
 			lines.append(n2o_line)
-		# Damage model (rg/damage.h): one warning line while a part is worn ("DAMAGE: Radiator 62 % ... - repair in the garage").
+		# Damage model (rg/damage.h): one warning line while a part is worn ("DAMAGE: Radiator 62 % ... - repair: pause menu or garage",
+		# "ENGINE SEIZED (Crank bearings) - ..."); none while difficulty.mechanical_damage is off.
 		if _simulation.has_method("get_damage_state"):
 			var damage: Dictionary = _simulation.get_damage_state()
 			var damage_line := str(damage.get("warning", ""))

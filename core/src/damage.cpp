@@ -49,7 +49,7 @@ bool number_in(const json& o, const char* key, double lo, double hi, double& out
     return true;
 }
 
-double lerp_scale(double min_scale, double health) { return min_scale + (1.0 - min_scale) * health; }
+double lerp_scale(double scale_at_zero, double health) { return scale_at_zero + (1.0 - scale_at_zero) * health; }
 
 } // namespace
 
@@ -58,6 +58,7 @@ const char* to_string(DamageEffect effect) {
         case DamageEffect::None: return "none";
         case DamageEffect::RadiatorUa: return "radiator_ua";
         case DamageEffect::FanFlow: return "fan_flow";
+        case DamageEffect::Friction: return "friction";
     }
     return "none";
 }
@@ -77,8 +78,8 @@ std::optional<DamageConfig> parse_damage_config(const std::string& text, const s
     const json& j = *doc;
     if (!known_keys(j, {"format", "source", "report_below", "save_interval_s", "parts", "rules"}, "top level", origin, err)) return std::nullopt;
     std::string format;
-    if (!detail::get_string(j, "format", format) || format != "rg.damage/1") {
-        fail(err, origin, "\"format\" must be \"rg.damage/1\"");
+    if (!detail::get_string(j, "format", format) || format != "rg.damage/2") {
+        fail(err, origin, "\"format\" must be \"rg.damage/2\"");
         return std::nullopt;
     }
     DamageConfig c;
@@ -94,7 +95,7 @@ std::optional<DamageConfig> parse_damage_config(const std::string& text, const s
         const json& po = (*parts)[i];
         const std::string where = "parts[" + std::to_string(i) + "]";
         if (!po.is_object()) { fail(err, origin, where + ": not an object"); return std::nullopt; }
-        if (!known_keys(po, {"id", "label", "description", "effect", "min_scale", "source"}, where, origin, err)) return std::nullopt;
+        if (!known_keys(po, {"id", "label", "description", "effect", "scale_at_zero", "seize_below", "source"}, where, origin, err)) return std::nullopt;
         DamagePartConfig p;
         if (!detail::get_string(po, "id", p.id) || !is_snake(p.id)) { fail(err, origin, where + ": \"id\" must be a lower_snake name"); return std::nullopt; }
         if (c.find(p.id) != nullptr) { fail(err, origin, where + ": duplicate part id \"" + p.id + "\""); return std::nullopt; }
@@ -105,14 +106,19 @@ std::optional<DamageConfig> parse_damage_config(const std::string& text, const s
         if (!detail::get_string(po, "effect", effect)) { fail(err, origin, where + ": \"effect\" is required"); return std::nullopt; }
         if (effect == "radiator_ua") p.effect = DamageEffect::RadiatorUa;
         else if (effect == "fan_flow") p.effect = DamageEffect::FanFlow;
+        else if (effect == "friction") p.effect = DamageEffect::Friction;
         else if (effect == "none") p.effect = DamageEffect::None;
-        else { fail(err, origin, where + ": \"effect\" must be radiator_ua, fan_flow or none"); return std::nullopt; }
-        if (p.effect != DamageEffect::None) {
-            if (!number_in(po, "min_scale", 0.0, 1.0, p.min_scale, where, origin, err)) return std::nullopt;
-        } else if (po.contains("min_scale")) {
-            fail(err, origin, where + ": \"min_scale\" needs an effect");
+        else { fail(err, origin, where + ": \"effect\" must be radiator_ua, fan_flow, friction or none"); return std::nullopt; }
+        if (p.effect == DamageEffect::Friction) {
+            // A worn bearing or ring rubs harder: the factor rises from 1 (healthy) to scale_at_zero.
+            if (!number_in(po, "scale_at_zero", 1.0, 50.0, p.scale_at_zero, where, origin, err)) return std::nullopt;
+        } else if (p.effect != DamageEffect::None) {
+            if (!number_in(po, "scale_at_zero", 0.0, 1.0, p.scale_at_zero, where, origin, err)) return std::nullopt;
+        } else if (po.contains("scale_at_zero")) {
+            fail(err, origin, where + ": \"scale_at_zero\" needs an effect");
             return std::nullopt;
         }
+        if (po.contains("seize_below") && !number_in(po, "seize_below", 0.0, 0.99, p.seize_below, where, origin, err)) return std::nullopt;
         c.parts.push_back(std::move(p));
     }
 
@@ -126,8 +132,7 @@ std::optional<DamageConfig> parse_damage_config(const std::string& text, const s
         const json& ro = (*rules)[i];
         const std::string where = "rules[" + std::to_string(i) + "]";
         if (!ro.is_object()) { fail(err, origin, where + ": not an object"); return std::nullopt; }
-        if (!known_keys(ro, {"id", "part", "signal", "above_c", "above_overheat_k", "after_s", "rate_per_s", "rate_per_s_per_k", "only_while_fan_on", "source"},
-                        where, origin, err))
+        if (!known_keys(ro, {"id", "part", "signal", "above_c", "above_overheat_k", "after_s", "curve", "only_while_fan_on", "only_while_running", "source"}, where, origin, err))
             return std::nullopt;
         DamageRuleConfig r;
         if (!detail::get_string(ro, "id", r.id) || !is_snake(r.id) || !rule_ids.insert(r.id).second) {
@@ -148,12 +153,38 @@ std::optional<DamageConfig> parse_damage_config(const std::string& text, const s
         if (abs == rel) { fail(err, origin, where + ": give exactly one of \"above_c\" and \"above_overheat_k\""); return std::nullopt; }
         r.relative_to_overheat = rel;
         if (!number_in(ro, rel ? "above_overheat_k" : "above_c", rel ? -100.0 : -50.0, rel ? 200.0 : 400.0, r.above, where, origin, err)) return std::nullopt;
-        if (!number_in(ro, "after_s", 0.0, 3600.0, r.after_s, where, origin, err)) return std::nullopt;
-        if (!number_in(ro, "rate_per_s", 0.0, 1.0, r.rate_per_s, where, origin, err)) return std::nullopt;
-        if (!number_in(ro, "rate_per_s_per_k", 0.0, 1.0, r.rate_per_s_per_k, where, origin, err, false)) return std::nullopt;
-        if (!(r.rate_per_s > 0.0) && !(r.rate_per_s_per_k > 0.0)) { fail(err, origin, where + ": a rule needs a positive rate"); return std::nullopt; }
+        if (!number_in(ro, "after_s", 0.0, 3600.0, r.after_s, where, origin, err, false)) return std::nullopt;
+        const auto curve = ro.find("curve");
+        if (curve == ro.end() || !curve->is_array() || curve->size() < 2) {
+            fail(err, origin, where + ": \"curve\" must be an array of at least two [excess_k, health_per_s] points");
+            return std::nullopt;
+        }
+        bool any_positive = false;
+        for (std::size_t k = 0; k < curve->size(); ++k) {
+            const json& pt = (*curve)[k];
+            const std::string at = where + ".curve[" + std::to_string(k) + "]";
+            if (!pt.is_array() || pt.size() != 2 || !pt[0].is_number() || !pt[1].is_number()) {
+                fail(err, origin, at + ": a point is [excess_k, health_per_s]");
+                return std::nullopt;
+            }
+            const double x = pt[0].get<double>(), y = pt[1].get<double>();
+            if (!std::isfinite(x) || !std::isfinite(y) || x < 0.0 || x > 500.0 || y < 0.0 || y > 10.0) {
+                fail(err, origin, at + ": excess in [0, 500] K, rate in [0, 10] per s");
+                return std::nullopt;
+            }
+            if (k == 0 && x != 0.0) { fail(err, origin, at + ": the curve starts at excess 0"); return std::nullopt; }
+            if (k > 0 && !(x > r.curve.back().first)) { fail(err, origin, at + ": excess must increase strictly"); return std::nullopt; }
+            if (k > 0 && y < r.curve.back().second) { fail(err, origin, at + ": the rate must not fall as the excess grows"); return std::nullopt; }
+            any_positive = any_positive || y > 0.0;
+            r.curve.emplace_back(x, y);
+        }
+        if (!any_positive) { fail(err, origin, where + ": a curve needs a positive rate"); return std::nullopt; }
         if (ro.contains("only_while_fan_on") && !detail::get_bool(ro, "only_while_fan_on", r.only_while_fan_on)) {
             fail(err, origin, where + ": \"only_while_fan_on\" must be a boolean");
+            return std::nullopt;
+        }
+        if (ro.contains("only_while_running") && !detail::get_bool(ro, "only_while_running", r.only_while_running)) {
+            fail(err, origin, where + ": \"only_while_running\" must be a boolean");
             return std::nullopt;
         }
         if (!detail::get_string(ro, "source", r.source) || r.source.empty()) { fail(err, origin, where + ": \"source\" is required"); return std::nullopt; }
@@ -261,16 +292,33 @@ bool save_damage_state(const std::string& path, const DamageState& state, std::s
     return true;
 }
 
-CoolingScales cooling_scales(const DamageConfig& config, const DamageState& state) {
-    CoolingScales s;
+double wear_rate_per_s(const DamageRuleConfig& rule, double excess_k) {
+    const auto& c = rule.curve;
+    if (!(excess_k > 0.0) || c.size() < 2) return 0.0;
+    std::size_t i = 1;
+    while (i + 1 < c.size() && excess_k > c[i].first) ++i; // segment [i-1, i]; past the last point: the last segment
+    const double x0 = c[i - 1].first, y0 = c[i - 1].second, x1 = c[i].first, y1 = c[i].second;
+    const double rate = y0 + (y1 - y0) * (excess_k - x0) / (x1 - x0);
+    return std::max(0.0, rate);
+}
+
+DamageScales damage_scales(const DamageConfig& config, const DamageState& state) {
+    DamageScales s;
     for (const DamagePartConfig& p : config.parts) {
         const double h = state.health_of(p.id);
         if (h == 1.0) continue; // exactly unity: no multiplication at all
-        const double f = lerp_scale(p.min_scale, h);
+        const double f = lerp_scale(p.scale_at_zero, h);
         if (p.effect == DamageEffect::RadiatorUa) s.radiator_ua *= f;
         else if (p.effect == DamageEffect::FanFlow) s.fan_flow *= f;
+        else if (p.effect == DamageEffect::Friction) s.friction *= f;
     }
     return s;
+}
+
+const DamagePartConfig* seized_part(const DamageConfig& config, const DamageState& state) {
+    for (const DamagePartConfig& p : config.parts)
+        if (p.can_seize() && state.health_of(p.id) <= p.seize_below) return &p;
+    return nullptr;
 }
 
 DamageModel::DamageModel(DamageConfig config, DamageState state, double overheat_c)
@@ -284,7 +332,7 @@ bool DamageModel::step(double dt, const DamageInputs& in) {
         if (r.relative_to_overheat && !(overheat_c_ > 0.0)) continue; // the car has no overheat warning
         const double threshold = r.relative_to_overheat ? overheat_c_ + r.above : r.above;
         const double value = r.signal == DamageSignal::OilC ? in.oil_c : in.coolant_c;
-        const bool active = value > threshold && (!r.only_while_fan_on || in.fan_on);
+        const bool active = value > threshold && (!r.only_while_fan_on || in.fan_on) && (!r.only_while_running || in.engine_running);
         if (!active) {
             dwell_[i] = 0.0;
             continue;
@@ -294,7 +342,7 @@ bool DamageModel::step(double dt, const DamageInputs& in) {
         const auto it = state_.health.find(r.part);
         const double before = it == state_.health.end() ? 1.0 : it->second;
         if (before <= 0.0) continue;
-        const double loss = (r.rate_per_s + r.rate_per_s_per_k * (value - threshold)) * dt;
+        const double loss = wear_rate_per_s(r, value - threshold) * dt;
         const double after = std::max(0.0, before - loss);
         if (after != before) {
             state_.health[r.part] = after;
@@ -320,7 +368,12 @@ DamageView damage_view(const DamageConfig& config, const DamageState& state) {
         pv.health = state.health_of(p.id);
         pv.damaged = pv.health < config.report_below;
         pv.effect = p.effect;
-        pv.effect_scale = p.effect == DamageEffect::None ? 1.0 : lerp_scale(p.min_scale, pv.health);
+        pv.effect_scale = p.effect == DamageEffect::None ? 1.0 : lerp_scale(p.scale_at_zero, pv.health);
+        pv.seized = p.can_seize() && pv.health <= p.seize_below;
+        if (pv.seized && !v.seized) {
+            v.seized = true;
+            v.seized_label = p.label;
+        }
         v.any_damaged = v.any_damaged || pv.damaged;
         listed.insert(p.id);
         v.parts.push_back(std::move(pv));
@@ -335,11 +388,12 @@ DamageView damage_view(const DamageConfig& config, const DamageState& state) {
         v.any_damaged = v.any_damaged || pv.damaged;
         v.parts.push_back(std::move(pv));
     }
-    v.scales = cooling_scales(config, state);
+    v.scales = damage_scales(config, state);
     return v;
 }
 
 std::string damage_warning_line(const DamageView& view) {
+    if (view.seized) return "ENGINE SEIZED (" + view.seized_label + ") - repair the car: pause menu or garage";
     if (!view.any_damaged) return "";
     std::string line = "DAMAGE:";
     bool first = true;
@@ -350,7 +404,7 @@ std::string damage_warning_line(const DamageView& view) {
         line += buf;
         first = false;
     }
-    return line + " - repair in the garage";
+    return line + " - repair: pause menu or garage";
 }
 
 } // namespace rg

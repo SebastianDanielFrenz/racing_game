@@ -890,6 +890,7 @@ bool Session::step_once(bool from_loop) {
         for(std::size_t i=0;i<vehicle_desc_.aero.fans.size();++i)
             world_->set_aero_fan_command(vehicle_id_,i,config_.environment.fan_command);
     }
+    if (have_vehicle_) apply_damage_controls();
     world_->step();
     adopt_physics_channel_writes();
     if (have_vehicle_) update_damage();
@@ -905,45 +906,80 @@ void Session::setup_damage() {
     if (!config_.damage) return;
     const EngineThermalInfo info = engine_thermal_info(vehicle_desc_);
     damage_.emplace(config_.damage->config, config_.damage->state, info.overheat_c);
+    damage_enabled_.store(config_.damage->enabled, std::memory_order_relaxed);
+    damage_enabled_applied_ = config_.damage->enabled;
+    damage_seized_ = info.present && damage_enabled_applied_ && damage_->seized() != nullptr;
     {
         std::lock_guard<std::mutex> lock(damage_mutex_);
         damage_report_.present = true;
         damage_report_.thermal = info.present;
-        damage_report_.state = damage_->state();
+        publish_damage_locked();
     }
     // A car brought in damaged drives damaged from its first tick (the queued factors apply at the first tick boundary).
-    if (info.present) apply_cooling_scales(damage_->scales());
+    if (info.present && damage_enabled_applied_) apply_damage_scales(damage_->scales());
 }
 
-void Session::apply_cooling_scales(const CoolingScales& scales) {
+void Session::publish_damage_locked() {
+    damage_report_.enabled = damage_enabled_applied_;
+    damage_report_.state = damage_->state();
+    const DamagePartConfig* seized = damage_->seized();
+    damage_report_.seized = damage_seized_;
+    damage_report_.seized_part = damage_seized_ && seized != nullptr ? seized->id : std::string();
+}
+
+void Session::apply_damage_scales(const DamageScales& scales) {
     if (scales == damage_applied_) return; // healthy and never damaged: the physics is never called
-    world_->set_engine_cooling_capacity(vehicle_id_, ps::drivetrain::CoolingCapacity{scales.radiator_ua, scales.fan_flow});
+    // Each seam is called only when its own factors changed, so a cooling-only damage never touches the friction.
+    if (scales.radiator_ua != damage_applied_.radiator_ua || scales.fan_flow != damage_applied_.fan_flow)
+        world_->set_engine_cooling_capacity(vehicle_id_, ps::drivetrain::CoolingCapacity{scales.radiator_ua, scales.fan_flow});
+    if (scales.friction != damage_applied_.friction)
+        world_->set_engine_wear(vehicle_id_, ps::drivetrain::EngineWear{scales.friction});
     damage_applied_ = scales;
     std::lock_guard<std::mutex> lock(damage_mutex_);
     damage_report_.applied = scales;
 }
 
+void Session::apply_damage_controls() {
+    if (!damage_seized_) return;
+    // A seized engine: no ignition, no cranking, whatever the player or the drive script asks for. Not a physics write
+    // (the mirror is told, like the unattended override), so the player's own ignition setting survives the repair.
+    const auto hold = [this](const char* name) {
+        world_->set_control(name, 0.0);
+        if (channels_pushed_) note_world_override(control_channels_, channel_mirror_, name, 0.0);
+    };
+    hold("ignition");
+    hold("starter");
+}
+
 void Session::update_damage() {
     if (!damage_) return;
     const bool thermal = vehicle_desc_.powertrain.thermal.has_value();
+    bool publish = false;
+    const bool enabled = damage_enabled_.load(std::memory_order_relaxed);
+    if (enabled != damage_enabled_applied_) {
+        damage_enabled_applied_ = enabled;
+        publish = true;
+    }
     if (damage_repair_pending_.exchange(false, std::memory_order_acq_rel)) {
         damage_->repair();
-        if (thermal) apply_cooling_scales(damage_->scales());
-        std::lock_guard<std::mutex> lock(damage_mutex_);
-        damage_report_.state = damage_->state();
-        ++damage_report_.revision;
+        publish = true;
     }
-    if (!thermal) return;
-    const ps::drivetrain::EngineThermalSnapshot& t = world_->powertrain_state(vehicle_id_).thermal;
-    DamageInputs in;
-    in.has_thermal = t.has_thermal;
-    in.coolant_c = t.coolant_c;
-    in.oil_c = t.oil_c;
-    in.fan_on = t.fan_on;
-    if (!damage_->step(world_->dt(), in)) return;
-    apply_cooling_scales(damage_->scales());
+    if (thermal && enabled) {
+        const ps::drivetrain::PowertrainSnapshot& pt = world_->powertrain_state(vehicle_id_);
+        const ps::drivetrain::EngineThermalSnapshot& t = pt.thermal;
+        DamageInputs in;
+        in.engine_running = pt.engine_state == ps::drivetrain::EngineState::Running;
+        in.has_thermal = t.has_thermal;
+        in.coolant_c = t.coolant_c;
+        in.oil_c = t.oil_c;
+        in.fan_on = t.fan_on;
+        if (damage_->step(world_->dt(), in)) publish = true;
+    }
+    if (!publish) return;
+    if (thermal) apply_damage_scales(enabled ? damage_->scales() : DamageScales{});
+    damage_seized_ = thermal && enabled && damage_->seized() != nullptr;
     std::lock_guard<std::mutex> lock(damage_mutex_);
-    damage_report_.state = damage_->state();
+    publish_damage_locked();
     ++damage_report_.revision;
 }
 
@@ -957,9 +993,16 @@ void Session::request_damage_repair() {
     {
         std::lock_guard<std::mutex> lock(damage_mutex_);
         damage_report_.state = DamageState{};
+        damage_report_.seized = false;
+        damage_report_.seized_part.clear();
         ++damage_report_.revision;
     }
     damage_repair_pending_.store(true, std::memory_order_release);
+}
+
+void Session::set_damage_enabled(bool enabled) {
+    if (!config_.damage) return;
+    damage_enabled_.store(enabled, std::memory_order_relaxed);
 }
 
 bool Session::sync_road_decks(int budget) {

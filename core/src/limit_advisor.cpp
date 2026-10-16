@@ -943,7 +943,7 @@ std::vector<AdviceItem> build_advice(const AdviceInput& input, const AdvisorConf
         emit("CoolantTemperature", temp_grade(input.coolant_limit_time_s, input.coolant_limit_c),
              {{"value", fixed(input.coolant_peak_c, 0) + " C"}, {"time", duration(input.coolant_limit_time_s)}, {"limit", fixed(input.coolant_limit_c, 0) + " C"},
               {"part", input.radiator_part.empty() ? std::string("radiator") : input.radiator_part}, {"ambient", ambient}, {"air_speed", air}},
-             input.coolant_peak_rpm, "engine_block", input.radiator_option);
+             input.coolant_peak_rpm, "head_gasket", input.radiator_option);
         emit("OilTemperature", temp_grade(input.oil_limit_time_s, input.oil_limit_c),
              {{"value", fixed(input.oil_peak_c, 0) + " C"}, {"time", duration(input.oil_limit_time_s)}, {"limit", fixed(input.oil_limit_c, 0) + " C"},
               {"part", input.oil_cooler_part.empty() ? std::string("oil cooling") : input.oil_cooler_part}, {"ambient", ambient}, {"air_speed", oil_air}},

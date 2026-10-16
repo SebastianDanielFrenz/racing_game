@@ -206,6 +206,9 @@ struct SessionConfig {
         DamageConfig config;
         DamageState state;
         std::string state_path; // where the caller saves the state (informational: the Session never writes files)
+        // The difficulty setting difficulty.mechanical_damage. false: nothing wears and the stored damage is not applied
+        // (the car drives as new; the state is kept as it is). Session::set_damage_enabled changes it while driving.
+        bool enabled = true;
     };
     std::shared_ptr<const Damage> damage;
 };
@@ -215,8 +218,11 @@ struct DamageReport {
     bool present = false;      // SessionConfig::damage was set
     bool thermal = false;      // the car has the engine thermal model (only then does anything wear)
     std::uint64_t revision = 0; // +1 every tick a health changed, and on a repair
+    bool enabled = true;       // difficulty.mechanical_damage (Session::set_damage_enabled)
+    bool seized = false;       // a part has seized the engine: ignition and starter held at 0 until a repair
+    std::string seized_part;   // its id
     DamageState state;
-    CoolingScales applied;     // what the physics was last given (1, 1 = never called)
+    DamageScales applied;      // what the physics was last given (1, 1, 1 = never called)
 };
 
 // V8: the physics weather as of the last tick (WeatherSnapshot::installed false = no environment).
@@ -443,6 +449,9 @@ public:
     [[nodiscard]] const DamageConfig* damage_config() const { return config_.damage ? &config_.damage->config : nullptr; }
     [[nodiscard]] std::string damage_state_path() const { return config_.damage ? config_.damage->state_path : std::string(); }
     void request_damage_repair();
+    // difficulty.mechanical_damage, any thread, applied at the next tick: false stops all wear and gives the physics
+    // healthy factors (a seized engine runs again); true applies the stored state again.
+    void set_damage_enabled(bool enabled);
     [[nodiscard]] FixedRateLoop::LoopStats loop_stats() const { return loop_.stats(); }
 
     // --- Tick-spike diagnostics (owner drive 2026-09-27: ~170 ms sim-thread
@@ -877,9 +886,14 @@ private:
     // Damage model (stepping thread), its published report (mutex) and a pending repair.
     void setup_damage();
     void update_damage();
-    void apply_cooling_scales(const CoolingScales& scales);
+    void apply_damage_scales(const DamageScales& scales);
+    void apply_damage_controls(); // a seized engine: ignition and starter to 0 right before the step
+    void publish_damage_locked();
     std::optional<DamageModel> damage_;
-    CoolingScales damage_applied_;
+    DamageScales damage_applied_;
+    bool damage_seized_ = false;            // stepping thread
+    bool damage_enabled_applied_ = true;    // stepping thread: the enabled flag the last tick used
+    std::atomic<bool> damage_enabled_{true};
     mutable std::mutex damage_mutex_;
     DamageReport damage_report_;
     std::atomic<bool> damage_repair_pending_{false};

@@ -67,6 +67,7 @@ void configure_vehicle_chassis(rg::SessionConfig& config, const VehicleOverrides
             auto damage = std::make_shared<rg::SessionConfig::Damage>();
             damage->config = std::move(*cfg);
             damage->state_path = overrides.damage_state_path;
+            damage->enabled = overrides.damage_enabled;
             if (!overrides.damage_state_path.empty()) {
                 if (auto st = rg::load_damage_state(overrides.damage_state_path, &err)) damage->state = std::move(*st);
                 else std::fprintf(stderr, "RG_DAMAGE state not loaded (driving healthy): %s\n", err.c_str());
@@ -1495,6 +1496,8 @@ void RgSimulation::_bind_methods() {
     godot::ClassDB::bind_method(D_METHOD("get_vehicle_nitrous", "vehicle_name"), &RgSimulation::get_vehicle_nitrous);
     godot::ClassDB::bind_method(D_METHOD("get_damage_state"), &RgSimulation::get_damage_state);
     godot::ClassDB::bind_method(D_METHOD("repair_damage", "state_path"), &RgSimulation::repair_damage);
+    godot::ClassDB::bind_method(D_METHOD("set_damage_enabled", "enabled"), &RgSimulation::set_damage_enabled);
+    godot::ClassDB::bind_method(D_METHOD("is_damage_enabled"), &RgSimulation::is_damage_enabled);
     godot::ClassDB::bind_method(D_METHOD("get_vehicle_thermal", "vehicle_name"), &RgSimulation::get_vehicle_thermal);
     godot::ClassDB::bind_method(D_METHOD("get_vehicle_ground_speed_mps", "vehicle_name"), &RgSimulation::get_vehicle_ground_speed_mps);
 }

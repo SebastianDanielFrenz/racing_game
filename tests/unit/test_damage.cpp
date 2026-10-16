@@ -52,14 +52,16 @@ struct TempDir {
 
 // A minimal config: one part per effect, one absolute rule each.
 const char* kMiniConfig = R"({
-  "format": "rg.damage/1", "source": "test",
+  "format": "rg.damage/2", "source": "test",
   "parts": [
-    {"id": "radiator", "label": "Radiator", "effect": "radiator_ua", "min_scale": 0.5, "source": "t"},
-    {"id": "radiator_fan", "label": "Fan", "effect": "fan_flow", "min_scale": 0.0, "source": "t"}
+    {"id": "radiator", "label": "Radiator", "effect": "radiator_ua", "scale_at_zero": 0.5, "source": "t"},
+    {"id": "radiator_fan", "label": "Fan", "effect": "fan_flow", "scale_at_zero": 0.0, "source": "t"},
+    {"id": "bearings", "label": "Bearings", "effect": "friction", "scale_at_zero": 3.0, "seize_below": 0.1, "source": "t"}
   ],
   "rules": [
-    {"id": "boil", "part": "radiator", "signal": "coolant_c", "above_c": 120.0, "after_s": 2.0, "rate_per_s": 0.1, "rate_per_s_per_k": 0.01, "source": "t"},
-    {"id": "fan", "part": "radiator_fan", "signal": "coolant_c", "above_overheat_k": 0.0, "after_s": 0.0, "rate_per_s": 0.05, "only_while_fan_on": true, "source": "t"}
+    {"id": "boil", "part": "radiator", "signal": "coolant_c", "above_c": 120.0, "after_s": 2.0, "curve": [[0, 0.1], [10, 0.2]], "source": "t"},
+    {"id": "fan", "part": "radiator_fan", "signal": "coolant_c", "above_overheat_k": 0.0, "after_s": 0.0, "curve": [[0, 0.05], [10, 0.05]], "only_while_fan_on": true, "source": "t"},
+    {"id": "film", "part": "bearings", "signal": "oil_c", "above_c": 130.0, "curve": [[0, 0.01], [10, 0.05], [20, 0.4]], "source": "t"}
   ]
 })";
 
@@ -137,13 +139,24 @@ TEST_CASE("damage: the loader rejects malformed configs with a reason", "[damage
         return err;
     };
     CHECK_THAT(bad("[]"), ContainsSubstring("not a JSON object"));
-    CHECK_THAT(bad(R"({"format":"rg.damage/2","parts":[]})"), ContainsSubstring("rg.damage/1"));
+    CHECK_THAT(bad(R"({"format":"rg.damage/1","parts":[]})"), ContainsSubstring("rg.damage/2"));
     std::string t = kMiniConfig;
     CHECK_THAT(bad(std::string(t).replace(t.find("\"radiator_ua\""), 13, "\"boost\"")), ContainsSubstring("effect"));
     CHECK_THAT(bad(std::string(t).replace(t.find("\"part\": \"radiator\""), 18, "\"part\": \"turbo\"")), ContainsSubstring("part"));
     CHECK_THAT(bad(std::string(t).replace(t.find("\"above_c\": 120.0"), 16, "\"above_c\": 120.0, \"above_overheat_k\": 1")),
                ContainsSubstring("exactly one"));
     CHECK_THAT(bad(std::string(t).replace(t.find("\"source\": \"test\""), 16, "\"source\": \"test\", \"colour\": 1")), ContainsSubstring("unknown key"));
+    // Curves: start at 0, excess strictly rising, rate never falling, a positive rate somewhere.
+    const std::string boil = "[[0, 0.1], [10, 0.2]]";
+    const auto with_curve = [&](const std::string& c) { return std::string(t).replace(t.find(boil), boil.size(), c); };
+    CHECK_THAT(bad(with_curve("[[1, 0.1], [10, 0.2]]")), ContainsSubstring("starts at excess 0"));
+    CHECK_THAT(bad(with_curve("[[0, 0.1], [0, 0.2]]")), ContainsSubstring("increase strictly"));
+    CHECK_THAT(bad(with_curve("[[0, 0.2], [10, 0.1]]")), ContainsSubstring("must not fall"));
+    CHECK_THAT(bad(with_curve("[[0, 0], [10, 0]]")), ContainsSubstring("positive rate"));
+    CHECK_THAT(bad(with_curve("[[0, 0.1]]")), ContainsSubstring("at least two"));
+    // A friction part rises (scale_at_zero >= 1), a cooling part falls (<= 1).
+    CHECK_THAT(bad(std::string(t).replace(t.find("\"scale_at_zero\": 3.0"), 20, "\"scale_at_zero\": 0.5")), ContainsSubstring("[1, 50]"));
+    CHECK_THAT(bad(std::string(t).replace(t.find("\"scale_at_zero\": 0.5"), 20, "\"scale_at_zero\": 2.0")), ContainsSubstring("[0, 1]"));
 }
 
 TEST_CASE("damage: the state file round-trips, keeps unknown parts, and a healthy state removes it", "[damage]") {
@@ -179,22 +192,65 @@ TEST_CASE("damage: the state file round-trips, keeps unknown parts, and a health
     CHECK_THAT(err, ContainsSubstring("[0, 1]"));
 }
 
-TEST_CASE("damage: cooling scales are exactly 1 while healthy and follow min_scale when worn", "[damage]") {
+TEST_CASE("damage: scales are exactly 1 while healthy and follow scale_at_zero when worn; a part seizes below seize_below", "[damage]") {
     const rg::DamageConfig c = mini();
     rg::DamageState s;
-    CHECK(rg::cooling_scales(c, s).unity());
+    CHECK(rg::damage_scales(c, s).unity());
     s.health["radiator"] = 1.0;
-    CHECK(rg::cooling_scales(c, s).unity());
+    CHECK(rg::damage_scales(c, s).unity());
     s.health["radiator"] = 0.5;      // 0.5 + 0.5 x 0.5
     s.health["radiator_fan"] = 0.25; // 0 + 1 x 0.25
-    const rg::CoolingScales k = rg::cooling_scales(c, s);
+    s.health["bearings"] = 0.5;      // 3 + (1 - 3) x 0.5 = 2
+    const rg::DamageScales k = rg::damage_scales(c, s);
     CHECK(k.radiator_ua == 0.75);
     CHECK(k.fan_flow == 0.25);
+    CHECK(k.friction == 2.0);
+    CHECK(rg::seized_part(c, s) == nullptr);
     const rg::DamageView v = rg::damage_view(c, s);
     CHECK(v.any_damaged);
+    CHECK_FALSE(v.seized);
     CHECK_THAT(rg::damage_warning_line(v), ContainsSubstring("Radiator 50 %"));
-    CHECK_THAT(rg::damage_warning_line(v), ContainsSubstring("repair in the garage"));
+    CHECK_THAT(rg::damage_warning_line(v), ContainsSubstring("repair: pause menu or garage"));
     CHECK(rg::damage_warning_line(rg::damage_view(c, rg::DamageState{})).empty());
+    s.health["bearings"] = 0.1; // at seize_below: seized
+    REQUIRE(rg::seized_part(c, s) != nullptr);
+    CHECK(rg::seized_part(c, s)->id == "bearings");
+    const rg::DamageView sv = rg::damage_view(c, s);
+    CHECK(sv.seized);
+    CHECK(sv.seized_label == "Bearings");
+    CHECK_THAT(rg::damage_warning_line(sv), ContainsSubstring("ENGINE SEIZED (Bearings)"));
+}
+
+TEST_CASE("damage: the wear rate grows faster than the excess (owner: far past the safe value ruins a part quicker)", "[damage]") {
+    const rg::DamageConfig c = mini();
+    const rg::DamageRuleConfig& film = c.rules.at(2);
+    CHECK(rg::wear_rate_per_s(film, -5.0) == 0.0);
+    CHECK(rg::wear_rate_per_s(film, 0.0) == 0.0); // at the safe value itself: nothing
+    CHECK(std::abs(rg::wear_rate_per_s(film, 5.0) - 0.03) < 1e-12);  // between the points
+    CHECK(std::abs(rg::wear_rate_per_s(film, 15.0) - 0.225) < 1e-12);
+    CHECK(std::abs(rg::wear_rate_per_s(film, 30.0) - 0.75) < 1e-12); // past the table: on along the last slope
+    // Superlinear: twice the excess wears more than twice as fast, on every rule of the shipped file.
+    for (const rg::DamageRuleConfig& r : shipped().rules) {
+        INFO(r.id);
+        const double e = r.curve.back().first;
+        CHECK(rg::wear_rate_per_s(r, e) >= 2.0 * rg::wear_rate_per_s(r, e / 2.0));
+        CHECK(rg::wear_rate_per_s(r, 2.0 * e) > rg::wear_rate_per_s(r, e));
+    }
+    // Time-integrated: the same 2 s past the safe value at 10 K and at 20 K over.
+    rg::DamageModel a(c, rg::DamageState{}, 0.0), b(c, rg::DamageState{}, 0.0);
+    for (int i = 0; i < 8; ++i) {
+        a.step(0.25, rg::DamageInputs{true, 90.0, 140.0, false});
+        b.step(0.25, rg::DamageInputs{true, 90.0, 150.0, false});
+    }
+    const double loss_a = 1.0 - a.state().health_of("bearings"), loss_b = 1.0 - b.state().health_of("bearings");
+    std::printf("DAMAGE 2 s at 10 K over: %.3f lost, at 20 K over: %.3f lost\n", loss_a, loss_b);
+    CHECK(std::abs(loss_a - 0.1) < 1e-9);
+    CHECK(std::abs(loss_b - 0.8) < 1e-9); // twice the excess, eight times the loss
+    CHECK(b.seized() == nullptr);         // 0.2 left, seize_below 0.1
+    b.step(0.25, rg::DamageInputs{true, 90.0, 150.0, false});
+    b.step(0.25, rg::DamageInputs{true, 90.0, 150.0, false});
+    CHECK(b.seized() != nullptr);
+    CHECK(a.seized() == nullptr);
 }
 
 // ---- accumulation ------------------------------------------------------------------------------------------------------
@@ -209,7 +265,7 @@ TEST_CASE("damage: wear starts after the dwell, grows with the excess, stops bel
     CHECK_FALSE(m.step(dt, hot));
     CHECK(m.step(dt, hot));
     const double h1 = m.state().health_of("radiator");
-    CHECK(std::abs(h1 - (1.0 - (0.1 + 0.01 * 5.0) * dt)) < 1e-12);
+    CHECK(std::abs(h1 - (1.0 - 0.15 * dt)) < 1e-12); // 5 K into [[0, 0.1], [10, 0.2]]
     CHECK(m.state().health_of("radiator_fan") == 1.0);
     // Below the threshold: no wear, the dwell resets, and the damage stays (no self-healing).
     rg::DamageInputs cool{true, 100.0, 100.0, true};
@@ -369,7 +425,7 @@ TEST_CASE("damage: the garage hands the paths to the drive, reads the saved stat
     auto st = rg::load_damage_state(d.damage_state_path, &err);
     REQUIRE(cfg.has_value());
     REQUIRE(st.has_value());
-    CHECK(rg::cooling_scales(*cfg, *st).fan_flow < 1.0);
+    CHECK(rg::damage_scales(*cfg, *st).fan_flow < 1.0);
 
     // Repair: free, the file is gone, the car is healthy.
     REQUIRE(g->repair_damage(id, &err));

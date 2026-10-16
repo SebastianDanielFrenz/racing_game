@@ -55,6 +55,7 @@ struct VehicleOverrides {
     std::string turbo_map_extension_path; // "" = stage maps are used as loaded
     std::string damage_config_path;       // data/vehicles/damage.json ("" = no damage model)
     std::string damage_state_path;        // <user dir>/garage/damage/<id>.json (may not exist: a healthy car)
+    bool damage_enabled = true;           // difficulty.mechanical_damage (RgSimulation::set_damage_enabled)
 };
 
 class RgSimulation : public godot::Node {
@@ -399,7 +400,12 @@ public:
     godot::Dictionary get_damage_state();
     // The garage repaired the car whose state file is `state_path`: if that is the running car, its parts are healthy
     // from the next tick (free, owner rule). Returns true when the running car was repaired.
+    // "" = the running car, whatever its file (the pause menu's "Repair car").
     bool repair_damage(const godot::String& state_path);
+    // difficulty.mechanical_damage: false = nothing wears and the stored damage has no effect (kept on disk). Applies to
+    // the running car at its next tick and to every later load.
+    void set_damage_enabled(bool enabled);
+    [[nodiscard]] bool is_damage_enabled() const { return vehicle_overrides_.damage_enabled; }
     // Engine temperature for dashboards (rg::engine_thermal_hud); {present: false} for a car without a thermal model.
     [[nodiscard]] godot::Dictionary get_vehicle_thermal(const godot::String& vehicle_name) const;
     [[nodiscard]] float get_vehicle_ground_speed_mps(const godot::String& vehicle_name) const;

@@ -1,6 +1,6 @@
 {
-  "format": "rg.damage/1",
-  "source": "Damage model, first piece (2026-10-16, owner: a radiator / fan damage part that fails). Every number here is [AS] (chosen for play, not measured): wear starts only well past the car's own overheat warning (the cooling system's warnings.overheat_c, 118 C for the class defaults and the hypercar) and is slow enough that a short excursion costs a few per cent while a long overheat ruins the part. The parts' ids are the names the garage setup check gives the cooling limits (AdviceItem::damage_part). Rules apply in file order every simulation tick; dwell timers reset as soon as the signal drops below the threshold.",
+  "format": "rg.damage/2",
+  "source": "Car damage model (2026-10-16; owner on PR #33: 'pushing far in excess of safe values should ruin a part quicker; getting oil up to 170 C within 3 minutes should not be possible because the engine breaks first', and 'an engine without a real working cooling solution should keep running, but then other parts will start failing and that might cause the engine to shut off'). Every number here is [AS] (chosen for play, not measured on a real engine). Each part has one health-to-function translation (effect, factor = scale_at_zero + (1 - scale_at_zero) x health): the cooling parts cost radiator conductance or fan air, the engine internals raise the engine's friction (more heat into the oil, less power) and seize below seize_below, which shuts the engine off until the car is repaired. Each rule wears its part at a rate read off its curve over the excess past the safe value ([excess K, health lost per second], linear between points and on along the last segment beyond the table): a few kelvin past the safe value cost a part over many minutes, far past it ruins the part in seconds. The coolant rules count from the car's own overheat warning (cooling_system warnings.overheat_c, 118 C for the class defaults and the hypercar), the oil rules from absolute oil temperatures: 135 C is the setup check's oil limit (data/cooling_systems/cooling_upgrades.json oil_limit_c: an engine oil keeps its film to about 130-140 C), so a car the setup check passes never wears its internals; the stock hypercar's full-throttle run settles at 110.8 C oil on a 35 C day. Rules apply in file order every simulation tick; a dwell timer resets as soon as its signal drops below the safe value. The calibration against the owner's 2 MW / 11 bar hypercar run is in docs/damage_model.md (tests/unit/test_damage_engine.cpp [.][damage][long]).",
   "report_below": 0.995,
   "save_interval_s": 5.0,
   "parts": [
@@ -9,7 +9,7 @@
       "label": "Radiator",
       "description": "Boiled coolant scale and burst tubes: the radiator passes less heat to the air.",
       "effect": "radiator_ua",
-      "min_scale": 0.25,
+      "scale_at_zero": 0.25,
       "source": "[AS] a ruined core keeps a quarter of its heat-exchanger conductance (some tubes still flow)."
     },
     {
@@ -17,7 +17,7 @@
       "label": "Radiator fan",
       "description": "A cooked fan motor turns slower: less air through the radiator when the car is slow.",
       "effect": "fan_flow",
-      "min_scale": 0.0,
+      "scale_at_zero": 0.0,
       "source": "[AS] a dead fan moves no air; ram air still flows at speed."
     },
     {
@@ -25,8 +25,26 @@
       "label": "Head gasket",
       "description": "Combustion gas leaks into the coolant and forms pockets in the radiator: the cooling gets worse.",
       "effect": "radiator_ua",
-      "min_scale": 0.6,
-      "source": "[AS] gas pockets cost up to 40 % of the radiator's conductance; a power loss would need a physics seam the engine model does not have yet."
+      "scale_at_zero": 0.6,
+      "source": "[AS] gas pockets cost up to 40 % of the radiator's conductance."
+    },
+    {
+      "id": "crankshaft",
+      "label": "Crank bearings",
+      "description": "Thin hot oil lets the crank bearings rub: more friction, more heat in the oil, less power; worn through, they seize the engine.",
+      "effect": "friction",
+      "scale_at_zero": 3.0,
+      "seize_below": 0.2,
+      "source": "[AS] a scored bearing set triples the engine's friction before it locks up (physics_sim World::set_engine_wear scales the oil-viscosity friction of the engine plant); it seizes with 20 % of its life left (by then the friction it adds stalls a part-throttle engine anyway)."
+    },
+    {
+      "id": "pistons",
+      "label": "Pistons and rings",
+      "description": "Scuffed pistons and rings drag on the bores: more friction and heat; worn through, a piston seizes in its bore.",
+      "effect": "friction",
+      "scale_at_zero": 2.0,
+      "seize_below": 0.2,
+      "source": "[AS] scuffed skirts and rings double the friction; a piston seizes with 20 % of its life left."
     }
   ],
   "rules": [
@@ -36,9 +54,8 @@
       "signal": "coolant_c",
       "above_overheat_k": 4.0,
       "after_s": 15.0,
-      "rate_per_s": 0.0015,
-      "rate_per_s_per_k": 0.0003,
-      "source": "[AS] 4 K past the overheat warning for 15 s: the coolant boils locally in the core; about 10 s at 10 K over the threshold costs 4.5 %."
+      "curve": [[0, 0.0015], [10, 0.0045], [30, 0.02], [60, 0.1]],
+      "source": "[AS] 4 K past the overheat warning for 15 s: the coolant boils locally in the core; 10 K over costs about 4.5 % in 10 s, 30 K over 2 % a second."
     },
     {
       "id": "fan_overload",
@@ -46,9 +63,9 @@
       "signal": "coolant_c",
       "above_overheat_k": 0.0,
       "after_s": 30.0,
-      "rate_per_s": 0.0008,
+      "curve": [[0, 0.0008], [20, 0.0016], [40, 0.004]],
       "only_while_fan_on": true,
-      "source": "[AS] the fan running flat out in overheated air for more than 30 s: about 5 % a minute."
+      "source": "[AS] the fan running flat out in overheated air for more than 30 s: about 5 % a minute, faster the hotter the air it pulls."
     },
     {
       "id": "head_gasket_overheat",
@@ -56,9 +73,26 @@
       "signal": "coolant_c",
       "above_overheat_k": 12.0,
       "after_s": 5.0,
-      "rate_per_s": 0.004,
-      "rate_per_s_per_k": 0.0008,
+      "curve": [[0, 0.004], [10, 0.012], [25, 0.05], [50, 0.25]],
       "source": "[AS] 12 K past the overheat warning (130 C for the class cars) the head warps against the gasket within seconds."
+    },
+    {
+      "id": "bearing_oil_film",
+      "part": "crankshaft",
+      "signal": "oil_c",
+      "above_c": 135.0,
+      "curve": [[0, 0.0001], [5, 0.0005], [10, 0.002], [20, 0.015], [30, 0.1], [35, 1.0]],
+      "only_while_running": true,
+      "source": "[AS] above 135 C the oil film thins: three minutes at 140 C cost 9 %, at 145 C a third of the bearings; at 155 C 1.5 % a second, at 165 C 10 % a second and at 170 C the film is gone (100 % a second). Calibrated on the owner's report (oil 190 C within 3 minutes): an oil temperature rising at 0.44 K/s seizes the bearings at about 161 C, 1 K/s at 166 C, 3 K/s at 169 C, before any worn-bearing friction is counted (test_damage_engine.cpp, the oil ramp case); a ramp faster than that is not one the engine thermal model produces."
+    },
+    {
+      "id": "piston_scuffing",
+      "part": "pistons",
+      "signal": "oil_c",
+      "above_c": 145.0,
+      "curve": [[0, 0.0005], [10, 0.004], [20, 0.03], [25, 0.6]],
+      "only_while_running": true,
+      "source": "[AS] above 145 C oil the piston skirts lose their oil film and scuff against the bores: 0.4 % a second at 155 C, 3 % at 165 C, 60 % at 170 C."
     }
   ]
 }

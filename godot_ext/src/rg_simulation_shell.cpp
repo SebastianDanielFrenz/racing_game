@@ -83,6 +83,7 @@ void RgSimulation::set_vehicle_overrides(const godot::Dictionary& overrides) {
         o.damage_config_path = std::string(godot::String(overrides["damage_config_path"]).utf8().get_data());
     if (overrides.has("damage_state_path"))
         o.damage_state_path = std::string(godot::String(overrides["damage_state_path"]).utf8().get_data());
+    o.damage_enabled = vehicle_overrides_.damage_enabled; // a setting, not part of the garage selection
     vehicle_overrides_ = std::move(o);
 }
 
@@ -256,16 +257,26 @@ godot::Dictionary RgSimulation::get_damage_state() {
     godot::Dictionary d = rg_godot::damage_view_to_dictionary(rg::damage_view(cfg, r.state), true);
     d["state_path"] = godot::String::utf8(session_->damage_state_path().c_str());
     d["thermal"] = r.thermal;
+    d["enabled"] = r.enabled;
+    // What the Session holds (the view's own seized follows the state alone; with the setting off nothing is held).
+    d["seized"] = r.seized;
+    d["seized_part"] = godot::String::utf8(r.seized_part.c_str());
+    if (!r.enabled) d["warning"] = godot::String(); // stored damage has no effect: no HUD line
     return d;
 }
 
 bool RgSimulation::repair_damage(const godot::String& state_path) {
     if (!session_ || session_->damage_config() == nullptr) return false;
     const std::string path(state_path.utf8().get_data());
-    if (path.empty() || path != session_->damage_state_path()) return false;
+    if (!path.empty() && path != session_->damage_state_path()) return false;
     session_->request_damage_repair();
     save_damage(); // the file stays removed (healthy)
     return true;
+}
+
+void RgSimulation::set_damage_enabled(bool enabled) {
+    vehicle_overrides_.damage_enabled = enabled;
+    if (session_) session_->set_damage_enabled(enabled);
 }
 
 } // namespace rg_godot

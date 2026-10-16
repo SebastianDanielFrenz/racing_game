@@ -40,6 +40,7 @@ signal garage_save_requested
 signal garage_exit_requested(destination: String)
 signal controls_changed # a binding / tuning changed on the controls screen
 signal damage_repaired(state_path: String) # the garage repaired a car (main.gd repairs the running world's car too)
+signal repair_requested(id: String) # the car browser's "Repair (free)" (main.gd hands it to RgShell.repair_chosen)
 
 const SliderBox := preload("res://scripts/slider_box.gd")
 const BOOT_SECONDS := 1.5
@@ -606,11 +607,17 @@ func _build_browser(screen_name: String) -> void:
 	ui.car_chosen.connect(func(id: String): vehicle_chosen.emit(id))
 	ui.back_requested.connect(func(): back_requested.emit())
 	ui.state_changed.connect(func(): browser_state_changed.emit())
+	ui.repair_requested.connect(func(id: String): repair_requested.emit(id))
 	_root.add_child(ui)
 	_browser = ui
 	_buttons["choose"] = ui.get_control("choose")
 	_buttons["back"] = ui.get_control("back")
 	_buttons["filter"] = ui.get_control("filter_button")
+
+# The car browser's stats again (after a repair).
+func refresh_browser() -> void:
+	if _browser != null and is_instance_valid(_browser) and _browser.has_method("refresh_stats"):
+		_browser.refresh_stats()
 
 # Esc closes the browser's filter panel first; true when it did.
 func browser_consume_back() -> bool:

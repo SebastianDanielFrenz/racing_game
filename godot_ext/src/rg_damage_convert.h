@@ -9,8 +9,9 @@
 
 namespace rg_godot {
 
-// {present, any_damaged, warning (the HUD line, "" when healthy), radiator_ua_scale, fan_flow_scale,
-//  parts: [{id, label, description, health (0..1), damaged, effect ("radiator_ua" | "fan_flow" | "none"), effect_scale}]}
+// {present, any_damaged, seized, seized_label, warning (the HUD line, "" when healthy), radiator_ua_scale, fan_flow_scale,
+//  friction_scale, parts: [{id, label, description, health (0..1), damaged, seized, effect ("radiator_ua" | "fan_flow" |
+//  "friction" | "none"), effect_scale}]}
 inline godot::Dictionary damage_view_to_dictionary(const rg::DamageView& view, bool present) {
     const auto str = [](const std::string& s) { return godot::String::utf8(s.c_str()); };
     godot::Dictionary d;
@@ -19,6 +20,9 @@ inline godot::Dictionary damage_view_to_dictionary(const rg::DamageView& view, b
     d["warning"] = str(rg::damage_warning_line(view));
     d["radiator_ua_scale"] = view.scales.radiator_ua;
     d["fan_flow_scale"] = view.scales.fan_flow;
+    d["friction_scale"] = view.scales.friction;
+    d["seized"] = view.seized;
+    d["seized_label"] = str(view.seized_label);
     godot::Array parts;
     for (const rg::DamagePartView& p : view.parts) {
         godot::Dictionary e;
@@ -27,6 +31,7 @@ inline godot::Dictionary damage_view_to_dictionary(const rg::DamageView& view, b
         e["description"] = str(p.description);
         e["health"] = p.health;
         e["damaged"] = p.damaged;
+        e["seized"] = p.seized;
         e["effect"] = str(rg::to_string(p.effect));
         e["effect_scale"] = p.effect_scale;
         parts.push_back(e);
