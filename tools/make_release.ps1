@@ -28,7 +28,7 @@
                                                            a CMakeLists.txt; without it surface_map
                                                            / palette paths cannot resolve)
        NOT copied: .git, out/build, cache/ (the big geo2map stores).
-    4. Writes play.cmd / play_drive.cmd / play_vr.cmd (Godot on the snapshot's game/;
+    4. Writes play.cmd / play_drive.cmd / play_vr.cmd / play_compat.cmd (Godot on the snapshot's game/;
        RG_G2M_CACHE / RG_G2M_HOME default to the real shared locations, resolved
        now, unless the caller already set them) and RELEASE.txt.
     5. Updates <OutRoot>\latest.cmd (+ latest_drive.cmd) and keeps only the
@@ -174,7 +174,11 @@ Set-Content -Path (Join-Path $partial 'play.cmd')       -Encoding ASCII -Value (
 Set-Content -Path (Join-Path $partial 'play_drive.cmd') -Encoding ASCII -Value (New-LauncherText '--drive ')
 # VR: Godot's own --xr-mode on starts OpenXR (needs a PC OpenXR runtime, e.g. SteamVR or the
 # headset's own); main.gd falls back to the desktop cameras when OpenXR does not initialise.
-Set-Content -Path (Join-Path $partial 'play_vr.cmd')    -Encoding ASCII -Value (New-LauncherText '' '--xr-mode on ')
+# VR always runs the Vulkan Mobile renderer, whatever the graphics.renderer setting says.
+Set-Content -Path (Join-Path $partial 'play_vr.cmd')    -Encoding ASCII -Value (New-LauncherText '' '--xr-mode on --rendering-method mobile --rendering-driver vulkan ')
+# Fallback when the default Mobile (Vulkan) renderer does not start or draws wrongly on a machine: the OpenGL
+# Compatibility renderer for this run only (the Settings screen's Renderer choice makes it permanent).
+Set-Content -Path (Join-Path $partial 'play_compat.cmd') -Encoding ASCII -Value (New-LauncherText '' '--rendering-method gl_compatibility ')
 
 # Store info (best effort): which source scope the default world expects and
 # which derived release ids (scopes) the derived store already holds.
@@ -222,6 +226,7 @@ $release = @(
     "  play.cmd          game shell (boot splash + main menu)",
     "  play_drive.cmd    straight into the real world, Drive mode (--drive)",
     "  play_vr.cmd       game shell in VR (Godot --xr-mode on; needs a PC OpenXR runtime such as SteamVR)",
+    "  play_compat.cmd   game shell on the OpenGL Compatibility renderer (fallback; the default is Mobile/Vulkan)",
     "  extra arguments are passed on to the game, e.g. play.cmd --flat",
     "  ..\latest.cmd     (next to the snapshots) starts the newest snapshot; latest_drive.cmd / latest_vr.cmd likewise",
     "  Godot is $godotGui",
@@ -236,7 +241,7 @@ $release = @(
     "",
     "CONTENTS",
     ($copied | ForEach-Object { "  $_" }),
-    "  play.cmd, play_drive.cmd, play_vr.cmd, RELEASE.txt",
+    "  play.cmd, play_drive.cmd, play_vr.cmd, play_compat.cmd, RELEASE.txt",
     "NOT copied: .git, out/build, cache/ (geo2map stores)."
 )
 Set-Content -Path (Join-Path $partial 'RELEASE.txt') -Encoding ASCII -Value ($release | ForEach-Object { $_ })
