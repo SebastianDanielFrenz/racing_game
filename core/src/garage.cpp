@@ -175,6 +175,40 @@ std::unique_ptr<Garage> Garage::open(const GarageConfig& config, std::string* er
         }
     }
     {
+        // Garage turbo kits (rg/turbo_kit.h): optional file, strict when present.
+        std::string path = config.turbo_kits_path;
+        if (path.empty()) {
+            const std::string dflt = config.repo_root + "/data/engines/turbo_kits.json";
+            std::error_code ec;
+            if (fs::is_regular_file(fs::path(dflt), ec)) path = dflt;
+        }
+        if (!path.empty()) {
+            auto cfg = load_turbo_kit_config(path, config.repo_root, &e);
+            if (!cfg) {
+                if (err != nullptr) *err = e;
+                return nullptr;
+            }
+            g->ctx_.turbo_kits = std::make_shared<const TurboKitConfig>(*cfg);
+        }
+    }
+    {
+        // Swappable engine internals (rg/engine_internals.h): optional file, strict when present.
+        std::string path = config.engine_internals_path;
+        if (path.empty()) {
+            const std::string dflt = config.repo_root + "/data/engines/engine_internals.json";
+            std::error_code ec;
+            if (fs::is_regular_file(fs::path(dflt), ec)) path = dflt;
+        }
+        if (!path.empty()) {
+            auto cfg = load_engine_internals(path, &e);
+            if (!cfg) {
+                if (err != nullptr) *err = e;
+                return nullptr;
+            }
+            g->ctx_.engine_internals = std::make_shared<const EngineInternalsConfig>(*cfg);
+        }
+    }
+    {
         // Base part masses (rg/part_mass.h): optional file, strict when present.
         std::string path = config.part_masses_path;
         if (path.empty()) {
@@ -567,6 +601,8 @@ std::string Garage::drop_unavailable_values() {
         if (!gone && view->def.kind == OptionKind::FileChoice && std::holds_alternative<std::string>(value)) {
             const std::string& s = std::get<std::string>(value);
             gone = s != "stock" && std::find(view->choices.begin(), view->choices.end(), s) == view->choices.end();
+            // Listed but refused on the new engine (a bore step its block's wall cannot take): back to stock too.
+            for (const SetupPart& p : view->parts) if (!gone && s != "stock" && p.id == s && !p.fits) gone = true;
         }
         if (gone) drop.push_back(id);
     }

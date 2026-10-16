@@ -350,4 +350,193 @@ std::vector<ps::Vec3> drone_probe_offsets();
 // The camera height after the clearance: max(z, ground + clearance) over every probe that found ground (nullopt = none).
 double drone_clear_terrain(double z, const std::vector<std::optional<double>>& grounds, double clearance_m);
 
+// ------------------------------------------------- shared rig helpers ----
+// Used by the chase, drone and walker rigs (docs/unreal_port.md leak #10). Same Z-up frame as the drone.
+
+// Ground probes around a camera (the near-plane footprint): 5 offsets from the position, the first is zero.
+std::vector<ps::Vec3> ground_probe_offsets();
+// The camera height after the clearance: max(z, ground + clearance) over every probe that found ground.
+double clear_terrain_height(double z, const std::vector<std::optional<double>>& grounds, double clearance_m);
+// False when the camera is within 1 cm of the point it should look at (no look-at then).
+bool look_valid(const ps::Vec3& position, const ps::Vec3& target);
+// Orbit yaw wanted by the look input of the chase and drone rigs (see drone_target_orbit_yaw).
+double rig_orbit_yaw(double key_x, double key_y, double stick_x, double stick_y, double deadzone);
+
+// ------------------------------------------------------------------ chase ----
+// The Drive chase rig (chase_rig.gd): the camera at a smoothed car-relative offset, the look-around orbit and the
+// snap after a relocation. Frame as the drone: Z-up; `forward`/`left` are the chassis axes (basis x and y in Godot).
+struct ChaseParams {
+    double follow_distance_m = 7.0;
+    double follow_height_m = 2.5;
+    double look_height_m = 1.0;
+    double side_offset_m = 0.0;        // + = the car's left, added to the "behind" position
+    double terrain_clearance_m = 0.6;
+    double position_lag = 6.0;
+    double orbit_deadzone = 0.2;
+    double orbit_lag = 14.0;           // <= 0 = no smoothing
+    double snap_m = 60.0;
+};
+
+struct ChaseState {
+    ps::Vec3 offset{};            // smoothed camera - car
+    double orbit_yaw_rad = 0.0;   // + = looking to the right of the car's heading
+    bool initialized = false;
+};
+
+struct ChaseInput {
+    ps::Vec3 target_pos{};
+    ps::Vec3 forward{1, 0, 0};
+    ps::Vec3 left{0, 1, 0};
+    double key_x = 0.0, key_y = 0.0;
+    double stick_x = 0.0, stick_y = 0.0;
+    bool live = true;
+};
+
+struct ChaseFrame {
+    ps::Vec3 position{};  // before the terrain clearance
+    ps::Vec3 look_at{};
+};
+
+// Re-seat behind the car on the next step (a rig switch, or no simulation this frame). The orbit yaw is kept.
+void chase_reset(ChaseState& s);
+ChaseFrame chase_follow_step(ChaseState& s, const ChaseInput& in, double dt, const ChaseParams& p = {});
+
+// ------------------------------------------------------------------- free ----
+// The FreeCam rig (free_rig.gd): yaw/pitch from mouse and look rate, horizontal movement relative to the heading.
+// yaw 0 looks along +y (Godot -Z), + turns left (counter-clockwise seen from above); pitch + = up.
+struct FreeParams {
+    double move_speed_mps = 40.0;
+    double fast_multiplier = 6.0;
+    double look_rate_rad_s = 1.8;
+    double mouse_sensitivity = 0.0025;
+    double pitch_limit_rad = 1.5;
+};
+
+struct FreeState {
+    ps::Vec3 position{};
+    double yaw_rad = 0.0;
+    double pitch_rad = 0.0;
+};
+
+struct FreeInput {
+    double mouse_x = 0.0, mouse_y = 0.0;   // pixels this frame
+    double look_x = 0.0, look_y = 0.0;     // look rate, -1..1
+    double move_right = 0.0, move_up = 0.0, move_forward = 0.0;
+    bool fast = false;
+    bool live = true;                      // false: nothing changes
+};
+
+// Start where the previous camera was, looking the same way (`forward` need not be unit length).
+void free_activate(FreeState& s, const ps::Vec3& position, const ps::Vec3& forward, const FreeParams& p = {});
+void free_place(FreeState& s, const ps::Vec3& position, double yaw_rad, double pitch_rad, const FreeParams& p = {});
+void free_shift_origin(FreeState& s, const ps::Vec3& delta);
+void free_step(FreeState& s, const FreeInput& in, double dt, const FreeParams& p = {});
+
+// ----------------------------------------------------------------- walker ----
+// The OnFoot camera (walker_rig.gd): look yaw/pitch, third-person zoom, pivot smoothing, placement and aim. The
+// walking itself is rg/walker.h; this is display only. Yaw convention as FreeState.
+struct WalkerCamParams {
+    double look_rate_rad_s = 2.2;
+    double mouse_sensitivity = 0.0025;
+    double third_person_distance_m = 3.2;
+    double min_distance_m = 1.2;
+    double max_distance_m = 9.0;
+    double head_height_m = 1.55;       // third-person pivot above the feet
+    double eye_height_m = 1.62;        // first-person camera above the feet
+    double terrain_clearance_m = 0.3;
+    double follow_rate = 28.0;
+    double snap_m = 12.0;
+    double third_pitch_min = -1.1;
+    double third_pitch_max = 1.2;
+    double first_pitch_limit = 1.5;
+    double zoom_wheel_factor = 1.15;
+    double zoom_key_rate = 1.2;
+    double start_pitch_rad = -0.15;
+};
+
+struct WalkerCamState {
+    double yaw_rad = 0.0;
+    double pitch_rad = -0.15;
+    double distance_m = 3.2;
+    ps::Vec3 smoothed_feet{};
+    bool have_walker = false;
+    bool drain_wheel = false;
+};
+
+struct WalkerCamInput {
+    bool has_walker = false;      // false: the walker is not spawned (yet) or already gone
+    ps::Vec3 feet{};
+    ps::Vec3 car_position{};      // looked at on the first sight of the walker
+    double mouse_x = 0.0, mouse_y = 0.0;
+    double wheel_steps = 0.0;
+    double zoom_key = 0.0;
+    double look_x = 0.0, look_y = 0.0;
+    bool live = true;
+    bool first_person = false;
+};
+
+struct WalkerCamFrame {
+    bool placed = false;          // false: keep the position, only the look rotates
+    bool third_person = false;
+    ps::Vec3 position{};          // before the terrain clearance (third person)
+    ps::Vec3 pivot{};             // the point the third-person camera aims at
+    double yaw_rad = 0.0;         // the look angles (the rotation when not aimed at the pivot)
+    double pitch_rad = 0.0;
+};
+
+struct WalkerCamAim {
+    bool valid = false;           // false: use the look angles of the frame
+    double yaw_rad = 0.0;
+    double pitch_rad = 0.0;
+};
+
+WalkerCamState walker_cam_initial_state(const WalkerCamParams& p = {});
+// A rig switch: the pose comes from the previous camera's forward axis, the wheel is drained once.
+void walker_cam_activate(WalkerCamState& s, const ps::Vec3& from_forward, const WalkerCamParams& p = {});
+void walker_cam_shift_origin(WalkerCamState& s, const ps::Vec3& delta);
+void walker_cam_hold(WalkerCamState& s);  // no simulation this frame
+// Horizontal forward direction of the look heading, for the walking input.
+ps::Vec3 walker_cam_look_forward(const WalkerCamState& s);
+WalkerCamFrame walker_cam_step(WalkerCamState& s, const WalkerCamInput& in, double dt, const WalkerCamParams& p = {});
+// After the terrain clearance moved the third-person camera: aim at the pivot (pitch clamped to the third-person range).
+WalkerCamAim walker_cam_aim(const ps::Vec3& pivot, const ps::Vec3& position, const WalkerCamParams& p = {});
+
+// ------------------------------------------------------------- orbit rig ----
+// The orbit view's rig around orbit_step (orbit_rig.gd): the car-relative look-at point with its short lag, the mouse
+// scaling, the car's heading frame and the placement. Z-up frame as the drone.
+struct OrbitRigParams {
+    double snap_m = 60.0;
+    double follow_lag = 8.0;
+    double clearance_m = 0.6;
+    double mouse_look_per_px = 0.05;   // full deflection per 20 px of captured-mouse motion in one frame
+    double focus_height_m = 1.0;       // the look-at point above the chassis origin
+};
+
+struct OrbitRigState {
+    OrbitState orbit{};
+    ps::Vec3 target_rel{0, 0, 1};
+    bool initialized = false;
+};
+
+struct OrbitRigInput {
+    ps::Vec3 chassis_pos{};
+    ps::Vec3 forward{1, 0, 0};         // the chassis forward axis (any length; only its horizontal part is used)
+    double look_x = 0.0, look_y = 0.0; // look rate
+    double mouse_x = 0.0, mouse_y = 0.0;
+    double zoom_steps = 0.0;
+    double zoom_key = 0.0;
+    bool live = true;
+};
+
+struct OrbitRigFrame {
+    ps::Vec3 position{};  // before the terrain clearance
+    ps::Vec3 target{};
+};
+
+OrbitRigState orbit_rig_initial_state();
+void orbit_rig_activate(OrbitRigState& s);   // default orbit, re-seat the look-at point
+void orbit_rig_reset(OrbitRigState& s);      // no simulation this frame
+OrbitRigFrame orbit_rig_step(OrbitRigState& s, const OrbitRigInput& in, double dt, const OrbitRigParams& p = {});
+
+
 } // namespace rg

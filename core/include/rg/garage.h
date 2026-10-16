@@ -38,6 +38,8 @@ struct GarageConfig {
     std::string driveline_catalog_path; // data/drivetrains/driveline_catalog.json ("" = <repo_root>/data/drivetrains/driveline_catalog.json)
     std::string tyre_families_path; // data/tyres/families.json ("" = no tyre choice)
     std::string turbo_map_extension_path; // data/engines/turbo_map_extension.json ("" = <repo_root>/data/engines/turbo_map_extension.json if it exists, else no extension)
+    std::string turbo_kits_path; // data/engines/turbo_kits.json ("" = <repo_root>/data/engines/turbo_kits.json if it exists, else no turbo kits)
+    std::string engine_internals_path; // data/engines/engine_internals.json ("" = <repo_root>/data/engines/engine_internals.json if it exists, else no internals options)
     std::string part_masses_path; // data/vehicles/part_masses.json ("" = <repo_root>/data/vehicles/part_masses.json if it exists, else no part-mass tree)
     std::string user_dir;      // selection and setups are saved under <user_dir>/garage/
     std::string work_root;     // scratch and drive materialisations

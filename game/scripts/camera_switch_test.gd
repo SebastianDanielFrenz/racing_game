@@ -44,10 +44,22 @@ extends Node
 #     camera along its view direction and the drone stops at the ground when
 #     it descends; (d) leaving the mode removes the drone.
 #
+#  7. WALKER (on_foot mode, rg::walker_cam_*): the rig needs a spawned walker, so
+#     the simulation is unpaused for the spawn (the car stands still, well
+#     below the get-out speed) and paused again once the camera settled. Like
+#     the FPV rig it does not continue the previous camera: on the first sight
+#     of the walker it looks at the car it got out of, from a fixed distance.
+#     Checks: (a) A -> on_foot, plain and with a rebase in the switch frame:
+#     once the walker exists the camera equals its baseline whatever A was;
+#     (b) on_foot -> B reproduces B's baseline and leaving the mode removes
+#     the walker; (c) a settled walker camera stays put across a rebase; (d) the
+#     look heading starts toward the car and is a horizontal unit vector;
+#     (e) first person sits at the eye height above the walker's feet.
+#     The maths is rg::walker_cam_* (tests/unit/test_camera_math.cpp [walker_cam]).
+#
 # Prints "RG_CAMERA_TEST ..." lines and a final PASS / FAIL line with the worst
-# position/rotation error seen; exit code 1 on a failure. The walker rig is not
-# in the matrix: it needs a spawned walker (a stepping simulation and a car
-# below the get-out speed); drive_smoke.gd switches to it.
+# position/rotation error seen; exit code 1 on a failure. drive_smoke.gd also
+# switches to the walker rig, with the car driven there first.
 
 const POS_TOL_M := 0.05
 const ROT_TOL_DEG := 0.5
@@ -357,6 +369,76 @@ func _run() -> void:
 	sim.set_paused(true)
 	await _frames(2)
 	print("RG_CAMERA_TEST fpv_checks=%d" % fpv_checks)
+
+	# ---- 7. walker (on_foot) ----
+	var walker_checks := 0
+	var walker_base := {}
+	var walker_rig: Node3D = director.rigs["walker"]
+	for with_rebase in [false, true]:
+		for a in views:
+			await _to_view(a)
+			if with_rebase:
+				var moved := _force_rebase()
+				_check(moved >= REBASE_OFFSET_M * 0.9, "walker: the out-of-band rebase moved the origin by %.1f m" % moved)
+			sim.set_paused(false)
+			var answer := str(sim.set_player_mode("on_foot"))
+			var got_walker: bool = await _wait_until(func(): return not sim.get_walker_state().is_empty() and director.active_name == "walker", 10.0)
+			await _settle(0.4) # the walker lands, the pivot smoothing (28 /s) converges
+			sim.set_paused(true)
+			await _settle(0.4)
+			var tag := "%s -> on_foot%s" % [a, " (rebase in the switch frame)" if with_rebase else ""]
+			_check(got_walker, "%s: the walker exists and the walker rig is active (mode answer '%s')" % [tag, answer])
+			var s := _sample()
+			if walker_base.is_empty():
+				walker_base = s
+				print("RG_CAMERA_TEST walker baseline rel=(%.3f, %.3f, %.3f)" % [s["rel"].x, s["rel"].y, s["rel"].z])
+				# third person: a few metres from the car, not inside it
+				_check(Vector2(s["rel"].x, s["rel"].z).length() > 1.5, "the walker camera is outside the car (rel %.2f, %.2f, %.2f)" % [s["rel"].x, s["rel"].y, s["rel"].z])
+				# (d) the look heading starts toward the car
+				var ws: Dictionary = sim.get_walker_state()
+				var to_car: Vector3 = ws["car_position"] - ws["position"]
+				to_car.y = 0.0
+				var look: Vector3 = walker_rig.get_look_forward()
+				_check(absf(look.length() - 1.0) < 0.001 and absf(look.y) < 0.001, "the look heading is a horizontal unit vector (%s)" % look)
+				_check(look.dot(to_car.normalized()) > 0.99, "the walker first looks at the car (dot %.4f)" % look.dot(to_car.normalized()))
+			else:
+				_compare(tag, s, walker_base)
+			walker_checks += 1
+			sim.set_player_mode("drive")
+			sim.set_paused(false)
+			await _frames(3)
+			_check(sim.get_walker_state().is_empty(), "%s: leaving the mode removes the walker" % tag)
+			sim.set_paused(true)
+			await _frames(2)
+			main.set_drive_view("chase")
+			await _frames(2)
+			main.set_drive_view(a)
+			await _frames(1)
+			_compare("on_foot -> %s" % a, _sample(), baseline[a])
+	# a settled walker camera stays put across a rebase; first person sits at the eye height
+	await _to_view("chase")
+	sim.set_paused(false)
+	sim.set_player_mode("on_foot")
+	await _wait_until(func(): return not sim.get_walker_state().is_empty() and director.active_name == "walker", 10.0)
+	await _settle(0.4)
+	sim.set_paused(true)
+	await _settle(0.4)
+	var walker_before := _sample()
+	_force_rebase()
+	await _frames(2)
+	_compare("settled walker camera stays put across a rebase", _sample(), walker_before)
+	walker_rig.toggle_first_person()
+	await _settle(0.4)
+	var ws1: Dictionary = sim.get_walker_state()
+	var eye: float = (director.active_camera().global_position - (ws1["position"] as Vector3)).length()
+	_check(absf(eye - walker_rig.eye_height_m) < 0.05, "first person: the camera is %.3f m from the feet (eye height %.2f)" % [eye, walker_rig.eye_height_m])
+	walker_rig.toggle_first_person()
+	sim.set_player_mode("drive")
+	sim.set_paused(false)
+	await _frames(3)
+	sim.set_paused(true)
+	await _frames(2)
+	print("RG_CAMERA_TEST walker_checks=%d" % walker_checks)
 
 	sim.set_paused(false)
 	if _failures == 0:
