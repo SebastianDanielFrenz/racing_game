@@ -298,7 +298,10 @@ func _run() -> void:
 	await _back_to_root()
 	_press("tile:Swaps")
 	_press("tile:Drivetrain")
-	for type_name in ["AWD","RWD","FWD"]: _check(ui.get_button("tile:"+type_name).disabled, "unsupported drivetrain swap disabled: " + type_name)
+	var layout_option: Dictionary = ui._garage_option("drive_layout")
+	_check(not layout_option.is_empty(), "drivetrain swap options exist")
+	for part in layout_option.get("parts", []):
+		_check(ui.get_button("part:drive_layout:" + str(part["id"])) != null, "drivetrain swap card exists: " + str(part["id"]))
 	# ---- gearbox swap: the hypercar takes only boxes rated for its V8 ----
 	await _back_to_root()
 	_press("tile:Drivetrain")
