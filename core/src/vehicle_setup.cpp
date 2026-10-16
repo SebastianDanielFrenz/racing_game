@@ -354,6 +354,14 @@ bool entry_offers(const CatalogEntry& entry, const std::string& id) {
     return std::find(entry.setup_options.begin(), entry.setup_options.end(), id) != entry.setup_options.end();
 }
 
+}
+
+bool part_choice_offered(const CatalogEntry& entry, const SetupOptionDef& def) {
+    return def.kind == OptionKind::PartChoice && entry_offers(entry, def.id) && entry.interior.count(def.slot) != 0;
+}
+
+namespace {
+
 std::vector<std::string> pointers_for(const CatalogEntry& entry, const SetupOptionDef& def) {
     const auto it = entry.setup_pointers.find(def.id);
     return it != entry.setup_pointers.end() ? it->second : def.pointers;
@@ -1628,7 +1636,7 @@ SetupModel build_setup_model(const CatalogEntry& entry, const SetupOptionTable& 
             const auto it = installed->values.find(def.id);
             if (it == installed->values.end()) continue;
             if (def.kind == OptionKind::PartChoice) {
-                if (entry_offers(entry, def.id) && entry.interior.count(def.slot) != 0) {
+                if (part_choice_offered(entry, def)) {
                     model.error = apply_part_choice(files, def, it->second);
                     if (!model.error.empty()) return model;
                 }
@@ -2122,6 +2130,9 @@ CompiledSetup compile_setup_internal(const CatalogEntry& entry, const SetupOptio
         if (def.kind == OptionKind::TyreChoice || def.kind == OptionKind::FileChoice) continue;
         const auto it = setup.values.find(def.id);
         if (it == setup.values.end()) continue;
+        // A weight-reduction choice for a part this car does not have (a passenger seat on a bench, rear seats on a
+        // two-seater) is not offered: a saved setup that still holds one is ignored, never an error.
+        if (def.kind == OptionKind::PartChoice && !part_choice_offered(entry, def)) continue;
         if (def.kind != OptionKind::Colour && is_stock(def, it->second)) continue;
         if (def.kind == OptionKind::Colour && !std::holds_alternative<std::string>(it->second)) {
             out.error = def.id + ": a colour must look like #rrggbb";

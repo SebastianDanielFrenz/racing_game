@@ -551,11 +551,15 @@ TEST_CASE("part mass tree: weight reduction part choices swap, lighten and remov
             CHECK(v.choices == std::vector<std::string>{"stock", "sport_bucket"});
         }
     }
-    // a choice for a slot the car lacks is refused with a message, an unknown part too
+    // a choice for a slot the car lacks is ignored (a saved setup may still hold one; the garage does not offer it),
+    // an unknown part is refused
     rg::VehicleSetup bad;
     bad.vehicle_id = "car_hyper";
     bad.values["trim_hood"] = std::string("carbon");
-    CHECK_FALSE(rg::compile_setup(f.entry("car_hyper"), f.table, f.ctx, bad).ok);
+    const rg::CompiledSetup ignored = rg::compile_setup(f.entry("car_hyper"), f.table, f.ctx, bad);
+    INFO(ignored.error);
+    CHECK(ignored.ok);
+    CHECK(ignored.parts.total_kg == Approx(rg::stock_part_tree(f.entry("car_hyper"), f.table, f.ctx).total_kg));
     bad.values.clear();
     bad.values["trim_audio"] = std::string("gold_plated");
     CHECK_FALSE(rg::compile_setup(sedan, f.table, f.ctx, bad).ok);

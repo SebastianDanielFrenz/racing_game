@@ -418,6 +418,11 @@ void Garage::normalise_engine_values(VehicleSetup& setup, std::vector<std::strin
 VehicleSetup Garage::effective_setup_with_notices(const std::string& id, std::vector<std::string>* notices) const {
     VehicleSetup s = preset_setup(id);
     for (const auto& [option_id, value] : saved_setup(id).values) s.values[option_id] = value; // the player's own values win
+    if (const CatalogEntry* e = catalog_.find(id)) { // a weight-reduction choice for a part the car lacks is dropped
+        for (const SetupOptionDef& def : options_.options) {
+            if (def.kind == OptionKind::PartChoice && !part_choice_offered(*e, def)) s.values.erase(def.id);
+        }
+    }
     normalise_engine_values(s, notices);
     return s;
 }

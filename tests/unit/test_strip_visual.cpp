@@ -9,6 +9,7 @@
 
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/matchers/catch_matchers_string.hpp>
+#include <catch2/catch_approx.hpp>
 
 #include <algorithm>
 #include <chrono>
@@ -20,6 +21,7 @@
 #include <string>
 
 namespace {
+using Catch::Approx;
 namespace fs = std::filesystem;
 using Catch::Matchers::ContainsSubstring;
 const std::string kRoot = RG_SOURCE_DIR;
@@ -203,9 +205,13 @@ TEST_CASE("strip visual: the generated cars' sources name the nodes the data wai
     for (const auto& [stem, model] : table.models) {
         for (const rg::StripRule& r : model.rules) {
             if (!r.after_regeneration) continue;
-            const auto src = read_text(kRoot + "/tools/cargen/cars/" + stem + ".py");
+            auto src = read_text(kRoot + "/tools/cargen/cars/" + stem + ".py");
             INFO(stem << " " << r.slot);
             REQUIRE(src.has_value()); // only generated cars may wait for a regenerated model
+            // pieces every generated car shares (the cabin floor's carpet and insulation) are made in common.py
+            const auto common = read_text(kRoot + "/tools/cargen/cargen/common.py");
+            REQUIRE(common.has_value());
+            *src += *common;
             for (const std::string& n : r.hide) {
                 // the node is created by name ("seat_driver") or by prefix ("door_card_" + ...)
                 const std::string prefix = n.substr(0, n.find_last_of('_') + 1);
@@ -263,5 +269,106 @@ TEST_CASE("strip visual: the garage hands the hidden nodes to the visual", "[str
     REQUIRE(g->begin_edit("car_sedan", &err));
     REQUIRE(g->set_option("trim_audio", std::string("removed")).accepted);
     CHECK(g->working_hidden_nodes().empty());
+    g->discard();
+}
+
+TEST_CASE("strip visual: a car without a separate seat does not offer to remove it", "[strip_visual][garage][seats]") {
+    TempDirs t;
+    std::string err;
+    auto g = rg::Garage::open(config_for(t), &err);
+    INFO(err);
+    REQUIRE(g != nullptr);
+    const auto offered = [&](const std::string& car, const std::string& option) {
+        REQUIRE(g->begin_edit(car, &err));
+        bool found = false, available = false;
+        for (const rg::OptionView& v : g->model().options) {
+            if (v.def.id == option) {
+                found = true;
+                available = v.available;
+            }
+        }
+        const bool accepted = g->set_option(option, std::string("removed")).accepted;
+        g->discard();
+        REQUIRE(found);
+        CHECK(accepted == available); // what the list offers is what a click can set
+        return available;
+    };
+    // front bench: driver and passenger in one piece, no separate passenger seat
+    CHECK(!offered("car_runabout", "trim_passenger_seat"));
+    CHECK(offered("car_runabout", "trim_rear_seats"));
+    // no rear seats behind the Ventura GT's buckets, nor in the two-seat hypercars
+    CHECK(!offered("car_gt70", "trim_rear_seats"));
+    CHECK(offered("car_gt70", "trim_passenger_seat"));
+    for (const char* car : {"car_hyper", "car_hyper_n2o", "car_hyper_track", "car_hyper_stealth"}) {
+        CHECK(!offered(car, "trim_rear_seats"));
+        CHECK(offered(car, "trim_passenger_seat"));
+    }
+    // cars with all four seats offer both
+    for (const char* car : {"car_city", "car_sedan", "car_sedan_rwd_track", "car_generic_suv"}) {
+        CHECK(offered(car, "trim_passenger_seat"));
+        CHECK(offered(car, "trim_rear_seats"));
+    }
+    // every car: a seat option is offered exactly when the catalog says the car has that seat
+    for (const rg::CatalogEntry& e : g->catalog().entries) {
+        if (!e.preset_of.empty()) continue; // a preset inherits its base
+        INFO(e.id);
+        const auto has = [&](const char* slot) { return e.interior.count(slot) != 0; };
+        if (e.interior.empty()) continue;
+        for (const auto& [option, slot] : {std::pair<const char*, const char*>{"trim_driver_seat", "seat_driver"},
+                                           {"trim_passenger_seat", "seat_passenger"},
+                                           {"trim_rear_seats", "rear_seats"}}) {
+            REQUIRE(g->begin_edit(e.id, &err));
+            bool available = false;
+            for (const rg::OptionView& v : g->model().options) {
+                if (v.def.id == option) available = v.available;
+            }
+            g->discard();
+            INFO(option);
+            CHECK(available == has(slot));
+            CHECK(available == rg::part_choice_offered(e, *g->options().find(option)));
+        }
+    }
+}
+
+TEST_CASE("strip visual: a saved setup that removes a seat the car lacks is ignored", "[strip_visual][garage][seats]") {
+    TempDirs t;
+    std::string err;
+    auto g = rg::Garage::open(config_for(t), &err);
+    INFO(err);
+    REQUIRE(g != nullptr);
+    const auto stock = g->prepare_drive("car_runabout");
+    REQUIRE(stock.ok);
+    g->cleanup();
+    // a setup file written when the option was still offered (or edited by hand)
+    fs::create_directories(fs::path(g->setup_path("car_runabout")).parent_path());
+    {
+        std::ofstream f(g->setup_path("car_runabout"));
+        f << R"({"format":"racing_game.vehicle_setup/1","vehicle":"car_runabout","options":{"trim_passenger_seat":"removed","trim_rear_seats":"removed"}})";
+    }
+    const rg::VehicleSetup eff = g->effective_setup("car_runabout");
+    CHECK(eff.values.count("trim_passenger_seat") == 0); // dropped
+    CHECK(eff.values.count("trim_rear_seats") == 1);     // the rear bench is a real part: kept
+    const auto drive = g->prepare_drive("car_runabout");
+    INFO(drive.error);
+    REQUIRE(drive.ok);
+    // only the rear bench came off (16 kg); no passenger seat mass was taken out
+    CHECK(drive.chassis.mass_kg == Approx(stock.chassis.mass_kg - 16.0).margin(0.05));
+    CHECK(!contains(drive.hidden_nodes, "seat_passenger"));
+    CHECK(contains(drive.hidden_nodes, "seat_rear"));
+    g->cleanup();
+    // the compiler ignores it too (a setup built by hand, not through the garage)
+    const rg::CatalogEntry* e = g->catalog().find("car_runabout");
+    REQUIRE(e != nullptr);
+    rg::VehicleSetup s;
+    s.vehicle_id = "car_runabout";
+    s.values["trim_passenger_seat"] = std::string("removed");
+    rg::SetupContext ctx = g->context();
+    const rg::CompiledSetup c = rg::compile_setup(*e, g->options(), ctx, s);
+    INFO(c.error);
+    CHECK(c.ok);
+    // the editor refuses to set it
+    REQUIRE(g->begin_edit("car_runabout", &err));
+    const auto r = g->set_option("trim_passenger_seat", std::string("removed"));
+    CHECK(!r.accepted);
     g->discard();
 }

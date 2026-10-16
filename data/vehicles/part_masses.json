@@ -47,6 +47,7 @@
     "seat_comfort": { "label": "Comfort seat", "mass_kg": 22.0, "source": "[AS] a powered, heated front seat with its rails and motors, 20-25 kg (recalled)." },
     "seat_manual": { "label": "Front seat", "mass_kg": 15.0, "source": "[AS] a manually adjusted front seat with rails, 13-17 kg (recalled)." },
     "seat_vintage": { "label": "Bench seat half", "mass_kg": 9.0, "source": "[AS] a sprung, horsehair-padded vintage seat on a wooden frame, 8-10 kg per place (estimated)." },
+    "seat_vintage_bench": { "label": "Front bench seat", "mass_kg": 18.0, "source": "[AS] the one-piece sprung vintage front bench for driver and passenger, 16-20 kg (estimated; two places of seat_vintage)." },
     "seat_sport_bucket": { "label": "Sport bucket seat", "mass_kg": 12.0, "source": "[AS] a fixed-back glass-fibre bucket seat with its side mounts, 10-13 kg (recalled)." },
     "seat_carbon_bucket": { "label": "Carbon bucket seat", "mass_kg": 6.5, "source": "[AS] a carbon-fibre racing shell with thin padding and mounts, 5-8 kg (recalled)." },
     "rear_bench": { "label": "Rear seats", "mass_kg": 24.0, "source": "[AS] a split-folding rear bench (cushion, backrests, headrests, belt hardware), 20-28 kg (recalled)." },
