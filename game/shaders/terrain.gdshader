@@ -75,10 +75,23 @@ vec2 session_xy(vec3 world) {
 	return vec2(-world.z, -world.x) + rg_origin_mod;
 }
 
+// layer_mean is the map's mean in its own sRGB encoding (surface_materials.gd). The Compatibility renderer hands
+// source_color samples to this shader in that encoding; the Mobile (and Forward+) renderer hands them linear, so the
+// mean is linearised here to match the texture it stands in for (measured, Mobile renderer 2026-10-15: without this the
+// ground beyond detail_far_m drew about twice as bright as the textured ground in front of it).
+vec3 mean_colour(int layer) {
+#if CURRENT_RENDERER == RENDERER_COMPATIBILITY
+	return layer_mean[layer];
+#else
+	vec3 c = layer_mean[layer];
+	return mix(pow((c + 0.055) / 1.055, vec3(2.4)), c / 12.92, lessThan(c, vec3(0.04045)));
+#endif
+}
+
 vec3 layer_albedo(int layer, vec2 p, float lod_far) {
-	if (lod_far >= 1.0) { return layer_mean[layer] * layer_tint[layer]; }
+	if (lod_far >= 1.0) { return mean_colour(layer) * layer_tint[layer]; }
 	vec3 c = texture(surface_albedo, vec3(p / layer_tile_m[layer], float(layer))).rgb * layer_tint[layer];
-	return mix(c, layer_mean[layer] * layer_tint[layer], lod_far);
+	return mix(c, mean_colour(layer) * layer_tint[layer], lod_far);
 }
 
 // Tangent-space relief (x along east, y along north), unit-less, scaled by the layer strength.
@@ -136,7 +149,7 @@ void fragment() {
 		// Large-scale brightness variation so the repeats do not show from afar.
 		if (macro_strength > 0.0) {
 			float m = dot(texture(surface_albedo, vec3(p / macro_tile_m, float(layer_macro)), 2.0).rgb, vec3(0.333));
-			float mean = dot(layer_mean[layer_macro], vec3(0.333));
+			float mean = dot(mean_colour(layer_macro), vec3(0.333));
 			albedo *= clamp(1.0 + macro_strength * (m / max(mean, 0.01) - 1.0) * 2.0, 0.6, 1.4);
 		}
 		// Wet: darker, glossier; puddles on flat paved/unpaved road and flat ground where the noise is low.
@@ -147,7 +160,7 @@ void fragment() {
 			// rg_puddles so at full puddles about puddle_cover of the flat area is under water.
 			float noise = texture(surface_albedo, vec3(p / puddle_tile_m + vec2(0.37, 0.71), float(layer_macro)), 3.0).r;
 			float flat_ground = smoothstep(0.985, 0.998, world_n.y);
-			float t = layer_mean[layer_macro].r + puddle_spread * (2.0 * puddle_cover * rg_puddles - 1.0);
+			float t = mean_colour(layer_macro).r + puddle_spread * (2.0 * puddle_cover * rg_puddles - 1.0);
 			puddle = smoothstep(t + 0.015, t - 0.015, noise) * flat_ground * smoothstep(0.0, 0.2, rg_puddles);
 			puddle *= mix(0.5, 1.0, wr);
 		}
@@ -182,7 +195,8 @@ void fragment() {
 	if (!FRONT_FACING) { NORMAL = -NORMAL; }
 }
 
-// gl_compatibility: ALBEDO and source_color samples are sRGB-encoded values here (measured), LIGHT_COLOR carries the
+// gl_compatibility: ALBEDO and source_color samples are sRGB-encoded values here (measured; linear in the Mobile
+// renderer, which gives the same picture per light - see mean_colour), LIGHT_COLOR carries the
 // light energy times PI. Diffuse: Lambert with an ambient floor. With surface detail off the pre-texture formula is
 // kept (ALBEDO once more in DIFFUSE_LIGHT; the renderer multiplies by ALBEDO again), so the plain ramp looks as before.
 // Specular: only glossy (wet) fragments, recognised by their roughness (SPECULAR_AMOUNT is not proportional to SPECULAR

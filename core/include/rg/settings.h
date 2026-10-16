@@ -11,7 +11,7 @@
 // map_data.store_dir. (Not here, because nothing consumes them yet: map-server
 // endpoint, pin region, cache size - g2m_server does not exist; resolution
 // scale / FSR - the project renders with the Compatibility renderer, which has
-// no 3D scaling; traffic - the F7 panel and user://traffic.cfg stay the one
+// no 3D scaling (later added as graphics.render_scale); traffic - the F7 panel and user://traffic.cfg stay the one
 // traffic settings model.)
 //
 // File format (UTF-8 JSON):
@@ -59,6 +59,9 @@ struct SettingDef {
     std::vector<std::string> choices; // Choice
     // false: takes effect when the next world loads (store_dir), not live.
     bool applies_live = true;
+    // true (with applies_live false): takes effect only when the game is started again (graphics.renderer: the
+    // engine picks its renderer once, at start-up).
+    bool applies_on_restart = false;
     // false: persisted state of a screen (the car browser's group/sort/filter), not a player-facing control.
     // Hidden keys are not listed by settings_sections() / the settings screen, but load, validate and save as usual.
     bool shown = true;

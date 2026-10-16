@@ -34,6 +34,7 @@
 #pragma once
 
 #include "rg/engine_store.h"
+#include "rg/driveline_swap.h"
 #include "rg/gearbox_catalog.h"
 #include "rg/turbo_map_extension.h"
 #include "rg/slider_map.h"
@@ -93,11 +94,15 @@ struct SetupOptionDef {
     // "gearboxes" = the rg::GearboxCatalog (data/gearboxes/gearbox_catalog.json), offered when the box's torque rating
     // covers the installed engine's peak torque; ids = the catalogue ids. An engine choice also derives the swap
     // package (engine_swap.h); all of them ignore compatible_engines.
+    // Drivetrain swap (rg/driveline_swap.h, data/drivetrains/driveline_catalog.json): "drive_layouts" = the layouts
+    // (FWD / RWD / AWD with a centre kind; ids = the catalogue ids), "differentials" = the axle differential units for
+    // the axle named by `axle` (front | rear; offered only while that axle is driven). Both transform the vehicle file's
+    // driveline in code (never a file reference) and are offered only on a car whose driveline the swap understands.
     std::string catalog;
     std::vector<std::string> compatible_engines; // original engine stems, an explicit game fitment list; "*" = any engine
     std::string part_format; // required referenced file format
     bool no_turbo_override = false; // default engine turbo must not shadow a vehicle override
-    std::string axle;                  // TyreChoice: "front" | "rear"
+    std::string axle;                  // TyreChoice and the "differentials" catalog: "front" | "rear"
     // Scale only (garage numeric inputs): the option is shown and typed in ABSOLUTE units (rpm, bar, ms) on a linear or
     // logarithmic slider, derived from the stock value of its first target leaf; min/max/step are then not authored and the
     // allowed factor range is abs_min/stock .. abs_max/stock (widened to contain 1). See rg/slider_map.h.
@@ -159,6 +164,8 @@ struct SetupContext {
     std::shared_ptr<const EngineStore> engines;
     // The gearbox list the "gearboxes" catalog option reads. nullptr = that option is unavailable.
     std::shared_ptr<const GearboxCatalog> gearboxes;
+    // The drive layouts and differentials the "drive_layouts"/"differentials" options read. nullptr = unavailable.
+    std::shared_ptr<const DrivelineCatalog> drivelines;
     // Turbo stage map extension policy (rg/turbo_map_extension.h): when set, a load that finds the engine's air demand outside
     // the stage map extends and caches the map under engine_map_cache_dir. nullptr = maps are used as they are.
     std::shared_ptr<const TurboMapExtensionConfig> turbo_map_extension;
@@ -214,6 +221,8 @@ struct SetupModel {
     double chassis_mass_delta_kg = 0.0;
     std::string engine_title;    // the installed engine's display name ("" = the car's own)
     std::string engine_key;      // the installed engine's EngineStore key (the car's own too); "" = not in the store
+    // The driveline with the installed choices (a drivetrain swap included): what the stats show.
+    DrivelineInfo driveline;
 };
 // Builds the option views of an entry from its files.
 SetupModel build_setup_model(const CatalogEntry& entry, const SetupOptionTable& table, const SetupContext& ctx,

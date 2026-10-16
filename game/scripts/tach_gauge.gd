@@ -82,6 +82,10 @@ func _ready() -> void:
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_simulation = get_node_or_null(simulation_path)
 	_input_map = get_node_or_null(input_map_path)
+	_dial = _DialLayer.new()
+	_dial.gauge = self
+	_dial.show_behind_parent = true
+	add_child(_dial)
 
 const FrameProbe := preload("res://scripts/frame_probe.gd")
 func _process(delta: float) -> void:
@@ -107,7 +111,85 @@ func _process_body(delta: float) -> void:
 		_speed_limit = {}
 		_thermal = {}
 		_pedals = {}
-	queue_redraw()
+	# Redraw only what changed on screen (perf, 2026-10-15): the dial (face, ticks, numbers, rings) is its own canvas
+	# item, recorded once per car / window size / drive-mode colour; the needle, gear, lamps, speed and bars are
+	# recorded again only when a value they show changes (needle in 0.05 deg steps, i.e. under a third of a pixel at
+	# the tip at 4K). Before, both were recorded every frame (tach_draw 0.5 ms per frame in the owner's 4K log).
+	var static_sig := _static_signature()
+	if static_sig != _static_sig:
+		_static_sig = static_sig
+		_dial.queue_redraw()
+	# Fast path while driving: a moved needle redraws anyway, so the full signature is not built (it is rebuilt, and
+	# compared, on the next frame the needle holds still).
+	var needle_q := -1
+	if _visible_content():
+		needle_q = int(round(GaugeLogic.clock_deg_for_rpm(_display_rpm, GaugeLogic.max_rpm_for_limiter(float(_gauge_info.get("limiter_rpm", 0.0)))) * 20.0))
+	if needle_q != _needle_q:
+		_needle_q = needle_q
+		_dynamic_sig = []
+		queue_redraw()
+		return
+	var dynamic_sig := _dynamic_signature()
+	if dynamic_sig != _dynamic_sig:
+		_dynamic_sig = dynamic_sig
+		queue_redraw()
+
+var _dial: _DialLayer
+var _static_sig: Array = []
+var _dynamic_sig: Array = []
+var _needle_q := -2
+
+# The dial face: drawn behind the gauge's own (moving) content.
+class _DialLayer extends Node2D:
+	var gauge: Control
+	func _draw() -> void:
+		var probe_t0 := Time.get_ticks_usec()
+		gauge._draw_dial(self)
+		preload("res://scripts/frame_probe.gd").add("tach_draw", Time.get_ticks_usec() - probe_t0)
+
+func _visible_content() -> bool:
+	return not (_simulation == null or vehicle_name == "" or _gauge_info.is_empty() or _last_pt.is_empty())
+
+func _static_signature() -> Array:
+	if not _visible_content():
+		return [false]
+	return [true, get_viewport_rect().size, _gauge_info.get("idle_rpm", 0.0), _gauge_info.get("limiter_rpm", 0.0),
+		DriveModeTheme.is_themed(_last_pt), DriveModeTheme.accent(_last_pt, COLOR_TICK_MINOR)]
+
+# Every input of _draw_body, quantised to what the drawing shows (texts as drawn, blink phases as booleans).
+func _dynamic_signature() -> Array:
+	if not _visible_content():
+		return [false]
+	var limiter_rpm: float = _gauge_info.get("limiter_rpm", 0.0)
+	var max_rpm: float = GaugeLogic.max_rpm_for_limiter(limiter_rpm)
+	var lamps := []
+	var lamp_blinks: bool = int(_last_pt.get("launch_lamp", 0)) == 3
+	for row in _existing_assist_lamp_states():
+		lamps.append(row["state"])
+		lamp_blinks = lamp_blinks or row["state"] == GaugeLogic.LampState.INTERVENING
+	# A blink phase counts only while something on the gauge blinks with it, so a quiet gauge is not redrawn.
+	var t := Time.get_ticks_msec() / 1000.0
+	var engine_state := String(_last_pt.get("engine_state", "off"))
+	var fast_blinks: bool = bool(_last_pt.get("grind_active", false)) or (ThermalReadout.is_present(_thermal) and int(_thermal.get("level_code", 1)) == 3)
+	var blink_on: bool = fast_blinks and fmod(t, 0.3) < 0.15
+	var lamp_blink: bool = lamp_blinks and fmod(t, 0.4) < 0.2
+	var slow_blink_on: bool = engine_state == "stalled" and fmod(t, 1.0) < 0.7
+	var pedals := []
+	for k in ["clutch", "brake", "throttle"]:
+		pedals.append(int(round(float(_pedals.get(k, -1.0)) * 400.0)) if not _pedals.is_empty() else -1)
+	var thermal := []
+	if ThermalReadout.is_present(_thermal):
+		thermal = [int(_thermal.get("level_code", 1)), int(round(float(_thermal.get("coolant_c", 0.0)))), int(round(float(_thermal.get("oil_c", 0.0)))),
+			int(round(clampf(float(_thermal.get("gauge", 0.0)), 0.0, 1.0) * 600.0)), bool(_thermal.get("fan_on", false))]
+	return [true, get_viewport_rect().size, int(round(GaugeLogic.clock_deg_for_rpm(_display_rpm, max_rpm) * 20.0)),
+		limiter_rpm > 0.0 and _display_rpm >= limiter_rpm, int(_last_pt.get("gear", 0)), engine_state,
+		bool(_last_pt.get("grind_active", false)), blink_on, lamp_blink, slow_blink_on,
+		_gauge_info.get("fitted_assists", PackedStringArray()), bool(_last_pt.get("assist_traction_control", false)),
+		bool(_last_pt.get("traction_control_intervening", false)), int(_last_pt.get("launch_lamp", 0)), lamps,
+		DriveModeTheme.is_themed(_last_pt), DriveModeTheme.label(_last_pt) if DriveModeTheme.is_themed(_last_pt) else "",
+		DriveModeTheme.accent(_last_pt, COLOR_TICK_MINOR), int(round(float(_last_pt.get("speedo_kmh", 0.0)))), int(round(_gps_kmh)),
+		_speed_limit.get("kind", "unknown"), int(round(float(_speed_limit.get("kph", 0.0)))), bool(_speed_limit.get("conditional", false)),
+		thermal, pedals, int(round(clampf(1.0 - float(_last_pt.get("clutch_engagement", 1.0)), 0.0, 1.0) * 400.0))]
 
 func _clock_rad(clock_deg: float) -> float:
 	return deg_to_rad(clock_deg - 90.0)
@@ -173,11 +255,51 @@ func _draw() -> void:
 	_draw_body()
 	FrameProbe.add("tach_draw", Time.get_ticks_usec() - probe_t0)
 
+# The static dial face on the _DialLayer canvas item (behind the needle): background, rim, redline, ticks, numbers,
+# idle dot and the gear ring. Same geometry as before the split.
+func _draw_dial(canvas: CanvasItem) -> void:
+	if not _visible_content():
+		return
+	var idle_rpm: float = _gauge_info.get("idle_rpm", 0.0)
+	var limiter_rpm: float = _gauge_info.get("limiter_rpm", 0.0)
+	var max_rpm: float = GaugeLogic.max_rpm_for_limiter(limiter_rpm)
+	var vp_size: Vector2 = get_viewport_rect().size
+	var scale: float = max(vp_size.y / 1080.0, 0.4)
+	var radius: float = 150.0 * scale
+	var margin: float = 64.0 * scale
+	var center := Vector2(vp_size.x - margin - radius, vp_size.y - margin - radius * 1.5)
+	var font: Font = get_theme_default_font()
+	var font_size_tick: int = int(round(15.0 * scale))
+
+	canvas.draw_circle(center, radius * 1.08, COLOR_BG)
+	# Drive modes (assists I7): the dial rim and the gear ring take the colour of the mode that runs.
+	var themed: bool = DriveModeTheme.is_themed(_last_pt)
+	var accent: Color = DriveModeTheme.accent(_last_pt, COLOR_TICK_MINOR)
+	if themed:
+		canvas.draw_arc(center, radius * 1.08, 0.0, TAU, 96, accent, scale * 3.0, true)
+
+	var redline_start_rad: float = _clock_rad(GaugeLogic.redline_start_clock_deg(limiter_rpm, max_rpm))
+	var redline_end_rad: float = _clock_rad(GaugeLogic.redline_end_clock_deg(max_rpm))
+	if redline_end_rad > redline_start_rad + 0.001:
+		canvas.draw_arc(center, radius * 1.02, redline_start_rad, redline_end_rad, 32, COLOR_REDLINE, radius * 0.05, true)
+
+	for major_rpm in GaugeLogic.major_tick_rpms(max_rpm):
+		var deg: float = GaugeLogic.clock_deg_for_rpm(major_rpm, max_rpm)
+		canvas.draw_line(_polar(center, radius * 0.86, deg), _polar(center, radius, deg), COLOR_TICK_MAJOR, scale * 2.5, true)
+		var label := str(int(round(major_rpm / 1000.0)))
+		var text_size: Vector2 = font.get_string_size(label, HORIZONTAL_ALIGNMENT_LEFT, -1, font_size_tick)
+		canvas.draw_string(font, _polar(center, radius * 0.70, deg) - Vector2(text_size.x * 0.5, -text_size.y * 0.35), label, HORIZONTAL_ALIGNMENT_LEFT, -1, font_size_tick, COLOR_TICK_MAJOR)
+	for minor_rpm in GaugeLogic.minor_tick_rpms(max_rpm):
+		var deg2: float = GaugeLogic.clock_deg_for_rpm(minor_rpm, max_rpm)
+		canvas.draw_line(_polar(center, radius * 0.93, deg2), _polar(center, radius, deg2), COLOR_TICK_MINOR, scale * 1.5, true)
+
+	if idle_rpm > 0.0:
+		canvas.draw_circle(_polar(center, radius * 0.79, GaugeLogic.clock_deg_for_rpm(idle_rpm, max_rpm)), scale * 3.0, COLOR_TICK_MINOR)
+
 func _draw_body() -> void:
-	if _simulation == null or vehicle_name == "" or _gauge_info.is_empty() or _last_pt.is_empty():
+	if not _visible_content():
 		return
 
-	var idle_rpm: float = _gauge_info.get("idle_rpm", 0.0)
 	var limiter_rpm: float = _gauge_info.get("limiter_rpm", 0.0)
 	var gear_count: int = int(_gauge_info.get("gear_count", 0))
 	var max_rpm: float = GaugeLogic.max_rpm_for_limiter(limiter_rpm)
@@ -189,35 +311,14 @@ func _draw_body() -> void:
 	var center := Vector2(vp_size.x - margin - radius, vp_size.y - margin - radius * 1.5)
 
 	var font: Font = get_theme_default_font()
-	var font_size_tick: int = int(round(15.0 * scale))
 	var gear_font_scale: float = 1.0 if gear_count < 10 else 0.75
 	var font_size_gear: int = int(round(46.0 * scale * gear_font_scale))
 	var font_size_lamp: int = int(round(13.0 * scale))
 	var font_size_speed: int = int(round(52.0 * scale))
 	var font_size_speed_unit: int = int(round(16.0 * scale))
 
-	draw_circle(center, radius * 1.08, COLOR_BG)
-	# Drive modes (assists I7): the dial rim and the gear ring take the colour of the mode that runs.
 	var themed: bool = DriveModeTheme.is_themed(_last_pt)
 	var accent: Color = DriveModeTheme.accent(_last_pt, COLOR_TICK_MINOR)
-	if themed:
-		draw_arc(center, radius * 1.08, 0.0, TAU, 96, accent, scale * 3.0, true)
-
-	var redline_start_rad: float = _clock_rad(GaugeLogic.redline_start_clock_deg(limiter_rpm, max_rpm))
-	var redline_end_rad: float = _clock_rad(GaugeLogic.redline_end_clock_deg(max_rpm))
-	if redline_end_rad > redline_start_rad + 0.001:
-		draw_arc(center, radius * 1.02, redline_start_rad, redline_end_rad, 32, COLOR_REDLINE, radius * 0.05, true)
-
-	for major_rpm in GaugeLogic.major_tick_rpms(max_rpm):
-		var deg: float = GaugeLogic.clock_deg_for_rpm(major_rpm, max_rpm)
-		draw_line(_polar(center, radius * 0.86, deg), _polar(center, radius, deg), COLOR_TICK_MAJOR, scale * 2.5, true)
-		_draw_centered_text(font, _polar(center, radius * 0.70, deg), str(int(round(major_rpm / 1000.0))), font_size_tick, COLOR_TICK_MAJOR)
-	for minor_rpm in GaugeLogic.minor_tick_rpms(max_rpm):
-		var deg2: float = GaugeLogic.clock_deg_for_rpm(minor_rpm, max_rpm)
-		draw_line(_polar(center, radius * 0.93, deg2), _polar(center, radius, deg2), COLOR_TICK_MINOR, scale * 1.5, true)
-
-	if idle_rpm > 0.0:
-		draw_circle(_polar(center, radius * 0.79, GaugeLogic.clock_deg_for_rpm(idle_rpm, max_rpm)), scale * 3.0, COLOR_TICK_MINOR)
 
 	var needle_deg: float = GaugeLogic.clock_deg_for_rpm(_display_rpm, max_rpm)
 	var in_redline: bool = limiter_rpm > 0.0 and _display_rpm >= limiter_rpm
@@ -234,6 +335,7 @@ func _draw_body() -> void:
 		gear_text_color = COLOR_GEAR_GRIND_FLASH
 	elif engine_state == "stalled" or engine_state == "off":
 		gear_text_color = COLOR_GEAR_STALLED
+	# Over the needle's hub, as before the dial split.
 	draw_circle(center, gear_radius, COLOR_GEAR_BG)
 	draw_arc(center, gear_radius, 0.0, TAU, 48, accent, scale * (2.5 if themed else 1.5), true)
 	_draw_centered_text(font, center, GaugeLogic.gear_label(int(_last_pt.get("gear", 0))), font_size_gear, gear_text_color)

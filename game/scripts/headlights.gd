@@ -146,6 +146,8 @@ func set_level(level: int) -> void:
 
 # states: lamp action -> bool ("tail_lamp", "brake_lamp", "reverse_lamp"), from exterior_lamps.gd.
 func set_states(states: Dictionary) -> void:
+	if states == _states:
+		return # unchanged (called every frame): no light parameter pushed to the RenderingServer
 	_states = states
 	_update_rear()
 

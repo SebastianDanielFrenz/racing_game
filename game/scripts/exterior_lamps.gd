@@ -61,6 +61,11 @@ func update_lamps(snapshot: Dictionary, channels: Dictionary) -> void:
 				states[action] = RgDriverActions.state(action,snapshot,channels)["active"]
 			if states[action] and (best.is_empty() or float(k["nits"]) > float(best["nits"])):
 				best = k
+		# Only a change (of lamp kind or of the scene exposure) reaches the material (a setter re-uploads its uniforms even with the same value).
+		if lamp.has("applied") and lamp["applied"] == best and lamp.get("applied_e") == e:
+			continue
+		lamp["applied"] = best
+		lamp["applied_e"] = e
 		var material: StandardMaterial3D = lamp["material"]
 		material.emission_enabled = not best.is_empty()
 		if best.is_empty():

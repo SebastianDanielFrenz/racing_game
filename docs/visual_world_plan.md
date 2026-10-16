@@ -17,8 +17,8 @@ rendering). See "Built" at the end.
 ## Owner questions (each with a recommendation)
 
 1. **Godot preview.** The Godot side stays a thin preview (sky light, widget,
-   headlights on `gl_compatibility`, where every spot light costs one extra pass
-   per lit object). *Recommendation:* no Godot work beyond that; grass, crops and
+   headlights; on the `gl_compatibility` fallback every spot light costs one extra
+   pass per lit object, on Mobile (the default since 2026-10-15) lights are clustered). *Recommendation:* no Godot work beyond that; grass, crops and
    textures are rendered first in Unreal.
 2. **Game clock start.** Today: the real date (UTC) at 14:00 local, progressing
    at x1 (real time). *Recommendation:* keep that; the menu offers stopped/x1/
@@ -59,8 +59,10 @@ to git LFS (owner decision at that point).
 
 ## What exists today
 
-- **Renderer.** `game/project.godot`: `gl_compatibility` for desktop and mobile.
-  Compatibility is a multi-pass forward renderer: the directional light(s) go
+- **Renderer.** `game/project.godot`: Mobile (Vulkan) since 2026-10-15, with
+  `gl_compatibility` as the fallback (docs/mobile_renderer.md). Mobile is a single-pass
+  clustered forward renderer (at most 8 omni + 8 spot lights per mesh), HDR, auto-exposure
+  and glow. The fallback, Compatibility, is a multi-pass forward renderer: the directional light(s) go
   in the base pass, every omni/spot light touching an object costs one more
   pass of that object; limits `rendering/limits/opengl/max_lights_per_object`
   (default 8) and `max_renderable_lights` (default 32). Spot/omni shadows exist

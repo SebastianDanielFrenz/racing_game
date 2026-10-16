@@ -93,6 +93,7 @@ var _garage_path: Array[String] = []
 var _garage_preferred: Button
 var _engine_notice := ""                        # G1: options an engine change reset (shown under the engine cards)
 var _gearbox_notice := ""                       # a gearbox change reset the gear ratios (shown under the gearbox cards)
+var _driveline_notice := ""                     # a drive layout change put a differential choice back to stock
 var _component_textures: Dictionary = {}
 var _component_catalog: Dictionary = {}
 var _garage_exit: Control
@@ -497,7 +498,9 @@ func _setting_row(def: Dictionary) -> Control:
 		row.add_child(value_label)
 		_setting_displays[key] = value_label
 	var help: String = str(def["help"])
-	if not bool(def["applies_live"]):
+	if bool(def.get("applies_on_restart", false)):
+		help += " (applies when the game is started again)"
+	elif not bool(def["applies_live"]):
 		help += " (applies when the next world loads)"
 	holder.add_child(_label(help, 13, HORIZONTAL_ALIGNMENT_LEFT, true))
 	var note := _label("", 13, HORIZONTAL_ALIGNMENT_LEFT)
@@ -1052,12 +1055,13 @@ func _draw_upgrades() -> void:
 			if _garage_option("turbo_install").is_empty() and _garage_option("turbo_install_n2o").is_empty(): disabled.append("Turbo")
 			if top == "Swaps":
 				var no_fuel: bool = _garage_option("fuel").is_empty()
-				_draw_tiles(["Engine", "Fuel", "Forced induction", "Drivetrain"], [] + (["Engine"] if disabled.has("Engine") else []) + (["Fuel"] if no_fuel else []) + (["Forced induction"] if disabled.has("Turbo") else []))
+				var no_drivetrain: bool = _garage_option("drive_layout").is_empty() and _garage_option("diff_front").is_empty() and _garage_option("diff_rear").is_empty()
+				_draw_tiles(["Engine", "Fuel", "Forced induction", "Drivetrain"], [] + (["Engine"] if disabled.has("Engine") else []) + (["Fuel"] if no_fuel else []) + (["Forced induction"] if disabled.has("Turbo") else []) + (["Drivetrain"] if no_drivetrain else []))
 			else:
 				_draw_tiles(["Turbo", "N2O", "Camshaft"],disabled + (["N2O"] if _garage_option("nitrous_install_hyper").is_empty() and _garage_option("nitrous_install_sedan").is_empty() else []))
 			return
 		if top == "Swaps" and _garage_path[1] == "Drivetrain":
-			_draw_tiles(["AWD", "RWD", "FWD"],["AWD", "RWD", "FWD"])
+			_draw_drivetrain_swaps()
 			return
 		var opt := _garage_option("engine_install") if _garage_path[1] == "Engine" else _garage_option("turbo_install")
 		if _garage_path[1] == "Fuel": opt = _garage_option("fuel")
@@ -1193,6 +1197,48 @@ func _draw_gearbox_choices(opt: Dictionary) -> void:
 			line.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 			_option_box.add_child(line)
 	_focus_garage.call_deferred()
+
+# The drivetrain swap: the drive layouts by section (FWD / RWD / AWD with its centre differential), then the axle
+# differentials of the driven axles. RgGarage decides what fits; the first card of each list is what the car has now.
+func _draw_drivetrain_swaps() -> void:
+	var layout := _garage_option("drive_layout")
+	if layout.is_empty():
+		_option_box.add_child(_label("This car's driveline cannot be swapped.",14,HORIZONTAL_ALIGNMENT_LEFT,true))
+	else:
+		var by_section: Dictionary = {}
+		for part in layout["parts"]:
+			var section := str(part.get("section", ""))
+			if not by_section.has(section): by_section[section] = []
+			by_section[section].append(part)
+		for section in ["FWD", "RWD", "AWD"]:
+			if not by_section.has(section): continue
+			_option_box.add_child(_label(str(section),18,HORIZONTAL_ALIGNMENT_LEFT))
+			_draw_part_grid(layout, by_section[section])
+	for id in ["diff_front", "diff_rear"]:
+		var opt := _garage_option(id)
+		if opt.is_empty(): continue
+		_option_box.add_child(_label(str(opt.get("label", id)),18,HORIZONTAL_ALIGNMENT_LEFT))
+		_draw_part_grid(opt, opt["parts"])
+	if not _driveline_notice.is_empty():
+		var line := _label(_driveline_notice,14,HORIZONTAL_ALIGNMENT_LEFT,true)
+		line.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		_option_box.add_child(line)
+	_focus_garage.call_deferred()
+
+func _draw_part_grid(opt: Dictionary, parts: Array) -> void:
+	var grid := GridContainer.new()
+	grid.columns = 2
+	grid.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_option_box.add_child(grid)
+	for part in parts:
+		var installed := str(part["id"]) == str(opt["value"])
+		var presentation: Dictionary = part.duplicate()
+		presentation["size"] = (str(part.get("subtitle", "")) + "\n" + str(part.get("detail", ""))).strip_edges()
+		var card := _make_component_card(presentation,"INSTALLED" if installed else "Install")
+		grid.add_child(card)
+		_buttons["part:" + str(opt["id"]) + ":" + str(part["id"])] = card
+		card.pressed.connect(func(): _edit_option(str(opt["id"]),str(part["id"])); _draw_garage_options())
+		if installed or _garage_preferred == null: _garage_preferred = card
 
 func _induction_type(part_id: String) -> String:
 	if part_id == "hyper_na": return "NA"
@@ -1698,6 +1744,8 @@ func _edit_option(option_id: String, value: Variant) -> Dictionary:
 		_engine_notice = str(result.get("notice", ""))
 	if option_id == "gearbox_install":
 		_gearbox_notice = str(result.get("notice", ""))
+	if option_id == "drive_layout":
+		_driveline_notice = str(result.get("notice", ""))
 	var note: Label = _option_notes.get(option_id, null)
 	if note != null:
 		note.visible = not bool(result["accepted"])

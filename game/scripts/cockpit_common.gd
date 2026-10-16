@@ -115,6 +115,8 @@ func _copy_lamp_materials(root: Node) -> void:
 			if not _materials.has(copy.resource_name): _materials[copy.resource_name] = []
 			_materials[copy.resource_name].append(copy)
 
+var _lamp_applied: Dictionary = {} # lamp material name -> last applied on/off
+
 func update_lamps(snapshot: Dictionary, channels: Dictionary = {}) -> void:
 	var states: Dictionary = {}
 	for rule in _layout.get("lamps",[]):
@@ -130,6 +132,10 @@ func update_lamps(snapshot: Dictionary, channels: Dictionary = {}) -> void:
 			var field: String = rule["field"]
 			on = snapshot.has(field) and snapshot.get(field) == rule["equals"]
 		if not _lamp_specs.has(name): continue
+		# Material parameters are pushed to the RenderingServer only on a change: a setter call re-uploads the
+		# material's uniforms even with the same value, every frame for every lamp (perf, 2026-10-15).
+		if _lamp_applied.get(name, null) == on: continue
+		_lamp_applied[name] = on
 		var spec: Dictionary = _lamp_specs[name]
 		var rgb: Array = spec["emissive_on"]
 		for material in _materials.get(name,[]):

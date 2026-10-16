@@ -743,6 +743,9 @@ func _load_car(info: Dictionary) -> bool:
 	preload("res://scripts/model_options.gd").apply(model, path.get_basename() + ".rig.json", [])
 	var bounds := _model_bounds_iso(model)
 	_car_pivot.add_child(holder)
+	# Draw calls (perf, 2026-10-15): bake the static parts per material before the twin is copied (car_mesh_merge.gd).
+	if OS.get_environment("RG_CAR_MERGE") != "0":
+		preload("res://scripts/car_mesh_merge.gd").merge(model as Node3D, path.get_basename() + ".rig.json", path.get_basename() + ".cockpit.json", true, false)
 	for mi in _mesh_instances(holder):
 		mi.layers = LAYER_REAL
 		mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_ON

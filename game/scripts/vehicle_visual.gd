@@ -127,6 +127,11 @@ func _load_model() -> void:
 	# A pure axis permutation (determinant +1: an even permutation of the
 	# three axes), so this never mirrors the mesh.
 	_model_root.transform.basis = Basis(Vector3(0, 1, 0), Vector3(0, 0, 1), Vector3(1, 0, 0))
+	# Coarser LODs of the car by camera distance where the rig lists them and the graphics.car_lod setting asks for
+	# them (car_lods.gd; default "full" = none).
+	var lod_parts: int = preload("res://scripts/car_lods.gd").attach(_model_root, model_absolute_path)
+	if lod_parts > 0:
+		print("rg_godot vehicle_visual.gd: %d LOD parts for %s" % [lod_parts, model_absolute_path.get_file()])
 	if model_absolute_path.get_file() == "car_hyper.glb":
 		load("res://scripts/cockpit_common.gd").attach_to(_model_root,simulation,vehicle_name,model_absolute_path)
 		var cluster := Node3D.new()
@@ -173,6 +178,13 @@ func _load_model() -> void:
 					_rig_wheel_width[node["name"]] = float(node["wheel"].get("tyre_width", node["wheel"]["width"]))
 	_load_ok = true
 	apply_colours()
+	# Draw calls (perf, 2026-10-15): bake the parts that never move on their own into one surface per material and
+	# take the sun shadow off small cockpit parts (car_mesh_merge.gd). RG_CAR_MERGE=0 keeps the model as loaded.
+	if OS.get_environment("RG_CAR_MERGE") != "0":
+		var merged: Dictionary = preload("res://scripts/car_mesh_merge.gd").merge(_model_root, rig_path, cockpit_json)
+		print("rg_godot vehicle_visual.gd: merged %d static surfaces into %d, kept %d, %d small cockpit parts without shadow, %d shadow surfaces in %d proxies" % [
+			merged["merged_surfaces"], merged["merged_into"], merged["kept_surfaces"], merged["small_parts_shadow_off"],
+			merged["shadow_surfaces_proxied"], merged["shadow_proxies"]])
 	print("rg_godot vehicle_visual.gd: loaded model ", model_absolute_path)
 
 # Paints the model's `paint` and `rim_*` materials with the setup's colours and styles paint,
