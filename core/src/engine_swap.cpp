@@ -74,21 +74,30 @@ SwapPackage derive_swap_package(const SwapCar& car, const SwapEngine& engine, co
         if (!choices.fuel.empty() && p.fuel_changed) p.lines.push_back("Fuel: " + fuel_label(wanted));
     }
 
-    if (!engine_swapped) return p;
+    const bool kit = !choices.turbo_kit.empty();
+    if (!engine_swapped && !kit) return p;
 
     // ---- clutch ----
+    const double factor = kit ? std::max(1.0, choices.boost_torque_factor) : 1.0;
+    const double peak = engine.peak_torque_nm * factor;
+    const std::string whose = kit ? "the engine's estimated " + num0(peak) + " N*m with the turbo kit"
+                                  : "the engine's " + num0(peak) + " N*m";
+    if (kit) {
+        p.lines.push_back("Turbo kit: " + choices.turbo_kit + (engine.peak_torque_nm > 0.0
+                              ? " (peak torque about " + num0(engine.peak_torque_nm) + " -> " + num0(peak) + " N*m)" : std::string()));
+    }
     if (car.clutch_kinetic_nm > 0.0 && engine.peak_torque_nm > 0.0) {
-        const double wanted = std::ceil(1.5 * engine.peak_torque_nm / 10.0) * 10.0;
+        const double wanted = std::ceil(1.5 * peak / 10.0) * 10.0;
         if (car.clutch_kinetic_nm < wanted) {
             p.set_clutch = true;
             p.clutch_kinetic_nm = wanted;
             p.lines.push_back("Clutch capacity raised from " + num0(car.clutch_kinetic_nm) + " to " + num0(wanted) +
-                              " N*m (1.5 x the engine's " + num0(engine.peak_torque_nm) + " N*m)");
-        } else {
-            p.lines.push_back("Clutch kept at " + num0(car.clutch_kinetic_nm) + " N*m (already above 1.5 x the engine's " +
-                              num0(engine.peak_torque_nm) + " N*m)");
+                              " N*m (1.5 x " + whose + ")");
+        } else if (engine_swapped) {
+            p.lines.push_back("Clutch kept at " + num0(car.clutch_kinetic_nm) + " N*m (already above 1.5 x " + whose + ")");
         }
     }
+    if (!engine_swapped) return p;
 
     // ---- TCU ----
     if (engine.idle_rpm > 0.0 && engine.limiter_rpm > engine.idle_rpm) {
@@ -143,10 +152,14 @@ SwapPackage derive_swap_package(const SwapCar& car, const SwapEngine& engine, co
 }
 
 FitResult check_fit(const CatalogEntry& car, const EngineEntry& engine) {
+    if (!engine.envelope_mm) return FitResult{};
+    return check_fit_size(car, *engine.envelope_mm);
+}
+
+FitResult check_fit_size(const CatalogEntry& car, const std::array<double, 3>& env) {
     FitResult r;
-    if (!car.engine_bay_envelope || !engine.envelope_mm) return r;
+    if (!car.engine_bay_envelope) return r;
     const EngineBayEnvelope& bay = *car.engine_bay_envelope;
-    const std::array<double, 3>& env = *engine.envelope_mm;
     const bool transverse = bay.crank_axis == 'y';
     const double room[3] = {transverse ? bay.size_mm[1] : bay.size_mm[0], transverse ? bay.size_mm[0] : bay.size_mm[1],
                             bay.size_mm[2]};

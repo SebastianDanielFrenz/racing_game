@@ -639,6 +639,110 @@
       ]
     },
     {
+      "id": "engine_bore",
+      "label": "Cylinder bore",
+      "group": "Engine internals",
+      "area": "engine",
+      "kind": "file_choice",
+      "catalog": "engine_internals",
+      "internal": "cylinder_bore",
+      "file": "engine",
+      "part_format": "rg.engine_internals/1",
+      "pointers": [
+        "/bore_mm",
+        "/cycle/compression_ratio"
+      ],
+      "help": "Bores every cylinder oversize (+0.5 mm, +1.0 mm, or a re-sleeved big bore of +3.0 mm): more swept volume, so more torque and power at the same rpm. The engine file's bore changes, its maps are generated again, and the compression ratio rises because the head's combustion chamber stays as it was. A bored block takes pistons of the new diameter only: every piston grade is then sized to it and weighs more, which loads the connecting rods harder (a lower rod-limited rpm). A step that would leave too thin a wall between two cylinders is not offered; a thin wall makes the setup check warn. A turbo kit fitted to the bored engine is sized for its larger displacement. Figures in data/engines/engine_internals.json (\"bore\")."
+    },
+    {
+      "id": "turbo_kit",
+      "label": "Turbo kit",
+      "group": "Turbo system",
+      "area": "engine",
+      "kind": "file_choice",
+      "catalog": "turbo_kits",
+      "file": "engine",
+      "part_format": "physics_sim.turbo_configuration/1",
+      "pointers": [
+        "/default_forced_induction"
+      ],
+      "help": "Fit a turbo system to an engine that has none: the turbo, intercooler and wastegate are sized for the installed engine's air flow (data/engines/turbo_kits.json), the boost map is regenerated and a compression ratio above 10:1 is lowered. Boost pressure is adjusted separately in Tuning. Torque-curve engines cannot take a kit; the garage says why."
+    },
+    {
+      "id": "charge_piping",
+      "label": "Charge piping",
+      "group": "Turbo system",
+      "area": "engine",
+      "kind": "file_choice",
+      "catalog": "charge_piping",
+      "file": "engine",
+      "part_format": "physics_sim.turbo_configuration/1",
+      "pointers": [
+        "/default_forced_induction"
+      ],
+      "help": "The pipes and couplers from the compressor through the intercooler to the throttle. A kit comes with plastic piping rated for street boost; aluminium and steel take more pressure and weigh more. The setup check warns when the boost target is above the piping's rating (data/engines/turbo_kits.json); nothing breaks yet."
+    },
+    {
+      "id": "engine_rods",
+      "label": "Connecting rods",
+      "group": "Engine internals",
+      "area": "engine",
+      "kind": "file_choice",
+      "catalog": "engine_internals",
+      "internal": "connecting_rods",
+      "file": "engine",
+      "part_format": "rg.engine_internals/1",
+      "pointers": [
+        "/stroke_mm"
+      ],
+      "help": "The rods between pistons and crankshaft. Forged steel and titanium (as in F1) survive a higher mean piston speed; titanium is also 35 % lighter. The engine's piston-speed limit is that of its WEAKEST part: rods, pistons and crankshaft. Limits and masses are in data/engines/engine_internals.json; the choice changes no engine data, only the setup check's limits and the car's mass. Nothing breaks yet (damage model to come); the setup check names the part that would fail."
+    },
+    {
+      "id": "engine_pistons",
+      "label": "Pistons",
+      "group": "Engine internals",
+      "area": "engine",
+      "kind": "file_choice",
+      "catalog": "engine_internals",
+      "internal": "pistons",
+      "file": "engine",
+      "part_format": "rg.engine_internals/1",
+      "pointers": [
+        "/stroke_mm"
+      ],
+      "help": "Hypereutectic and forged pistons survive a higher mean piston speed and weigh less than stock cast ones. The engine's piston-speed limit is that of its WEAKEST part: rods, pistons and crankshaft. Limits and masses are in data/engines/engine_internals.json; the choice changes no engine data, only the setup check's limits and the car's mass. Nothing breaks yet (damage model to come); the setup check names the part that would fail."
+    },
+    {
+      "id": "engine_crankshaft",
+      "label": "Crankshaft",
+      "group": "Engine internals",
+      "area": "engine",
+      "kind": "file_choice",
+      "catalog": "engine_internals",
+      "internal": "crankshaft",
+      "file": "engine",
+      "part_format": "rg.engine_internals/1",
+      "pointers": [
+        "/stroke_mm"
+      ],
+      "help": "Forged and billet steel cranks survive a higher mean piston speed; billet is 10 % lighter. The engine's piston-speed limit is that of its WEAKEST part: rods, pistons and crankshaft. Limits and masses are in data/engines/engine_internals.json; the choice changes no engine data, only the setup check's limits and the car's mass. Nothing breaks yet (damage model to come); the setup check names the part that would fail."
+    },
+    {
+      "id": "engine_valve_springs",
+      "label": "Valve springs",
+      "group": "Engine internals",
+      "area": "engine",
+      "kind": "file_choice",
+      "catalog": "engine_internals",
+      "internal": "valve_springs",
+      "file": "engine",
+      "part_format": "rg.engine_internals/1",
+      "pointers": [
+        "/stroke_mm"
+      ],
+      "help": "Stiffer springs keep the valves on the cam at higher rpm; above the springs' limit the valves float and can hit the pistons. Stock springs hold the factory limiter plus a margin. Limits and masses are in data/engines/engine_internals.json; the choice changes no engine data, only the setup check's limits and the car's mass. Nothing breaks yet (damage model to come); the setup check names the part that would fail."
+    },
+    {
       "id": "turbo_boost_target",
       "label": "Boost target",
       "group": "Turbo calibration",
