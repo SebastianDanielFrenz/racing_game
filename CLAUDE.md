@@ -1405,7 +1405,7 @@ acceptance. `last_drive.json` in the existing Godot user-data directory records
 session/UTM positions, build and status; the HUD/native build info reports the
 source revision. Source libraries remain unchanged.
 
-Current physics pin: f38075e (physics_sim master, 2026-10-16: contents mass #10, traction-control fix #11 = the former d11626d, automatic/DCT gearboxes #12 = the former 511cc23); hash_check vehicle_step_steer state_hash 0xace4d38ea725e065. Older pin notes below are history.
+Current physics pin: e0e8894 (physics_sim claude/cvt-dct-launch = master f38075e + CVT gearbox type and DCT launch control, PR #13; master f38075e: contents mass #10, traction-control fix #11, automatic/DCT gearboxes #12); hash_check vehicle_step_steer state_hash 0xace4d38ea725e065. Older pin notes below are history.
 
 Current physics pin: d11626d (physics_sim claude/tc-fix, PR #5 TC fix: closed-loop launch-control hand-over, Racing unit TC Sport retards the spark, Sport/Relaxed gains up; regression tests/unit/test_tc_owner_repro.cpp [tc_regression], hidden [tc_repro] diagnostics; hash_check vehicle_step_steer state_hash 0xace4d38ea725e065 unchanged - its car has no assist unit). Before: 4fe9a1f (physics_sim master after PR #8, the TC drift fix). Earlier pin history: 7d5316f (2026-10-05, from 9e94f0f, from 976e8d7). 9e94f0f -> 7d5316f brings weather W6 (water film, wet grip as a factor on SurfaceTable lambda_mu, tyre profiles): a no-op while no physics_sim environment with surface conditions is installed, and racing_game installs none; no source change needed, hash_check vehicle_step_steer state_hash 0xbab69b300eba41a3 unchanged. OSM building presentation and future mixed asset/imagery approach: docs/buildings.md.
 
