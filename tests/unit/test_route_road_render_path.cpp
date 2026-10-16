@@ -417,6 +417,7 @@ TEST_CASE("corridor incident samples: served geometry classes reduce raw OSM gri
     CHECK(view_source.terrain_classes.fn==nullptr);
     const g2m::geo::UtmZone zone{32,g2m::geo::Hemisphere::North};
     int samples=0,mismatches=0,drawn_but_grass=0,grip_but_not_drawn=0,class_mismatches=0;
+    int class_drawn_not_paved=0,class_paved_not_drawn=0;
     std::size_t unpaved_overlay_vertices=0,walkway_overlay_vertices=0;
     int path_surface_samples=0,path_surface_mismatches=0;
     for(const auto& p:points) {
@@ -480,14 +481,19 @@ TEST_CASE("corridor incident samples: served geometry classes reduce raw OSM gri
             const bool class_grip=served_class_paved_at(*terrain,zone,p.e,p.n);
             ++samples;
             if(draw!=raw.paved) ++mismatches;
-            if(draw!=class_grip) ++class_mismatches;
+            if(draw!=class_grip) {
+                ++class_mismatches;
+                if(draw) ++class_drawn_not_paved; else ++class_paved_not_drawn;
+            }
             std::printf("TC_ROAD_CENTER mark=6 UTM=(%.0f,%.0f) ribbon_paved=%d raw_physics_paved=%d served_class_paved=%d nearest_raw_paved_edge_m=%.2f; chassis yaw unavailable, wheel contacts not inferred\n",
                         cell_e,cell_n,draw?1:0,raw.paved?1:0,class_grip?1:0,raw.nearest_paved_edge_m);
             continue; // no reliable chassis pose for wheel offsets on this stationary marker
         }
         const double h=p.heading_deg*3.14159265358979323846/180.0;
         const double nx=-std::sin(h),ny=std::cos(h);
-        for(const double offset : {-1.4,-0.85,-0.8,0.0,0.8,0.825,1.4}) {
+        // Probe both sides beyond the tire footprint to detect stale paved
+        // classifications outside the explicit route mesh.
+        for(const double offset : {-12.0,-8.0,-6.0,-4.0,-2.0,-1.4,-0.85,-0.8,0.0,0.8,0.825,1.4,2.0,4.0,6.0,8.0,12.0}) {
             const double e=p.e+nx*offset,n=p.n+ny*offset;
             // Physics selects its material from the integer-metre cell centre.
             // Compare the visible road at that same quantized contact point.
@@ -505,13 +511,14 @@ TEST_CASE("corridor incident samples: served geometry classes reduce raw OSM gri
             }
             if(draw!=class_grip) {
                 ++class_mismatches;
+                if(draw) ++class_drawn_not_paved; else ++class_paved_not_drawn;
                 std::printf("TC_ROAD_CLASS mismatch mark=%d t=%.1f offset=%+.1fm UTM=(%.3f,%.3f) drawn_paved=%d served_class_paved=%d\n",
                             p.marker,p.sim_time,offset,cell_e,cell_n,draw?1:0,class_grip?1:0);
             }
         }
     }
-    std::printf("TC_ROAD_PARITY summary samples=%d raw_osm_mismatch=%d drawn_paved_physics_grass=%d physics_paved_not_drawn=%d served_class_mismatch=%d\n",
-                samples,mismatches,drawn_but_grass,grip_but_not_drawn,class_mismatches);
+    std::printf("TC_ROAD_PARITY summary samples=%d raw_osm_mismatch=%d drawn_paved_physics_grass=%d physics_paved_not_drawn=%d served_class_mismatch=%d drawn_paved_class_not_paved=%d class_paved_not_drawn=%d\n",
+                samples,mismatches,drawn_but_grass,grip_but_not_drawn,class_mismatches,class_drawn_not_paved,class_paved_not_drawn);
     std::printf("TC_ROUTE_SURFACE summary unpaved_vertices=%zu walkway_vertices=%zu sampled_path_materials=%d mismatches=%d\n",
                 unpaved_overlay_vertices,walkway_overlay_vertices,path_surface_samples,path_surface_mismatches);
     // The legacy raster is expected to disagree at the measured road-bed
