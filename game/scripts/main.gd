@@ -1872,6 +1872,8 @@ func _user_dir() -> String:
 	return _user_dir_override if _user_dir_override != "" else ProjectSettings.globalize_path("user://")
 
 var _user_dir_override: String = ""
+const RendererChoice := preload("res://scripts/renderer_choice.gd")
+var _renderer_reported := false
 
 func _apply_user_dir_flag(user_args: PackedStringArray) -> void:
 	var dir_index := user_args.find("--shell-user-dir")
@@ -2171,6 +2173,16 @@ func _apply_setting(key: String) -> void:
 			elif str(value) == "exclusive_fullscreen":
 				mode = DisplayServer.WINDOW_MODE_EXCLUSIVE_FULLSCREEN
 			DisplayServer.window_set_mode(mode)
+		"graphics.renderer":
+			# Restart-only (renderer_choice.gd): the override file is what Godot reads at the next start. A test run with
+			# --shell-user-dir keeps its settings elsewhere and must not touch the player's override.
+			if _user_dir_override == "":
+				var err := RendererChoice.store(str(value))
+				if err != "":
+					push_warning("renderer setting: " + err)
+			if not _renderer_reported:
+				_renderer_reported = true
+				print(RendererChoice.report(str(value)))
 		"graphics.vsync":
 			if not _vr_active: # the headset's own refresh drives frame pacing
 				DisplayServer.window_set_vsync_mode(DisplayServer.VSYNC_ENABLED if bool(value) else DisplayServer.VSYNC_DISABLED)

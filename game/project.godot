@@ -11,13 +11,13 @@ config_version=5
 
 config/name="racing_game R0"
 run/main_scene="res://scenes/main.tscn"
-config/features=PackedStringArray("4.5", "GL Compatibility")
+config/features=PackedStringArray("4.5", "Mobile")
+config/project_settings_override="user://renderer_override.cfg"
 config/icon=""
 
 [rendering]
 
-renderer/rendering_method="gl_compatibility"
-renderer/rendering_method.mobile="gl_compatibility"
+renderer/rendering_method="mobile"
 textures/vram_compression/import_etc2_astc=true
 
 [shader_globals]
