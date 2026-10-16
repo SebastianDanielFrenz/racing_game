@@ -563,8 +563,8 @@ TEST_CASE("engine swap: engine-bound options follow the installed engine", "[eng
     CHECK(availability(stock, "turbo_install"));
     const auto swapped = model_of(setup_of("car_hyper", {{"engine_install", std::string("sedan_i4")}}));
     REQUIRE(swapped.error.empty());
-    CHECK_FALSE(availability(swapped, "turbo_install")); // the I6 has no turbo to install
-    CHECK(swapped.chassis_mass_delta_kg == Approx(165.0 - 175.0));
+    CHECK_FALSE(availability(swapped, "turbo_install")); // the I4 has no turbo to install
+    CHECK(swapped.chassis_mass_delta_kg == Approx(105.0 - 175.0));
     CHECK_FALSE(swapped.swap_lines.empty());
     CHECK(swapped.engine_title == "Inline-four 2.0");
 

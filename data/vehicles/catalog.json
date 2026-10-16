@@ -449,8 +449,11 @@
         "crank_axis": "y",
         "source": "variant of car_city: reuses data/models/pico/pico.glb and data/vehicles/car_city.json unchanged (no new art, the garage and the drive show the plain Pico body). Declared bay [AS]: data/models/pico/pico.rig.json engine_bay.box_m (620 x 900 x 560 mm) with the front clip 80 mm longer (700 mm fore-aft), 130 mm wider (1030 mm across: wider wings, the track and suspension in the physics unchanged) and the hood raised 100 mm (660 mm tall, a hood bulge), less the same 330 mm transaxle at the left end of the transverse engine as car_city = 700 mm along the crank. Mass and drag stay those of car_city."
       },
+      "interior": {"seat_driver": "seat_manual", "seat_passenger": "seat_manual", "rear_seats": "rear_bench_small", "audio": "audio_basic", "door_trim": "door_trim_4door", "dashboard": "dash_compact", "sound_deadening": "sound_deadening_small", "carpets": "carpets_small", "spare_wheel": "spare_wheel_compact", "fasteners": "fasteners_small", "hood": "hood_steel_small"},
       "chassis": {
-        "mass_kg": 852.0,
+        "mass_kg": 888.6,
+        "body_mass_kg": 425.0,
+        "body_mass_source": "[AS] bare shell (owner on PR #22: interior ripped out, no engine assembly, no drivetrain, no wheels; the seats, trim, carpets, audio, spare wheel, bonnet and fasteners are the catalogue's interior parts, the engine, gearbox, driveline, suspension, brakes, steering, wheels, cooling and fuel system are their own parts): a five-door steel city car of about 3.6 m - body in white with subframes 230 kg, doors and tailgate 70, glass 22, bumpers and lights 25, wiring loom, battery and control units 30, exhaust 18, heater 15, other fixed parts 15 = 425 kg (estimated).",
         "half_extents": [
           1.6,
           0.5,
