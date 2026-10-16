@@ -74,6 +74,9 @@ add_executable(rg_unit_tests
   test_limit_advisor.cpp
   test_envelope_cost.cpp
   test_engine_garage.cpp
+  test_turbo_kit.cpp
+  test_engine_internals.cpp
+  test_engine_bore.cpp
   test_gearbox_swap.cpp
   test_part_mass.cpp
   test_strip_visual.cpp

@@ -1,0 +1,117 @@
+{
+  "format": "rg.turbo_kits/1",
+  "source": "Garage turbo kits for engines that have no turbo (owner on PR #5, 2026-10-15: 'Turbos cannot be fitted yet to many engines'). One rule, no per-engine files: rg::size_turbo_kit (core/src/turbo_kit.cpp) sizes each kit from the engine's own swept volume and limiter rpm and scales the anchor turbo at constant tip speed, the hardware-family method of physics_sim docs/data_formats/turbo.md. The conversion (boost grid, compression ratio ceiling) is physics_sim docs/data_formats/engine.md 'Adding or removing forced induction'.",
+  "anchor_hardware": "external/physics_sim/data/turbos/hyper_turbo_approx.json",
+  "anchor_exducer_mm": 82.0,
+  "anchor_exducer_source": "GTX3582R Gen II class compressor wheel 66/82 mm (the anchor file's rotor_inertia_source); only used for the card text.",
+  "cache_subdir": "turbo_kits",
+  "sizing": {
+    "volumetric_efficiency": 0.9,
+    "volumetric_efficiency_source": "[AS] a street engine near its power peak; the demand is an upper estimate at the limiter.",
+    "flow_margin": 1.4,
+    "flow_margin_source": "[AS] compressor max flow 40 % above the engine's peak need: room before choke at the limiter without the lag of a much larger wheel.",
+    "ambient_pressure_kpa": 101.325,
+    "ambient_temperature_k": 288.15,
+    "efficiency_log_slope": 0.127,
+    "efficiency_log_slope_source": "[AS] efficiency = anchor 0.80 + 0.127 ln(s): a wheel half the anchor's size reaches ~0.71 (small passenger-car turbos peak at 0.70-0.75), clamped to [efficiency_min, anchor].",
+    "efficiency_min": 0.7,
+    "wastegate_to_throat": 3.0,
+    "wastegate_to_throat_source": "physics_sim turbo templates: wastegate port 3.0 x the turbine throat (a single on a small engine; the anchor's twin uses 2.36).",
+    "min_scale": 0.3,
+    "max_scale": 1.6
+  },
+  "conversion": {
+    "max_compression_ratio": 10.0,
+    "max_compression_ratio_source": "physics_sim engine.md: a converted engine keeps the compression ratio at or below 10.5 (check_buildable's forced-induction ceiling); 10.0 leaves knock margin on E5 [AS]. Engines below it keep theirs.",
+    "intercooler_effectiveness": 0.75,
+    "compressible_exhaust": true,
+    "boost_control": {
+      "kp": 1.0,
+      "ki_per_s": 1.0,
+      "kd_s": 0.05,
+      "actuator_tau_s": 0.1,
+      "source": "physics_sim turbo configuration templates (gains per unit of target_boost_bar)."
+    }
+  },
+  "kits": [
+    {
+      "id": "street_single",
+      "label": "Street turbo kit",
+      "count": 1,
+      "target_boost_bar": 0.5
+    },
+    {
+      "id": "sport_single",
+      "label": "Sport turbo kit",
+      "count": 1,
+      "target_boost_bar": 1.0
+    },
+    {
+      "id": "sport_twin",
+      "label": "Twin-turbo kit",
+      "count": 2,
+      "target_boost_bar": 1.0
+    },
+    {
+      "id": "quad",
+      "label": "Quad-turbo kit",
+      "count": 4,
+      "target_boost_bar": 1.0
+    }
+  ],
+  "kits_help": "Shortcuts for a turbo count (1 to 4, any engine) and a starting boost target. The boost slider (turbo_boost_target) then moves the target freely and the kit is re-sized for the final target; whether the engine and its turbos fit the car's engine bay is checked from the envelope rule below.",
+  "envelope": {
+    "unit_length_per_exducer": 2.6,
+    "unit_length_add_mm": 60.0,
+    "unit_diameter_per_exducer": 2.2,
+    "unit_gap_mm": 20.0,
+    "pipe_velocity_m_s": 60.0,
+    "unit_side_protrusion": 0.5,
+    "source": "[AS] one turbo unit as a box from its compressor exducer D: length along the shaft 2.6 D + 60 mm (compressor housing, bearing housing, turbine housing), outer size 2.2 D (the compressor volute). Anchor GTX3582R class, D 82 mm: 273 x 180 mm, about its catalogue outline. Units sit in a row along the crank on the exhaust side (a V engine with more than one: split over both banks), 20 mm apart; the row sets the length when it is longer than the engine. Width: the turbo takes the place of the NA exhaust manifold, which the engine envelope already holds, so only half its outer size (unit_side_protrusion 0.5) stands out on that side. The charge pipe (sized for 60 m/s at charge density per unit, for its mass) is routed through the gaps to the front-mounted intercooler ahead of the radiator; neither is in the box (open question: no bay model of the gaps)."
+  },
+  "mass": {
+    "unit_mass_fixed_kg": 2.0,
+    "unit_mass_scaled_kg": 7.5,
+    "hot_side_mass_per_unit_kg": 3.0,
+    "intercooler_area_m2_per_kg_s": 0.45,
+    "intercooler_depth_m": 0.076,
+    "intercooler_density_kg_m3": 650.0,
+    "piping_length_base_m": 1.8,
+    "piping_length_per_extra_unit_m": 0.6,
+    "source": "[AS] Turbo unit: 2.0 kg that do not shrink with the wheel (bearing housing, oil/water lines, actuator) + 7.5 kg x s^3 (housings scale with volume): the anchor (s = 1) 9.5 kg, a GTX3582R-class unit with housings; s = 0.44 (a small single on a 1 L three) 2.6 kg, a K03-class unit. Exhaust manifold and downpipe 3 kg per turbo. Intercooler: a 600 x 300 x 76 mm bar-and-plate core (~9 kg) serves about 0.4 kg/s, so 0.45 m2 of face per kg/s, 76 mm deep, 650 kg/m3 effective (core + end tanks). Charge piping: 1.8 m compressor -> intercooler -> throttle, +0.6 m per extra turbo; its mass per metre comes from the material below."
+  },
+  "limits": {
+    "max_shaft_speed_factor": 1.15,
+    "source": "Damage-model data, not simulated yet. [AS] a rotor's rated maximum shaft speed is 15 % above the scaled reference speed (compressor maps end near the tip-speed limit; the reference speed is the map's design point). The advisor warns when the dyno sweep's rotor speed passes it."
+  },
+  "default_piping": "plastic",
+  "piping": [
+    {
+      "id": "plastic",
+      "label": "Plastic",
+      "rated_bar": 1.5,
+      "burst_bar": 3.0,
+      "wall_mm": 3.0,
+      "density_kg_m3": 1350.0,
+      "source": "[AS] moulded PA66 charge pipes with rubber couplers as on factory turbo cars: rated for the factory boost (about 1 to 1.5 bar); couplers blow off and pipes crack near 3 bar. PA66-GF density 1350 kg/m3, 3 mm wall."
+    },
+    {
+      "id": "aluminium",
+      "label": "Aluminium",
+      "rated_bar": 3.0,
+      "burst_bar": 8.0,
+      "wall_mm": 2.0,
+      "density_kg_m3": 2700.0,
+      "source": "[AS] mandrel-bent 6061 tube with silicone couplers and T-bolt clamps: the couplers limit it to about 3 bar continuous; the tube itself holds far more. 2 mm wall, 2700 kg/m3."
+    },
+    {
+      "id": "steel",
+      "label": "Stainless steel",
+      "rated_bar": 5.0,
+      "burst_bar": 15.0,
+      "wall_mm": 1.5,
+      "density_kg_m3": 7900.0,
+      "source": "[AS] 304 stainless tube with welded beads and reinforced 4-ply silicone couplers / V-band joints: about 5 bar continuous. 1.5 mm wall, 7900 kg/m3."
+    }
+  ]
+}

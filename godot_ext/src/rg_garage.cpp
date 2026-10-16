@@ -336,6 +336,7 @@ godot::Array RgGarage::get_options() const {
         d["max"] = v.max;
         d["step"] = v.def.step;
         d["available"] = v.available;
+        d["unavailable_reason"] = from_std(v.unavailable_reason);
         d["stock"] = value_to_variant(v.stock);
         const rg::SetupValue cur = garage_->current_value(v.def.id);
         d["value"] = value_to_variant(cur);
@@ -352,9 +353,12 @@ godot::Array RgGarage::get_options() const {
             part["size"] = from_std(p.detail);
             part["section"] = from_std(p.section);
             part["subtitle"] = from_std(p.subtitle);
+            part["fits"] = p.fits;
+            part["fit_reason"] = from_std(p.fit_reason);
             parts.push_back(part);
         }
         d["parts"] = parts;
+        d["hidden_reason"] = from_std(rg::hidden_parts_reason(v));
         godot::PackedStringArray coming_soon;
         for (const std::string& c : v.coming_soon) coming_soon.push_back(from_std(c));
         d["coming_soon"] = coming_soon;
@@ -756,6 +760,7 @@ godot::Dictionary RgGarage::get_advice() const {
         if(!item.suggestion.empty()) text+="\n"+item.suggestion;
         d["lines"]=lines; d["text"]=from_std(text); d["suggestion"]=from_std(item.suggestion);
         d["option_id"]=from_std(item.option_id);
+        d["damage_part"]=from_std(item.damage_part); // the part a future damage model would break ("" = none)
         d["rpm_from"]=item.rpm_from; d["rpm_to"]=item.rpm_to;
         d["remedy_state"]=int(item.remedy_state); d["remedy_text"]=from_std(item.remedy_text);
         d["can_solve"]=item.can_solve;
