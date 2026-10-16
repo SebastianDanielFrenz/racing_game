@@ -1,6 +1,6 @@
 {
   "format": "rg.strip_visual/1",
-  "source": "Which model nodes a car's weight-reduction choices (setup_options.json group \"Weight reduction\", rg/part_mass.h trim slots) take off the visible car (owner on PR #22, 2026-10-16). Per model (the .glb file's stem) a list of rules {slot, part, hide}: when the setup fits `part` in the part_choice option's `slot`, the model nodes in `hide` are hidden, in the drive (including the cockpit) and in the garage. `after_regeneration` rules name nodes that tools/cargen now produces but the committed .glb files do not have yet (regenerate with `python3 tools/cargen/build.py`, which needs the owner's LFS checkout); a node the loaded model lacks is ignored. `not_separate` says per slot why a model shows no change: the element is part of the body mesh, or the choice is a lighter part of the same shape. Core: rg/strip_visual.h; test tests/unit/test_strip_visual.cpp.",
+  "source": "Which model nodes a car's weight-reduction choices (setup_options.json group \"Weight reduction\", rg/part_mass.h trim slots) take off the visible car (owner on PR #22, 2026-10-16). Per model (the .glb file's stem) a list of rules {slot, part, hide}: when the setup fits `part` in the part_choice option's `slot`, the model nodes in `hide` are hidden, in the drive (including the cockpit) and in the garage. `after_regeneration` rules name nodes that tools/cargen now produces but the committed .glb files do not have yet (regenerate with `python3 tools/cargen/build.py`, which needs the owner's LFS checkout); a node the loaded model lacks is ignored. A slot a car does not have at all (no passenger seat on a bench, no rear seats in a two-seater) is not in the catalog's `interior`, so the garage does not offer its option; it needs no entry here. `not_separate` says per slot why a model shows no change: the element is part of the body mesh, or the choice is a lighter part of the same shape. Core: rg/strip_visual.h; test tests/unit/test_strip_visual.cpp.",
   "models": {
     "pico": {
       "rules": [
@@ -44,13 +44,38 @@
           ],
           "after_regeneration": true,
           "note": "nodes added by tools/cargen cars/pico.py (children of the doors)"
+        },
+        {
+          "slot": "carpets",
+          "part": "removed",
+          "hide": [
+            "carpets"
+          ],
+          "after_regeneration": true,
+          "note": "node added by tools/cargen cars/pico.py (common.cabin_shell)"
+        },
+        {
+          "slot": "sound_deadening",
+          "part": "removed",
+          "hide": [
+            "sound_deadening"
+          ],
+          "after_regeneration": true,
+          "note": "node added by tools/cargen cars/pico.py (common.cabin_shell): the floor pad under the carpet and the rear bulkhead pad"
+        },
+        {
+          "slot": "dashboard",
+          "part": "stripped",
+          "hide": [
+            "dash_console",
+            "dash_glovebox"
+          ],
+          "after_regeneration": true,
+          "note": "nodes added by tools/cargen cars/pico.py: the console cup tray and the glovebox lid; the dash body, climate knobs and gear lever stay"
         }
       ],
       "not_separate": {
-        "dashboard": "the element is part of the single body mesh (shared materials with the rest of the cabin), no node of its own (dash_hard, dash_paint, gauges and the climate knobs are one body surface set)",
-        "sound_deadening": "the element is part of the single body mesh (shared materials with the rest of the cabin), no node of its own (no insulation is modelled)",
-        "carpets": "the element is part of the single body mesh (shared materials with the rest of the cabin), no node of its own (carpet surfaces share the cabin shell)",
-        "spare_wheel": "the element is part of the single body mesh (shared materials with the rest of the cabin), no node of its own (no spare wheel or jack is modelled)",
+        "spare_wheel": "the space-saver lies under the boot floor, where it is not visible; nothing to hide",
         "door_trim": "until the model is regenerated the door cards are surfaces of the door nodes",
         "seat_passenger": "until the model is regenerated the seats are surfaces of the body",
         "rear_seats": "until the model is regenerated the rear bench is part of the body",
@@ -93,14 +118,46 @@
           ],
           "after_regeneration": true,
           "note": "nodes added by tools/cargen cars/ventura_gt.py (children of the doors)"
+        },
+        {
+          "slot": "carpets",
+          "part": "removed",
+          "hide": [
+            "carpets"
+          ],
+          "after_regeneration": true,
+          "note": "node added by tools/cargen cars/ventura_gt.py (cabin floor and luggage deck carpet)"
+        },
+        {
+          "slot": "sound_deadening",
+          "part": "removed",
+          "hide": [
+            "sound_deadening"
+          ],
+          "after_regeneration": true,
+          "note": "node added by tools/cargen cars/ventura_gt.py (common.cabin_shell)"
+        },
+        {
+          "slot": "dashboard",
+          "part": "stripped",
+          "hide": [
+            "dash_console",
+            "dash_glovebox"
+          ],
+          "after_regeneration": true,
+          "note": "nodes added by tools/cargen cars/ventura_gt.py: the console storage lid and the glovebox lid; the dash body and the gauges stay"
+        },
+        {
+          "slot": "spare_wheel",
+          "part": "removed",
+          "hide": [
+            "spare_wheel"
+          ],
+          "after_regeneration": true,
+          "note": "node added by tools/cargen cars/ventura_gt.py: the spare lying on the luggage deck"
         }
       ],
       "not_separate": {
-        "dashboard": "the element is part of the single body mesh (shared materials with the rest of the cabin), no node of its own",
-        "sound_deadening": "the element is part of the single body mesh (shared materials with the rest of the cabin), no node of its own (no insulation is modelled)",
-        "carpets": "the element is part of the single body mesh (shared materials with the rest of the cabin), no node of its own (carpet surfaces share the cabin shell)",
-        "spare_wheel": "the element is part of the single body mesh (shared materials with the rest of the cabin), no node of its own (no spare wheel is modelled)",
-        "rear_seats": "the model has no rear seat (a luggage deck sits behind the buckets), so there is nothing to remove on screen",
         "door_trim": "until the model is regenerated the door cards are surfaces of the door nodes",
         "seat_passenger": "until the model is regenerated the seats are surfaces of the body",
         "fasteners": "a swap for a lighter part of the same shape: no visual change by design (bolt heads are not modelled)",
@@ -118,14 +175,37 @@
           ],
           "after_regeneration": true,
           "note": "node added by tools/cargen cars/runabout_t.py"
+        },
+        {
+          "slot": "carpets",
+          "part": "removed",
+          "hide": [
+            "carpets"
+          ],
+          "after_regeneration": true,
+          "note": "node added by tools/cargen cars/runabout_t.py: the floor mat over the floorboards"
+        },
+        {
+          "slot": "dashboard",
+          "part": "stripped",
+          "hide": [
+            "dash_glovebox"
+          ],
+          "after_regeneration": true,
+          "note": "node added by tools/cargen cars/runabout_t.py: the tool tray under the dash"
+        },
+        {
+          "slot": "spare_wheel",
+          "part": "removed",
+          "hide": [
+            "spare_wheel"
+          ],
+          "after_regeneration": true,
+          "note": "node added by tools/cargen cars/runabout_t.py: the spare upright on the tail"
         }
       ],
       "not_separate": {
-        "seat_passenger": "the front bench seats driver and passenger in one piece: it stays on the body",
         "rear_seats": "until the model is regenerated the rear bench is part of the body",
-        "dashboard": "the element is part of the single body mesh (shared materials with the rest of the cabin), no node of its own",
-        "carpets": "the element is part of the single body mesh (shared materials with the rest of the cabin), no node of its own (floorboard surfaces)",
-        "spare_wheel": "the element is part of the single body mesh (shared materials with the rest of the cabin), no node of its own (no spare wheel is modelled)",
         "fasteners": "a swap for a lighter part of the same shape: no visual change by design (bolt heads are not modelled)",
         "hood": "a swap for a lighter part of the same shape: no visual change by design (the carbon weave is not modelled; a tint of the hood's paint surface is an open question)",
         "seat_driver": "a swap for a lighter part of the same shape: no visual change by design (a bucket seat is not modelled separately)"

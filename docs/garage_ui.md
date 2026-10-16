@@ -341,10 +341,23 @@ hides is never baked into the body surface.
 Per model, `not_separate` in the data says why a slot shows no change: the element is part of the single body mesh
 (no node to hide), or the choice is a lighter part of the same shape. What can be hidden today (committed .glb files):
 the Pico's touchscreen and steering-wheel audio buttons, the Ventura GT's radio buttons and knobs. The generated cars
-need a regenerated model for the rest: tools/cargen now splits out `seat_driver` / `seat_passenger` / `seat_rear`
-(Pico), `seat_driver` / `seat_passenger` (Ventura GT), `seat_rear` (Runabout T) and the door cards `door_card_*` (Pico,
-Ventura GT, as children of the doors) as static nodes tagged `strip` in the rig; the data's `after_regeneration` rules
+need a regenerated model for the rest: tools/cargen now splits out, as static nodes tagged `strip` in the rig,
+`seat_driver` / `seat_passenger` / `seat_rear` (Pico), `seat_driver` / `seat_passenger` (Ventura GT), `seat_rear`
+(Runabout T), the door cards `door_card_*` (Pico, Ventura GT, as children of the doors), `carpets` (all three: floor
+carpet, the Ventura's luggage-deck carpet, the Runabout's floor mat), `sound_deadening` (Pico, Ventura GT: floor pad
+under the carpet and rear bulkhead pad, made in `cargen/common.py cabin_shell`), `dash_console` / `dash_glovebox`
+(Pico, Ventura GT; the Runabout only `dash_glovebox`, a tool tray) and `spare_wheel` (Ventura GT lying on the luggage
+deck, Runabout T upright on the tail; the Pico's space-saver sits under the boot floor and is not modelled). A stripped
+dashboard keeps the dash body, gauges, switches, climate knobs and gear lever. The data's `after_regeneration` rules
 name them and a model without them ignores the rule. Regenerating (`python3 tools/cargen/build.py`) needs the owner's
 checkout with the LFS files; the glb, rig, cockpit and flow files are committed together afterwards. The test
 `[strip_visual][data]` checks every catalog car's slots against the data and every live node against the rig file;
 `cockpit_test.gd` checks the hiding and the clicks. Thumbnails (`car_thumbnails.gd`) show the stock car.
+
+A weight-reduction option is offered only for a part the car has (owner on PR #29: "the passenger seat should not be
+removeable if a passenger seat does not exist"). The rule is the catalog's `interior` map (`rg::part_choice_offered`):
+the garage lists the option for a slot only when the car has it, and a saved setup holding a choice for a missing part
+is ignored (`Garage::effective_setup` drops it, `compile_setup` skips it). The Runabout T's front bench is one part
+(`seat_vintage_bench`, 18 kg, the slot `seat_driver`) with no passenger-seat option; the Ventura GT and the two-seat
+hypercars have no `rear_seats` slot (the Ventura's 14 kg of rear-deck trim moved into its body mass, so its total is
+unchanged). Tests `[strip_visual][seats]`.

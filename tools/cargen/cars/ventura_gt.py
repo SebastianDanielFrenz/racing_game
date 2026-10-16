@@ -28,7 +28,7 @@ from cargen import detail as D
 from cargen.closed_body import ClosedCarBody
 from cargen.flow import FlowRecorder
 from cargen.wheels import Wheel, corner
-from cargen.common import (materials, finish, door_card, seat_closed, cabin_shell, top_z, surface_path, arch_lip,
+from cargen.common import (spare_wheel, materials, finish, door_card, seat_closed, cabin_shell, top_z, surface_path, arch_lip,
                            door_part_of, blade_path)
 from assetgen.scene import Model
 from assetgen.carbody import Panel
@@ -456,6 +456,13 @@ def build_cabin(m, ck, body):
                  knob_r=0.022, ball=True)
     C.lever(m, ck, "handbrake", (-0.32, 0.0, 0.445), (0.0, 1.0, 0.0), (0.24, 0.0, 0.03), "handbrake", 22.0,
             mat="chrome", grip_mat="dash_hard", label="handbrake", grip_r=0.016)
+    # ---- console lid and glovebox: own static nodes (rig extra "strip" = dashboard)
+    m.node("dash_console", None, (-0.12, 0.0, 0.447), None, strip="dashboard")
+    M.rounded_box(mb, (-0.12, 0.0, 0.452), (0.15, 0.19, 0.03), 0.01, "dash_hard", "dash_console")    # storage lid
+    M.rounded_box(mb, (-0.045, 0.0, 0.452), (0.012, 0.05, 0.012), 0.003, "chrome", "dash_console")   # latch
+    m.node("dash_glovebox", None, (0.262, -0.34, 0.69), None, strip="dashboard")
+    M.rounded_box(mb, (0.262, -0.34, 0.69), (0.02, 0.50, 0.16), 0.01, "dash_hard", "dash_glovebox")  # lid
+    M.rounded_box(mb, (0.250, -0.34, 0.70), (0.012, 0.10, 0.012), 0.003, "chrome", "dash_glovebox")  # catch
     # ---- pedals: hanging clutch and brake, floor-hinged organ throttle
     for name, yy, pc, organ in (("clutch", EYE_Y + 0.13, (0.30, EYE_Y + 0.13, 0.30), False),
                                 ("brake", EYE_Y + 0.01, (0.29, EYE_Y + 0.01, 0.29), False),
@@ -468,9 +475,11 @@ def build_cabin(m, ck, body):
         m.node(node_name, None, (-0.55, yy, 0.36), None, strip=node_name)
         seat_closed(m, (-0.55, yy, 0.36), width=0.50, recline=0.36, mat="seat", accent="seat_accent", depth=0.52,
                     height=0.14, bolster=0.05, part=node_name)
-    M.rounded_box(mb, (-1.30, 0.0, 0.40), (0.70, 1.30, 0.04), 0.01, "carpet")
+    # luggage deck: its carpet joins the "carpets" node; the spare wheel lies on it (strip = spare_wheel)
+    M.rounded_box(mb, (-1.30, 0.0, 0.40), (0.70, 1.30, 0.04), 0.01, "carpet", "carpets")
     for yy in (0.25, -0.25):
-        M.rounded_box(mb, (-1.30, yy, 0.425), (0.66, 0.025, 0.006), 0.002, "trim_black")  # luggage straps
+        M.rounded_box(mb, (-1.30, yy, 0.425), (0.66, 0.025, 0.006), 0.002, "trim_black", "carpets")  # luggage straps
+    spare_wheel(m, "spare_wheel", (-1.30, 0.0, 0.50), 0.29, 0.14)
     # ---- door cards with window cranks and chrome pulls
     for name, side, x0, x1 in DOORS:
         card = "door_card_" + name[-1]            # own node under the door (strip = door_trim), moves with it
