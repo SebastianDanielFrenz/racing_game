@@ -34,6 +34,7 @@
 #include <godot_cpp/variant/vector3.hpp>
 
 #include <atomic>
+#include <chrono>
 #include <memory>
 #include <optional>
 #include <string>
@@ -52,6 +53,8 @@ struct VehicleOverrides {
     ps::real chassis_z_m = 0.6;
     std::string engine_map_cache_dir;
     std::string turbo_map_extension_path; // "" = stage maps are used as loaded
+    std::string damage_config_path;       // data/vehicles/damage.json ("" = no damage model)
+    std::string damage_state_path;        // <user dir>/garage/damage/<id>.json (may not exist: a healthy car)
 };
 
 class RgSimulation : public godot::Node {
@@ -390,6 +393,13 @@ public:
     [[nodiscard]] godot::Dictionary get_vehicle_powertrain(const godot::String& vehicle_name) const;
     // Nitrous kit state for the HUD; {present: false} for a car without a kit (see the .cpp).
     [[nodiscard]] godot::Dictionary get_vehicle_nitrous(const godot::String& vehicle_name) const;
+    // Damage model (rg/damage.h): rg_damage_convert.h's dictionary for the running car plus state_path ("" = none) and
+    // thermal (the car has the thermal model). Polled by the HUD; also saves a changed state every
+    // DamageConfig::save_interval_s (the state is also saved when the world is torn down and on exit).
+    godot::Dictionary get_damage_state();
+    // The garage repaired the car whose state file is `state_path`: if that is the running car, its parts are healthy
+    // from the next tick (free, owner rule). Returns true when the running car was repaired.
+    bool repair_damage(const godot::String& state_path);
     // Engine temperature for dashboards (rg::engine_thermal_hud); {present: false} for a car without a thermal model.
     [[nodiscard]] godot::Dictionary get_vehicle_thermal(const godot::String& vehicle_name) const;
     [[nodiscard]] float get_vehicle_ground_speed_mps(const godot::String& vehicle_name) const;
@@ -434,6 +444,11 @@ private:
     enum class InitPhase : int { Idle, Loading, Ready, Error };
 
     VehicleOverrides vehicle_overrides_;
+    // Damage persistence (rg_simulation_shell.cpp): the revision of the running Session's damage that is on disk, and when
+    // it was last saved.
+    void save_damage(); // writes the running Session's damage state when its revision changed since the last write
+    std::uint64_t damage_saved_revision_ = 0;
+    std::chrono::steady_clock::time_point damage_saved_at_{};
 
     struct SpawnOverride {
         double x = 0.0;

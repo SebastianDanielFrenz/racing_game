@@ -1,5 +1,6 @@
 #include "rg/session.h"
 #include "rg/aero_map_selection.h"
+#include "rg/engine_thermal_info.h"
 #include "rg/flat_ground.h"
 #include "rg/vehicle_load.h"
 
@@ -359,6 +360,7 @@ void Session::build_world_contents(const SessionConfig& config) {
     }
     if(!vehicle_desc_.aero.fans.empty()&&config_.environment.fan_battery_energy_j>0)
         world_->credit_aero_fan_energy(vehicle_id_,config_.environment.fan_battery_energy_j);
+    setup_damage();
     spawn_tick_ = world_->tick();
     throw_if_cancelled();
     if(config.startup) config.startup->stage.store(StartupProgress::Done,std::memory_order_relaxed);
@@ -890,10 +892,74 @@ bool Session::step_once(bool from_loop) {
     }
     world_->step();
     adopt_physics_channel_writes();
+    if (have_vehicle_) update_damage();
     spike.step_ms = lap();
     post_step(from_loop);
     spike.post_ms = lap();
     return finish(TickSpikeKind::Stepped, true);
+}
+
+// ---- damage model (rg/damage.h) -------------------------------------------------------------------------------------
+
+void Session::setup_damage() {
+    if (!config_.damage) return;
+    const EngineThermalInfo info = engine_thermal_info(vehicle_desc_);
+    damage_.emplace(config_.damage->config, config_.damage->state, info.overheat_c);
+    {
+        std::lock_guard<std::mutex> lock(damage_mutex_);
+        damage_report_.present = true;
+        damage_report_.thermal = info.present;
+        damage_report_.state = damage_->state();
+    }
+    // A car brought in damaged drives damaged from its first tick (the queued factors apply at the first tick boundary).
+    if (info.present) apply_cooling_scales(damage_->scales());
+}
+
+void Session::apply_cooling_scales(const CoolingScales& scales) {
+    if (scales == damage_applied_) return; // healthy and never damaged: the physics is never called
+    world_->set_engine_cooling_capacity(vehicle_id_, ps::drivetrain::CoolingCapacity{scales.radiator_ua, scales.fan_flow});
+    damage_applied_ = scales;
+    std::lock_guard<std::mutex> lock(damage_mutex_);
+    damage_report_.applied = scales;
+}
+
+void Session::update_damage() {
+    if (!damage_) return;
+    const bool thermal = vehicle_desc_.powertrain.thermal.has_value();
+    if (damage_repair_pending_.exchange(false, std::memory_order_acq_rel)) {
+        damage_->repair();
+        if (thermal) apply_cooling_scales(damage_->scales());
+        std::lock_guard<std::mutex> lock(damage_mutex_);
+        damage_report_.state = damage_->state();
+        ++damage_report_.revision;
+    }
+    if (!thermal) return;
+    const ps::drivetrain::EngineThermalSnapshot& t = world_->powertrain_state(vehicle_id_).thermal;
+    DamageInputs in;
+    in.has_thermal = t.has_thermal;
+    in.coolant_c = t.coolant_c;
+    in.oil_c = t.oil_c;
+    in.fan_on = t.fan_on;
+    if (!damage_->step(world_->dt(), in)) return;
+    apply_cooling_scales(damage_->scales());
+    std::lock_guard<std::mutex> lock(damage_mutex_);
+    damage_report_.state = damage_->state();
+    ++damage_report_.revision;
+}
+
+DamageReport Session::damage_report() const {
+    std::lock_guard<std::mutex> lock(damage_mutex_);
+    return damage_report_;
+}
+
+void Session::request_damage_repair() {
+    if (!config_.damage) return;
+    {
+        std::lock_guard<std::mutex> lock(damage_mutex_);
+        damage_report_.state = DamageState{};
+        ++damage_report_.revision;
+    }
+    damage_repair_pending_.store(true, std::memory_order_release);
 }
 
 bool Session::sync_road_decks(int budget) {

@@ -39,6 +39,7 @@ signal garage_option_changed(option_id: String)
 signal garage_save_requested
 signal garage_exit_requested(destination: String)
 signal controls_changed # a binding / tuning changed on the controls screen
+signal damage_repaired(state_path: String) # the garage repaired a car (main.gd repairs the running world's car too)
 
 const SliderBox := preload("res://scripts/slider_box.gd")
 const BOOT_SECONDS := 1.5
@@ -1112,7 +1113,29 @@ func _draw_internals() -> void:
 # Cooling (core cooling_upgrades.h): more fuel burned means more heat; radiator, fan, oil cooler and block cooling carry it off.
 # Each grade card shows its numbers and the mass it adds; the setup check warns when the coolant or oil would run too hot.
 func _draw_cooling() -> void:
+	_draw_damage_panel()
 	_draw_grade_rows(COOLING_OPTIONS, "More fuel burned means more heat for the engine. Bigger cooling parts carry it off and weigh more. The setup check warns when the coolant or oil would run too hot at full power.")
+
+# Damage (core damage.h; owner rules: damage stays until repaired, repairs are free and need this button). Shown only while a
+# part of the edited car is worn: one line per part with its health and what it does, and the Repair button.
+func _draw_damage_panel() -> void:
+	if not garage.has_method("get_damage"): return
+	var id := str(garage.get_edit_id())
+	var damage: Dictionary = garage.get_damage(id)
+	if not bool(damage.get("present", false)) or not bool(damage.get("any_damaged", false)): return
+	_option_box.add_child(_label("Damage",16,HORIZONTAL_ALIGNMENT_LEFT,true))
+	for part in damage.get("parts", []):
+		if not bool(part.get("damaged", false)): continue
+		var line := _label("%s: %.0f %%  -  %s" % [str(part["label"]), float(part["health"]) * 100.0, str(part["description"])],14,HORIZONTAL_ALIGNMENT_LEFT,true)
+		line.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		_option_box.add_child(line)
+	_button(_option_box, "repair_damage", "Repair (free)", func():
+		var reply: Dictionary = garage.repair_damage(id)
+		if bool(reply.get("ok", false)):
+			damage_repaired.emit(str(damage.get("state_path", "")))
+		else:
+			push_warning("RG_DAMAGE repair failed: %s" % str(reply.get("error", "")))
+		_draw_garage_options())
 
 # One row of grade cards per option id. A part the car cannot fit (fits = false) is hidden unless the player asks for all parts.
 func _draw_grade_rows(ids: Array, note_text: String) -> void:

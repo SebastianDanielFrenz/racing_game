@@ -59,6 +59,23 @@ void configure_vehicle_chassis(rg::SessionConfig& config, const VehicleOverrides
         else
             std::fprintf(stderr, "RG_TURBO_MAP policy not loaded: %s\n", err.c_str());
     }
+    if (!overrides.damage_config_path.empty()) {
+        // Damage model: the rules and this car's saved health (a missing file = healthy; a broken one drives healthy and
+        // is left alone until the next save).
+        std::string err;
+        if (auto cfg = rg::load_damage_config(overrides.damage_config_path, &err)) {
+            auto damage = std::make_shared<rg::SessionConfig::Damage>();
+            damage->config = std::move(*cfg);
+            damage->state_path = overrides.damage_state_path;
+            if (!overrides.damage_state_path.empty()) {
+                if (auto st = rg::load_damage_state(overrides.damage_state_path, &err)) damage->state = std::move(*st);
+                else std::fprintf(stderr, "RG_DAMAGE state not loaded (driving healthy): %s\n", err.c_str());
+            }
+            config.damage = std::move(damage);
+        } else {
+            std::fprintf(stderr, "RG_DAMAGE config not loaded (no damage model): %s\n", err.c_str());
+        }
+    }
     if (overrides.has_chassis) {
         config.chassis_mass_kg = overrides.chassis_mass_kg;
         config.chassis_half_extents = overrides.chassis_half_extents;
@@ -113,6 +130,8 @@ RgSimulation::~RgSimulation() {
     stop_engine_audio();
     cancel_init();
     reap_init_thread(/*wait=*/true);
+    if (session_) session_->stop();
+    save_damage(); // damage persists until repaired (owner rule)
     session_.reset(); // Session's own destructor stops its loop
     origin_rebase_ = nullptr;
 }
@@ -134,7 +153,9 @@ void RgSimulation::teardown_current() {
     cancel_init();                   // R2.2 R9: cancel-then-join
     reap_init_thread(/*wait=*/true); // joins any in-flight worker first (see its own doc comment)
     if (session_) session_->stop();
+    save_damage(); // a world reload / Change car of the same car reloads it from this file
     session_.reset();
+    damage_saved_revision_ = 0;
     origin_rebase_ = nullptr;
     init_phase_.store(InitPhase::Idle, std::memory_order_relaxed);
     init_message_.clear();
@@ -1472,6 +1493,8 @@ void RgSimulation::_bind_methods() {
     godot::ClassDB::bind_method(D_METHOD("get_vehicle_speed_limit", "vehicle_name"), &RgSimulation::get_vehicle_speed_limit);
     godot::ClassDB::bind_method(D_METHOD("get_vehicle_powertrain", "vehicle_name"), &RgSimulation::get_vehicle_powertrain);
     godot::ClassDB::bind_method(D_METHOD("get_vehicle_nitrous", "vehicle_name"), &RgSimulation::get_vehicle_nitrous);
+    godot::ClassDB::bind_method(D_METHOD("get_damage_state"), &RgSimulation::get_damage_state);
+    godot::ClassDB::bind_method(D_METHOD("repair_damage", "state_path"), &RgSimulation::repair_damage);
     godot::ClassDB::bind_method(D_METHOD("get_vehicle_thermal", "vehicle_name"), &RgSimulation::get_vehicle_thermal);
     godot::ClassDB::bind_method(D_METHOD("get_vehicle_ground_speed_mps", "vehicle_name"), &RgSimulation::get_vehicle_ground_speed_mps);
 }

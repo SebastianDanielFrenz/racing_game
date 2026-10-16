@@ -1,0 +1,64 @@
+{
+  "format": "rg.damage/1",
+  "source": "Damage model, first piece (2026-10-16, owner: a radiator / fan damage part that fails). Every number here is [AS] (chosen for play, not measured): wear starts only well past the car's own overheat warning (the cooling system's warnings.overheat_c, 118 C for the class defaults and the hypercar) and is slow enough that a short excursion costs a few per cent while a long overheat ruins the part. The parts' ids are the names the garage setup check gives the cooling limits (AdviceItem::damage_part). Rules apply in file order every simulation tick; dwell timers reset as soon as the signal drops below the threshold.",
+  "report_below": 0.995,
+  "save_interval_s": 5.0,
+  "parts": [
+    {
+      "id": "radiator",
+      "label": "Radiator",
+      "description": "Boiled coolant scale and burst tubes: the radiator passes less heat to the air.",
+      "effect": "radiator_ua",
+      "min_scale": 0.25,
+      "source": "[AS] a ruined core keeps a quarter of its heat-exchanger conductance (some tubes still flow)."
+    },
+    {
+      "id": "radiator_fan",
+      "label": "Radiator fan",
+      "description": "A cooked fan motor turns slower: less air through the radiator when the car is slow.",
+      "effect": "fan_flow",
+      "min_scale": 0.0,
+      "source": "[AS] a dead fan moves no air; ram air still flows at speed."
+    },
+    {
+      "id": "head_gasket",
+      "label": "Head gasket",
+      "description": "Combustion gas leaks into the coolant and forms pockets in the radiator: the cooling gets worse.",
+      "effect": "radiator_ua",
+      "min_scale": 0.6,
+      "source": "[AS] gas pockets cost up to 40 % of the radiator's conductance; a power loss would need a physics seam the engine model does not have yet."
+    }
+  ],
+  "rules": [
+    {
+      "id": "radiator_boil",
+      "part": "radiator",
+      "signal": "coolant_c",
+      "above_overheat_k": 4.0,
+      "after_s": 15.0,
+      "rate_per_s": 0.0015,
+      "rate_per_s_per_k": 0.0003,
+      "source": "[AS] 4 K past the overheat warning for 15 s: the coolant boils locally in the core; about 10 s at 10 K over the threshold costs 4.5 %."
+    },
+    {
+      "id": "fan_overload",
+      "part": "radiator_fan",
+      "signal": "coolant_c",
+      "above_overheat_k": 0.0,
+      "after_s": 30.0,
+      "rate_per_s": 0.0008,
+      "only_while_fan_on": true,
+      "source": "[AS] the fan running flat out in overheated air for more than 30 s: about 5 % a minute."
+    },
+    {
+      "id": "head_gasket_overheat",
+      "part": "head_gasket",
+      "signal": "coolant_c",
+      "above_overheat_k": 12.0,
+      "after_s": 5.0,
+      "rate_per_s": 0.004,
+      "rate_per_s_per_k": 0.0008,
+      "source": "[AS] 12 K past the overheat warning (130 C for the class cars) the head warps against the gasket within seconds."
+    }
+  ]
+}

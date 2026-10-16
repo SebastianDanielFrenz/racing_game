@@ -1751,6 +1751,8 @@ func _apply_vehicle(sel: Dictionary) -> void:
 		"z_m": float(chassis["z_m"]),
 		"engine_map_cache_dir": str(sel["engine_map_cache_dir"]),
 		"turbo_map_extension_path": str(sel.get("turbo_map_extension_path", "")),
+		"damage_config_path": str(sel.get("damage_config_path", "")),
+		"damage_state_path": str(sel.get("damage_state_path", "")),
 	})
 	# optional model parts: the setup's (a folding top) plus the raised hood a tall swapped-in engine needs
 	var parts: Array = Array(sel.get("model_options", []))
@@ -1876,6 +1878,10 @@ func _on_garage_option_changed(option_id: String) -> void:
 	# optional model parts (the Runabout's folding top): shown as soon as the option changes
 	_garage_scene.set_model_options(Array(_garage.get_working_colours().get("model_options", [])))
 
+func _on_damage_repaired(state_path: String) -> void:
+	if _simulation != null and _simulation.has_method("repair_damage"):
+		_simulation.repair_damage(state_path)
+
 func _on_garage_save() -> void:
 	var saved: Dictionary = _garage.save()
 	print("RG_GARAGE save ok=%s %s" % [saved.get("ok", false), saved.get("error", "")])
@@ -1991,6 +1997,8 @@ func _build_shell(user_args: PackedStringArray) -> void:
 	_shell_ui.garage_area_chosen.connect(_on_garage_area_chosen)
 	_shell_ui.garage_option_changed.connect(_on_garage_option_changed)
 	_shell_ui.garage_save_requested.connect(_on_garage_save)
+	# A garage repair of the car that is running (pause -> garage) applies at once, not only at the next world load.
+	_shell_ui.damage_repaired.connect(_on_damage_repaired)
 	_shell_ui.garage_exit_requested.connect(_on_garage_exit)
 	add_child(_shell_ui)
 	if _xr_menu != null: _xr_menu.attach(_shell_ui)
