@@ -37,8 +37,8 @@ returns one level at a time; the root opens the save-and-exit prompt. Upgrades:
   one gearbox output into one or two axle differentials takes every layout; a transfer case or anything else greys
   the tile out. A layout change that stops driving an axle returns that axle's differential choice to stock with a
   notice. Every layout stays offered, FWD <-> RWD included (owner on PR #19). A swap that runs the driveline the length
-  of the car (an AWD conversion, FWD <-> RWD) carries a weight penalty; that mass comes in through the per-part mass
-  work (branch claude/part-mass), not through this code. The stats (vehicle select, car browser) follow the setup's layout.
+  of the car (an AWD conversion, FWD <-> RWD) carries a weight penalty: the part-mass tree (see "Part masses" below)
+  adds the new axle hardware and a layout-conversion node. The stats (vehicle select, car browser) follow the setup's layout.
 
 Compound installs preserve each axle's width. Dimension installs preserve each
 axle's compound. All applies the chosen property to both axles, offering only
@@ -147,6 +147,119 @@ this is an NA conversion approximation and retains the original engine internals
 Verification: 195 garage checks and 80 native assertions across four engine-part
 cases passed. Logs: out/garage_induction_final.log, out/garage_induction_polish_unit.log.
 N2O swap screen captured in out/garage_induction_ready_shots/induction_types.png.
+
+## Turbo kits for engines without a turbo (2026-10-15)
+
+Owner on PR #5: "Turbos cannot be fitted yet to many engines." The option `turbo_kit` (setup_options.json, catalog
+`turbo_kits`, group "Turbo system") fits a turbo system to the INSTALLED engine when it is a simulated engine with a cycle
+block and no turbo of its own (pico, ventura, runabout, the demo pipe I4, the A25A; also after an engine swap into any
+car). The generated hardware and configuration files are content-addressed under `<engine map cache>/turbo_kits/`.
+
+Installing a kit sets the engine's `default_forced_induction` to the generated configuration, its
+`cycle.grid_p_im_kpa` to `ps::drivetrain::boost_grid_p_im(cycle, target)` and lowers a compression ratio above 10.0 to
+10.0 (physics_sim engine.md "Adding or removing forced induction"; knock, lambda and spark stay the physics' own
+models). The swap package treats a kit like a torque increase: the clutch rule (1.5 x peak) uses peak x the charge
+pressure ratio, and the gearbox notice counts the boosted torque. Torque-curve engines, already-turbocharged engines,
+rotaries and lift-family engines are refused: `OptionView::unavailable_reason` (RgGarage `unavailable_reason`) says why,
+and Engine -> Turbo / Swaps -> Forced induction show that text instead of hiding the tile. Changing to an engine that
+cannot take a kit drops it (`Garage::drop_unavailable_values`).
+
+### Sizing logic (owner on PR #21: count and boost are free choices)
+
+The kits in `data/engines/turbo_kits.json` (rg.turbo_kits/1) are shortcuts for a turbo COUNT and a STARTING boost:
+Street (1, 0.5 bar), Sport (1, 1.0 bar), Twin-turbo (2, 1.0 bar), Quad-turbo (4, 1.0 bar). Any count goes on any eligible
+engine (no cylinder rule); the boost slider (`turbo_boost_target`) then moves the target freely. One rule, applied to the
+final target (compile re-sizes the kit after the slider: `CompiledSetup::turbo_kit`):
+
+1. Air demand of the whole engine at the limiter: charge density (ambient compressed to the target at the anchor's
+   efficiency, then the intercooler at 0.75 effectiveness) x swept volume x limiter rpm / 120 x VE 0.9.
+2. Split over N turbos: each compressor must flow demand / N x 1.4 (flow margin: no choke at the limiter, no late spool).
+3. Each unit = physics_sim's anchor `hyper_turbo_approx.json` (GTX3582R class, 82 mm exducer) scaled at constant tip
+   speed, s = sqrt(flow / anchor flow), clamped to [0.3, 1.6]: flow, throat, wastegate, shaft loss x s^2, reference rpm / s,
+   rotor inertia x s^5, efficiencies anchor + 0.127 ln s. More turbos = smaller, faster, quicker-spooling, less efficient
+   units; a quad on a 1.0 L three reaches the 0.3 clamp (four 25 mm units, slightly oversized).
+4. Envelope per unit from its exducer D: 2.6 D + 60 mm long, 2.2 D across. The units sit in a row along the crank on the
+   exhaust side (a V engine with more than one: split over both banks); the row sets the length when longer than the
+   engine; width grows by 0.5 x 2.2 D per side (the turbo takes the NA exhaust manifold's place, which the engine envelope
+   already holds). `rg::check_fit_size` holds engine + kit against the car's `engine_bay_envelope`; a kit that does not
+   fit is refused on install ("... does not fit Pico (556 mm long, the bay takes 500 mm)") and its card says so first.
+   The charge pipe and the front-mounted intercooler are not in the box.
+5. Masses ([AS], `mass` block): turbo unit 2.0 kg + 7.5 kg x s^3; exhaust manifold and downpipe 3 kg per turbo;
+   intercooler core 0.45 m^2 per kg/s of demand x 76 mm x 650 kg/m^3; charge piping 1.8 m (+0.6 m per extra turbo) of a
+   pipe sized for 60 m/s at charge density, wall and density from the material. `rg::turbo_kit_parts` puts them under the
+   engine of the part-mass tree (`engine.turbo_kit.*`), so the drive's chassis mass follows the kit.
+
+Measured (Sketch maps, engine dyno at the same rpm): Street kit on every kit engine x1.30 to x1.61 power at 0.43-0.49 bar;
+the Quad on the pico at 1.0 bar 88 kW at 5650 rpm against 54 kW NA (x1.63), rotor ~212 000 rpm (rated 460 000).
+
+### Charge piping
+
+Option `charge_piping` (catalog `charge_piping`, offered wherever a kit can go): Plastic (comes with the kit, rated 1.5 bar,
+bursts near 3 bar), Aluminium (3 / 8 bar), Stainless steel (5 / 15 bar), each with wall, density and an [AS] source. The
+setup check reports boost above the rating; the setup still saves.
+
+### Damage model data
+
+Limits are recorded as data now and only WARNED about by the setup check (limit advisor, game-side build rules in
+`data/garage/advisor.json`), nothing fails in the simulation yet:
+
+| Rule | Value | Limit (data) | Severity |
+|---|---|---|---|
+| `ChargePipingPressure` | max(boost target, sweep charge pressure) | piping `rated_bar` / `burst_bar` (turbo_kits.json `piping`) | Near from 90 %, warning above rated, critical (variant `burst`) at burst |
+| `TurboShaftSpeed` | sweep rotor speed (one rotor) | kit `max_shaft_rpm` = reference rpm x `limits.max_shaft_speed_factor` 1.15 | Near from 90 %, warning above |
+| `MeanPistonSpeed` | 2 x stroke x top sweep rpm | the WEAKEST installed rod / piston / crank grade (engine_internals.json); without internals data advisor.json `part_limits.max_mean_piston_speed_m_s` 25 | Near from 90 %, warning above |
+| `ValveFloat` | top sweep rpm | valve spring grade x the engine's factory limiter (engine_internals.json `limiter_factor`) | Near from 90 %, warning above |
+
+Every part-limit item carries `AdviceItem::damage_part` (Godot: `damage_part` in `RgGarage.get_advice`): the part a
+damage model would wear or break - `charge_piping`, `turbo_unit`, `connecting_rods`, `pistons`, `crankshaft`,
+`valve_springs`, or `engine_internals` for the engine-wide fallback. Its `option_id` is the garage option that swaps that
+part (the weak rod set: `engine_rods`), so "fix" opens the part, not only the rev limit.
+
+How a future damage model reads them: `CompiledSetup::turbo_kit` (a `TurboKitBuild`) lists each fitted part
+(`TurboKitPart`: id, count, mass, `limits` map - `max_shaft_rpm` on `turbo_unit`, `rated_bar` / `burst_bar` on
+`charge_piping`), and the advisor's `AdviceInput` carries the same figures (`set_part_limits`). A damage model would run
+on the stepping thread against the live `PowertrainState` (turbo_rpm, boost) instead of the dyno sweep, use the same
+numbers as thresholds (rated = wear starts, burst = the part fails: boost leak / turbo failure), and its outcome would be
+the engine and turbo telemetry the HUD already shows. Knock is the physics' own model already (ECU and knock limit);
+overheating has the engine thermal model's temperatures but no limits yet.
+
+**Engine internals** (2026-10-16, owner on PR #21: the safe piston speed depends on the material, a titanium rod as in
+F1 holds more; `rg/engine_internals.h`, `data/engines/engine_internals.json` rg.engine_internals/1): four swappable
+parts, garage Upgrades > Engine > Internals (options `engine_rods`, `engine_pistons`, `engine_crankshaft`,
+`engine_valve_springs`, catalog `engine_internals`):
+
+| Part | Grades ([AS] limit, mass vs stock) |
+|---|---|
+| Connecting rods | stock powder-forged 21 m/s; forged steel H-beam 25 m/s x1.05; titanium 28 m/s x0.65 |
+| Pistons | stock cast 21 m/s; hypereutectic 23 m/s x0.97; forged 2618 26 m/s x0.92 |
+| Crankshaft | stock cast iron 21 m/s; forged steel 25 m/s x1.0; billet steel 27 m/s x0.9 |
+| Valve springs | stock 1.0 x limiter; uprated 1.25 x x1.15; race 1.45 x x1.0 |
+
+- A stock part rates at least `stock_margin` (1.15) x the factory figure (piston speed at the engine's own limiter, or
+  the limiter), so no car as built warns; an upgrade never rates below stock. The engine's piston-speed limit is its
+  weakest rod / piston / crank (titanium rods on a cast crank still break the crank).
+- Masses: stock set = kg per litre x displacement, a grade = stock x `mass_factor`; the part-mass tree gets the
+  DIFFERENCE under `engine.internals.<kind>` (negative for lighter parts), so the drive's chassis mass follows. The
+  physics engine inertia is not changed (no physics input for rotating mass yet).
+- The choice edits no engine file (limits and masses only). Simulated engines with a cycle block only; torque-curve and
+  rotary engines show the reason. A choice is kept across an engine swap and re-rated for the new engine (a swap to a torque-curve engine then refuses the setup with the reason, as for a turbo kit).
+- While the internals are known, physics' own `MeanPistonSpeed` dyno finding (one table figure, 25 m/s) is dropped: the
+  part rule replaces it.
+
+Damage-model hook (owner on PR #5: damage persists until repaired, repairs are an explicit action - garage, later a pit
+stop or finishing with it - probably free, and damage affects driving). Not built yet; the data is shaped for it:
+`CompiledSetup::internals` / `turbo_kit` list every installed part with its limit, and every warning names its
+`damage_part`. A damage model would keep a per-part wear/broken state in the saved setup (next to the part's grade),
+add wear while the live state is above the rating (piston speed from the engine rpm, boost, rotor speed), break the part
+at its failure figure, apply the effect in the drive (a broken rod: the engine stops; floated valves: misfire / power
+loss; a burst pipe: boost leak), and clear the state on the garage's repair action.
+
+Open questions for the owner: whether the charge pipe and intercooler should count against the bay (needs a bay model of
+the gaps), whether metal piping should cost anything besides mass, and whether a burst should later be a part the player
+replaces.
+
+Tests: tests/unit/test_turbo_kit.cpp `[turbo_kit]`, tests/unit/test_engine_internals.cpp `[engine_internals]`; the dyno comparisons (kit vs NA at the same rpm, the quad on the
+pico) are `[turbo_kit][dyno][long]`.
 
 ## Live engine dyno (2026-10-08)
 
@@ -275,3 +388,21 @@ at d2d43f6. Evidence: out/adaptive_pressure_tests.log (65 native assertions),
 out/adaptive_pressure_regression.log (1288 existing control/cache assertions),
 out/adaptive_game_hardware_tests.log (57 hardware/domain assertions) and
 out/adaptive_setup_tests.log (structural checks through 30 bar requested boost).
+
+## Part masses (2026-10-15)
+
+Owner on PR #19: each part has its own mass, a parent carries the cumulative mass of its children, and swaps change the
+car's mass through the parts. `rg/part_mass.h` builds the tree from data only (the vehicle file as the setup leaves it,
+the engine and gearbox catalogues' `mass_kg`, `data/vehicles/part_masses.json`, the catalog's per-car
+`chassis.body_mass_kg`); the drive's chassis mass is the tree's total (physics carries no part as a mass of its own:
+wheel_mass is spin inertia only). Body masses are chosen so every stock car keeps its previous chassis mass.
+
+A drivetrain layout other than the stock one carries a penalty (owner: "the drivetrain needs to run across the entire
+car, like in an AWD setup"): the new axle's differential and half shafts and an AWD transfer case come from the file;
+the `layout_conversion` node adds 15 kg of mounting hardware, an 18 kg transfer drive for a 2WD result, and a 14 kg
+driveline along the car where the new layout has no more propshafts than the stock one. Front-engine examples on the
+synthetic car: FWD -> RWD +45 kg, RWD -> FWD +35 kg, FWD -> AWD +87 kg (with a viscous centre / Torsen rear). All
+figures are [AS].
+
+The garage shows it under Chassis -> Weight (`RgGarage.get_mass_breakdown(id)`: total, change against stock, body and
+groups, the drivetrain's parts).

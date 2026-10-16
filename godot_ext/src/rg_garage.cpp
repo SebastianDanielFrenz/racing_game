@@ -336,6 +336,7 @@ godot::Array RgGarage::get_options() const {
         d["max"] = v.max;
         d["step"] = v.def.step;
         d["available"] = v.available;
+        d["unavailable_reason"] = from_std(v.unavailable_reason);
         d["stock"] = value_to_variant(v.stock);
         const rg::SetupValue cur = garage_->current_value(v.def.id);
         d["value"] = value_to_variant(cur);
@@ -517,6 +518,53 @@ godot::Dictionary RgGarage::get_swap_info() const {
         d["engine_title"] = from_std(garage_->model().engine_title);
     }
     d["lines"] = lines;
+    return d;
+}
+
+namespace {
+void flatten_parts(const rg::PartNode& n, int depth, godot::Array& out) {
+    godot::Dictionary d;
+    d["id"] = godot::String::utf8(n.id.c_str());
+    d["label"] = godot::String::utf8(n.label.c_str());
+    d["own_kg"] = n.own_kg;
+    d["total_kg"] = n.total_kg();
+    d["depth"] = depth;
+    d["source"] = godot::String::utf8(n.source.c_str());
+    out.push_back(d);
+    for (const rg::PartNode& c : n.children) flatten_parts(c, depth + 1, out);
+}
+} // namespace
+
+godot::Dictionary RgGarage::get_mass_breakdown(const String& id) const {
+    godot::Dictionary d;
+    d["ok"] = false;
+    if (garage_ == nullptr) {
+        d["error"] = String("garage not initialised");
+        return d;
+    }
+    const std::string car = to_std(id);
+    const rg::PartTree tree = garage_->part_tree(car);
+    d["ok"] = tree.ok;
+    d["error"] = from_std(tree.error);
+    d["total_kg"] = tree.total_kg;
+    d["chassis_kg"] = tree.chassis_kg;
+    d["physics_carried_kg"] = tree.physics_carried_kg;
+    d["layout"] = from_std(tree.layout);
+    d["stock_layout"] = from_std(tree.stock_layout);
+    const rg::CatalogEntry* entry = garage_->catalog().find(car);
+    d["stock_kg"] = entry != nullptr ? entry->chassis.mass_kg : 0.0;
+    godot::Array groups;
+    for (const rg::MassGroup& g : rg::mass_groups(tree)) {
+        godot::Dictionary gd;
+        gd["id"] = from_std(g.id);
+        gd["label"] = from_std(g.label);
+        gd["kg"] = g.kg;
+        groups.push_back(gd);
+    }
+    d["groups"] = groups;
+    godot::Array parts;
+    if (tree.ok) flatten_parts(tree.root, 0, parts);
+    d["parts"] = parts;
     return d;
 }
 
@@ -702,6 +750,7 @@ godot::Dictionary RgGarage::get_advice() const {
         if(!item.suggestion.empty()) text+="\n"+item.suggestion;
         d["lines"]=lines; d["text"]=from_std(text); d["suggestion"]=from_std(item.suggestion);
         d["option_id"]=from_std(item.option_id);
+        d["damage_part"]=from_std(item.damage_part); // the part a future damage model would break ("" = none)
         d["rpm_from"]=item.rpm_from; d["rpm_to"]=item.rpm_to;
         d["remedy_state"]=int(item.remedy_state); d["remedy_text"]=from_std(item.remedy_text);
         d["can_solve"]=item.can_solve;
@@ -768,6 +817,7 @@ void RgGarage::_bind_methods() {
     ClassDB::bind_method(D_METHOD("is_dirty"), &RgGarage::is_dirty);
     ClassDB::bind_method(D_METHOD("get_validation"), &RgGarage::get_validation);
     ClassDB::bind_method(D_METHOD("get_swap_info"), &RgGarage::get_swap_info);
+    ClassDB::bind_method(D_METHOD("get_mass_breakdown", "id"), &RgGarage::get_mass_breakdown);
     ClassDB::bind_method(D_METHOD("get_engines"), &RgGarage::get_engines);
     ClassDB::bind_method(D_METHOD("get_bay_engine", "id"), &RgGarage::get_bay_engine);
     ClassDB::bind_method(D_METHOD("create_user_engine", "base_key", "name", "patch_json"), &RgGarage::create_user_engine);

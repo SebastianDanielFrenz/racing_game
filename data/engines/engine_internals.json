@@ -1,0 +1,56 @@
+{
+  "format": "rg.engine_internals/1",
+  "source": "Swappable engine internals (owner on PR #21: the maximum safe piston speed depends on the material of the parts; a titanium connecting rod as in F1 holds higher speeds). One entry per part kind with material grades. Damage-model data: nothing fails in the simulation yet, the garage setup check (limit advisor) warns, and every limit names the part that would take the damage. All figures [AS] with the reasoning per entry.",
+  "stock_margin": 1.15,
+  "stock_margin_source": "[AS] stock parts are rated for what the factory runs: a mean piston speed (or rpm) 15 % above the engine's own limiter, the usual margin a manufacturer leaves over the rev limit. A stock grade's limit is the larger of its table figure and that.",
+  "parts": [
+    {
+      "kind": "connecting_rods",
+      "label": "Connecting rods",
+      "limit_kind": "mean_piston_speed",
+      "stock_mass_per_litre_kg": 1.2,
+      "mass_source": "[AS] a set of rods weighs about 1.2 kg per litre of displacement (a 500 cm3 cylinder's steel rod ~0.6 kg with its bolts and big-end bearing shells).",
+      "grades": [
+        {"id": "stock", "label": "Stock (powder-forged steel)", "limit": 21.0, "mass_factor": 1.0, "source": "[AS] sintered/powder-forged cracked-cap rods of a passenger engine: about 20-22 m/s mean piston speed before the rod bolts and the small end become the limit."},
+        {"id": "forged_steel", "label": "Forged steel (H-beam)", "limit": 25.0, "mass_factor": 1.05, "source": "[AS] 4340 forged H-beam rods with ARP bolts, the usual performance upgrade: about 25 m/s, slightly heavier than stock."},
+        {"id": "titanium", "label": "Titanium", "limit": 28.0, "mass_factor": 0.65, "source": "[AS] Ti-6Al-4V rods as in F1 and top-level racing (F1 V8s ran ~26 m/s at 19-20k rpm): about 28 m/s and 35 % lighter than steel."}
+      ]
+    },
+    {
+      "kind": "pistons",
+      "label": "Pistons",
+      "limit_kind": "mean_piston_speed",
+      "stock_mass_per_litre_kg": 0.7,
+      "mass_source": "[AS] pistons with pins and rings, about 0.7 kg per litre (a 500 cm3 cylinder's piston set ~0.35 kg).",
+      "grades": [
+        {"id": "stock", "label": "Stock (cast aluminium)", "limit": 21.0, "mass_factor": 1.0, "source": "[AS] cast eutectic aluminium pistons: ring land and pin boss fatigue limit them near 20-22 m/s."},
+        {"id": "hypereutectic", "label": "Hypereutectic aluminium", "limit": 23.0, "mass_factor": 0.97, "source": "[AS] high-silicon cast pistons: harder, a little stronger and lighter, about 23 m/s."},
+        {"id": "forged", "label": "Forged aluminium (2618)", "limit": 26.0, "mass_factor": 0.92, "source": "[AS] forged 2618 pistons with short skirts as in racing: about 26 m/s, lighter than cast."}
+      ]
+    },
+    {
+      "kind": "crankshaft",
+      "label": "Crankshaft",
+      "limit_kind": "mean_piston_speed",
+      "stock_mass_per_litre_kg": 6.0,
+      "mass_source": "[AS] about 6 kg of crankshaft per litre (a 2.0 L four's cast crank ~12 kg).",
+      "grades": [
+        {"id": "stock", "label": "Stock (cast iron)", "limit": 21.0, "mass_factor": 1.0, "source": "[AS] nodular cast iron cranks of passenger engines: torsional and bending fatigue near 20-22 m/s."},
+        {"id": "forged_steel", "label": "Forged steel", "limit": 25.0, "mass_factor": 1.0, "source": "[AS] forged 4340 steel crank: about 25 m/s at a similar mass."},
+        {"id": "billet_steel", "label": "Billet steel (knife-edged)", "limit": 27.0, "mass_factor": 0.9, "source": "[AS] crank machined from a billet with knife-edged counterweights: about 27 m/s and 10 % lighter."}
+      ]
+    },
+    {
+      "kind": "valve_springs",
+      "label": "Valve springs",
+      "limit_kind": "limiter_factor",
+      "stock_mass_per_litre_kg": 0.25,
+      "mass_source": "[AS] valve springs with retainers and keepers, about 0.25 kg per litre (four valves per cylinder).",
+      "grades": [
+        {"id": "stock", "label": "Stock", "limit": 1.0, "mass_factor": 1.0, "source": "[AS] stock springs keep the valves on the cam up to the factory limiter plus the stock margin, then float."},
+        {"id": "uprated", "label": "Uprated (dual springs)", "limit": 1.25, "mass_factor": 1.15, "source": "[AS] stiffer dual springs: valve float moves to about 1.25 x the factory limiter, a little heavier."},
+        {"id": "race", "label": "Race (beehive, titanium retainers)", "limit": 1.45, "mass_factor": 1.0, "source": "[AS] beehive springs with titanium retainers: about 1.45 x the factory limiter at the stock mass. Beyond this a real engine needs pneumatic valves (F1)."}
+      ]
+    }
+  ]
+}

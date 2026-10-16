@@ -5,7 +5,8 @@
 //   * Fuel (D1): the tank's fuel is kept if the new engine lists it, else it becomes the engine's reference fuel
 //     (fuels[0]) with a notice; a fuel the player picked must be one of the engine's.
 //   * Clutch: kinetic capacity = 1.5 x the new engine's peak torque when the current one is lower (a stronger clutch
-//     stays); static_factor is the car's.
+//     stays); static_factor is the car's. A turbo kit (SwapChoices::turbo_kit) multiplies the peak torque by its
+//     estimated boost torque factor and applies the clutch rule even without an engine swap.
 //   * Auto-clutch (TCU): bite = idle + 300, anti-stall = idle - 100, rolling re-engage = idle + 500, full range from
 //     bite + 500 to max(that, 0.45 x limiter) [AS] - the physics loader's ordering rules hold by construction.
 //   * Auto-shift: up at full throttle = limiter - 300, at zero throttle 0.45 x limiter, down 0.19 / 0.41 x limiter
@@ -54,6 +55,10 @@ struct SwapEngine {
 
 struct SwapChoices {
     std::string fuel; // the fuel the player picked ("" = the rule above)
+    // A garage turbo kit on an engine that had none (rg/turbo_kit.h): its label and the estimated WOT torque ratio
+    // boosted / NA. The clutch rule then sizes for peak torque x factor, with or without an engine swap.
+    std::string turbo_kit;
+    double boost_torque_factor = 1.0;
 };
 
 struct SwapAutoClutch {
@@ -102,5 +107,7 @@ struct FitResult {
     std::vector<std::string> reasons; // empty when allowed
 };
 FitResult check_fit(const CatalogEntry& car, const EngineEntry& engine);
+// The same for any box (mm, x along the crank): the engine with a turbo kit fitted (rg/turbo_kit.h turbo_kit_envelope_mm).
+FitResult check_fit_size(const CatalogEntry& car, const std::array<double, 3>& size_mm);
 
 } // namespace rg
