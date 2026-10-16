@@ -19,7 +19,10 @@ returns one level at a time; the root opens the save-and-exit prompt. Upgrades:
 - Drivetrain and Appearance & assists link to installed-part tuning.
 - Upgrades → Drivetrain → Gearbox (2026-10-13): swap the car's gearbox. Boxes are grouped Manual (manual
   and sequential, the latter labelled "Sequential"), Automatic (torque converter), Dual-clutch and CVT;
-  CVT is empty ("Coming soon") until physics_sim models a variator. Every car is offered the
+  CVT has two rows (2026-10-16): cvt_converter (torque converter launch) and cvt_clutch (starting
+  clutch), both rated 250 N*m; a CVT holds an engine-derived target rpm (idle + 0.09..0.60 of the
+  idle-limiter band by throttle, limiter - 0.15 band at full throttle) and S steps through fixed
+  ratios. Every car is offered the
   whole catalogue (data/gearboxes/gearbox_catalog.json) filtered by the INSTALLED engine's peak torque:
   a box whose rating is below it is not listed, and a setup that forces one anyway is rejected with
   "gearbox: rated 450 N*m, engine makes 1371 N*m". The car's own box is the "stock" card. Changing
