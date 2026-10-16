@@ -358,6 +358,7 @@ godot::Array RgGarage::get_options() const {
             parts.push_back(part);
         }
         d["parts"] = parts;
+        d["hidden_reason"] = from_std(rg::hidden_parts_reason(v));
         godot::PackedStringArray coming_soon;
         for (const std::string& c : v.coming_soon) coming_soon.push_back(from_std(c));
         d["coming_soon"] = coming_soon;

@@ -240,7 +240,9 @@ void set_part_limits(AdviceInput& input, const CompiledSetup& compiled) {
     if (compiled.internals) {
         const EngineInternalsBuild& in = *compiled.internals;
         if (const InternalPartBuild* w = in.weakest_piston_speed()) {
-            input.piston_speed_limit_m_s = w->limit;
+            // Rod load and piston speed meet in one currency: the rpm where the part reaches its rating, shown as the
+            // equivalent mean piston speed.
+            input.piston_speed_limit_m_s = w->limit_rpm * 2.0 * in.stroke_m / 60.0;
             input.piston_speed_part = internal_part_name(*w);
             input.piston_speed_kind = w->kind;
             input.piston_speed_kind_label = lower_first(w->kind_label);
@@ -250,6 +252,12 @@ void set_part_limits(AdviceInput& input, const CompiledSetup& compiled) {
             input.valve_float_rpm = v->limit;
             input.valve_part = internal_part_name(*v);
             input.valve_option = v->option_id;
+        }
+        if (in.bore) {
+            input.cylinder_wall_mm = in.bore->wall_mm;
+            input.cylinder_wall_safe_mm = in.bore->safe_wall_mm;
+            input.bore_label = lower_first(in.bore->label);
+            input.bore_option = in.bore_option_id;
         }
     }
     if (!compiled.turbo_kit) return;
@@ -469,9 +477,9 @@ std::optional<AdvisorConfig> parse_advisor_config(const std::string& json_text, 
         }
         for (auto it = rules->begin(); it != rules->end(); ++it) {
             const std::string where = "build_rules." + it.key();
-            static const std::set<std::string> rule_names = {"TurboStageMapCoverage", "ChargePipingPressure", "TurboShaftSpeed", "MeanPistonSpeed", "ValveFloat", "CoolantTemperature", "OilTemperature"};
+            static const std::set<std::string> rule_names = {"TurboStageMapCoverage", "ChargePipingPressure", "TurboShaftSpeed", "MeanPistonSpeed", "ValveFloat", "CylinderWall", "CoolantTemperature", "OilTemperature"};
             if (rule_names.count(it.key()) == 0 || !it->is_object()) {
-                fail(err, origin, where + ": not a supported rule name (TurboStageMapCoverage, ChargePipingPressure, TurboShaftSpeed, MeanPistonSpeed, ValveFloat, CoolantTemperature, OilTemperature) or not an object");
+                fail(err, origin, where + ": not a supported rule name (TurboStageMapCoverage, ChargePipingPressure, TurboShaftSpeed, MeanPistonSpeed, ValveFloat, CylinderWall, CoolantTemperature, OilTemperature) or not an object");
                 return std::nullopt;
             }
             AdviceKindConfig k;
@@ -910,6 +918,14 @@ std::vector<AdviceItem> build_advice(const AdviceInput& input, const AdvisorConf
              {{"value", fixed(input.oil_peak_c, 0) + " C"}, {"limit", fixed(input.oil_limit_c, 0) + " C"},
               {"part", input.oil_cooler_part.empty() ? std::string("oil cooling") : input.oil_cooler_part}, {"ambient", ambient}, {"air_speed", oil_air}},
              input.oil_peak_rpm, "crankshaft", input.oil_cooler_option);
+        if (std::isfinite(input.cylinder_wall_mm) && std::isfinite(input.cylinder_wall_safe_mm) &&
+            input.cylinder_wall_mm < input.cylinder_wall_safe_mm) {
+            // A geometry figure, not a sweep value: thinner than safe is a warning at any rpm.
+            emit("CylinderWall", pd::LimitSeverity::Limiting,
+                 {{"value", fixed(input.cylinder_wall_mm, 1) + " mm"}, {"limit", fixed(input.cylinder_wall_safe_mm, 1) + " mm"},
+                  {"part", input.bore_label}},
+                 0.0, "cylinder_block", input.bore_option);
+        }
     }
     // Engine-map loader warnings, one line each, in one item.
     if (config.loader_notice && !config.loader_notice->hidden) {

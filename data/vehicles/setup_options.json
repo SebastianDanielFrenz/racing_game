@@ -639,6 +639,22 @@
       ]
     },
     {
+      "id": "engine_bore",
+      "label": "Cylinder bore",
+      "group": "Engine internals",
+      "area": "engine",
+      "kind": "file_choice",
+      "catalog": "engine_internals",
+      "internal": "cylinder_bore",
+      "file": "engine",
+      "part_format": "rg.engine_internals/1",
+      "pointers": [
+        "/bore_mm",
+        "/cycle/compression_ratio"
+      ],
+      "help": "Bores every cylinder oversize (+0.5 mm, +1.0 mm, or a re-sleeved big bore of +3.0 mm): more swept volume, so more torque and power at the same rpm. The engine file's bore changes, its maps are generated again, and the compression ratio rises because the head's combustion chamber stays as it was. A bored block takes pistons of the new diameter only: every piston grade is then sized to it and weighs more, which loads the connecting rods harder (a lower rod-limited rpm). A step that would leave too thin a wall between two cylinders is not offered; a thin wall makes the setup check warn. A turbo kit fitted to the bored engine is sized for its larger displacement. Figures in data/engines/engine_internals.json (\"bore\")."
+    },
+    {
       "id": "turbo_kit",
       "label": "Turbo kit",
       "group": "Turbo system",

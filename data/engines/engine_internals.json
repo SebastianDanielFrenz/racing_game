@@ -2,18 +2,60 @@
   "format": "rg.engine_internals/1",
   "source": "Swappable engine internals (owner on PR #21: the maximum safe piston speed depends on the material of the parts; a titanium connecting rod as in F1 holds higher speeds). One entry per part kind with material grades. Damage-model data: nothing fails in the simulation yet, the garage setup check (limit advisor) warns, and every limit names the part that would take the damage. All figures [AS] with the reasoning per entry.",
   "stock_margin": 1.15,
-  "stock_margin_source": "[AS] stock parts are rated for what the factory runs: a mean piston speed (or rpm) 15 % above the engine's own limiter, the usual margin a manufacturer leaves over the rev limit. A stock grade's limit is the larger of its table figure and that.",
+  "stock_margin_source": "[AS] stock parts are rated for what the factory runs: a mean piston speed (or rpm) 15 % above the engine's own limiter, the usual margin a manufacturer leaves over the rev limit. A stock grade's limit is the larger of its table figure and that. For the rods the margin is on the engine speed: the stock rod on stock pistons reaches its rating no lower than 1.15 x the limiter.",
+  "rod_crank_ratio": 0.3,
+  "rod_crank_ratio_source": "[AS] lambda = crank radius / connecting-rod length. Road engines run 0.27-0.33 (rod/stroke 1.5-1.9); 0.3 for every engine because the engine data has no rod length yet. Use the engine's own rod length once its data carries one.",
+  "rod_small_end_share": 0.3333,
+  "rod_small_end_share_source": "[AS] the usual split of a connecting rod for the reciprocating mass: about 1/3 moves with the piston (small end), 2/3 rotates with the crank pin.",
+  "bore": {
+    "source": "Cylinder bore upgrade (owner on PR #21: \"I want upgrades that bore out the cylinders; this logically implies new pistons (due to diameter difference), among other things.\"). Each step bores every cylinder oversize by the same amount; the engine file's bore_mm changes, so displacement (and the generated maps: bore is part of the engine-map cache key) follow. A bored block takes pistons of the new diameter only: every piston grade is then offered at that bore, and its mass grows with the bore. The steps an engine cannot take (the wall left between two bores would be thinner than min_wall_mm) are refused with the reason and hidden by default. All figures [AS] with the reasoning per entry.",
+    "pitch_factor": 1.09,
+    "pitch_factor_source": "[AS] bore spacing (centre to centre of two neighbouring cylinders) over bore. No engine file carries its bore spacing, so one ratio for every engine: production blocks run 1.06-1.13 (Honda K20 86 mm bore on 93 mm spacing = 1.08, BMW N52 85 on 91 = 1.07, GM LS3 103.25 on 111.76 = 1.08, Honda B18 81 on 90 = 1.11, recalled figures); 1.09 is the middle. The wall between two bores is spacing minus bore, so an 86 mm bore leaves 7.7 mm.",
+    "min_wall_mm": 4.0,
+    "min_wall_mm_source": "[AS] thinnest siamesed wall between two bores that still holds the head gasket's fire rings and does not crack under the gas load: about 4 mm (the usual figure big-bore and sleeve kits are built down to). A step that would leave less is refused.",
+    "safe_wall_mm": 5.0,
+    "safe_wall_mm_source": "[AS] below about 5 mm the wall flexes and the bores go out of round under load; the engine runs but the setup check warns (damage part cylinder_block). Nothing fails in the simulation yet.",
+    "piston_thickness_exponent": 1.0,
+    "piston_thickness_exponent_source": "[AS] piston mass = stock piston x (new bore / factory bore)^(2 + this): the crown area grows with the bore squared, and the crown is a plate carrying the gas pressure, whose bending stress goes with (diameter / thickness)^2, so the same stress needs the thickness to grow with the bore (exponent 1).",
+    "liner_length_per_stroke": 1.5,
+    "liner_length_per_stroke_source": "[AS] length of the bored surface (the cylinder liner) = 1.5 x stroke: the stroke plus the piston's compression height and skirt.",
+    "liner_density_kg_m3": 7200.0,
+    "liner_density_kg_m3_source": "[AS] grey cast iron (7,100-7,300 kg/m3), the material of an iron block or of the liners of an aluminium one: the boring removes the ring n x pi/4 x (new bore^2 - bore^2) x liner length of it, which the part-mass tree takes off the block.",
+    "compression_rule": "head_volume_kept",
+    "compression_rule_source": "[AS] the compression ratio is COMPUTED, not kept: the head's combustion chamber (the clearance volume Vc = Vs / (CR - 1)) stays as it was while the swept volume Vs grows with the bore squared, so CR' = 1 + (CR - 1) x (new bore / factory bore)^2. The gasket ring and the piston crown above the deck grow a little with the bore too, which is ignored (CR comes out a little high). A turbo kit fitted afterwards still lowers it to the kit's ceiling.",
+    "steps": [
+      {
+        "id": "overbore_0_5",
+        "label": "+0.5 mm overbore",
+        "oversize_mm": 0.5,
+        "source": "[AS] the first rebuild oversize: the bores are honed out 0.5 mm (0.020 in) and take oversize pistons. Every block takes it."
+      },
+      {
+        "id": "overbore_1_0",
+        "label": "+1.0 mm overbore",
+        "oversize_mm": 1.0,
+        "source": "[AS] the largest usual rebore without sleeves (0.040 in), still inside the liner of most blocks."
+      },
+      {
+        "id": "big_bore",
+        "label": "Big bore (+3.0 mm, re-sleeved)",
+        "oversize_mm": 3.0,
+        "source": "[AS] a big-bore kit: the old liners are bored out and thin ductile-iron sleeves pressed in for 3 mm more bore. Limited by the wall left between two bores (min_wall_mm); a block with a narrow bore spacing cannot take it."
+      }
+    ]
+  },
   "parts": [
     {
       "kind": "connecting_rods",
       "label": "Connecting rods",
-      "limit_kind": "mean_piston_speed",
+      "limit_kind": "rod_load",
       "stock_mass_per_litre_kg": 1.2,
       "mass_source": "[AS] a set of rods weighs about 1.2 kg per litre of displacement (a 500 cm3 cylinder's steel rod ~0.6 kg with its bolts and big-end bearing shells).",
       "grades": [
-        {"id": "stock", "label": "Stock (powder-forged steel)", "limit": 21.0, "mass_factor": 1.0, "source": "[AS] sintered/powder-forged cracked-cap rods of a passenger engine: about 20-22 m/s mean piston speed before the rod bolts and the small end become the limit."},
-        {"id": "forged_steel", "label": "Forged steel (H-beam)", "limit": 25.0, "mass_factor": 1.05, "source": "[AS] 4340 forged H-beam rods with ARP bolts, the usual performance upgrade: about 25 m/s, slightly heavier than stock."},
-        {"id": "titanium", "label": "Titanium", "limit": 28.0, "mass_factor": 0.65, "source": "[AS] Ti-6Al-4V rods as in F1 and top-level racing (F1 V8s ran ~26 m/s at 19-20k rpm): about 28 m/s and 35 % lighter than steel."}
+        {"id": "stock", "label": "Stock (powder-forged steel)", "limit": 40000, "mass_factor": 1.0, "source": "[AS] sintered/powder-forged cracked-cap rods of a passenger engine. The rating is a tensile load per litre of CYLINDER volume (one rod = this x displacement / cylinders): 40 kN per litre, i.e. about 20 kN for a 500 cm3 cylinder, which a stock rod on stock pistons reaches near 8,100 rpm at 76 mm stroke (rod bolts and small end are the limit). The stock rule lifts it where an engine's limiter needs more."},
+        {"id": "cast_steel", "label": "Cast steel (economy)", "limit": 26000, "mass_factor": 1.1, "source": "[AS] cheap cast-steel rods as in low-cost or very old engines: porous and not shot-peened, so fatigue limits them at about 65 % of the stock rod's tension (26 kN per litre of cylinder), and the casting needs thicker sections, so about 10 % more mass. Rated below what the factory limiter of most engines needs, so an engine run to its stock limiter warns."},
+        {"id": "forged_steel", "label": "Forged steel (H-beam)", "limit": 56000, "mass_factor": 1.05, "source": "[AS] 4340 forged H-beam rods with ARP bolts, the usual performance upgrade: about 1.4 times the stock rod's tension (56 kN per litre of cylinder), slightly heavier than stock."},
+        {"id": "titanium", "label": "Titanium", "limit": 70000, "mass_factor": 0.65, "source": "[AS] Ti-6Al-4V rods as in F1 and top-level racing: about 1.75 times the stock rod's tension (70 kN per litre of cylinder) at 35 % less mass, which also lowers the load itself (a third of the rod moves with the piston)."}
       ]
     },
     {
@@ -24,6 +66,7 @@
       "mass_source": "[AS] pistons with pins and rings, about 0.7 kg per litre (a 500 cm3 cylinder's piston set ~0.35 kg).",
       "grades": [
         {"id": "stock", "label": "Stock (cast aluminium)", "limit": 21.0, "mass_factor": 1.0, "source": "[AS] cast eutectic aluminium pistons: ring land and pin boss fatigue limit them near 20-22 m/s."},
+        {"id": "low_silicon_cast", "label": "Low-silicon cast aluminium", "limit": 18.0, "mass_factor": 1.05, "source": "[AS] a cheap low-silicon cast piston with thicker crown and skirt: softer ring lands, about 18 m/s, 5 % heavier than the stock eutectic piston."},
         {"id": "hypereutectic", "label": "Hypereutectic aluminium", "limit": 23.0, "mass_factor": 0.97, "source": "[AS] high-silicon cast pistons: harder, a little stronger and lighter, about 23 m/s."},
         {"id": "forged", "label": "Forged aluminium (2618)", "limit": 26.0, "mass_factor": 0.92, "source": "[AS] forged 2618 pistons with short skirts as in racing: about 26 m/s, lighter than cast."}
       ]
@@ -36,6 +79,7 @@
       "mass_source": "[AS] about 6 kg of crankshaft per litre (a 2.0 L four's cast crank ~12 kg).",
       "grades": [
         {"id": "stock", "label": "Stock (cast iron)", "limit": 21.0, "mass_factor": 1.0, "source": "[AS] nodular cast iron cranks of passenger engines: torsional and bending fatigue near 20-22 m/s."},
+        {"id": "lightweight_cast", "label": "Lightweight cast", "limit": 18.5, "mass_factor": 0.85, "source": "[AS] a thin-web cast crank with smaller counterweights, saving 15 % mass but with less fatigue margin: about 18.5 m/s, below a stock crank."},
         {"id": "forged_steel", "label": "Forged steel", "limit": 25.0, "mass_factor": 1.0, "source": "[AS] forged 4340 steel crank: about 25 m/s at a similar mass."},
         {"id": "billet_steel", "label": "Billet steel (knife-edged)", "limit": 27.0, "mass_factor": 0.9, "source": "[AS] crank machined from a billet with knife-edged counterweights: about 27 m/s and 10 % lighter."}
       ]
@@ -48,6 +92,7 @@
       "mass_source": "[AS] valve springs with retainers and keepers, about 0.25 kg per litre (four valves per cylinder).",
       "grades": [
         {"id": "stock", "label": "Stock", "limit": 1.0, "mass_factor": 1.0, "source": "[AS] stock springs keep the valves on the cam up to the factory limiter plus the stock margin, then float."},
+        {"id": "weak_single", "label": "Weak single springs", "limit": 0.85, "mass_factor": 0.85, "source": "[AS] light single springs with a low seat pressure: valve float starts at about 0.85 x the factory limiter, so an engine run to its stock limiter floats its valves. 15 % lighter than stock."},
         {"id": "uprated", "label": "Uprated (dual springs)", "limit": 1.25, "mass_factor": 1.15, "source": "[AS] stiffer dual springs: valve float moves to about 1.25 x the factory limiter, a little heavier."},
         {"id": "race", "label": "Race (beehive, titanium retainers)", "limit": 1.45, "mass_factor": 1.0, "source": "[AS] beehive springs with titanium retainers: about 1.45 x the factory limiter at the stock mass. Beyond this a real engine needs pneumatic valves (F1)."}
       ]

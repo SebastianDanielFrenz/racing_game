@@ -170,6 +170,8 @@ std::vector<SettingDef> build_schema() {
     light.shown = false;
     light.help = "Headlamp switch position: auto (light sensor), on (dipped beam) or off. The lights key cycles it.";
     s.push_back(std::move(light));
+    // Garage upgrade lists: show the choices the car cannot fit too (greyed out with the reason). Persisted, hidden.
+    s.push_back(hidden(make_bool("garage", "show_all_upgrades", "Show all upgrades", "", false)));
     return s;
 }
 
