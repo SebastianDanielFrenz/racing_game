@@ -106,7 +106,8 @@ godot::Dictionary RgDriverActions::selector_shift(const godot::Dictionary& snaps
     godot::Dictionary d;
     d["gear_request"] = r.gear_request;
     d["change"] = r.gear_request != rg::kGearRequestNoChange;
-    d["release_park"] = r.release_park;
+    d["park_request"] = r.park_request;
+    d["refused"] = r.refused;
     d["forward_counts"] = r.forward_counts;
     return d;
 }

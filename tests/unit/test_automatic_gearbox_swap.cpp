@@ -274,7 +274,7 @@ TEST_CASE("automatic gearbox: the garage drops the clutch and shift-assist optio
     fs::remove_all(work, ec);
 }
 
-TEST_CASE("automatic gearbox: the shift keys pick the selector from P/N/R and are paddles in D", "[automatic][driver_actions]") {
+TEST_CASE("automatic gearbox: the shift keys step the selector P-R-N-D", "[automatic][driver_actions]") {
     rg::DriverSnapshot s;
     // a manual car: nothing changes, the counters are forwarded
     rg::SelectorShift m = rg::selector_shift(s, 1, 0);
@@ -285,33 +285,81 @@ TEST_CASE("automatic gearbox: the shift keys pick the selector from P/N/R and ar
     s.park_fitted = true;
     s.park_engaged = true;
     CHECK(rg::selector_label(s) == "P");
-    rg::SelectorShift up = rg::selector_shift(s, 1, 0);
-    CHECK(up.gear_request == rg::kGearRequestDrive);
-    CHECK(up.release_park);
-    CHECK_FALSE(up.forward_counts);
-    rg::SelectorShift down = rg::selector_shift(s, 0, 1);
-    CHECK(down.gear_request == -1.0);
+    // up from P: R
+    rg::SelectorShift st = rg::selector_shift(s, 1, 0);
+    CHECK(st.gear_request == -1.0);
+    CHECK(st.park_request == 0);
+    CHECK_FALSE(st.forward_counts);
+    // down from P: nothing
+    CHECK(rg::selector_shift(s, 0, 1).gear_request == rg::kGearRequestNoChange);
+    // two presses in a frame: P -> R -> N
+    st = rg::selector_shift(s, 2, 0);
+    CHECK(st.gear_request == 0.0);
+    CHECK(st.park_request == 0);
+    CHECK(rg::selector_shift(s, 3, 0).gear_request == rg::kGearRequestDrive);
+    // R
     s.park_engaged = false;
-    CHECK(rg::selector_label(s) == "N");
     s.transmission_selector = -1;
     CHECK(rg::selector_label(s) == "R");
     CHECK(rg::selector_shift(s, 1, 0).gear_request == 0.0); // R -> N
-    CHECK(rg::selector_shift(s, 0, 1).gear_request == rg::kGearRequestNoChange);
-    s.speed_mps = 5.0; // rolling in R: the keys do nothing
-    CHECK(rg::selector_shift(s, 1, 0).gear_request == rg::kGearRequestNoChange);
+    st = rg::selector_shift(s, 0, 1); // R -> P
+    CHECK(st.gear_request == 0.0);
+    CHECK(st.park_request == 1);
+    // N
+    s.transmission_selector = 0;
+    CHECK(rg::selector_label(s) == "N");
+    CHECK(rg::selector_shift(s, 1, 0).gear_request == rg::kGearRequestDrive);
+    CHECK(rg::selector_shift(s, 0, 1).gear_request == -1.0);
+    // D: down goes N, then (two presses) R, then P at a standstill
     s.transmission_selector = 99;
     s.gear = 3;
     CHECK(rg::selector_label(s) == "D");
+    CHECK(rg::selector_shift(s, 0, 1).gear_request == 0.0);
+    CHECK(rg::selector_shift(s, 0, 2).gear_request == -1.0);
+    st = rg::selector_shift(s, 0, 3);
+    CHECK(st.gear_request == 0.0);
+    CHECK(st.park_request == 1);
+    // D up: nothing, and the counters are not forwarded (no paddles without manual mode)
+    st = rg::selector_shift(s, 1, 0);
+    CHECK(st.gear_request == rg::kGearRequestNoChange);
+    CHECK_FALSE(st.forward_counts);
+    // rolling: D -> N is allowed, N -> R and R -> P are refused
+    s.speed_mps = 5.0;
+    st = rg::selector_shift(s, 0, 1);
+    CHECK(st.gear_request == 0.0);
+    CHECK_FALSE(st.refused);
+    st = rg::selector_shift(s, 0, 2);
+    CHECK(st.gear_request == 0.0); // stops at N
+    CHECK(st.refused);
+    s.transmission_selector = 0;
+    st = rg::selector_shift(s, 0, 1);
+    CHECK(st.gear_request == rg::kGearRequestNoChange);
+    CHECK(st.refused);
+    CHECK(rg::selector_shift(s, 1, 0).gear_request == rg::kGearRequestDrive); // N -> D while rolling is fine
+    s.transmission_selector = -1;
+    s.speed_mps = -3.0;
+    st = rg::selector_shift(s, 0, 1);
+    CHECK(st.refused);
+    CHECK(st.park_request == -1);
+    // a car without a park lock: R is the lowest position
+    rg::DriverSnapshot np;
+    np.transmission_kind = 1;
+    np.transmission_selector = -1;
+    CHECK(rg::selector_shift(np, 0, 1).gear_request == rg::kGearRequestNoChange);
+    // manual mode in D: the counters go to physics
+    s.speed_mps = 20.0;
+    s.transmission_selector = 99;
+    s.transmission_manual = true;
     const rg::SelectorShift paddles = rg::selector_shift(s, 1, 0);
     CHECK(paddles.forward_counts);
     CHECK(paddles.gear_request == rg::kGearRequestNoChange);
+    CHECK(rg::selector_label(s) == "M3");
+    s.transmission_manual = false;
     s.transmission_sport = true;
     CHECK(rg::selector_label(s) == "S");
-    s.transmission_manual = true;
-    CHECK(rg::selector_label(s) == "M3");
 }
 
-TEST_CASE("automatic gearbox: the selector actions write gear_request, park and the D/S mode", "[automatic][driver_actions]") {
+TEST_CASE("automatic gearbox: Y toggles manual mode, the D/S action and park", "[automatic][driver_actions]") {
     struct MapSink final : rg::ChannelSink {
         std::vector<std::pair<std::string, double>> v;
         double get(std::string_view c) const override {
@@ -328,25 +376,45 @@ TEST_CASE("automatic gearbox: the selector actions write gear_request, park and 
     rg::VehicleContext ctx;
     ctx.snapshot.transmission_kind = 2;
     ctx.snapshot.park_fitted = true;
-    REQUIRE(a.submit({"select_drive"}));
+    // the removed selector actions no longer exist
+    CHECK_FALSE(a.submit({"select_drive"}));
+    // manual mode only from D
+    ctx.snapshot.transmission_selector = 0;
+    REQUIRE(a.submit({"manual_mode"}));
+    a.apply(ctx, sink);
+    CHECK(sink.get("shift_up_count") == 0.0);
+    // from D: one up and one down count (physics enters manual mode, no gear change)
+    ctx.snapshot.transmission_selector = 99;
+    REQUIRE(a.submit({"manual_mode"}));
+    a.apply(ctx, sink);
+    CHECK(sink.get("shift_up_count") == 1.0);
+    CHECK(sink.get("shift_down_count") == 1.0);
+    // in manual mode the same key returns to D by changing gear_request
+    ctx.snapshot.transmission_manual = true;
+    sink.set("gear_request", rg::kGearRequestDrive);
+    REQUIRE(a.submit({"manual_mode"}));
+    a.apply(ctx, sink);
+    CHECK(sink.get("gear_request") == rg::kGearRequestDrive - 1);
+    CHECK(sink.get("shift_up_count") == 1.0);
+    sink.set("gear_request", rg::kGearRequestDrive - 1);
+    REQUIRE(a.submit({"manual_mode"}));
     a.apply(ctx, sink);
     CHECK(sink.get("gear_request") == rg::kGearRequestDrive);
+    // D / S schedule and park keep working
+    REQUIRE(a.submit({"transmission_mode"}));
+    a.apply(ctx, sink);
+    CHECK(sink.get("transmission.mode") == 1.0);
     REQUIRE(a.submit({"park"}));
     a.apply(ctx, sink);
     CHECK(sink.get("park_lock") == 1.0);
     CHECK(sink.get("gear_request") == 0.0);
-    REQUIRE(a.submit({"select_reverse"}));
-    a.apply(ctx, sink);
-    CHECK(sink.get("gear_request") == -1.0);
-    CHECK(sink.get("park_lock") == 0.0);
-    REQUIRE(a.submit({"transmission_mode"}));
-    a.apply(ctx, sink);
-    CHECK(sink.get("transmission.mode") == 1.0);
-    // a manual car ignores the selector actions
+    // a manual car ignores both
     MapSink manual;
     rg::VehicleContext mctx;
-    REQUIRE(a.submit({"select_drive"}));
+    mctx.snapshot.transmission_selector = 5;
+    REQUIRE(a.submit({"manual_mode"}));
     a.apply(mctx, manual);
+    CHECK(manual.get("shift_up_count") == 0.0);
     CHECK(manual.get("gear_request") == 0.0);
 }
 

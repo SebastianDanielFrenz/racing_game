@@ -72,11 +72,15 @@ Paddles, the touchpad and MISC1 are the back grips of Xbox Elite / Steam Deck / 
 the share button of Xbox Series pads, reported by SDL as buttons 15-20. On a pad without them these
 actions are reachable only by rebinding. Not verified on hardware.
 
-Automatic and dual-clutch gearboxes (2026-10-16): the shift keys work the selector while the car stands in
-P, N or R (shift up: P/N -> D, R -> N; shift down: P/N -> R) and are paddles (manual mode) in D. The
-actions select_drive, select_reverse, select_neutral and transmission_mode (D/S toggle, key Y) have no
-other defaults; reverse is refused while rolling in D faster than 1 m/s. On a manual car all four do
-nothing. The cluster shows P R N D S or M<gear>.
+Automatic and dual-clutch gearboxes (2026-10-16): the existing shift up / shift down actions (E / Q,
+pad B / X) step the selector one position per press along P <-> R <-> N <-> D (up from P goes R, N, D; down
+from D goes N, R, P). Stepping into P or R is refused while the car rolls faster than 1 m/s (a HUD message;
+physics refuses them too); D -> N and N -> D stay possible at speed. Y (`manual_mode`) toggles manual mode, only
+from D: there shift up / down change gears (tiptronic), the cluster shows M<gear>, and pressing Y again
+returns to D. Outside manual mode shift up in D does nothing. There are no separate P / R / N / D actions.
+Park keeps its key P (`park`) on every car; on an automatic it is the same as selecting P (neutral plus the
+park lock). `transmission_mode` (D / S shift schedule) has no default key. The cluster shows P R N D S or
+M<gear>. On a manual car all of this does nothing and the shift keys behave as before.
 
 Still keyboard-only (no free pad button without a chord): start/stop engine (F11), headlights (O), park
 (P), get out (G), truck ahead (T), zoom in/out (PageUp/PageDown, orbit / drone / third person), switch

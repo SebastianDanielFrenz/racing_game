@@ -9,9 +9,9 @@ namespace rg {
 namespace {
 // Preserve the original forwarding order; per-action events chain through the
 // last value written, irrespective of which device submitted them.
-constexpr std::array<std::string_view, 18> ids = {
+constexpr std::array<std::string_view, 16> ids = {
     "auto_shift", "traction_control", "toggle_aero", "toggle_launch_control", "drive_mode", "toggle_nitrous", "park", "epb", "start_stop", "hazard", "indicator_left", "indicator_right", "horn", "lights",
-    "select_drive", "select_reverse", "select_neutral", "transmission_mode"
+    "transmission_mode", "manual_mode"
 };
 constexpr std::array<std::string_view, 8> channels = {
     "assist.auto_shift", "assist.traction_control", "assist.aero_control", "assist.launch_control", "assist.drive_mode", "nitrous_arm", "park_lock", "epb"
@@ -119,17 +119,26 @@ void DriverActions::apply(const VehicleContext& context, ChannelSink& sink) {
         }
     }
     for (const auto& event : pending_) {
-        // Automatic gearbox plan A1: selector positions and the S/D mode, only on an automatic or dual-clutch box.
+        // Automatic gearbox plan A1: the S/D schedule and manual (tiptronic) mode, only on an automatic or dual-clutch box.
         const int index = slot(event.id);
         if (index < 14 || snapshot.transmission_kind == 0) continue;
-        if (index == 17) {
+        if (index == 14) {
             const double current = sink.get("transmission.mode");
             sink.set("transmission.mode", event.kind == DriverActionKind::Set ? (event.value >= 0.5 ? 1 : 0) : (current >= 0.5 ? 0 : 1));
             continue;
         }
-        if (index == 15 && std::abs(snapshot.speed_mps) > kSelectorStandstillMps && snapshot.transmission_selector > 0) continue;
-        sink.set("gear_request", index == 14 ? kGearRequestDrive : index == 15 ? -1.0 : 0.0);
-        if (snapshot.park_fitted) sink.set("park_lock", 0);
+        // index 15, manual mode: only from D. The state is the physics' own (snapshot), not a latch of ours.
+        if (snapshot.transmission_selector <= 0) continue;
+        const bool want = event.kind == DriverActionKind::Set ? event.value >= 0.5 : !snapshot.transmission_manual;
+        if (want == snapshot.transmission_manual) continue;
+        if (want) {
+            // Physics enters manual mode on a shift count in D; one up plus one down changes no gear.
+            sink.set("shift_up_count", sink.get("shift_up_count") + 1);
+            sink.set("shift_down_count", sink.get("shift_down_count") + 1);
+        } else {
+            // Back to D: a changed gear_request ends manual mode (any value >= the gear count is plain D).
+            sink.set("gear_request", sink.get("gear_request") == kGearRequestDrive ? kGearRequestDrive - 1 : kGearRequestDrive);
+        }
     }
     for (const auto& event : pending_) {
         const int index = slot(event.id);
@@ -158,19 +167,40 @@ void DriverActions::apply(const VehicleContext& context, ChannelSink& sink) {
     discard_pending();
 }
 
+namespace {
+// Selector positions in lever order.
+enum Pos { PosP = 0, PosR = 1, PosN = 2, PosD = 3 };
+int selector_pos(const DriverSnapshot& s) {
+    if (s.transmission_selector < 0) return PosR;
+    if (s.transmission_selector > 0) return PosD;
+    return s.park_fitted && s.park_engaged ? PosP : PosN;
+}
+} // namespace
+
 SelectorShift selector_shift(const DriverSnapshot& snapshot, int up, int down) {
     SelectorShift out;
     if (snapshot.transmission_kind == 0 || (up <= 0 && down <= 0)) return out;
-    const bool standstill = std::abs(snapshot.speed_mps) <= kSelectorStandstillMps;
-    if (snapshot.transmission_selector > 0) return out; // D: the counters are paddles (manual mode in physics)
+    int pos = selector_pos(snapshot);
+    if (pos == PosD && snapshot.transmission_manual) return out; // tiptronic: the counters change gears in physics
     out.forward_counts = false;
-    if (!standstill) return out; // P/N/R while rolling: the shift keys do nothing
-    if (up > 0 && down <= 0) {
-        out.gear_request = snapshot.transmission_selector < 0 ? 0.0 : kGearRequestDrive; // R -> N -> D
-    } else if (down > 0 && up <= 0) {
-        out.gear_request = snapshot.transmission_selector == 0 ? -1.0 : kGearRequestNoChange;
+    const bool standstill = std::abs(snapshot.speed_mps) <= kSelectorStandstillMps;
+    const int lowest = snapshot.park_fitted ? PosP : PosR;
+    const int start = pos;
+    // One step per press, up first then down; P and R are refused while rolling (physics refuses them too).
+    for (int i = 0; i < up && pos < PosD; ++i) ++pos;
+    for (int i = 0; i < down; ++i) {
+        const int next = pos - 1;
+        if (next < lowest) break;
+        if (!standstill && (next == PosP || next == PosR)) { out.refused = true; break; }
+        pos = next;
     }
-    out.release_park = out.gear_request != kGearRequestNoChange;
+    if (pos == start) return out;
+    switch (pos) {
+    case PosP: out.gear_request = 0.0; out.park_request = 1; break;
+    case PosR: out.gear_request = -1.0; out.park_request = 0; break;
+    case PosN: out.gear_request = 0.0; out.park_request = 0; break;
+    default: out.gear_request = kGearRequestDrive; out.park_request = 0; break;
+    }
     return out;
 }
 

@@ -18,7 +18,7 @@
     "horn": [{"type": "key", "key": "J"}],
     "lights": [{"type": "key", "key": "O"}],
     "park": [{"type": "key", "key": "P"}],
-    "transmission_mode": [{"type": "key", "key": "Y"}],
+    "manual_mode": [{"type": "key", "key": "Y"}],
     "ignition": [{"type": "key", "key": "I"}],
     "starter": [{"type": "key", "key": "K"}],
     "traction_control": [{"type": "key", "key": "F4"}],

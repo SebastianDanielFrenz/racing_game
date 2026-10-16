@@ -71,19 +71,23 @@ struct DriverSnapshot {
     double steering_wheel_deg = 0;
 };
 
-// Automatic gearbox plan A1: the shift keys on an automatic. From P/N/R at (near) standstill, shift up selects D and
-// shift down selects R; in D the counters go to physics (paddles = manual mode). Returns the gear_request to write
-// (kGearRequestNoChange = leave the channel), and whether the shift counters should still be forwarded.
+// Automatic gearbox: on an automatic or dual-clutch car the shift up / down keys step the selector along
+// P <-> R <-> N <-> D, one position per press (shift up from P goes R, N, D; shift down from D goes N, R, P). Stepping
+// into P or R is refused while the car rolls faster than kSelectorStandstillMps (`refused`, nothing changes). In D with
+// manual mode on (the physics' own flag) the counters are forwarded and change gears (tiptronic). Returns the
+// gear_request and park_lock to write (kGearRequestNoChange / -1 = leave the channel), and whether the shift counters
+// should still be forwarded. A manual-gearbox car gets no change and forward_counts true.
 constexpr double kGearRequestNoChange = -100.0;
 constexpr double kGearRequestDrive = 99.0;
 constexpr double kSelectorStandstillMps = 1.0;
 struct SelectorShift {
     double gear_request = kGearRequestNoChange;
-    bool release_park = false;
+    int park_request = -1; // -1 no change, 0 release the park lock, 1 engage it
     bool forward_counts = true;
+    bool refused = false;
 };
 SelectorShift selector_shift(const DriverSnapshot& snapshot, int up, int down);
-// The selector letter for HUD and cluster: "P", "R", "N", "D", "S" (sport) or "M<gear>" (paddles); "" on a manual car.
+// The selector letter for HUD and cluster: "P", "R", "N", "D", "S" (sport) or "M<gear>" (manual mode); "" on a manual car.
 std::string selector_label(const DriverSnapshot& snapshot);
 
 struct VehicleContext {
