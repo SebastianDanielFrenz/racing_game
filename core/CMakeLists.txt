@@ -117,6 +117,7 @@ add_library(rg_core STATIC
     src/turbo_map_extension.cpp
     src/turbo_kit.cpp
     src/engine_internals.cpp
+    src/cooling_upgrades.cpp
     src/road_ahead.cpp
     src/camera_math.cpp
     src/camera_motion.cpp

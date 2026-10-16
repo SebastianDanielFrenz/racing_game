@@ -141,6 +141,58 @@
           "suggestion": ""
         }
       }
+    },
+    "CoolantTemperature": {
+      "option": "cooling_radiator",
+      "option_help": "Damage-model data: the steady coolant temperature of full power on a hot day (rg::steady_thermal, the physics model's own balance; check settings in data/cooling_systems/cooling_upgrades.json) against the car's overheat warning. The engine block (head gasket, cylinder head) takes the damage; the radiator, fan and block cooling options carry the heat off. More fuel burned (a turbo kit, more boost, N2O) means more heat. Nothing overheats in the damage sense yet; the dashboard warning is the physics' own.",
+      "title": "The coolant would overheat",
+      "lines": [
+        "At {rpm} and full power the coolant settles at {value} on a {ambient} day with {air_speed} of air through the radiator; the warning is at {limit}.",
+        "The engine block would take the damage (not simulated yet)."
+      ],
+      "suggestion": "A bigger radiator, a stronger fan or more block cooling, or less boost.",
+      "variants": {
+        "near": {
+          "title": "The coolant gets close to overheating",
+          "lines": [
+            "At {rpm} and full power the coolant settles at {value} on a {ambient} day with {air_speed} of air through the radiator; the warning is at {limit}."
+          ],
+          "suggestion": ""
+        },
+        "burst": {
+          "title": "The coolant would boil over",
+          "lines": [
+            "At {rpm} and full power the coolant would settle at {value} on a {ambient} day with {air_speed} of air through the radiator, far above the warning at {limit}.",
+            "The engine block would take the damage (not simulated yet)."
+          ]
+        }
+      }
+    },
+    "OilTemperature": {
+      "option": "cooling_oil_cooler",
+      "option_help": "Damage-model data: the steady oil temperature of full power on a hot day against the check's oil limit (cooling_upgrades.json check.oil_limit_c). Hot oil thins and the bearings (crankshaft) wear. An oil cooler removes heat in proportion to the air speed.",
+      "title": "The oil would run too hot",
+      "lines": [
+        "At {rpm} and full power the oil settles at {value} on a {ambient} day with {air_speed} of air; the limit is {limit}.",
+        "The crankshaft bearings would take the damage (not simulated yet)."
+      ],
+      "suggestion": "An oil cooler or a bigger one.",
+      "variants": {
+        "near": {
+          "title": "The oil gets close to its limit",
+          "lines": [
+            "At {rpm} and full power the oil settles at {value} on a {ambient} day with {air_speed} of air; the limit is {limit}."
+          ],
+          "suggestion": ""
+        },
+        "burst": {
+          "title": "The oil would run far too hot",
+          "lines": [
+            "At {rpm} and full power the oil would settle at {value} on a {ambient} day with {air_speed} of air, far above the limit of {limit}.",
+            "The crankshaft bearings would take the damage (not simulated yet)."
+          ]
+        }
+      }
     }
   },
 

@@ -261,6 +261,56 @@ replaces.
 Tests: tests/unit/test_turbo_kit.cpp `[turbo_kit]`, tests/unit/test_engine_internals.cpp `[engine_internals]`; the dyno comparisons (kit vs NA at the same rpm, the quad on the
 pico) are `[turbo_kit][dyno][long]`.
 
+## Cooling system upgrades (2026-10-16)
+
+Owner on PR #21: "More combustion should result in more heat for the engine components which should need to be cooled. We need
+cooling system upgrades (water cooling elements in the engine block, bigger radiator, ...)."
+
+**Does the heat follow the combustion?** Yes, in the physics already (physics_sim engine thermal model): the heat into the engine
+lump is `wall_heat_fraction` x the RELEASED fuel energy of each substep, plus friction. Measured here (car_gt70, 35 C, full
+throttle 25 s, `[.][cooling][long]`): peak wall heat 135 kW without a turbo kit, 281 kW with the sport single kit (x2.08), coolant
+after 25 s 95.1 vs 110.4 C. No physics change is needed for that. What the schema cannot do: it has NO water-jacket geometry,
+passage area or wall-to-coolant heat transfer coefficient, so "water cooling elements in the block" cannot be a separate heat
+path; they are modelled with the levers that exist (a stronger pump, more coolant in the block, a cooler thermostat).
+
+`rg/cooling_upgrades.h`, `data/cooling_systems/cooling_upgrades.json` (rg.cooling_upgrades/1), four setup options in the
+**Cooling** group (`cooling_radiator`, `cooling_fan`, `cooling_oil_cooler`, `cooling_block_cooling`, catalog `cooling_upgrades`).
+A grade is a set of factors applied to the car's EFFECTIVE cooling_system / engine thermal values (the `extends` chain resolved),
+so one table fits every car and engine; `materialise_setup` writes patched copies of the cooling_system file (radiator, fan, oil
+cooler) and the vehicle's engine thermal override (block cooling).
+
+| Part | Grades (all figures [AS], reasoning in each grade's `source`) | Lever in the physics |
+|---|---|---|
+| Radiator | stock; aluminium wide core (area x1.35, UA per area x1.15); race ducted (area x1.8, x1.3, ram x1.25) | `radiator.frontal_area_m2`, `ua_ref_w_k`, `air_mass_flow_ref_kg_s`, `ram_coefficient` |
+| Fan | stock; high-flow (flow x1.5, on/off 4 K earlier); race twin (x2.2, 8 K earlier) | `fan.face_velocity_m_s`, `power_w`, `on_c/off_c`; only helps below the speed where the ram air is faster than the fan |
+| Oil cooler | stock; street (+0.15 W/K per m/s per litre); race (+0.35) | `oil_cooler.air_w_k_per_m_s` |
+| Block cooling | stock; high-flow pump (x1.5); enlarged jackets (pump x1.5, +0.35 L coolant per litre, thermostat 6 K lower) | `pump.l_min_per_krpm`, engine lump capacity, `thermostat.open_c/full_open_c` |
+
+* **Mass.** Each grade is a child of the part-mass tree's `engine.cooling` node with the mass the NEW part adds over the stock
+  part (fixed kg + kg per litre + kg per extra m2 of core); the chassis mass moves by the same amount (test: children sum, tree
+  total moves by `CoolingBuild::mass_delta_kg`).
+* **Availability.** The options are offered on every car with a cooling_system; a car without one gets the option unavailable with
+  the reason. Each `SetupPart` carries `fits` / `fit_reason` (a grade the engine's file cannot work on, e.g. a per-litre grade
+  without a displacement); the garage hides a non-fitting tile unless "show all" is on.
+* **Setup check.** `CoolantTemperature` / `OilTemperature` rules (advisor.json build_rules): the setup check computes the steady
+  state of the physics model (`rg::steady_thermal`, the same two-lump / eps-NTU / thermostat / fan balance) for the sweep points
+  up to 0.9 x the rev limiter and within 5 % of the peak power of those (a car tops out in its top gear below the limiter), on a 30 C day with the ram air that power holds (11 m/s x cbrt(kW)). Advice from 5 K under
+  the limit, a warning above it, critical from 10 K above. The limit is the car's own `warnings.overheat_c` (coolant) or 135 C
+  (oil). Items name `damage_part` (`engine_block` for the coolant, `crankshaft` for the oil film) and the option that fixes it
+  (`cooling_radiator`, `cooling_oil_cooler`). Nothing is clamped.
+* **Stock cars.** Every catalog car except the two hypercars is clean. The hypercars (car_hyper 135 C coolant / 145 C oil,
+  car_hyper_n2o 164 / 187 C) are flagged critical: the steady state of their full dyno power at top-speed air is above the
+  limits. That is by design, not a bug: data/cooling_systems/hyper.json sizes the radiator for a 60 s pull at top speed, not for
+  minutes of it. With the race radiator and race oil cooler the hypercar's check is clean (`[.][cooling][long]`).
+* **Measured.** car_hyper, 35 C, full throttle 170 s to 413 km/h: stock coolant 117.1 C / oil 123.2 C at the end, race
+  radiator + race oil cooler 93.9 C / 93.0 C. `steady_thermal` at the end of the run predicts 117.3 C (stock) and 94.1 C
+  (race): the estimate agrees with the simulation within 0.3 K on the coolant. The run is not itself a steady state at full
+  dyno power (the strip ends first), so the check's 135 C for the stock hypercar is the estimator at the dyno's fuel flow, not a
+  simulated number.
+
+Tests: tests/unit/test_cooling_upgrades.cpp `[cooling]` (table, options on every car, materialised files, mass sum, steady check,
+advisor items); `[.][cooling][long]` runs the measurements above and the check on every stock car.
+
 ## Live engine dyno (2026-10-08)
 
 The dyno chart is anchored at the bottom of the left performance panel, outside

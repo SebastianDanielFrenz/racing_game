@@ -353,6 +353,8 @@ godot::Array RgGarage::get_options() const {
             part["size"] = from_std(p.detail);
             part["section"] = from_std(p.section);
             part["subtitle"] = from_std(p.subtitle);
+            part["fits"] = p.fits;
+            part["fit_reason"] = from_std(p.fit_reason);
             parts.push_back(part);
         }
         d["parts"] = parts;

@@ -26,6 +26,7 @@
 //     physics_sim's solve_remedy). The Godot layer only starts, polls and shows.
 #pragma once
 
+#include "rg/cooling_upgrades.h"
 #include "rg/turbo_map_extension.h"
 #include "rg/vehicle_setup.h"
 
@@ -202,9 +203,24 @@ struct AdviceInput {
     std::string piston_speed_part, piston_speed_kind, piston_speed_kind_label, piston_speed_option;
     double valve_float_rpm = std::numeric_limits<double>::quiet_NaN();
     std::string valve_part, valve_option;
+    // Cooling check (rg/cooling_upgrades.h steady_thermal, set by set_thermal_limits): the hottest steady coolant / oil
+    // temperature of the sweep at full power on the check's day and air speed, and the limits (the car's own overheat warning
+    // for the coolant, the check's oil limit). NaN = no check (a car without the thermal model, a torque-curve engine).
+    double coolant_peak_c = std::numeric_limits<double>::quiet_NaN(), coolant_limit_c = std::numeric_limits<double>::quiet_NaN();
+    double coolant_peak_rpm = 0.0;
+    double oil_peak_c = std::numeric_limits<double>::quiet_NaN(), oil_limit_c = std::numeric_limits<double>::quiet_NaN();
+    double oil_peak_rpm = 0.0;
+    double thermal_ambient_c = 0.0, thermal_air_speed_m_s = 0.0, coolant_air_speed_m_s = 0.0, oil_air_speed_m_s = 0.0, thermal_near_margin_k = 5.0, thermal_exceeded_margin_k = 10.0;
+    std::string radiator_part, oil_cooler_part;               // installed grade labels ("stock radiator")
+    std::string radiator_option, oil_cooler_option;           // the garage options that swap them
 };
 // Fills the part-limit fields of `input` from a compiled setup's turbo kit and engine internals (none = left NaN).
 void set_part_limits(AdviceInput& input, const CompiledSetup& compiled);
+// Fills the cooling-check fields of `input` from the loaded car (its VehicleDesc carries the engine thermal model with the
+// installed cooling parts), the sweep's points (`input.points`: fuel flow and power per rpm) and the check settings; the grade
+// labels and options come from `compiled.cooling`. Leaves the fields NaN when the car has no thermal model or the engine no
+// fuel model (a torque map without fuel flow).
+void set_thermal_limits(AdviceInput& input, const ps::vehicle::VehicleDesc& desc, const CoolingCheckConfig& check, const CompiledSetup& compiled);
 
 // Groups the findings per kind (and part field), drops what the config hides, merges contiguous rpm ranges, renders
 // the templates; worst severity first (then the config's kind order, then rpm).
