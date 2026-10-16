@@ -393,8 +393,9 @@ TEST_CASE("corridor incident samples: served geometry classes reduce raw OSM gri
         {465181.770,5552547.229,135.473,160.9,5,64.1},
         {465147.723,5552559.482,136.119,160.9,5,64.8667},
         // Stationary marker at the Unterliederbach spawn before the user
-        // reproduced a right pull; chassis heading is the configured spawn yaw.
-        {466758.462,5551413.982,109.571,161.9,6,108.7542},
+        // reproduced a right pull. The marker stores camera heading, not the
+        // chassis yaw, so only its recorded centre position is reliable here.
+        {466758.462,5551413.982,109.571,0.0,6,108.7542},
     };
     std::string err;
     auto config=rg::load_world_config(std::string(RG_SOURCE_DIR)+"/data/world/world_config_rhein_main_corridor.json",&err);
@@ -472,6 +473,18 @@ TEST_CASE("corridor incident samples: served geometry classes reduce raw OSM gri
                     static_cast<unsigned>(role),(a.z+b.z+c.z)/3.0,ground.value_or(-999.0));
             }
         }
+        if (p.marker == 6) {
+            const double cell_e=std::round(p.e),cell_n=std::round(p.n);
+            const bool draw=paved_ribbon_at(ribbon,cell_e,cell_n,p.z-0.5);
+            const auto raw=physics_paved_at(*terrain,zone,p.e,p.n);
+            const bool class_grip=served_class_paved_at(*terrain,zone,p.e,p.n);
+            ++samples;
+            if(draw!=raw.paved) ++mismatches;
+            if(draw!=class_grip) ++class_mismatches;
+            std::printf("TC_ROAD_CENTER mark=6 UTM=(%.0f,%.0f) ribbon_paved=%d raw_physics_paved=%d served_class_paved=%d nearest_raw_paved_edge_m=%.2f; chassis yaw unavailable, wheel contacts not inferred\n",
+                        cell_e,cell_n,draw?1:0,raw.paved?1:0,class_grip?1:0,raw.nearest_paved_edge_m);
+            continue; // no reliable chassis pose for wheel offsets on this stationary marker
+        }
         const double h=p.heading_deg*3.14159265358979323846/180.0;
         const double nx=-std::sin(h),ny=std::cos(h);
         for(const double offset : {-1.4,-0.85,-0.8,0.0,0.8,0.825,1.4}) {
@@ -494,26 +507,6 @@ TEST_CASE("corridor incident samples: served geometry classes reduce raw OSM gri
                 ++class_mismatches;
                 std::printf("TC_ROAD_CLASS mismatch mark=%d t=%.1f offset=%+.1fm UTM=(%.3f,%.3f) drawn_paved=%d served_class_paved=%d\n",
                             p.marker,p.sim_time,offset,cell_e,cell_n,draw?1:0,class_grip?1:0);
-            }
-        }
-        if(p.marker==6) {
-            static constexpr std::array<double,4> local_x{1.566,1.566,-1.134,-1.134};
-            static constexpr std::array<double,4> local_y{0.85,-0.85,0.825,-0.825};
-            static constexpr std::array<const char*,4> reported{"asphalt","grass","asphalt","asphalt"};
-            const double c=std::cos(h),s=std::sin(h);
-            for(std::size_t wheel=0;wheel<local_x.size();++wheel) {
-                const double wx=p.e+c*local_x[wheel]-s*local_y[wheel];
-                const double wy=p.n+s*local_x[wheel]+c*local_y[wheel];
-                const double cell_e=std::round(wx),cell_n=std::round(wy);
-                const bool draw=paved_ribbon_at(ribbon,cell_e,cell_n,p.z-0.5);
-                const PhysicsRoadSample physics=physics_paved_at(*terrain,zone,wx,wy);
-                const bool class_grip=served_class_paved_at(*terrain,zone,wx,wy);
-                ++samples;
-                if(draw!=physics.paved) ++mismatches;
-                if(draw!=class_grip) ++class_mismatches;
-                std::printf("TC_ROAD_WHEEL mark=6 wheel=%s offset=(%.3f,%.3f) cell=(%.0f,%.0f) reported=%s ribbon_paved=%d raw_physics_paved=%d served_class_paved=%d nearest_raw_paved_edge_m=%.2f\n",
-                            std::array<const char*,4>{"FL","FR","RL","RR"}[wheel],local_x[wheel],local_y[wheel],cell_e,cell_n,
-                            reported[wheel],draw?1:0,physics.paved?1:0,class_grip?1:0,physics.nearest_paved_edge_m);
             }
         }
     }
