@@ -12,20 +12,21 @@ extends Node3D
 # PageDown zoom. The look-at point follows the car through a smoothed
 # CAR-RELATIVE offset (zero lag at any constant speed; only changes of the
 # offset, e.g. a jump, are smoothed), so nothing absolute needs shifting.
+#
+# Display only (docs/unreal_port.md leak #10): the look-at lag, the snap, the
+# mouse scaling and the placement in the car's heading frame are
+# rg::orbit_rig_* in core/include/rg/camera_math.h (RgCameraMath.orbit_rig_*).
+# This script keeps the state Dictionary, forwards the chassis pose and input,
+# probes the ground and places the Camera3D.
 
-const SNAP_M := 60.0
-const FOLLOW_LAG := 8.0 # higher = snappier
-const CLEARANCE_M := 0.6
-const MOUSE_LOOK_PER_PX := 0.05 # full deflection (1.0) per 20 px of captured-mouse motion in one frame
+const CLEARANCE_M := 0.6 # terrain clearance (rg::OrbitRigParams::clearance_m)
 
 var camera: Camera3D
 
-var _state: Dictionary = {}
-var _target: Vector3 = Vector3.ZERO
-var _target_rel: Vector3 = Vector3.UP # smoothed look-at point relative to the chassis origin
-var _initialized: bool = false
+var _state: Dictionary = {} # RgCameraMath.orbit_rig_* state
 
 func _ready() -> void:
+	_state = RgCameraMath.orbit_rig_initial_state()
 	camera = Camera3D.new()
 	camera.name = "Camera"
 	camera.near = 0.1
@@ -37,48 +38,38 @@ func set_base_fov(base_fov_deg: float) -> void:
 	camera.fov = base_fov_deg
 
 func activate(_from: Transform3D) -> void:
-	_state = RgCameraMath.orbit_default_state()
-	_initialized = false
+	_state = RgCameraMath.orbit_rig_activate(_state)
 
 func shift_origin(delta: Vector3) -> void:
-	position += delta
-	_target += delta # recomputed from the chassis next frame anyway
+	position += delta # the look-at point is chassis-relative: nothing absolute is kept
 
 func update_rig(delta: float, simulation: Node, input_map: Node, input_live: bool) -> void:
 	if simulation == null or int(simulation.get_step_count()) <= 0:
-		_initialized = false
+		_state = RgCameraMath.orbit_rig_reset(_state)
 		return
-	if _state.is_empty():
-		_state = RgCameraMath.orbit_default_state()
 	var chassis: Transform3D = simulation.get_body_transform("chassis")
-	var focus_rel := Vector3.UP * 1.0
-	if not _initialized or _target_rel.distance_to(focus_rel) > SNAP_M:
-		_target_rel = focus_rel
-		_initialized = true
-	_target_rel = _target_rel.lerp(focus_rel, 1.0 - exp(-FOLLOW_LAG * delta))
-	_target = chassis.origin + _target_rel
-
-	var input := {"look_x": 0.0, "look_y": 0.0, "zoom_steps": 0.0, "zoom_key": 0.0, "live": input_live}
+	var input := {
+		"chassis_position": chassis.origin,
+		# basis.x is the car's FORWARD direction in Godot space (frame_convert.h)
+		"chassis_forward": chassis.basis.x,
+		"look": Vector2.ZERO,
+		"mouse": Vector2.ZERO,
+		"zoom_steps": 0.0,
+		"zoom_key": 0.0,
+		"live": input_live,
+	}
 	if input_live and input_map != null:
-		var look: Vector2 = input_map.get_camera_look_rate()
-		var mouse: Vector2 = input_map.consume_mouse_delta()
 		# Right/up on the stick or arrow keys moves the camera right/up; the
 		# captured mouse drags the camera the same way (right = camera right,
 		# mouse up = camera down, like looking up from below the car).
-		input["look_x"] = clampf(look.x + mouse.x * MOUSE_LOOK_PER_PX, -1.0, 1.0)
-		input["look_y"] = clampf(look.y + mouse.y * MOUSE_LOOK_PER_PX, -1.0, 1.0)
+		input["look"] = input_map.get_camera_look_rate()
+		input["mouse"] = input_map.consume_mouse_delta()
 		input["zoom_steps"] = input_map.consume_zoom_steps()
 		input["zoom_key"] = input_map.get_camera_zoom_key()
-	_state = RgCameraMath.orbit_step(_state, input, delta)
-
-	# offset: ISO heading frame (x forward, y left, z up) -> Godot.
-	var o: Vector3 = _state["offset"]
-	var forward := Vector3(chassis.basis.x.x, 0.0, chassis.basis.x.z)
-	forward = forward.normalized() if forward.length() > 0.001 else Vector3(0.0, 0.0, -1.0)
-	var left := Vector3.UP.cross(forward)
-	position = _target + forward * o.x + left * o.y + Vector3.UP * o.z
-	var ground = simulation.get_camera_ground_height(position)
-	if ground != null:
-		position.y = maxf(position.y, float(ground) + CLEARANCE_M)
-	if position.distance_to(_target) > 0.01:
-		look_at(_target, Vector3.UP)
+	var frame: Dictionary = RgCameraMath.orbit_rig_step(_state, input, delta)
+	_state = frame
+	var pos: Vector3 = frame["position"]
+	var ground = simulation.get_camera_ground_height(pos)
+	position = RgCameraMath.apply_clearance(pos, [ground], CLEARANCE_M)
+	if RgCameraMath.look_valid(position, frame["target"]):
+		look_at(frame["target"], Vector3.UP)

@@ -227,10 +227,52 @@ int AdvisorConfig::decimals_for(const std::string& quantity, int fallback) const
     return it == decimals.end() ? fallback : it->second;
 }
 
+namespace {
+std::string lower_first(std::string s) {
+    if (!s.empty() && s[0] >= 'A' && s[0] <= 'Z') s[0] = static_cast<char>(s[0] - 'A' + 'a');
+    return s;
+}
+// "the titanium connecting rods" style name of an installed part: grade + kind ("Stock (cast iron)" -> "stock (cast iron) crankshaft").
+std::string internal_part_name(const InternalPartBuild& p) { return lower_first(p.grade_label) + " " + lower_first(p.kind_label); }
+} // namespace
+
+void set_part_limits(AdviceInput& input, const CompiledSetup& compiled) {
+    if (compiled.internals) {
+        const EngineInternalsBuild& in = *compiled.internals;
+        if (const InternalPartBuild* w = in.weakest_piston_speed()) {
+            // Rod load and piston speed meet in one currency: the rpm where the part reaches its rating, shown as the
+            // equivalent mean piston speed.
+            input.piston_speed_limit_m_s = w->limit_rpm * 2.0 * in.stroke_m / 60.0;
+            input.piston_speed_part = internal_part_name(*w);
+            input.piston_speed_kind = w->kind;
+            input.piston_speed_kind_label = lower_first(w->kind_label);
+            input.piston_speed_option = w->option_id;
+        }
+        if (const InternalPartBuild* v = in.valve_springs()) {
+            input.valve_float_rpm = v->limit;
+            input.valve_part = internal_part_name(*v);
+            input.valve_option = v->option_id;
+        }
+        if (in.bore) {
+            input.cylinder_wall_mm = in.bore->wall_mm;
+            input.cylinder_wall_safe_mm = in.bore->safe_wall_mm;
+            input.bore_label = lower_first(in.bore->label);
+            input.bore_option = in.bore_option_id;
+        }
+    }
+    if (!compiled.turbo_kit) return;
+    const TurboKitBuild& kit = *compiled.turbo_kit;
+    input.piping_rated_bar = kit.piping.rated_bar;
+    input.piping_burst_bar = kit.piping.burst_bar;
+    input.piping_label = kit.piping.label + " charge piping";
+    input.turbo_max_shaft_rpm = kit.sizing.max_shaft_rpm;
+}
+
+
 const std::vector<std::string>& known_advice_fact_names() {
     static const std::vector<std::string> names = {
         "target", "value", "limit", "value_pct", "limit_pct", "value_kpa", "limit_kpa", "rpm", "rpm_from", "rpm_to", "range",
-        "peak", "peak_rpm", "low", "low_rpm", "reach_rpm", "drop_rpm", "current", "required_min", "required", "ratio_min", "ratio", "message", "coverage", "uncovered", "choke_flow", "demand_flow", "units"};
+        "peak", "peak_rpm", "low", "low_rpm", "reach_rpm", "drop_rpm", "current", "required_min", "required", "ratio_min", "ratio", "message", "coverage", "uncovered", "choke_flow", "demand_flow", "units", "burst", "part", "part_kind", "limit_rpm"};
     return names;
 }
 
@@ -271,7 +313,7 @@ std::optional<AdvisorConfig> parse_advisor_config(const std::string& json_text, 
         fail(err, origin, "\"format\" must be \"rg.garage_advisor/1\"");
         return std::nullopt;
     }
-    static const std::set<std::string> allowed = {"format", "source", "debounce_ms", "sweep", "merge_gap_rpm", "decimals", "remedy", "limit_policy", "kinds", "build_rules", "loader_warnings"};
+    static const std::set<std::string> allowed = {"format", "source", "debounce_ms", "sweep", "merge_gap_rpm", "decimals", "remedy", "limit_policy", "kinds", "build_rules", "loader_warnings", "part_limits"};
     for (auto it = root.begin(); it != root.end(); ++it) {
         const std::string& key = it.key();
         const bool help = key.size() > 5 && key.compare(key.size() - 5, 5, "_help") == 0;
@@ -367,14 +409,35 @@ std::optional<AdvisorConfig> parse_advisor_config(const std::string& json_text, 
         }
         for (auto it = rules->begin(); it != rules->end(); ++it) {
             const std::string where = "build_rules." + it.key();
-            if (it.key() != "TurboStageMapCoverage" || !it->is_object()) {
-                fail(err, origin, where + ": not a supported BuildRule name (TurboStageMapCoverage) or not an object");
+            static const std::set<std::string> rule_names = {"TurboStageMapCoverage", "ChargePipingPressure", "TurboShaftSpeed", "MeanPistonSpeed", "ValveFloat", "CylinderWall"};
+            if (rule_names.count(it.key()) == 0 || !it->is_object()) {
+                fail(err, origin, where + ": not a supported rule name (TurboStageMapCoverage, ChargePipingPressure, TurboShaftSpeed, MeanPistonSpeed, ValveFloat, CylinderWall) or not an object");
                 return std::nullopt;
             }
             AdviceKindConfig k;
             k.rule_name = it.key();
             if (!read_kind_body(*it, where, origin, k, err)) return std::nullopt;
             c.build_rules.push_back(std::move(k));
+        }
+    }
+    if (const auto limits = root.find("part_limits"); limits != root.end()) {
+        if (!limits->is_object()) {
+            fail(err, origin, "\"part_limits\" must be an object");
+            return std::nullopt;
+        }
+        for (auto it = limits->begin(); it != limits->end(); ++it) {
+            const std::string& key = it.key();
+            const bool help = key == "source" || (key.size() > 5 && key.compare(key.size() - 5, 5, "_help") == 0);
+            if (!help && key != "near_fraction" && key != "max_mean_piston_speed_m_s") {
+                fail(err, origin, "part_limits: unknown key \"" + key + "\"");
+                return std::nullopt;
+            }
+        }
+        if (!detail::get_number(*limits, "near_fraction", c.part_near_fraction) || !(c.part_near_fraction > 0.0 && c.part_near_fraction <= 1.0) ||
+            !detail::get_number(*limits, "max_mean_piston_speed_m_s", c.max_mean_piston_speed_m_s) ||
+            !(c.max_mean_piston_speed_m_s > 5.0 && c.max_mean_piston_speed_m_s < 60.0)) {
+            fail(err, origin, "part_limits needs near_fraction in (0, 1] and max_mean_piston_speed_m_s in (5, 60)");
+            return std::nullopt;
         }
     }
     if (const auto notice = root.find("loader_warnings"); notice != root.end()) {
@@ -538,6 +601,9 @@ std::vector<AdviceItem> build_advice(const AdviceInput& input, const AdvisorConf
     // below the game's own per-kind floor (min_severity, only where the game genuinely adds one).
     std::map<std::pair<int, std::string>, std::vector<pd::LimitFinding>> groups;
     for (const pd::LimitFinding& f : input.findings) {
+        // With the engine internals known, the game's MeanPistonSpeed build rule rates the speed against the weakest
+        // installed part (a titanium rod set raises it); physics' one table figure would contradict it, so it is dropped.
+        if (f.kind == pd::LimitKind::MeanPistonSpeed && std::isfinite(input.piston_speed_limit_m_s)) continue;
         const AdviceKindConfig* k = config.find(f.kind);
         if (k == nullptr || k->hidden || !config.policy.warns(f.severity) || (k->min_severity && f.severity < *k->min_severity)) continue;
         groups[{static_cast<int>(f.kind), f.part.field}].push_back(f);
@@ -692,6 +758,88 @@ std::vector<AdviceItem> build_advice(const AdviceInput& input, const AdvisorConf
         item.suggestion = render_advice_template(text.suggestion, facts);
         items.push_back(std::move(item));
     }
+    // Part limits (damage-model data): the fitted parts' ratings against what the sweep reached. Advice only.
+    {
+        double peak_charge = std::isfinite(input.target_boost_bar) ? input.target_boost_bar : 0.0;
+        double peak_turbo = 0.0, turbo_at = 0.0, top_rpm = 0.0;
+        for (const pd::DynoPoint& p : input.points) {
+            peak_charge = std::max(peak_charge, static_cast<double>(p.charge_boost_bar));
+            if (p.turbo_rpm > peak_turbo) {
+                peak_turbo = p.turbo_rpm;
+                turbo_at = p.rpm;
+            }
+            top_rpm = std::max(top_rpm, static_cast<double>(p.rpm));
+        }
+        const auto grade = [&](double value, double rated, double burst) -> std::optional<pd::LimitSeverity> {
+            if (!(rated > 0.0) || !std::isfinite(value)) return std::nullopt;
+            if (std::isfinite(burst) && value >= burst) return pd::LimitSeverity::Exceeded;
+            if (value > rated) return pd::LimitSeverity::Limiting;
+            if (value >= config.part_near_fraction * rated) return pd::LimitSeverity::Near;
+            return std::nullopt;
+        };
+        const auto emit = [&](const std::string& name, std::optional<pd::LimitSeverity> sev, std::map<std::string, std::string> facts,
+                              double rpm, const std::string& damage_part, const std::string& option_override) {
+            if (!sev) return;
+            const AdviceKindConfig* kc = config.find_rule(name);
+            if (kc == nullptr || kc->hidden || !config.policy.warns(*sev) || (kc->min_severity && *sev < *kc->min_severity)) return;
+            AdviceItem item;
+            item.kind_name = item.rule_name = item.id = name;
+            item.option_id = option_override.empty() ? kc->option_id : option_override;
+            item.damage_part = damage_part;
+            item.severity = advice_severity(*sev);
+            item.variant = *sev == pd::LimitSeverity::Exceeded ? "burst" : (*sev == pd::LimitSeverity::Near ? "near" : "");
+            if (kc->variants.count(item.variant) == 0) item.variant.clear();
+            if (rpm > 0.0) {
+                item.rpm_from = item.rpm_to = rpm;
+                facts["rpm"] = fixed(rpm, 0) + " RPM";
+            }
+            const AdviceText text = resolve_text(*kc, item.variant);
+            if (text.max_severity) item.severity = std::min(item.severity, advice_severity(*text.max_severity));
+            item.title = text.title;
+            for (const std::string& l : text.lines) item.lines.push_back(render_advice_template(l, facts));
+            drop_empty(item.lines);
+            item.suggestion = render_advice_template(text.suggestion, facts);
+            items.push_back(std::move(item));
+        };
+        const int bar = dec(config, "bar");
+        if (std::isfinite(input.piping_rated_bar)) {
+            emit("ChargePipingPressure", grade(peak_charge, input.piping_rated_bar, input.piping_burst_bar),
+                 {{"value", fixed(peak_charge, bar) + " bar"}, {"limit", fixed(input.piping_rated_bar, bar) + " bar"},
+                  {"burst", fixed(input.piping_burst_bar, bar) + " bar"}, {"part", input.piping_label},
+                  {"target", std::isfinite(input.target_boost_bar) ? fixed(input.target_boost_bar, bar) + " bar" : "?"}},
+                 0.0, "charge_piping", "");
+        }
+        if (std::isfinite(input.turbo_max_shaft_rpm) && peak_turbo > 0.0) {
+            emit("TurboShaftSpeed", grade(peak_turbo, input.turbo_max_shaft_rpm, std::numeric_limits<double>::quiet_NaN()),
+                 {{"value", fixed(peak_turbo, 0) + " rpm"}, {"limit", fixed(input.turbo_max_shaft_rpm, 0) + " rpm"}}, turbo_at,
+                 "turbo_unit", "");
+        }
+        if (input.stroke_m > 0.0 && top_rpm > 0.0) {
+            // The weakest installed part's limit (rg/engine_internals.h), else the engine-wide figure.
+            const double speed = 2.0 * input.stroke_m * top_rpm / 60.0;
+            const bool parts = std::isfinite(input.piston_speed_limit_m_s);
+            const double limit = parts ? input.piston_speed_limit_m_s : config.max_mean_piston_speed_m_s;
+            const double safe_rpm = limit * 60.0 / (2.0 * input.stroke_m);
+            emit("MeanPistonSpeed", grade(speed, limit, std::numeric_limits<double>::quiet_NaN()),
+                 {{"value", fixed(speed, 1) + " m/s"}, {"limit", fixed(limit, 1) + " m/s"},
+                  {"part", parts ? input.piston_speed_part : std::string("engine internals")},
+                  {"part_kind", parts ? input.piston_speed_kind_label : std::string("engine internals")}, {"limit_rpm", fixed(safe_rpm, 0) + " RPM"}},
+                 top_rpm, parts ? input.piston_speed_kind : std::string("engine_internals"), parts ? input.piston_speed_option : std::string());
+        }
+        if (std::isfinite(input.valve_float_rpm) && top_rpm > 0.0) {
+            emit("ValveFloat", grade(top_rpm, input.valve_float_rpm, std::numeric_limits<double>::quiet_NaN()),
+                 {{"value", fixed(top_rpm, 0) + " RPM"}, {"limit", fixed(input.valve_float_rpm, 0) + " RPM"}, {"part", input.valve_part}},
+                 top_rpm, "valve_springs", input.valve_option);
+        }
+        if (std::isfinite(input.cylinder_wall_mm) && std::isfinite(input.cylinder_wall_safe_mm) &&
+            input.cylinder_wall_mm < input.cylinder_wall_safe_mm) {
+            // A geometry figure, not a sweep value: thinner than safe is a warning at any rpm.
+            emit("CylinderWall", pd::LimitSeverity::Limiting,
+                 {{"value", fixed(input.cylinder_wall_mm, 1) + " mm"}, {"limit", fixed(input.cylinder_wall_safe_mm, 1) + " mm"},
+                  {"part", input.bore_label}},
+                 0.0, "cylinder_block", input.bore_option);
+        }
+    }
     // Engine-map loader warnings, one line each, in one item.
     if (config.loader_notice && !config.loader_notice->hidden) {
         const AdviceKindConfig& kc = *config.loader_notice;
@@ -794,6 +942,7 @@ AdviceSweep run_advice_sweep(const ps::vehicle::VehicleDesc& desc, const Advisor
         if (simulated->turbo_pair) out.input.target_boost_bar = simulated->turbo_pair->target_boost_pa / 1.0e5;
         if (config.sweep.nitrous_with_kit) spec.nitrous = pd::nitrous_from_powertrain(desc.powertrain);
         out.input.build_issues = pd::check_turbo_stage_coverage(*simulated, &config.policy); // stage seam S0
+        if (simulated->cycle) out.input.stroke_m = simulated->cycle->stroke_m;
     }
 
     const auto t0 = std::chrono::steady_clock::now();
@@ -1069,6 +1218,7 @@ void LimitAdvisor::run() {
                                      component_ref_file(material.vehicle_path, "gearbox"));
             sweep.input.loader_warnings = std::move(loader_warnings);
             sweep.input.turbo_choke = turbo_choke;
+            set_part_limits(sweep.input, material.compiled);
             items = build_advice(sweep.input, config_);
         } catch (const ps::io::GenerationCancelled&) {
             continue; // a newer request (or cancel()) took over

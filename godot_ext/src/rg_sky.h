@@ -30,8 +30,10 @@ public:
     // the sun), sun_elevation_deg, sun_energy, sun_color, moon_direction,
     // moon_elevation_deg, moon_illuminated, moon_energy, moon_color,
     // ambient_energy, sky_top_color, sky_horizon_color, icon, weather_id,
-    // weather_label, cloud_cover}; {} before initialize.
-    [[nodiscard]] godot::Dictionary get_state() const;
+    // weather_label, cloud_cover, illuminance_lux, exposure (time-adapted
+    // display value per cd/m2, rg/exposure.h), adapted_lux, night_exposure}; {}
+    // before initialize. Not const: each call advances the exposure adaptation.
+    [[nodiscard]] godot::Dictionary get_state();
     // [{id, group, label, enabled, selected, reason}]
     [[nodiscard]] godot::Array get_menu() const;
     bool choose(const godot::String& id);

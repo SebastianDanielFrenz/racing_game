@@ -56,6 +56,8 @@ add_library(rg_core STATIC
     src/environment.cpp
     src/npc_truck.cpp
     src/walker.cpp
+    src/fpv_drone.cpp
+    src/fpv_drone_sound.cpp
     src/npc_traffic.cpp
     src/traffic_stuck.cpp
     src/building_footprints.cpp
@@ -89,6 +91,7 @@ add_library(rg_core STATIC
     src/shell_flow.cpp
     src/sky.cpp
     src/time_weather.cpp
+    src/exposure.cpp
     src/climate.cpp
     src/wet_look.cpp
     src/weather_sync.cpp
@@ -106,6 +109,7 @@ add_library(rg_core STATIC
     src/engine_store.cpp
     src/engine_swap.cpp
     src/gearbox_catalog.cpp
+    src/part_mass.cpp
     src/driveline_swap.cpp
     src/crt_guard.cpp
     src/garage_set.cpp
@@ -113,6 +117,8 @@ add_library(rg_core STATIC
     src/garage_dyno.cpp
     src/limit_advisor.cpp
     src/turbo_map_extension.cpp
+    src/turbo_kit.cpp
+    src/engine_internals.cpp
     src/road_ahead.cpp
     src/camera_math.cpp
     src/camera_motion.cpp

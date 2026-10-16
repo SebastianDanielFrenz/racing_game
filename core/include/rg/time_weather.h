@@ -8,6 +8,7 @@
 // and location (rg/climate.h).
 #pragma once
 
+#include "rg/exposure.h"
 #include "rg/sky.h"
 
 #include <array>
@@ -49,6 +50,7 @@ struct LightingKey {
     double ambient_energy = 0;
     Rgb sky_top_rgb{0, 0, 0};
     Rgb sky_horizon_rgb{0, 0, 0};
+    double illuminance_lux = 0; // horizontal illuminance under a clear sky (interpolated in log space)
 };
 struct LightingConfig {
     std::vector<LightingKey> keys; // ascending sun elevation, >= 2
@@ -59,6 +61,9 @@ struct LightingConfig {
     double cloud_exponent = 3.4;
     double cloud_ambient_dim = 0.3;     // ambient energy x (1 - dim * cover)
     Rgb overcast_rgb{0.55, 0.57, 0.6};  // sky colour blended in with cloud cover
+    double cloud_illuminance_dim = 0.8; // illuminance x (1 - dim * cover^exponent)
+    double cloud_illuminance_exponent = 1.5;
+    double moon_illuminance_full_lux = 0.25; // full moon at the zenith, clear sky
 };
 struct SkyLighting {
     double sun_energy = 0;
@@ -68,6 +73,9 @@ struct SkyLighting {
     double ambient_energy = 0;
     Rgb sky_top_rgb{0, 0, 0};
     Rgb sky_horizon_rgb{0, 0, 0};
+    // Horizontal illuminance in lux (sun + sky + moon, clouds applied): the light
+    // sensor of the automatic headlamps and the camera exposure read this.
+    double illuminance_lux = 0;
 };
 SkyLighting sky_lighting(const LightingConfig& config, const SkyPosition& sun, const MoonPosition& moon, double cloud_cover);
 
@@ -93,6 +101,7 @@ struct SkyConfig {
     std::string unwired_reason;                        // shown for presets the game cannot apply yet
     IconThresholds icon;
     LightingConfig lighting;
+    ExposureConfig exposure;
 };
 std::optional<SkyConfig> load_sky_config(const std::string& path, std::string* error);
 
@@ -153,6 +162,10 @@ struct TimeWeatherState {
     double rate = 1;
     // Derived air temperature at the climate station (rg/climate.h); NaN without a climate.
     double air_temp_c = std::numeric_limits<double>::quiet_NaN();
+    // Camera exposure (rg/exposure.h): display value per nit. Filled by
+    // TimeWeather::sample() (adapted over time); state() gives the instant value.
+    double exposure = 0;
+    double adapted_lux = 0;
 };
 
 // Session-frame (UTM grid: x east, y north, z up) unit direction towards a
@@ -162,12 +175,19 @@ std::array<double, 3> grid_direction(const SkyPosition& body, double grid_conver
 class TimeWeather {
 public:
     TimeWeather(SkyConfig config, GeoLocation location);
-    void advance(double real_dt_s) { clock_.advance(real_dt_s); }
+    void advance(double real_dt_s) {
+        clock_.advance(real_dt_s);
+        if (real_dt_s > 0) exposure_dt_ += real_dt_s;
+    }
     TimeController& clock() { return clock_; }
     const TimeController& clock() const { return clock_; }
     const SkyConfig& config() const { return config_; }
     const GeoLocation& location() const { return location_; }
     TimeWeatherState state() const;
+    // state() plus the time-adapted exposure: adapts over the real time passed
+    // to advance() since the last sample; a clock jump or weather change (menu)
+    // snaps the adaptation.
+    TimeWeatherState sample();
     std::vector<SkyMenuItem> menu() const;
     // Applies a menu item; false for an unknown or disabled id.
     bool choose(const std::string& id);
@@ -182,6 +202,10 @@ private:
     TimeController clock_;
     std::size_t weather_ = 0;
     std::shared_ptr<const ClimateConfig> climate_;
+    ExposureController exposure_;
+    double exposure_dt_ = 0;
+    std::uint64_t exposure_revision_ = ~std::uint64_t{0};
+    std::size_t exposure_weather_ = ~std::size_t{0};
 };
 
 // "15 °C" (rounded) from kelvin; "-- °C" when not finite.

@@ -46,10 +46,10 @@ void RgSky::advance(double dt) { if (tw_) tw_->advance(dt); }
 void RgSky::set_local_time_h(double h) { if (tw_) tw_->clock().set_local_time_h(h); }
 void RgSky::set_rate(double r) { if (tw_) tw_->clock().set_rate(r); }
 
-godot::Dictionary RgSky::get_state() const {
+godot::Dictionary RgSky::get_state() {
     godot::Dictionary d;
     if (!tw_) return d;
-    const auto s = tw_->state();
+    const auto s = tw_->sample();
     const double gamma = tw_->location().grid_convergence_deg;
     d["clock_text"] = godot::String(s.clock_text.c_str());
     d["date_text"] = godot::String(s.date_text.c_str());
@@ -73,6 +73,10 @@ godot::Dictionary RgSky::get_state() const {
     d["cloud_cover"] = s.weather.cloud_cover;
     d["air_temp_c"] = s.air_temp_c; // NaN without a climate
     d["physics_weather"] = tw_->climate() != nullptr;
+    d["illuminance_lux"] = s.lighting.illuminance_lux;
+    d["exposure"] = s.exposure;
+    d["adapted_lux"] = s.adapted_lux;
+    d["night_exposure"] = rg::night_exposure(tw_->config().exposure);
     return d;
 }
 

@@ -4,7 +4,8 @@ extends Node
 # (<model>.rig.json lights.head.materials; no lamp sockets exist in the rigs),
 # aimed forward and slightly down. On/off and dipped/main beam follow the
 # shared DriverActions projection ("head_lamp", "main_beam" <- cabin.lights).
-# Beam numbers: data/world/headlights.json. Rear: one red SpotLight3D at the midpoint of the tail/brake lamp
+# Beam numbers: data/world/headlights.json (photometric: candela; on screen x the scene exposure,
+# light_exposure.gd, so the beams light the road at night and are negligible in daylight). Rear: one red SpotLight3D at the midpoint of the tail/brake lamp
 # materials (dim for the tail lamps, stronger while braking) and one white one at the reverse lamps, aimed
 # backward and down; their on/off states are pushed by exterior_lamps.gd (set_states).
 #
@@ -15,6 +16,7 @@ extends Node
 # into one spot at their midpoint (half the extra passes).
 
 const CONFIG_PATH := "res://../data/world/headlights.json"
+const LightExposure := preload("res://scripts/light_exposure.gd")
 var simulation: Node
 var vehicle_name: String
 var spots: Array[SpotLight3D] = []
@@ -23,6 +25,11 @@ var rear_spots := {} # "tail" / "reverse" -> SpotLight3D
 var _level := -1
 var _states := {}
 var _rear_key := ""
+var _exposure := -1.0 # exposure the energies were last set for
+
+static func load_config() -> Dictionary:
+	var cfg = JSON.parse_string(FileAccess.get_file_as_string(ProjectSettings.globalize_path(CONFIG_PATH)))
+	return cfg if cfg is Dictionary else {}
 
 # model: the glTF root (model space: +Z forward, +X left, +Y up).
 static func attach_to(model: Node3D, sim: Node, car: String, rig: Dictionary) -> Node:
@@ -30,8 +37,8 @@ static func attach_to(model: Node3D, sim: Node, car: String, rig: Dictionary) ->
 	driver.name = "Headlights"
 	driver.simulation = sim
 	driver.vehicle_name = car
-	var cfg = JSON.parse_string(FileAccess.get_file_as_string(ProjectSettings.globalize_path(CONFIG_PATH)))
-	driver.config = cfg if cfg is Dictionary else {}
+	driver.config = load_config()
+	driver._exposure = LightExposure.current(driver.config)
 	var materials: Array = rig.get("lights", {}).get("head", {}).get("materials", [])
 	var clusters: Array = lamp_clusters(model, materials)
 	if int(driver.config.get("lights_per_car", 2)) == 1 and clusters.size() == 2:
@@ -134,7 +141,7 @@ func set_level(level: int) -> void:
 		spot.spot_angle = float(beam.get("angle_deg", 30.0))
 		spot.spot_angle_attenuation = float(beam.get("angle_attenuation", 1.0))
 		spot.spot_attenuation = float(beam.get("attenuation", 1.0))
-		spot.light_energy = float(beam.get("energy", 4.0))
+		spot.light_energy = LightExposure.spot_energy(float(beam.get("intensity_cd", 0.0)), _exposure, spot.spot_attenuation, float(beam.get("reference_m", 1.0)))
 		spot.basis = Basis.looking_at(direction, Vector3.UP)
 
 # states: lamp action -> bool ("tail_lamp", "brake_lamp", "reverse_lamp"), from exterior_lamps.gd.
@@ -150,13 +157,21 @@ func _update_rear() -> void:
 		var spec: Dictionary = config.get("tail", {})
 		var braking: bool = bool(_states.get("brake_lamp", false))
 		tail.visible = braking or bool(_states.get("tail_lamp", false))
-		tail.light_energy = float(spec.get("brake_energy", 2.0)) if braking else float(spec.get("energy", 0.6))
+		tail.light_energy = LightExposure.spot_energy(float(spec.get("brake_intensity_cd" if braking else "intensity_cd", 0.0)), _exposure, tail.spot_attenuation, float(spec.get("reference_m", 1.0)))
 	var reverse = rear_spots.get("reverse")
 	if reverse != null:
 		reverse.visible = bool(_states.get("reverse_lamp", false))
-		reverse.light_energy = float(config.get("reverse", {}).get("energy", 2.0))
+		reverse.light_energy = LightExposure.spot_energy(float(config.get("reverse", {}).get("intensity_cd", 0.0)), _exposure, reverse.spot_attenuation, float(config.get("reverse", {}).get("reference_m", 1.0)))
 
 func _process(_delta: float) -> void:
+	var e := LightExposure.current(config)
+	if absf(e - _exposure) > 0.01 * _exposure: # the scene exposure moved (time of day, weather): rescale the beams
+		_exposure = e
+		var level := _level
+		_level = -1
+		if level >= 0:
+			set_level(level)
+		_update_rear()
 	if simulation == null or spots.is_empty() or not simulation.has_method("get_control"):
 		return
 	set_level(int(round(simulation.get_control("cabin.lights"))))

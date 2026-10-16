@@ -86,7 +86,7 @@ Ordered by port value (how much an Unreal front end would otherwise duplicate). 
 | 7 | `road_stream.gd:85-106`, `building_stream.gd:87-110` | duplicated 1 km tile wanted-set + "behind a fast car goes last" ordering | open: one `rg::tile_schedule(focus, velocity, radius)` |
 | 8 | `tyre_sound_model.gd` (whole file) | tyre audio DSP (roll noise, scrub, squeal crossfade) | open: `rg::TyreSound` (PCM out; front end only outputs) |
 | 9 | `input_map.gd:146-164`, `:332-413`, `:567-576` | auto-shift default from the vehicle file's `manual_tcu`, edge counting, ignition toggle state, steering-wheel angle from steer ratio | open: fold into `rg::Controls` / `rg::DriverActions` |
-| 10 | `chase_rig.gd:62-107`, `drone_rig.gd:64-130`, `walker_rig.gd:81-102`, `free_rig.gd`, `orbit_rig.gd` | orbit-yaw target from stick/keys, zoom law, lag filters, terrain-clearance probes | open: extend `rg/camera_math.h` (it already has `orbit_step`, `chase_follow_offset`, `cockpit_look_step`) |
+| 10 | `chase_rig.gd:62-107`, `drone_rig.gd:64-130`, `walker_rig.gd:81-102`, `free_rig.gd`, `orbit_rig.gd` | orbit-yaw target from stick/keys, zoom law, lag filters, terrain-clearance probes | done (2026-10-16) for all five rigs; the drone part was done 2026-10-15: `rg::drone_*` in `rg/camera_math.h` (`drone_follow_step`, `drone_zoom_step`, `drone_target_orbit_yaw`, `drone_clear_terrain`; golden test against the former GDScript), `drone_rig.gd` and the VR `xr_drone` rig only draw. 2026-10-16: the chase (`chase_follow_step`), free (`free_step`), walker (`walker_cam_step`/`walker_cam_aim`) and orbit (`orbit_rig_step`) rigs moved the same way, with shared `ground_probe_offsets`/`clear_terrain_height`/`look_valid`/`rig_orbit_yaw`; golden tests against the former GDScript (`[chase]`, `[free]`, `[walker_cam]`, `[orbit_rig]` in test_camera_math.cpp), the four rig scripts only forward input, probe the ground and place the Camera3D. The chassis-motion shake/FOV (`RgCameraMotion`) was already core |
 | 11 | `main.gd:1031-1046` `_save_drive_location`, `main.gd:1888-1932` `_log_owner_mark` | last_drive.json / drive_marks.jsonl records (session -> UTM, compass heading) | open: writer next to the reader in `rg/spawn_presets.h` |
 | 12 | `shell_ui.gd:1338` `_tyre_presentation` | parses tyre ids and applies the rated-speed cap - duplicates `rg/tyre_spec.h` | open: `RgGarage` returns the parsed spec |
 | 13 | `gauge_logic.gd` (whole file) | tach scale (max rpm from limiter, ticks, redline, gear label, lamp state) | open (small; UMG would re-implement it) |
@@ -96,7 +96,7 @@ Ordered by port value (how much an Unreal front end would otherwise duplicate). 
 | 17 | binding `rg_simulation.cpp:785-818` | `get_vehicle_gauge_info` walks VehicleDesc components | open: `rg::gauge_info(VehicleDesc)` |
 | 18 | binding `rg_simulation.cpp:820-850` | park-lock fitted scan, drive power formula, assist bit decode (1/2/4/8) | open: `rg::assist_hud` already exists - extend |
 | 19 | binding `rg_simulation.cpp:659-672` | steering kinematics computed through a Godot basis round trip | open: `rg::chassis_local_motion(FrameSnapshot)` |
-| 20 | binding `rg_simulation.cpp:1000-1015` | drone-target labels ("NPC truck", "NPC lorry #n") | open: `rg::drone_target_label` |
+| 20 | binding `rg_simulation.cpp:1000-1015` | drone-target labels ("NPC truck", "NPC lorry #n") | done (2026-10-15): `rg::drone_target_label` in `rg/player_mode.h`, the binding passes the lorry flag |
 | 21 | binding `rg_terrain_view.cpp:268-383` | ground-check / bed-check probe loops | open: `rg/terrain_stream.h` (owned by the heal agent area today) |
 
 ## 2. Moved in this package
@@ -371,3 +371,10 @@ Each milestone ends with a UE automation test that mirrors the matching smoke te
 | Q8 | Input: keep `rg::Controls` as the binding authority (UE only provides raw device states) or move bindings to Enhanced Input mapping contexts generated from `data/controls`? | **Keep `rg::Controls`** (controls screen, saved `controls.json`, calibration and device memory stay identical); Enhanced Input only as the raw key/axis source. |
 | Q9 | Does Godot keep running in parallel until UE parity, and do new features land in both? | **Yes until M4**; new gameplay goes to rg_core only, Godot presentation is frozen except fixes. |
 | Q10 | VR in the first UE milestone set? | **No, last** (M6); OpenXR in UE is a separate risk. |
+
+### FPV drone (2026-10-15)
+
+`rg::FpvDrone` (`rg/fpv_drone.h`) and `rg::FpvRotorVoice` (`rg/fpv_drone_sound.h`) are engine-neutral: the flight model, ground
+clamp (a probe function; the Session supplies a World ray), the rotor synthesis and the config loader are in rg_core, so a UE port
+only needs a camera at `FrameSnapshot::fpv`, the input mapping (camera-group axes) and an audio sink for the mono 48 kHz buffer.
+Presentation files: `fpv_rig.gd`, `fpv_audio.gd`, the HUD line. No new leak.

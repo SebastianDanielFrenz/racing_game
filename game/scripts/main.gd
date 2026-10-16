@@ -97,6 +97,7 @@ var _input_map: Node
 var _drive_view: String = "chase" # chase / bumper / cockpit / orbit / cinematic (rg::DriveView)
 var _drone_target_seen: int = -1 # last drone_target_id printed (-1 = own car)
 var _walker_rig: Node3D
+var _fpv_audio: Node
 var _walker_visual: Node3D
 var _refusals_seen: int = 0 # get_mode_state()["get_out_refusals"] already reported to the HUD
 var _enter_refused_seen: int = 0 # ... ["walker_enter_refused"]
@@ -539,6 +540,9 @@ func _build_scene(user_args: PackedStringArray) -> void:
 	if rolling_config is Dictionary:
 		_simulation.set_rolling_resistance_model(str(rolling_config.get("physics", {}).get("rolling_resistance_model", "quadratic")))
 	_simulation.set_aero_map_selection_path(ProjectSettings.globalize_path("res://../data/aero/hypercar_map.json"))
+	var fpv_err: String = _simulation.set_fpv_drone_config(ProjectSettings.globalize_path("res://../data/controls/fpv_drone.json"))
+	if fpv_err != "":
+		push_warning("fpv drone config: " + fpv_err + " (built-in defaults)")
 	add_child(_simulation)
 	if fetch_delay_ms > 0:
 		_simulation.set_fetch_delay_ms(fetch_delay_ms)
@@ -620,6 +624,11 @@ func _build_scene(user_args: PackedStringArray) -> void:
 	free.set_script(load("res://scripts/free_rig.gd"))
 	add_child(free)
 	_director.add_rig("free", free)
+	var fpv := Node3D.new()
+	fpv.name = "FpvRig"
+	fpv.set_script(load("res://scripts/fpv_rig.gd"))
+	add_child(fpv)
+	_director.add_rig("fpv", fpv)
 	var drone := Node3D.new()
 	drone.name = "DroneRig"
 	drone.set_script(load("res://scripts/drone_rig.gd"))
@@ -847,6 +856,9 @@ func _release_world_nodes() -> void:
 		_vehicle_audio.shutdown()
 		_vehicle_audio.queue_free()
 		_vehicle_audio = null
+	if _fpv_audio != null:
+		_fpv_audio.queue_free()
+		_fpv_audio = null
 	# The view shares the old Session's WorldTerrain: release it first.
 	_world_view.release()
 	_director.set_terrain_view(null)
@@ -1277,9 +1289,12 @@ func _apply_mode_state() -> Dictionary:
 	if rig_name == "chase":
 		rig_name = _drive_view # chase / bumper / cockpit / orbit / cinematic
 	if _vr_active:
-		# VR keeps its own free rig for the drone view too (no XR drone rig yet).
-		# (No XR walker rig yet either: on foot the player keeps the tracked free flight.)
-		rig_name = "xr_free" if rig_name == "free" or rig_name == "drone" or rig_name == "walker" else "xr_cockpit"
+		# VR has its own drone rig (xr_drone: trails the target, the player's view is never rotated for them).
+		# (No XR walker rig yet: on foot the player keeps the tracked free flight.)
+		if rig_name == "drone":
+			rig_name = "xr_drone"
+		else:
+			rig_name = "xr_free" if rig_name == "free" or rig_name == "walker" or rig_name == "fpv" else "xr_cockpit"
 	var drone_id := int(ms.get("drone_target_id", -1))
 	if drone_id != _drone_target_seen:
 		_drone_target_seen = drone_id
@@ -1326,6 +1341,18 @@ func _forward_walking(live: bool) -> void:
 		return
 	var m: Vector2 = _input_map.get_walk_move()
 	_simulation.set_walker_input(m.x, m.y, _walker_rig.get_look_forward(), _input_map.get_walk_run())
+
+# FPV drone input (fpv_drone mode): the camera group's move axes (right, up, forward) and look axes (yaw, pitch). The
+# flight model lives in rg_core (rg::FpvDrone); the rate axes are +left / +up there, the look input is +right / +up.
+func _forward_flying(live: bool) -> void:
+	if not bool(_simulation.is_running()):
+		return
+	if not live or _panel_open():
+		_simulation.set_fpv_input(0.0, 0.0, 0.0, 0.0, 0.0)
+		return
+	var m: Vector3 = _input_map.get_camera_move()
+	var look: Vector2 = _input_map.get_camera_look_rate()
+	_simulation.set_fpv_input(m.x, m.y, m.z, -look.x, look.y)
 
 func _forward_driving(live: bool, delta: float) -> void:
 	# Edge counts are consumed every frame, so presses made while the car is
@@ -1387,6 +1414,7 @@ func _forward_driving(live: bool, delta: float) -> void:
 		if write["channel"] == "ignition": _input_map.sync_ignition(float(write["value"]))
 		if write["channel"] == "assist.drive_mode": drive_mode_change = roundi(write["value"])
 	_input_map.advance_cabin(_simulation,pt,delta,true,VEHICLE_NAME)
+	_save_light_mode_if_changed()
 	if drive_mode_change >= 0 and _hud != null:
 		var requested := pt.duplicate()
 		requested["drive_mode_effective"] = drive_mode_change
@@ -1631,6 +1659,11 @@ func _process_body(delta: float) -> void:
 		_vehicle_audio.director = _director
 		_vehicle_audio.vehicle_name = VEHICLE_NAME
 		add_child(_vehicle_audio)
+		_fpv_audio = Node.new()
+		_fpv_audio.name = "FpvAudio"
+		_fpv_audio.set_script(load("res://scripts/fpv_audio.gd"))
+		_fpv_audio.simulation = _simulation
+		add_child(_fpv_audio)
 		_apply_audio_settings()
 	if _vehicle_audio != null:
 		_vehicle_audio.muted = _paused
@@ -1639,6 +1672,9 @@ func _process_body(delta: float) -> void:
 	_forward_driving(bool(ms.get("driving_inputs_live", false)) and in_drive, delta)
 	FrameProbe.add("forward_driving", Time.get_ticks_usec() - forward_t0)
 	_forward_walking(bool(ms.get("walking_inputs_live", false)) and in_drive)
+	_forward_flying(bool(ms.get("flying_inputs_live", false)) and in_drive)
+	if _fpv_audio != null:
+		_fpv_audio.muted = _paused
 	_panels_open_prev = _panel_open()
 	_mouse_captured_prev = _input_map.is_mouse_captured()
 
@@ -1652,19 +1688,20 @@ func _try_start_vr() -> void:
 		return
 	DisplayServer.window_set_vsync_mode(DisplayServer.VSYNC_DISABLED)
 	get_viewport().use_xr = true
-	for rig_name in ["xr_cockpit", "xr_free"]:
+	for rig_name in ["xr_cockpit", "xr_free", "xr_drone"]:
 		var rig := XROrigin3D.new()
 		rig.name = rig_name
 		rig.set_script(load("res://scripts/xr_rig.gd"))
 		rig.body_visuals = _visuals
 		rig.free_flight = rig_name == "xr_free"
+		rig.drone_follow = rig_name == "xr_drone"
 		add_child(rig)
 		_director.add_rig(rig_name, rig)
 	_vr_active = true
 	_xr_menu = load("res://scripts/xr_menu.gd").new()
 	_xr_menu.main = self
 	add_child(_xr_menu)
-	print("RG_VR active: tracked cockpit, F9 recenter; FreeCam uses tracked free flight")
+	print("RG_VR active: tracked cockpit, F9 recenter; FreeCam uses tracked free flight, drone follow trails the target (xr_drone)")
 
 # Owner bookmarks survive normal log rotation in user://drive_marks.jsonl.
 func _input(event: InputEvent) -> void:
@@ -2140,6 +2177,17 @@ func set_drive_view(view: String) -> void:
 	if _simulation != null:
 		_simulation.set_road_ahead_wanted(view == "cinematic")
 
+# The headlamp switch (auto/on/off, the lights key cycles it) persists like a setting: saved when it changes.
+var _saved_light_mode := ""
+func _save_light_mode_if_changed() -> void:
+	if _shell == null or _input_map == null:
+		return
+	var mode: String = _input_map.get_light_mode()
+	if mode != _saved_light_mode:
+		_saved_light_mode = mode
+		_shell.set_setting("cabin.light_mode", mode)
+		_shell.save_settings()
+
 # Sun shadows and 3D resolution scale (perf, 2026-10-15). The defaults (high, 1.0) are the look before these settings
 # existed: four PSSM cascades to 300 m with terrain casting, native resolution. Also re-applied when a world's terrain
 # view starts (the terrain's cast flag lives on its instances).
@@ -2166,6 +2214,10 @@ func _apply_graphics_quality() -> void:
 func _apply_setting(key: String) -> void:
 	var value: Variant = _shell.get_setting(key)
 	match key:
+		"cabin.light_mode":
+			if _input_map != null:
+				_input_map.set_light_mode(str(value))
+			_saved_light_mode = str(value)
 		"graphics.window_mode":
 			var mode := DisplayServer.WINDOW_MODE_WINDOWED
 			if str(value) == "fullscreen":
@@ -2218,6 +2270,8 @@ func _apply_audio_settings() -> void:
 	_vehicle_audio.master_volume = float(_shell.get_setting("audio.master_volume"))
 	_vehicle_audio.engine_volume = float(_shell.get_setting("audio.engine_volume"))
 	_vehicle_audio.tyre_volume = float(_shell.get_setting("audio.tyre_volume"))
+	if _fpv_audio != null:
+		_fpv_audio.master_volume = float(_shell.get_setting("audio.master_volume"))
 
 func _log_owner_mark() -> void:
 	var point := chassis_session_position()
