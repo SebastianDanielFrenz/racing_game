@@ -240,7 +240,9 @@ void set_part_limits(AdviceInput& input, const CompiledSetup& compiled) {
     if (compiled.internals) {
         const EngineInternalsBuild& in = *compiled.internals;
         if (const InternalPartBuild* w = in.weakest_piston_speed()) {
-            input.piston_speed_limit_m_s = w->limit;
+            // Rod load and piston speed meet in one currency: the rpm where the part reaches its rating, shown as the
+            // equivalent mean piston speed.
+            input.piston_speed_limit_m_s = w->limit_rpm * 2.0 * in.stroke_m / 60.0;
             input.piston_speed_part = internal_part_name(*w);
             input.piston_speed_kind = w->kind;
             input.piston_speed_kind_label = lower_first(w->kind_label);

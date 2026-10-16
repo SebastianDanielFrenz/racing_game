@@ -1659,7 +1659,11 @@ std::vector<SetupPart> parts_of(const SetupOptionDef& def, const SetupContext& c
             p.detail += mass;
             if (eng != nullptr && eng->envelope_mm && entry_for_fit != nullptr) {
                 const FitResult fit = check_fit_size(*entry_for_fit, turbo_kit_envelope_mm(*ctx.turbo_kits, k.count, z, *eng->envelope_mm, eng->envelope_layout == "v"));
-                if (!fit.allowed) p.detail += " · does not fit the engine bay (" + fit.reasons.front() + ")";
+                if (!fit.allowed) {
+                    p.detail += " · does not fit the engine bay (" + fit.reasons.front() + ")";
+                    p.fits = false;
+                    p.fit_reason = k.label + " does not fit " + entry_for_fit->title + " (" + fit.reasons.front() + ")";
+                }
             }
             out.push_back(std::move(p));
         }
@@ -1709,6 +1713,15 @@ std::vector<SetupPart> parts_of(const SetupOptionDef& def, const SetupContext& c
             if (!power.empty()) detail += (detail.empty() ? "" : " · ") + power;
             if (e.user) detail += std::string(detail.empty() ? "" : " · ") + "custom, based on " + e.base_name;
             p.detail = detail;
+            if (entry_for_fit != nullptr) {
+                const FitResult fit = check_fit(*entry_for_fit, e);
+                if (!fit.allowed) {
+                    std::string why;
+                    for (const std::string& r : fit.reasons) why += (why.empty() ? "" : "; ") + r;
+                    p.fits = false;
+                    p.fit_reason = e.name + " does not fit " + entry_for_fit->title + (why.empty() ? std::string() : " (" + why + ")");
+                }
+            }
             out.push_back(std::move(p));
         }
     } else if (def.catalog == "fuels" && files.engine) {
@@ -2560,6 +2573,30 @@ ValidationResult validate_setup(const CatalogEntry& entry, const SetupOptionTabl
     }
     result.ok = true;
     return result;
+}
+
+} // namespace rg
+
+namespace rg {
+
+std::vector<SetupPart> visible_parts(const OptionView& view, bool show_all) {
+    std::vector<SetupPart> out;
+    for (const SetupPart& p : view.parts) {
+        if (show_all || p.fits || p.id == "stock") out.push_back(p);
+    }
+    return out;
+}
+
+std::string hidden_parts_reason(const OptionView& view) {
+    std::string first;
+    bool any = false;
+    for (const SetupPart& p : view.parts) {
+        if (p.id == "stock") continue;
+        any = true;
+        if (p.fits) return {};
+        if (first.empty()) first = p.fit_reason;
+    }
+    return any ? first : std::string();
 }
 
 } // namespace rg

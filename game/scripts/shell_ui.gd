@@ -1054,11 +1054,14 @@ func _draw_turbo_kit(kit: Dictionary) -> void:
 	var grid := GridContainer.new()
 	grid.columns = 2
 	_option_box.add_child(grid)
+	_add_hidden_note(kit)
 	for part in kit["parts"]:
 		var installed := str(part["id"]) == str(kit["value"])
+		if not _part_visible(part) and not installed: continue
 		var presentation: Dictionary = part.duplicate()
 		presentation["size"] = str(part.get("detail", ""))
 		var card := _make_component_card(presentation,"INSTALLED" if installed else "Install")
+		_grey_if_unfit(card, part)
 		grid.add_child(card)
 		_buttons["part:turbo_kit:" + str(part["id"])] = card
 		card.pressed.connect(func(): _edit_option("turbo_kit",str(part["id"])); _draw_garage_options())
@@ -1113,11 +1116,14 @@ func _draw_internals() -> void:
 		var grid := GridContainer.new()
 		grid.columns = 2
 		_option_box.add_child(grid)
+		_add_hidden_note(opt)
 		for part in opt["parts"]:
 			var fitted := str(part["id"]) == str(opt["value"])
+			if not _part_visible(part) and not fitted: continue
 			var shown: Dictionary = part.duplicate()
 			shown["size"] = str(part.get("detail", ""))
 			var card := _make_component_card(shown,"INSTALLED" if fitted else "Install")
+			_grey_if_unfit(card, part)
 			grid.add_child(card)
 			_buttons["part:" + id + ":" + str(part["id"])] = card
 			var option_id: String = id
@@ -1126,8 +1132,47 @@ func _draw_internals() -> void:
 	_draw_swap_summary()
 	_focus_garage.call_deferred()
 
+# "Show all" (hidden setting garage.show_all_upgrades, default off): by default an upgrade list holds only what the car can
+# fit; core decides (part "fits"/"fit_reason", option "hidden_reason"), this only filters.
+func _show_all_upgrades() -> bool:
+	return shell != null and bool(shell.get_setting("garage.show_all_upgrades"))
+
+func _part_visible(part: Dictionary) -> bool:
+	return bool(part.get("fits", true)) or _show_all_upgrades()
+
+# A card of a part the car cannot fit (shown only with "show all"): greyed out, the reason as its text, not installable.
+func _grey_if_unfit(card: Control, part: Dictionary) -> void:
+	if bool(part.get("fits", true)): return
+	card.modulate = Color(1, 1, 1, 0.5)
+	if card is BaseButton: card.disabled = true
+	card.tooltip_text = str(part.get("fit_reason", ""))
+
+# One line saying why a list is empty: every choice was hidden because the car cannot fit it.
+func _add_hidden_note(opt: Dictionary) -> void:
+	var why := str(opt.get("hidden_reason", ""))
+	if why.is_empty() or _show_all_upgrades(): return
+	var shown_any := false
+	for part in opt["parts"]:
+		if str(part["id"]) != "stock" and _part_visible(part): shown_any = true
+	if shown_any: return
+	var note := _label("%s: nothing fits. %s" % [str(opt["label"]), why],14,HORIZONTAL_ALIGNMENT_LEFT,true)
+	note.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_option_box.add_child(note)
+
+func _draw_show_all_toggle() -> void:
+	var check := CheckButton.new()
+	check.text = "Show all (including what does not fit)"
+	check.button_pressed = _show_all_upgrades()
+	check.toggled.connect(func(on: bool):
+		shell.set_setting("garage.show_all_upgrades", on)
+		shell.save_settings()
+		_draw_garage_options())
+	_option_box.add_child(check)
+	_buttons["show_all_upgrades"] = check
+
 func _draw_upgrades() -> void:
 	_option_box.add_child(_label(" / ".join(_garage_path) if not _garage_path.is_empty() else "Upgrade categories",20,HORIZONTAL_ALIGNMENT_LEFT))
+	_draw_show_all_toggle()
 	if _garage_path.is_empty():
 		_draw_tiles(["Engine", "Chassis", "Wheels", "Swaps", "Drivetrain", "Appearance & assists"])
 		return
@@ -1186,7 +1231,9 @@ func _draw_upgrades() -> void:
 				if str(part["id"]) == "hyper_na": continue
 				if str(part["id"]).contains("single") != single: continue
 			var installed := str(part["id"]) == str(opt["value"])
+			if not _part_visible(part) and not installed: continue
 			var card := _make_component_card(part,"INSTALLED" if installed else "Install")
+			_grey_if_unfit(card, part)
 			grid.add_child(card)
 			_buttons["part:" + str(opt["id"]) + ":" + str(part["id"])] = card
 			card.pressed.connect(func(): _edit_option(str(opt["id"]),str(part["id"])); _draw_garage_options())

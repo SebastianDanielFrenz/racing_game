@@ -228,15 +228,42 @@ F1 holds more; `rg/engine_internals.h`, `data/engines/engine_internals.json` rg.
 parts, garage Upgrades > Engine > Internals (options `engine_rods`, `engine_pistons`, `engine_crankshaft`,
 `engine_valve_springs`, catalog `engine_internals`):
 
-| Part | Grades ([AS] limit, mass vs stock) |
+| Part | Grades ([AS] rating, mass vs stock) |
 |---|---|
-| Connecting rods | stock powder-forged 21 m/s; forged steel H-beam 25 m/s x1.05; titanium 28 m/s x0.65 |
-| Pistons | stock cast 21 m/s; hypereutectic 23 m/s x0.97; forged 2618 26 m/s x0.92 |
-| Crankshaft | stock cast iron 21 m/s; forged steel 25 m/s x1.0; billet steel 27 m/s x0.9 |
-| Valve springs | stock 1.0 x limiter; uprated 1.25 x x1.15; race 1.45 x x1.0 |
+| Connecting rods (tensile load, kN per litre of cylinder volume) | cast steel (economy) 26 x1.10 (below stock); stock powder-forged 40; forged steel H-beam 56 x1.05; titanium 70 x0.65 |
+| Pistons (mean piston speed) | low-silicon cast 18 m/s x1.05 (below stock); stock cast 21 m/s; hypereutectic 23 m/s x0.97; forged 2618 26 m/s x0.92 |
+| Crankshaft (mean piston speed) | lightweight cast 18.5 m/s x0.85 (below stock); stock cast iron 21 m/s; forged steel 25 m/s x1.0; billet steel 27 m/s x0.9 |
+| Valve springs (x factory limiter) | weak single 0.85 x x0.85 (below stock); stock 1.0 x; uprated dual 1.25 x x1.15; race beehive 1.45 x x1.0 |
+
+**Connecting-rod load** (owner on PR #21: the load on the rod scales with the piston's weight). The rod is rated by the
+peak inertial tension at TDC on the exhaust stroke, not by piston speed:
+
+    F = m_recip x (S / 2) x w^2 x (1 + lambda)
+
+`m_recip` = the piston set (pin and rings included) of ONE cylinder + one third of the rod's own mass
+(`rod_small_end_share`), both from the installed grades' mass factors; `S` = stroke; `w` = 2 pi rpm / 60;
+`lambda` = crank radius / rod length (`rod_crank_ratio` 0.3 [AS], one ratio for every engine because the engine data
+carries no rod length yet; use the engine's own once it does). A rod grade's rating is `limit` x (displacement / cylinders)
+newtons. The rpm where the rod reaches it is `w = sqrt(rating / (m_recip x S/2 x (1 + lambda)))`, so a lighter piston
+grade (forged 0.92) raises it, a heavier one (low-silicon cast 1.05) lowers it, and lighter rods lower the load too. A
+stock rod on stock pistons holds at least `stock_margin` x the factory limiter (the margin is on the engine speed).
+
+**Weakest part.** Every bottom-end part is reduced to the engine speed at which it reaches its rating (piston speed ->
+rpm = v x 60 / (2 S); rod load as above): the lowest one is the engine's safe rpm and the part the setup check names. The
+rod's rating is displayed there as the equivalent mean piston speed (`limit`) with its rpm (`limit_rpm`).
+
+**Downgrades.** The first grade is always stock; a grade whose table figure is below stock's keeps its own figure instead of
+being lifted to the engine's stock rating, so it may sit below what the factory limiter needs and then the setup check warns
+(`MeanPistonSpeed` / `ValveFloat`, naming the part) at the stock rev limit; the card says "below stock". Stock itself never
+warns. Upgrades still never rate below stock.
+
+**Upgrade lists show what fits.** By default the garage upgrade lists (turbo kits, engine swaps and the other catalog option
+cards) hide a choice the car cannot fit; each `SetupPart` carries `fits` / `fit_reason` (core, `visible_parts`,
+`hidden_parts_reason`). A tile whose choices are all hidden shows one line with the reason. A "Show all" toggle in the
+upgrade panel (hidden setting `garage.show_all_upgrades`, default off) lists them greyed out with their reason.
 
 - A stock part rates at least `stock_margin` (1.15) x the factory figure (piston speed at the engine's own limiter, or
-  the limiter), so no car as built warns; an upgrade never rates below stock. The engine's piston-speed limit is its
+  the limiter), so no car as built warns; an upgrade never rates below stock. The engine's limit is its
   weakest rod / piston / crank (titanium rods on a cast crank still break the crank).
 - Masses: stock set = kg per litre x displacement, a grade = stock x `mass_factor`; the part-mass tree gets the
   DIFFERENCE under `engine.internals.<kind>` (negative for lighter parts), so the drive's chassis mass follows. The

@@ -2,18 +2,23 @@
   "format": "rg.engine_internals/1",
   "source": "Swappable engine internals (owner on PR #21: the maximum safe piston speed depends on the material of the parts; a titanium connecting rod as in F1 holds higher speeds). One entry per part kind with material grades. Damage-model data: nothing fails in the simulation yet, the garage setup check (limit advisor) warns, and every limit names the part that would take the damage. All figures [AS] with the reasoning per entry.",
   "stock_margin": 1.15,
-  "stock_margin_source": "[AS] stock parts are rated for what the factory runs: a mean piston speed (or rpm) 15 % above the engine's own limiter, the usual margin a manufacturer leaves over the rev limit. A stock grade's limit is the larger of its table figure and that.",
+  "stock_margin_source": "[AS] stock parts are rated for what the factory runs: a mean piston speed (or rpm) 15 % above the engine's own limiter, the usual margin a manufacturer leaves over the rev limit. A stock grade's limit is the larger of its table figure and that. For the rods the margin is on the engine speed: the stock rod on stock pistons reaches its rating no lower than 1.15 x the limiter.",
+  "rod_crank_ratio": 0.3,
+  "rod_crank_ratio_source": "[AS] lambda = crank radius / connecting-rod length. Road engines run 0.27-0.33 (rod/stroke 1.5-1.9); 0.3 for every engine because the engine data has no rod length yet. Use the engine's own rod length once its data carries one.",
+  "rod_small_end_share": 0.3333,
+  "rod_small_end_share_source": "[AS] the usual split of a connecting rod for the reciprocating mass: about 1/3 moves with the piston (small end), 2/3 rotates with the crank pin.",
   "parts": [
     {
       "kind": "connecting_rods",
       "label": "Connecting rods",
-      "limit_kind": "mean_piston_speed",
+      "limit_kind": "rod_load",
       "stock_mass_per_litre_kg": 1.2,
       "mass_source": "[AS] a set of rods weighs about 1.2 kg per litre of displacement (a 500 cm3 cylinder's steel rod ~0.6 kg with its bolts and big-end bearing shells).",
       "grades": [
-        {"id": "stock", "label": "Stock (powder-forged steel)", "limit": 21.0, "mass_factor": 1.0, "source": "[AS] sintered/powder-forged cracked-cap rods of a passenger engine: about 20-22 m/s mean piston speed before the rod bolts and the small end become the limit."},
-        {"id": "forged_steel", "label": "Forged steel (H-beam)", "limit": 25.0, "mass_factor": 1.05, "source": "[AS] 4340 forged H-beam rods with ARP bolts, the usual performance upgrade: about 25 m/s, slightly heavier than stock."},
-        {"id": "titanium", "label": "Titanium", "limit": 28.0, "mass_factor": 0.65, "source": "[AS] Ti-6Al-4V rods as in F1 and top-level racing (F1 V8s ran ~26 m/s at 19-20k rpm): about 28 m/s and 35 % lighter than steel."}
+        {"id": "stock", "label": "Stock (powder-forged steel)", "limit": 40000, "mass_factor": 1.0, "source": "[AS] sintered/powder-forged cracked-cap rods of a passenger engine. The rating is a tensile load per litre of CYLINDER volume (one rod = this x displacement / cylinders): 40 kN per litre, i.e. about 20 kN for a 500 cm3 cylinder, which a stock rod on stock pistons reaches near 8,100 rpm at 76 mm stroke (rod bolts and small end are the limit). The stock rule lifts it where an engine's limiter needs more."},
+        {"id": "cast_steel", "label": "Cast steel (economy)", "limit": 26000, "mass_factor": 1.1, "source": "[AS] cheap cast-steel rods as in low-cost or very old engines: porous and not shot-peened, so fatigue limits them at about 65 % of the stock rod's tension (26 kN per litre of cylinder), and the casting needs thicker sections, so about 10 % more mass. Rated below what the factory limiter of most engines needs, so an engine run to its stock limiter warns."},
+        {"id": "forged_steel", "label": "Forged steel (H-beam)", "limit": 56000, "mass_factor": 1.05, "source": "[AS] 4340 forged H-beam rods with ARP bolts, the usual performance upgrade: about 1.4 times the stock rod's tension (56 kN per litre of cylinder), slightly heavier than stock."},
+        {"id": "titanium", "label": "Titanium", "limit": 70000, "mass_factor": 0.65, "source": "[AS] Ti-6Al-4V rods as in F1 and top-level racing: about 1.75 times the stock rod's tension (70 kN per litre of cylinder) at 35 % less mass, which also lowers the load itself (a third of the rod moves with the piston)."}
       ]
     },
     {
@@ -24,6 +29,7 @@
       "mass_source": "[AS] pistons with pins and rings, about 0.7 kg per litre (a 500 cm3 cylinder's piston set ~0.35 kg).",
       "grades": [
         {"id": "stock", "label": "Stock (cast aluminium)", "limit": 21.0, "mass_factor": 1.0, "source": "[AS] cast eutectic aluminium pistons: ring land and pin boss fatigue limit them near 20-22 m/s."},
+        {"id": "low_silicon_cast", "label": "Low-silicon cast aluminium", "limit": 18.0, "mass_factor": 1.05, "source": "[AS] a cheap low-silicon cast piston with thicker crown and skirt: softer ring lands, about 18 m/s, 5 % heavier than the stock eutectic piston."},
         {"id": "hypereutectic", "label": "Hypereutectic aluminium", "limit": 23.0, "mass_factor": 0.97, "source": "[AS] high-silicon cast pistons: harder, a little stronger and lighter, about 23 m/s."},
         {"id": "forged", "label": "Forged aluminium (2618)", "limit": 26.0, "mass_factor": 0.92, "source": "[AS] forged 2618 pistons with short skirts as in racing: about 26 m/s, lighter than cast."}
       ]
@@ -36,6 +42,7 @@
       "mass_source": "[AS] about 6 kg of crankshaft per litre (a 2.0 L four's cast crank ~12 kg).",
       "grades": [
         {"id": "stock", "label": "Stock (cast iron)", "limit": 21.0, "mass_factor": 1.0, "source": "[AS] nodular cast iron cranks of passenger engines: torsional and bending fatigue near 20-22 m/s."},
+        {"id": "lightweight_cast", "label": "Lightweight cast", "limit": 18.5, "mass_factor": 0.85, "source": "[AS] a thin-web cast crank with smaller counterweights, saving 15 % mass but with less fatigue margin: about 18.5 m/s, below a stock crank."},
         {"id": "forged_steel", "label": "Forged steel", "limit": 25.0, "mass_factor": 1.0, "source": "[AS] forged 4340 steel crank: about 25 m/s at a similar mass."},
         {"id": "billet_steel", "label": "Billet steel (knife-edged)", "limit": 27.0, "mass_factor": 0.9, "source": "[AS] crank machined from a billet with knife-edged counterweights: about 27 m/s and 10 % lighter."}
       ]
@@ -48,6 +55,7 @@
       "mass_source": "[AS] valve springs with retainers and keepers, about 0.25 kg per litre (four valves per cylinder).",
       "grades": [
         {"id": "stock", "label": "Stock", "limit": 1.0, "mass_factor": 1.0, "source": "[AS] stock springs keep the valves on the cam up to the factory limiter plus the stock margin, then float."},
+        {"id": "weak_single", "label": "Weak single springs", "limit": 0.85, "mass_factor": 0.85, "source": "[AS] light single springs with a low seat pressure: valve float starts at about 0.85 x the factory limiter, so an engine run to its stock limiter floats its valves. 15 % lighter than stock."},
         {"id": "uprated", "label": "Uprated (dual springs)", "limit": 1.25, "mass_factor": 1.15, "source": "[AS] stiffer dual springs: valve float moves to about 1.25 x the factory limiter, a little heavier."},
         {"id": "race", "label": "Race (beehive, titanium retainers)", "limit": 1.45, "mass_factor": 1.0, "source": "[AS] beehive springs with titanium retainers: about 1.45 x the factory limiter at the stock mass. Beyond this a real engine needs pneumatic valves (F1)."}
       ]

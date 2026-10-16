@@ -70,6 +70,10 @@ struct SetupPart {
     // A catalog option may group its parts (the gearbox list: "Manual" / "Automatic" / "CVT") and give each a second line.
     std::string section;   // "" = not grouped
     std::string subtitle;  // kind and focus, e.g. "Sequential · Race · straight-cut"; detail holds the numbers
+    // False when the car cannot take this choice (a turbo kit or engine that does not fit the engine bay): `fit_reason` says why
+    // in the player's words. The garage hides such a choice by default ("show all" lists it greyed out with the reason).
+    bool fits = true;
+    std::string fit_reason;
 };
 
 struct SetupOptionDef {
@@ -206,6 +210,15 @@ struct OptionView {
     int list_size = 0;                 // ScaleList: number of entries
     std::vector<double> stock_numbers; // ScaleList: stock leaf values (gear ratios) for display
 };
+
+// The upgrade lists show only what the car can fit unless the player asks for everything (settings key
+// kShowAllUpgradesKey, hidden, default off). The stock choice is never hidden.
+inline constexpr const char* kShowAllUpgradesKey = "garage.show_all_upgrades";
+// The parts of an option the garage lists: every part, or with show_all == false only those that fit (plus stock).
+std::vector<SetupPart> visible_parts(const OptionView& view, bool show_all);
+// "" while at least one non-stock part fits (or the option has none); else the reason the first hidden one gives, so a tile
+// with an empty list can say why ("<label>: <reason>").
+std::string hidden_parts_reason(const OptionView& view);
 
 // How the garage shows and types ONE number of an option (a Scale, a BrakeBias, one gear of a ScaleList) in the units the
 // player thinks in. displayed = stored x multiplier; every field comes from the data and the car's stock values.
