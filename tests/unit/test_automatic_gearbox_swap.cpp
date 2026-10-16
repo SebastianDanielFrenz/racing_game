@@ -26,6 +26,7 @@
 #include <filesystem>
 #include <memory>
 #include <string>
+#include <utility>
 #include <variant>
 #include <vector>
 
@@ -431,7 +432,8 @@ struct AutoDrive {
 };
 // The car_sedan with an automatic on a flat tessellated ground: start the engine, select D, release the brake and creep
 // with no throttle for creep_s, then full throttle for drive_s.
-AutoDrive drive_auto(const Fixture& f, const std::string& box, double creep_s, double drive_s, const std::string& car_id = "car_sedan") {
+AutoDrive drive_auto(const Fixture& f, const std::string& box, double creep_s, double drive_s,
+                     const std::string& car_id = "car_sedan", int stop_cycles = 0) {
     const rg::CatalogEntry& car = f.entry(car_id);
     rg::ScopedWorkDir dir(f.ctx.work_root, "drive_" + box);
     const rg::MaterialisedSetup m = rg::materialise_setup(car, f.table, f.ctx, setup_of(car.id, box), dir.path());
@@ -486,6 +488,28 @@ AutoDrive drive_auto(const Fixture& f, const std::string& box, double creep_s, d
             out.min_cvt_ratio = std::min(out.min_cvt_ratio, static_cast<double>(pt.cvt_ratio));
         }
         if (pt.engine_state != ps::drivetrain::EngineState::Running) out.stalled = true;
+    }
+    for (int cycle = 0; cycle < stop_cycles; ++cycle) {
+        for (int phase = 0; phase < 2; ++phase) {
+            world.set_control("throttle", phase == 0 ? 0.0 : 0.3);
+            world.set_control("brake", phase == 0 ? 1.0 : 0.0);
+            for (int i = 0; i < 240 * (phase == 0 ? 8 : 5); ++i) {
+                session.step();
+                const auto pt = world.powertrain_state(vid);
+                if (pt.engine_state != ps::drivetrain::EngineState::Running) {
+                    if (!out.stalled) {
+                        std::printf("RG_DCT_STALL car=%s box=%s cycle=%d phase=%d t=%.3f rpm=%.1f "
+                                    "gear=%d target=%d clutch=%.4f speed=%.3f\n",
+                                    car_id.c_str(), box.c_str(), cycle, phase, i / 240.0, double(pt.engine_rpm),
+                                    int(pt.gear), int(pt.gear_target), double(pt.clutch_engagement), speed());
+                    }
+                    out.stalled = true;
+                }
+            }
+            INFO("stop/start cycle " << cycle << " phase " << phase << " in " << car_id);
+            if (phase == 0) CHECK(speed() < 0.25);
+            else CHECK(speed() > 1.0);
+        }
     }
     out.end_kmh = speed() * 3.6;
     return out;
@@ -609,5 +633,15 @@ TEST_CASE("cvt gearbox: the sedan with a CVT creeps and drives from rest on the 
         CHECK(d.end_kmh > 100.0);
         std::printf("RG_CVT_DRIVE %s creep=%.3f m/s ratio %.3f..%.3f max_rpm=%.0f end=%.1f km/h\n", box, d.creep_mps,
                     d.max_cvt_ratio, d.min_cvt_ratio, d.max_rpm, d.end_kmh);
+    }
+}
+
+TEST_CASE("dual clutch: repeated braking and part-throttle launches do not stall", "[automatic][dct_stop_start]") {
+    Fixture f;
+    for (const auto& car_box : {std::pair{"car_sedan", "dct_7"}, std::pair{"car_hyper", "hyper_7dct"}}) {
+        INFO(car_box.first);
+        const auto d = drive_auto(f, car_box.second, 2.0, 8.0, car_box.first, 3);
+        REQUIRE(d.started);
+        CHECK_FALSE(d.stalled);
     }
 }
