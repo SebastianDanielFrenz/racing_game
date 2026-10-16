@@ -173,7 +173,9 @@ bool RgTerrainView::load_synthetic_preview(double spawn_x, double spawn_y, doubl
 
 godot::Dictionary RgTerrainView::get_road_visual_tile(int x,int y,double lift) {
     godot::Dictionary out;if(!terrain_)return out;
-    const g2m::TileKey key{terrain_->frame().zone(),2,x,y};const auto mesh=terrain_->road_visual_tile(key,lift);
+    const g2m::TileKey key{terrain_->frame().zone(),2,x,y};const auto shared=terrain_->road_visual_tile_shared(key,lift);
+    if(!shared)return out;
+    const auto& mesh=*shared;
     godot::PackedVector3Array points,normals;godot::PackedVector2Array uv,uv2;godot::PackedColorArray colours;godot::PackedInt32Array indices;
     for(const auto& v:mesh.vertices){points.append({-v.y,v.z,-v.x});normals.append({0,1,0});uv.append({v.u,v.v});uv2.append({v.width,v.fade});const int flags=static_cast<int>(v.flags)|(v.verge>.5f?256:0);colours.append({v.lanes/32,v.forward/32,static_cast<float>(flags&255)/255,static_cast<float>(flags>>8)/255});}
     for(auto i:mesh.indices)indices.append(i);

@@ -1,13 +1,17 @@
 #include "rg/route_surface_mesh.h"
 
 #include "g2m/layer/road_geom_tile.h"
+#include "g2m/core/geom/project.h"
 #include "g2m/world/road_structures.h"
 
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <cstdlib>
 #include <cstdint>
+#include <optional>
 #include <string>
+#include <utility>
 
 namespace rg {
 namespace {
@@ -34,6 +38,111 @@ int material_flags(g2m::SurfaceKind surface, bool paved, g2m::LaneKind kind) {
 bool owned(const g2m::TileKey& key, double e, double n) {
     return std::floor(e / static_cast<double>(key.size_m())) == key.x &&
            std::floor(n / static_cast<double>(key.size_m())) == key.y;
+}
+
+struct PathMaterial {
+    g2m::SurfaceKind surface = g2m::SurfaceKind::Dirt;
+    bool paved = false;
+    double width_m = 1.5;
+};
+
+std::optional<double> clean_positive_width(std::optional<std::string_view> value) {
+    if (!value) return std::nullopt;
+    const std::string text(*value);
+    char* end = nullptr;
+    const double width = std::strtod(text.c_str(), &end);
+    if (end == text.c_str() || *end != '\0' || !std::isfinite(width) || width < 0.6 || width > 12.0)
+        return std::nullopt;
+    return width;
+}
+
+std::optional<PathMaterial> path_material(const g2m::osm::OsmData& data, const g2m::osm::Way& way) {
+    const auto tags = data.tags_of(way);
+    const auto highway = data.tag(tags, "highway");
+    if (!highway) return std::nullopt;
+    if (data.tag(tags, "area").value_or(std::string_view{}) == "yes") return std::nullopt;
+    // These pedestrian/cycle ways are deliberately separate from the drivable road graph. Carriageways, tracks,
+    // service roads and junctions continue to come from the served RoadGeomTile path above.
+    double default_width = 1.5;
+    if (*highway == "cycleway") default_width = 2.0;
+    else if (*highway == "pedestrian") default_width = 3.0;
+    else if (*highway == "steps") default_width = 1.2;
+    else if (*highway == "bridleway") default_width = 2.0;
+    else if (*highway != "footway" && *highway != "path") return std::nullopt;
+
+    const auto footway = data.tag(tags, "footway");
+    const auto surface_tag = data.tag(tags, "surface");
+    PathMaterial result;
+    result.width_m = clean_positive_width(data.tag(tags, "width")).value_or(default_width);
+    if (surface_tag) {
+        const std::string_view s = *surface_tag;
+        if (s == "asphalt") { result.surface = g2m::SurfaceKind::Asphalt; result.paved = true; }
+        else if (s == "concrete") { result.surface = g2m::SurfaceKind::Concrete; result.paved = true; }
+        else if (s == "paving_stones") { result.surface = g2m::SurfaceKind::PavingStones; result.paved = true; }
+        else if (s == "sett" || s == "cobblestone") { result.surface = g2m::SurfaceKind::Sett; result.paved = true; }
+        else if (s == "gravel" || s == "fine_gravel") result.surface = g2m::SurfaceKind::Gravel;
+        else if (s == "compacted" || s == "unpaved") result.surface = g2m::SurfaceKind::Compacted;
+        else if (s == "grass") result.surface = g2m::SurfaceKind::Grass;
+        else if (s == "sand") result.surface = g2m::SurfaceKind::Sand;
+        else result.surface = g2m::SurfaceKind::Dirt;
+    } else if ((*highway == "footway" && footway && *footway == "sidewalk") || *highway == "pedestrian") {
+        result.surface = g2m::SurfaceKind::PavingStones;
+        result.paved = true;
+    } else if (*highway == "cycleway") {
+        result.surface = g2m::SurfaceKind::Asphalt;
+        result.paved = true;
+    }
+    return result;
+}
+
+struct Point2 { double e = 0, n = 0; };
+
+Point2 add(Point2 a, Point2 b) { return {a.e + b.e, a.n + b.n}; }
+Point2 sub(Point2 a, Point2 b) { return {a.e - b.e, a.n - b.n}; }
+Point2 scale(Point2 a, double s) { return {a.e * s, a.n * s}; }
+double dot(Point2 a, Point2 b) { return a.e * b.e + a.n * b.n; }
+double length(Point2 a) { return std::hypot(a.e, a.n); }
+Point2 unit(Point2 a) { const double d = length(a); return d > 1e-8 ? scale(a, 1.0 / d) : Point2{}; }
+
+std::vector<Point2> round_path_corners(const std::vector<Point2>& source) {
+    if (source.size() < 3) return source;
+    std::vector<Point2> rounded;
+    rounded.reserve(source.size() * 3);
+    rounded.push_back(source.front());
+    for (std::size_t i = 1; i + 1 < source.size(); ++i) {
+        const Point2 in = unit(sub(source[i], source[i - 1]));
+        const Point2 out = unit(sub(source[i + 1], source[i]));
+        const double before = length(sub(source[i], source[i - 1]));
+        const double after = length(sub(source[i + 1], source[i]));
+        const double turn = dot(in, out);
+        if (before < 0.1 || after < 0.1 || turn > 0.985 || turn < -0.8) {
+            rounded.push_back(source[i]);
+            continue;
+        }
+        const double trim = std::min({2.0, before * 0.25, after * 0.25});
+        if (trim < 0.25) { rounded.push_back(source[i]); continue; }
+        const Point2 entry = sub(source[i], scale(in, trim));
+        const Point2 exit = add(source[i], scale(out, trim));
+        rounded.push_back(entry);
+        const int steps = std::clamp(static_cast<int>(std::ceil(trim * 1.5)), 2, 8);
+        for (int j = 1; j < steps; ++j) {
+            const double t = static_cast<double>(j) / steps, one = 1.0 - t;
+            rounded.push_back(add(add(scale(entry, one * one), scale(source[i], 2.0 * one * t)),
+                                  scale(exit, t * t)));
+        }
+        rounded.push_back(exit);
+    }
+    rounded.push_back(source.back());
+
+    std::vector<Point2> dense;
+    dense.push_back(rounded.front());
+    for (std::size_t i = 0; i + 1 < rounded.size(); ++i) {
+        const Point2 a = rounded[i], b = rounded[i + 1];
+        const int segments = std::max(1, static_cast<int>(std::ceil(length(sub(b, a)) / 1.0)));
+        for (int j = 1; j <= segments; ++j)
+            dense.push_back(add(a, scale(sub(b, a), static_cast<double>(j) / segments)));
+    }
+    return dense;
 }
 
 } // namespace
@@ -178,6 +287,88 @@ void append_route_surface_mesh(g2m::world::RoadRibbonTile& mesh, const g2m::Road
                     mesh.indices.insert(mesh.indices.end(), {a, b, a + 1, a + 1, b, b + 1});
                 }
             }
+        }
+    }
+}
+
+void append_standalone_path_mesh(g2m::world::RoadRibbonTile& mesh, const g2m::OsmTile& osm,
+                                const g2m::TileKey& key, const g2m::world::RoadRibbonGround& ground,
+                                double lift_m) {
+    if (!ground) return;
+    mesh.key = key;
+    const double ox = static_cast<double>(key.min_easting()), oy = static_cast<double>(key.min_northing());
+    const auto zone = key.zone;
+    const g2m::geo::Utm utm;
+    const auto& data = osm.data;
+    constexpr int kUnpaved = 8192;
+    constexpr int kWalkway = 32768;
+
+    for (const auto& way : data.ways) {
+        const auto material = path_material(data, way);
+        if (!material || way.refs_count < 2) continue;
+        const auto tags = data.tags_of(way);
+        if (data.tag(tags, "bridge").value_or(std::string_view{}) == "yes" ||
+            data.tag(tags, "tunnel").value_or(std::string_view{}) == "yes") continue;
+        std::vector<Point2> original;
+        original.reserve(way.refs_count);
+        bool valid = true;
+        for (const auto id : data.refs_of(way)) {
+            const auto* node = data.find_node(id);
+            if (!node) { valid = false; break; }
+            const auto projected = g2m::geom::project_e7_to_mm(utm, zone, node->lat, node->lon);
+            if (!projected) { valid = false; break; }
+            const Point2 p{static_cast<double>(projected->x) / 1000.0,
+                           static_cast<double>(projected->y) / 1000.0};
+            if (original.empty() || length(sub(p, original.back())) > 0.05) original.push_back(p);
+        }
+        if (!valid || original.size() < 2) continue;
+        const auto path = round_path_corners(original);
+        if (path.size() < 2) continue;
+        const double half = material->width_m * 0.5;
+        int route_flags = (material->paved
+            ? material_flags(material->surface, true, g2m::LaneKind::Sidewalk)
+            : material_flags(material->surface, false, g2m::LaneKind::Sidewalk)) | kWalkway;
+        if (!material->paved) route_flags |= kUnpaved;
+        const float flags = static_cast<float>(route_flags);
+        const float surface = static_cast<float>(material->surface);
+        for (std::size_t i = 0; i + 1 < path.size(); ++i) {
+            const Point2 midpoint = scale(add(path[i], path[i + 1]), 0.5);
+            if (!owned(key, midpoint.e, midpoint.n)) continue;
+            const Point2 tangent = unit(sub(path[i + 1], path[i]));
+            if (length(tangent) < 0.5) continue;
+            const auto cross_section = [&](std::size_t at) {
+                const Point2 before = at == 0 ? tangent : unit(sub(path[at], path[at - 1]));
+                const Point2 after = at + 1 == path.size() ? tangent : unit(sub(path[at + 1], path[at]));
+                const Point2 n0{-before.n, before.e}, n1{-after.n, after.e};
+                Point2 normal = unit(add(n0, n1));
+                if (length(normal) < 0.5) normal = n1;
+                const double denom = std::max(0.5, std::abs(dot(normal, n1)));
+                const double offset = std::min(half / denom, half * 2.0);
+                return std::pair<Point2, Point2>{add(path[at], scale(normal, offset)),
+                                                  sub(path[at], scale(normal, offset))};
+            };
+            const auto [left0, right0] = cross_section(i);
+            const auto [left1, right1] = cross_section(i + 1);
+            const std::array<Point2,4> corners{left0,right0,left1,right1};
+            std::array<double,4> heights{};
+            bool has_ground = true;
+            for (std::size_t j = 0; j < corners.size(); ++j) {
+                const auto h = ground(corners[j].e, corners[j].n);
+                if (!h) { has_ground = false; break; }
+                heights[j] = *h + lift_m + 0.01;
+            }
+            if (!has_ground) continue;
+            const auto first = static_cast<std::int32_t>(mesh.vertices.size());
+            const double station0 = static_cast<double>(i), station1 = static_cast<double>(i + 1);
+            const auto vertex = [&](Point2 p, double z, float lateral, double station) {
+                mesh.vertices.push_back({static_cast<float>(p.e - ox), static_cast<float>(p.n - oy),
+                    static_cast<float>(z), lateral, static_cast<float>(station),
+                    static_cast<float>(material->width_m), 1.0f, surface, 0.0f,
+                    static_cast<float>(route_flags), 0.0f});
+            };
+            vertex(left0, heights[0], 1.0f, station0); vertex(right0, heights[1], 0.0f, station0);
+            vertex(left1, heights[2], 1.0f, station1); vertex(right1, heights[3], 0.0f, station1);
+            mesh.indices.insert(mesh.indices.end(), {first, first+1, first+2, first+1, first+3, first+2});
         }
     }
 }

@@ -31,6 +31,7 @@ add_executable(rg_unit_tests
   test_terrain_smoothing.cpp
   test_route_road_coverage.cpp
   test_route_road_render_path.cpp
+  test_route_standalone_paths.cpp
   test_fixed_rate_loop.cpp
   test_terrain_view_streamer.cpp
   test_render_focus.cpp

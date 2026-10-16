@@ -451,12 +451,100 @@ std::shared_ptr<const g2m::RoadGeomTile> WorldTerrain::road_geometry_at(double e
 }
 
 g2m::world::RoadRibbonTile WorldTerrain::road_visual_tile(const g2m::TileKey& key,double lift) {
-    const auto geometry=road_geometry_at(key.min_easting()+512,key.min_northing()+512);
-    if(!geometry)return {};
-    const auto ground=[this,key](double e,double n){return g2m::world::sample_height_bilinear([this](const auto& k){return height_tile_shared(k).tile.get();},key.zone,0,0,e,n);};
-    auto mesh=g2m::world::build_road_ribbons(*geometry,key,ground,lift,separation_);
-    append_route_surface_mesh(mesh,*geometry,key,ground,lift,separation_);
-    return mesh;
+    const auto shared = road_visual_tile_shared(key, lift);
+    return shared ? *shared : g2m::world::RoadRibbonTile{};
+}
+
+std::shared_ptr<const g2m::world::RoadRibbonTile> WorldTerrain::road_visual_tile_shared(
+    const g2m::TileKey& key, double lift) {
+    constexpr std::size_t kRouteMeshCacheBudget = 64u * 1024u * 1024u;
+    const RouteMeshKey cache_key{key, lift};
+    std::shared_future<std::shared_ptr<const g2m::world::RoadRibbonTile>> future;
+    std::shared_ptr<std::promise<std::shared_ptr<const g2m::world::RoadRibbonTile>>> producer;
+    {
+        std::lock_guard<std::mutex> lock(route_mesh_cache_mutex_);
+        const auto hit = route_mesh_cache_.find(cache_key);
+        if (hit != route_mesh_cache_.end()) {
+            ++route_mesh_cache_hits_;
+            if (hit->second.future.wait_for(std::chrono::seconds(0)) != std::future_status::ready)
+                ++route_mesh_cache_waits_;
+            route_mesh_cache_lru_.splice(route_mesh_cache_lru_.end(), route_mesh_cache_lru_, hit->second.lru);
+            future = hit->second.future;
+        } else {
+            producer = std::make_shared<std::promise<std::shared_ptr<const g2m::world::RoadRibbonTile>>>();
+            future = producer->get_future().share();
+            route_mesh_cache_lru_.push_back(cache_key);
+            route_mesh_cache_.emplace(cache_key,
+                RouteMeshCacheEntry{future, std::prev(route_mesh_cache_lru_.end()), 0, false});
+            ++route_mesh_cache_builds_;
+        }
+    }
+    if (!producer) return future.get();
+
+    try {
+        const auto geometry = road_geometry_at(key.min_easting() + 512, key.min_northing() + 512);
+        const auto ground = [this, key](double e, double n) {
+            return g2m::world::sample_height_bilinear(
+                [this](const auto& height_key) { return height_tile_shared(height_key).tile.get(); },
+                key.zone, 0, 0, e, n);
+        };
+        const auto build_started = std::chrono::steady_clock::now();
+        g2m::world::RoadRibbonTile mesh;
+        if (geometry) {
+            mesh = g2m::world::build_road_ribbons(*geometry, key, ground, lift, separation_);
+            append_route_surface_mesh(mesh, *geometry, key, ground, lift, separation_);
+        } else {
+            mesh.key = key;
+        }
+        if (const auto osm = source_osm_tile(key))
+            append_standalone_path_mesh(mesh, *osm, key, ground, lift);
+        const auto build_elapsed = std::chrono::duration_cast<std::chrono::microseconds>(
+            std::chrono::steady_clock::now() - build_started).count();
+        auto immutable = std::make_shared<const g2m::world::RoadRibbonTile>(std::move(mesh));
+        producer->set_value(immutable);
+
+        const std::size_t bytes = immutable->vertices.capacity() * sizeof(g2m::world::RoadRibbonVertex) +
+                                  immutable->indices.capacity() * sizeof(std::int32_t);
+        std::lock_guard<std::mutex> lock(route_mesh_cache_mutex_);
+        route_mesh_cache_build_microseconds_ += static_cast<std::uint64_t>(std::max<std::int64_t>(build_elapsed, 0));
+        const auto built = route_mesh_cache_.find(cache_key);
+        if (built != route_mesh_cache_.end()) {
+            built->second.ready = true;
+            built->second.bytes = bytes;
+            route_mesh_cache_resident_bytes_ += bytes;
+        }
+        // Evict completed least-recently-used meshes until the retained geometry fits the budget. In-flight entries
+        // are skipped; a temporary overage is allowed while callers build distinct tiles concurrently.
+        while (route_mesh_cache_resident_bytes_ > kRouteMeshCacheBudget) {
+            bool evicted = false;
+            for (auto lru = route_mesh_cache_lru_.begin(); lru != route_mesh_cache_lru_.end(); ++lru) {
+                const auto candidate = route_mesh_cache_.find(*lru);
+                if (candidate == route_mesh_cache_.end()) {
+                    route_mesh_cache_lru_.erase(lru);
+                    evicted = true;
+                    break;
+                }
+                if (!candidate->second.ready) continue;
+                route_mesh_cache_resident_bytes_ -= candidate->second.bytes;
+                route_mesh_cache_lru_.erase(candidate->second.lru);
+                route_mesh_cache_.erase(candidate);
+                evicted = true;
+                break;
+            }
+            if (!evicted) break;
+        }
+        return immutable;
+    } catch (...) {
+        const auto failure = std::current_exception();
+        try { producer->set_exception(failure); } catch (...) {}
+        std::lock_guard<std::mutex> lock(route_mesh_cache_mutex_);
+        const auto failed = route_mesh_cache_.find(cache_key);
+        if (failed != route_mesh_cache_.end()) {
+            route_mesh_cache_lru_.erase(failed->second.lru);
+            route_mesh_cache_.erase(failed);
+        }
+        std::rethrow_exception(failure);
+    }
 }
 
 std::shared_ptr<const g2m::OsmTile> WorldTerrain::source_osm_tile(const g2m::TileKey& key) {
@@ -720,17 +808,17 @@ std::shared_ptr<const g2m::TerrainClassTile> WorldTerrain::terrain_class_tile(
     // those exact triangles onto the integer-metre physics lattice so their wheel material follows the visible strip.
     auto stamped = std::make_shared<g2m::TerrainClassTile>(*base);
     const auto l2 = key.parent().parent();
-    auto route_mesh = road_visual_tile(l2, 0.0);
+    const auto route_mesh = road_visual_tile_shared(l2, 0.0);
     // A road-geometry fetch can transiently fail while its class product is already available. Do not memoize that
     // incomplete overlay: a later physics fetch can retry geometry and will then align the class to the visible mesh.
-    if (route_mesh.indices.empty()) return base;
+    if (!route_mesh || route_mesh->indices.empty()) return base;
     const auto ground = [this, l2, priority](double e, double n) {
         return g2m::world::sample_height_bilinear(
             [this, priority](const auto& height_key) {
                 return height_tile_shared(height_key, priority).tile.get();
             }, l2.zone, 0, 0, e, n);
     };
-    stamp_route_surface_classes(*stamped, route_mesh, ground);
+    stamp_route_surface_classes(*stamped, *route_mesh, ground);
     {
         std::lock_guard<std::mutex> lock(physics_class_overlay_mutex_);
         const auto [it, inserted] = physics_class_overlay_cache_.emplace(key, stamped);
@@ -742,6 +830,12 @@ std::shared_ptr<const g2m::TerrainClassTile> WorldTerrain::terrain_class_tile(
 WorldTerrain::FetchStats WorldTerrain::fetch_stats() const {
     std::lock_guard<std::mutex> lk(stats_mutex_);
     return stats_;
+}
+
+WorldTerrain::RouteMeshCacheStats WorldTerrain::route_mesh_cache_stats() const {
+    std::lock_guard<std::mutex> lock(route_mesh_cache_mutex_);
+    return RouteMeshCacheStats{route_mesh_cache_hits_, route_mesh_cache_builds_, route_mesh_cache_waits_,
+                               route_mesh_cache_build_microseconds_, route_mesh_cache_resident_bytes_};
 }
 
 WorldTerrain::OsmFetchStats WorldTerrain::osm_fetch_stats() const {

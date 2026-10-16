@@ -31,11 +31,13 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include <array>
+#include <atomic>
 #include <chrono>
 #include <cmath>
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
+#include <exception>
 #include <filesystem>
 #include <memory>
 #include <optional>
@@ -420,10 +422,46 @@ TEST_CASE("corridor incident samples: served geometry classes reduce raw OSM gri
     int class_drawn_not_paved=0,class_paved_not_drawn=0;
     std::size_t unpaved_overlay_vertices=0,walkway_overlay_vertices=0;
     int path_surface_samples=0,path_surface_mismatches=0;
+    double first_l0_class_ms=-1.0,total_l0_class_ms=0.0;
+    int l0_class_calls=0;
+    double first_mesh_request_ms=-1.0;
+    g2m::TileKey warm_mesh_key{};
+    const auto first_key=g2m::tile_key_at(zone,2,points[0].e,points[0].n);
+    REQUIRE(first_key.has_value());
+    std::array<std::shared_ptr<const g2m::world::RoadRibbonTile>,4> cold_meshes{};
+    std::array<std::exception_ptr,4> cold_errors{};
+    std::atomic<int> ready{0};
+    std::atomic<bool> start{false};
+    std::vector<std::thread> cold_workers;
+    const auto cold_started=std::chrono::steady_clock::now();
+    for(std::size_t i=0;i<cold_meshes.size();++i) cold_workers.emplace_back([&,i] {
+        ready.fetch_add(1,std::memory_order_release);
+        while(!start.load(std::memory_order_acquire)) std::this_thread::yield();
+        try { cold_meshes[i]=terrain->road_visual_tile_shared(*first_key,0.018); }
+        catch(...) { cold_errors[i]=std::current_exception(); }
+    });
+    while(ready.load(std::memory_order_acquire)!=static_cast<int>(cold_meshes.size())) std::this_thread::yield();
+    start.store(true,std::memory_order_release);
+    for(auto& worker:cold_workers) worker.join();
+    first_mesh_request_ms=std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-cold_started).count();
+    for(std::size_t i=0;i<cold_meshes.size();++i) {
+        if(cold_errors[i]) std::rethrow_exception(cold_errors[i]);
+        REQUIRE(cold_meshes[i]!=nullptr);
+        CHECK(cold_meshes[i].get()==cold_meshes[0].get());
+    }
+    const auto single_flight=terrain->route_mesh_cache_stats();
+    CHECK(single_flight.builds==1);
+    CHECK(single_flight.waits>0);
     for(const auto& p:points) {
         const auto key=g2m::tile_key_at(zone,2,p.e,p.n);
         REQUIRE(key.has_value());
-        const auto ribbon=terrain->road_visual_tile(*key,0.018);
+        const auto mesh_started=std::chrono::steady_clock::now();
+        const auto shared_ribbon=terrain->road_visual_tile_shared(*key,0.018);
+        REQUIRE(shared_ribbon != nullptr);
+        const auto& ribbon=*shared_ribbon;
+        if(first_mesh_request_ms<0.0)
+            first_mesh_request_ms=std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-mesh_started).count();
+        warm_mesh_key=*key;
         for(const auto& vertex:ribbon.vertices) {
             const int flags=static_cast<int>(std::lround(vertex.flags));
             if((flags&8192)!=0) ++unpaved_overlay_vertices;
@@ -449,7 +487,13 @@ TEST_CASE("corridor incident samples: served geometry classes reduce raw OSM gri
                 [&terrain](const auto& k){return terrain->height_tile_shared(k).tile.get();},zone,0,0,cell_e,cell_n);
             if(!contact_ground || std::abs(*contact_ground-(a.z+b.z+c.z)/3.0)>0.45)
                 continue; // Elevated bridges/decks use the separate structure contact path, not the 2-D ground lattice.
+            const auto class_started=std::chrono::steady_clock::now();
             const auto class_tile=terrain->terrain_class_tile(*cell_key);
+            const double class_ms=std::chrono::duration<double,std::milli>(
+                std::chrono::steady_clock::now()-class_started).count();
+            if(first_l0_class_ms<0.0) first_l0_class_ms=class_ms;
+            total_l0_class_ms+=class_ms;
+            ++l0_class_calls;
             if(!class_tile || class_tile->key!=*cell_key) continue;
             const int ix=static_cast<int>(std::round(e))-static_cast<int>(cell_key->min_easting());
             const int iy=static_cast<int>(std::round(n))-static_cast<int>(cell_key->min_northing());
@@ -521,6 +565,18 @@ TEST_CASE("corridor incident samples: served geometry classes reduce raw OSM gri
                 samples,mismatches,drawn_but_grass,grip_but_not_drawn,class_mismatches,class_drawn_not_paved,class_paved_not_drawn);
     std::printf("TC_ROUTE_SURFACE summary unpaved_vertices=%zu walkway_vertices=%zu sampled_path_materials=%d mismatches=%d\n",
                 unpaved_overlay_vertices,walkway_overlay_vertices,path_surface_samples,path_surface_mismatches);
+    const auto warm_started=std::chrono::steady_clock::now();
+    const auto warm_mesh=terrain->road_visual_tile_shared(warm_mesh_key,0.018);
+    const double warm_mesh_request_ms=std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-warm_started).count();
+    REQUIRE(warm_mesh != nullptr);
+    REQUIRE_FALSE(warm_mesh->indices.empty());
+    const auto mesh_cache=terrain->route_mesh_cache_stats();
+    std::printf("TC_ROUTE_MESH_CACHE hits=%llu builds=%llu waits=%llu build_mesh_s=%.3f resident_mib=%.2f first_request_ms=%.2f warm_shared_lookup_ms=%.2f\n",
+                static_cast<unsigned long long>(mesh_cache.hits),static_cast<unsigned long long>(mesh_cache.builds),
+                static_cast<unsigned long long>(mesh_cache.waits),static_cast<double>(mesh_cache.build_microseconds)/1e6,
+                static_cast<double>(mesh_cache.resident_bytes)/(1024.0*1024.0),first_mesh_request_ms,warm_mesh_request_ms);
+    std::printf("TC_ROUTE_L0_CLASS calls=%d first_ms=%.2f mean_ms=%.2f\n",l0_class_calls,first_l0_class_ms,
+                l0_class_calls>0 ? total_l0_class_ms/l0_class_calls : 0.0);
     // The legacy raster is expected to disagree at the measured road-bed
     // boundaries. At the physics cell centres the served classes agree with
     // the explicit surface mesh; cell-edge uncertainty is bounded by the
@@ -532,6 +588,8 @@ TEST_CASE("corridor incident samples: served geometry classes reduce raw OSM gri
     CHECK(walkway_overlay_vertices > 0);
     CHECK(path_surface_samples > 0);
     CHECK(path_surface_mismatches == 0);
+    CHECK(mesh_cache.hits > 0);
+    CHECK(mesh_cache.resident_bytes <= 64u * 1024u * 1024u);
     terrain.reset();
     std::error_code ec;
     std::filesystem::remove_all(temp,ec);
