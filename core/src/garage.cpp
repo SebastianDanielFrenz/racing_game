@@ -192,6 +192,23 @@ std::unique_ptr<Garage> Garage::open(const GarageConfig& config, std::string* er
         }
     }
     {
+        // Weight-reduction choices -> model nodes to hide (rg/strip_visual.h): optional file, strict when present.
+        std::string path = config.strip_visual_path;
+        if (path.empty()) {
+            const std::string dflt = config.repo_root + "/data/vehicles/strip_visual.json";
+            std::error_code ec;
+            if (fs::is_regular_file(fs::path(dflt), ec)) path = dflt;
+        }
+        if (!path.empty()) {
+            auto table = load_strip_visual(path, &e);
+            if (!table) {
+                if (err != nullptr) *err = e;
+                return nullptr;
+            }
+            g->strip_visual_ = std::make_shared<const StripVisualTable>(std::move(*table));
+        }
+    }
+    {
         const std::string cat = config.gearbox_catalog_path.empty() ? config.repo_root + "/data/gearboxes/gearbox_catalog.json"
                                                                      : config.gearbox_catalog_path;
         auto boxes = GearboxCatalog::open(cat, config.repo_root, &e);
@@ -670,6 +687,24 @@ std::vector<std::string> Garage::working_model_options() const {
     return out;
 }
 
+std::vector<std::string> Garage::hidden_nodes_for(const CatalogEntry& e, const VehicleSetup& setup) const {
+    if (!strip_visual_) return {};
+    std::map<std::string, std::string> fitted; // slot -> part id of every weight-reduction choice other than stock
+    for (const SetupOptionDef& def : options_.options) {
+        if (def.kind != OptionKind::PartChoice || e.interior.count(def.slot) == 0) continue;
+        const auto it = setup.values.find(def.id);
+        if (it != setup.values.end() && std::holds_alternative<std::string>(it->second) && std::get<std::string>(it->second) != "stock") {
+            fitted[def.slot] = std::get<std::string>(it->second);
+        }
+    }
+    return strip_visual_->hidden_nodes(model_stem(e.model_path), fitted);
+}
+
+std::vector<std::string> Garage::working_hidden_nodes() const {
+    const CatalogEntry* e = editing() ? catalog_.find(edit_id_) : nullptr;
+    return e != nullptr ? hidden_nodes_for(*e, working_) : std::vector<std::string>{};
+}
+
 bool Garage::save(std::string* err) {
     if (!editing()) {
         if (err != nullptr) *err = "no vehicle is being edited";
@@ -797,6 +832,8 @@ DriveSelection Garage::prepare_drive(const std::string& id) {
                 d.model_options = m.compiled.model_options;
                 d.modified = true;
             }
+            d.hidden_nodes = hidden_nodes_for(*e, setup);
+            if (!d.hidden_nodes.empty()) d.modified = true;
         }
     }
 

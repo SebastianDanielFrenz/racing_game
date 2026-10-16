@@ -313,7 +313,7 @@ intercooler, charge piping; sized from rotor inertia and air flow, all [AS]). Th
 
 Weight reduction: `part_choice` options in setup_options.json (group "Weight reduction") swap, lighten (a mass factor)
 or remove one interior part per slot; the catalog's per-car `interior` map names the stock parts (masses in
-part_masses.json). Mass only: the model keeps showing the part. A preset's stats mass is its tree with its
+part_masses.json). The model shows the removal where it has a node for the part ("Visual removal" below). A preset's stats mass is its tree with its
 `preset_setup` applied.
 
 A drivetrain layout other than the stock one carries a penalty (owner: "the drivetrain needs to run across the entire
@@ -325,3 +325,26 @@ figures are [AS].
 
 The garage shows it under Chassis -> Weight (`RgGarage.get_mass_breakdown(id)`: total, change against stock, body and
 groups, the drivetrain's parts).
+
+Visual removal (owner on PR #22: "visually remove elements that were removed for weight reduction"): what the model
+shows follows the weight-reduction choices. `data/vehicles/strip_visual.json` (rg.strip_visual/1, `rg/strip_visual.h`,
+Godot-free) maps, per model (the .glb file's stem), a fitted part of a slot (`audio` / `removed`) to the model nodes to
+hide. `Garage::working_hidden_nodes()` (the open setup) and `DriveSelection::hidden_nodes` (the drive) give the list
+(`RgGarage.get_working_colours()` and `prepare_drive()` key `hidden_nodes`); GDScript only toggles visibility:
+`model_options.gd apply(root, rig, options, hidden)` in `vehicle_visual.gd` (drive, cockpit included) and
+`garage_scene.gd` (car and mirror twin), and shows again what the previous call hid. `cockpit_controls.gd pick` skips a
+hidden control, so a removed radio cannot be clicked. A lighter part of the same shape (carbon bonnet, titanium
+fasteners, bucket seats) changes nothing on screen; the weave or a paint tint is an open question.
+`car_mesh_merge.gd` treats rig nodes with a `strip` extra like option parts (kept as their own group), so a node that
+hides is never baked into the body surface.
+
+Per model, `not_separate` in the data says why a slot shows no change: the element is part of the single body mesh
+(no node to hide), or the choice is a lighter part of the same shape. What can be hidden today (committed .glb files):
+the Pico's touchscreen and steering-wheel audio buttons, the Ventura GT's radio buttons and knobs. The generated cars
+need a regenerated model for the rest: tools/cargen now splits out `seat_driver` / `seat_passenger` / `seat_rear`
+(Pico), `seat_driver` / `seat_passenger` (Ventura GT), `seat_rear` (Runabout T) and the door cards `door_card_*` (Pico,
+Ventura GT, as children of the doors) as static nodes tagged `strip` in the rig; the data's `after_regeneration` rules
+name them and a model without them ignores the rule. Regenerating (`python3 tools/cargen/build.py`) needs the owner's
+checkout with the LFS files; the glb, rig, cockpit and flow files are committed together afterwards. The test
+`[strip_visual][data]` checks every catalog car's slots against the data and every live node against the rig file;
+`cockpit_test.gd` checks the hiding and the clicks. Thumbnails (`car_thumbnails.gd`) show the stock car.

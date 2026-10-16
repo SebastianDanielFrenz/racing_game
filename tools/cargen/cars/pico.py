@@ -350,14 +350,20 @@ def build_cabin(m, ck, body):
                          ("throttle", eye_y - 0.11, (0.70, eye_y - 0.11, 0.34))):
         C.pedal(m, ck, name, (0.80, yy, 0.62), pc, name, label=f"{name} pedal")
     # ---- seats
-    for yy in (0.36, -0.36):
+    # Own static nodes (rig extra "strip" = the garage weight-reduction slot) so a setup that takes a seat out can
+    # hide it: seat_driver (left, +y), seat_passenger, seat_rear (the bench). See docs/garage_ui.md "Visual removal".
+    for node_name, slot, yy in (("seat_driver", "seat_driver", 0.36), ("seat_passenger", "seat_passenger", -0.36)):
+        m.node(node_name, None, (-0.18, yy, 0.52), None, strip=slot)
         seat_closed(m, (-0.18, yy, 0.52), width=0.48, recline=0.30, mat="seat", accent="seat_accent",
-                    bolster=0.035)
+                    bolster=0.035, part=node_name)
+    m.node("seat_rear", None, (-1.05, 0.0, 0.50), None, strip="rear_seats")
     seat_closed(m, (-1.05, 0.0, 0.50), width=1.22, recline=0.26, mat="seat", accent=None, headrest=True,
-                headrest_split=2)
+                headrest_split=2, part="seat_rear")
     # ---- door cards (front cards carry the window switches)
     for name, side, x0, x1 in DOORS:
-        door_card(m, name, side, x0 + 0.05, x1 - 0.06, 0.40, 0.92, y=0.68, mat="dash_hard",
+        card = "door_card_" + name[-2:]          # own node under the door (strip = door_trim), moves with it
+        m.node(card, name, m.nodes[name].pivot, None, strip="door_trim")
+        door_card(m, card, side, x0 + 0.05, x1 - 0.06, 0.40, 0.92, y=0.68, mat="dash_hard",
                   top_mat="dash_paint" if name in ("door_FL", "door_FR") else "dash_hard",
                   bottle=True)
         if name in ("door_FL", "door_FR"):

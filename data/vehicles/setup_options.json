@@ -721,7 +721,7 @@
       "label": "Driver seat",
       "group": "Weight reduction",
       "area": "overview",
-      "help": "Swap the driver's seat for a lighter bucket. Mass only: the part stays on the model (visual removal is not built yet).",
+      "help": "Swap the driver's seat for a lighter bucket. The car shows it only where its model has a separate part for it.",
       "kind": "part_choice",
       "slot": "seat_driver",
       "parts": [
@@ -742,7 +742,7 @@
       "label": "Passenger seat",
       "group": "Weight reduction",
       "area": "overview",
-      "help": "Swap the passenger seat for a lighter bucket, or take it out. Mass only: the part stays on the model (visual removal is not built yet).",
+      "help": "Swap the passenger seat for a lighter bucket, or take it out. The car shows it only where its model has a separate part for it.",
       "kind": "part_choice",
       "slot": "seat_passenger",
       "parts": [
@@ -768,7 +768,7 @@
       "label": "Rear seats",
       "group": "Weight reduction",
       "area": "overview",
-      "help": "Take the rear seats out. Mass only: the part stays on the model (visual removal is not built yet).",
+      "help": "Take the rear seats out. The car shows it only where its model has a separate part for it.",
       "kind": "part_choice",
       "slot": "rear_seats",
       "parts": [
@@ -784,7 +784,7 @@
       "label": "Audio system",
       "group": "Weight reduction",
       "area": "overview",
-      "help": "Take the head unit, amplifier and speakers out. Mass only: the part stays on the model (visual removal is not built yet).",
+      "help": "Take the head unit, amplifier and speakers out. The car shows it only where its model has a separate part for it.",
       "kind": "part_choice",
       "slot": "audio",
       "parts": [
@@ -800,7 +800,7 @@
       "label": "Door trim",
       "group": "Weight reduction",
       "area": "overview",
-      "help": "Thin lightweight door cards, or bare door skins. Mass only: the part stays on the model (visual removal is not built yet).",
+      "help": "Thin lightweight door cards, or bare door skins. The car shows it only where its model has a separate part for it.",
       "kind": "part_choice",
       "slot": "door_trim",
       "parts": [
@@ -821,7 +821,7 @@
       "label": "Dashboard",
       "group": "Weight reduction",
       "area": "overview",
-      "help": "A stripped dashboard: gauges and switches only, no console, glovebox or trim panels. Mass only: the part stays on the model (visual removal is not built yet).",
+      "help": "A stripped dashboard: gauges and switches only, no console, glovebox or trim panels. The car shows it only where its model has a separate part for it.",
       "kind": "part_choice",
       "slot": "dashboard",
       "parts": [
@@ -837,7 +837,7 @@
       "label": "Sound deadening",
       "group": "Weight reduction",
       "area": "overview",
-      "help": "Strip the insulation from the floor, doors and bulkhead (louder cabin, not modelled). Mass only: the part stays on the model (visual removal is not built yet).",
+      "help": "Strip the insulation from the floor, doors and bulkhead (louder cabin, not modelled). The car shows it only where its model has a separate part for it.",
       "kind": "part_choice",
       "slot": "sound_deadening",
       "parts": [
@@ -853,7 +853,7 @@
       "label": "Carpets",
       "group": "Weight reduction",
       "area": "overview",
-      "help": "Take the carpets and boot liner out. Mass only: the part stays on the model (visual removal is not built yet).",
+      "help": "Take the carpets and boot liner out. The car shows it only where its model has a separate part for it.",
       "kind": "part_choice",
       "slot": "carpets",
       "parts": [
@@ -869,7 +869,7 @@
       "label": "Spare wheel",
       "group": "Weight reduction",
       "area": "overview",
-      "help": "Leave the spare wheel and jack at home. Mass only: the part stays on the model (visual removal is not built yet).",
+      "help": "Leave the spare wheel and jack at home. The car shows it only where its model has a separate part for it.",
       "kind": "part_choice",
       "slot": "spare_wheel",
       "parts": [
@@ -885,7 +885,7 @@
       "label": "Fasteners",
       "group": "Weight reduction",
       "area": "overview",
-      "help": "Titanium bolts and aluminium brackets for the bolt-on parts. Mass only: the part stays on the model (visual removal is not built yet).",
+      "help": "Titanium bolts and aluminium brackets for the bolt-on parts. The car shows it only where its model has a separate part for it.",
       "kind": "part_choice",
       "slot": "fasteners",
       "parts": [
@@ -901,7 +901,7 @@
       "label": "Bonnet",
       "group": "Weight reduction",
       "area": "overview",
-      "help": "An aluminium or carbon-fibre bonnet in place of the steel one. Mass only: the part stays on the model (visual removal is not built yet).",
+      "help": "An aluminium or carbon-fibre bonnet in place of the steel one. The car shows it only where its model has a separate part for it.",
       "kind": "part_choice",
       "slot": "hood",
       "parts": [

@@ -212,9 +212,44 @@ func _test_model(path: String) -> void:
 		check(parts.hood_variant(rig_file, 820.0) == "hood_scoop", "ventura_gt: an 820 mm engine gets the scoop")
 		parts.apply(root, rig_file, ["hood_scoop"])
 		check(root.find_child("hood_scoop", true, false).visible and not root.find_child("hood_bulge", true, false).visible, "ventura_gt: only the picked hood shows")
+	_test_strip(ck, root, rig_file, spec, eye, name)
 	holder.queue_free()
 	sim.queue_free()
 	await process_frame
+
+# Weight reduction (rg_core strip_visual.h, data/vehicles/strip_visual.json): the nodes of a removed part are hidden by
+# model_options.apply, a hidden control cannot be picked, and the next apply shows everything again.
+func _test_strip(ck: Node3D, root: Node3D, rig_file: String, spec: Dictionary, eye: Node3D, name: String) -> void:
+	var parts := preload("res://scripts/model_options.gd")
+	var table: Variant = JSON.parse_string(FileAccess.get_file_as_string("res://../data/vehicles/strip_visual.json"))
+	var model: Dictionary = (table as Dictionary).get("models", {}).get(name, {})
+	var live := 0
+	var all_nodes: Array = []
+	for rule in model.get("rules", []):
+		all_nodes.append_array(rule["hide"])
+		if bool(rule.get("after_regeneration", false)):
+			continue
+		live += 1
+		var hide: Array = rule["hide"]
+		parts.apply(root, rig_file, [], hide)
+		for n in hide:
+			var node: Node3D = root.find_child(str(n), true, false)
+			check(node != null and not node.visible, "%s: %s/%s hides %s" % [name, rule["slot"], rule["part"], n])
+		for c in spec["controls"]:
+			if not c.has("hit") or not hide.has(str(c["node"])):
+				continue
+			var node: Node3D = root.find_child(str(c["node"]), true, false)
+			var hc: Array = c["hit"]["center"]
+			var centre: Vector3 = node.global_transform * Vector3(float(hc[1]), float(hc[2]), float(hc[0]))
+			var dir := (eye.global_position - centre).normalized()
+			check(ck.pick(centre + dir * 0.12, -dir) != str(c["node"]), "%s: hidden control %s is not clickable" % [name, c["node"]])
+		parts.apply(root, rig_file, [], [])
+		for n in hide:
+			check((root.find_child(str(n), true, false) as Node3D).visible, "%s: %s shows again once the part is back" % [name, n])
+	# names a model has no node for (nodes of a model not regenerated yet) are ignored, the rest still works
+	parts.apply(root, rig_file, [], all_nodes + ["no_such_node"])
+	parts.apply(root, rig_file, [], [])
+	print("RG_COCKPIT %s strip rules=%d live=%d" % [name, model.get("rules", []).size(), live])
 
 # Hazard / indicator stalk / horn switches submit ActionEvents (source CockpitMouse = 3) and follow the projected state.
 func _test_shared_switches(ck: Node3D, sim: FakeSim, spec: Dictionary, name: String) -> void:

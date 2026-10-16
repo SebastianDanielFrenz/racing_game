@@ -442,10 +442,13 @@ def build_cabin(m, ck):
     C.lever(m, ck, "handbrake", (-0.10, TUB_W - 0.08, FLOOR_Z + 0.02), (0.0, 1.0, 0.0), (0.06, 0.0, 0.48),
             "handbrake", 20.0, mat="frame", grip_mat="wood", label="handbrake", grip_r=0.016)
     # ---- buttoned leather benches
+    # The front bench seats driver and passenger in one piece, so it stays on the body; the rear bench is its own
+    # static node (rig extra "strip" = the garage weight-reduction slot rear_seats).
     seat_closed(m, (-0.42, 0.0, FLOOR_Z + 0.34), width=1.12, recline=0.22, mat="leather", headrest=False,
                 depth=0.46, height=0.16, pleats=6)
+    m.node("seat_rear", None, (-1.02, 0.0, FLOOR_Z + 0.36), None, strip="rear_seats")
     seat_closed(m, (-1.02, 0.0, FLOOR_Z + 0.36), width=1.12, recline=0.24, mat="leather", headrest=False,
-                depth=0.44, height=0.16, pleats=6)
+                depth=0.44, height=0.16, pleats=6, part="seat_rear")
     for xs in (-0.42, -1.02):
         for k in range(5):
             for j in range(2):

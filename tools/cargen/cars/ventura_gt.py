@@ -463,15 +463,19 @@ def build_cabin(m, ck, body):
         piv = (0.40, yy, 0.58) if not organ else (0.36, yy, 0.20)
         C.pedal(m, ck, name, piv, pc, name, organ=organ, label=f"{name} pedal")
     # ---- bucket seats, luggage deck behind them
-    for yy in (EYE_Y, -EYE_Y):
+    # Own static nodes (rig extra "strip" = the garage weight-reduction slot): seat_driver (left, +y), seat_passenger.
+    for node_name, yy in (("seat_driver", EYE_Y), ("seat_passenger", -EYE_Y)):
+        m.node(node_name, None, (-0.55, yy, 0.36), None, strip=node_name)
         seat_closed(m, (-0.55, yy, 0.36), width=0.50, recline=0.36, mat="seat", accent="seat_accent", depth=0.52,
-                    height=0.14, bolster=0.05)
+                    height=0.14, bolster=0.05, part=node_name)
     M.rounded_box(mb, (-1.30, 0.0, 0.40), (0.70, 1.30, 0.04), 0.01, "carpet")
     for yy in (0.25, -0.25):
         M.rounded_box(mb, (-1.30, yy, 0.425), (0.66, 0.025, 0.006), 0.002, "trim_black")  # luggage straps
     # ---- door cards with window cranks and chrome pulls
     for name, side, x0, x1 in DOORS:
-        door_card(m, name, side, x0 + 0.05, x1 - 0.08, 0.30, 0.84, y=0.74, mat="dash_hard", top_mat="dash_top")
+        card = "door_card_" + name[-1]            # own node under the door (strip = door_trim), moves with it
+        m.node(card, name, m.nodes[name].pivot, None, strip="door_trim")
+        door_card(m, card, side, x0 + 0.05, x1 - 0.08, 0.30, 0.84, y=0.74, mat="dash_hard", top_mat="dash_top")
         C.rotary_knob(m, ck, f"crank_{name[-1]}", (0.02, side * 0.69, 0.56), (0, -side, 0), 0.03, 0.012,
                       f"window_{name[-1].lower()}", list(range(9)), sweep_deg=1440.0, mat="chrome", part=name,
                       label=f"window crank {name[-1]}", up_hint=(0, 0, 1))
