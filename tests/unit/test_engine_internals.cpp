@@ -223,7 +223,7 @@ TEST_CASE("engine internals: garage options, compiled limits and the part-mass t
     REQUIRE(model.error.empty());
     int seen = 0;
     for (const rg::OptionView& v : model.options) {
-        if (v.def.catalog != "engine_internals") continue;
+        if (v.def.catalog != "engine_internals" || v.def.internal == rg::kCylinderBoreKind) continue; // the bore: test_engine_bore.cpp
         INFO(v.def.id);
         ++seen;
         CHECK(v.available);

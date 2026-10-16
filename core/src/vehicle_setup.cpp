@@ -481,6 +481,38 @@ std::string internals_blocker(const Files& files, const SetupContext& ctx) {
     return engine_internals_refusal(*facts, name);
 }
 
+// The installed engine's facts with the garage bore applied (files.internals[kCylinderBoreKind]): bore, displacement and
+// compression ratio of the bored engine, factory_* the engine file's. What the turbo kit sizes from.
+std::optional<EngineFacts> installed_engine_facts(const Files& files, const SetupContext& ctx, std::string* err) {
+    if (!files.engine) {
+        if (err != nullptr) *err = "This car has no engine.";
+        return std::nullopt;
+    }
+    auto facts = read_engine_facts(files.engine->path, err);
+    if (!facts) return facts;
+    const auto it = files.internals.find(kCylinderBoreKind);
+    if (it != files.internals.end() && it->second != "stock" && ctx.engine_internals) {
+        if (const auto g = bore_geometry(*ctx.engine_internals, *facts, it->second, nullptr); g && g->fits) return bored_engine_facts(*facts, *g);
+    }
+    return facts;
+}
+
+// Why the bore step `id` cannot go on the installed engine ("" = it can; "stock" always can).
+std::string bore_blocker(const Files& files, const SetupContext& ctx, const std::string& id) {
+    const std::string why = internals_blocker(files, ctx);
+    if (!why.empty() || id == "stock") return why;
+    if (!ctx.engine_internals->bore) return "No bore upgrades are available.";
+    const auto facts = read_engine_facts(files.engine->path, nullptr);
+    if (!facts) return "The engine file cannot be read.";
+    std::string name;
+    if (files.swapped) {
+        name = files.swapped->name;
+    } else if (ctx.engines) {
+        if (const EngineEntry* e = ctx.engines->find_by_file(files.engine->path)) name = e->name;
+    }
+    return bore_refusal(*ctx.engine_internals, *facts, id, name);
+}
+
 // File choices are never a filesystem picker: only declared compatible IDs can resolve a path.
 bool file_choice_fits(Files& files, const SetupOptionDef& def, const CatalogEntry& entry, const SetupContext& ctx) {
     if (!entry_offers(entry, def.id)) return false;
@@ -493,6 +525,7 @@ bool file_choice_fits(Files& files, const SetupOptionDef& def, const CatalogEntr
     } else if (def.catalog == "turbo_kits") {
         return turbo_kit_blocker(files, ctx).empty();
     } else if (def.catalog == "engine_internals") {
+        if (def.internal == kCylinderBoreKind) return internals_blocker(files, ctx).empty() && ctx.engine_internals->bore.has_value();
         return internals_blocker(files, ctx).empty() && ctx.engine_internals->find(def.internal) != nullptr;
     } else if (def.catalog == "charge_piping") {
         // Offered wherever a kit can go (the kit is chosen in the same visit); without a kit it changes nothing.
@@ -521,7 +554,7 @@ std::optional<TurboKitBuild> refresh_kit_parts(Files& files, const SetupContext&
                                            [](const PartAttachment& a) { return a.parent_id == "engine" && a.node.id == "turbo_kit"; }),
                             files.part_extras.end());
     if (!files.kit_spec || !ctx.turbo_kits || !files.engine) return std::nullopt;
-    const auto facts = read_engine_facts(files.engine->path, nullptr);
+    const auto facts = installed_engine_facts(files, ctx, nullptr);
     if (!facts) return std::nullopt;
     const TurboKitSpec& spec = *files.kit_spec;
     const TurboKitSizing sizing = size_turbo_kit(*ctx.turbo_kits, spec, *facts, facts->limiter_rpm);
@@ -557,7 +590,7 @@ std::optional<EngineInternalsBuild> refresh_internals_parts(Files& files, const 
 // generated files and converts the engine (default_forced_induction, boost grid, compression ratio). "" when fine.
 std::string fit_turbo_kit(Files& files, const CatalogEntry& entry, const SetupContext& ctx, const TurboKitSpec& spec) {
     std::string err;
-    const auto facts = read_engine_facts(files.engine->path, &err);
+    const auto facts = installed_engine_facts(files, ctx, &err); // a bored engine: the kit sizes for its displacement
     if (!facts) return err;
     const TurboKitSizing sizing = size_turbo_kit(*ctx.turbo_kits, spec, *facts, facts->limiter_rpm);
     if (!sizing.ok) return sizing.error;
@@ -581,7 +614,9 @@ std::string fit_turbo_kit(Files& files, const CatalogEntry& entry, const SetupCo
     work["cycle"]["grid_p_im_kpa"] = *grid;
     if (sizing.compression_ratio < facts->compression_ratio) work["cycle"]["compression_ratio"] = sizing.compression_ratio;
     files.kit_label = spec.label;
-    files.kit_torque_factor = sizing.torque_factor;
+    // Against the engine's catalogue peak (the unbored engine): a bored engine makes displacement-ratio more before boost.
+    const double bore_ratio = facts->factory_displacement_l > 0.0 ? facts->displacement_l / facts->factory_displacement_l : 1.0;
+    files.kit_torque_factor = sizing.torque_factor * bore_ratio;
     files.kit_spec = spec;
     refresh_kit_parts(files, ctx);
     return {};
@@ -660,6 +695,22 @@ std::string install_catalog_part(Files& files, const SetupOptionDef& def, const 
         if (spec == nullptr) return def.id + ": \"" + id + "\" is not a turbo kit";
         const std::string why = fit_turbo_kit(files, entry, ctx, *spec);
         return why.empty() ? std::string() : def.id + ": " + why;
+    }
+    if (def.catalog == "engine_internals" && def.internal == kCylinderBoreKind) {
+        const std::string why = bore_blocker(files, ctx, id);
+        if (!why.empty()) return def.id + ": " + why;
+        const auto facts = read_engine_facts(files.engine->path, nullptr);
+        std::string err;
+        const auto g = facts ? bore_geometry(*ctx.engine_internals, *facts, id, &err) : std::nullopt;
+        if (!g) return def.id + ": " + (err.empty() ? std::string("the engine file cannot be read") : err);
+        // The engine file's own bore (displacement and the generated maps follow; bore_m is in the engine-map cache
+        // key) and the compression ratio of the bigger swept volume over the same head (head volume kept).
+        json& work = files.engine->work;
+        work["bore_mm"] = std::round(g->bore_m * 1.0e6) / 1000.0;
+        work["cycle"]["compression_ratio"] = g->compression_ratio;
+        files.internals[kCylinderBoreKind] = id;
+        refresh_internals_parts(files, ctx);
+        return {};
     }
     if (def.catalog == "engine_internals") {
         const InternalPartKind* kind = ctx.engine_internals->find(def.internal);
@@ -1641,7 +1692,7 @@ std::vector<SetupPart> parts_of(const SetupOptionDef& def, const SetupContext& c
     }
     if (def.catalog == "turbo_kits") {
         if (!ctx.turbo_kits || !files.engine) return out;
-        const auto facts = read_engine_facts(files.engine->path, nullptr);
+        const auto facts = installed_engine_facts(files, ctx, nullptr);
         if (!facts || !turbo_kit_refusal(*facts, {}).empty()) return out;
         const EngineEntry* eng = installed_engine_entry(files, ctx);
         for (const TurboKitSpec& k : ctx.turbo_kits->kits) {
@@ -1669,10 +1720,31 @@ std::vector<SetupPart> parts_of(const SetupOptionDef& def, const SetupContext& c
         }
         return out;
     }
+    if (def.catalog == "engine_internals" && def.internal == kCylinderBoreKind) {
+        if (!ctx.engine_internals || !ctx.engine_internals->bore || !files.engine) return out;
+        const auto facts = read_engine_facts(files.engine->path, nullptr);
+        if (!facts || !engine_internals_refusal(*facts, {}).empty()) return out;
+        for (const BoreStep& st : ctx.engine_internals->bore->steps) {
+            const auto g = bore_geometry(*ctx.engine_internals, *facts, st.id, nullptr);
+            if (!g) continue;
+            SetupPart p;
+            p.id = st.id;
+            p.label = st.label;
+            p.path = "engine_bore:" + st.id; // edits the engine file's bore_mm and compression ratio
+            p.detail = bore_step_detail(*g) + " · new pistons of this size";
+            if (!g->fits) {
+                p.fits = false;
+                p.fit_reason = g->reason;
+                p.detail += " · does not fit this block";
+            }
+            out.push_back(std::move(p));
+        }
+        return out;
+    }
     if (def.catalog == "engine_internals") {
         if (!ctx.engine_internals || !files.engine) return out;
         const InternalPartKind* kind = ctx.engine_internals->find(def.internal);
-        const auto facts = read_engine_facts(files.engine->path, nullptr);
+        const auto facts = installed_engine_facts(files, ctx, nullptr); // a bored block: pistons of the new diameter
         if (kind == nullptr || !facts || !engine_internals_refusal(*facts, {}).empty()) return out;
         for (const InternalGrade& g : kind->grades) {
             if (g.id == "stock") continue; // the stock card (build_setup_model)
@@ -1916,9 +1988,24 @@ SetupModel build_setup_model(const CatalogEntry& entry, const SetupOptionTable& 
                     v.parts.front().label = "No turbo (as built)";
                     if (!v.available && entry_offers(entry, def.id)) v.unavailable_reason = turbo_kit_blocker(files, ctx);
                 }
-                if (def.catalog == "engine_internals") {
-                    const InternalPartKind* kind = ctx.engine_internals ? ctx.engine_internals->find(def.internal) : nullptr;
+                if (def.catalog == "engine_internals" && def.internal == kCylinderBoreKind) {
                     const auto facts = files.engine ? read_engine_facts(files.engine->path, nullptr) : std::nullopt;
+                    v.parts.front().label = "Stock bore";
+                    v.parts.front().path = "engine_bore:stock";
+                    if (facts && ctx.engine_internals) {
+                        if (const auto g = bore_geometry(*ctx.engine_internals, *facts, "stock", nullptr)) {
+                            char buf[64];
+                            std::snprintf(buf, sizeof(buf), " · takes at most +%.1f mm", g->max_oversize_mm);
+                            v.parts.front().detail = bore_step_detail(*g) + buf;
+                        }
+                    }
+                    if (!v.available && entry_offers(entry, def.id)) {
+                        v.unavailable_reason = internals_blocker(files, ctx);
+                        if (v.unavailable_reason.empty()) v.unavailable_reason = "No bore step fits this engine.";
+                    }
+                } else if (def.catalog == "engine_internals") {
+                    const InternalPartKind* kind = ctx.engine_internals ? ctx.engine_internals->find(def.internal) : nullptr;
+                    const auto facts = files.engine ? installed_engine_facts(files, ctx, nullptr) : std::nullopt;
                     if (kind != nullptr) {
                         v.parts.front().label = kind->grades.front().label;
                         v.parts.front().path = "engine_internals:" + kind->kind + ":stock";

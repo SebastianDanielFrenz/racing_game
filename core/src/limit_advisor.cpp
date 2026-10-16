@@ -253,6 +253,12 @@ void set_part_limits(AdviceInput& input, const CompiledSetup& compiled) {
             input.valve_part = internal_part_name(*v);
             input.valve_option = v->option_id;
         }
+        if (in.bore) {
+            input.cylinder_wall_mm = in.bore->wall_mm;
+            input.cylinder_wall_safe_mm = in.bore->safe_wall_mm;
+            input.bore_label = lower_first(in.bore->label);
+            input.bore_option = in.bore_option_id;
+        }
     }
     if (!compiled.turbo_kit) return;
     const TurboKitBuild& kit = *compiled.turbo_kit;
@@ -403,9 +409,9 @@ std::optional<AdvisorConfig> parse_advisor_config(const std::string& json_text, 
         }
         for (auto it = rules->begin(); it != rules->end(); ++it) {
             const std::string where = "build_rules." + it.key();
-            static const std::set<std::string> rule_names = {"TurboStageMapCoverage", "ChargePipingPressure", "TurboShaftSpeed", "MeanPistonSpeed", "ValveFloat"};
+            static const std::set<std::string> rule_names = {"TurboStageMapCoverage", "ChargePipingPressure", "TurboShaftSpeed", "MeanPistonSpeed", "ValveFloat", "CylinderWall"};
             if (rule_names.count(it.key()) == 0 || !it->is_object()) {
-                fail(err, origin, where + ": not a supported rule name (TurboStageMapCoverage, ChargePipingPressure, TurboShaftSpeed, MeanPistonSpeed, ValveFloat) or not an object");
+                fail(err, origin, where + ": not a supported rule name (TurboStageMapCoverage, ChargePipingPressure, TurboShaftSpeed, MeanPistonSpeed, ValveFloat, CylinderWall) or not an object");
                 return std::nullopt;
             }
             AdviceKindConfig k;
@@ -824,6 +830,14 @@ std::vector<AdviceItem> build_advice(const AdviceInput& input, const AdvisorConf
             emit("ValveFloat", grade(top_rpm, input.valve_float_rpm, std::numeric_limits<double>::quiet_NaN()),
                  {{"value", fixed(top_rpm, 0) + " RPM"}, {"limit", fixed(input.valve_float_rpm, 0) + " RPM"}, {"part", input.valve_part}},
                  top_rpm, "valve_springs", input.valve_option);
+        }
+        if (std::isfinite(input.cylinder_wall_mm) && std::isfinite(input.cylinder_wall_safe_mm) &&
+            input.cylinder_wall_mm < input.cylinder_wall_safe_mm) {
+            // A geometry figure, not a sweep value: thinner than safe is a warning at any rpm.
+            emit("CylinderWall", pd::LimitSeverity::Limiting,
+                 {{"value", fixed(input.cylinder_wall_mm, 1) + " mm"}, {"limit", fixed(input.cylinder_wall_safe_mm, 1) + " mm"},
+                  {"part", input.bore_label}},
+                 0.0, "cylinder_block", input.bore_option);
         }
     }
     // Engine-map loader warnings, one line each, in one item.

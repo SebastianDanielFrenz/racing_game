@@ -89,6 +89,12 @@ struct EngineFacts {
     double displacement_l = 0.0;      // swept volume of all cylinders (piston engines with a cycle block)
     double compression_ratio = 0.0;   // geometric (cycle block)
     double stroke_m = 0.0;            // cycle block (mean piston speed, rg/engine_internals.h)
+    double bore_m = 0.0;              // cycle block (the engine file's bore_mm)
+    // The engine as its file has it. read_engine_facts sets these equal to bore_m / displacement_l / compression_ratio;
+    // rg::bored_engine_facts (engine_internals.h) changes only the three above, so "factory" stays the unbored engine.
+    double factory_bore_m = 0.0;
+    double factory_displacement_l = 0.0;
+    double factory_compression_ratio = 0.0;
     // The cycle block as loaded (validate-only), for ps::drivetrain::boost_grid_p_im; null without one.
     std::shared_ptr<const ps::drivetrain::CycleModelDesc> cycle;
 };

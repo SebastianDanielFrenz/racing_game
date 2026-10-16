@@ -123,6 +123,16 @@
         }
       }
     },
+    "CylinderWall": {
+      "option": "engine_bore",
+      "option_help": "Damage-model data: a bored block (data/engines/engine_internals.json \"bore\") leaves a thinner wall between two cylinders, bore spacing (pitch_factor x factory bore, [AS]) minus the new bore. Below safe_wall_mm the wall flexes and the bores go out of round under load; the item names the cylinder block (damage_part cylinder_block). A geometry figure, not a sweep value: shown at any rpm. Nothing fails yet.",
+      "title": "Thin cylinder walls",
+      "lines": [
+        "The {part} leaves {value} of wall between two cylinders; about {limit} is safe.",
+        "The bores can go out of round under load (damage is not simulated yet)."
+      ],
+      "suggestion": "A smaller bore step."
+    },
     "ValveFloat": {
       "option": "engine_valve_springs",
       "option_help": "Damage-model data: the top of the sweep against the rpm the installed valve springs keep the valves on the cam (data/engines/engine_internals.json limit_kind limiter_factor: a factor of the engine's factory limiter). Above it the valves float and can touch the pistons; nothing fails yet.",

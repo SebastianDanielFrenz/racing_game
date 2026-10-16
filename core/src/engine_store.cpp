@@ -133,6 +133,10 @@ EngineFacts facts_of(const ps::drivetrain::ComponentParams& params, bool* ok) {
             f.compression_ratio = c.compression_ratio;
             f.stroke_m = c.stroke_m;
             f.displacement_l = kPi / 4.0 * c.bore_m * c.bore_m * c.stroke_m * c.cylinders * 1000.0;
+            f.bore_m = c.bore_m;
+            f.factory_bore_m = c.bore_m;
+            f.factory_displacement_l = f.displacement_l;
+            f.factory_compression_ratio = c.compression_ratio;
             f.cycle = std::make_shared<const ps::drivetrain::CycleModelDesc>(c);
         }
     } else {

@@ -209,10 +209,11 @@ Limits are recorded as data now and only WARNED about by the setup check (limit 
 | `TurboShaftSpeed` | sweep rotor speed (one rotor) | kit `max_shaft_rpm` = reference rpm x `limits.max_shaft_speed_factor` 1.15 | Near from 90 %, warning above |
 | `MeanPistonSpeed` | 2 x stroke x top sweep rpm | the WEAKEST installed rod / piston / crank grade (engine_internals.json); without internals data advisor.json `part_limits.max_mean_piston_speed_m_s` 25 | Near from 90 %, warning above |
 | `ValveFloat` | top sweep rpm | valve spring grade x the engine's factory limiter (engine_internals.json `limiter_factor`) | Near from 90 %, warning above |
+| `CylinderWall` | the wall left between two bores of a bored block | engine_internals.json `bore.safe_wall_mm` 5 mm [AS] | warning below (a geometry figure, any rpm); damage part `cylinder_block`, option `engine_bore` |
 
 Every part-limit item carries `AdviceItem::damage_part` (Godot: `damage_part` in `RgGarage.get_advice`): the part a
 damage model would wear or break - `charge_piping`, `turbo_unit`, `connecting_rods`, `pistons`, `crankshaft`,
-`valve_springs`, or `engine_internals` for the engine-wide fallback. Its `option_id` is the garage option that swaps that
+`valve_springs`, `cylinder_block` (a thin wall after a bore), or `engine_internals` for the engine-wide fallback. Its `option_id` is the garage option that swaps that
 part (the weak rod set: `engine_rods`), so "fix" opens the part, not only the rev limit.
 
 How a future damage model reads them: `CompiledSetup::turbo_kit` (a `TurboKitBuild`) lists each fitted part
@@ -273,6 +274,68 @@ upgrade panel (hidden setting `garage.show_all_upgrades`, default off) lists the
 - While the internals are known, physics' own `MeanPistonSpeed` dyno finding (one table figure, 25 m/s) is dropped: the
   part rule replaces it.
 
+**Cylinder bore** (2026-10-16, owner on PR #21: "I want upgrades that bore out the cylinders; this logically implies new
+pistons (due to diameter difference), among other things."). Garage option `engine_bore` (Upgrades > Engine > Internals,
+catalog `engine_internals`, `internal` "cylinder_bore", placed after `engine_install` and before `turbo_kit` in
+setup_options.json so a kit sizes for the bored engine). Unlike the other internals it EDITS the engine file: `bore_mm`
+and `cycle/compression_ratio` through the merge patch (the option's pointers are the whitelist), so the swept volume and
+the generated maps follow (`bore_m` is part of the physics engine-map cache key, so a bored engine generates its own maps
+once, then hits the cache). Steps and figures in engine_internals.json `"bore"`, every one [AS] with its reasoning:
+
+| Step | Oversize | Note |
+|---|---|---|
+| `overbore_0_5` | +0.5 mm | first rebuild oversize, every block takes it |
+| `overbore_1_0` | +1.0 mm | largest rebore without sleeves |
+| `big_bore` | +3.0 mm | re-sleeved big-bore kit, limited by the wall |
+
+- **Per-engine limit.** No engine file carries its bore spacing, so spacing = `pitch_factor` 1.09 x factory bore [AS]
+  (K20 1.08, N52 1.07, LS3 1.08, B18 1.11). Wall = spacing - new bore. Below `min_wall_mm` 4.0 the step is refused
+  (`SetupPart::fits` false with the reason, hidden unless "Show all"; a saved one is refused by compile, and an engine
+  swap to a block that cannot take it drops it back to stock with a notice); below `safe_wall_mm` 5.0 it fits but the
+  setup check warns (`CylinderWall`, damage part `cylinder_block`).
+
+  | Engine | Bore | Spacing [AS] | +3 mm wall | Big bore |
+  |---|---|---|---|---|
+  | 1.0 L I3 (Pico) | 71.0 | 77.4 | 3.4 mm | refused (at most +2.4 mm) |
+  | 2.5 L I4 (A25A) | 87.5 | 95.4 | 4.9 mm | fits, warns |
+  | demo I4 (pipes) | 86.0 | 93.7 | 4.7 mm | fits, warns |
+  | twin-turbo V8 (hyper) | 92.0 | 100.3 | 5.3 mm | fits |
+  | 2.9 L side-valve I4 | 95.25 | 103.8 | 5.6 mm | fits |
+  | 5.0 L V8 (Ventura) | 101.6 | 110.7 | 6.1 mm | fits |
+
+- **Compression ratio** is computed, not kept: the head's clearance volume stays, the swept volume grows with bore^2, so
+  CR' = 1 + (CR - 1) x (bore' / bore)^2 (rounded to 0.001; the Ventura's 9.0 becomes 9.48 with the big bore). The gasket
+  ring and the crown above the deck are ignored (CR comes out slightly high). A turbo kit fitted afterwards still lowers
+  it to the kit's ceiling.
+- **Pistons of the new size.** A bored block takes pistons of the new diameter only: every piston grade is then offered
+  at that bore (cards and labels name it, e.g. "104.6 mm bore"); mass = factory piston x (bore' / bore)^(2 + k),
+  `piston_thickness_exponent` k = 1 [AS] (crown area x bore^2, crown thickness x bore for the same bending stress). The
+  heavier piston loads the SAME rods more (rods keep their factory rating and mass), so the rod-limited rpm drops:
+  Ventura big bore pistons 3.46 -> 3.78 kg, rod-limited 8,182 -> 7,955 rpm. Rods, crank and springs keep their masses.
+- **Part-mass tree.** `engine.internals.pistons` carries the piston difference to the factory set even at the stock
+  grade, `engine.internals.cylinder_block` the liner ring bored away: n x pi/4 x (b'^2 - b^2) x 1.5 stroke [AS] x 7200
+  kg/m3 cast iron [AS] (Ventura big bore -3.2 kg).
+- **Turbo kit** sizes from the bored displacement (the facts it reads are the bored engine's): Ventura + street single
+  air demand 0.412 -> 0.436 kg/s, wheel scale 0.980 -> 1.009. The kit's torque factor for clutch sizing is multiplied by
+  the displacement ratio. A bore without a kit or swap does not re-size the clutch (no swap package runs; +6 % torque on
+  the big bore against the clutches' >= 1.2 x margin). Bay fit is unchanged (same block).
+- **Measured** (engine dyno, Sketch maps, `[bore][dyno][long]`):
+
+  | Engine, step | Displacement | 2,200-2,300 rpm | 3,450-3,600 | 4,750-4,900 | 5,650-5,850 |
+  |---|---|---|---|---|---|
+  | Ventura 5.0 V8, big bore (+3.0 mm) | +6.0 % | 433 -> 461 N*m (+6.5 %) | 457 -> 488 (+6.8 %) | 456 -> 470 (+3.3 %) | 384 -> 386 (+0.5 %) |
+  | A25A 2.5 I4, +1.0 mm | +2.3 % | 240 -> 247 N*m (+3.0 %) | 285 -> 293 (+2.7 %) | 254 -> 257 (+1.2 %) | 213 -> 214 (+0.3 %) |
+
+  Low and mid rpm gain the displacement plus a little from the higher compression ratio; at the top the gain fades
+  because valves, ports, cams and the intake are the stock engine's (breathing-limited), which is what a real overbore
+  does without head work.
+- **Not changed** (physics gaps, stated): the engine_thermal file's own `displacement_l` and heat capacities stay stock;
+  valve diameters (the `ValveDiameterBand` build rule compares them to the bore, so a big bore can move it), ports, cams
+  and the engine's rotating inertia are unchanged; the knock-limited ECU sees the higher CR through the cycle model.
+  No stroker crank: changing the stroke moves every stroke-based limit, the rod ratio (the A25A already sits at the
+  3.0 `RodRatio` build-rule edge) and the deck height, so it needs new rods and pistons with another pin height - left
+  for a later step.
+
 Damage-model hook (owner on PR #5: damage persists until repaired, repairs are an explicit action - garage, later a pit
 stop or finishing with it - probably free, and damage affects driving). Not built yet; the data is shaped for it:
 `CompiledSetup::internals` / `turbo_kit` list every installed part with its limit, and every warning names its
@@ -285,7 +348,7 @@ Open questions for the owner: whether the charge pipe and intercooler should cou
 the gaps), whether metal piping should cost anything besides mass, and whether a burst should later be a part the player
 replaces.
 
-Tests: tests/unit/test_turbo_kit.cpp `[turbo_kit]`, tests/unit/test_engine_internals.cpp `[engine_internals]`; the dyno comparisons (kit vs NA at the same rpm, the quad on the
+Tests: tests/unit/test_turbo_kit.cpp `[turbo_kit]`, tests/unit/test_engine_internals.cpp `[engine_internals]`, tests/unit/test_engine_bore.cpp `[bore]` (dyno: `[bore][dyno][long]`); the dyno comparisons (kit vs NA at the same rpm, the quad on the
 pico) are `[turbo_kit][dyno][long]`.
 
 ## Live engine dyno (2026-10-08)

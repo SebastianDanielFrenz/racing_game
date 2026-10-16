@@ -54,6 +54,27 @@ struct InternalPartKind {
     [[nodiscard]] const InternalGrade* find(const std::string& id) const;
 };
 
+// Cylinder bore upgrade (owner on PR #21: "I want upgrades that bore out the cylinders; this logically implies new pistons
+// (due to diameter difference), among other things."). engine_internals.json "bore": oversize steps, limited per engine by
+// the wall left between two bores (bore spacing = pitch_factor x factory bore, [AS]: no engine file carries its spacing).
+struct BoreStep {
+    std::string id;            // "overbore_0_5", "overbore_1_0", "big_bore"
+    std::string label;
+    double oversize_mm = 0.0;  // added to the factory bore
+    std::string source;
+};
+
+struct BoreConfig {
+    double pitch_factor = 1.09;               // bore spacing / factory bore
+    double min_wall_mm = 4.0;                 // a step leaving less is refused
+    double safe_wall_mm = 5.0;                // below it the setup check warns (damage part cylinder_block)
+    double piston_thickness_exponent = 1.0;   // piston mass x (bore / factory bore)^(2 + this)
+    double liner_length_per_stroke = 1.5;     // bored length = this x stroke (block mass removed)
+    double liner_density_kg_m3 = 7200.0;
+    std::vector<BoreStep> steps;
+    [[nodiscard]] const BoreStep* find(const std::string& id) const;
+};
+
 struct EngineInternalsConfig {
     double stock_margin = 1.15;
     // Rod load (limit_kind "rod_load"): peak inertial tension at TDC F = m_recip x (S/2) x w^2 x (1 + lambda), with
@@ -62,8 +83,12 @@ struct EngineInternalsConfig {
     double rod_crank_ratio = 0.3;
     double rod_small_end_share = 1.0 / 3.0;
     std::vector<InternalPartKind> parts;
+    std::optional<BoreConfig> bore;   // absent: no bore steps
     [[nodiscard]] const InternalPartKind* find(const std::string& kind) const;
 };
+
+// The grades-map key (describe_engine_internals) and refresh key that carries the bore step id ("stock" = factory bore).
+inline constexpr const char* kCylinderBoreKind = "cylinder_bore";
 
 // Strict, exception-free: nullopt + *err on a malformed file (every part needs a "stock" grade first).
 std::optional<EngineInternalsConfig> load_engine_internals(const std::string& path, std::string* err);
@@ -71,6 +96,34 @@ std::optional<EngineInternalsConfig> parse_engine_internals(const std::string& j
 
 // "" when the engine's internals can be swapped, else the reason in the player's words (`name` = the engine's name).
 std::string engine_internals_refusal(const EngineFacts& facts, const std::string& name);
+
+// A bore step on one engine, from the FACTORY figures (EngineFacts::factory_*; a bored facts value gives the same answer).
+// The compression ratio is computed with the head's clearance volume kept: CR' = 1 + (CR - 1) x (bore' / bore)^2.
+struct BoreGeometry {
+    std::string step, label;            // "stock" for the factory bore
+    double oversize_mm = 0.0;
+    double factory_bore_m = 0.0, bore_m = 0.0;
+    double spacing_mm = 0.0;            // pitch_factor x factory bore
+    double wall_mm = 0.0;               // spacing - bore
+    double min_wall_mm = 0.0, safe_wall_mm = 0.0; // the config's figures
+    double max_oversize_mm = 0.0;       // spacing - factory bore - min_wall_mm
+    double displacement_l = 0.0, factory_displacement_l = 0.0;
+    double compression_ratio = 0.0, factory_compression_ratio = 0.0;
+    double block_mass_delta_kg = 0.0;   // the liner ring bored away (negative)
+    bool fits = true;                   // wall >= min_wall_mm
+    bool warns = false;                 // fits but wall < safe_wall_mm
+    std::string reason;                 // why it does not fit ("" when it does)
+};
+
+// nullopt + *err when the engine's internals are refused (engine_internals_refusal), the config has no bore block or the
+// step id is unknown. A step that does not fit still returns a geometry (fits = false, reason set).
+std::optional<BoreGeometry> bore_geometry(const EngineInternalsConfig& config, const EngineFacts& facts, const std::string& step, std::string* err);
+// "" when the step fits this engine, else the reason in the player's words.
+std::string bore_refusal(const EngineInternalsConfig& config, const EngineFacts& facts, const std::string& step, const std::string& name);
+// The facts of the bored engine: bore_m, displacement_l and compression_ratio of `g` (factory_* kept). Stock = unchanged.
+EngineFacts bored_engine_facts(const EngineFacts& facts, const BoreGeometry& g);
+// "87.0 mm · 2.54 L · CR 13.3 · wall 6.9 mm · -0.3 kg block" card line.
+std::string bore_step_detail(const BoreGeometry& g);
 
 // One installed part as built: grade, limit for THIS engine, mass and its difference to stock.
 struct InternalPartBuild {
@@ -89,6 +142,8 @@ struct InternalPartBuild {
 };
 
 struct EngineInternalsBuild {
+    std::optional<BoreGeometry> bore;   // set when the block is bored (grades[kCylinderBoreKind] != "stock")
+    std::string bore_option_id;         // options[kCylinderBoreKind]
     double stroke_m = 0.0;
     double factory_limiter_rpm = 0.0;
     double factory_piston_speed_m_s = 0.0;   // at the factory limiter
@@ -96,11 +151,14 @@ struct EngineInternalsBuild {
     // The weakest bottom-end part (piston speed or rod load: the lowest limit_rpm; the one that would fail first); nullptr without one.
     [[nodiscard]] const InternalPartBuild* weakest_piston_speed() const;
     [[nodiscard]] const InternalPartBuild* valve_springs() const;   // the LimiterFactor part (valve float rpm)
-    [[nodiscard]] double mass_delta_kg() const;
+    [[nodiscard]] double mass_delta_kg() const;   // parts + the block material bored away
 };
 
-// `grades`: kind -> grade id ("stock" when absent); `options`: kind -> the option id that swaps it. nullopt + *err when a
-// grade id is unknown or the engine is refused.
+// `grades`: kind -> grade id ("stock" when absent), plus kCylinderBoreKind -> bore step id; `options`: kind -> the option
+// id that swaps it. `facts` may be the factory or the bored facts (the factory_* fields are the baseline either way); with a
+// bore step the pistons are the new diameter's: piston mass x (bore / factory bore)^(2 + exponent), which loads the rods,
+// while rods, crank and springs keep their factory masses and the rods their factory rating (so the rod-limited rpm
+// drops). nullopt + *err when a grade id is unknown, the bore step does not fit or the engine is refused.
 std::optional<EngineInternalsBuild> describe_engine_internals(const EngineInternalsConfig& config, const EngineFacts& facts,
                                                              const std::map<std::string, std::string>& grades,
                                                              const std::map<std::string, std::string>& options, std::string* err);
@@ -111,7 +169,8 @@ double internal_grade_limit(const EngineInternalsConfig& config, const EngineFac
 std::string internal_grade_detail(const EngineInternalsConfig& config, const EngineFacts& facts, const std::string& kind, const std::string& grade);
 
 // The part-mass tree entry: an "internals" node under "engine" with one child per part that differs from stock (own
-// mass = the difference, may be negative); nullopt when every part is stock.
+// mass = the difference, may be negative; bored: the pistons of the new diameter even at the stock grade, and
+// "engine.internals.cylinder_block" with the liner material removed); nullopt when every part is stock.
 std::optional<PartAttachment> engine_internals_parts(const EngineInternalsBuild& build);
 
 } // namespace rg

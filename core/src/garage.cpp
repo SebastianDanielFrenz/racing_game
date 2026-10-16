@@ -582,6 +582,8 @@ std::string Garage::drop_unavailable_values() {
         if (!gone && view->def.kind == OptionKind::FileChoice && std::holds_alternative<std::string>(value)) {
             const std::string& s = std::get<std::string>(value);
             gone = s != "stock" && std::find(view->choices.begin(), view->choices.end(), s) == view->choices.end();
+            // Listed but refused on the new engine (a bore step its block's wall cannot take): back to stock too.
+            for (const SetupPart& p : view->parts) if (!gone && s != "stock" && p.id == s && !p.fits) gone = true;
         }
         if (gone) drop.push_back(id);
     }

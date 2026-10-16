@@ -1084,7 +1084,7 @@ func _draw_turbo_kit(kit: Dictionary) -> void:
 	_draw_swap_summary()
 	_focus_garage.call_deferred()
 
-const INTERNALS_OPTIONS := ["engine_rods", "engine_pistons", "engine_crankshaft", "engine_valve_springs"]
+const INTERNALS_OPTIONS := ["engine_bore", "engine_rods", "engine_pistons", "engine_crankshaft", "engine_valve_springs"]
 
 # An option whether it is available or not (an unavailable one that the car offers carries its reason); {} when absent.
 func _any_option(id: String) -> Dictionary:
@@ -1101,7 +1101,7 @@ func _internals_offered() -> bool:
 # Engine internals (core engine_internals.h): one row of grade cards per part. The engine's piston-speed limit is its
 # weakest part's; the setup check names the part that would fail. Nothing breaks yet (no damage model).
 func _draw_internals() -> void:
-	var note := _label("The safe piston speed is that of the weakest part: rods, pistons and crankshaft. Valve springs set the rpm the valves follow the cam to.",13,HORIZONTAL_ALIGNMENT_LEFT,true)
+	var note := _label("A bigger bore adds displacement and takes new pistons of that size. The safe piston speed is that of the weakest part: rods, pistons and crankshaft. Valve springs set the rpm the valves follow the cam to.",13,HORIZONTAL_ALIGNMENT_LEFT,true)
 	note.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	_option_box.add_child(note)
 	for id in INTERNALS_OPTIONS:

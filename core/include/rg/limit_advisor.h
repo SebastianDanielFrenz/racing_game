@@ -168,7 +168,7 @@ struct AdviceItem {
     std::string suggestion; // "" = none
     std::string option_id;
     // Damage-model hook: the part a part-limit item says would take the damage ("charge_piping", "turbo_unit",
-    // "connecting_rods", "pistons", "crankshaft", "valve_springs", "engine_internals" for the engine-wide fallback); "" for
+    // "connecting_rods", "pistons", "crankshaft", "valve_springs", "cylinder_block", "engine_internals" for the engine-wide fallback); "" for
     // physics limit kinds and the loader notice. A future damage model wears or breaks exactly this part.
     std::string damage_part;
     RemedyState remedy_state = RemedyState::None;
@@ -202,6 +202,11 @@ struct AdviceInput {
     std::string piston_speed_part, piston_speed_kind, piston_speed_kind_label, piston_speed_option;
     double valve_float_rpm = std::numeric_limits<double>::quiet_NaN();
     std::string valve_part, valve_option;
+    // A bored block (EngineInternalsBuild::bore): the wall left between two cylinders and the [AS] safe figure (NaN = not
+    // bored). Below the safe figure the CylinderWall build rule warns (damage_part "cylinder_block").
+    double cylinder_wall_mm = std::numeric_limits<double>::quiet_NaN();
+    double cylinder_wall_safe_mm = std::numeric_limits<double>::quiet_NaN();
+    std::string bore_label, bore_option;
 };
 // Fills the part-limit fields of `input` from a compiled setup's turbo kit and engine internals (none = left NaN).
 void set_part_limits(AdviceInput& input, const CompiledSetup& compiled);
