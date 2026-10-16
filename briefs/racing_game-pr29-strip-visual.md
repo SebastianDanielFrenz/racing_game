@@ -41,7 +41,7 @@ Before this PR the 11 weight-reduction options (driver/passenger/rear seats, aud
 
 ## 4/5. Questions for Sebastian
 
-Unanswered: none left in the PR. The only open item is his "Resolve conflicts" request (step 1).
+Open question, never posted in the PR yet: should the imported Phoenix 455 keep a rear-seat removal option? Today it keeps its rear seats, because its single merged mesh cannot show whether it has any. Post this question in the PR with a recommendation (suggested: keep it without the option until the model is split into parts) and wait for Sebastian's answer. The other open item is his "Resolve conflicts" request (step 1).
 
 Already answered (decisions, do not re-ask; his comment 2026-10-16 12:35, numbered as in the PR's question list):
 1. Climate knobs on a stripped dashboard: "dunno" - so they STAY; stripped dashboard hides only the new console and glovebox nodes.

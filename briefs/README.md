@@ -17,7 +17,7 @@ If a branch has moved past these, the brief is older than the branch: read the n
 | racing_game `claude/part-mass` (#22) | `88896b3` |
 | racing_game `claude/automatic-gearbox` (#26) | `68e3da4` |
 | racing_game `claude/strip-visual` (#29) | `b522ab3` |
-| racing_game `claude/cooling-damage` (#33) | `caf2453` |
+| racing_game `claude/cooling-damage` (#33) | `a80c395` |
 | physics_sim `master` | `c08b00c` |
 | physics_sim `claude/block-cooling` (#14) | `97e4a85` |
 | physics_sim `claude/cooling-capacity` (#15) | `4e81619` |
@@ -41,7 +41,7 @@ racing_game pins both libraries as submodules. Library changes reach the game on
 - Roughly 25 PRs from 2026-10-14..16 were merged into **`claude/plan-work-q2a5oy`** (head `07581be`), which is **draft PR #5** against main. Sebastian wants to merge it into main eventually ("I want to actually merge this branch at some point").
 - main has 2 commits the plan branch lacks (installer + LFS bootstrap). Merge main into the plan branch before or while landing #5.
 - Base new racing_game work on the plan branch unless Sebastian merges #5 first.
-- Open PRs stacked on it: #22 (part masses), #26 (automatic/DCT/CVT gearboxes; already contains merged #30), #29 (strip visual, stacked on #22), #33 (damage model, needs physics_sim #15).
+- Open PRs stacked on it: #22 (part masses), #26 (automatic/DCT/CVT gearboxes; already contains merged #30), #29 (strip visual, stacked on #22), #33 (damage model: cooling, head gasket, crankshaft, pistons, seizing; needs physics_sim #15).
 
 ## 3. Open PRs and their briefs
 
@@ -51,21 +51,21 @@ racing_game pins both libraries as submodules. Library changes reach the game on
 | racing_game | [#22](https://github.com/SebastianDanielFrenz/racing_game/pull/22) Per-part mass tree | `claude/part-mass` -> plan branch | ready | `racing_game-pr22-part-mass.md` |
 | racing_game | [#26](https://github.com/SebastianDanielFrenz/racing_game/pull/26) Automatic, DCT (and CVT via #30) gearboxes | `claude/automatic-gearbox` -> plan branch | draft | `racing_game-pr26-automatic-gearbox.md` |
 | racing_game | [#29](https://github.com/SebastianDanielFrenz/racing_game/pull/29) Strip visual | `claude/strip-visual` -> `claude/part-mass` | draft | `racing_game-pr29-strip-visual.md` |
-| racing_game | [#33](https://github.com/SebastianDanielFrenz/racing_game/pull/33) Damage model piece 1 (cooling) | `claude/cooling-damage` -> plan branch | draft | `racing_game-pr33-cooling-damage.md` |
+| racing_game | [#33](https://github.com/SebastianDanielFrenz/racing_game/pull/33) Mechanical damage model (cooling, head gasket, crankshaft, pistons) | `claude/cooling-damage` -> plan branch | draft | `racing_game-pr33-cooling-damage.md` |
 | physics_sim | [#14](https://github.com/SebastianDanielFrenz/physics_sim/pull/14) Engine water jacket, pump upgrade, steady-state solver | `claude/block-cooling` -> `master` | draft | `physics_sim-pr14-block-cooling.md` |
 | physics_sim | [#15](https://github.com/SebastianDanielFrenz/physics_sim/pull/15) Runtime radiator/fan capacity API | `claude/cooling-capacity` -> `master` | draft | `physics_sim-pr15-cooling-capacity.md` |
 | geo2map_engine | [#12](https://github.com/SebastianDanielFrenz/geo2map_engine/pull/12) Manager tracker (docs only) | `claude/manager` -> `main` | draft | `geo2map_engine-pr12-manager.md` |
 
 ### Suggested merge order (inferred from the stacking; Sebastian merges, agents do not)
 
-1. physics_sim #14 and #15 into master (independent of each other).
+1. physics_sim #15 into master, then #14 (or the other way round). They touch the same thermal files and conflict; whichever merges second resolves it.
 2. racing_game #22, then #29 (re-target #29 to the plan branch after #22 lands; it has one known conflict in `data/vehicles/catalog.json`).
 3. racing_game #26 (carries #30's CVT work).
 4. racing_game #33 after re-pinning `external/physics_sim` from its PR-branch commit to physics_sim master (which then contains #15).
 5. One pin bump PR on the plan branch to physics_sim master (with #14) to adopt the water jacket (see the physics_sim #14 brief).
 6. Merge main into the plan branch, then #5 into main.
 
-Sub-PR pins differ (plan branch physics `f38075e`; #26 `ad401bc`; #33 physics `26a193d` = first commit of physics_sim #15's branch, NOT on master, and geo2map `16a8ec6`). Expect conflicts in `external/physics_sim`, `CLAUDE.md`, `core/src/vehicle_setup.cpp`, `tests/unit/CMakeLists.txt`, `data/gearboxes/gearbox_catalog.json`. Resolve by taking physics_sim master and re-running the affected tests.
+Sub-PR pins differ (plan branch physics `f38075e`; #26 `ad401bc`; #33 physics `4e81619` = head of physics_sim #15's branch (set_engine_cooling_capacity + set_engine_wear), NOT on master, and geo2map `16a8ec6`). Expect conflicts in `external/physics_sim`, `CLAUDE.md`, `core/src/vehicle_setup.cpp`, `tests/unit/CMakeLists.txt`, `data/gearboxes/gearbox_catalog.json`. Resolve by taking physics_sim master and re-running the affected tests.
 
 ## 4. Submodule pins
 

@@ -52,6 +52,8 @@ Already answered (decisions, do not re-ask), comment 2026-10-16 by Sebastian:
 - Jacket-less user files must keep behaving exactly as before (bit-identical hashes).
 
 ## Known issues / risks
+
+- Conflicts with physics_sim #15 (`claude/cooling-capacity`, head `4e81619`) on the same thermal files. Whichever merges second resolves it; racing_game #33 depends on #15, so merging #15 first is the simpler order.
 - All jacket numbers are [AS] assumptions (0.8 exponent = Dittus-Boelter); one class value for both shipped engines; nothing calibrated.
 - Thermostat (2 K play, 20 s wax lag) hunts in a limit cycle at small openings (pre-existing); with a jacket `solve_steady_thermal` gives the centre of the hunting, not a time average. J4 uses a proportional thermostat for the partial-open case.
 - `World::engine_thermal_state` still returns coolant and oil only; `set_engine_thermal_state` sets metal = coolant. Read metal from the snapshot.

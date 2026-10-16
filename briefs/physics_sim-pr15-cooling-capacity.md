@@ -12,9 +12,9 @@ Physics seam for racing_game's damage model. Before, a car's cooling system was 
 | State | DRAFT, mergeable_state reported "unknown" by GitHub, but a local `git merge-tree` of master with the branch gave no conflict (inferred clean) |
 | Size | 3 commits, 9 files, +217 / -3 (GitHub PR numbers; the PR body text predates commit 3) |
 | Commits | `26a193d` set_engine_cooling_capacity; `13e0452` (CMake <3.30 configure fix, came in from master) merged by `bab3ddf`; `4e81619` set_engine_wear + fan power |
-| racing_game consumer | racing_game #33 pins `26a193d` (commit 1 only) |
+| racing_game consumer | racing_game #33 (head `a80c395`) pins `4e81619`, this branch's head; #33's engine wear uses `set_engine_wear` |
 
-**Merge order: this PR first, then racing_game #33 re-pinned to the merged master commit.** The pin in #33 is an unmerged commit of THIS branch (26a193d) and must not be merged as is.
+**Merge order: this PR first, then racing_game #33 re-pinned to the merged master commit.** The pin in #33 is an unmerged commit of THIS branch (4e81619) and must not be merged as is.
 
 **What landed vs. the "IN PROGRESS" item "fan power drops with a damaged fan":** it DID land, in `4e81619` (pushed 19:10 UTC, after Sebastian's answer): `fan_power_w` now scales with the cube of `fan_flow_scale` (fan affinity laws), exactly the loaded power at scale 1. Test: the `[cooling_capacity]` case was extended. Not yet updated: the PR description (still says the question is open and lists only the first commit's content).
 
@@ -51,7 +51,7 @@ Physics seam for racing_game's damage model. Before, a car's cooling system was 
 
 - PR text is stale relative to the head (commit 3 missing in the description).
 - On CMake 3.28 the cloud configure failed at `ps_environment_standalone` (WHOLE_ARCHIVE); fixed on master by #16 (13e0452), already merged into this branch.
-- Overlaps with `claude/block-cooling` (same files).
+- Conflicts with `claude/block-cooling` (#14, same thermal files); whichever merges second resolves it.
 - Determinism: factors hashed only when != 1, so existing scenario hashes should be unchanged; racing_game reports hash_check vehicle_step_steer `0xace4d38ea725e065` unchanged with 26a193d (not re-reported for 4e81619).
 
 ## 7. Local build, run, verify (Windows)
