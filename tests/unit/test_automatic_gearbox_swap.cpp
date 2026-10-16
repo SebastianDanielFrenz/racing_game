@@ -658,3 +658,45 @@ TEST_CASE("automatic gearbox: swaps preserve N2O hypercar driving modes", "[auto
         CHECK(h.desc.drive_modes->default_mode == ps::vehicle::DriveMode::Normal);
     }
 }
+
+TEST_CASE("N2O hypercar modes scale the DCT pedal and preserve the manual pedal policy", "[automatic][drive_modes_auto][pedal]") {
+    Fixture f;
+    const auto& car = f.entry("car_hyper_n2o");
+    for (const char* box : {"stock", "hyper_7dct"}) {
+        INFO(box);
+        rg::ScopedWorkDir dir(f.ctx.work_root, std::string("mode_pedal_") + box);
+        const auto m = rg::materialise_setup(car, f.table, f.ctx, setup_of(car.id, box), dir.path());
+        INFO(m.error);
+        REQUIRE(m.ok);
+        rg::SessionConfig config;
+        config.vehicle_json_path = m.vehicle_path;
+        config.surface_table_path = kRoot + "/data/surfaces/surfaces.json";
+        config.chassis_mass_kg = car.chassis.mass_kg;
+        config.chassis_half_extents = ps::Vec3{car.chassis.half_extents[0], car.chassis.half_extents[1], car.chassis.half_extents[2]};
+        config.chassis_z_m = car.chassis.spawn_z_m;
+        config.engine_map_cache_dir = f.ctx.engine_map_cache_dir;
+        rg::Session session(config);
+        auto& world = session.world();
+        world.set_control("brake", 1.0);
+        world.set_control("gear_request", 0.0);
+        world.set_control("ignition", 1.0);
+        world.set_control("starter", 1.0);
+        for (int i = 0; i < 240 * 4; ++i) session.step();
+        REQUIRE(world.powertrain_state(session.vehicle_id()).engine_state == ps::drivetrain::EngineState::Running);
+        world.set_control("starter", 0.0);
+        world.set_control("throttle", 0.6);
+        const double expected[] = {0.3, 0.6, 0.8, 0.8};
+        for (int mode = 0; mode < 4; ++mode) {
+            INFO(mode);
+            world.set_control("assist.drive_mode", mode);
+            for (int i = 0; i < 240; ++i) session.step();
+            const auto pt = world.powertrain_state(session.vehicle_id());
+            REQUIRE_FALSE(pt.engines.empty());
+            CHECK(int(pt.drive_mode_effective) == mode);
+            // Pedal plan P1 deliberately keeps manual/sequential gearboxes unbent.
+            const double command = std::string(box) == "stock" ? 0.6 : expected[mode];
+            CHECK(double(pt.engines[0].throttle_command) == Approx(command).margin(1e-6));
+            std::printf("RG_MODE_PEDAL box=%s mode=%d pedal=0.6 command=%.6f\n", box, mode, double(pt.engines[0].throttle_command));
+        }
+    }
+}
