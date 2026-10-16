@@ -319,6 +319,9 @@ func _process_body(_delta: float) -> void:
 			safety.append(str(controls["epb"]["label"]) if str(controls["epb"]["label"]) != "" else "EPB released")
 		if not safety.is_empty():
 			lines.append("   ".join(safety))
+		# Headlamp switch (O cycles auto / on / off): "AUTO", "AUTO LIGHTS", "LIGHTS", "MAIN BEAM" or off.
+		var lamp_label := str(controls["lights"]["label"])
+		lines.append("headlamps %s (O: auto / on / off)" % (lamp_label if lamp_label != "" else "OFF"))
 		# Drive mode (assists I7, M cycles the offered modes): the mode that runs, in its theme colour; launch control
 		# state when the car has one. The whole readout takes a light tint of the mode colour.
 		var themed_readout := false

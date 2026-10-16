@@ -552,6 +552,8 @@ if ($script:Failures.Count -eq 0 -and -not $script:DriveSkipped) {
             Report-Fail "no 'RG_CAMERA_TEST PASS' line - camera_switch_test.gd did not finish"
         } elseif (-not $pairsLine -or [int]$pairsLine.Matches[0].Groups[1].Value -lt 20 -or [int]$pairsLine.Matches[0].Groups[2].Value -lt 20) {
             Report-Fail "camera switch test: fewer than 20 plain + 20 rebase pairs ran ($($pairsLine.Line))"
+        } elseif (-not ($logContent | Select-String -Pattern 'RG_CAMERA_TEST drone_checks=(\d+)' | Where-Object { [int]$_.Matches[0].Groups[1].Value -ge 10 })) {
+            Report-Fail "camera switch test: fewer than 10 drone switch checks ran (5 views x plain/rebase)"
         } else {
             Report-Ok "camera switch test: $($passLine.Line); $($pairsLine.Line)"
         }

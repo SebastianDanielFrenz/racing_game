@@ -6,6 +6,12 @@
 
 namespace rg {
 
+std::string drone_target_label(std::optional<std::uint64_t> target, std::uint64_t npc_truck_id, bool is_lorry) {
+    if (!target) return "own car";
+    if (*target == npc_truck_id) return "NPC truck";
+    return std::string(is_lorry ? "NPC lorry #" : "NPC car #") + std::to_string(*target);
+}
+
 ModeRules rules_for(PlayerMode mode, std::optional<std::uint64_t> drone_target) {
     ModeRules r;
     switch (mode) {

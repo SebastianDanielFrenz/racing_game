@@ -6,6 +6,12 @@ extends Node
 # (a sky colour change makes Godot re-render the sky radiance).
 # Without the GDExtension class (pure-GDScript runs) it keeps the old fixed sun.
 
+# Exposure (rg/exposure.h): RgSky reports the sky's illuminance and the time-adapted camera
+# exposure; they go to light_exposure.gd for the lamps and the automatic headlamps. The
+# Compatibility renderer clips scene values well below daylight luminances, so the sky keeps
+# its tuned look at environment exposure 1 and only the lamps are multiplied by the exposure
+# (identical on screen for the linear tonemap). See docs/visual_world_plan.md "Exposure".
+const LightExposure := preload("res://scripts/light_exposure.gd")
 const UPDATE_HZ := 10.0
 var sky = null # RgSky
 var simulation: Node = null # RgSimulation: fed the clock and weather (physics environment, V8) at UPDATE_HZ
@@ -65,6 +71,8 @@ func _process(delta: float) -> void:
 	if simulation != null and simulation.has_method("sync_weather"):
 		simulation.sync_weather() # clock jumps, day change, weather choice, temperature drift -> the Session
 	var s: Dictionary = sky.get_state()
+	LightExposure.exposure = float(s.get("exposure", -1.0))
+	LightExposure.ambient_lux = float(s.get("illuminance_lux", NAN))
 	_aim(sun, s["sun_direction"])
 	sun.light_energy = s["sun_energy"]
 	sun.light_color = s["sun_color"]
