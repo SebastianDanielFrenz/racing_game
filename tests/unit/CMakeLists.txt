@@ -86,6 +86,7 @@ add_executable(rg_unit_tests
   test_stutter_perf.cpp
   test_nitrous_spawn.cpp
   test_nitrous_gain.cpp
+  test_tc_owner_repro.cpp
   test_engine_thermal_info.cpp
   test_game_car_thermal.cpp
   test_assist_info.cpp
