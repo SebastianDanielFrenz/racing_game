@@ -18,8 +18,11 @@ returns one level at a time; the root opens the save-and-exit prompt. Upgrades:
 - Wheels → All/Front/Rear → Compounds/Dimensions → installable image cards.
 - Drivetrain and Appearance & assists link to installed-part tuning.
 - Upgrades → Drivetrain → Gearbox (2026-10-13): swap the car's gearbox. Boxes are grouped Manual (manual
-  and sequential, the latter labelled "Sequential"), Automatic and CVT; the last two are empty until
-  physics_sim models a torque converter and a variator and show "Coming soon". Every car is offered the
+  and sequential, the latter labelled "Sequential"), Automatic (torque converter), Dual-clutch and CVT;
+  CVT has two rows (2026-10-16): cvt_converter (torque converter launch) and cvt_clutch (starting
+  clutch), both rated 250 N*m; a CVT holds an engine-derived target rpm (idle + 0.09..0.60 of the
+  idle-limiter band by throttle, limiter - 0.15 band at full throttle) and S steps through fixed
+  ratios. Every car is offered the
   whole catalogue (data/gearboxes/gearbox_catalog.json) filtered by the INSTALLED engine's peak torque:
   a box whose rating is below it is not listed, and a setup that forces one anyway is rejected with
   "gearbox: rated 450 N*m, engine makes 1371 N*m". The car's own box is the "stock" card. Changing
@@ -27,6 +30,13 @@ returns one level at a time; the root opens the save-and-exit prompt. Upgrades:
   drops it back to stock with a notice. The card shows kind, focus, gear type, gear count, first/last
   ratio and rating. The N2O shot and extra boost are not counted against the rating (the list describes
   the engine as catalogued).
+  Automatic and dual-clutch boxes (2026-10-16, physics_sim automatic gearbox A1): installing one removes the
+  clutch component and the clutch pedal, turns the manual_tcu into an automatic_tcu whose shift schedule,
+  kickdown and manual-mode up rpm are derived from the installed engine's idle and limiter, fits a park
+  lock when the car has none and drops the drive_modes part (it sets manual_tcu points). The swap lines
+  say so ("Clutch removed", "Park lock fitted"). Options that only make sense with a clutch or a manual
+  TCU (clutch capacity, auto clutch/blip/shift assists) are no longer offered; values already set for
+  them are dropped with "The gearbox does not offer: ... (back to stock)".
 - Upgrades → Swaps → Drivetrain (2026-10-15): change the drive layout and the axle differentials. Layout cards
   are grouped FWD / RWD / AWD (AWD with an open, viscous or locked centre; physics_sim has no Torsen/LSD centre yet); below them one card row per
   DRIVEN axle offers open, clutch LSD, Torsen, viscous or locked. The first card of each list is what the car has now

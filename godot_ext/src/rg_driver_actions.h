@@ -22,6 +22,7 @@ public:
     void set_light_mode(const godot::String& mode);
     godot::String get_light_mode() const;
     static godot::Dictionary state(const godot::String& id, const godot::Dictionary& snapshot, const godot::Dictionary& channels);
+    static godot::Dictionary selector_shift(const godot::Dictionary& snapshot, int up, int down);
 protected:
     static void _bind_methods();
 private:

@@ -216,7 +216,7 @@ struct OptionView {
     SetupValue stock;                  // the value that changes nothing
     std::vector<std::string> choices;  // TyreChoice: candidate tyre ids (compound x allowed sizes)
     std::vector<SetupPart> parts; // available presentation records, including stock
-    std::vector<std::string> coming_soon; // a grouped catalog option: the sections that have no entries yet ("Automatic", "CVT")
+    std::vector<std::string> coming_soon; // a grouped catalog option: the sections that have no entries yet (none since the CVT rows)
     int list_size = 0;                 // ScaleList: number of entries
     std::vector<double> stock_numbers; // ScaleList: stock leaf values (gear ratios) for display
 };

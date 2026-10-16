@@ -80,6 +80,7 @@ add_executable(rg_unit_tests
   test_cooling_upgrades.cpp
   test_engine_bore.cpp
   test_gearbox_swap.cpp
+  test_automatic_gearbox_swap.cpp
   test_part_mass.cpp
   test_drivetrain_swap.cpp
   test_garage.cpp
@@ -120,6 +121,15 @@ target_link_libraries(rg_unit_tests
     nlohmann_json::nlohmann_json
 )
 
+# These diagnostics intentionally use standard C stdio/environment functions.
+# MSVC labels them deprecated; keep /WX elsewhere and scope the CRT opt-out
+# to the affected translation units (no change to product builds).
+if(WIN32)
+  set_property(SOURCE
+    test_road_overpass.cpp test_exposure.cpp test_turbo_kit.cpp
+    test_nitrous_gain.cpp test_tc_owner_repro.cpp test_turbo_map_extension.cpp
+    APPEND PROPERTY COMPILE_DEFINITIONS _CRT_SECURE_NO_WARNINGS)
+endif()
 target_compile_definitions(rg_unit_tests PRIVATE RG_SOURCE_DIR="${CMAKE_SOURCE_DIR}")
 
 list(APPEND CMAKE_MODULE_PATH ${catch2_SOURCE_DIR}/extras)

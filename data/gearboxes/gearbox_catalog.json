@@ -1,6 +1,6 @@
 {
   "format": "rg.gearbox_catalog/1",
-  "source": "Game-owned gearbox catalogue (gearbox swap, 2026-10-13). One row per gearbox file the garage offers. What a physics_sim gearbox file cannot say lives here: display name, kind (manual | sequential | automatic | cvt), focus (economy | touring | performance | race), gear_type (helical | straight_cut, the later gear-whine audio keys on it), synchro (cone | dog), the input torque rating, the dry mass (mass_kg, the gearbox's own node in the garage part-mass tree, rg/part_mass.h; without the differential) and the card text. rating_nm is the maximum engine torque the box is rated for (N*m at the input shaft): physics_sim's GearboxDesc has no rating yet, so the rating is kept HERE and moves into the physics file when the physics session adds one; the garage offers a box only for an engine whose peak torque does not exceed it. All ratings and designs are invented [AS] and chosen to cover the shipped engines (engine peaks: i4 2.0 ~212, A25A 290, N52 300, R26B 608, hyper V8 1387 N*m). Paths are relative to the repository root. The automatic and CVT kinds have no entries yet (physics_sim has no torque converter or variator): the garage lists them as 'coming soon'; the kinds themselves are fixed in rg::GearboxCatalog (gearbox_catalog.h).",
+  "source": "Game-owned gearbox catalogue (gearbox swap, 2026-10-13). One row per gearbox file the garage offers. What a physics_sim gearbox file cannot say lives here: display name, kind (manual | sequential | automatic | dual_clutch | cvt), focus (economy | touring | performance | race), gear_type (helical | straight_cut, the later gear-whine audio keys on it), synchro (cone | dog | none: the clutch-to-clutch kinds shift on wet clutches), the input torque rating, the dry mass (mass_kg, the gearbox's own node in the garage part-mass tree, rg/part_mass.h; without the differential) and the card text. rating_nm is the maximum engine torque the box is rated for (N*m at the input shaft): physics_sim's GearboxDesc has no rating yet, so the rating is kept HERE and moves into the physics file when the physics session adds one; the garage offers a box only for an engine whose peak torque does not exceed it. All ratings and designs are invented [AS] and chosen to cover the shipped engines (engine peaks: i4 2.0 ~212, A25A 290, N52 300, R26B 608, hyper V8 1387 N*m). Paths are relative to the repository root. Automatic (torque converter) and dual_clutch rows (2026-10-16) also carry a 'tcu' object: the automatic_tcu fields that belong to the box; the engine-dependent shift, kickdown, lock-up and launch rpm points are derived from the installed engine on install (rg::derive_automatic_tcu_points). CVT rows (2026-10-16, physics_sim CVT plan C1) name physics_sim's push-belt sedan_cvt (torque converter) and sedan_cvt_clutch (starting clutch), rated 250 N*m = their files' rated_input_torque_nm; their 'tcu' adds 'cvt': {stepped_sport}, the variator's target-rpm and minimum-rpm curves are derived from the installed engine on install. A section without rows is listed as 'coming soon'; the kinds themselves are fixed in rg::GearboxCatalog (gearbox_catalog.h).",
   "gearboxes": [
     {
       "id": "econ_5mt",
@@ -105,6 +105,147 @@
       "mass_source": "[AS] a period cast-iron 3-speed sliding-mesh box: 35-40 kg, recalled, no citation fetched; 38 kg used.",
       "file": "data/gearboxes/vintage_3mt.json",
       "description": "Three widely spaced straight-cut gears and no synchronisers, as in the earliest motor cars. Match the speeds or it grinds."
+    },
+    {
+      "id": "auto_8at",
+      "mass_kg": 85,
+      "mass_source": "[AS] estimated dry mass of a comparable unit without its differential (no citation fetched).",
+      "name": "8-speed automatic",
+      "kind": "automatic",
+      "focus": "touring",
+      "gear_type": "helical",
+      "synchro": "none",
+      "rating_nm": 400,
+      "file": "external/physics_sim/data/gearboxes/sedan_8at.json",
+      "description": "Torque-converter automatic with eight planetary gears: creeps away at idle, shifts on its own and locks the converter up when cruising. P R N D on the selector, the shift keys switch to manual mode.",
+      "tcu": {
+        "min_time_in_gear_s": 0.8,
+        "kickdown_throttle": 0.9,
+        "manual_timeout_s": 0.0,
+        "upshift_torque_fraction": 0.7,
+        "creep_torque_nm": 0.0,
+        "lockup": {
+          "enabled": true,
+          "min_gear": 3,
+          "max_throttle": 0.8
+        }
+      }
+    },
+    {
+      "id": "heavy_8at",
+      "mass_kg": 105,
+      "mass_source": "[AS] estimated dry mass of a comparable unit without its differential (no citation fetched).",
+      "name": "Heavy-duty 8-speed automatic",
+      "kind": "automatic",
+      "focus": "performance",
+      "gear_type": "helical",
+      "synchro": "none",
+      "rating_nm": 750,
+      "file": "data/gearboxes/heavy_8at.json",
+      "description": "The eight-speed automatic with a looser converter and heavier clutch packs for big-torque engines.",
+      "tcu": {
+        "min_time_in_gear_s": 0.8,
+        "kickdown_throttle": 0.9,
+        "manual_timeout_s": 0.0,
+        "upshift_torque_fraction": 0.7,
+        "creep_torque_nm": 0.0,
+        "lockup": {
+          "enabled": true,
+          "min_gear": 3,
+          "max_throttle": 0.8
+        }
+      }
+    },
+    {
+      "id": "dct_7",
+      "mass_kg": 75,
+      "mass_source": "[AS] estimated dry mass of a comparable unit without its differential (no citation fetched).",
+      "name": "7-speed dual-clutch",
+      "kind": "dual_clutch",
+      "focus": "performance",
+      "gear_type": "helical",
+      "synchro": "none",
+      "rating_nm": 350,
+      "file": "external/physics_sim/data/gearboxes/sedan_7dct.json",
+      "description": "Two wet clutches, odd and even gears on their own shafts: the next gear waits preselected and the shift is a clutch handover in tens of milliseconds. Launches on clutch slip.",
+      "tcu": {
+        "min_time_in_gear_s": 0.5,
+        "kickdown_throttle": 0.9,
+        "manual_timeout_s": 0.0,
+        "upshift_torque_fraction": 0.4,
+        "creep_torque_nm": 40.0
+      }
+    },
+    {
+      "id": "hyper_7dct",
+      "mass_kg": 90,
+      "mass_source": "[AS] estimated dry mass of a comparable unit without its differential (no citation fetched).",
+      "name": "Hypercar 7-speed dual-clutch",
+      "kind": "dual_clutch",
+      "focus": "race",
+      "gear_type": "helical",
+      "synchro": "none",
+      "rating_nm": 1600,
+      "file": "data/gearboxes/hyper_7dct.json",
+      "description": "The hypercar's gearing in a wet dual-clutch transaxle with clutches for over 1,500 N*m: near-instant shifts under full power.",
+      "tcu": {
+        "min_time_in_gear_s": 0.4,
+        "kickdown_throttle": 0.9,
+        "manual_timeout_s": 0.0,
+        "upshift_torque_fraction": 0.4,
+        "creep_torque_nm": 60.0
+      }
+    },
+    {
+      "id": "cvt_converter",
+      "mass_kg": 80,
+      "mass_source": "[AS] estimated dry mass of a comparable unit without its differential (no citation fetched).",
+      "name": "CVT with torque converter",
+      "kind": "cvt",
+      "focus": "economy",
+      "gear_type": "helical",
+      "synchro": "none",
+      "rating_nm": 250,
+      "file": "external/physics_sim/data/gearboxes/sedan_cvt.json",
+      "description": "Push-belt CVT: no gears, the pulleys change the ratio steplessly so the engine holds the rpm the pedal asks for. Pulls away on a torque converter that locks up at once; in S it steps through seven fixed ratios like an automatic.",
+      "tcu": {
+        "min_time_in_gear_s": 0.6,
+        "kickdown_throttle": 0.9,
+        "manual_timeout_s": 0.0,
+        "upshift_torque_fraction": 1.0,
+        "creep_torque_nm": 0.0,
+        "lockup": {
+          "enabled": true,
+          "min_gear": 1,
+          "max_throttle": 1.0
+        },
+        "cvt": {
+          "stepped_sport": true
+        }
+      }
+    },
+    {
+      "id": "cvt_clutch",
+      "mass_kg": 70,
+      "mass_source": "[AS] estimated dry mass of a comparable unit without its differential (no citation fetched).",
+      "name": "CVT with starting clutch",
+      "kind": "cvt",
+      "focus": "economy",
+      "gear_type": "helical",
+      "synchro": "none",
+      "rating_nm": 250,
+      "file": "external/physics_sim/data/gearboxes/sedan_cvt_clutch.json",
+      "description": "The push-belt CVT without a converter: a wet starting clutch slips the car away from rest and holds the variator at its launch ratio until it closes. Lighter and more direct, with less creep. In S it steps through seven fixed ratios.",
+      "tcu": {
+        "min_time_in_gear_s": 0.6,
+        "kickdown_throttle": 0.9,
+        "manual_timeout_s": 0.0,
+        "upshift_torque_fraction": 1.0,
+        "creep_torque_nm": 40.0,
+        "cvt": {
+          "stepped_sport": true
+        }
+      }
     }
   ]
 }
