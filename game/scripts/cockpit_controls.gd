@@ -35,6 +35,7 @@ var rig_path: String = ""
 const EYE_RADIUS_M := 0.9       # the camera must be this close to the driver eye for clicks to count
 # RgDriverActions enum values (godot_ext/src/rg_driver_actions.h); literals so this script parses without the GDExtension
 const KIND_RELEASE := 1
+const KIND_PRESS := 0
 const KIND_SET := 2
 const SOURCE_COCKPIT_MOUSE := 3
 const DRIVER_BACKED := ["hazard", "indicator", "horn", "lights"]   # channels with a DriverActions action
@@ -504,7 +505,10 @@ func activate(node_name: String, step: int = 1) -> bool:
 	var channel := str(action.get("channel", ""))
 	match str(action.get("type", "")):
 		"toggle":
-			if driver_actions != null and (channel == "hazard" or channel == "lights"):
+			if driver_actions != null and channel == "lights":
+				_submit(channel, KIND_PRESS, 1.0) # the same cycle as the lights key: auto -> on -> off -> auto
+				return true
+			if driver_actions != null and channel == "hazard":
 				_submit(channel, KIND_SET, 0.0 if _truthy(get_cosmetic(channel)) else 1.0)
 				return true
 			var on := not _truthy(_cosmetic.get(channel, false))

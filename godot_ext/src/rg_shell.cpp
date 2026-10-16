@@ -276,6 +276,7 @@ godot::Array RgShell::get_settings_schema() const {
             for (const std::string& c : def.choices) choices.push_back(from_std(c));
             d["choices"] = choices;
             d["applies_live"] = def.applies_live;
+            d["applies_on_restart"] = def.applies_on_restart;
             list.push_back(d);
         }
         sd["settings"] = list;

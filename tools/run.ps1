@@ -72,11 +72,14 @@
     Print what would happen and do nothing - no build, no launch.
 
 .PARAMETER -Renderer
-    Godot rendering method for this run: compat (default, the project
-    setting gl_compatibility), mobile or forward_plus. Forwarded as
-    --rendering-method; the frame-time lines (RG_FRAME_STATS) name the
-    renderer and driver that actually ran. mobile/forward_plus run on
-    Vulkan (or D3D12 with -Driver d3d12); see the perf PR's renderer notes.
+    Godot rendering method for this run: mobile (the project default since
+    the Mobile renderer move, Vulkan; also what VR uses), compat (the OpenGL
+    gl_compatibility renderer, the fallback) or forward_plus. Forwarded as
+    --rendering-method, which wins over the in-game Settings > Renderer
+    choice (user://renderer_override.cfg) for this run only. Without it the
+    game starts on the renderer that setting names (default mobile). The
+    frame-time lines (RG_FRAME_STATS, with -Perf) and the RG_RENDERER start
+    line name the renderer and driver that actually ran.
 
 .PARAMETER -Driver
     Godot rendering driver: opengl3 (compat only), vulkan, d3d12. Default:
@@ -94,8 +97,10 @@
     child only): frame probes, GPU/CPU render timers and the 1 Hz
     RG_FRAME_STATS / RG_TERRAIN_STREAM / RG_ROAD_STREAM lines that
     tools/perf_summary.py reads. Off by default (no cost in a normal game).
-    -Renderer, -Driver and -RenderThread imply it; so do RG_PERF_AB and
-    RG_BENCH_SURFACES when set in the environment.
+    -Driver and -RenderThread imply it; so do RG_PERF_AB and
+    RG_BENCH_SURFACES when set in the environment. -Renderer does not any
+    more (it is also the plain Compatibility fallback switch): add -Perf to
+    compare renderers.
 
 .PARAMETER -Preset
     CMake preset to build (default 'relwithdebinfo' - a debug build makes
@@ -277,7 +282,8 @@ $launchArgs = New-Object System.Collections.Generic.List[string]
 $launchArgs.Add('--path')
 $launchArgs.Add($gameDir)
 
-# -Renderer / -Driver (perf, 2026-10-15): compare the three Godot renderers on the same scene.
+# -Renderer / -Driver (perf, 2026-10-15): compare the three Godot renderers on the same scene; -Renderer compat is
+# also the Compatibility fallback since Mobile became the default.
 $renderMethod = switch ($Renderer) {
     ''             { '' }
     'compat'       { 'gl_compatibility' }
@@ -297,7 +303,7 @@ if ($RenderThread) {
 
 # -Perf (or a perf comparison option): performance diagnostics on for the child (RG_PERF=1, main.gd).
 $perfSet = $false
-if (($Perf -or $Renderer -or $Driver -or $RenderThread) -and $env:RG_PERF -ne '1') {
+if (($Perf -or $Driver -or $RenderThread) -and $env:RG_PERF -ne '1') {
     $env:RG_PERF = '1'; $perfSet = $true
     Write-Host "perf diagnostics on (RG_PERF=1)"
 }

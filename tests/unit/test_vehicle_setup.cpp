@@ -15,6 +15,7 @@
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/matchers/catch_matchers_string.hpp>
+#include <catch2/matchers/catch_matchers_string.hpp>
 
 #include <algorithm>
 #include <cmath>
@@ -619,11 +620,15 @@ TEST_CASE("engine parts: swaps tune the newly installed engine and keep other re
         }
         CHECK(found);
     }
-    {   // G1: any catalog engine fits any catalog car (the old per-car compatible_engines list is gone)
+    {   // G1: any catalog engine that fits the bay goes into any catalog car (no per-car compatible_engines list)
         const auto hyper = rg::compile_setup(f.entry("car_hyper"), f.table, f.ctx,
-            setup_of("car_hyper", {{"engine_install", std::string("sedan_i6")}}));
+            setup_of("car_hyper", {{"engine_install", std::string("sedan_i4")}}));
         INFO(hyper.error);
         CHECK(hyper.ok);
+        const auto too_long = rg::compile_setup(f.entry("car_hyper"), f.table, f.ctx,
+            setup_of("car_hyper", {{"engine_install", std::string("sedan_i6")}}));
+        CHECK_FALSE(too_long.ok);
+        CHECK_THAT(too_long.error, Catch::Matchers::ContainsSubstring("801 mm long, the bay takes 700 mm"));
     }
     CHECK_FALSE(rg::compile_setup(f.entry("car_sedan"), f.table, f.ctx,
         setup_of("car_sedan", {{"engine_install", std::string("../../anything.json")}})).ok);
