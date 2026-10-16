@@ -148,6 +148,13 @@ const ps::drivetrain::ManualTcuDesc* tcu_of(const ps::vehicle::VehicleDesc& d) {
     return nullptr;
 }
 
+const ps::drivetrain::AutomaticTcuDesc* auto_tcu_of(const ps::vehicle::VehicleDesc& d) {
+    for (const auto& c : d.controllers) {
+        if (const auto* g = std::get_if<ps::drivetrain::AutomaticTcuDesc>(&c.params)) return g;
+    }
+    return nullptr;
+}
+
 // The ids the garage lists for a car (every part of the gearbox option), in list order.
 std::vector<std::string> offered_ids(const Fixture& f, const rg::CatalogEntry& e) {
     const rg::SetupModel m = rg::build_setup_model(e, f.table, f.ctx);
@@ -172,7 +179,7 @@ double max_step(const ps::drivetrain::GearboxDesc& g) {
 TEST_CASE("gearbox catalogue: the shipped rows load with their kinds, ratings and sections", "[gearbox_swap][garage]") {
     Fixture f;
     const auto& list = f.boxes->list();
-    CHECK(list.size() == 8);
+    CHECK(list.size() == 12);
     std::set<std::string> ids;
     for (const auto& g : list) {
         INFO(g.id);
@@ -190,15 +197,17 @@ TEST_CASE("gearbox catalogue: the shipped rows load with their kinds, ratings an
     CHECK(straight->gear_type == "straight_cut");
     CHECK(straight->focus == "race");
     CHECK(rg::gearbox_section(*straight) == "Manual");
-    // Automatic and CVT have no entries until physics models them: the sections are known and empty.
+    // Automatic and dual-clutch boxes since automatic gearbox plan A1; CVT has no entries until physics models it.
     const auto sections = f.boxes->sections();
-    REQUIRE(sections.size() == 3);
+    REQUIRE(sections.size() == 4);
     CHECK(sections[0].label == "Manual");
     CHECK(sections[0].has_entries);
     CHECK(sections[1].label == "Automatic");
-    CHECK_FALSE(sections[1].has_entries);
-    CHECK(sections[2].label == "CVT");
-    CHECK_FALSE(sections[2].has_entries);
+    CHECK(sections[1].has_entries);
+    CHECK(sections[2].label == "Dual-clutch");
+    CHECK(sections[2].has_entries);
+    CHECK(sections[3].label == "CVT");
+    CHECK_FALSE(sections[3].has_entries);
     // the stock boxes are the catalogue's too (found by file)
     CHECK(f.boxes->find_by_file(component_ref(f.entry("car_hyper"), "gearbox")) == f.boxes->find("hyper_7mt"));
     CHECK(f.boxes->find_by_file(component_ref(f.entry("car_sedan"), "gearbox")) == f.boxes->find("touring_6mt"));
@@ -244,8 +253,16 @@ TEST_CASE("gearbox swap: every catalogue box loads in each car it is compatible 
             CHECK(gb->forward_ratios.front() == Approx(box.first_ratio));
             CHECK(gb->forward_ratios.back() == Approx(box.top_ratio));
             CHECK((box.kind == rg::GearboxKind::Sequential) == (gb->type == ps::drivetrain::GearboxType::Sequential));
-            // the controller still drives the (new) gearbox component and the car keeps its auto-shift
-            REQUIRE(tcu_of(l.desc) != nullptr);
+            CHECK((box.kind == rg::GearboxKind::Automatic) == (gb->type == ps::drivetrain::GearboxType::Automatic));
+            CHECK((box.kind == rg::GearboxKind::DualClutch) == (gb->type == ps::drivetrain::GearboxType::DualClutch));
+            if (rg::is_clutch_to_clutch(box.kind)) {
+                // an automatic or dual-clutch box brings its own controller (no manual_tcu, no clutch pedal)
+                CHECK(tcu_of(l.desc) == nullptr);
+                CHECK(auto_tcu_of(l.desc) != nullptr);
+            } else {
+                // the controller still drives the (new) gearbox component and the car keeps its auto-shift
+                REQUIRE(tcu_of(l.desc) != nullptr);
+            }
             ++loads;
         }
     }
@@ -269,10 +286,11 @@ TEST_CASE("gearbox swap: the garage offers exactly the boxes the engine's torque
         CHECK(std::set<std::string>(got.begin(), got.end()) == expected);
         CHECK(got.size() == expected.size());
     }
-    // the two hypercars: the stock 7-speed and the straight-cut race box, nothing else takes 1387 N*m
+    // the two hypercars: the stock 7-speed, the straight-cut race box and the hypercar dual-clutch; nothing else
+    // takes 1387 N*m
     for (const char* id : {"car_hyper", "car_hyper_n2o"}) {
         const std::vector<std::string> got = offered_ids(f, f.entry(id));
-        CHECK(std::set<std::string>(got.begin(), got.end()) == std::set<std::string>{"stock", "straight_cut_6sq"});
+        CHECK(std::set<std::string>(got.begin(), got.end()) == std::set<std::string>{"stock", "straight_cut_6sq", "hyper_7dct"});
     }
     // the economy sedan (i4, about 212 N*m) is offered the whole catalogue except the 160 N*m vintage 3-speed
     const std::vector<std::string> sedan = offered_ids(f, f.entry("car_sedan_rwd"));
@@ -418,6 +436,7 @@ TEST_CASE("gearbox swap: the auto-shift points leave room for every box's larges
         const double peak = engine_peak_of(f, *car);
         for (const rg::GearboxEntry& box : f.boxes->list()) {
             if (!rg::check_gearbox_rating(box, peak).empty()) continue;
+            if (rg::is_clutch_to_clutch(box.kind)) continue; // own schedule: test_automatic_gearbox_swap.cpp
             INFO(car->id << " + " << box.id);
             const Loaded l = load_setup(f, *car, setup_of(car->id, {{"gearbox_install", box.id}}));
             REQUIRE(l.ok);
@@ -515,6 +534,7 @@ TEST_CASE("gearbox swap: the sedan shifts up through every box on auto-shift wit
     const double peak = engine_peak_of(f, car);
     for (const rg::GearboxEntry& box : f.boxes->list()) {
         if (!rg::check_gearbox_rating(box, peak).empty()) continue; // the vintage 3-speed (160 N*m) is not offered to this engine
+        if (rg::is_clutch_to_clutch(box.kind)) continue; // driven on the selector: test_automatic_gearbox_swap.cpp
         INFO(box.id);
         const Drive d = drive_with(f, car, setup_of(car.id, {{"gearbox_install", box.id}}), 16.0);
         CHECK(d.started);

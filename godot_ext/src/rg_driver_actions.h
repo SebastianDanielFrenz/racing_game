@@ -19,6 +19,7 @@ public:
     void configure_auto_shift(bool enabled);
     bool get_auto_shift() const;
     static godot::Dictionary state(const godot::String& id, const godot::Dictionary& snapshot, const godot::Dictionary& channels);
+    static godot::Dictionary selector_shift(const godot::Dictionary& snapshot, int up, int down);
 protected:
     static void _bind_methods();
 private:

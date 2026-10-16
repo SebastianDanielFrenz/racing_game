@@ -9,8 +9,9 @@ namespace rg {
 namespace {
 // Preserve the original forwarding order; per-action events chain through the
 // last value written, irrespective of which device submitted them.
-constexpr std::array<std::string_view, 14> ids = {
-    "auto_shift", "traction_control", "toggle_aero", "toggle_launch_control", "drive_mode", "toggle_nitrous", "park", "epb", "start_stop", "hazard", "indicator_left", "indicator_right", "horn", "lights"
+constexpr std::array<std::string_view, 18> ids = {
+    "auto_shift", "traction_control", "toggle_aero", "toggle_launch_control", "drive_mode", "toggle_nitrous", "park", "epb", "start_stop", "hazard", "indicator_left", "indicator_right", "horn", "lights",
+    "select_drive", "select_reverse", "select_neutral", "transmission_mode"
 };
 constexpr std::array<std::string_view, 8> channels = {
     "assist.auto_shift", "assist.traction_control", "assist.aero_control", "assist.launch_control", "assist.drive_mode", "nitrous_arm", "park_lock", "epb"
@@ -107,6 +108,8 @@ void DriverActions::apply(const VehicleContext& context, ChannelSink& sink) {
             if (index == 6) {
                 if (!snapshot.park_fitted) continue;
                 next = event.kind == DriverActionKind::Set ? (event.value != 0 ? 1 : 0) : 1;
+                // An automatic's P = N + park lock (physics automatic_tcu).
+                if (snapshot.transmission_kind != 0 && next != 0) sink.set("gear_request", 0);
             } else if (index == 7) {
                 if (!snapshot.epb_fitted) continue;
                 // Switch LEVEL only; never reconstruct or retry the physics latch.
@@ -114,6 +117,19 @@ void DriverActions::apply(const VehicleContext& context, ChannelSink& sink) {
             }
             sink.set(channels[index], next);
         }
+    }
+    for (const auto& event : pending_) {
+        // Automatic gearbox plan A1: selector positions and the S/D mode, only on an automatic or dual-clutch box.
+        const int index = slot(event.id);
+        if (index < 14 || snapshot.transmission_kind == 0) continue;
+        if (index == 17) {
+            const double current = sink.get("transmission.mode");
+            sink.set("transmission.mode", event.kind == DriverActionKind::Set ? (event.value >= 0.5 ? 1 : 0) : (current >= 0.5 ? 0 : 1));
+            continue;
+        }
+        if (index == 15 && std::abs(snapshot.speed_mps) > kSelectorStandstillMps && snapshot.transmission_selector > 0) continue;
+        sink.set("gear_request", index == 14 ? kGearRequestDrive : index == 15 ? -1.0 : 0.0);
+        if (snapshot.park_fitted) sink.set("park_lock", 0);
     }
     for (const auto& event : pending_) {
         const int index = slot(event.id);
@@ -140,6 +156,30 @@ void DriverActions::apply(const VehicleContext& context, ChannelSink& sink) {
         }
     }
     discard_pending();
+}
+
+SelectorShift selector_shift(const DriverSnapshot& snapshot, int up, int down) {
+    SelectorShift out;
+    if (snapshot.transmission_kind == 0 || (up <= 0 && down <= 0)) return out;
+    const bool standstill = std::abs(snapshot.speed_mps) <= kSelectorStandstillMps;
+    if (snapshot.transmission_selector > 0) return out; // D: the counters are paddles (manual mode in physics)
+    out.forward_counts = false;
+    if (!standstill) return out; // P/N/R while rolling: the shift keys do nothing
+    if (up > 0 && down <= 0) {
+        out.gear_request = snapshot.transmission_selector < 0 ? 0.0 : kGearRequestDrive; // R -> N -> D
+    } else if (down > 0 && up <= 0) {
+        out.gear_request = snapshot.transmission_selector == 0 ? -1.0 : kGearRequestNoChange;
+    }
+    out.release_park = out.gear_request != kGearRequestNoChange;
+    return out;
+}
+
+std::string selector_label(const DriverSnapshot& snapshot) {
+    if (snapshot.transmission_kind == 0) return {};
+    if (snapshot.transmission_selector < 0) return "R";
+    if (snapshot.transmission_selector == 0) return snapshot.park_engaged ? "P" : "N";
+    if (snapshot.transmission_manual) return "M" + std::to_string(std::max(1, snapshot.gear));
+    return snapshot.transmission_sport ? "S" : "D";
 }
 
 void DriverActions::configure_cabin(const CabinConfig& c) {
@@ -217,6 +257,16 @@ ControlState DriverActions::state(std::string_view id, const DriverSnapshot& sna
         out.lamp_segments = out.active ? 1 : 0;
         out.label = out.active ? "P" : "";
         out.colour_role = out.active ? "warning" : "off";
+    } else if (id == "transmission") {
+        // Automatic gearbox plan A1: the selector letter (P R N D S M<n>) of an automatic or dual-clutch box.
+        out.fitted = snapshot.transmission_kind != 0;
+        out.enabled = out.fitted;
+        out.value = snapshot.transmission_selector;
+        out.active = out.fitted && snapshot.transmission_selector != 0;
+        out.lamp_segments = out.fitted ? 1 : 0;
+        out.label = selector_label(snapshot);
+        out.lamp_state = snapshot.transmission_kind;
+        out.colour_role = !out.fitted ? "off" : snapshot.transmission_sport ? "sport" : "normal";
     } else if (id == "epb") {
         out.fitted = snapshot.epb_fitted;
         out.enabled = out.fitted;

@@ -336,7 +336,13 @@ func _draw_body() -> void:
 	# Over the needle's hub, as before the dial split.
 	draw_circle(center, gear_radius, COLOR_GEAR_BG)
 	draw_arc(center, gear_radius, 0.0, TAU, 48, accent, scale * (2.5 if themed else 1.5), true)
-	_draw_centered_text(font, center, GaugeLogic.gear_label(int(_last_pt.get("gear", 0))), font_size_gear, gear_text_color)
+	var gear_text: String = GaugeLogic.gear_label(int(_last_pt.get("gear", 0)))
+	if int(_last_pt.get("transmission_kind", 0)) != 0:
+		# Automatic / dual-clutch: P R N D S M<n> from rg::selector_label, the running gear after D/S.
+		var sel: String = str(RgDriverActions.state("transmission", _last_pt, {})["label"])
+		var g: int = int(_last_pt.get("gear", 0))
+		gear_text = sel + (str(g) if (sel == "D" or sel == "S") and g > 0 else "")
+	_draw_centered_text(font, center, gear_text, font_size_gear, gear_text_color)
 
 	var fitted_assists: PackedStringArray = _gauge_info.get("fitted_assists", PackedStringArray())
 	for i in range(SYSTEM_LAMP_NAMES.size()):

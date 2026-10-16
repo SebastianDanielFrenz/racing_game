@@ -7,6 +7,7 @@ var drive_kw := 0.0
 var boost_bar := -1.0
 var gear := 0
 var park_engaged := false
+var selector_label := "" # automatic / dual-clutch: P R N D S M<n> (rg::selector_label), "" on a manual
 var cabin_lamps: Dictionary = {}
 var capacity := 0.0
 var density := 0.0
@@ -84,6 +85,7 @@ func _process_body(delta: float) -> void:
 	boost_bar = pt.get("boost_bar",-1.0)
 	gear = int(pt.get("gear",0))
 	park_engaged = controls["park"]["active"]
+	selector_label = str(controls["transmission"]["label"]) if controls.has("transmission") and controls["transmission"]["fitted"] else ""
 	fuel = pt.get("fuel_mass_kg",0.0)
 	if capacity>0.0 and (initial_fuel<0.0 or fuel>initial_fuel+0.01):
 		initial_fuel = fuel
@@ -147,7 +149,12 @@ func _draw_body() -> void:
 	if themed:
 		# Drive mode, small, under the tach dial (between its lower end and the information strip).
 		text(drive_mode_label,Vector2(735,299),22,drive_mode_accent)
-	text("P" if park_engaged else ("R" if gear<0 else ("N" if gear==0 else str(gear))),Vector2(490,174),90)
+	if selector_label != "":
+		# Automatic gearboxes: the selector letter, with the running gear after D/S (M already carries it).
+		var shown := selector_label + (str(gear) if (selector_label == "D" or selector_label == "S") and gear > 0 else "")
+		text(shown,Vector2(490,174),90 if shown.length() < 2 else 70)
+	else:
+		text("P" if park_engaged else ("R" if gear<0 else ("N" if gear==0 else str(gear))),Vector2(490,174),90)
 	text("GEAR",Vector2(490,207),18,blue)
 	if not cabin_lamps.is_empty():
 		text("<",Vector2(330,32),28,Color.GREEN if cabin_lamps["left"]["active"] else Color(0.15,0.15,0.15))

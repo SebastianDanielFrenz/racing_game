@@ -24,7 +24,7 @@ choosing the half; a pedal resting at +-1 is bound calibrated (rest -> opposite 
 
 ## Data
 
-- `data/controls/actions.json` (`rg.control_actions/1`): the one action schema, 48 actions. Fields: `id`,
+- `data/controls/actions.json` (`rg.control_actions/1`): the one action schema, 52 actions. Fields: `id`,
   `label`, `group` (driving/camera/on_foot/menus/global), `kind` (`button` | `axis`), `mode`
   (`held` | `edge`, buttons), `range` (`signed` | `unit` | `delta`, axes), `negative_label`/
   `positive_label`, `help`, `modes` (the player modes the action is live in; two bindings of one
@@ -71,6 +71,12 @@ L3 (7: `cam_fast`, free cam / on foot). A press in another mode is consumed and 
 Paddles, the touchpad and MISC1 are the back grips of Xbox Elite / Steam Deck / DualSense Edge pads and
 the share button of Xbox Series pads, reported by SDL as buttons 15-20. On a pad without them these
 actions are reachable only by rebinding. Not verified on hardware.
+
+Automatic and dual-clutch gearboxes (2026-10-16): the shift keys work the selector while the car stands in
+P, N or R (shift up: P/N -> D, R -> N; shift down: P/N -> R) and are paddles (manual mode) in D. The
+actions select_drive, select_reverse, select_neutral and transmission_mode (D/S toggle, key Y) have no
+other defaults; reverse is refused while rolling in D faster than 1 m/s. On a manual car all four do
+nothing. The cluster shows P R N D S or M<gear>.
 
 Still keyboard-only (no free pad button without a chord): start/stop engine (F11), headlights (O), park
 (P), get out (G), truck ahead (T), zoom in/out (PageUp/PageDown, orbit / drone / third person), switch

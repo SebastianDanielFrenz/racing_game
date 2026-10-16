@@ -71,6 +71,7 @@ add_executable(rg_unit_tests
   test_envelope_cost.cpp
   test_engine_garage.cpp
   test_gearbox_swap.cpp
+  test_automatic_gearbox_swap.cpp
   test_drivetrain_swap.cpp
   test_garage.cpp
   test_car_browser.cpp

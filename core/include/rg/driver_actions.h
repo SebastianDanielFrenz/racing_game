@@ -61,10 +61,30 @@ struct DriverSnapshot {
     int esc_effective = 0; // 0 off, 1 on, 2 sport
     bool esc_intervening = false;
     int gear = 0;
+    // Automatic gearbox plan A1 (physics automatic_tcu): 0 manual, 1 torque-converter automatic, 2 dual-clutch.
+    int transmission_kind = 0;
+    int transmission_selector = 0; // -1 R, 0 N (P when park_engaged), k > 0 D limited to gear k
+    bool transmission_manual = false; // paddles took over in D
+    bool transmission_sport = false;
     bool engine_running = false;
     double speed_mps = 0;
     double steering_wheel_deg = 0;
 };
+
+// Automatic gearbox plan A1: the shift keys on an automatic. From P/N/R at (near) standstill, shift up selects D and
+// shift down selects R; in D the counters go to physics (paddles = manual mode). Returns the gear_request to write
+// (kGearRequestNoChange = leave the channel), and whether the shift counters should still be forwarded.
+constexpr double kGearRequestNoChange = -100.0;
+constexpr double kGearRequestDrive = 99.0;
+constexpr double kSelectorStandstillMps = 1.0;
+struct SelectorShift {
+    double gear_request = kGearRequestNoChange;
+    bool release_park = false;
+    bool forward_counts = true;
+};
+SelectorShift selector_shift(const DriverSnapshot& snapshot, int up, int down);
+// The selector letter for HUD and cluster: "P", "R", "N", "D", "S" (sport) or "M<gear>" (paddles); "" on a manual car.
+std::string selector_label(const DriverSnapshot& snapshot);
 
 struct VehicleContext {
     DriverSnapshot snapshot;
@@ -120,7 +140,7 @@ private:
     CabinState cabin_;
     CabinConfig config_;
     bool cabin_configured_ = false;
-    std::array<bool, 14> held_{};
+    std::array<bool, 18> held_{};
     std::vector<ActionEvent> pending_;
 };
 
