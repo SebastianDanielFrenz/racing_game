@@ -179,7 +179,7 @@ double max_step(const ps::drivetrain::GearboxDesc& g) {
 TEST_CASE("gearbox catalogue: the shipped rows load with their kinds, ratings and sections", "[gearbox_swap][garage]") {
     Fixture f;
     const auto& list = f.boxes->list();
-    CHECK(list.size() == 12);
+    CHECK(list.size() == 14);
     std::set<std::string> ids;
     for (const auto& g : list) {
         INFO(g.id);
@@ -197,7 +197,7 @@ TEST_CASE("gearbox catalogue: the shipped rows load with their kinds, ratings an
     CHECK(straight->gear_type == "straight_cut");
     CHECK(straight->focus == "race");
     CHECK(rg::gearbox_section(*straight) == "Manual");
-    // Automatic and dual-clutch boxes since automatic gearbox plan A1; CVT has no entries until physics models it.
+    // Automatic and dual-clutch boxes since automatic gearbox plan A1, CVT since physics_sim CVT plan C1.
     const auto sections = f.boxes->sections();
     REQUIRE(sections.size() == 4);
     CHECK(sections[0].label == "Manual");
@@ -207,7 +207,7 @@ TEST_CASE("gearbox catalogue: the shipped rows load with their kinds, ratings an
     CHECK(sections[2].label == "Dual-clutch");
     CHECK(sections[2].has_entries);
     CHECK(sections[3].label == "CVT");
-    CHECK_FALSE(sections[3].has_entries);
+    CHECK(sections[3].has_entries);
     // the stock boxes are the catalogue's too (found by file)
     CHECK(f.boxes->find_by_file(component_ref(f.entry("car_hyper"), "gearbox")) == f.boxes->find("hyper_7mt"));
     CHECK(f.boxes->find_by_file(component_ref(f.entry("car_sedan"), "gearbox")) == f.boxes->find("touring_6mt"));
@@ -249,12 +249,19 @@ TEST_CASE("gearbox swap: every catalogue box loads in each car it is compatible 
             REQUIRE(l.ok);
             const auto* gb = gearbox_of(l.desc);
             REQUIRE(gb != nullptr);
-            REQUIRE(static_cast<int>(gb->forward_ratios.size()) == box.gears);
-            CHECK(gb->forward_ratios.front() == Approx(box.first_ratio));
-            CHECK(gb->forward_ratios.back() == Approx(box.top_ratio));
+            REQUIRE(static_cast<int>(gb->forward_ratios.size()) == box.gears); // a cvt: its virtual steps
+            if (box.kind == rg::GearboxKind::Cvt) {
+                REQUIRE(gb->cvt.has_value());
+                CHECK(gb->cvt->ratio_low == Approx(box.first_ratio));
+                CHECK(gb->cvt->ratio_high == Approx(box.top_ratio));
+            } else {
+                CHECK(gb->forward_ratios.front() == Approx(box.first_ratio));
+                CHECK(gb->forward_ratios.back() == Approx(box.top_ratio));
+            }
             CHECK((box.kind == rg::GearboxKind::Sequential) == (gb->type == ps::drivetrain::GearboxType::Sequential));
             CHECK((box.kind == rg::GearboxKind::Automatic) == (gb->type == ps::drivetrain::GearboxType::Automatic));
             CHECK((box.kind == rg::GearboxKind::DualClutch) == (gb->type == ps::drivetrain::GearboxType::DualClutch));
+            CHECK((box.kind == rg::GearboxKind::Cvt) == (gb->type == ps::drivetrain::GearboxType::Cvt));
             if (rg::is_clutch_to_clutch(box.kind)) {
                 // an automatic or dual-clutch box brings its own controller (no manual_tcu, no clutch pedal)
                 CHECK(tcu_of(l.desc) == nullptr);

@@ -13,10 +13,11 @@
 // The garage offers a box only for an engine whose peak torque does not exceed it (check_gearbox_rating).
 //
 // Sections of the garage list: Manual (kind manual and sequential, the latter labelled "Sequential"),
-// Automatic (torque converter), Dual-clutch and CVT. physics_sim models the converter automatic and the
-// dual-clutch box (gearbox types "automatic" / "dual_clutch", controller automatic_tcu); CVT has no entries
-// until it models a variator, and the garage shows it as "coming soon". A box's kind must match its file's
-// type for every kind but cvt.
+// Automatic (torque converter), Dual-clutch and CVT. physics_sim models all three (gearbox types "automatic" /
+// "dual_clutch" / "cvt", controller automatic_tcu; a cvt launches through a torque converter or its forward
+// clutch, chosen by the file). A section without rows shows as "coming soon". A box's kind must match its file's
+// type. A cvt file has no forward_ratios: its virtual steps (cvt.steps, used in S and with the paddles) count as
+// the gears and first/top ratio are the variator's ratio_low/ratio_high.
 #pragma once
 
 #include <memory>
@@ -41,13 +42,15 @@ struct GearboxEntry {
     double rating_nm = 0.0;   // maximum engine torque the box takes
     std::string file;         // absolute, normalised path of the physics_sim gearbox file
     // Read from the gearbox file:
-    int gears = 0;            // forward gears
-    double first_ratio = 0.0;
-    double top_ratio = 0.0;
-    // Automatic / dual-clutch only: the row's "tcu" object (JSON text) - the automatic_tcu fields that belong to the
-    // box (min_time_in_gear_s, kickdown_throttle, manual_timeout_s, upshift_torque_fraction, creep_torque_nm and the
-    // lockup enabled/min_gear/max_throttle of a converter box). The engine-dependent rpm points are derived on install
-    // (derive_automatic_tcu_points); ids are filled in by the installer.
+    int gears = 0;            // forward gears (cvt: the virtual steps)
+    double first_ratio = 0.0; // cvt: ratio_low
+    double top_ratio = 0.0;   // cvt: ratio_high
+    bool converter = false;   // the file has a torque converter (automatic always, cvt optional)
+    // Automatic / dual-clutch / cvt only: the row's "tcu" object (JSON text) - the automatic_tcu fields that belong to
+    // the box (min_time_in_gear_s, kickdown_throttle, manual_timeout_s, upshift_torque_fraction, creep_torque_nm, the
+    // lockup enabled/min_gear/max_throttle of a converter box, and for a cvt "cvt": {"stepped_sport"}). The
+    // engine-dependent rpm points are derived on install (derive_automatic_tcu_points); ids are filled in by the
+    // installer.
     std::string tcu_json;
 };
 
@@ -58,8 +61,11 @@ struct GearboxEntry {
 //   sport_schedule  up idle + 0.33 band / limiter - 250, down idle + 0.17 band / idle + 0.53 band;
 //   kickdown_max_rpm limiter - 600; lock-up engage idle + 0.10 band (at least idle + 400), release idle + 0.05 band
 //                   (at least idle + 250, below engage);
-//   dual-clutch launch: bite idle + 200, full engagement from idle + 0.12 band (at least bite + 400) to idle + 0.45
-//                   band, anti-stall 0.75 x idle, lock slip 100 rpm.
+//   dual-clutch launch (also a cvt without converter): bite idle + 200, full engagement from idle + 0.12 band (at
+//                   least bite + 400) to idle + 0.45 band, anti-stall 0.75 x idle, lock slip 100 rpm;
+//   cvt ratio law:  target engine rpm vs throttle 0 / 0.2 / 0.5 / 0.8 / 1 at idle + 0.09 / 0.16 / 0.32 / 0.60 band
+//                   and limiter - 0.15 band; minimum rpm vs gearbox output rpm 0 / 2000 / 6000 at idle + 0.07 /
+//                   0.12 / 0.25 band (an idle 800 / limiter 6500 engine gets physics_sim's sedan CVT fixture values).
 // ok = false (and every value 0) when limiter <= idle + 1000.
 struct AutomaticTcuPoints {
     bool ok = false;
@@ -69,7 +75,11 @@ struct AutomaticTcuPoints {
     double lockup_engage_rpm = 0.0, lockup_release_rpm = 0.0;
     double launch_bite_rpm = 0.0, launch_full_rpm_min = 0.0, launch_full_rpm_max = 0.0, launch_anti_stall_rpm = 0.0;
     double launch_lock_slip_rpm = 0.0;
+    double cvt_target_rpm[5] = {0.0, 0.0, 0.0, 0.0, 0.0}; // at throttle kCvtTargetThrottle[i]
+    double cvt_min_rpm[3] = {0.0, 0.0, 0.0};              // at output rpm kCvtMinOutputRpm[i]
 };
+inline constexpr double kCvtTargetThrottle[5] = {0.0, 0.2, 0.5, 0.8, 1.0};
+inline constexpr double kCvtMinOutputRpm[3] = {0.0, 2000.0, 6000.0};
 AutomaticTcuPoints derive_automatic_tcu_points(double idle_rpm, double limiter_rpm);
 
 // One section of the garage list.

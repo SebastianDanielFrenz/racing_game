@@ -503,7 +503,6 @@ std::string install_catalog_part(Files& files, const SetupOptionDef& def, const 
     if (def.catalog == "gearboxes") {
         const GearboxEntry* g = ctx.gearboxes->find(id);
         if (g == nullptr) return def.id + ": \"" + id + "\" is not a gearbox in the catalogue";
-        if (g->kind == GearboxKind::Cvt) return def.id + ": " + g->name + " cannot be simulated yet";
         if (norm_path(g->file) == original_gearbox_path(files)) {
             // The car's own gearbox, chosen explicitly: nothing changes (also when it was swapped before in this session).
             return {};
@@ -621,7 +620,7 @@ int controller_of_type(const json& vehicle, const char* type) {
     return -1;
 }
 
-// Automatic gearbox swap (2026-10-16): the car gets a clutch-to-clutch gearbox (automatic or dual_clutch, whose ref
+// Automatic gearbox swap (2026-10-16): the car gets a clutch-to-clutch gearbox (automatic, dual_clutch or cvt, whose ref
 // install_catalog_part has already repointed). Trusted code, like a drive layout: the clutch component goes (its two
 // shafts become one, engine to gearbox), the manual_tcu becomes an automatic_tcu (same id, so the clutch assist
 // options no longer find their pointers and drop out of the setup), drive-mode and assist-fitment electronics that
@@ -728,21 +727,37 @@ std::string install_clutch_to_clutch(Files& files, const GearboxEntry& g) {
     tcu["sport_schedule"] = json{{"up_rpm_at_zero_throttle", pts.sport_up_zero}, {"up_rpm_at_full_throttle", pts.sport_up_full},
                                  {"down_rpm_at_zero_throttle", pts.sport_down_zero}, {"down_rpm_at_full_throttle", pts.sport_down_full}};
     tcu["kickdown_max_rpm"] = pts.kickdown_max_rpm;
-    if (g.kind == GearboxKind::Automatic) {
+    if (g.converter) { // a converter automatic or a converter CVT: lock-up
         json lk = tcu.contains("lockup") ? tcu["lockup"] : json::object();
         lk["engage_rpm"] = pts.lockup_engage_rpm;
         lk["release_rpm"] = pts.lockup_release_rpm;
         tcu["lockup"] = std::move(lk);
-    } else {
+    } else { // a dual-clutch box or a starting-clutch CVT: the launch clutch
         tcu["launch"] = json{{"bite_rpm", pts.launch_bite_rpm}, {"full_rpm_min", pts.launch_full_rpm_min},
                              {"full_rpm_max", pts.launch_full_rpm_max}, {"lock_slip_rpm", pts.launch_lock_slip_rpm},
                              {"anti_stall_rpm", pts.launch_anti_stall_rpm}};
     }
+    if (g.kind == GearboxKind::Cvt) {
+        // CVT ratio law (physics automatic_tcu "cvt"): the engine rpm the variator aims at, from the installed engine.
+        json c = tcu.contains("cvt") ? tcu["cvt"] : json::object();
+        json tx = json::array(), ty = json::array(), mx = json::array(), my = json::array();
+        for (int i = 0; i < 5; ++i) { tx.push_back(kCvtTargetThrottle[i]); ty.push_back(pts.cvt_target_rpm[i]); }
+        for (int i = 0; i < 3; ++i) { mx.push_back(kCvtMinOutputRpm[i]); my.push_back(pts.cvt_min_rpm[i]); }
+        c["target_rpm_vs_throttle"] = json{{"x", tx}, {"y", ty}};
+        c["min_rpm_vs_output_rpm"] = json{{"x", mx}, {"y", my}};
+        tcu["cvt"] = std::move(c);
+    }
+    const bool stepped = g.kind == GearboxKind::Cvt && tcu["cvt"].value("stepped_sport", true);
     if (at >= 0) ctrls[static_cast<std::size_t>(at)] = std::move(tcu);
     else ctrls.insert(ctrls.begin(), std::move(tcu));
-    char buf[200];
-    std::snprintf(buf, sizeof(buf), "%s: shifts up at %.0f rpm at full throttle (sport %.0f), P R N D on the selector, the shift keys select manual mode",
-                  g.kind == GearboxKind::Automatic ? "Automatic" : "Dual-clutch", pts.up_full, pts.sport_up_full);
+    char buf[220];
+    if (g.kind == GearboxKind::Cvt) {
+        std::snprintf(buf, sizeof(buf), "CVT: holds %.0f rpm at full throttle%s, P R N D on the selector, the shift keys select the steps",
+                      pts.cvt_target_rpm[4], stepped ? ", S steps through fixed ratios" : "");
+    } else {
+        std::snprintf(buf, sizeof(buf), "%s: shifts up at %.0f rpm at full throttle (sport %.0f), P R N D on the selector, the shift keys select manual mode",
+                      g.kind == GearboxKind::Automatic ? "Automatic" : "Dual-clutch", pts.up_full, pts.sport_up_full);
+    }
     files.gearbox_lines.push_back(buf);
 
     // Electronics that need a manual_tcu: drive modes (they set its shift points) and assist fitment of its assists.
@@ -1574,7 +1589,6 @@ std::vector<SetupPart> parts_of(const SetupOptionDef& def, const SetupContext& c
         for (const GearboxEntry& g : ctx.gearboxes->list()) {
             // The car's own box is always listed (it becomes "stock"); any other must take the engine's torque.
             if (norm_path(g.file) != original && !check_gearbox_rating(g, peak).empty()) continue;
-            if (g.kind == GearboxKind::Cvt) continue;
             SetupPart p;
             p.id = g.id;
             p.label = g.name;

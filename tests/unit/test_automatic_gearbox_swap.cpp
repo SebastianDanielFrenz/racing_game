@@ -354,14 +354,17 @@ namespace {
 struct AutoDrive {
     bool started = false;
     int top_gear = 0;
+    int transmission_kind = -1;
+    double max_cvt_ratio = 0.0, min_cvt_ratio = 1e9; // a cvt under throttle
+    double max_rpm = 0.0;
     double creep_mps = 0.0;
     double end_kmh = 0.0;
     bool stalled = false;
 };
 // The car_sedan with an automatic on a flat tessellated ground: start the engine, select D, release the brake and creep
 // with no throttle for creep_s, then full throttle for drive_s.
-AutoDrive drive_auto(const Fixture& f, const std::string& box, double creep_s, double drive_s) {
-    const rg::CatalogEntry& car = f.entry("car_sedan");
+AutoDrive drive_auto(const Fixture& f, const std::string& box, double creep_s, double drive_s, const std::string& car_id = "car_sedan") {
+    const rg::CatalogEntry& car = f.entry(car_id);
     rg::ScopedWorkDir dir(f.ctx.work_root, "drive_" + box);
     const rg::MaterialisedSetup m = rg::materialise_setup(car, f.table, f.ctx, setup_of(car.id, box), dir.path());
     INFO(m.error);
@@ -408,6 +411,12 @@ AutoDrive drive_auto(const Fixture& f, const std::string& box, double creep_s, d
         session.step();
         const auto pt = world.powertrain_state(vid);
         out.top_gear = std::max(out.top_gear, static_cast<int>(pt.gear));
+        out.transmission_kind = static_cast<int>(pt.transmission_kind);
+        out.max_rpm = std::max(out.max_rpm, static_cast<double>(pt.engine_rpm));
+        if (pt.transmission_kind == 3) {
+            out.max_cvt_ratio = std::max(out.max_cvt_ratio, static_cast<double>(pt.cvt_ratio));
+            out.min_cvt_ratio = std::min(out.min_cvt_ratio, static_cast<double>(pt.cvt_ratio));
+        }
         if (pt.engine_state != ps::drivetrain::EngineState::Running) out.stalled = true;
     }
     out.end_kmh = speed() * 3.6;
@@ -428,5 +437,109 @@ TEST_CASE("automatic gearbox: the sedan with an automatic creeps at idle and dri
         CHECK(d.end_kmh > 100.0);
         std::printf("RG_AUTO_DRIVE %s creep=%.3f m/s top_gear=%d end=%.1f km/h\n", box, d.creep_mps, d.top_gear,
                     d.end_kmh);
+    }
+}
+
+// ---- CVT (physics_sim CVT plan C1) ----
+
+TEST_CASE("cvt gearbox: the catalogue rows and the CVT section", "[gearbox_swap][automatic][cvt]") {
+    Fixture f;
+    for (const char* id : {"cvt_converter", "cvt_clutch"}) {
+        INFO(id);
+        const rg::GearboxEntry* g = f.boxes->find(id);
+        REQUIRE(g != nullptr);
+        CHECK(g->kind == rg::GearboxKind::Cvt);
+        CHECK(rg::is_clutch_to_clutch(g->kind));
+        CHECK(g->synchro == "none");
+        CHECK(rg::gearbox_section(*g) == "CVT");
+        CHECK(g->gears == 7);                      // the virtual steps of S
+        CHECK(g->first_ratio == Approx(2.63));     // ratio_low
+        CHECK(g->top_ratio == Approx(0.38));       // ratio_high
+        CHECK(g->converter == (std::string(id) == "cvt_converter"));
+        CHECK_THAT(rg::gearbox_detail_line(*g), ContainsSubstring("stepless 2.63 to 0.38"));
+        CHECK_THAT(rg::gearbox_summary_line(*g), ContainsSubstring("CVT"));
+    }
+    bool cvt_listed = false;
+    for (const rg::GearboxSection& sec : f.boxes->sections()) {
+        if (sec.label == "CVT") cvt_listed = sec.has_entries;
+    }
+    CHECK(cvt_listed); // no longer "coming soon"
+}
+
+TEST_CASE("cvt gearbox: the derived ratio law rises with the throttle inside the engine's band", "[gearbox_swap][automatic][cvt]") {
+    for (const auto& [idle, limiter] : std::vector<std::pair<double, double>>{{800, 6500}, {900, 8250}, {550, 2200}, {1000, 7000}}) {
+        INFO(idle << " .. " << limiter);
+        const rg::AutomaticTcuPoints p = rg::derive_automatic_tcu_points(idle, limiter);
+        REQUIRE(p.ok);
+        CHECK(p.cvt_target_rpm[0] > idle);
+        for (int i = 0; i + 1 < 5; ++i) CHECK(p.cvt_target_rpm[i] < p.cvt_target_rpm[i + 1]);
+        CHECK(p.cvt_target_rpm[4] < limiter);
+        CHECK(p.cvt_min_rpm[0] > idle * 1.0 - 1.0);
+        for (int i = 0; i + 1 < 3; ++i) CHECK(p.cvt_min_rpm[i] < p.cvt_min_rpm[i + 1]);
+        CHECK(p.cvt_min_rpm[2] < p.cvt_target_rpm[4]);
+    }
+    // an idle 800 / limiter 6500 engine gets physics_sim's sedan CVT fixture curve (its full-throttle point 5600)
+    const rg::AutomaticTcuPoints p = rg::derive_automatic_tcu_points(800, 6500);
+    CHECK(p.cvt_target_rpm[0] == Approx(1300.0));
+    CHECK(p.cvt_target_rpm[1] == Approx(1700.0));
+    CHECK(p.cvt_target_rpm[2] == Approx(2600.0));
+    CHECK(p.cvt_target_rpm[3] == Approx(4200.0));
+    CHECK(p.cvt_target_rpm[4] == Approx(5650.0));
+    CHECK(p.cvt_min_rpm[0] == Approx(1200.0));
+    CHECK(p.cvt_min_rpm[1] == Approx(1500.0));
+    CHECK(p.cvt_min_rpm[2] == Approx(2250.0));   // 800 + 0.25 * 5700 = 2225, to the nearest 50
+}
+
+TEST_CASE("cvt gearbox: installing one replaces the clutch and the manual TCU with a cvt ratio law", "[gearbox_swap][automatic][cvt]") {
+    Fixture f;
+    for (const char* box : {"cvt_converter", "cvt_clutch"}) {
+        INFO(box);
+        const Loaded l = load_setup(f, f.entry("car_sedan_rwd"), setup_of("car_sedan_rwd", box));
+        INFO(l.error);
+        REQUIRE(l.ok);
+        CHECK(count_components<ps::drivetrain::ClutchDesc>(l.desc) == 0);
+        CHECK(count_components<ps::drivetrain::ParkLockDesc>(l.desc) == 1);
+        CHECK_FALSE(has_manual_tcu(l.desc));
+        const auto* tcu = auto_tcu_of(l.desc);
+        REQUIRE(tcu != nullptr);
+        REQUIRE(tcu->cvt.has_value());
+        CHECK(tcu->cvt->stepped_sport);
+        const auto& tgt = tcu->cvt->target_rpm_vs_throttle;
+        REQUIRE(tgt.y.size() == 5);
+        for (std::size_t i = 0; i + 1 < tgt.y.size(); ++i) CHECK(tgt.y[i] < tgt.y[i + 1]);
+        CHECK_FALSE(tcu->cvt->min_rpm_vs_output_rpm.x.empty());
+        const ps::drivetrain::GearboxDesc* gb = nullptr;
+        for (const auto& c : l.desc.powertrain.components) {
+            if (const auto* g = std::get_if<ps::drivetrain::GearboxDesc>(&c.params)) gb = g;
+        }
+        REQUIRE(gb != nullptr);
+        CHECK(gb->type == ps::drivetrain::GearboxType::Cvt);
+        CHECK(gb->converter.has_value() == (std::string(box) == "cvt_converter"));
+        CHECK(has_line(l.compiled.swap_lines, "CVT: holds"));
+        CHECK(has_line(l.compiled.swap_lines, "Clutch removed"));
+    }
+    // the hypercar's torque is far above the CVT's rating
+    const rg::CompiledSetup weak = rg::compile_setup(f.entry("car_hyper"), f.table, f.ctx, setup_of("car_hyper", "cvt_clutch"));
+    CHECK_FALSE(weak.ok);
+    CHECK_THAT(weak.error, ContainsSubstring("gearbox: rated 250 N*m"));
+}
+
+TEST_CASE("cvt gearbox: the sedan with a CVT creeps and drives from rest on the variator", "[gearbox_swap][automatic][cvt][drive]") {
+    Fixture f;
+    for (const char* box : {"cvt_converter", "cvt_clutch"}) {
+        INFO(box);
+        const AutoDrive d = drive_auto(f, box, 6.0, 14.0, "car_sedan_rwd");
+        CHECK(d.started);
+        CHECK_FALSE(d.stalled);
+        CHECK(d.transmission_kind == 3);
+        CHECK(d.creep_mps > 0.3);
+        CHECK(d.creep_mps < 5.0);
+        CHECK(d.top_gear == 1);                          // D is one "gear": the variator
+        CHECK(d.max_cvt_ratio > 2.0);                    // launches near ratio_low (2.63)
+        CHECK(d.max_cvt_ratio - d.min_cvt_ratio > 1.0);  // and sweeps up the ratio range (2.63 -> ~1.36) holding the WOT target
+        CHECK(d.max_rpm < 6400.0);                       // the WOT target rpm, held below the 6800 fuel cut
+        CHECK(d.end_kmh > 100.0);
+        std::printf("RG_CVT_DRIVE %s creep=%.3f m/s ratio %.3f..%.3f max_rpm=%.0f end=%.1f km/h\n", box, d.creep_mps,
+                    d.max_cvt_ratio, d.min_cvt_ratio, d.max_rpm, d.end_kmh);
     }
 }
