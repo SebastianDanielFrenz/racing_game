@@ -56,6 +56,8 @@ add_library(rg_core STATIC
     src/environment.cpp
     src/npc_truck.cpp
     src/walker.cpp
+    src/fpv_drone.cpp
+    src/fpv_drone_sound.cpp
     src/npc_traffic.cpp
     src/traffic_stuck.cpp
     src/building_footprints.cpp
