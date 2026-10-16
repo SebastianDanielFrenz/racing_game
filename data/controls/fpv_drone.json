@@ -1,0 +1,25 @@
+{
+  "format": "rg.fpv_drone/1",
+  "flight": {
+    "max_speed_mps": 25.0,
+    "max_vertical_speed_mps": 12.0,
+    "accel_mps2": 16.0,
+    "decel_mps2": 22.0,
+    "yaw_rate_rad_s": 2.2,
+    "pitch_rate_rad_s": 1.5,
+    "pitch_limit_deg": 80.0,
+    "rate_response_per_s": 14.0,
+    "ground_clearance_m": 0.35,
+    "spawn_height_above_car_m": 2.2,
+    "ground_probe_up_m": 1.0
+  },
+  "audio": {
+    "idle_hz": 150.0,
+    "max_hz": 420.0,
+    "idle_level": 0.22,
+    "max_level": 0.8,
+    "activity_rise_per_s": 6.0,
+    "activity_fall_per_s": 2.5,
+    "yaw_activity_weight": 0.5
+  }
+}

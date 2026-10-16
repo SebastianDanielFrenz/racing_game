@@ -47,6 +47,14 @@ ModeRules rules_for(PlayerMode mode, std::optional<std::uint64_t> drone_target) 
             r.walking_inputs_live = true; // move / run / jump / interact
             r.camera_rig = CameraRig::Walker;
             break;
+        case PlayerMode::FpvDrone:
+            r.implemented = true;
+            r.vehicle_control = VehicleControl::Unattended; // parked while the player flies
+            r.driving_inputs_live = false;
+            r.camera_inputs_live = false; // the drone's own yaw/pitch inputs are the look
+            r.flying_inputs_live = true;
+            r.camera_rig = CameraRig::Fpv;
+            break;
     }
     return r;
 }
@@ -58,6 +66,7 @@ const char* to_string(PlayerMode mode) {
         case PlayerMode::DroneFollow: return "drone_follow";
         case PlayerMode::Cockpit: return "cockpit";
         case PlayerMode::OnFoot: return "on_foot";
+        case PlayerMode::FpvDrone: return "fpv_drone";
     }
     return "unknown";
 }
@@ -95,6 +104,7 @@ const char* to_string(CameraRig rig) {
         case CameraRig::Drone: return "drone";
         case CameraRig::Seat: return "seat";
         case CameraRig::Walker: return "walker";
+        case CameraRig::Fpv: return "fpv";
     }
     return "unknown";
 }
@@ -245,6 +255,7 @@ ModeRules PlayerModeMachine::effective_rules() const {
     if (world_phase_ != WorldPhase::Ready) {
         r.driving_inputs_live = false;
         r.walking_inputs_live = false;
+        r.flying_inputs_live = false;
         r.vehicle_control = VehicleControl::Unattended;
     }
     return r;
