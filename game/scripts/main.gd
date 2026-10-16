@@ -1277,9 +1277,12 @@ func _apply_mode_state() -> Dictionary:
 	if rig_name == "chase":
 		rig_name = _drive_view # chase / bumper / cockpit / orbit / cinematic
 	if _vr_active:
-		# VR keeps its own free rig for the drone view too (no XR drone rig yet).
-		# (No XR walker rig yet either: on foot the player keeps the tracked free flight.)
-		rig_name = "xr_free" if rig_name == "free" or rig_name == "drone" or rig_name == "walker" else "xr_cockpit"
+		# VR has its own drone rig (xr_drone: trails the target, the player's view is never rotated for them).
+		# (No XR walker rig yet: on foot the player keeps the tracked free flight.)
+		if rig_name == "drone":
+			rig_name = "xr_drone"
+		else:
+			rig_name = "xr_free" if rig_name == "free" or rig_name == "walker" else "xr_cockpit"
 	var drone_id := int(ms.get("drone_target_id", -1))
 	if drone_id != _drone_target_seen:
 		_drone_target_seen = drone_id
@@ -1387,6 +1390,7 @@ func _forward_driving(live: bool, delta: float) -> void:
 		if write["channel"] == "ignition": _input_map.sync_ignition(float(write["value"]))
 		if write["channel"] == "assist.drive_mode": drive_mode_change = roundi(write["value"])
 	_input_map.advance_cabin(_simulation,pt,delta,true,VEHICLE_NAME)
+	_save_light_mode_if_changed()
 	if drive_mode_change >= 0 and _hud != null:
 		var requested := pt.duplicate()
 		requested["drive_mode_effective"] = drive_mode_change
@@ -1652,19 +1656,20 @@ func _try_start_vr() -> void:
 		return
 	DisplayServer.window_set_vsync_mode(DisplayServer.VSYNC_DISABLED)
 	get_viewport().use_xr = true
-	for rig_name in ["xr_cockpit", "xr_free"]:
+	for rig_name in ["xr_cockpit", "xr_free", "xr_drone"]:
 		var rig := XROrigin3D.new()
 		rig.name = rig_name
 		rig.set_script(load("res://scripts/xr_rig.gd"))
 		rig.body_visuals = _visuals
 		rig.free_flight = rig_name == "xr_free"
+		rig.drone_follow = rig_name == "xr_drone"
 		add_child(rig)
 		_director.add_rig(rig_name, rig)
 	_vr_active = true
 	_xr_menu = load("res://scripts/xr_menu.gd").new()
 	_xr_menu.main = self
 	add_child(_xr_menu)
-	print("RG_VR active: tracked cockpit, F9 recenter; FreeCam uses tracked free flight")
+	print("RG_VR active: tracked cockpit, F9 recenter; FreeCam uses tracked free flight, drone follow trails the target (xr_drone)")
 
 # Owner bookmarks survive normal log rotation in user://drive_marks.jsonl.
 func _input(event: InputEvent) -> void:
@@ -2140,6 +2145,17 @@ func set_drive_view(view: String) -> void:
 	if _simulation != null:
 		_simulation.set_road_ahead_wanted(view == "cinematic")
 
+# The headlamp switch (auto/on/off, the lights key cycles it) persists like a setting: saved when it changes.
+var _saved_light_mode := ""
+func _save_light_mode_if_changed() -> void:
+	if _shell == null or _input_map == null:
+		return
+	var mode: String = _input_map.get_light_mode()
+	if mode != _saved_light_mode:
+		_saved_light_mode = mode
+		_shell.set_setting("cabin.light_mode", mode)
+		_shell.save_settings()
+
 # Sun shadows and 3D resolution scale (perf, 2026-10-15). The defaults (high, 1.0) are the look before these settings
 # existed: four PSSM cascades to 300 m with terrain casting, native resolution. Also re-applied when a world's terrain
 # view starts (the terrain's cast flag lives on its instances).
@@ -2166,6 +2182,10 @@ func _apply_graphics_quality() -> void:
 func _apply_setting(key: String) -> void:
 	var value: Variant = _shell.get_setting(key)
 	match key:
+		"cabin.light_mode":
+			if _input_map != null:
+				_input_map.set_light_mode(str(value))
+			_saved_light_mode = str(value)
 		"graphics.window_mode":
 			var mode := DisplayServer.WINDOW_MODE_WINDOWED
 			if str(value) == "fullscreen":

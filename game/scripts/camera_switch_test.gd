@@ -25,15 +25,27 @@ extends Node
 #     and view direction), with and without a rebase in the switch frame; and
 #     free_cam -> B reproduces B's baseline.
 #
+#  5. DRONE (drone_follow, own car as the target): the drone does not sit at a
+#     fixed place on activation - it starts where the previous camera was and
+#     eases to its trailing position (exponential lag), so its checks differ:
+#     (a) A -> drone: the first frame moves at most the lag's share of the way
+#     (plus POS_TOL_M) from A's camera, also across a rebase in the switch
+#     frame; (b) once settled the drone camera equals its baseline whatever A
+#     was and whether or not a rebase crossed the switch; (c) drone -> B
+#     reproduces B's baseline; (d) a settled drone stays put across a rebase.
+#     The maths is rg::drone_* (tests/unit/test_camera_math.cpp [drone]).
+#
 # Prints "RG_CAMERA_TEST ..." lines and a final PASS / FAIL line with the worst
-# position/rotation error seen; exit code 1 on a failure. Drone and walker rigs
-# are not in the matrix: they need a drone target / a spawned walker and share
-# the same activate()/shift_origin() contract; drive_smoke.gd switches to them.
+# position/rotation error seen; exit code 1 on a failure. The walker rig is not
+# in the matrix: it needs a spawned walker (a stepping simulation and a car
+# below the get-out speed); drive_smoke.gd switches to it.
 
 const POS_TOL_M := 0.05
 const ROT_TOL_DEG := 0.5
 const REBASE_OFFSET_M := 900.0
-const TIMEOUT_S := 120.0
+const TIMEOUT_S := 300.0
+const DRONE_LAG := 4.0 # drone_rig.gd position_lag
+const DRONE_SETTLE_S := 2.5 # exp(-4 * 2.5) = 4.5e-5 of the fly-in left
 
 var main: Node
 var _checks := 0
@@ -108,6 +120,18 @@ func _view(view_name: String, rebase: bool) -> void:
 func _to_view(view_name: String, settle_frames: int = 3) -> void:
 	main.set_drive_view(view_name)
 	await _frames(settle_frames)
+
+# Waits wall-clock seconds (the drone's lag runs on frame deltas).
+func _settle(seconds: float) -> void:
+	var until := Time.get_ticks_msec() + int(seconds * 1000.0)
+	while Time.get_ticks_msec() < until:
+		await get_tree().process_frame
+
+func _to_drone(rebase: bool) -> void:
+	if rebase:
+		var moved := _force_rebase()
+		_check(moved >= REBASE_OFFSET_M * 0.9, "drone: the out-of-band rebase moved the origin by %.1f m" % moved)
+	main._simulation.set_player_mode("drone_follow")
 
 func _run() -> void:
 	var guard := get_tree().create_timer(TIMEOUT_S)
@@ -216,6 +240,55 @@ func _run() -> void:
 			await _frames(1)
 			_compare("free_cam -> %s" % a, _sample(), baseline[a])
 	print("RG_CAMERA_TEST free_cam_checks=%d rebases=%d rebase_count=%d" % [free_checks, _rebases_seen, director.rebase_count])
+
+	# ---- 5. drone follow ----
+	var drone_checks := 0
+	sim.set_player_mode("drone_follow")
+	await _settle(DRONE_SETTLE_S)
+	var drone_base := _sample()
+	_check(drone_base["rig"] == "drone", "drone_follow activates the drone rig (is '%s')" % drone_base["rig"])
+	_check(director.rigs.has("drone"), "the director has the drone rig")
+	sim.set_player_mode("drive")
+	await _frames(2)
+	for with_rebase in [false, true]:
+		for a in views:
+			main.set_drive_view("chase")
+			await _frames(3)
+			await _to_view(a)
+			var from := _sample()
+			var tag := "%s -> drone%s" % [a, " (rebase in the switch frame)" if with_rebase else ""]
+			var t0 := Time.get_ticks_msec()
+			_to_drone(with_rebase)
+			await _frames(1)
+			var dt_s := maxf(float(Time.get_ticks_msec() - t0) / 1000.0, 1.0 / 60.0)
+			var first := _sample()
+			_check(first["rig"] == "drone", "%s: the drone rig is active" % tag)
+			# starts where the previous camera was: at most the lag's share of the fly-in (two frame times of slack)
+			var fly: float = (drone_base["rel"] - from["rel"]).length()
+			var allowed: float = fly * (1.0 - exp(-DRONE_LAG * dt_s * 2.0)) + POS_TOL_M
+			var moved: float = (first["rel"] - from["rel"]).length()
+			_max_pos = maxf(_max_pos, maxf(moved - allowed, 0.0))
+			_check(moved <= allowed, "%s: first frame moved %.3f m of a %.2f m fly-in (allowed %.3f)" % [tag, moved, fly, allowed])
+			await _settle(DRONE_SETTLE_S)
+			_compare(tag + ", settled", _sample(), drone_base)
+			drone_checks += 1
+			sim.set_player_mode("drive")
+			await _frames(1)
+			main.set_drive_view("chase")
+			await _frames(2)
+			main.set_drive_view(a)
+			await _frames(1)
+			_compare("drone -> %s" % a, _sample(), baseline[a])
+	# a settled drone stays put across a rebase (its rig root and smoothed state follow the origin)
+	sim.set_player_mode("drone_follow")
+	await _settle(DRONE_SETTLE_S)
+	var before_rebase := _sample()
+	_force_rebase()
+	await _frames(2)
+	_compare("settled drone stays put across a rebase", _sample(), before_rebase)
+	sim.set_player_mode("drive")
+	await _frames(2)
+	print("RG_CAMERA_TEST drone_checks=%d" % drone_checks)
 
 	sim.set_paused(false)
 	if _failures == 0:

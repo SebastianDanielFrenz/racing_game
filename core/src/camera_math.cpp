@@ -490,3 +490,111 @@ double steering_wheel_angle_rad(double steer,double lock_deg) {
     return std::isfinite(steer)&&std::isfinite(lock_deg)&&lock_deg>=0?std::clamp(steer,-1.0,1.0)*lock_deg*kPi/180:0;
 }
 }
+
+// ------------------------------------------------------------------ drone ----
+
+namespace rg {
+
+namespace {
+constexpr double kTau = 6.283185307179586476925286766559;
+constexpr double kHalfPi = 1.5707963267948966192313216916398;
+// Godot's lerp_angle (core/math/math_funcs.h), the former GDScript call.
+double lerp_angle_godot(double from, double to, double w) {
+    const double difference = std::fmod(to - from, kTau);
+    const double distance = std::fmod(2.0 * difference, kTau) - difference;
+    return from + distance * w;
+}
+double len3(const ps::Vec3& v) { return std::sqrt(v.x * v.x + v.y * v.y + v.z * v.z); }
+} // namespace
+
+DroneState drone_initial_state(const DroneParams& p) {
+    DroneState s;
+    s.distance_m = std::clamp(p.follow_distance_m, p.min_distance_m, p.max_distance_m);
+    return s;
+}
+
+void drone_activate(DroneState& s, const ps::Vec3& from_position) {
+    s.smoothed_pos = from_position;
+    s.from_absolute = true;
+    s.initialized = true;
+    s.orbit_yaw_rad = 0.0;
+    s.drain_wheel = true;
+}
+
+void drone_shift_origin(DroneState& s, const ps::Vec3& d) {
+    s.smoothed_pos = ps::Vec3{s.smoothed_pos.x + d.x, s.smoothed_pos.y + d.y, s.smoothed_pos.z + d.z};
+}
+
+void drone_hold(DroneState& s) { s.initialized = false; }
+
+double drone_target_orbit_yaw(double key_x, double key_y, double stick_x, double stick_y, double deadzone) {
+    if (std::fabs(key_x) > 0.5) return (key_x > 0.0 ? 1.0 : (key_x < 0.0 ? -1.0 : 0.0)) * kHalfPi;
+    if (key_y < -0.5) return kPi;
+    const double mag = std::min(std::sqrt(stick_x * stick_x + stick_y * stick_y), 1.0);
+    if (mag <= deadzone) return 0.0;
+    return std::atan2(stick_x, stick_y);
+}
+
+void drone_zoom_step(DroneState& s, double wheel, double key, bool live, double dt, const DroneParams& p) {
+    if (s.drain_wheel) {
+        s.drain_wheel = false;
+        return;
+    }
+    if (!live) return;
+    s.distance_m *= std::pow(p.zoom_wheel_factor, -wheel) * std::exp(-key * p.zoom_key_rate * dt);
+    s.distance_m = std::clamp(s.distance_m, p.min_distance_m, p.max_distance_m);
+}
+
+DroneFrame drone_follow_step(DroneState& s, const DroneFollowInput& in, double dt, const DroneParams& p) {
+    // The target's forward axis kept horizontal, so a pitching car does not swing the drone up and down.
+    const double fx = in.target_forward.x, fy = in.target_forward.y;
+    const double fl = std::sqrt(fx * fx + fy * fy);
+    if (fl > 0.2) {
+        s.heading_x = fx / fl;
+        s.heading_y = fy / fl;
+    }
+    const ps::Vec3 desired{-s.heading_x * s.distance_m, -s.heading_y * s.distance_m, s.distance_m * p.height_per_distance};
+    const ps::Vec3 look_at{in.target_pos.x, in.target_pos.y, in.target_pos.z + p.look_height_m};
+
+    if (s.from_absolute) {
+        s.offset = ps::Vec3{s.smoothed_pos.x - in.target_pos.x, s.smoothed_pos.y - in.target_pos.y,
+                            s.smoothed_pos.z - in.target_pos.z};
+        s.from_absolute = false;
+    }
+    const ps::Vec3 jump{s.offset.x - desired.x, s.offset.y - desired.y, s.offset.z - desired.z};
+    if (!s.initialized || len3(jump) > p.snap_m) {
+        s.offset = desired;
+        s.initialized = true;
+    }
+    const double a = 1.0 - std::exp(-p.position_lag * dt);
+    s.offset = ps::Vec3{s.offset.x + (desired.x - s.offset.x) * a, s.offset.y + (desired.y - s.offset.y) * a,
+                        s.offset.z + (desired.z - s.offset.z) * a};
+    s.smoothed_pos = ps::Vec3{in.target_pos.x + s.offset.x, in.target_pos.y + s.offset.y, in.target_pos.z + s.offset.z};
+
+    double target_yaw = 0.0;
+    if (in.live) target_yaw = drone_target_orbit_yaw(in.key_x, in.key_y, in.stick_x, in.stick_y, p.orbit_deadzone);
+    if (p.orbit_lag <= 0.0) s.orbit_yaw_rad = target_yaw;
+    else s.orbit_yaw_rad = lerp_angle_godot(s.orbit_yaw_rad, target_yaw, 1.0 - std::exp(-p.orbit_lag * dt));
+
+    // Rotation about +z by -yaw (Godot: offset.rotated(UP, -yaw)).
+    const double c = std::cos(-s.orbit_yaw_rad), sn = std::sin(-s.orbit_yaw_rad);
+    DroneFrame f;
+    f.position = ps::Vec3{in.target_pos.x + s.offset.x * c - s.offset.y * sn,
+                          in.target_pos.y + s.offset.x * sn + s.offset.y * c, in.target_pos.z + s.offset.z};
+    f.look_at = look_at;
+    const ps::Vec3 d{f.position.x - look_at.x, f.position.y - look_at.y, f.position.z - look_at.z};
+    f.has_look = len3(d) > 0.01;
+    return f;
+}
+
+std::vector<ps::Vec3> drone_probe_offsets() {
+    return {ps::Vec3{0, 0, 0}, ps::Vec3{0.3, 0, 0}, ps::Vec3{-0.3, 0, 0}, ps::Vec3{0, -0.3, 0}, ps::Vec3{0, 0.3, 0}};
+}
+
+double drone_clear_terrain(double z, const std::vector<std::optional<double>>& grounds, double clearance_m) {
+    for (const auto& g : grounds)
+        if (g) z = std::max(z, *g + clearance_m);
+    return z;
+}
+
+} // namespace rg

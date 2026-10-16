@@ -20,6 +20,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdio>
 #include <filesystem>
 #include <fstream>
 #include <initializer_list>
@@ -335,8 +336,32 @@ TEST_CASE("engine fit: the generated envelopes against the measured bays", "[eng
     CHECK_FALSE(rg::check_fit(*runabout, *v8).allowed);
     CHECK(rg::check_fit(*gt, *v8).allowed);
     CHECK(rg::check_fit(*gt, *i6).allowed);
-    // a car without a measured bay takes everything
-    CHECK(rg::check_fit(f.entry("car_sedan"), *v8).allowed);
+    // the sedan bay takes the hypercar's V8 (with its turbos 939 mm wide); the hypercar's mid bay is too short for the I6
+    const rg::EngineEntry* hyper_v8 = find("hyper_v8_one1_audio");
+    REQUIRE(hyper_v8);
+    CHECK(rg::check_fit(f.entry("car_sedan"), *hyper_v8).allowed);
+    const rg::FitResult i6_in_hyper = rg::check_fit(f.entry("car_hyper"), *i6);
+    CHECK_FALSE(i6_in_hyper.allowed);
+    REQUIRE(i6_in_hyper.reasons.size() == 1);
+    CHECK(i6_in_hyper.reasons[0] == "801 mm long, the bay takes 700 mm");
+    // the Big Bay variant of the city car takes every engine the plain car takes plus the fours, the rotary and the Ventura
+    // V8; the hypercar's V8 (939 mm wide) and the long I6 stay out
+    const rg::CatalogEntry& big = f.entry("car_city_bigbay");
+    int city_fits = 0, big_fits = 0;
+    for (const rg::EngineEntry& e : f.store->list()) {
+        INFO(e.key);
+        const bool in_city = rg::check_fit(*city, e).allowed, in_big = rg::check_fit(big, e).allowed;
+        if (in_city) CHECK(in_big);
+        city_fits += in_city ? 1 : 0;
+        big_fits += in_big ? 1 : 0;
+    }
+    CHECK(city_fits == 1);
+    CHECK(big_fits >= 7);
+    CHECK(rg::check_fit(big, *v8).allowed);
+    CHECK_FALSE(rg::check_fit(big, *i6).allowed);
+    CHECK_FALSE(rg::check_fit(big, *hyper_v8).allowed);
+    CHECK(big.vehicle_path == city->vehicle_path); // no new car file
+    CHECK(big.model_path == city->model_path);     // no new art
 }
 
 TEST_CASE("engine swap: the car's own engine changes nothing", "[engine_garage][engine_swap]") {
@@ -536,12 +561,12 @@ TEST_CASE("engine swap: engine-bound options follow the installed engine", "[eng
     const auto stock = model_of(setup_of("car_hyper", {}));
     REQUIRE(stock.error.empty());
     CHECK(availability(stock, "turbo_install"));
-    const auto swapped = model_of(setup_of("car_hyper", {{"engine_install", std::string("sedan_i6")}}));
+    const auto swapped = model_of(setup_of("car_hyper", {{"engine_install", std::string("sedan_i4")}}));
     REQUIRE(swapped.error.empty());
     CHECK_FALSE(availability(swapped, "turbo_install")); // the I6 has no turbo to install
     CHECK(swapped.chassis_mass_delta_kg == Approx(165.0 - 175.0));
     CHECK_FALSE(swapped.swap_lines.empty());
-    CHECK(swapped.engine_title == "Inline-six 3.0");
+    CHECK(swapped.engine_title == "Inline-four 2.0");
 
     // Availability reads the INSTALLED engine, not the car's own: the A25A car offers its sedan nitrous kit, an I4 swapped in
     // (torque map) loses the kit and a simulated V8 keeps it, but the kit is not on the V8's engine list.
@@ -569,19 +594,25 @@ TEST_CASE("engine swap: the chassis-mass delta is the catalog figure difference"
     CHECK(delta("car_sedan_rwd", "default:i4_2l_na") == 0.0);
 }
 
-TEST_CASE("engine swap: a car without a measured bay takes every engine", "[engine_garage][engine_swap]") {
+TEST_CASE("engine fit: every car has a measured bay that takes its own engine", "[engine_garage][engine_swap][fit]") {
     Fixture f;
-    int bayless = 0;
-    for (const rg::CatalogEntry* car : f.base_cars()) {
-        if (car->engine_bay_envelope) continue; // the measured bays are the [fit] case's
-        ++bayless;
-        for (const rg::EngineEntry& e : f.store->list()) {
-            const rg::FitResult r = rg::check_fit(*car, e);
-            CHECK(r.allowed);
-            CHECK(r.reasons.empty());
+    for (const rg::CatalogEntry& car : f.catalog.entries) { // presets inherit their base's bay
+        INFO(car.id);
+        REQUIRE(car.engine_bay_envelope.has_value());
+        CHECK_FALSE(car.engine_bay_envelope->source.empty());
+        const rg::EngineEntry* own = nullptr;
+        std::ifstream in(car.vehicle_path);
+        const nlohmann::json j = nlohmann::json::parse(in);
+        for (const auto& c : j.at("powertrain").at("components")) {
+            if (c.value("type", "") == "engine") {
+                own = f.store->find_by_file((fs::path(car.vehicle_path).parent_path() / c.at("ref").get<std::string>()).lexically_normal().generic_string());
+            }
         }
+        REQUIRE(own != nullptr);
+        const rg::FitResult fit = rg::check_fit(car, *own);
+        INFO(own->key << (fit.reasons.empty() ? std::string() : ": " + fit.reasons.front()));
+        CHECK(fit.allowed);
     }
-    CHECK(bayless > 0); // the sedans and the hypercar have no measured bay yet
 }
 
 TEST_CASE("engine setup: a /1 setup with the first version's engine ids reads unchanged and resolves", "[engine_garage][setup]") {
@@ -757,4 +788,68 @@ TEST_CASE("engine catalog: the cycle engines' peak figures match the engine dyno
         CHECK(std::abs(c.torque_rpm - tq_rpm) <= 500.0);
         CHECK(std::abs(c.power_rpm - pw_rpm) <= 500.0);
     }
+}
+
+// "It fits, it's offered": every engine of the store (a user engine included) x every catalog car (presets included).
+// The engine list of every car offers every engine; one that does not fit stays listed and names the dimension. A pair
+// either fits and loads (validate only) or is refused by check_fit with exactly its reasons. Prints the matrix.
+TEST_CASE("engine fit: the full engine x car matrix - fits and loads, or is refused for its size alone", "[engine_garage][engine_swap][fit][matrix]") {
+    TempDir user;
+    Fixture f(user.path);
+    std::string err;
+    const auto user_key = f.store->create_user_engine("default:hyper_v8_one1_audio", "Matrix V8", "{}", &err);
+    INFO(err);
+    REQUIRE(user_key.has_value());
+    f.refresh();
+    const auto& engines = f.store->list();
+    std::string table = "car \\ engine";
+    for (const rg::EngineEntry& e : engines) table += " | " + e.key;
+    table += "\n";
+    int fits = 0, refused = 0;
+    for (const rg::CatalogEntry& car : f.catalog.entries) {
+        INFO(car.id);
+        REQUIRE(car.engine_bay_envelope.has_value());
+        // the engine list offers every engine
+        const rg::SetupModel model = rg::build_setup_model(car, f.table, f.ctx);
+        const rg::OptionView* install = nullptr;
+        for (const auto& o : model.options) if (o.def.id == "engine_install") install = &o;
+        REQUIRE(install != nullptr);
+        CHECK(install->available);
+        table += car.id;
+        for (const rg::EngineEntry& engine : engines) {
+            INFO(engine.key);
+            const rg::FitResult fit = rg::check_fit(car, engine);
+            const rg::SetupPart* part = nullptr;
+            for (const auto& p : install->parts) if (p.id == engine.key || p.id == engine.id) part = &p;
+            const bool own = part == nullptr && fit.allowed; // the car's own engine is the stock entry
+            if (!own) {
+                REQUIRE(part != nullptr);
+                CHECK((part->detail.find("Does not fit") != std::string::npos) == !fit.allowed);
+            }
+            const Loaded l = load_setup(f, car, setup_of(car.id, {{"engine_install", engine.key}}));
+            INFO(l.error);
+            if (fit.allowed) {
+                CHECK(l.ok);
+                ++fits;
+                table += " | fits";
+                continue;
+            }
+            REQUIRE_FALSE(fit.reasons.empty());
+            CHECK_FALSE(l.ok);
+            for (const std::string& r : fit.reasons) {
+                CHECK_THAT(l.error, ContainsSubstring(r));
+                const bool names_dimension = r.find(" long,") != std::string::npos || r.find(" wide,") != std::string::npos ||
+                                             r.find(" tall,") != std::string::npos;
+                CHECK(names_dimension);
+            }
+            ++refused;
+            std::string why;
+            for (const std::string& r : fit.reasons) why += (why.empty() ? "" : "; ") + r;
+            table += " | no: " + why;
+        }
+        table += "\n";
+    }
+    std::printf("ENGINE_FIT_MATRIX fits=%d refused=%d\n%s", fits, refused, table.c_str());
+    CHECK(fits > 0);
+    CHECK(refused > 0);
 }

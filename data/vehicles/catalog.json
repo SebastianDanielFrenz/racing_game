@@ -13,6 +13,15 @@
       "model": "external/physics_sim/data/models/car_hyper/car_hyper.glb",
       "engine_bay": "mid",
       "interior": {"seat_driver": "seat_carbon_bucket", "seat_passenger": "seat_carbon_bucket", "audio": "audio_basic", "door_trim": "door_trim_hyper", "dashboard": "dash_hyper", "sound_deadening": "sound_deadening_hyper", "carpets": "carpets_hyper", "fasteners": "fasteners_small"},
+      "engine_bay_envelope": {
+        "size_mm": [
+          700,
+          966,
+          711
+        ],
+        "crank_axis": "x",
+        "source": "external/physics_sim/data/models/car_hyper/car_hyper.glb, mid engine: from the cabin bulkhead (x -1.05, rear end of the cabin carpet) to the rear end of the art's engine/transaxle block (x -2.20, material engine) less 0.45 m for the transaxle (gearbox + differential, inline with the crank) [AS] = 700 mm; the rear axle (x -1.35) lies at the front end of that block and nothing outside the block (diffuser below, exhaust behind) has room for a gearbox, so the transaxle shares the block length with the engine; between the rear tyres' inner faces (|y| 0.663) less 0.18 m each side = 966 mm; from the flat underbody (z 0.10) + 0.05 m [AS] to the inner skin of the engine_cover node (z 0.861) = 711 mm"
+      },
       "chassis": {
         "mass_kg": 1220.3,
         "body_mass_kg": 600.0,
@@ -71,6 +80,15 @@
       "model": "external/physics_sim/data/models/car_sedan/car_sedan.glb",
       "engine_bay": "front",
       "interior": {"seat_driver": "seat_comfort", "seat_passenger": "seat_comfort", "rear_seats": "rear_bench", "audio": "audio_system", "door_trim": "door_trim_4door", "dashboard": "dash_full", "sound_deadening": "sound_deadening_sedan", "carpets": "carpets", "spare_wheel": "spare_wheel_compact", "fasteners": "fasteners_steel", "hood": "hood_steel"},
+      "engine_bay_envelope": {
+        "size_mm": [
+          879,
+          975,
+          691
+        ],
+        "crank_axis": "x",
+        "source": "external/physics_sim/data/models/car_sedan/car_sedan.glb: firewall x 1.025 (rear edge of the hood node), front x 1.904 (body front 2.304), front tyres' inner faces |y| 0.668, underbody z 0.156, hood z 0.907 at x 1.46: 879 x 975 x 691 mm, longitudinal (holds the art's own engine block, x 1.325..1.875); measured on the art like the car_gt70 bay: firewall = rear edge of the hood / windscreen base, front = body front less 0.40 m for bumper beam, radiator and fan [AS] (the car_sedan figure: its modelled grille at x 2.22 less a 0.32 m radiator core and fan [AS]), half width = front tyre inner face less 0.18 m for inner fender and suspension (the car_gt70 figure), bottom = lowest underbody under the bay + 0.05 m crossmember [AS], top = hood outer surface within 0.15 m of the bay centre less 0.01 m skin [AS]"
+      },
       "chassis": {
         "mass_kg": 1329.4,
         "body_mass_kg": 680.0,
@@ -122,6 +140,15 @@
       "model": "external/physics_sim/data/models/car_sedan/car_sedan.glb",
       "engine_bay": "front",
       "interior": {"seat_driver": "seat_manual", "seat_passenger": "seat_manual", "rear_seats": "rear_bench", "audio": "audio_system", "door_trim": "door_trim_4door", "dashboard": "dash_full", "sound_deadening": "sound_deadening_sedan", "carpets": "carpets", "spare_wheel": "spare_wheel_compact", "fasteners": "fasteners_steel", "hood": "hood_steel"},
+      "engine_bay_envelope": {
+        "size_mm": [
+          879,
+          975,
+          691
+        ],
+        "crank_axis": "x",
+        "source": "the car_sedan bay (same art): external/physics_sim/data/models/car_sedan/car_sedan.glb: firewall x 1.025 (rear edge of the hood node), front x 1.904 (body front 2.304), front tyres' inner faces |y| 0.668, underbody z 0.156, hood z 0.907 at x 1.46: 879 x 975 x 691 mm, longitudinal (holds the art's own engine block, x 1.325..1.875); measured on the art like the car_gt70 bay: firewall = rear edge of the hood / windscreen base, front = body front less 0.40 m for bumper beam, radiator and fan [AS] (the car_sedan figure: its modelled grille at x 2.22 less a 0.32 m radiator core and fan [AS]), half width = front tyre inner face less 0.18 m for inner fender and suspension (the car_gt70 figure), bottom = lowest underbody under the bay + 0.05 m crossmember [AS], top = hood outer surface within 0.15 m of the bay centre less 0.01 m skin [AS]"
+      },
       "chassis": {
         "mass_kg": 1267.4,
         "body_mass_kg": 680.0,
@@ -173,6 +200,15 @@
       "model": "external/physics_sim/data/models/car_sedan/car_sedan.glb",
       "engine_bay": "front",
       "interior": {"seat_driver": "seat_manual", "seat_passenger": "seat_manual", "rear_seats": "rear_bench", "audio": "audio_system", "door_trim": "door_trim_4door", "dashboard": "dash_full", "sound_deadening": "sound_deadening_sedan", "carpets": "carpets", "spare_wheel": "spare_wheel_compact", "fasteners": "fasteners_steel", "hood": "hood_steel"},
+      "engine_bay_envelope": {
+        "size_mm": [
+          879,
+          975,
+          691
+        ],
+        "crank_axis": "x",
+        "source": "the car_sedan bay (same art): external/physics_sim/data/models/car_sedan/car_sedan.glb: firewall x 1.025 (rear edge of the hood node), front x 1.904 (body front 2.304), front tyres' inner faces |y| 0.668, underbody z 0.156, hood z 0.907 at x 1.46: 879 x 975 x 691 mm, longitudinal (holds the art's own engine block, x 1.325..1.875); measured on the art like the car_gt70 bay: firewall = rear edge of the hood / windscreen base, front = body front less 0.40 m for bumper beam, radiator and fan [AS] (the car_sedan figure: its modelled grille at x 2.22 less a 0.32 m radiator core and fan [AS]), half width = front tyre inner face less 0.18 m for inner fender and suspension (the car_gt70 figure), bottom = lowest underbody under the bay + 0.05 m crossmember [AS], top = hood outer surface within 0.15 m of the bay centre less 0.01 m skin [AS]"
+      },
       "chassis": {
         "mass_kg": 1321.4,
         "body_mass_kg": 680.0,
@@ -222,6 +258,15 @@
       "model": "external/physics_sim/data/models/car_sedan/car_sedan.glb",
       "engine_bay": "front",
       "interior": {"seat_driver": "seat_manual", "seat_passenger": "seat_manual", "rear_seats": "rear_bench", "audio": "audio_system", "door_trim": "door_trim_4door", "dashboard": "dash_full", "sound_deadening": "sound_deadening_sedan", "carpets": "carpets", "spare_wheel": "spare_wheel_compact", "fasteners": "fasteners_steel", "hood": "hood_steel"},
+      "engine_bay_envelope": {
+        "size_mm": [
+          879,
+          975,
+          691
+        ],
+        "crank_axis": "x",
+        "source": "the car_sedan bay (same art): external/physics_sim/data/models/car_sedan/car_sedan.glb: firewall x 1.025 (rear edge of the hood node), front x 1.904 (body front 2.304), front tyres' inner faces |y| 0.668, underbody z 0.156, hood z 0.907 at x 1.46: 879 x 975 x 691 mm, longitudinal (holds the art's own engine block, x 1.325..1.875); measured on the art like the car_gt70 bay: firewall = rear edge of the hood / windscreen base, front = body front less 0.40 m for bumper beam, radiator and fan [AS] (the car_sedan figure: its modelled grille at x 2.22 less a 0.32 m radiator core and fan [AS]), half width = front tyre inner face less 0.18 m for inner fender and suspension (the car_gt70 figure), bottom = lowest underbody under the bay + 0.05 m crossmember [AS], top = hood outer surface within 0.15 m of the bay centre less 0.01 m skin [AS]"
+      },
       "chassis": {
         "mass_kg": 1285.4,
         "body_mass_kg": 680.0,
@@ -271,6 +316,15 @@
       "model": "external/physics_sim/data/models/car_hyper/car_hyper.glb",
       "engine_bay": "mid",
       "interior": {"seat_driver": "seat_carbon_bucket", "seat_passenger": "seat_carbon_bucket", "audio": "audio_basic", "door_trim": "door_trim_hyper", "dashboard": "dash_hyper", "sound_deadening": "sound_deadening_hyper", "carpets": "carpets_hyper", "fasteners": "fasteners_small"},
+      "engine_bay_envelope": {
+        "size_mm": [
+          700,
+          966,
+          711
+        ],
+        "crank_axis": "x",
+        "source": "the car_hyper bay (same art): external/physics_sim/data/models/car_hyper/car_hyper.glb, mid engine: from the cabin bulkhead (x -1.05, rear end of the cabin carpet) to the rear end of the art's engine/transaxle block (x -2.20, material engine) less 0.45 m for the transaxle (gearbox + differential, inline with the crank) [AS] = 700 mm; the rear axle (x -1.35) lies at the front end of that block and nothing outside the block (diffuser below, exhaust behind) has room for a gearbox, so the transaxle shares the block length with the engine; between the rear tyres' inner faces (|y| 0.663) less 0.18 m each side = 966 mm; from the flat underbody (z 0.10) + 0.05 m [AS] to the inner skin of the engine_cover node (z 0.861) = 711 mm"
+      },
       "chassis": {
         "mass_kg": 1232.6,
         "body_mass_kg": 600.0,
@@ -340,6 +394,63 @@
         "mass_kg": 888.6,
         "body_mass_kg": 425.0,
         "body_mass_source": "[AS] bare shell (owner on PR #22: interior ripped out, no engine assembly, no drivetrain, no wheels; the seats, trim, carpets, audio, spare wheel, bonnet and fasteners are the catalogue's interior parts, the engine, gearbox, driveline, suspension, brakes, steering, wheels, cooling and fuel system are their own parts): a five-door steel city car of about 3.6 m - body in white with subframes 230 kg, doors and tailgate 70, glass 22, bumpers and lights 25, wiring loom, battery and control units 30, exhaust 18, heater 15, other fixed parts 15 = 425 kg (estimated).",
+        "half_extents": [
+          1.6,
+          0.5,
+          0.12
+        ],
+        "spawn_z_m": 0.55,
+        "source": "sprung mass of data/vehicles/car_city.json (900 kg kerb minus four 12 kg wheels); collision box inside the body, centred on the CoG; spawn height = CoG height + 3 cm [AS]"
+      },
+      "visual": {
+        "paint": "#d8473a",
+        "rim": "#b8bcc2"
+      },
+      "setup": {
+        "tyre_fitment": {
+          "front": {
+            "rims_in": [
+              14,
+              15
+            ],
+            "min_width_mm": 145,
+            "max_width_mm": 185,
+            "width_step_mm": 10,
+            "diameter_tolerance_mm": 12
+          },
+          "rear": {
+            "rims_in": [
+              14,
+              15
+            ],
+            "min_width_mm": 145,
+            "max_width_mm": 185,
+            "width_step_mm": 10,
+            "diameter_tolerance_mm": 12
+          }
+        }
+      }
+    },
+    {
+      "id": "car_city_bigbay",
+      "title": "Pico Big Bay",
+      "subtitle": "City car with a bigger engine bay",
+      "description": "The Pico with a longer, wider front clip and a raised hood, so the engine bay takes a transverse four, a rotary or a compact V8 as well as its own three-cylinder. Same car otherwise: 1.0 litre three-cylinder as standard, five-speed manual, front-wheel drive.",
+      "body_type": "hatchback",
+      "vehicle": "data/vehicles/car_city.json",
+      "model": "data/models/pico/pico.glb",
+      "engine_bay": "front",
+      "engine_bay_envelope": {
+        "size_mm": [
+          700,
+          700,
+          660
+        ],
+        "crank_axis": "y",
+        "source": "variant of car_city: reuses data/models/pico/pico.glb and data/vehicles/car_city.json unchanged (no new art, the garage and the drive show the plain Pico body). Declared bay [AS]: data/models/pico/pico.rig.json engine_bay.box_m (620 x 900 x 560 mm) with the front clip 80 mm longer (700 mm fore-aft), 130 mm wider (1030 mm across: wider wings, the track and suspension in the physics unchanged) and the hood raised 100 mm (660 mm tall, a hood bulge), less the same 330 mm transaxle at the left end of the transverse engine as car_city = 700 mm along the crank. Mass and drag stay those of car_city."
+      },
+      "chassis": {
+        "mass_kg": 852.0,
         "half_extents": [
           1.6,
           0.5,
@@ -510,6 +621,15 @@
       "model": "data/models/imported/toyama_xr/toyama_xr.glb",
       "engine_bay": "front",
       "interior": {"seat_driver": "seat_comfort", "seat_passenger": "seat_comfort", "rear_seats": "rear_bench", "audio": "audio_system", "door_trim": "door_trim_4door", "dashboard": "dash_full", "sound_deadening": "sound_deadening_sedan", "carpets": "carpets", "spare_wheel": "spare_wheel_compact", "fasteners": "fasteners_steel", "hood": "hood_steel"},
+      "engine_bay_envelope": {
+        "size_mm": [
+          809,
+          923,
+          765
+        ],
+        "crank_axis": "x",
+        "source": "data/models/imported/toyama_xr/toyama_xr.glb: firewall x 1.011 (windscreen base), front x 1.821 (body front 2.221), front tyres' inner faces |y| 0.641, underbody z 0.178, hood z 1.003 at x 1.42: 809 x 923 x 765 mm, longitudinal; measured on the art like the car_gt70 bay: firewall = rear edge of the hood / windscreen base, front = body front less 0.40 m for bumper beam, radiator and fan [AS] (the car_sedan figure: its modelled grille at x 2.22 less a 0.32 m radiator core and fan [AS]), half width = front tyre inner face less 0.18 m for inner fender and suspension (the car_gt70 figure), bottom = lowest underbody under the bay + 0.05 m crossmember [AS], top = hood outer surface within 0.15 m of the bay centre less 0.01 m skin [AS]"
+      },
       "chassis": {
         "mass_kg": 1329.4,
         "body_mass_kg": 680.0,
@@ -561,6 +681,15 @@
       "model": "data/models/imported/generic_suv/generic_suv.glb",
       "engine_bay": "front",
       "interior": {"seat_driver": "seat_comfort", "seat_passenger": "seat_comfort", "rear_seats": "rear_bench", "audio": "audio_system", "door_trim": "door_trim_4door", "dashboard": "dash_full", "sound_deadening": "sound_deadening_sedan", "carpets": "carpets", "spare_wheel": "spare_wheel_compact", "fasteners": "fasteners_steel", "hood": "hood_steel"},
+      "engine_bay_envelope": {
+        "size_mm": [
+          976,
+          871,
+          850
+        ],
+        "crank_axis": "x",
+        "source": "data/models/imported/generic_suv/generic_suv.glb: firewall x 0.942 (windscreen base), front x 1.918 (body front 2.318), front tyres' inner faces |y| 0.616, underbody z 0.221, hood z 1.130 at x 1.43: 976 x 871 x 850 mm, longitudinal; measured on the art like the car_gt70 bay: firewall = rear edge of the hood / windscreen base, front = body front less 0.40 m for bumper beam, radiator and fan [AS] (the car_sedan figure: its modelled grille at x 2.22 less a 0.32 m radiator core and fan [AS]), half width = front tyre inner face less 0.18 m for inner fender and suspension (the car_gt70 figure), bottom = lowest underbody under the bay + 0.05 m crossmember [AS], top = hood outer surface within 0.15 m of the bay centre less 0.01 m skin [AS]"
+      },
       "chassis": {
         "mass_kg": 1475.4,
         "body_mass_kg": 820.0,
@@ -610,6 +739,15 @@
       "model": "data/models/imported/phoenix_455/phoenix_455.glb",
       "engine_bay": "front",
       "interior": {"seat_driver": "seat_manual", "seat_passenger": "seat_manual", "rear_seats": "rear_bench_small", "audio": "audio_basic", "door_trim": "door_trim_2door", "dashboard": "dash_classic", "sound_deadening": "sound_deadening_classic", "carpets": "carpets", "spare_wheel": "spare_wheel_full", "fasteners": "fasteners_steel", "hood": "hood_steel_long"},
+      "engine_bay_envelope": {
+        "size_mm": [
+          1312,
+          1061,
+          759
+        ],
+        "crank_axis": "x",
+        "source": "data/models/imported/phoenix_455/phoenix_455.glb: firewall x 0.559 (windscreen base, behind the hood node's rear edge), front x 1.872 (body front 2.272), front tyres' inner faces |y| 0.710, underbody z 0.124, hood node z 0.943 at x 1.22: 1312 x 1061 x 759 mm, longitudinal; measured on the art like the car_gt70 bay: firewall = rear edge of the hood / windscreen base, front = body front less 0.40 m for bumper beam, radiator and fan [AS] (the car_sedan figure: its modelled grille at x 2.22 less a 0.32 m radiator core and fan [AS]), half width = front tyre inner face less 0.18 m for inner fender and suspension (the car_gt70 figure), bottom = lowest underbody under the bay + 0.05 m crossmember [AS], top = hood outer surface within 0.15 m of the bay centre less 0.01 m skin [AS]"
+      },
       "chassis": {
         "mass_kg": 1345.8,
         "body_mass_kg": 665.0,
