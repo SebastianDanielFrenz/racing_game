@@ -408,7 +408,7 @@ ps::Pose Session::setup_terrain(const TerrainModeConfig& tm) {
         if (tm.world_terrain != nullptr && tm.world_terrain->served_terrain_class()) {
             if (!tm.fetch->provides_classes()) {
                 throw std::invalid_argument(
-                    "Session: render_classes=served with physics.road_surfaces.enabled but the terrain fetch does not provide g2m.terrain.class");
+                    "Session: class-based road physics is enabled but the terrain fetch does not provide g2m.terrain.class");
             }
             const ps::SurfaceId paved = resolve_grip_surface(*surface_table_, "paved", phys.road_surfaces.paved);
             const ps::SurfaceId unpaved = resolve_grip_surface(*surface_table_, "unpaved", phys.road_surfaces.unpaved);

@@ -26,6 +26,7 @@
 #include "g2m/layer/osm_roads.h"
 #include "g2m/mesh/terrain_chunk.h"
 #include "g2m/world/road_ribbons.h"
+#include "g2m/world/height_sampler.h"
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -399,9 +400,9 @@ TEST_CASE("corridor incident samples: served geometry classes reduce raw OSM gri
     auto config=rg::load_world_config(std::string(RG_SOURCE_DIR)+"/data/world/world_config_rhein_main_corridor.json",&err);
     INFO(err);
     REQUIRE(config.has_value());
-    // The served class layer uses the same road geometry/cross-sections as
-    // the visible ribbons; test it as a candidate shared source for tire grip.
-    config->render_classes_served=true;
+    // The served class layer is the physics grip source, but route classes are
+    // removed from the terrain render so only explicit route meshes paint paths.
+    config->render_classes_none=true;
     // Avoid writes to the shared baked cache while a player may be using it.
     const auto temp=std::filesystem::temp_directory_path()/(
         "rg_tc_incident_road_parity_"+std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()));
@@ -410,12 +411,67 @@ TEST_CASE("corridor incident samples: served geometry classes reduce raw OSM gri
     auto terrain=rg::WorldTerrain::open(*config,&err);
     INFO(err);
     REQUIRE(terrain!=nullptr);
+    const auto view_source=terrain->view_source();
+    CHECK(view_source.class_lookup.fn==nullptr);
+    CHECK(view_source.terrain_classes.fn==nullptr);
     const g2m::geo::UtmZone zone{32,g2m::geo::Hemisphere::North};
     int samples=0,mismatches=0,drawn_but_grass=0,grip_but_not_drawn=0,class_mismatches=0;
+    std::size_t unpaved_overlay_vertices=0,walkway_overlay_vertices=0;
+    int path_surface_samples=0,path_surface_mismatches=0;
     for(const auto& p:points) {
         const auto key=g2m::tile_key_at(zone,2,p.e,p.n);
         REQUIRE(key.has_value());
         const auto ribbon=terrain->road_visual_tile(*key,0.018);
+        for(const auto& vertex:ribbon.vertices) {
+            const int flags=static_cast<int>(std::lround(vertex.flags));
+            if((flags&8192)!=0) ++unpaved_overlay_vertices;
+            if((flags&32768)!=0) ++walkway_overlay_vertices;
+        }
+        int route_triangle=0;
+        for(std::size_t i=0;i+2<ribbon.indices.size();i+=3) {
+            const auto& a=ribbon.vertices[static_cast<std::size_t>(ribbon.indices[i])];
+            const auto& b=ribbon.vertices[static_cast<std::size_t>(ribbon.indices[i+1])];
+            const auto& c=ribbon.vertices[static_cast<std::size_t>(ribbon.indices[i+2])];
+            const int flags=static_cast<int>(std::lround(a.flags));
+            const bool unpaved=(flags&8192)!=0, walkway=(flags&32768)!=0;
+            const bool paved_bed=!unpaved&&!walkway&&(flags&(16|32))==0&&a.verge<=0.5f&&b.verge<=0.5f&&c.verge<=0.5f;
+            if((!unpaved&&!walkway&&!paved_bed) || (route_triangle++%4096)!=0) continue;
+            const double e=key->min_easting()+(a.x+b.x+c.x)/3.0;
+            const double n=key->min_northing()+(a.y+b.y+c.y)/3.0;
+            const auto cell_key=g2m::tile_key_at(zone,std::uint8_t{0},std::round(e),std::round(n));
+            if(!cell_key) continue;
+            const double cell_e=std::round(e),cell_n=std::round(n);
+            if(!point_in_triangle(cell_e-key->min_easting(),cell_n-key->min_northing(),a,b,c,(a.z+b.z+c.z)/3.0))
+                continue; // A triangle centroid may round outside a narrow band; physics samples cell centres.
+            const auto contact_ground=g2m::world::sample_height_bilinear(
+                [&terrain](const auto& k){return terrain->height_tile_shared(k).tile.get();},zone,0,0,cell_e,cell_n);
+            if(!contact_ground || std::abs(*contact_ground-(a.z+b.z+c.z)/3.0)>0.45)
+                continue; // Elevated bridges/decks use the separate structure contact path, not the 2-D ground lattice.
+            const auto class_tile=terrain->terrain_class_tile(*cell_key);
+            if(!class_tile || class_tile->key!=*cell_key) continue;
+            const int ix=static_cast<int>(std::round(e))-static_cast<int>(cell_key->min_easting());
+            const int iy=static_cast<int>(std::round(n))-static_cast<int>(cell_key->min_northing());
+            if(ix<0||iy<0||ix>=g2m::kTerrainClassSamples||iy>=g2m::kTerrainClassSamples) continue;
+            const auto node=g2m::TerrainClassTile::index(ix,iy);
+            ++path_surface_samples;
+            const auto land=static_cast<g2m::LandClass>(class_tile->land_class[node]);
+            const auto surface=static_cast<g2m::SurfaceKind>(class_tile->surface[node]);
+            auto visual=static_cast<g2m::SurfaceKind>(static_cast<std::uint8_t>(std::lround(a.lanes)));
+            if(paved_bed) visual=(flags&2048)!=0 ? g2m::SurfaceKind::PavingStones :
+                (flags&4096)!=0 ? g2m::SurfaceKind::Concrete : g2m::SurfaceKind::Asphalt;
+            else if(visual==g2m::SurfaceKind::Unknown)
+                visual=unpaved ? g2m::SurfaceKind::Dirt : ((flags&2048)!=0 ? g2m::SurfaceKind::PavingStones : g2m::SurfaceKind::Asphalt);
+            const auto expected_land=unpaved ? g2m::LandClass::UnpavedRoad : g2m::LandClass::PavedRoad;
+            if(land!=expected_land || surface!=visual) {
+                ++path_surface_mismatches;
+                const auto ground=g2m::world::sample_height_bilinear(
+                    [&terrain](const auto& k){return terrain->height_tile_shared(k).tile.get();},zone,0,0,cell_e,cell_n);
+                const auto role=static_cast<g2m::TerrainRole>(class_tile->role[node]);
+                std::printf("TC_PATH_CLASS mismatch UTM=(%.2f,%.2f) flags=%d land=%u/%u surface=%u/%u role=%u zmesh=%.2f ground=%.2f\n",cell_e,cell_n,flags,
+                    static_cast<unsigned>(land),static_cast<unsigned>(expected_land),static_cast<unsigned>(surface),static_cast<unsigned>(visual),
+                    static_cast<unsigned>(role),(a.z+b.z+c.z)/3.0,ground.value_or(-999.0));
+            }
+        }
         const double h=p.heading_deg*3.14159265358979323846/180.0;
         const double nx=-std::sin(h),ny=std::cos(h);
         for(const double offset : {-1.4,-0.85,-0.8,0.0,0.8,0.825,1.4}) {
@@ -463,13 +519,19 @@ TEST_CASE("corridor incident samples: served geometry classes reduce raw OSM gri
     }
     std::printf("TC_ROAD_PARITY summary samples=%d raw_osm_mismatch=%d drawn_paved_physics_grass=%d physics_paved_not_drawn=%d served_class_mismatch=%d\n",
                 samples,mismatches,drawn_but_grass,grip_but_not_drawn,class_mismatches);
+    std::printf("TC_ROUTE_SURFACE summary unpaved_vertices=%zu walkway_vertices=%zu sampled_path_materials=%d mismatches=%d\n",
+                unpaved_overlay_vertices,walkway_overlay_vertices,path_surface_samples,path_surface_mismatches);
     // The legacy raster is expected to disagree at the measured road-bed
-    // boundaries; the shared geometry classes must materially reduce that
-    // disagreement. Remaining class/ribbon differences are edge quantization
-    // (mesh vertices sit at +0.5m while class/physics cells use integer nodes).
+    // boundaries. At the physics cell centres the served classes agree with
+    // the explicit surface mesh; cell-edge uncertainty is bounded by the
+    // documented 0.5 m level-0 grid quantization.
     CHECK(drawn_but_grass > 0);
     CHECK(grip_but_not_drawn == 0);
-    CHECK(class_mismatches * 2 < mismatches);
+    CHECK(class_mismatches == 0);
+    CHECK(unpaved_overlay_vertices > 0);
+    CHECK(walkway_overlay_vertices > 0);
+    CHECK(path_surface_samples > 0);
+    CHECK(path_surface_mismatches == 0);
     terrain.reset();
     std::error_code ec;
     std::filesystem::remove_all(temp,ec);

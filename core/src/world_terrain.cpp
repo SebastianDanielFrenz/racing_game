@@ -8,6 +8,7 @@
 // invalid zone - is guarded by an explicit check in WorldTerrain::open()
 // before it is ever called, so this file never needs a try/catch.
 #include "rg/world_terrain.h"
+#include "rg/route_surface_mesh.h"
 #include "rg/route_check.h"
 
 #include "g2m/layer/layer_id.h"
@@ -152,8 +153,9 @@ std::unique_ptr<WorldTerrain> WorldTerrain::open(const WorldConfig& config, std:
     // Opt-in: g2m.terrain.class joins the release (and the carved layer with it; height() still serves the plain
     // terrain height, so physics and the carve fallbacks are unchanged). The release id changes: a store derived
     // for the default release is not reused. Off (the default) leaves the release id as it was.
-    wt->served_terrain_class_ = config.render_classes_served;
-    service_cfg.layers.classes = config.render_classes_served;
+    wt->served_terrain_class_ = config.render_classes_served || config.render_classes_none;
+    wt->render_classes_disabled_ = config.render_classes_none;
+    service_cfg.layers.classes = wt->served_terrain_class_;
     service_cfg.zone = g2m::geo::UtmZone{config.session_origin_utm.zone};
     service_cfg.e0_m = static_cast<std::int64_t>(e0_rounded);
     service_cfg.n0_m = static_cast<std::int64_t>(n0_rounded);
@@ -451,7 +453,10 @@ std::shared_ptr<const g2m::RoadGeomTile> WorldTerrain::road_geometry_at(double e
 g2m::world::RoadRibbonTile WorldTerrain::road_visual_tile(const g2m::TileKey& key,double lift) {
     const auto geometry=road_geometry_at(key.min_easting()+512,key.min_northing()+512);
     if(!geometry)return {};
-    return g2m::world::build_road_ribbons(*geometry,key,[this,key](double e,double n){return g2m::world::sample_height_bilinear([this](const auto& k){return height_tile_shared(k).tile.get();},key.zone,0,0,e,n);},lift,separation_);
+    const auto ground=[this,key](double e,double n){return g2m::world::sample_height_bilinear([this](const auto& k){return height_tile_shared(k).tile.get();},key.zone,0,0,e,n);};
+    auto mesh=g2m::world::build_road_ribbons(*geometry,key,ground,lift,separation_);
+    append_route_surface_mesh(mesh,*geometry,key,ground,lift,separation_);
+    return mesh;
 }
 
 std::shared_ptr<const g2m::OsmTile> WorldTerrain::source_osm_tile(const g2m::TileKey& key) {
@@ -589,6 +594,12 @@ void WorldTerrain::build_static_view(double cam_x, double cam_y, std::vector<Ren
     const unsigned hw = std::thread::hardware_concurrency();
     const unsigned threads = hw == 0 ? 4u : std::min(hw, 8u);
     const std::shared_ptr<const g2m::RenderRoadLod> road_lod = render_road_lod();
+    if (render_classes_disabled_) {
+        build_static_view_from_lookup(cam_x, cam_y, lod_params_, static_cast<double>(frame_->e0_m()),
+                                      static_cast<double>(frame_->n0_m()), &world_terrain_lookup, this, threads, out,
+                                      g2m::world::ClassLookup{}, road_surfaces_);
+        return;
+    }
     if (served_terrain_class_) {
         build_static_view_from_lookup(cam_x, cam_y, lod_params_, static_cast<double>(frame_->e0_m()),
                                       static_cast<double>(frame_->n0_m()), &world_terrain_lookup, this, threads, out,
@@ -620,7 +631,10 @@ TerrainViewSource WorldTerrain::view_source() {
     source.lookup = &world_terrain_lookup;
     source.ctx = this;
     source.road_lod = render_road_lod();
-    if (served_terrain_class_) {
+    if (render_classes_disabled_) {
+        // No route colour window: the underlying terrain keeps its natural material; route surfaces are separate
+        // streamed geometry. Physics still fetches the served class tiles through HeightTileSharedFetch.
+    } else if (served_terrain_class_) {
         // Takes precedence over class_lookup in g2m::world::build_one_chunk; class_lookup stays unset so the OSM
         // road raster (and its src.osm fetches) is not run for render.
         source.terrain_classes = g2m::world::TerrainClassLookup{&world_terrain_class_lookup, this, source.road_lod.get()};
@@ -676,21 +690,53 @@ std::shared_ptr<const std::vector<g2m::RoadSegment>> WorldTerrain::road_segments
 
 std::shared_ptr<const g2m::TerrainClassTile> WorldTerrain::terrain_class_tile(
     const g2m::TileKey& key, g2m::world::Priority priority) {
-    if (auto hit = service_->peek_terrain_class(key)) return hit;
-    auto ticket = service_->terrain_class(key, priority);
-    if (!wait_ticket(ticket)) return nullptr;
-    switch (ticket.state()) {
-        case g2m::world::TileState::Ready:
-            return ticket.value();
-        case g2m::world::TileState::Absent:
-            return nullptr; // outside coverage: no class data
-        default:
-            std::fprintf(stderr,
-                         "WorldTerrain::terrain_class_tile: g2m.terrain.class fetch/derive failed (tile %s) - "
-                         "this chunk has no class data\n",
-                         g2m::to_string(key).c_str());
-            return nullptr;
+    if (key.level == 0) {
+        std::lock_guard<std::mutex> lock(physics_class_overlay_mutex_);
+        const auto hit = physics_class_overlay_cache_.find(key);
+        if (hit != physics_class_overlay_cache_.end()) return hit->second;
     }
+    std::shared_ptr<const g2m::TerrainClassTile> base = service_->peek_terrain_class(key);
+    if (!base) {
+        auto ticket = service_->terrain_class(key, priority);
+        if (!wait_ticket(ticket)) return nullptr;
+        switch (ticket.state()) {
+            case g2m::world::TileState::Ready:
+                base = ticket.value();
+                break;
+            case g2m::world::TileState::Absent:
+                return nullptr; // outside coverage: no class data
+            default:
+                std::fprintf(stderr,
+                             "WorldTerrain::terrain_class_tile: g2m.terrain.class fetch/derive failed (tile %s) - "
+                             "this chunk has no class data\n",
+                             g2m::to_string(key).c_str());
+                return nullptr;
+        }
+    }
+    if (!base || key.level != 0) return base;
+
+    // The served terrain-class product classifies roadbeds and landcover, while explicit unpaved, sidewalk and
+    // cycleway strips are constructed from the same RoadGeomTile cross-sections as the visible route mesh. Project
+    // those exact triangles onto the integer-metre physics lattice so their wheel material follows the visible strip.
+    auto stamped = std::make_shared<g2m::TerrainClassTile>(*base);
+    const auto l2 = key.parent().parent();
+    auto route_mesh = road_visual_tile(l2, 0.0);
+    // A road-geometry fetch can transiently fail while its class product is already available. Do not memoize that
+    // incomplete overlay: a later physics fetch can retry geometry and will then align the class to the visible mesh.
+    if (route_mesh.indices.empty()) return base;
+    const auto ground = [this, l2, priority](double e, double n) {
+        return g2m::world::sample_height_bilinear(
+            [this, priority](const auto& height_key) {
+                return height_tile_shared(height_key, priority).tile.get();
+            }, l2.zone, 0, 0, e, n);
+    };
+    stamp_route_surface_classes(*stamped, route_mesh, ground);
+    {
+        std::lock_guard<std::mutex> lock(physics_class_overlay_mutex_);
+        const auto [it, inserted] = physics_class_overlay_cache_.emplace(key, stamped);
+        if (!inserted) return it->second;
+    }
+    return stamped;
 }
 
 WorldTerrain::FetchStats WorldTerrain::fetch_stats() const {

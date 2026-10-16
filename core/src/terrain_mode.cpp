@@ -67,7 +67,7 @@ TerrainModeConfig make_terrain_mode(const WorldConfig& config, std::shared_ptr<W
         auto roads = [terrain](const g2m::TileKey& l2) {
             return terrain->road_segments_shared(l2, terrain->physics_priority());
         };
-        if (config.render_classes_served) {
+        if (terrain->served_terrain_class()) {
             fetch = std::make_shared<HeightTileSharedFetch>(std::move(heights), std::move(roads),
                 [terrain](const g2m::TileKey& key) {
                     return terrain->terrain_class_tile(key, terrain->physics_priority());

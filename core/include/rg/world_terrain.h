@@ -172,9 +172,9 @@ public:
     [[nodiscard]] int carve_max_level() const { return carve_max_level_; }
     void set_carve_max_level(int level) { carve_max_level_ = level < 0 ? 0 : (level > 2 ? 2 : level); }
 
-    // True when render and (with road_surfaces enabled) physics grip use the served g2m.terrain.class layer. The
-    // layer is built from the same roads.geom cross-sections as the visible road ribbons; the legacy OSM raster is
-    // retained only for world configs that explicitly select render_classes="osm".
+    // True when the served g2m.terrain.class layer is available. It is used for physics grip in both "served" and
+    // "none" render modes; "none" leaves its render callback unset so the terrain remains an unpainted underlay.
+    // The legacy OSM raster is retained only for world configs that explicitly select render_classes="osm".
     [[nodiscard]] bool served_terrain_class() const { return served_terrain_class_; }
     // The decoded g2m.terrain.class tile `key` (blocking, from a non-pool thread; the service caches it). Null when
     // the layer is not in the release, the tile is absent (outside coverage) or failed (reported once per call).
@@ -288,6 +288,9 @@ private:
     g2m::mesh::LodParams lod_params_;
     g2m::mesh::LodParams world_lod_params_;
     bool served_terrain_class_ = false;
+    bool render_classes_disabled_ = false;
+    mutable std::mutex physics_class_overlay_mutex_;
+    std::map<g2m::TileKey, std::shared_ptr<const g2m::TerrainClassTile>> physics_class_overlay_cache_;
     mutable std::mutex road_lod_mutex_;
     std::shared_ptr<const g2m::RenderRoadLod> road_lod_;
 
