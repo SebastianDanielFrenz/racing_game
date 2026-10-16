@@ -1081,6 +1081,51 @@ func _draw_turbo_kit(kit: Dictionary) -> void:
 	_draw_swap_summary()
 	_focus_garage.call_deferred()
 
+const INTERNALS_OPTIONS := ["engine_rods", "engine_pistons", "engine_crankshaft", "engine_valve_springs"]
+
+# An option whether it is available or not (an unavailable one that the car offers carries its reason); {} when absent.
+func _any_option(id: String) -> Dictionary:
+	for opt in garage.get_options():
+		if str(opt["id"]) == id and (bool(opt["available"]) or not str(opt.get("unavailable_reason", "")).is_empty()):
+			return opt
+	return {}
+
+func _internals_offered() -> bool:
+	for id in INTERNALS_OPTIONS:
+		if not _any_option(id).is_empty(): return true
+	return false
+
+# Engine internals (core engine_internals.h): one row of grade cards per part. The engine's piston-speed limit is its
+# weakest part's; the setup check names the part that would fail. Nothing breaks yet (no damage model).
+func _draw_internals() -> void:
+	var note := _label("The safe piston speed is that of the weakest part: rods, pistons and crankshaft. Valve springs set the rpm the valves follow the cam to.",13,HORIZONTAL_ALIGNMENT_LEFT,true)
+	note.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_option_box.add_child(note)
+	for id in INTERNALS_OPTIONS:
+		var opt := _any_option(id)
+		if opt.is_empty(): continue
+		_option_box.add_child(_label(str(opt["label"]),16,HORIZONTAL_ALIGNMENT_LEFT,true))
+		if not bool(opt["available"]):
+			var why := _label(str(opt.get("unavailable_reason", "")),14,HORIZONTAL_ALIGNMENT_LEFT,true)
+			why.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+			_option_box.add_child(why)
+			continue
+		var grid := GridContainer.new()
+		grid.columns = 2
+		_option_box.add_child(grid)
+		for part in opt["parts"]:
+			var fitted := str(part["id"]) == str(opt["value"])
+			var shown: Dictionary = part.duplicate()
+			shown["size"] = str(part.get("detail", ""))
+			var card := _make_component_card(shown,"INSTALLED" if fitted else "Install")
+			grid.add_child(card)
+			_buttons["part:" + id + ":" + str(part["id"])] = card
+			var option_id: String = id
+			card.pressed.connect(func(): _edit_option(option_id,str(part["id"])); _draw_garage_options())
+			if fitted and _garage_preferred == null: _garage_preferred = card
+	_draw_swap_summary()
+	_focus_garage.call_deferred()
+
 func _draw_upgrades() -> void:
 	_option_box.add_child(_label(" / ".join(_garage_path) if not _garage_path.is_empty() else "Upgrade categories",20,HORIZONTAL_ALIGNMENT_LEFT))
 	if _garage_path.is_empty():
@@ -1105,7 +1150,10 @@ func _draw_upgrades() -> void:
 				var no_drivetrain: bool = _garage_option("drive_layout").is_empty() and _garage_option("diff_front").is_empty() and _garage_option("diff_rear").is_empty()
 				_draw_tiles(["Engine", "Fuel", "Forced induction", "Drivetrain"], [] + (["Engine"] if disabled.has("Engine") else []) + (["Fuel"] if no_fuel else []) + (["Forced induction"] if disabled.has("Turbo") else []) + (["Drivetrain"] if no_drivetrain else []))
 			else:
-				_draw_tiles(["Turbo", "N2O", "Camshaft"],disabled + (["N2O"] if _garage_option("nitrous_install_hyper").is_empty() and _garage_option("nitrous_install_sedan").is_empty() else []))
+				_draw_tiles(["Turbo", "N2O", "Internals", "Camshaft"],disabled + (["N2O"] if _garage_option("nitrous_install_hyper").is_empty() and _garage_option("nitrous_install_sedan").is_empty() else []) + ([] if _internals_offered() else ["Internals"]))
+			return
+		if top == "Engine" and _garage_path[1] == "Internals":
+			_draw_internals()
 			return
 		if top == "Swaps" and _garage_path[1] == "Drivetrain":
 			_draw_drivetrain_swaps()

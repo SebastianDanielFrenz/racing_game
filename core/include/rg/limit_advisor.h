@@ -104,9 +104,11 @@ struct AdvisorConfig {
     std::string policy_file;
     ps::drivetrain::LimitPolicy policy;
     // Part limits (damage-model data, docs/garage_ui.md "Damage model data"): the game-side build rules ChargePipingPressure,
-    // TurboShaftSpeed and MeanPistonSpeed. A value at `part_near_fraction` x its rating or above is Near, above the
-    // rating Limiting, at a burst figure (piping) Exceeded. `max_mean_piston_speed_m_s` is the one engine-wide figure
-    // ("part_limits" in the file); the piping and turbo figures come with the parts (rg/turbo_kit.h).
+    // TurboShaftSpeed, MeanPistonSpeed and ValveFloat. A value at `part_near_fraction` x its rating or above is Near, above
+    // the rating Limiting, at a burst figure (piping) Exceeded. The piping and turbo figures come with the parts
+    // (rg/turbo_kit.h), the piston-speed and valve-float figures with the engine internals (rg/engine_internals.h: the
+    // weakest installed part). `max_mean_piston_speed_m_s` ("part_limits" in the file) is the engine-wide fallback for an
+    // engine without internals data.
     double part_near_fraction = 0.9;
     double max_mean_piston_speed_m_s = 25.0;
 
@@ -165,6 +167,10 @@ struct AdviceItem {
     std::vector<std::string> lines;
     std::string suggestion; // "" = none
     std::string option_id;
+    // Damage-model hook: the part a part-limit item says would take the damage ("charge_piping", "turbo_unit",
+    // "connecting_rods", "pistons", "crankshaft", "valve_springs", "engine_internals" for the engine-wide fallback); "" for
+    // physics limit kinds and the loader notice. A future damage model wears or breaks exactly this part.
+    std::string damage_part;
     RemedyState remedy_state = RemedyState::None;
     std::string remedy_text;
     bool can_solve = false; // a "Find fix" search exists for this item
@@ -189,8 +195,15 @@ struct AdviceInput {
     std::string piping_label;
     double turbo_max_shaft_rpm = std::numeric_limits<double>::quiet_NaN();
     double stroke_m = 0.0;
+    // Engine internals (CompiledSetup::internals): the weakest piston-speed part (NaN = use the config's engine-wide
+    // figure) and the valve springs' float rpm (NaN = no check). *_kind = the part kind (damage_part), *_option = the
+    // garage option that swaps it ("" = the rule's own option_id).
+    double piston_speed_limit_m_s = std::numeric_limits<double>::quiet_NaN();
+    std::string piston_speed_part, piston_speed_kind, piston_speed_kind_label, piston_speed_option;
+    double valve_float_rpm = std::numeric_limits<double>::quiet_NaN();
+    std::string valve_part, valve_option;
 };
-// Fills the part-limit fields of `input` from a compiled setup's turbo kit (no kit = left NaN).
+// Fills the part-limit fields of `input` from a compiled setup's turbo kit and engine internals (none = left NaN).
 void set_part_limits(AdviceInput& input, const CompiledSetup& compiled);
 
 // Groups the findings per kind (and part field), drops what the config hides, merges contiguous rpm ranges, renders

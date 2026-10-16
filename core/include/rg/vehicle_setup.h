@@ -37,6 +37,7 @@
 #include "rg/driveline_swap.h"
 #include "rg/gearbox_catalog.h"
 #include "rg/turbo_kit.h"
+#include "rg/engine_internals.h"
 #include "rg/part_mass.h"
 #include "rg/turbo_map_extension.h"
 #include "rg/slider_map.h"
@@ -100,6 +101,10 @@ struct SetupOptionDef {
     // has no turbo of its own: the kit is sized for that engine and written to the cache, the engine's
     // default_forced_induction, manifold-pressure grid and (when above the kit ceiling) compression ratio are set. The
     // option is unavailable, with OptionView::unavailable_reason, on an engine that cannot take one.
+    // "engine_internals" = the grades of one engine part (`internal` names the kind: connecting_rods, pistons, crankshaft,
+    // valve_springs; rg/engine_internals.h, data/engines/engine_internals.json) for the INSTALLED engine; the choice edits
+    // no file (limits and masses only: the setup check and the part-mass tree). Unavailable, with a reason, on an engine
+    // whose internals cannot be swapped (torque curve, rotary). Ids = the grade ids, "stock" = the factory part.
     // Drivetrain swap (rg/driveline_swap.h, data/drivetrains/driveline_catalog.json): "drive_layouts" = the layouts
     // (FWD / RWD / AWD with a centre kind; ids = the catalogue ids), "differentials" = the axle differential units for
     // the axle named by `axle` (front | rear; offered only while that axle is driven). Both transform the vehicle file's
@@ -108,6 +113,7 @@ struct SetupOptionDef {
     std::vector<std::string> compatible_engines; // original engine stems, an explicit game fitment list; "*" = any engine
     std::string part_format; // required referenced file format
     bool no_turbo_override = false; // default engine turbo must not shadow a vehicle override
+    std::string internal;              // "engine_internals" catalog: the part kind
     std::string axle;                  // TyreChoice and the "differentials" catalog: "front" | "rear"
     // Scale only (garage numeric inputs): the option is shown and typed in ABSOLUTE units (rpm, bar, ms) on a linear or
     // logarithmic slider, derived from the stock value of its first target leaf; min/max/step are then not authored and the
@@ -177,6 +183,9 @@ struct SetupContext {
     std::shared_ptr<const TurboMapExtensionConfig> turbo_map_extension;
     // The garage turbo kits the "turbo_kits" catalog option offers (rg/turbo_kit.h). nullptr = that option is unavailable.
     std::shared_ptr<const TurboKitConfig> turbo_kits;
+    // The swappable engine internals the "engine_internals" catalog options offer (rg/engine_internals.h). nullptr = those
+    // options are unavailable and the setup check rates the engine with AdvisorConfig's one engine-wide piston speed.
+    std::shared_ptr<const EngineInternalsConfig> engine_internals;
     // Base part masses (data/vehicles/part_masses.json, rg/part_mass.h). With it and the entry's body mass, every
     // model / compiled setup carries the car's part-mass tree and the drive takes its chassis mass from it.
     // nullptr = no tree: the drive uses the catalog chassis mass plus the engine swap's delta.
@@ -263,6 +272,9 @@ struct CompiledSetup {
     // A garage turbo kit (catalog "turbo_kits"), sized for the FINAL boost target (the boost slider re-sizes it), with
     // its charge piping, parts, masses and limits (the part-mass tree and the limit advisor read it); unset = no kit.
     std::optional<TurboKitBuild> turbo_kit;
+    // The engine internals as installed (catalog "engine_internals"; every part, stock or swapped) with their limits for
+    // this engine and masses; unset without an internals table or on an engine whose internals cannot be swapped.
+    std::optional<EngineInternalsBuild> internals;
 };
 CompiledSetup compile_setup(const CatalogEntry& entry, const SetupOptionTable& table, const SetupContext& ctx,
                             const VehicleSetup& setup);

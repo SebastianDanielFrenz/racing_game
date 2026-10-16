@@ -131,6 +131,7 @@ EngineFacts facts_of(const ps::drivetrain::ComponentParams& params, bool* ok) {
             f.has_cycle = true;
             f.cylinders = c.cylinders;
             f.compression_ratio = c.compression_ratio;
+            f.stroke_m = c.stroke_m;
             f.displacement_l = kPi / 4.0 * c.bore_m * c.bore_m * c.stroke_m * c.cylinders * 1000.0;
             f.cycle = std::make_shared<const ps::drivetrain::CycleModelDesc>(c);
         }

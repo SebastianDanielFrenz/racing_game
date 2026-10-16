@@ -207,7 +207,13 @@ Limits are recorded as data now and only WARNED about by the setup check (limit 
 |---|---|---|---|
 | `ChargePipingPressure` | max(boost target, sweep charge pressure) | piping `rated_bar` / `burst_bar` (turbo_kits.json `piping`) | Near from 90 %, warning above rated, critical (variant `burst`) at burst |
 | `TurboShaftSpeed` | sweep rotor speed (one rotor) | kit `max_shaft_rpm` = reference rpm x `limits.max_shaft_speed_factor` 1.15 | Near from 90 %, warning above |
-| `MeanPistonSpeed` | 2 x stroke x top sweep rpm | advisor.json `part_limits.max_mean_piston_speed_m_s` 25 | Near from 90 %, warning above |
+| `MeanPistonSpeed` | 2 x stroke x top sweep rpm | the WEAKEST installed rod / piston / crank grade (engine_internals.json); without internals data advisor.json `part_limits.max_mean_piston_speed_m_s` 25 | Near from 90 %, warning above |
+| `ValveFloat` | top sweep rpm | valve spring grade x the engine's factory limiter (engine_internals.json `limiter_factor`) | Near from 90 %, warning above |
+
+Every part-limit item carries `AdviceItem::damage_part` (Godot: `damage_part` in `RgGarage.get_advice`): the part a
+damage model would wear or break - `charge_piping`, `turbo_unit`, `connecting_rods`, `pistons`, `crankshaft`,
+`valve_springs`, or `engine_internals` for the engine-wide fallback. Its `option_id` is the garage option that swaps that
+part (the weak rod set: `engine_rods`), so "fix" opens the part, not only the rev limit.
 
 How a future damage model reads them: `CompiledSetup::turbo_kit` (a `TurboKitBuild`) lists each fitted part
 (`TurboKitPart`: id, count, mass, `limits` map - `max_shaft_rpm` on `turbo_unit`, `rated_bar` / `burst_bar` on
@@ -217,11 +223,42 @@ numbers as thresholds (rated = wear starts, burst = the part fails: boost leak /
 the engine and turbo telemetry the HUD already shows. Knock is the physics' own model already (ECU and knock limit);
 overheating has the engine thermal model's temperatures but no limits yet.
 
+**Engine internals** (2026-10-16, owner on PR #21: the safe piston speed depends on the material, a titanium rod as in
+F1 holds more; `rg/engine_internals.h`, `data/engines/engine_internals.json` rg.engine_internals/1): four swappable
+parts, garage Upgrades > Engine > Internals (options `engine_rods`, `engine_pistons`, `engine_crankshaft`,
+`engine_valve_springs`, catalog `engine_internals`):
+
+| Part | Grades ([AS] limit, mass vs stock) |
+|---|---|
+| Connecting rods | stock powder-forged 21 m/s; forged steel H-beam 25 m/s x1.05; titanium 28 m/s x0.65 |
+| Pistons | stock cast 21 m/s; hypereutectic 23 m/s x0.97; forged 2618 26 m/s x0.92 |
+| Crankshaft | stock cast iron 21 m/s; forged steel 25 m/s x1.0; billet steel 27 m/s x0.9 |
+| Valve springs | stock 1.0 x limiter; uprated 1.25 x x1.15; race 1.45 x x1.0 |
+
+- A stock part rates at least `stock_margin` (1.15) x the factory figure (piston speed at the engine's own limiter, or
+  the limiter), so no car as built warns; an upgrade never rates below stock. The engine's piston-speed limit is its
+  weakest rod / piston / crank (titanium rods on a cast crank still break the crank).
+- Masses: stock set = kg per litre x displacement, a grade = stock x `mass_factor`; the part-mass tree gets the
+  DIFFERENCE under `engine.internals.<kind>` (negative for lighter parts), so the drive's chassis mass follows. The
+  physics engine inertia is not changed (no physics input for rotating mass yet).
+- The choice edits no engine file (limits and masses only). Simulated engines with a cycle block only; torque-curve and
+  rotary engines show the reason. A choice is kept across an engine swap and re-rated for the new engine (a swap to a torque-curve engine then refuses the setup with the reason, as for a turbo kit).
+- While the internals are known, physics' own `MeanPistonSpeed` dyno finding (one table figure, 25 m/s) is dropped: the
+  part rule replaces it.
+
+Damage-model hook (owner on PR #5: damage persists until repaired, repairs are an explicit action - garage, later a pit
+stop or finishing with it - probably free, and damage affects driving). Not built yet; the data is shaped for it:
+`CompiledSetup::internals` / `turbo_kit` list every installed part with its limit, and every warning names its
+`damage_part`. A damage model would keep a per-part wear/broken state in the saved setup (next to the part's grade),
+add wear while the live state is above the rating (piston speed from the engine rpm, boost, rotor speed), break the part
+at its failure figure, apply the effect in the drive (a broken rod: the engine stops; floated valves: misfire / power
+loss; a burst pipe: boost leak), and clear the state on the garage's repair action.
+
 Open questions for the owner: whether the charge pipe and intercooler should count against the bay (needs a bay model of
 the gaps), whether metal piping should cost anything besides mass, and whether a burst should later be a part the player
 replaces.
 
-Tests: tests/unit/test_turbo_kit.cpp `[turbo_kit]`; the dyno comparisons (kit vs NA at the same rpm, the quad on the
+Tests: tests/unit/test_turbo_kit.cpp `[turbo_kit]`, tests/unit/test_engine_internals.cpp `[engine_internals]`; the dyno comparisons (kit vs NA at the same rpm, the quad on the
 pico) are `[turbo_kit][dyno][long]`.
 
 ## Live engine dyno (2026-10-08)

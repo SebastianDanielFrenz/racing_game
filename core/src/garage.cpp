@@ -191,6 +191,23 @@ std::unique_ptr<Garage> Garage::open(const GarageConfig& config, std::string* er
         }
     }
     {
+        // Swappable engine internals (rg/engine_internals.h): optional file, strict when present.
+        std::string path = config.engine_internals_path;
+        if (path.empty()) {
+            const std::string dflt = config.repo_root + "/data/engines/engine_internals.json";
+            std::error_code ec;
+            if (fs::is_regular_file(fs::path(dflt), ec)) path = dflt;
+        }
+        if (!path.empty()) {
+            auto cfg = load_engine_internals(path, &e);
+            if (!cfg) {
+                if (err != nullptr) *err = e;
+                return nullptr;
+            }
+            g->ctx_.engine_internals = std::make_shared<const EngineInternalsConfig>(*cfg);
+        }
+    }
+    {
         // Base part masses (rg/part_mass.h): optional file, strict when present.
         std::string path = config.part_masses_path;
         if (path.empty()) {

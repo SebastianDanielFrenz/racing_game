@@ -34,7 +34,7 @@
   "part_limits": {
     "near_fraction": 0.9,
     "max_mean_piston_speed_m_s": 25.0,
-    "source": "[AS] Damage-model data, warnings only. Mean piston speed: production engines run up to about 20-25 m/s at their limiter (sports engines ~24, F1 ~25+); above 25 m/s rods and bearings are the limit. A part reported Near from 90 % of its rating. The charge piping and turbo ratings come with the parts in data/engines/turbo_kits.json."
+    "source": "[AS] Damage-model data, warnings only. Mean piston speed: production engines run up to about 20-25 m/s at their limiter (sports engines ~24, F1 ~25+); above 25 m/s rods and bearings are the limit. max_mean_piston_speed_m_s is only the fallback for an engine without internals data: with data/engines/engine_internals.json the weakest installed part sets the limit. A part reported Near from 90 % of its rating. The charge piping and turbo ratings come with the parts in data/engines/turbo_kits.json."
   },
   "build_rules": {
     "TurboStageMapCoverage": {
@@ -106,18 +106,37 @@
     },
     "MeanPistonSpeed": {
       "option": "engine_rev_limit",
-      "option_help": "Damage-model data: mean piston speed 2 x stroke x rpm at the top of the sweep against part_limits.max_mean_piston_speed_m_s. Any simulated engine.",
+      "option_help": "Damage-model data: mean piston speed 2 x stroke x rpm at the top of the sweep against the WEAKEST installed engine part (connecting rods, pistons, crankshaft; data/engines/engine_internals.json, rg/engine_internals.h). The item's option is then the garage option that swaps that part ({part} names it with its grade, {part_kind} the kind, damage_part is the part a damage model would break); the rev limit (this option) is the fallback for an engine without internals data, rated against part_limits.max_mean_piston_speed_m_s. Any simulated engine. While the parts are known, physics' own MeanPistonSpeed finding (one table figure) is not shown.",
       "title": "Mean piston speed is very high",
       "lines": [
-        "At {rpm} the pistons average {value}; the limit is {limit}.",
-        "Rods and bearings wear fast above it (not simulated yet)."
+        "At {rpm} the pistons average {value}; the {part} hold {limit} (about {limit_rpm}).",
+        "They would be the first to fail above it (damage is not simulated yet)."
       ],
-      "suggestion": "A lower rev limit.",
+      "suggestion": "Stronger {part_kind}, or a lower rev limit.",
       "variants": {
         "near": {
           "title": "Mean piston speed is close to the limit",
           "lines": [
-            "At {rpm} the pistons average {value}; the limit is {limit}."
+            "At {rpm} the pistons average {value}; the {part} hold {limit} (about {limit_rpm})."
+          ],
+          "suggestion": ""
+        }
+      }
+    },
+    "ValveFloat": {
+      "option": "engine_valve_springs",
+      "option_help": "Damage-model data: the top of the sweep against the rpm the installed valve springs keep the valves on the cam (data/engines/engine_internals.json limit_kind limiter_factor: a factor of the engine's factory limiter). Above it the valves float and can touch the pistons; nothing fails yet.",
+      "title": "Valves float at this rev limit",
+      "lines": [
+        "At {value} the valves no longer follow the cam; the {part} hold up to {limit}.",
+        "A floating valve can hit a piston (damage is not simulated yet)."
+      ],
+      "suggestion": "Stiffer valve springs, or a lower rev limit.",
+      "variants": {
+        "near": {
+          "title": "Valve springs are close to their limit",
+          "lines": [
+            "At {value} the {part} are close to their limit of {limit}."
           ],
           "suggestion": ""
         }

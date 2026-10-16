@@ -88,6 +88,7 @@ struct EngineFacts {
     int cylinders = 0;
     double displacement_l = 0.0;      // swept volume of all cylinders (piston engines with a cycle block)
     double compression_ratio = 0.0;   // geometric (cycle block)
+    double stroke_m = 0.0;            // cycle block (mean piston speed, rg/engine_internals.h)
     // The cycle block as loaded (validate-only), for ps::drivetrain::boost_grid_p_im; null without one.
     std::shared_ptr<const ps::drivetrain::CycleModelDesc> cycle;
 };
