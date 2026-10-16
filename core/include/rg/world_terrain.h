@@ -23,7 +23,9 @@
 #include "g2m/layer/osm_roads.h"
 #include "g2m/mesh/lod_select.h"
 #include "g2m/mesh/terrain_chunk.h"
+#include "g2m/layer/terrain_class.h"
 #include "g2m/world/chunk_road_classes.h"
+#include "g2m/world/chunk_terrain_classes.h"
 #include "g2m/world/terrain_service.h"
 #include "g2m/world/tile_fetch.h"
 #include "g2m/world/view_streamer.h"
@@ -57,11 +59,13 @@ using TerrainViewSource = g2m::world::ViewSource;
 void build_static_view_from_lookup(double cam_x, double cam_y, const g2m::mesh::LodParams& params, double e0,
                                    double n0, g2m::mesh::TileLookup lookup, void* ctx, unsigned thread_count,
                                    std::vector<RenderChunk>& out, const g2m::world::ClassLookup& class_lookup = {},
-                                   const RoadSurfaceMap& surfaces = {}, TileCarveFn carve_state = nullptr);
+                                   const RoadSurfaceMap& surfaces = {}, TileCarveFn carve_state = nullptr,
+                                   const g2m::world::TerrainClassLookup& terrain_classes = {});
 bool build_render_chunks(const std::vector<g2m::mesh::ChunkKey>& keys, g2m::mesh::TileLookup lookup, void* ctx,
                          double e0, double n0, unsigned thread_count, std::vector<RenderChunk>& out,
                          const std::atomic<bool>* cancel = nullptr, const g2m::world::ClassLookup& class_lookup = {},
-                         const RoadSurfaceMap& surfaces = {}, TileCarveFn carve_state = nullptr);
+                         const RoadSurfaceMap& surfaces = {}, TileCarveFn carve_state = nullptr,
+                         const g2m::world::TerrainClassLookup& terrain_classes = {});
 
 class WorldTerrain {
 public:
@@ -167,6 +171,15 @@ public:
     void road_bed_points(double e0, double e1, double n0, double n1, int stride, std::vector<std::array<double, 3>>& out);
     [[nodiscard]] int carve_max_level() const { return carve_max_level_; }
     void set_carve_max_level(int level) { carve_max_level_ = level < 0 ? 0 : (level > 2 ? 2 : level); }
+
+    // True when the render class window is read from the served g2m.terrain.class layer (WorldConfig::
+    // render_classes_served); view_source() and build_static_view() then set ViewSource::terrain_classes and the
+    // OSM road raster is not run. Physics grip is unchanged (still the OSM raster).
+    [[nodiscard]] bool served_terrain_class() const { return served_terrain_class_; }
+    // The decoded g2m.terrain.class tile `key` (blocking, render priority, from a non-pool thread; the service
+    // caches it). Null when the layer is not in the release, the tile is absent (outside coverage) or failed (a
+    // failure is reported once per call on stderr); the chunk window is then all-Unknown.
+    [[nodiscard]] std::shared_ptr<const g2m::TerrainClassTile> terrain_class_tile(const g2m::TileKey& key);
 
     [[nodiscard]] const g2m::mesh::LodParams& lod_params() const { return lod_params_; }
     void set_lod_params(const g2m::mesh::LodParams& params) { lod_params_ = params; }
@@ -274,6 +287,7 @@ private:
     std::string terrain_height_layer_;
     g2m::mesh::LodParams lod_params_;
     g2m::mesh::LodParams world_lod_params_;
+    bool served_terrain_class_ = false;
     mutable std::mutex road_lod_mutex_;
     std::shared_ptr<const g2m::RenderRoadLod> road_lod_;
 

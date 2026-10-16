@@ -1085,6 +1085,7 @@ func _draw_turbo_kit(kit: Dictionary) -> void:
 	_focus_garage.call_deferred()
 
 const INTERNALS_OPTIONS := ["engine_bore", "engine_rods", "engine_pistons", "engine_crankshaft", "engine_valve_springs"]
+const COOLING_OPTIONS := ["cooling_radiator", "cooling_fan", "cooling_oil_cooler", "cooling_block_cooling"]
 
 # An option whether it is available or not (an unavailable one that the car offers carries its reason); {} when absent.
 func _any_option(id: String) -> Dictionary:
@@ -1092,6 +1093,11 @@ func _any_option(id: String) -> Dictionary:
 		if str(opt["id"]) == id and (bool(opt["available"]) or not str(opt.get("unavailable_reason", "")).is_empty()):
 			return opt
 	return {}
+
+func _cooling_offered() -> bool:
+	for id in COOLING_OPTIONS:
+		if not _any_option(id).is_empty(): return true
+	return false
 
 func _internals_offered() -> bool:
 	for id in INTERNALS_OPTIONS:
@@ -1101,10 +1107,19 @@ func _internals_offered() -> bool:
 # Engine internals (core engine_internals.h): one row of grade cards per part. The engine's piston-speed limit is its
 # weakest part's; the setup check names the part that would fail. Nothing breaks yet (no damage model).
 func _draw_internals() -> void:
-	var note := _label("A bigger bore adds displacement and takes new pistons of that size. The safe piston speed is that of the weakest part: rods, pistons and crankshaft. Valve springs set the rpm the valves follow the cam to.",13,HORIZONTAL_ALIGNMENT_LEFT,true)
+	_draw_grade_rows(INTERNALS_OPTIONS, "A bigger bore adds displacement and takes new pistons of that size. The safe piston speed is that of the weakest part: rods, pistons and crankshaft. Valve springs set the rpm the valves follow the cam to.")
+
+# Cooling (core cooling_upgrades.h): more fuel burned means more heat; radiator, fan, oil cooler and block cooling carry it off.
+# Each grade card shows its numbers and the mass it adds; the setup check warns when the coolant or oil would run too hot.
+func _draw_cooling() -> void:
+	_draw_grade_rows(COOLING_OPTIONS, "More fuel burned means more heat for the engine. Bigger cooling parts carry it off and weigh more. The setup check warns when the coolant or oil would run too hot at full power.")
+
+# One row of grade cards per option id. A part the car cannot fit (fits = false) is hidden unless the player asks for all parts.
+func _draw_grade_rows(ids: Array, note_text: String) -> void:
+	var note := _label(note_text,13,HORIZONTAL_ALIGNMENT_LEFT,true)
 	note.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	_option_box.add_child(note)
-	for id in INTERNALS_OPTIONS:
+	for id in ids:
 		var opt := _any_option(id)
 		if opt.is_empty(): continue
 		_option_box.add_child(_label(str(opt["label"]),16,HORIZONTAL_ALIGNMENT_LEFT,true))
@@ -1195,10 +1210,13 @@ func _draw_upgrades() -> void:
 				var no_drivetrain: bool = _garage_option("drive_layout").is_empty() and _garage_option("diff_front").is_empty() and _garage_option("diff_rear").is_empty()
 				_draw_tiles(["Engine", "Fuel", "Forced induction", "Drivetrain"], [] + (["Engine"] if disabled.has("Engine") else []) + (["Fuel"] if no_fuel else []) + (["Forced induction"] if disabled.has("Turbo") else []) + (["Drivetrain"] if no_drivetrain else []))
 			else:
-				_draw_tiles(["Turbo", "N2O", "Internals", "Camshaft"],disabled + (["N2O"] if _garage_option("nitrous_install_hyper").is_empty() and _garage_option("nitrous_install_sedan").is_empty() else []) + ([] if _internals_offered() else ["Internals"]))
+				_draw_tiles(["Turbo", "N2O", "Internals", "Cooling", "Camshaft"],disabled + (["N2O"] if _garage_option("nitrous_install_hyper").is_empty() and _garage_option("nitrous_install_sedan").is_empty() else []) + ([] if _internals_offered() else ["Internals"]) + ([] if _cooling_offered() else ["Cooling"]))
 			return
 		if top == "Engine" and _garage_path[1] == "Internals":
 			_draw_internals()
+			return
+		if top == "Engine" and _garage_path[1] == "Cooling":
+			_draw_cooling()
 			return
 		if top == "Swaps" and _garage_path[1] == "Drivetrain":
 			_draw_drivetrain_swaps()

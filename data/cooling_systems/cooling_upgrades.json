@@ -1,0 +1,120 @@
+{
+  "format": "rg.cooling_upgrades/1",
+  "source": "Garage cooling system upgrades (owner on PR #21: 'More combustion should result in more heat for the engine components which should need to be cooled. We need cooling system upgrades (water cooling elements in the engine block, bigger radiator, ...)'). Four parts, each with grades; a grade is a set of factors applied to the car's EFFECTIVE cooling_system / engine thermal file values (the extends chain resolved), so one table fits every car and every engine (rg/cooling_upgrades.h). The physics model (physics_sim engine_thermal.md / cooling_system.md) has these levers and no others: radiator frontal area, UA and air flow, ram coefficient, fan face velocity and thresholds, oil cooler conductance, coolant pump flow, engine-lump heat capacity (coolant volume), thermostat temperatures. It has NO water-jacket geometry, passage area or wall-to-coolant heat transfer coefficient, so 'water cooling elements in the block' is modelled as a stronger pump, a larger coolant volume and a cooler thermostat (block_cooling). Every figure is an invented [AS] value with its reasoning in the grade's own source; none was checked against a citation. Mass: each grade adds the mass of the NEW part over the stock part it replaces, as a child of the part-mass tree's 'engine.cooling' node (fixed_kg + per_litre_kg x displacement + added_kg_per_m2 x extra radiator area).",
+  "check": {
+    "ambient_c": 30.0,
+    "ram_speed_m_s": 45.0,
+    "top_speed_m_s_per_cbrt_kw": 11.0,
+    "power_band": 0.95,
+    "max_rpm_fraction_of_limiter": 0.9,
+    "friction_power_fraction": 0.09,
+    "transient_horizon_s": 1800.0,
+    "transient_step_s": 0.25,
+    "oil_limit_c": 135.0,
+    "source": "[AS] The setup check's steady state (rg::steady_thermal, the physics model's own balance): full power at a constant rpm on a 30 C day with the ram air that power holds: top_speed_m_s_per_cbrt_kw 11.0 [AS] x cbrt(power in kW) m/s, because drag power grows with v^3 (1 MW -> 110 m/s = 396 km/h, the hypercar's measured 413 km/h top speed; 190 kW -> 63 m/s = 227 km/h; 54 kW -> 42 m/s = 150 km/h), only sweep points up to 0.9 x the rev limiter (max_rpm_fraction_of_limiter [AS]: a car's top gear tops it out below the limiter; the hypercar's full-throttle run settles at 7384 rpm of a 8250 limiter = 0.895) and within 5 % of the peak power of those are checked (power_band 0.95 [AS]: full power is held for minutes only near the power peak, the over-rev tail is passed in seconds), so the check asks whether the car can hold full power at the pace that power gives it. ram_speed_m_s 45 is used only when that factor is 0. A measured full-throttle run of the hypercar at 35 C ends at 117.1 C coolant with the first hyper.json sizing and the estimate agreed (117.3 C); with the upsized hyper.json (2026-10-16) the run ends at 96.2 C and the estimate says 96.2 C (tests/unit/test_cooling_upgrades.cpp [.][cooling][long]). friction_power_fraction: friction heat as a share of the shaft power, 0.09 [AS] from the hypercar run in data/cooling_systems/hyper.json (88 kW friction heat at about 1 MW). Coolant limit = the car's own cooling_system warnings.overheat_c (118 C for the class defaults and the hypercar); oil_limit_c 135 C [AS]: a mineral/synthetic engine oil keeps its film to about 130-140 C, above it the viscosity falls and bearing wear rises (recalled, not cited). Since the owner's answer on PR #28 (option C) the check grades the TIME to the limit, not the steady temperature: rg::transient_thermal runs the physics model's own two-lump time history (heat capacities of the engine thermal file, thermostat wax lag, fan hysteresis, eps-NTU radiator) from the warm spawn state at each checked point, at a step of transient_step_s 0.25 s (backward Euler, as the physics at 1/240 s; 0.25 s moves the time to the limit by well under 1 s) for at most transient_horizon_s 1800 s [AS: a limit not reached in half an hour of full power is not one a driver meets]; how soon a limit counts as critical is advisor.json thermal_time.critical_within_s."
+  },
+  "parts": [
+    {
+      "kind": "radiator",
+      "label": "Radiator",
+      "damage_part": "radiator",
+      "grades": [
+        { "id": "stock", "label": "Stock radiator", "source": "The car's own cooling_system file." },
+        {
+          "id": "aluminium_wide",
+          "label": "Aluminium radiator, wide core",
+          "area_factor": 1.35,
+          "core_factor": 1.15,
+          "added_kg_per_m2": 9.0,
+          "fixed_kg": 0.8,
+          "source": "[AS] a full-width two-row aluminium core instead of the stock one: 1.35x frontal area (the opening and bay allow a third more core), 1.15x heat exchange per area at equal face velocity (thicker core, more tubes and fins), so UA x1.55 at 1.35x the air flow. Mass: 9 kg per extra m2 of core with its tanks and coolant (a 0.35 m2 passenger core weighs about 4-5 kg dry, 12-14 kg/m2 filled, recalled) plus 0.8 kg of new hoses and brackets."
+        },
+        {
+          "id": "race_ducted",
+          "label": "Race radiator, ducted",
+          "area_factor": 1.8,
+          "core_factor": 1.3,
+          "ram_factor": 1.25,
+          "added_kg_per_m2": 11.0,
+          "fixed_kg": 2.0,
+          "source": "[AS] a triple-pass race core of 1.8x the stock area, 1.3x heat exchange per area (UA x2.34), and an inlet duct that lifts the ram coefficient by 25 % (capped at 1). Mass: 11 kg per extra m2 (thicker core, more coolant), plus 2 kg of ducting and a larger header tank."
+        }
+      ]
+    },
+    {
+      "kind": "fan",
+      "label": "Cooling fan",
+      "damage_part": "radiator_fan",
+      "grades": [
+        { "id": "stock", "label": "Stock fan", "source": "The car's own cooling_system file." },
+        {
+          "id": "high_flow",
+          "label": "High-flow fan",
+          "fan_flow_factor": 1.5,
+          "fan_power_factor": 2.0,
+          "fan_on_offset_k": -4.0,
+          "fixed_kg": 1.2,
+          "source": "[AS] a larger electric fan with a shroud: 1.5x the face velocity through the core, twice the electrical power (reported only in the model), switching on and off 4 K earlier. It only matters below the speed at which the ram air alone is faster than the fan (about 10 m/s on the class radiator): in a crawl or a traffic jam, not at speed. Mass: 1.2 kg more than the stock fan and shroud."
+        },
+        {
+          "id": "race_twin",
+          "label": "Race twin fans",
+          "fan_flow_factor": 2.2,
+          "fan_power_factor": 4.0,
+          "fan_on_offset_k": -8.0,
+          "fixed_kg": 2.5,
+          "source": "[AS] twin brushless fans: 2.2x the face velocity, four times the power, on and off 8 K earlier. Mass: 2.5 kg more than the stock fan."
+        }
+      ]
+    },
+    {
+      "kind": "oil_cooler",
+      "label": "Oil cooler",
+      "damage_part": "oil_cooler",
+      "grades": [
+        { "id": "stock", "label": "Stock (as built)", "source": "The car's own cooling_system file: the class passenger car has no oil cooler, the hypercar a small air-oil cooler." },
+        {
+          "id": "street",
+          "label": "Oil cooler",
+          "oil_cooler_w_k_per_m_s_per_l": 0.15,
+          "fixed_kg": 1.6,
+          "per_litre_kg": 0.12,
+          "source": "[AS] an air-oil cooler in the nose adds 0.15 W/K per m/s of air per litre of displacement (the hypercar's own 0.6 W/K per m/s for 5.1 L is 0.12 per litre). Mass: 1.6 kg of core, lines and adapter plus 0.12 kg per litre of displacement for the extra oil it holds."
+        },
+        {
+          "id": "race",
+          "label": "Race oil cooler with thermostat",
+          "oil_cooler_w_k_per_m_s_per_l": 0.35,
+          "fixed_kg": 3.0,
+          "per_litre_kg": 0.25,
+          "source": "[AS] a large double-pass core with a thermostatic sandwich plate: 0.35 W/K per m/s per litre of displacement. Mass: 3.0 kg of core, braided lines and plate plus 0.25 kg per litre for the oil it holds."
+        }
+      ]
+    },
+    {
+      "kind": "block_cooling",
+      "label": "Block cooling",
+      "damage_part": "engine_block",
+      "grades": [
+        { "id": "stock", "label": "Stock block and water pump", "source": "The car's own engine thermal file." },
+        {
+          "id": "high_flow_pump",
+          "label": "High-flow water pump",
+          "pump_factor": 1.5,
+          "fixed_kg": 1.2,
+          "source": "[AS] a larger impeller moves 1.5x the coolant per revolution, which keeps the radiator's coolant side from limiting its effectiveness at low rpm. Mass: 1.2 kg more than the stock pump."
+        },
+        {
+          "id": "enlarged_jackets",
+          "label": "Enlarged water jackets, cool thermostat",
+          "pump_factor": 1.5,
+          "extra_coolant_l_per_l": 0.35,
+          "thermostat_offset_k": -6.0,
+          "fixed_kg": 2.0,
+          "per_litre_kg": 0.5,
+          "source": "[AS] machined and re-cast water jackets and head passages (0.35 L more coolant per litre of displacement, which slows the temperature rise and does not change the steady state), the high-flow pump (1.5x) and a thermostat that opens 6 K earlier (82/94 C instead of 88/100 C for the class engine). The physics has no wall heat transfer coefficient, so the jackets cannot raise the heat taken out of the cylinders; wall_heat_fraction is untouched. Mass: 2.0 kg of pump, thermostat housing and hardware plus 0.5 kg per litre (0.37 kg of the extra coolant at 1.065 kg/L, the rest casting)."
+        }
+      ]
+    }
+  ]
+}
