@@ -211,7 +211,7 @@ TEST_CASE("automatic gearbox: installing one replaces the clutch and the manual 
     INFO(h.error);
     REQUIRE(h.ok);
     CHECK(auto_tcu_of(h.desc) != nullptr);
-    CHECK_FALSE(h.desc.drive_modes.has_value());
+    REQUIRE(h.desc.drive_modes.has_value());
     CHECK(count_components<ps::drivetrain::ParkLockDesc>(h.desc) == 1); // its own park lock, not a second one
     // an automatic too weak for the engine is refused like a manual box
     const rg::CompiledSetup weak = rg::compile_setup(f.entry("car_hyper"), f.table, f.ctx, setup_of("car_hyper", "auto_8at"));
@@ -643,5 +643,18 @@ TEST_CASE("dual clutch: repeated braking and part-throttle launches do not stall
         const auto d = drive_auto(f, car_box.second, 2.0, 8.0, car_box.first, 3);
         REQUIRE(d.started);
         CHECK_FALSE(d.stalled);
+    }
+}
+
+TEST_CASE("automatic gearbox: swaps preserve N2O hypercar driving modes", "[automatic][drive_modes_auto]") {
+    Fixture f;
+    for (const char* box : {"stock", "hyper_7dct"}) {
+        INFO(box);
+        const auto h = load_setup(f, f.entry("car_hyper_n2o"), setup_of("car_hyper_n2o", box));
+        INFO(h.error);
+        REQUIRE(h.ok);
+        REQUIRE(h.desc.drive_modes.has_value());
+        CHECK(h.desc.drive_modes->modes_bits == 15);
+        CHECK(h.desc.drive_modes->default_mode == ps::vehicle::DriveMode::Normal);
     }
 }

@@ -31,7 +31,7 @@ func snapshot() -> Dictionary:
 	return pt
 func channels() -> Dictionary:
 	var result := {}
-	for key in ["gear_request","park_lock","shift_up_count","shift_down_count","transmission.mode"]:
+	for key in ["gear_request","park_lock","shift_up_count","shift_down_count","transmission.mode","assist.drive_mode"]:
 		result[key] = sim.get_control(key)
 	return result
 func action(id: String) -> void:
@@ -54,13 +54,14 @@ func run() -> void:
 	if not check(garage.initialize(repo,user_dir,user_dir.path_join("work"),"").ok,"garage initialises"):
 		garage.queue_free(); await process_frame; quit(1); return
 	actions = ClassDB.instantiate("RgDriverActions")
-	for box in ["auto_8at","dct_7","cvt_converter","cvt_clutch"]:
-		check(garage.begin_edit("car_sedan_rwd").ok,box+": edit opens")
+	for box in ["auto_8at","dct_7","cvt_converter","cvt_clutch","hyper_7dct"]:
+		var car_id := "car_hyper_n2o" if box == "hyper_7dct" else "car_sedan_rwd"
+		check(garage.begin_edit(car_id).ok,box+": edit opens")
 		var edited: Dictionary = garage.set_option("gearbox_install",box)
 		if not check(edited.accepted and edited.ok,box+": install validates "+str(edited)):
 			continue
 		check(garage.save().ok,box+": setup saves")
-		var selection: Dictionary = garage.prepare_drive("car_sedan_rwd")
+		var selection: Dictionary = garage.prepare_drive(car_id)
 		if not check(selection.ok,box+": drive materialises"):
 			continue
 		vehicle = selection.sim_name
@@ -79,7 +80,7 @@ func run() -> void:
 		sim.start()
 		check(await wait_for(func(): return snapshot().get("engine_state","")=="Running"),box+": engine starts")
 		sim.set_control("starter",0.0)
-		var kind := 3 if box.begins_with("cvt") else (2 if box=="dct_7" else 1)
+		var kind := 3 if box.begins_with("cvt") else (2 if box in ["dct_7","hyper_7dct"] else 1)
 		check(int(snapshot().get("transmission_kind",-1))==kind,box+": transmission kind published")
 		action("park")
 		check(await wait_for(func(): return bool(snapshot().get("park_lock_engaged",false))),box+": P engages")
@@ -89,6 +90,12 @@ func run() -> void:
 		check(await wait_for(func(): return int(snapshot().get("transmission_selector",-1))==0),box+": R -> N")
 		shift(1,0)
 		check(await wait_for(func(): return int(snapshot().get("transmission_selector",0))>0),box+": N -> D")
+		if box == "hyper_7dct":
+			check(bool(snapshot().get("drive_mode_fitted",false)), "hypercar DCT keeps driving modes fitted")
+			for mode in [2,3,0,1]: # default Normal -> Sport -> Racing -> Eco -> Normal
+				action("drive_mode")
+				check(await wait_for(func(): return int(snapshot().get("drive_mode_effective",-1)) == mode), "M cycles hypercar DCT to mode " + str(mode))
+				print("RG_AUTOMATIC_TEST hypercar drive mode=%s" % snapshot().get("drive_mode_name"))
 		action("manual_mode")
 		check(await wait_for(func(): return bool(snapshot().get("transmission_manual_mode",false))),box+": Y enters manual mode in physics")
 		var same_tick := int(sim.get_step_count())

@@ -33,7 +33,8 @@ returns one level at a time; the root opens the save-and-exit prompt. Upgrades:
   Automatic and dual-clutch boxes (2026-10-16, physics_sim automatic gearbox A1): installing one removes the
   clutch component and the clutch pedal, turns the manual_tcu into an automatic_tcu whose shift schedule,
   kickdown and manual-mode up rpm are derived from the installed engine's idle and limiter, fits a park
-  lock when the car has none and drops the drive_modes part (it sets manual_tcu points). The swap lines
+  lock when the car has none. Driving modes remain available, including their pedal, N2O, launch-control,
+  shift-schedule and clutch-closing settings. M cycles the modes with either gearbox type. The swap lines
   say so ("Clutch removed", "Park lock fitted"). Options that only make sense with a clutch or a manual
   TCU (clutch capacity, auto clutch/blip/shift assists) are no longer offered; values already set for
   them are dropped with "The gearbox does not offer: ... (back to stock)".
