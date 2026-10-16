@@ -23,6 +23,8 @@
 #include <string>
 #include <vector>
 
+namespace ps::drivetrain { struct CycleModelDesc; }
+
 namespace rg {
 
 enum class EngineClass { Curve, Mapped, Cycle };
@@ -55,6 +57,7 @@ struct EngineEntry {
     // (rg.engine_envelope/1, tools/cargen/engine_mesh.py); a user engine takes its default's. None = unknown size.
     std::optional<std::array<double, 3>> envelope_mm;
     std::string envelope_path; // absolute; "" without one
+    std::string envelope_layout; // the envelope file's "layout": "inline" | "v" | "rotary" ("" = unknown)
     std::string model_path;    // absolute .glb of the generated mesh (next to the envelope); "" without one
     EnginePeaks catalog_peaks; // measured once for cycle engines (a curve engine's are read from the file)
     std::vector<std::string> aliases; // legacy ids, defaults only
@@ -77,6 +80,23 @@ struct EngineFacts {
     bool has_thermal = false;         // the file (with its extends chain) names a default_thermal (the engine thermal model)
     std::vector<FuelFact> fuels;      // in the engine's list order; [0] is the reference fuel
     EnginePeaks curve_peaks;          // torque map: from the WOT curve; else known = false
+    // Air path (turbo kits, rg/turbo_kit.h). Simulated engines only; all zero/false for a torque map.
+    bool has_turbo = false;           // the engine carries forced induction of its own (default_forced_induction)
+    bool has_cycle = false;           // a "cycle" block (maps generated from geometry, so boosted rows can be generated)
+    bool rotary = false;              // Wankel architecture
+    bool lift_family = false;         // continuous intake lift (Valvetronic-style): the physics allows no forced induction
+    int cylinders = 0;
+    double displacement_l = 0.0;      // swept volume of all cylinders (piston engines with a cycle block)
+    double compression_ratio = 0.0;   // geometric (cycle block)
+    double stroke_m = 0.0;            // cycle block (mean piston speed, rg/engine_internals.h)
+    double bore_m = 0.0;              // cycle block (the engine file's bore_mm)
+    // The engine as its file has it. read_engine_facts sets these equal to bore_m / displacement_l / compression_ratio;
+    // rg::bored_engine_facts (engine_internals.h) changes only the three above, so "factory" stays the unbored engine.
+    double factory_bore_m = 0.0;
+    double factory_displacement_l = 0.0;
+    double factory_compression_ratio = 0.0;
+    // The cycle block as loaded (validate-only), for ps::drivetrain::boost_grid_p_im; null without one.
+    std::shared_ptr<const ps::drivetrain::CycleModelDesc> cycle;
 };
 // Loads `engine_file` through ps::io::load_engine_json (generate = false). nullopt + *err on a loader
 // rejection. Results are cached per (path, size, mtime), so repeated reads while editing are cheap.

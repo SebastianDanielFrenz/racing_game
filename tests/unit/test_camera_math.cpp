@@ -794,3 +794,564 @@ TEST_CASE("drone follow: zoom law, snap, orbit target and terrain clearance", "[
     CHECK(rg::drone_clear_terrain(10.0, {1.0, std::nullopt}, 1.0) == 10.0);
     CHECK(rg::drone_clear_terrain(2.0, {}, 1.0) == 2.0);
 }
+
+// ------------------------------------------------------- chase/free/walker/orbit rigs ----
+// Golden comparisons against the former GDScript rigs (chase_rig.gd, free_rig.gd, walker_rig.gd, orbit_rig.gd),
+// transcribed line by line in Godot's Y-up frame with the helpers of the drone section (docs/unreal_port.md leak #10).
+namespace {
+
+G3 gcross(G3 a, G3 b) { return {a.y * b.z - a.z * b.y, a.z * b.x - a.x * b.z, a.x * b.y - a.y * b.x}; }
+G3 gnorm(G3 a) {
+    const double l = glen(a);
+    return l > 0.0 ? a * (1.0 / l) : a;
+}
+double gclamp(double v, double lo, double hi) { return std::min(std::max(v, lo), hi); }
+// atan2/asin as the scripts call them, on Godot-frame values.
+const G3 kUp{0, 1, 0};
+
+// A chassis orientation in Godot axes: basis.x = forward, basis.y = left (what frame_convert.h hands out).
+struct Chassis {
+    G3 x, y;
+};
+Chassis chassis_pose(double yaw, double pitch, double roll) {
+    const G3 f{std::cos(pitch) * std::cos(yaw), std::sin(pitch), -std::cos(pitch) * std::sin(yaw)};
+    const G3 l0 = gnorm(gcross(kUp, f));
+    const G3 l = l0 * std::cos(roll) + gcross(f, l0) * std::sin(roll);
+    return {f, l};
+}
+
+double target_orbit_yaw_gd(double lx, double ly, double sx, double sy, double deadzone) {
+    if (std::fabs(lx) > 0.5) return gsignf(lx) * 3.141592653589793 * 0.5;
+    if (ly < -0.5) return 3.141592653589793;
+    const double mag = std::min(std::sqrt(sx * sx + sy * sy), 1.0);
+    if (mag <= deadzone) return 0.0;
+    return std::atan2(sx, sy);
+}
+
+// ---- chase_rig.gd
+struct GdChase {
+    double follow_distance_m = 7.0, follow_height_m = 2.5, look_height_m = 1.0, side_offset_m = 0.0;
+    double terrain_clearance_m = 0.6, position_lag = 6.0, orbit_deadzone = 0.2, orbit_lag = 14.0;
+    const double SNAP_M = 60.0;
+    G3 _smoothed_offset;
+    bool _initialized = false;
+    double _orbit_yaw = 0.0;
+    G3 position, look_at_pos;
+    bool looked = false;
+
+    void update_rig(double delta, G3 chassis_pos, const Chassis& c, bool live, double lx, double ly, double sx, double sy,
+                    const std::vector<std::optional<double>>& grounds) {
+        const G3 behind = gnorm(c.x) * (-follow_distance_m);
+        const G3 side = gnorm(c.y) * side_offset_m;
+        const G3 desired_offset = behind + side + kUp * follow_height_m;
+        look_at_pos = chassis_pos + kUp * look_height_m;
+        if (!_initialized || glen(_smoothed_offset - desired_offset) > SNAP_M) {
+            _smoothed_offset = desired_offset;
+            _initialized = true;
+        }
+        _smoothed_offset = glerp(_smoothed_offset, desired_offset, 1.0 - std::exp(-position_lag * delta));
+        double target_yaw = 0.0;
+        if (live) target_yaw = target_orbit_yaw_gd(lx, ly, sx, sy, orbit_deadzone);
+        if (orbit_lag <= 0.0) _orbit_yaw = target_yaw;
+        else _orbit_yaw = glerp_angle(_orbit_yaw, target_yaw, 1.0 - std::exp(-orbit_lag * delta));
+        position = chassis_pos + grotated_up(_smoothed_offset, -_orbit_yaw);
+        for (const auto& g : grounds)
+            if (g) position.y = std::max(position.y, *g + terrain_clearance_m);
+        looked = glen(position - look_at_pos) > 0.01;
+    }
+};
+
+TEST_CASE("chase rig matches the former GDScript rig", "[camera_math][chase][golden]") {
+    for (const double side : {0.0, 1.4}) {
+        for (const double orbit_lag : {14.0, 0.0}) {
+            GdChase ref;
+            ref.side_offset_m = side;
+            ref.orbit_lag = orbit_lag;
+            rg::ChaseParams p;
+            p.side_offset_m = side;
+            p.orbit_lag = orbit_lag;
+            rg::ChaseState st;
+            const double dt = 1.0 / 60.0;
+            double worst = 0.0;
+            G3 car{0, 0.5, 0};
+            double yaw = 0.0;
+            for (int i = 0; i < 1500; ++i) {
+                const double t = i * dt;
+                yaw += 0.5 * std::sin(t * 0.6) * dt;
+                const double speed = 3.0 + 40.0 * (0.5 + 0.5 * std::sin(t * 0.25));
+                car.x += std::cos(yaw) * speed * dt;
+                car.z += -std::sin(yaw) * speed * dt;
+                car.y = 0.5 + 0.4 * std::sin(t * 1.3);
+                if (i == 700) car = car + G3{500, 0, 200}; // relocation: the offset jump is not the car's (snap on the lag)
+                const Chassis c = chassis_pose(yaw, 0.15 * std::sin(t), 0.1 * std::sin(t * 0.7));
+                const bool live = !(i >= 400 && i < 460);
+                double lx = 0, ly = 0, sx = 0, sy = 0;
+                if (i >= 100 && i < 160) lx = 1.0;
+                if (i >= 160 && i < 200) lx = -1.0;
+                if (i >= 200 && i < 240) ly = -1.0;
+                if (i >= 500 && i < 900) {
+                    sx = 0.9 * std::sin(t);
+                    sy = 0.9 * std::cos(t);
+                }
+                if (i >= 1000 && i < 1010) { sx = 0.1; sy = 0.1; }
+                if (i == 1100) { // a changed follow distance beyond the snap distance
+                    ref.follow_distance_m = 90.0;
+                    p.follow_distance_m = 90.0;
+                }
+                if (i == 1200) { // a rig switch re-seats, a frame without a simulation too
+                    ref._initialized = false;
+                    rg::chase_reset(st);
+                }
+                std::vector<std::optional<double>> grounds(5);
+                for (int k = 0; k < 5; ++k)
+                    if ((i + k) % 4 != 0) grounds[static_cast<size_t>(k)] = 2.0 + 8.0 * std::sin(0.01 * i + k);
+
+                ref.update_rig(dt, car, c, live, lx, ly, sx, sy, grounds);
+
+                rg::ChaseInput in;
+                in.target_pos = to_core(car);
+                in.forward = to_core(c.x);
+                in.left = to_core(c.y);
+                in.key_x = lx; in.key_y = ly; in.stick_x = sx; in.stick_y = sy;
+                in.live = live;
+                const rg::ChaseFrame f = rg::chase_follow_step(st, in, dt, p);
+                const double z = rg::clear_terrain_height(f.position.z, grounds, p.terrain_clearance_m);
+                const G3 got = to_godot({f.position.x, f.position.y, z});
+                const G3 la = to_godot(f.look_at);
+                worst = std::max({worst, std::fabs(got.x - ref.position.x), std::fabs(got.y - ref.position.y),
+                                  std::fabs(got.z - ref.position.z), std::fabs(la.x - ref.look_at_pos.x),
+                                  std::fabs(la.y - ref.look_at_pos.y), std::fabs(la.z - ref.look_at_pos.z),
+                                  std::fabs(st.orbit_yaw_rad - ref._orbit_yaw)});
+                CHECK(rg::look_valid({got.x, -got.z, got.y}, f.look_at) == ref.looked);
+            }
+            CHECK(worst < 1e-9);
+        }
+    }
+}
+
+TEST_CASE("chase rig: constant speed keeps its offset, the first step sits behind the car", "[camera_math][chase]") {
+    const rg::ChaseParams p;
+    rg::ChaseState s;
+    rg::ChaseInput in;
+    in.forward = {1, 0, 0};
+    in.left = {0, 1, 0};
+    in.live = false;
+    const rg::ChaseFrame first = rg::chase_follow_step(s, in, 0.016, p);
+    CHECK_THAT(first.position.x, WithinAbs(-7.0, 1e-12));
+    CHECK_THAT(first.position.z, WithinAbs(2.5, 1e-12));
+    CHECK_THAT(first.look_at.z, WithinAbs(1.0, 1e-12));
+    rg::ChaseFrame last = first;
+    for (int i = 1; i < 300; ++i) {
+        in.target_pos = {30.0 * i / 60.0, 0, 0};
+        last = rg::chase_follow_step(s, in, 1.0 / 60.0, p);
+    }
+    CHECK_THAT(last.position.x - in.target_pos.x, WithinAbs(-7.0, 1e-9)); // zero lag at any constant speed
+    // reset re-seats (keeps the orbit yaw)
+    s.orbit_yaw_rad = 1.0;
+    rg::chase_reset(s);
+    CHECK_FALSE(s.initialized);
+    CHECK(s.orbit_yaw_rad == 1.0);
+}
+
+// ---- free_rig.gd
+struct GdFree {
+    double move_speed_mps = 40.0, fast_multiplier = 6.0, look_rate_rad_s = 1.8, mouse_sensitivity = 0.0025, pitch_limit_rad = 1.5;
+    G3 position;
+    double _yaw = 0.0, _pitch = 0.0;
+    void activate(G3 origin, G3 fwd) { // fwd = -from.basis.z
+        position = origin;
+        _yaw = std::atan2(-fwd.x, -fwd.z);
+        _pitch = gclamp(std::asin(gclamp(fwd.y, -1.0, 1.0)), -pitch_limit_rad, pitch_limit_rad);
+    }
+    void place(G3 pos, double yaw, double pitch) {
+        position = pos;
+        _yaw = yaw;
+        _pitch = gclamp(pitch, -pitch_limit_rad, pitch_limit_rad);
+    }
+    void update_rig(double delta, bool camera_input_live, double mx, double my, double lx, double ly, G3 m, bool fast) {
+        if (!camera_input_live) return;
+        _yaw -= mx * mouse_sensitivity + lx * look_rate_rad_s * delta;
+        _pitch -= my * mouse_sensitivity;
+        _pitch += ly * look_rate_rad_s * delta;
+        _pitch = gclamp(_pitch, -pitch_limit_rad, pitch_limit_rad);
+        G3 move = grotated_up(G3{m.x, 0.0, -m.z}, _yaw) + kUp * m.y;
+        if (glen(move) > 1.0) move = gnorm(move);
+        const double speed = move_speed_mps * (fast ? fast_multiplier : 1.0);
+        position = position + move * speed * delta;
+    }
+};
+
+TEST_CASE("free rig matches the former GDScript rig", "[camera_math][free][golden]") {
+    GdFree ref;
+    rg::FreeParams p;
+    rg::FreeState st;
+    const double dt = 1.0 / 60.0;
+    double worst = 0.0;
+    const G3 start{10, 5, -30};
+    const G3 look{0.3, 0.2, -0.9};
+    const G3 fwd = gnorm(look);
+    ref.activate(start, fwd);
+    rg::free_activate(st, to_core(start), to_core(fwd), p);
+    for (int i = 0; i < 1800; ++i) {
+        const double t = i * dt;
+        if (i == 900) { // place (screenshot tools), clamped pitch
+            ref.place({-40, 12, 7}, 2.2, 3.0);
+            rg::free_place(st, to_core({-40, 12, 7}), 2.2, 3.0, p);
+        }
+        if (i == 1200) { // floating-origin rebase
+            ref.position = ref.position + G3{-100, 0, 40};
+            rg::free_shift_origin(st, to_core({-100, 0, 40}));
+        }
+        if (i == 1500) { // activate from a camera looking straight up (pitch limit, heading from the horizontal part)
+            const G3 up_look = gnorm({0.01, 1.0, -0.02});
+            ref.activate({1, 2, 3}, up_look);
+            rg::free_activate(st, to_core({1, 2, 3}), to_core(up_look), p);
+        }
+        const bool live = !(i >= 300 && i < 360);
+        const double mx = (i % 50 == 0) ? 40.0 : 0.0, my = (i % 70 == 0) ? -25.0 : 0.0;
+        const double lx = (i >= 100 && i < 250) ? 0.8 : 0.0, ly = (i >= 400 && i < 700) ? 1.0 : (i >= 700 && i < 800 ? -1.0 : 0.0);
+        const G3 m{std::sin(t), 0.5 * std::sin(t * 0.7), std::cos(t * 1.3) * 1.2}; // z up to 1.2: a long vector normalises
+        const bool fast = (i % 400) < 100;
+        ref.update_rig(dt, live, mx, my, lx, ly, m, fast);
+        rg::FreeInput in;
+        in.mouse_x = mx; in.mouse_y = my; in.look_x = lx; in.look_y = ly;
+        in.move_right = m.x; in.move_up = m.y; in.move_forward = m.z;
+        in.fast = fast; in.live = live;
+        rg::free_step(st, in, dt, p);
+        const G3 got = to_godot(st.position);
+        worst = std::max({worst, std::fabs(got.x - ref.position.x), std::fabs(got.y - ref.position.y),
+                          std::fabs(got.z - ref.position.z), std::fabs(st.yaw_rad - ref._yaw),
+                          std::fabs(st.pitch_rad - ref._pitch)});
+    }
+    CHECK(worst < 1e-9);
+}
+
+// ---- walker_rig.gd
+struct GdWalker {
+    double look_rate_rad_s = 2.2, mouse_sensitivity = 0.0025, third_person_distance_m = 3.2, min_distance_m = 1.2,
+           max_distance_m = 9.0, head_height_m = 1.55, eye_height_m = 1.62, terrain_clearance_m = 0.3, follow_rate = 28.0,
+           snap_m = 12.0, third_pitch_min = -1.1, third_pitch_max = 1.2, first_pitch_limit = 1.5;
+    bool first_person = false;
+    double _yaw = 0.0, _pitch = -0.15, _distance_m = 3.2;
+    G3 _smoothed_feet, position;
+    double root_yaw = 0.0, cam_pitch = 0.0;
+    bool _have_walker = false, _drain_wheel = false;
+
+    GdWalker() { _distance_m = gclamp(third_person_distance_m, min_distance_m, max_distance_m); }
+    void activate(G3 from_origin, G3 fwd) {
+        position = from_origin;
+        _have_walker = false;
+        _drain_wheel = true;
+        _yaw = std::atan2(-fwd.x, -fwd.z);
+        _pitch = -0.15;
+        root_yaw = _yaw;
+        cam_pitch = _pitch;
+    }
+    void shift_origin(G3 d) {
+        position = position + d;
+        _smoothed_feet = _smoothed_feet + d;
+    }
+    G3 get_look_forward() const { return grotated_up(G3{0, 0, -1}, _yaw); }
+    void apply_rotation() {
+        root_yaw = _yaw;
+        cam_pitch = _pitch;
+    }
+    void update_look(double delta, double mx, double my, double wheel, double lx, double ly, double key, bool live) {
+        if (_drain_wheel) {
+            _drain_wheel = false;
+            wheel = 0.0;
+        }
+        if (!live) return;
+        _yaw -= mx * mouse_sensitivity + lx * look_rate_rad_s * delta;
+        _pitch -= my * mouse_sensitivity;
+        _pitch += ly * look_rate_rad_s * delta;
+        if (first_person) {
+            _pitch = gclamp(_pitch, -first_pitch_limit, first_pitch_limit);
+        } else {
+            _pitch = gclamp(_pitch, third_pitch_min, third_pitch_max);
+            _distance_m *= std::pow(1.15, -wheel) * std::exp(-key * 1.2 * delta);
+            _distance_m = gclamp(_distance_m, min_distance_m, max_distance_m);
+        }
+    }
+    // has_walker false: ws.is_empty(). grounds: one optional per probe.
+    void update_rig(double delta, bool has_walker, G3 feet, G3 car_position, double mx, double my, double wheel, double lx,
+                    double ly, double key, bool live, const std::vector<std::optional<double>>& grounds) {
+        if (!has_walker) {
+            update_look(delta, mx, my, wheel, lx, ly, key, live);
+            apply_rotation();
+            return;
+        }
+        if (!_have_walker) {
+            _have_walker = true;
+            _smoothed_feet = feet;
+            G3 to_car = car_position - feet;
+            to_car.y = 0.0;
+            if (glen(to_car) > 0.1) _yaw = std::atan2(-to_car.x, -to_car.z);
+            _pitch = -0.15;
+        } else if (glen(_smoothed_feet - feet) > snap_m) {
+            _smoothed_feet = feet;
+        } else {
+            _smoothed_feet = glerp(_smoothed_feet, feet, 1.0 - std::exp(-follow_rate * delta));
+        }
+        update_look(delta, mx, my, wheel, lx, ly, key, live);
+        if (first_person) {
+            position = _smoothed_feet + kUp * eye_height_m;
+            apply_rotation();
+            return;
+        }
+        const G3 pivot = _smoothed_feet + kUp * head_height_m;
+        // Basis(UP, yaw) * (Basis(RIGHT, pitch) * (0, 0, -1)); Basis(RIGHT, p) * (x, y, z) = (x, y c - z s, y s + z c)
+        const G3 pitched{0.0, 0.0 * std::cos(_pitch) - (-1.0) * std::sin(_pitch), 0.0 * std::sin(_pitch) + (-1.0) * std::cos(_pitch)};
+        const G3 look_dir = grotated_up(pitched, _yaw);
+        G3 pos = pivot - look_dir * _distance_m;
+        for (const auto& g : grounds)
+            if (g) pos.y = std::max(pos.y, *g + terrain_clearance_m);
+        position = pos;
+        const G3 to_pivot = pivot - pos;
+        const double flat = std::sqrt(to_pivot.x * to_pivot.x + to_pivot.z * to_pivot.z);
+        if (flat > 0.01) {
+            root_yaw = std::atan2(-to_pivot.x, -to_pivot.z);
+            cam_pitch = gclamp(std::atan2(to_pivot.y, flat), third_pitch_min, third_pitch_max);
+        } else {
+            apply_rotation();
+        }
+    }
+};
+
+TEST_CASE("walker camera matches the former GDScript rig", "[camera_math][walker_cam][golden]") {
+    GdWalker ref;
+    rg::WalkerCamParams p;
+    rg::WalkerCamState st = rg::walker_cam_initial_state(p);
+    CHECK_THAT(st.distance_m, WithinAbs(ref._distance_m, 0.0));
+    const double dt = 1.0 / 60.0;
+    double worst = 0.0;
+    G3 car{20, 0.5, -10};
+    G3 feet{21.5, 0.2, -9};
+    const G3 from_fwd = gnorm({0.6, 0.0, -0.8});
+    ref.activate({0, 3, 0}, from_fwd);
+    rg::walker_cam_activate(st, to_core(from_fwd), p);
+    for (int i = 0; i < 2400; ++i) {
+        const double t = i * dt;
+        // The walker spawns after 20 frames, runs, jumps (feet height), teleports at 900 (snap), despawns 1500..1560.
+        const bool has = !(i < 20 || (i >= 1500 && i < 1560));
+        feet.x += 3.0 * std::cos(0.3 * t) * dt;
+        feet.z += 3.0 * std::sin(0.3 * t) * dt;
+        feet.y = 0.2 + std::max(0.0, std::sin(t * 2.0)) * 0.8;
+        if (i == 900) feet = feet + G3{60, 0, -40};
+        if (i == 1100) { // floating-origin rebase
+            ref.shift_origin({-50, 0, 10});
+            rg::walker_cam_shift_origin(st, to_core({-50, 0, 10}));
+            feet = feet + G3{-50, 0, 10};
+            car = car + G3{-50, 0, 10};
+        }
+        if (i == 1300) ref.first_person = true;
+        if (i == 1700) ref.first_person = false;
+        if (i == 1900) { // a rig switch again, from a new camera heading
+            const G3 f2 = gnorm({-0.7, 0.2, 0.5});
+            ref.activate(ref.position, f2);
+            rg::walker_cam_activate(st, to_core(f2), p);
+        }
+        const bool live = !(i >= 300 && i < 360);
+        const double mx = (i % 60 == 0) ? 30.0 : 0.0, my = (i % 90 == 0) ? 20.0 : 0.0;
+        const double wheel = (i % 53 == 0) ? 2.0 : (i % 71 == 0 ? -4.0 : 0.0);
+        const double lx = (i >= 100 && i < 250) ? 0.7 : 0.0, ly = (i >= 400 && i < 900) ? 1.0 : (i >= 900 && i < 1000 ? -1.0 : 0.0);
+        const double key = (i >= 600 && i < 650) ? 1.0 : ((i >= 650 && i < 700) ? -1.0 : 0.0);
+        std::vector<std::optional<double>> grounds(5);
+        for (int k = 0; k < 5; ++k)
+            if ((i + k) % 3 != 0) grounds[static_cast<size_t>(k)] = -1.0 + 3.0 * std::sin(0.02 * i + k);
+
+        ref.update_rig(dt, has, feet, car, mx, my, wheel, lx, ly, key, live, grounds);
+
+        rg::WalkerCamInput in;
+        in.has_walker = has;
+        in.feet = to_core(feet);
+        in.car_position = to_core(car);
+        in.mouse_x = mx; in.mouse_y = my; in.wheel_steps = wheel; in.look_x = lx; in.look_y = ly; in.zoom_key = key;
+        in.live = live;
+        in.first_person = ref.first_person;
+        const rg::WalkerCamFrame f = rg::walker_cam_step(st, in, dt, p);
+        worst = std::max({worst, std::fabs(st.yaw_rad - ref._yaw), std::fabs(st.pitch_rad - ref._pitch),
+                          std::fabs(st.distance_m - ref._distance_m)});
+        const G3 lf = to_godot(rg::walker_cam_look_forward(st));
+        const G3 rlf = ref.get_look_forward();
+        worst = std::max({worst, std::fabs(lf.x - rlf.x), std::fabs(lf.y - rlf.y), std::fabs(lf.z - rlf.z)});
+        double yaw = f.yaw_rad, pitch = f.pitch_rad;
+        if (f.placed) {
+            ps::Vec3 pos = f.position;
+            if (f.third_person) {
+                pos.z = rg::clear_terrain_height(pos.z, grounds, p.terrain_clearance_m);
+                const rg::WalkerCamAim aim = rg::walker_cam_aim(f.pivot, pos, p);
+                if (aim.valid) {
+                    yaw = aim.yaw_rad;
+                    pitch = aim.pitch_rad;
+                }
+            }
+            const G3 got = to_godot(pos);
+            worst = std::max({worst, std::fabs(got.x - ref.position.x), std::fabs(got.y - ref.position.y),
+                              std::fabs(got.z - ref.position.z)});
+        }
+        worst = std::max({worst, std::fabs(yaw - ref.root_yaw), std::fabs(pitch - ref.cam_pitch)});
+    }
+    CHECK(worst < 1e-9);
+}
+
+TEST_CASE("walker camera: first sight, wheel drain, zoom clamp, aim", "[camera_math][walker_cam]") {
+    const rg::WalkerCamParams p;
+    rg::WalkerCamState s = rg::walker_cam_initial_state(p);
+    CHECK_THAT(s.distance_m, WithinAbs(3.2, 1e-12));
+    CHECK_THAT(s.pitch_rad, WithinAbs(-0.15, 1e-12));
+    rg::walker_cam_activate(s, {0, 1, 0}, p); // looking along +y (Godot -Z): yaw 0
+    CHECK_THAT(s.yaw_rad, WithinAbs(0.0, 1e-12));
+    rg::WalkerCamInput in;
+    in.wheel_steps = 5.0;
+    // no walker: the look stays responsive, nothing is placed, the first wheel call is drained
+    rg::WalkerCamFrame f = rg::walker_cam_step(s, in, 0.016, p);
+    CHECK_FALSE(f.placed);
+    CHECK_THAT(s.distance_m, WithinAbs(3.2, 1e-12));
+    in.wheel_steps = 100.0;
+    rg::walker_cam_step(s, in, 0.016, p);
+    CHECK_THAT(s.distance_m, WithinAbs(p.min_distance_m, 1e-12));
+    in.wheel_steps = -100.0;
+    rg::walker_cam_step(s, in, 0.016, p);
+    CHECK_THAT(s.distance_m, WithinAbs(p.max_distance_m, 1e-12));
+    // first sight: look at the car (here on +x -> yaw -pi/2: turning right), pitch reset
+    in = {};
+    in.has_walker = true;
+    in.feet = {0, 0, 0};
+    in.car_position = {5, 0, 0};
+    f = rg::walker_cam_step(s, in, 0.016, p);
+    CHECK(f.placed);
+    CHECK(f.third_person);
+    CHECK_THAT(s.yaw_rad, WithinAbs(-kPi / 2, 1e-12));
+    const ps::Vec3 fw = rg::walker_cam_look_forward(s);
+    CHECK_THAT(fw.x, WithinAbs(1.0, 1e-12));
+    CHECK_THAT(fw.y, WithinAbs(0.0, 1e-12));
+    // the camera stands behind the pivot, along the look direction
+    CHECK(f.position.x < f.pivot.x);
+    CHECK_THAT(f.pivot.z, WithinAbs(1.55, 1e-12));
+    // a jump beyond the snap distance snaps the pivot; first person sits at the eye height
+    in.feet = {100, 0, 0};
+    in.first_person = true;
+    f = rg::walker_cam_step(s, in, 0.016, p);
+    CHECK_THAT(f.position.x, WithinAbs(100.0, 1e-12));
+    CHECK_THAT(f.position.z, WithinAbs(1.62, 1e-12));
+    CHECK_FALSE(f.third_person);
+    // inputs off: the look does not change
+    const double yaw = s.yaw_rad;
+    in.live = false;
+    in.look_x = 1.0;
+    rg::walker_cam_step(s, in, 0.016, p);
+    CHECK(s.yaw_rad == yaw);
+    // aim: straight above/below is no aim; otherwise toward the pivot with the pitch clamped
+    CHECK_FALSE(rg::walker_cam_aim({0, 0, 5}, {0.001, 0, 0}, p).valid);
+    const rg::WalkerCamAim a = rg::walker_cam_aim({0, 0, 5}, {0, -1, 0}, p); // pivot ahead (+y) and 5 m up
+    CHECK(a.valid);
+    CHECK_THAT(a.yaw_rad, WithinAbs(0.0, 1e-12));
+    CHECK_THAT(a.pitch_rad, WithinAbs(p.third_pitch_max, 1e-12));
+}
+
+// ---- orbit_rig.gd (orbit_step itself is the core function the script already called)
+struct GdOrbitRig {
+    static constexpr double SNAP_M = 60.0, FOLLOW_LAG = 8.0, CLEARANCE_M = 0.6, MOUSE_LOOK_PER_PX = 0.05;
+    rg::OrbitState state;
+    G3 _target, _target_rel{0, 1, 0}, position;
+    bool _initialized = false, looked = false;
+    GdOrbitRig() {
+        const rg::OrbitParams op;
+        state.elevation_rad = op.default_elevation_rad;
+        state.distance_m = op.default_distance_m;
+    }
+    void activate() {
+        *this = GdOrbitRig();
+    }
+    void update_rig(double delta, G3 chassis_origin, G3 basis_x, double lx, double ly, double mx, double my, double zs,
+                    double zk, bool input_live, std::optional<double> ground) {
+        const G3 focus_rel = kUp * 1.0;
+        if (!_initialized || glen(_target_rel - focus_rel) > SNAP_M) {
+            _target_rel = focus_rel;
+            _initialized = true;
+        }
+        _target_rel = glerp(_target_rel, focus_rel, 1.0 - std::exp(-FOLLOW_LAG * delta));
+        _target = chassis_origin + _target_rel;
+        rg::OrbitInput input;
+        input.live = input_live;
+        if (input_live) {
+            input.look_x = gclamp(lx + mx * MOUSE_LOOK_PER_PX, -1.0, 1.0);
+            input.look_y = gclamp(ly + my * MOUSE_LOOK_PER_PX, -1.0, 1.0);
+            input.zoom_steps = zs;
+            input.zoom_key = zk;
+        }
+        state = rg::orbit_step(state, input, delta);
+        const ps::Vec3 o = rg::orbit_offset(state);
+        G3 forward{basis_x.x, 0.0, basis_x.z};
+        forward = glen(forward) > 0.001 ? gnorm(forward) : G3{0.0, 0.0, -1.0};
+        const G3 left = gcross(kUp, forward);
+        position = _target + forward * o.x + left * o.y + kUp * o.z;
+        if (ground) position.y = std::max(position.y, *ground + CLEARANCE_M);
+        looked = glen(position - _target) > 0.01;
+    }
+};
+
+TEST_CASE("orbit rig matches the former GDScript rig", "[camera_math][orbit_rig][golden]") {
+    GdOrbitRig ref;
+    rg::OrbitRigState st = rg::orbit_rig_initial_state();
+    const rg::OrbitRigParams p;
+    const double dt = 1.0 / 60.0;
+    double worst = 0.0;
+    G3 car{0, 0.5, 0};
+    double yaw = 0.0;
+    for (int i = 0; i < 2000; ++i) {
+        const double t = i * dt;
+        yaw += 0.6 * std::sin(t * 0.5) * dt;
+        car.x += std::cos(yaw) * 15.0 * dt;
+        car.z += -std::sin(yaw) * 15.0 * dt;
+        if (i == 800) car = car + G3{300, 0, 0};
+        if (i == 1400) { // a rig switch
+            ref.activate();
+            rg::orbit_rig_activate(st);
+        }
+        if (i == 1700) { // a frame without a simulation
+            ref._initialized = false;
+            rg::orbit_rig_reset(st);
+        }
+        const Chassis c = chassis_pose(yaw, 0.1 * std::sin(t), 0.0);
+        const bool live = !(i >= 500 && i < 560);
+        const double lx = (i >= 100 && i < 300) ? 0.8 : 0.0, ly = (i >= 300 && i < 400) ? -0.6 : 0.0;
+        const double mx = (i % 40 == 0) ? 12.0 : 0.0, my = (i % 55 == 0) ? -30.0 : 0.0;
+        const double zs = (i % 97 == 0) ? 2.0 : 0.0, zk = (i >= 1000 && i < 1100) ? 1.0 : 0.0;
+        std::optional<double> ground;
+        if (i % 3 != 0) ground = 1.0 + 4.0 * std::sin(0.02 * i);
+        ref.update_rig(dt, car, c.x, lx, ly, mx, my, zs, zk, live, ground);
+
+        rg::OrbitRigInput in;
+        in.chassis_pos = to_core(car);
+        in.forward = to_core(c.x);
+        in.look_x = lx; in.look_y = ly; in.mouse_x = mx; in.mouse_y = my; in.zoom_steps = zs; in.zoom_key = zk;
+        in.live = live;
+        const rg::OrbitRigFrame f = rg::orbit_rig_step(st, in, dt, p);
+        std::vector<std::optional<double>> grounds{ground};
+        const double z = rg::clear_terrain_height(f.position.z, grounds, p.clearance_m);
+        const G3 got = to_godot({f.position.x, f.position.y, z});
+        const G3 tg = to_godot(f.target);
+        worst = std::max({worst, std::fabs(got.x - ref.position.x), std::fabs(got.y - ref.position.y),
+                          std::fabs(got.z - ref.position.z), std::fabs(tg.x - ref._target.x), std::fabs(tg.y - ref._target.y),
+                          std::fabs(tg.z - ref._target.z), std::fabs(st.orbit.azimuth_rad - ref.state.azimuth_rad),
+                          std::fabs(st.orbit.distance_m - ref.state.distance_m)});
+        CHECK(rg::look_valid({got.x, -got.z, got.y}, f.target) == ref.looked);
+    }
+    CHECK(worst < 1e-9);
+}
+
+TEST_CASE("rig helpers: probes, clearance, look validity", "[camera_math][rig_helpers]") {
+    const auto probes = rg::ground_probe_offsets();
+    REQUIRE(probes.size() == 5);
+    CHECK(probes[0].x == 0.0);
+    const auto drone = rg::drone_probe_offsets();
+    for (size_t i = 0; i < 5; ++i) CHECK(probes[i].y == drone[i].y);
+    CHECK(rg::clear_terrain_height(2.0, {}, 1.0) == 2.0);
+    CHECK(rg::clear_terrain_height(2.0, {std::nullopt, 5.0, 1.0}, 0.5) == 5.5);
+    CHECK_FALSE(rg::look_valid({0, 0, 0}, {0.005, 0, 0}));
+    CHECK(rg::look_valid({0, 0, 0}, {0.02, 0, 0}));
+}
+
+} // namespace

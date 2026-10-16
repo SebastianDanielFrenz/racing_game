@@ -47,8 +47,8 @@ returns one level at a time; the root opens the save-and-exit prompt. Upgrades:
   one gearbox output into one or two axle differentials takes every layout; a transfer case or anything else greys
   the tile out. A layout change that stops driving an axle returns that axle's differential choice to stock with a
   notice. Every layout stays offered, FWD <-> RWD included (owner on PR #19). A swap that runs the driveline the length
-  of the car (an AWD conversion, FWD <-> RWD) carries a weight penalty; that mass comes in through the per-part mass
-  work (branch claude/part-mass), not through this code. The stats (vehicle select, car browser) follow the setup's layout.
+  of the car (an AWD conversion, FWD <-> RWD) carries a weight penalty: the part-mass tree (see "Part masses" below)
+  adds the new axle hardware and a layout-conversion node. The stats (vehicle select, car browser) follow the setup's layout.
 
 Compound installs preserve each axle's width. Dimension installs preserve each
 axle's compound. All applies the chosen property to both axles, offering only
@@ -157,6 +157,264 @@ this is an NA conversion approximation and retains the original engine internals
 Verification: 195 garage checks and 80 native assertions across four engine-part
 cases passed. Logs: out/garage_induction_final.log, out/garage_induction_polish_unit.log.
 N2O swap screen captured in out/garage_induction_ready_shots/induction_types.png.
+
+## Turbo kits for engines without a turbo (2026-10-15)
+
+Owner on PR #5: "Turbos cannot be fitted yet to many engines." The option `turbo_kit` (setup_options.json, catalog
+`turbo_kits`, group "Turbo system") fits a turbo system to the INSTALLED engine when it is a simulated engine with a cycle
+block and no turbo of its own (pico, ventura, runabout, the demo pipe I4, the A25A; also after an engine swap into any
+car). The generated hardware and configuration files are content-addressed under `<engine map cache>/turbo_kits/`.
+
+Installing a kit sets the engine's `default_forced_induction` to the generated configuration, its
+`cycle.grid_p_im_kpa` to `ps::drivetrain::boost_grid_p_im(cycle, target)` and lowers a compression ratio above 10.0 to
+10.0 (physics_sim engine.md "Adding or removing forced induction"; knock, lambda and spark stay the physics' own
+models). The swap package treats a kit like a torque increase: the clutch rule (1.5 x peak) uses peak x the charge
+pressure ratio, and the gearbox notice counts the boosted torque. Torque-curve engines, already-turbocharged engines,
+rotaries and lift-family engines are refused: `OptionView::unavailable_reason` (RgGarage `unavailable_reason`) says why,
+and Engine -> Turbo / Swaps -> Forced induction show that text instead of hiding the tile. Changing to an engine that
+cannot take a kit drops it (`Garage::drop_unavailable_values`).
+
+### Sizing logic (owner on PR #21: count and boost are free choices)
+
+The kits in `data/engines/turbo_kits.json` (rg.turbo_kits/1) are shortcuts for a turbo COUNT and a STARTING boost:
+Street (1, 0.5 bar), Sport (1, 1.0 bar), Twin-turbo (2, 1.0 bar), Quad-turbo (4, 1.0 bar). Any count goes on any eligible
+engine (no cylinder rule); the boost slider (`turbo_boost_target`) then moves the target freely. One rule, applied to the
+final target (compile re-sizes the kit after the slider: `CompiledSetup::turbo_kit`):
+
+1. Air demand of the whole engine at the limiter: charge density (ambient compressed to the target at the anchor's
+   efficiency, then the intercooler at 0.75 effectiveness) x swept volume x limiter rpm / 120 x VE 0.9.
+2. Split over N turbos: each compressor must flow demand / N x 1.4 (flow margin: no choke at the limiter, no late spool).
+3. Each unit = physics_sim's anchor `hyper_turbo_approx.json` (GTX3582R class, 82 mm exducer) scaled at constant tip
+   speed, s = sqrt(flow / anchor flow), clamped to [0.3, 1.6]: flow, throat, wastegate, shaft loss x s^2, reference rpm / s,
+   rotor inertia x s^5, efficiencies anchor + 0.127 ln s. More turbos = smaller, faster, quicker-spooling, less efficient
+   units; a quad on a 1.0 L three reaches the 0.3 clamp (four 25 mm units, slightly oversized).
+4. Envelope per unit from its exducer D: 2.6 D + 60 mm long, 2.2 D across. The units sit in a row along the crank on the
+   exhaust side (a V engine with more than one: split over both banks); the row sets the length when longer than the
+   engine; width grows by 0.5 x 2.2 D per side (the turbo takes the NA exhaust manifold's place, which the engine envelope
+   already holds). `rg::check_fit_size` holds engine + kit against the car's `engine_bay_envelope`; a kit that does not
+   fit is refused on install ("... does not fit Pico (556 mm long, the bay takes 500 mm)") and its card says so first.
+   The charge pipe and the front-mounted intercooler are not in the box.
+5. Masses ([AS], `mass` block): turbo unit 2.0 kg + 7.5 kg x s^3; exhaust manifold and downpipe 3 kg per turbo;
+   intercooler core 0.45 m^2 per kg/s of demand x 76 mm x 650 kg/m^3; charge piping 1.8 m (+0.6 m per extra turbo) of a
+   pipe sized for 60 m/s at charge density, wall and density from the material. `rg::turbo_kit_parts` puts them under the
+   engine of the part-mass tree (`engine.turbo_kit.*`), so the drive's chassis mass follows the kit.
+
+Measured (Sketch maps, engine dyno at the same rpm): Street kit on every kit engine x1.30 to x1.61 power at 0.43-0.49 bar;
+the Quad on the pico at 1.0 bar 88 kW at 5650 rpm against 54 kW NA (x1.63), rotor ~212 000 rpm (rated 460 000).
+
+### Charge piping
+
+Option `charge_piping` (catalog `charge_piping`, offered wherever a kit can go): Plastic (comes with the kit, rated 1.5 bar,
+bursts near 3 bar), Aluminium (3 / 8 bar), Stainless steel (5 / 15 bar), each with wall, density and an [AS] source. The
+setup check reports boost above the rating; the setup still saves.
+
+### Damage model data
+
+Limits are recorded as data now and only WARNED about by the setup check (limit advisor, game-side build rules in
+`data/garage/advisor.json`), nothing fails in the simulation yet:
+
+| Rule | Value | Limit (data) | Severity |
+|---|---|---|---|
+| `ChargePipingPressure` | max(boost target, sweep charge pressure) | piping `rated_bar` / `burst_bar` (turbo_kits.json `piping`) | Near from 90 %, warning above rated, critical (variant `burst`) at burst |
+| `TurboShaftSpeed` | sweep rotor speed (one rotor) | kit `max_shaft_rpm` = reference rpm x `limits.max_shaft_speed_factor` 1.15 | Near from 90 %, warning above |
+| `MeanPistonSpeed` | 2 x stroke x top sweep rpm | the WEAKEST installed rod / piston / crank grade (engine_internals.json); without internals data advisor.json `part_limits.max_mean_piston_speed_m_s` 25 | Near from 90 %, warning above |
+| `ValveFloat` | top sweep rpm | valve spring grade x the engine's factory limiter (engine_internals.json `limiter_factor`) | Near from 90 %, warning above |
+| `CylinderWall` | the wall left between two bores of a bored block | engine_internals.json `bore.safe_wall_mm` 5 mm [AS] | warning below (a geometry figure, any rpm); damage part `cylinder_block`, option `engine_bore` |
+
+Every part-limit item carries `AdviceItem::damage_part` (Godot: `damage_part` in `RgGarage.get_advice`): the part a
+damage model would wear or break - `charge_piping`, `turbo_unit`, `connecting_rods`, `pistons`, `crankshaft`,
+`valve_springs`, `cylinder_block` (a thin wall after a bore), or `engine_internals` for the engine-wide fallback. Its `option_id` is the garage option that swaps that
+part (the weak rod set: `engine_rods`), so "fix" opens the part, not only the rev limit.
+
+How a future damage model reads them: `CompiledSetup::turbo_kit` (a `TurboKitBuild`) lists each fitted part
+(`TurboKitPart`: id, count, mass, `limits` map - `max_shaft_rpm` on `turbo_unit`, `rated_bar` / `burst_bar` on
+`charge_piping`), and the advisor's `AdviceInput` carries the same figures (`set_part_limits`). A damage model would run
+on the stepping thread against the live `PowertrainState` (turbo_rpm, boost) instead of the dyno sweep, use the same
+numbers as thresholds (rated = wear starts, burst = the part fails: boost leak / turbo failure), and its outcome would be
+the engine and turbo telemetry the HUD already shows. Knock is the physics' own model already (ECU and knock limit);
+overheating has the engine thermal model's temperatures but no limits yet.
+
+**Engine internals** (2026-10-16, owner on PR #21: the safe piston speed depends on the material, a titanium rod as in
+F1 holds more; `rg/engine_internals.h`, `data/engines/engine_internals.json` rg.engine_internals/1): four swappable
+parts, garage Upgrades > Engine > Internals (options `engine_rods`, `engine_pistons`, `engine_crankshaft`,
+`engine_valve_springs`, catalog `engine_internals`):
+
+| Part | Grades ([AS] rating, mass vs stock) |
+|---|---|
+| Connecting rods (tensile load, kN per litre of cylinder volume) | cast steel (economy) 26 x1.10 (below stock); stock powder-forged 40; forged steel H-beam 56 x1.05; titanium 70 x0.65 |
+| Pistons (mean piston speed) | low-silicon cast 18 m/s x1.05 (below stock); stock cast 21 m/s; hypereutectic 23 m/s x0.97; forged 2618 26 m/s x0.92 |
+| Crankshaft (mean piston speed) | lightweight cast 18.5 m/s x0.85 (below stock); stock cast iron 21 m/s; forged steel 25 m/s x1.0; billet steel 27 m/s x0.9 |
+| Valve springs (x factory limiter) | weak single 0.85 x x0.85 (below stock); stock 1.0 x; uprated dual 1.25 x x1.15; race beehive 1.45 x x1.0 |
+
+**Connecting-rod load** (owner on PR #21: the load on the rod scales with the piston's weight). The rod is rated by the
+peak inertial tension at TDC on the exhaust stroke, not by piston speed:
+
+    F = m_recip x (S / 2) x w^2 x (1 + lambda)
+
+`m_recip` = the piston set (pin and rings included) of ONE cylinder + one third of the rod's own mass
+(`rod_small_end_share`), both from the installed grades' mass factors; `S` = stroke; `w` = 2 pi rpm / 60;
+`lambda` = crank radius / rod length (`rod_crank_ratio` 0.3 [AS], one ratio for every engine because the engine data
+carries no rod length yet; use the engine's own once it does). A rod grade's rating is `limit` x (displacement / cylinders)
+newtons. The rpm where the rod reaches it is `w = sqrt(rating / (m_recip x S/2 x (1 + lambda)))`, so a lighter piston
+grade (forged 0.92) raises it, a heavier one (low-silicon cast 1.05) lowers it, and lighter rods lower the load too. A
+stock rod on stock pistons holds at least `stock_margin` x the factory limiter (the margin is on the engine speed).
+
+**Weakest part.** Every bottom-end part is reduced to the engine speed at which it reaches its rating (piston speed ->
+rpm = v x 60 / (2 S); rod load as above): the lowest one is the engine's safe rpm and the part the setup check names. The
+rod's rating is displayed there as the equivalent mean piston speed (`limit`) with its rpm (`limit_rpm`).
+
+**Downgrades.** The first grade is always stock; a grade whose table figure is below stock's keeps its own figure instead of
+being lifted to the engine's stock rating, so it may sit below what the factory limiter needs and then the setup check warns
+(`MeanPistonSpeed` / `ValveFloat`, naming the part) at the stock rev limit; the card says "below stock". Stock itself never
+warns. Upgrades still never rate below stock.
+
+**Upgrade lists show what fits.** By default the garage upgrade lists (turbo kits, engine swaps and the other catalog option
+cards) hide a choice the car cannot fit; each `SetupPart` carries `fits` / `fit_reason` (core, `visible_parts`,
+`hidden_parts_reason`). A tile whose choices are all hidden shows one line with the reason. A "Show all" toggle in the
+upgrade panel (hidden setting `garage.show_all_upgrades`, default off) lists them greyed out with their reason.
+
+- A stock part rates at least `stock_margin` (1.15) x the factory figure (piston speed at the engine's own limiter, or
+  the limiter), so no car as built warns; an upgrade never rates below stock. The engine's limit is its
+  weakest rod / piston / crank (titanium rods on a cast crank still break the crank).
+- Masses: stock set = kg per litre x displacement, a grade = stock x `mass_factor`; the part-mass tree gets the
+  DIFFERENCE under `engine.internals.<kind>` (negative for lighter parts), so the drive's chassis mass follows. The
+  physics engine inertia is not changed (no physics input for rotating mass yet).
+- The choice edits no engine file (limits and masses only). Simulated engines with a cycle block only; torque-curve and
+  rotary engines show the reason. A choice is kept across an engine swap and re-rated for the new engine (a swap to a torque-curve engine then refuses the setup with the reason, as for a turbo kit).
+- While the internals are known, physics' own `MeanPistonSpeed` dyno finding (one table figure, 25 m/s) is dropped: the
+  part rule replaces it.
+
+**Cylinder bore** (2026-10-16, owner on PR #21: "I want upgrades that bore out the cylinders; this logically implies new
+pistons (due to diameter difference), among other things."). Garage option `engine_bore` (Upgrades > Engine > Internals,
+catalog `engine_internals`, `internal` "cylinder_bore", placed after `engine_install` and before `turbo_kit` in
+setup_options.json so a kit sizes for the bored engine). Unlike the other internals it EDITS the engine file: `bore_mm`
+and `cycle/compression_ratio` through the merge patch (the option's pointers are the whitelist), so the swept volume and
+the generated maps follow (`bore_m` is part of the physics engine-map cache key, so a bored engine generates its own maps
+once, then hits the cache). Steps and figures in engine_internals.json `"bore"`, every one [AS] with its reasoning:
+
+| Step | Oversize | Note |
+|---|---|---|
+| `overbore_0_5` | +0.5 mm | first rebuild oversize, every block takes it |
+| `overbore_1_0` | +1.0 mm | largest rebore without sleeves |
+| `big_bore` | +3.0 mm | re-sleeved big-bore kit, limited by the wall |
+
+- **Per-engine limit.** No engine file carries its bore spacing, so spacing = `pitch_factor` 1.09 x factory bore [AS]
+  (K20 1.08, N52 1.07, LS3 1.08, B18 1.11). Wall = spacing - new bore. Below `min_wall_mm` 4.0 the step is refused
+  (`SetupPart::fits` false with the reason, hidden unless "Show all"; a saved one is refused by compile, and an engine
+  swap to a block that cannot take it drops it back to stock with a notice); below `safe_wall_mm` 5.0 it fits but the
+  setup check warns (`CylinderWall`, damage part `cylinder_block`).
+
+  | Engine | Bore | Spacing [AS] | +3 mm wall | Big bore |
+  |---|---|---|---|---|
+  | 1.0 L I3 (Pico) | 71.0 | 77.4 | 3.4 mm | refused (at most +2.4 mm) |
+  | 2.5 L I4 (A25A) | 87.5 | 95.4 | 4.9 mm | fits, warns |
+  | demo I4 (pipes) | 86.0 | 93.7 | 4.7 mm | fits, warns |
+  | twin-turbo V8 (hyper) | 92.0 | 100.3 | 5.3 mm | fits |
+  | 2.9 L side-valve I4 | 95.25 | 103.8 | 5.6 mm | fits |
+  | 5.0 L V8 (Ventura) | 101.6 | 110.7 | 6.1 mm | fits |
+
+- **Compression ratio** is computed, not kept: the head's clearance volume stays, the swept volume grows with bore^2, so
+  CR' = 1 + (CR - 1) x (bore' / bore)^2 (rounded to 0.001; the Ventura's 9.0 becomes 9.48 with the big bore). The gasket
+  ring and the crown above the deck are ignored (CR comes out slightly high). A turbo kit fitted afterwards still lowers
+  it to the kit's ceiling.
+- **Pistons of the new size.** A bored block takes pistons of the new diameter only: every piston grade is then offered
+  at that bore (cards and labels name it, e.g. "104.6 mm bore"); mass = factory piston x (bore' / bore)^(2 + k),
+  `piston_thickness_exponent` k = 1 [AS] (crown area x bore^2, crown thickness x bore for the same bending stress). The
+  heavier piston loads the SAME rods more (rods keep their factory rating and mass), so the rod-limited rpm drops:
+  Ventura big bore pistons 3.46 -> 3.78 kg, rod-limited 8,182 -> 7,955 rpm. Rods, crank and springs keep their masses.
+- **Part-mass tree.** `engine.internals.pistons` carries the piston difference to the factory set even at the stock
+  grade, `engine.internals.cylinder_block` the liner ring bored away: n x pi/4 x (b'^2 - b^2) x 1.5 stroke [AS] x 7200
+  kg/m3 cast iron [AS] (Ventura big bore -3.2 kg).
+- **Turbo kit** sizes from the bored displacement (the facts it reads are the bored engine's): Ventura + street single
+  air demand 0.412 -> 0.436 kg/s, wheel scale 0.980 -> 1.009. The kit's torque factor for clutch sizing is multiplied by
+  the displacement ratio. A bore without a kit or swap does not re-size the clutch (no swap package runs; +6 % torque on
+  the big bore against the clutches' >= 1.2 x margin). Bay fit is unchanged (same block).
+- **Measured** (engine dyno, Sketch maps, `[bore][dyno][long]`):
+
+  | Engine, step | Displacement | 2,200-2,300 rpm | 3,450-3,600 | 4,750-4,900 | 5,650-5,850 |
+  |---|---|---|---|---|---|
+  | Ventura 5.0 V8, big bore (+3.0 mm) | +6.0 % | 433 -> 461 N*m (+6.5 %) | 457 -> 488 (+6.8 %) | 456 -> 470 (+3.3 %) | 384 -> 386 (+0.5 %) |
+  | A25A 2.5 I4, +1.0 mm | +2.3 % | 240 -> 247 N*m (+3.0 %) | 285 -> 293 (+2.7 %) | 254 -> 257 (+1.2 %) | 213 -> 214 (+0.3 %) |
+
+  Low and mid rpm gain the displacement plus a little from the higher compression ratio; at the top the gain fades
+  because valves, ports, cams and the intake are the stock engine's (breathing-limited), which is what a real overbore
+  does without head work.
+- **Not changed** (physics gaps, stated): the engine_thermal file's own `displacement_l` and heat capacities stay stock;
+  valve diameters (the `ValveDiameterBand` build rule compares them to the bore, so a big bore can move it), ports, cams
+  and the engine's rotating inertia are unchanged; the knock-limited ECU sees the higher CR through the cycle model.
+  No stroker crank: changing the stroke moves every stroke-based limit, the rod ratio (the A25A already sits at the
+  3.0 `RodRatio` build-rule edge) and the deck height, so it needs new rods and pistons with another pin height - left
+  for a later step.
+
+Damage-model hook (owner on PR #5: damage persists until repaired, repairs are an explicit action - garage, later a pit
+stop or finishing with it - probably free, and damage affects driving). Not built yet; the data is shaped for it:
+`CompiledSetup::internals` / `turbo_kit` list every installed part with its limit, and every warning names its
+`damage_part`. A damage model would keep a per-part wear/broken state in the saved setup (next to the part's grade),
+add wear while the live state is above the rating (piston speed from the engine rpm, boost, rotor speed), break the part
+at its failure figure, apply the effect in the drive (a broken rod: the engine stops; floated valves: misfire / power
+loss; a burst pipe: boost leak), and clear the state on the garage's repair action.
+
+Open questions for the owner: whether the charge pipe and intercooler should count against the bay (needs a bay model of
+the gaps), whether metal piping should cost anything besides mass, and whether a burst should later be a part the player
+replaces.
+
+Tests: tests/unit/test_turbo_kit.cpp `[turbo_kit]`, tests/unit/test_engine_internals.cpp `[engine_internals]`, tests/unit/test_engine_bore.cpp `[bore]` (dyno: `[bore][dyno][long]`); the dyno comparisons (kit vs NA at the same rpm, the quad on the
+pico) are `[turbo_kit][dyno][long]`.
+
+## Cooling system upgrades (2026-10-16)
+
+Owner on PR #21: "More combustion should result in more heat for the engine components which should need to be cooled. We need
+cooling system upgrades (water cooling elements in the engine block, bigger radiator, ...)."
+
+**Does the heat follow the combustion?** Yes, in the physics already (physics_sim engine thermal model): the heat into the engine
+lump is `wall_heat_fraction` x the RELEASED fuel energy of each substep, plus friction. Measured here (car_gt70, 35 C, full
+throttle 25 s, `[.][cooling][long]`): peak wall heat 135 kW without a turbo kit, 281 kW with the sport single kit (x2.08), coolant
+after 25 s 95.1 vs 110.4 C. No physics change is needed for that. What the schema cannot do: it has NO water-jacket geometry,
+passage area or wall-to-coolant heat transfer coefficient, so "water cooling elements in the block" cannot be a separate heat
+path; they are modelled with the levers that exist (a stronger pump, more coolant in the block, a cooler thermostat).
+
+`rg/cooling_upgrades.h`, `data/cooling_systems/cooling_upgrades.json` (rg.cooling_upgrades/1), four setup options in the
+**Cooling** group (`cooling_radiator`, `cooling_fan`, `cooling_oil_cooler`, `cooling_block_cooling`, catalog `cooling_upgrades`).
+A grade is a set of factors applied to the car's EFFECTIVE cooling_system / engine thermal values (the `extends` chain resolved),
+so one table fits every car and engine; `materialise_setup` writes patched copies of the cooling_system file (radiator, fan, oil
+cooler) and the vehicle's engine thermal override (block cooling).
+
+| Part | Grades (all figures [AS], reasoning in each grade's `source`) | Lever in the physics |
+|---|---|---|
+| Radiator | stock; aluminium wide core (area x1.35, UA per area x1.15); race ducted (area x1.8, x1.3, ram x1.25) | `radiator.frontal_area_m2`, `ua_ref_w_k`, `air_mass_flow_ref_kg_s`, `ram_coefficient` |
+| Fan | stock; high-flow (flow x1.5, on/off 4 K earlier); race twin (x2.2, 8 K earlier) | `fan.face_velocity_m_s`, `power_w`, `on_c/off_c`; only helps below the speed where the ram air is faster than the fan |
+| Oil cooler | stock; street (+0.15 W/K per m/s per litre); race (+0.35) | `oil_cooler.air_w_k_per_m_s` |
+| Block cooling | stock; high-flow pump (x1.5); enlarged jackets (pump x1.5, +0.35 L coolant per litre, thermostat 6 K lower) | `pump.l_min_per_krpm`, engine lump capacity, `thermostat.open_c/full_open_c` |
+
+* **Mass.** Each grade is a child of the part-mass tree's `engine.cooling` node with the mass the NEW part adds over the stock
+  part (fixed kg + kg per litre + kg per extra m2 of core); the chassis mass moves by the same amount (test: children sum, tree
+  total moves by `CoolingBuild::mass_delta_kg`).
+* **Availability.** The options are offered on every car with a cooling_system; a car without one gets the option unavailable with
+  the reason. Each `SetupPart` carries `fits` / `fit_reason` (a grade the engine's file cannot work on, e.g. a per-litre grade
+  without a displacement); the garage hides a non-fitting tile unless "show all" is on.
+* **Setup check.** `CoolantTemperature` / `OilTemperature` rules (advisor.json build_rules). Owner answer on PR #28
+  (option C): the check reports the TIME to the limit at constant full power, not only the steady temperature.
+  `rg::transient_thermal` runs the physics model's own two-lump time history (the engine thermal file's heat capacities,
+  backward Euler, thermostat wax lag and play, fan hysteresis, eps-NTU radiator) from the warm spawn state, for the sweep
+  points up to 0.9 x the rev limiter and within 5 % of the peak power of those (a car tops out in its top gear below the
+  limiter), on a 30 C day with the ram air that power holds (11 m/s x cbrt(kW)); step 0.25 s, horizon 1800 s
+  (cooling_upgrades.json check). The soonest point counts: never reached = clean, reached after more than
+  `thermal_time.critical_within_s` (60 s, advisor.json) = a warning, sooner = critical. The text names the time, the rpm, the
+  air speed and the steady temperature it would settle at (`rg::steady_thermal`). The limit is the car's own
+  `warnings.overheat_c` (coolant) or 135 C (oil). Items name `damage_part` (`engine_block` for the coolant, `crankshaft` for
+  the oil film) and the option that fixes it (`cooling_radiator`, `cooling_oil_cooler`). Nothing is clamped.
+* **Stock cars.** Every catalog car is clean except the nitrous hypercar. data/cooling_systems/hyper.json was upsized
+  for this check (owner on PR #28: 1.4 m2 of radiator core, UA_ref 7200 W/K, ram 0.22, fan 7 m/s, oil cooler 1.0 W/K per
+  m/s): stock car_hyper settles at 99.6 C coolant / 120.4 C oil and reaches neither limit (the first sizing reached 118 C
+  after 16 s and settled at 134.5 C: critical). car_hyper_n2o shares the cooling system and the dyno sweep sprays without
+  end: it settles at 119.6 C and reaches 118 C after 10 s (critical; the thermostat lag overshoots the steady figure), the oil
+  135 C after 107 s; a real shot lasts 35 s.
+* **Measured.** car_hyper, 35 C, full throttle 170 s to 413 km/h: stock coolant 96.2 C / oil 110.8 C at the end (first
+  sizing 117.1 / 123.2 C), race radiator + race oil cooler 93.9 C / 89.3 C. `steady_thermal` at the end of the run predicts
+  96.2 C (stock) and 93.5 C (race). ISA 15 C: peak 99.2 C during the pull, plateau 89-95 C.
+
+Tests: tests/unit/test_cooling_upgrades.cpp `[cooling]` (table, options on every car, materialised files, mass sum, steady check,
+advisor items); `[.][cooling][long]` runs the measurements above and the check on every stock car.
 
 ## Live engine dyno (2026-10-08)
 
@@ -285,3 +543,21 @@ at d2d43f6. Evidence: out/adaptive_pressure_tests.log (65 native assertions),
 out/adaptive_pressure_regression.log (1288 existing control/cache assertions),
 out/adaptive_game_hardware_tests.log (57 hardware/domain assertions) and
 out/adaptive_setup_tests.log (structural checks through 30 bar requested boost).
+
+## Part masses (2026-10-15)
+
+Owner on PR #19: each part has its own mass, a parent carries the cumulative mass of its children, and swaps change the
+car's mass through the parts. `rg/part_mass.h` builds the tree from data only (the vehicle file as the setup leaves it,
+the engine and gearbox catalogues' `mass_kg`, `data/vehicles/part_masses.json`, the catalog's per-car
+`chassis.body_mass_kg`); the drive's chassis mass is the tree's total (physics carries no part as a mass of its own:
+wheel_mass is spin inertia only). Body masses are chosen so every stock car keeps its previous chassis mass.
+
+A drivetrain layout other than the stock one carries a penalty (owner: "the drivetrain needs to run across the entire
+car, like in an AWD setup"): the new axle's differential and half shafts and an AWD transfer case come from the file;
+the `layout_conversion` node adds 15 kg of mounting hardware, an 18 kg transfer drive for a 2WD result, and a 14 kg
+driveline along the car where the new layout has no more propshafts than the stock one. Front-engine examples on the
+synthetic car: FWD -> RWD +45 kg, RWD -> FWD +35 kg, FWD -> AWD +87 kg (with a viscous centre / Torsen rear). All
+figures are [AS].
+
+The garage shows it under Chassis -> Weight (`RgGarage.get_mass_breakdown(id)`: total, change against stock, body and
+groups, the drivetrain's parts).

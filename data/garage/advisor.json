@@ -31,6 +31,11 @@
     "solve_points_help": "A Find fix button runs the wastegate search at these rpm of an item: the worst finding and/or the last (highest-rpm) one; the answer is the larger need."
   },
 
+  "part_limits": {
+    "near_fraction": 0.9,
+    "max_mean_piston_speed_m_s": 25.0,
+    "source": "[AS] Damage-model data, warnings only. Mean piston speed: production engines run up to about 20-25 m/s at their limiter (sports engines ~24, F1 ~25+); above 25 m/s rods and bearings are the limit. max_mean_piston_speed_m_s is only the fallback for an engine without internals data: with data/engines/engine_internals.json the weakest installed part sets the limit. A part reported Near from 90 % of its rating. The charge piping and turbo ratings come with the parts in data/engines/turbo_kits.json."
+  },
   "build_rules": {
     "TurboStageMapCoverage": {
       "option": "turbo_boost_target",
@@ -52,7 +57,144 @@
           "max_severity_help": "Owner decision 2026-10-14: the compressor's own choke is accepted, not a map problem; never louder than advice."
         }
       }
+    },
+    "ChargePipingPressure": {
+      "option": "charge_piping",
+      "option_help": "Damage-model data (docs/garage_ui.md \"Damage model data\"): the boost (the larger of the target and the sweep's charge pressure) against the fitted charge piping's rating (data/engines/turbo_kits.json piping). Near = at near_fraction of the rating, Limiting = above it, Exceeded (variant burst) = at the burst figure. Nothing fails in the simulation yet; the setup still saves.",
+      "title": "Boost is above the charge piping's rating",
+      "lines": [
+        "Boost reaches {value}; the {part} is rated for {limit}.",
+        "Couplers can blow off and pipes crack above the rating (not simulated yet)."
+      ],
+      "suggestion": "Aluminium or steel charge piping, or a lower boost target.",
+      "variants": {
+        "near": {
+          "title": "Boost is close to the charge piping's rating",
+          "lines": [
+            "Boost reaches {value}; the {part} is rated for {limit}."
+          ],
+          "suggestion": "Stronger charge piping before raising the boost further."
+        },
+        "burst": {
+          "title": "Boost would burst the charge piping",
+          "lines": [
+            "Boost reaches {value}; the {part} is rated for {limit} and lets go near {burst}.",
+            "A real car would lose its boost here (not simulated yet)."
+          ],
+          "suggestion": "Steel charge piping, or a much lower boost target."
+        }
+      }
+    },
+    "TurboShaftSpeed": {
+      "option": "turbo_boost_target",
+      "option_help": "Damage-model data: the dyno sweep's rotor speed against the kit turbo's rated maximum (scaled reference speed x limits.max_shaft_speed_factor in turbo_kits.json). Garage turbo kits only.",
+      "title": "Turbo overspeeds",
+      "lines": [
+        "The turbo spins at {value} at {rpm}; its rated maximum is {limit}.",
+        "An overspeeding wheel can burst (not simulated yet)."
+      ],
+      "suggestion": "A lower boost target, or more turbos sharing the air.",
+      "variants": {
+        "near": {
+          "title": "Turbo runs close to its speed limit",
+          "lines": [
+            "The turbo spins at {value} at {rpm}; its rated maximum is {limit}."
+          ],
+          "suggestion": ""
+        }
+      }
+    },
+    "MeanPistonSpeed": {
+      "option": "engine_rev_limit",
+      "option_help": "Damage-model data: mean piston speed 2 x stroke x rpm at the top of the sweep against the WEAKEST installed engine part (connecting rods, pistons, crankshaft; data/engines/engine_internals.json, rg/engine_internals.h). The item's option is then the garage option that swaps that part ({part} names it with its grade, {part_kind} the kind, damage_part is the part a damage model would break); the rev limit (this option) is the fallback for an engine without internals data, rated against part_limits.max_mean_piston_speed_m_s. Any simulated engine. While the parts are known, physics' own MeanPistonSpeed finding (one table figure) is not shown.",
+      "title": "Mean piston speed is very high",
+      "lines": [
+        "At {rpm} the pistons average {value}; the {part} hold {limit} (about {limit_rpm}).",
+        "They would be the first to fail above it (damage is not simulated yet)."
+      ],
+      "suggestion": "Stronger {part_kind}, or a lower rev limit.",
+      "variants": {
+        "near": {
+          "title": "Mean piston speed is close to the limit",
+          "lines": [
+            "At {rpm} the pistons average {value}; the {part} hold {limit} (about {limit_rpm})."
+          ],
+          "suggestion": ""
+        }
+      }
+    },
+    "CylinderWall": {
+      "option": "engine_bore",
+      "option_help": "Damage-model data: a bored block (data/engines/engine_internals.json \"bore\") leaves a thinner wall between two cylinders, bore spacing (pitch_factor x factory bore, [AS]) minus the new bore. Below safe_wall_mm the wall flexes and the bores go out of round under load; the item names the cylinder block (damage_part cylinder_block). A geometry figure, not a sweep value: shown at any rpm. Nothing fails yet.",
+      "title": "Thin cylinder walls",
+      "lines": [
+        "The {part} leaves {value} of wall between two cylinders; about {limit} is safe.",
+        "The bores can go out of round under load (damage is not simulated yet)."
+      ],
+      "suggestion": "A smaller bore step."
+    },
+    "ValveFloat": {
+      "option": "engine_valve_springs",
+      "option_help": "Damage-model data: the top of the sweep against the rpm the installed valve springs keep the valves on the cam (data/engines/engine_internals.json limit_kind limiter_factor: a factor of the engine's factory limiter). Above it the valves float and can touch the pistons; nothing fails yet.",
+      "title": "Valves float at this rev limit",
+      "lines": [
+        "At {value} the valves no longer follow the cam; the {part} hold up to {limit}.",
+        "A floating valve can hit a piston (damage is not simulated yet)."
+      ],
+      "suggestion": "Stiffer valve springs, or a lower rev limit.",
+      "variants": {
+        "near": {
+          "title": "Valve springs are close to their limit",
+          "lines": [
+            "At {value} the {part} are close to their limit of {limit}."
+          ],
+          "suggestion": ""
+        }
+      }
+    },
+    "CoolantTemperature": {
+      "option": "cooling_radiator",
+      "option_help": "Damage-model data: how long the coolant takes to reach the car's overheat warning at constant full power on a hot day, from the warm spawn state (rg::transient_thermal, the physics model's own two-lump time history with its heat capacities; check settings in data/cooling_systems/cooling_upgrades.json). Never = clean, later than thermal_time.critical_within_s = a warning, sooner = critical. The engine block (head gasket, cylinder head) takes the damage; the radiator, fan and block cooling options carry the heat off. More fuel burned (a turbo kit, more boost, N2O) means more heat.",
+      "title": "The coolant overheats under sustained full power",
+      "lines": [
+        "At {rpm} and full power the coolant reaches the {limit} warning after about {time} on a {ambient} day with {air_speed} of air through the radiator (it would settle at {value}).",
+        "The engine block takes the damage when it is held there."
+      ],
+      "suggestion": "A bigger radiator, a stronger fan or more block cooling, or less boost; or lift before {time} of full power.",
+      "variants": {
+        "burst": {
+          "title": "The coolant overheats within a minute",
+          "lines": [
+            "At {rpm} and full power the coolant reaches the {limit} warning after only about {time} on a {ambient} day with {air_speed} of air through the radiator (it would settle at {value}).",
+            "The engine block takes the damage when it is held there."
+          ]
+        }
+      }
+    },
+    "OilTemperature": {
+      "option": "cooling_oil_cooler",
+      "option_help": "Damage-model data: how long the oil takes to reach the check's oil limit (cooling_upgrades.json check.oil_limit_c) at constant full power on a hot day, from the warm spawn state (rg::transient_thermal). Hot oil thins and the bearings (crankshaft) wear. An oil cooler removes heat in proportion to the air speed.",
+      "title": "The oil runs too hot under sustained full power",
+      "lines": [
+        "At {rpm} and full power the oil reaches {limit} after about {time} on a {ambient} day with {air_speed} of air (it would settle at {value}).",
+        "The crankshaft bearings take the damage when it is held there."
+      ],
+      "suggestion": "An oil cooler or a bigger one; or lift before {time} of full power.",
+      "variants": {
+        "burst": {
+          "title": "The oil runs too hot within a minute",
+          "lines": [
+            "At {rpm} and full power the oil reaches {limit} after only about {time} on a {ambient} day with {air_speed} of air (it would settle at {value}).",
+            "The crankshaft bearings take the damage when it is held there."
+          ]
+        }
+      }
     }
+  },
+
+  "thermal_time": {
+    "critical_within_s": 60.0,
+    "source": "Owner answer on PR #28 (option C): the cooling check reports the time to the coolant / oil limit at constant full power, from the warm spawn state, not only the steady temperature. A limit reached after more than critical_within_s is a warning (the car can do a long pull, not minutes of it), within it critical; a setup whose temperatures settle below the limit is clean."
   },
 
   "loader_warnings": {

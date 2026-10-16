@@ -1,6 +1,6 @@
 {
   "format": "rg.gearbox_catalog/1",
-  "source": "Game-owned gearbox catalogue (gearbox swap, 2026-10-13). One row per gearbox file the garage offers. What a physics_sim gearbox file cannot say lives here: display name, kind (manual | sequential | automatic | dual_clutch | cvt), focus (economy | touring | performance | race), gear_type (helical | straight_cut, the later gear-whine audio keys on it), synchro (cone | dog | none: the clutch-to-clutch kinds shift on wet clutches), the input torque rating and the card text. rating_nm is the maximum engine torque the box is rated for (N*m at the input shaft): physics_sim's GearboxDesc has no rating yet, so the rating is kept HERE and moves into the physics file when the physics session adds one; the garage offers a box only for an engine whose peak torque does not exceed it. All ratings and designs are invented [AS] and chosen to cover the shipped engines (engine peaks: i4 2.0 ~212, A25A 290, N52 300, R26B 608, hyper V8 1387 N*m). Paths are relative to the repository root. Automatic (torque converter) and dual_clutch rows (2026-10-16) also carry a 'tcu' object: the automatic_tcu fields that belong to the box; the engine-dependent shift, kickdown, lock-up and launch rpm points are derived from the installed engine on install (rg::derive_automatic_tcu_points). CVT rows (2026-10-16, physics_sim CVT plan C1) name physics_sim's push-belt sedan_cvt (torque converter) and sedan_cvt_clutch (starting clutch), rated 250 N*m = their files' rated_input_torque_nm; their 'tcu' adds 'cvt': {stepped_sport}, the variator's target-rpm and minimum-rpm curves are derived from the installed engine on install. A section without rows is listed as 'coming soon'; the kinds themselves are fixed in rg::GearboxCatalog (gearbox_catalog.h).",
+  "source": "Game-owned gearbox catalogue (gearbox swap, 2026-10-13). One row per gearbox file the garage offers. What a physics_sim gearbox file cannot say lives here: display name, kind (manual | sequential | automatic | dual_clutch | cvt), focus (economy | touring | performance | race), gear_type (helical | straight_cut, the later gear-whine audio keys on it), synchro (cone | dog | none: the clutch-to-clutch kinds shift on wet clutches), the input torque rating, the dry mass (mass_kg, the gearbox's own node in the garage part-mass tree, rg/part_mass.h; without the differential) and the card text. rating_nm is the maximum engine torque the box is rated for (N*m at the input shaft): physics_sim's GearboxDesc has no rating yet, so the rating is kept HERE and moves into the physics file when the physics session adds one; the garage offers a box only for an engine whose peak torque does not exceed it. All ratings and designs are invented [AS] and chosen to cover the shipped engines (engine peaks: i4 2.0 ~212, A25A 290, N52 300, R26B 608, hyper V8 1387 N*m). Paths are relative to the repository root. Automatic (torque converter) and dual_clutch rows (2026-10-16) also carry a 'tcu' object: the automatic_tcu fields that belong to the box; the engine-dependent shift, kickdown, lock-up and launch rpm points are derived from the installed engine on install (rg::derive_automatic_tcu_points). CVT rows (2026-10-16, physics_sim CVT plan C1) name physics_sim's push-belt sedan_cvt (torque converter) and sedan_cvt_clutch (starting clutch), rated 250 N*m = their files' rated_input_torque_nm; their 'tcu' adds 'cvt': {stepped_sport}, the variator's target-rpm and minimum-rpm curves are derived from the installed engine on install. A section without rows is listed as 'coming soon'; the kinds themselves are fixed in rg::GearboxCatalog (gearbox_catalog.h).",
   "gearboxes": [
     {
       "id": "econ_5mt",
@@ -10,6 +10,8 @@
       "gear_type": "helical",
       "synchro": "cone",
       "rating_nm": 320,
+      "mass_kg": 32,
+      "mass_source": "[AS] a small transverse 5-speed manual without its differential weighs about 28-36 kg (economy cars, recalled, no citation fetched); 32 kg used.",
       "file": "data/gearboxes/econ_5mt.json",
       "description": "Long gearing and a tall overdrive fifth for low engine speed at motorway pace. Light and efficient, built for everyday engines."
     },
@@ -21,6 +23,8 @@
       "gear_type": "helical",
       "synchro": "cone",
       "rating_nm": 320,
+      "mass_kg": 36,
+      "mass_source": "[AS] one more gear pair and a longer case than the 5-speed economy box: 36 kg used, no citation fetched.",
       "file": "data/gearboxes/econ_6mt_overdrive.json",
       "description": "Two overdrive gears, the sixth very tall. The lowest engine speed on the motorway, at the cost of punch in the top gears."
     },
@@ -32,6 +36,8 @@
       "gear_type": "helical",
       "synchro": "cone",
       "rating_nm": 400,
+      "mass_kg": 40,
+      "mass_source": "[AS] a mid-size 6-speed manual for 400 N*m (passenger-car class, roughly 35-45 kg dry without differential, recalled, no citation fetched); 40 kg used.",
       "file": "external/physics_sim/data/gearboxes/sedan_6mt.json",
       "description": "The balanced six-speed of the sedans: even steps and a modest overdrive."
     },
@@ -43,6 +49,8 @@
       "gear_type": "helical",
       "synchro": "cone",
       "rating_nm": 550,
+      "mass_kg": 42,
+      "mass_source": "[AS] the touring box's size with wider close-ratio gears and stronger synchros: 42 kg used, no citation fetched.",
       "file": "data/gearboxes/close_ratio_6mt.json",
       "description": "Tightly spaced gears keep the engine in its power band after every shift. Short throw, strong synchros, nearly direct sixth."
     },
@@ -54,6 +62,8 @@
       "gear_type": "helical",
       "synchro": "cone",
       "rating_nm": 700,
+      "mass_kg": 52,
+      "mass_source": "[AS] a 6-speed rated for 700 N*m (heavy-duty performance class, roughly 48-58 kg dry, recalled, no citation fetched); 52 kg used.",
       "file": "data/gearboxes/heavy_duty_6mt.json",
       "description": "Large gears and synchros for high-torque engines. Direct fourth, overdrive fifth and sixth."
     },
@@ -65,6 +75,8 @@
       "gear_type": "helical",
       "synchro": "cone",
       "rating_nm": 1600,
+      "mass_kg": 68,
+      "mass_source": "[AS] a seven-speed for over 1,500 N*m in a hypercar (dry, its differential is a separate part of the tree): 60-75 kg for boxes of this torque class, recalled, no citation fetched; 68 kg used.",
       "file": "external/physics_sim/data/gearboxes/hyper_7mt.json",
       "description": "The hypercar's seven-speed: a long overdrive seventh for the top speed run and the strength for over 1,500 N*m."
     },
@@ -76,6 +88,8 @@
       "gear_type": "straight_cut",
       "synchro": "dog",
       "rating_nm": 1800,
+      "mass_kg": 48,
+      "mass_source": "[AS] a racing 6-speed sequential dog box with straight-cut gears and a light case for 1,800 N*m: 45-50 kg, recalled, no citation fetched; 48 kg used.",
       "file": "data/gearboxes/straight_cut_6sq.json",
       "description": "Racing dog box with straight-cut gears: no synchros, a sequential drum and very short shifts. Rated for the hypercar."
     },
@@ -87,11 +101,15 @@
       "gear_type": "straight_cut",
       "synchro": "dog",
       "rating_nm": 160,
+      "mass_kg": 38,
+      "mass_source": "[AS] a period cast-iron 3-speed sliding-mesh box: 35-40 kg, recalled, no citation fetched; 38 kg used.",
       "file": "data/gearboxes/vintage_3mt.json",
       "description": "Three widely spaced straight-cut gears and no synchronisers, as in the earliest motor cars. Match the speeds or it grinds."
     },
     {
       "id": "auto_8at",
+      "mass_kg": 85,
+      "mass_source": "[AS] estimated dry mass of a comparable unit without its differential (no citation fetched).",
       "name": "8-speed automatic",
       "kind": "automatic",
       "focus": "touring",
@@ -115,6 +133,8 @@
     },
     {
       "id": "heavy_8at",
+      "mass_kg": 105,
+      "mass_source": "[AS] estimated dry mass of a comparable unit without its differential (no citation fetched).",
       "name": "Heavy-duty 8-speed automatic",
       "kind": "automatic",
       "focus": "performance",
@@ -138,6 +158,8 @@
     },
     {
       "id": "dct_7",
+      "mass_kg": 75,
+      "mass_source": "[AS] estimated dry mass of a comparable unit without its differential (no citation fetched).",
       "name": "7-speed dual-clutch",
       "kind": "dual_clutch",
       "focus": "performance",
@@ -156,6 +178,8 @@
     },
     {
       "id": "hyper_7dct",
+      "mass_kg": 90,
+      "mass_source": "[AS] estimated dry mass of a comparable unit without its differential (no citation fetched).",
       "name": "Hypercar 7-speed dual-clutch",
       "kind": "dual_clutch",
       "focus": "race",
@@ -174,6 +198,8 @@
     },
     {
       "id": "cvt_converter",
+      "mass_kg": 80,
+      "mass_source": "[AS] estimated dry mass of a comparable unit without its differential (no citation fetched).",
       "name": "CVT with torque converter",
       "kind": "cvt",
       "focus": "economy",
@@ -200,6 +226,8 @@
     },
     {
       "id": "cvt_clutch",
+      "mass_kg": 70,
+      "mass_source": "[AS] estimated dry mass of a comparable unit without its differential (no citation fetched).",
       "name": "CVT with starting clutch",
       "kind": "cvt",
       "focus": "economy",

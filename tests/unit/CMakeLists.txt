@@ -23,6 +23,7 @@ add_executable(rg_unit_tests
   test_g2m_ps_bridge_link_smoke.cpp
   test_world_terrain.cpp
   test_terrain_colours.cpp
+  test_served_terrain_class.cpp
   test_road_surface.cpp
   test_underpass_decks.cpp
   test_road_structures.cpp
@@ -74,8 +75,13 @@ add_executable(rg_unit_tests
   test_limit_advisor.cpp
   test_envelope_cost.cpp
   test_engine_garage.cpp
+  test_turbo_kit.cpp
+  test_engine_internals.cpp
+  test_cooling_upgrades.cpp
+  test_engine_bore.cpp
   test_gearbox_swap.cpp
   test_automatic_gearbox_swap.cpp
+  test_part_mass.cpp
   test_drivetrain_swap.cpp
   test_garage.cpp
   test_car_browser.cpp
