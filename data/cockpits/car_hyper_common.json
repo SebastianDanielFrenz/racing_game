@@ -23,6 +23,9 @@
     {"id":"paddle_R", "part":"paddle_R", "socket":"socket_ctl_paddle_R", "parent":"steering_wheel", "position":[0.032,-0.065,-0.025], "normal":[0,0,1], "up":[1,0,0]},
     {"id":"horn", "part":"horn", "socket":"socket_ctl_horn", "parent":"steering_wheel", "position":[-0.004,0,0.002], "normal":[-0.954,0,0.301], "up":[0.301,0,0.954]}
   ],
+  "poses": [
+    {"node":"ctl_lights", "channel":"cabin.lights", "axis":[0,0,1], "angles_rad":[0.0, 1.04, 1.56], "note":"rotary light switch, pose only (no clicking yet): cabin.lights 0 off / 1 dipped / 2 main beam -> the part's detents 0 / 1.04 / 1.56 rad (detent 0.52 = side lights, not a game state); axis = the part rig's ISO joint axis"}
+  ],
   "lamps": [
     {"material":"lamp_tc_led0","action":"traction_control","segment":0},
     {"material":"lamp_tc_led1","action":"traction_control","segment":1},

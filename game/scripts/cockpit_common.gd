@@ -9,6 +9,7 @@ var _mounted: Array[Node3D] = []
 var _layout: Dictionary = {}
 var _materials: Dictionary = {}
 var _lamp_specs: Dictionary = {}
+var _poses: Array = [] # {node, rest (Basis), axis (glTF), angles, channel}: controls posed from a control channel
 
 static func attach_to(model: Node3D, sim: Node = null, car: String = "", source_path: String = "") -> Node3D:
 	var existing := model.get_node_or_null("CommonCockpit")
@@ -90,6 +91,11 @@ func _ready() -> void:
 		_mounted.append(part)
 		_copy_lamp_materials(part)
 	library.free()
+	for rule in _layout.get("poses",[]):
+		for part in _mounted:
+			var node := part.find_child(str(rule["node"]),true,false) as Node3D
+			if node == null: continue
+			_poses.append({"node":node,"rest":node.transform.basis,"axis":iso(rule["axis"]).normalized(),"angles":rule["angles_rad"],"channel":str(rule["channel"])})
 	model.set_meta("common_cockpit_mounted",true)
 	print("RG_COCKPIT_COMMON mounted=%d" % _mounted.size())
 	set_process(simulation != null)
@@ -109,6 +115,8 @@ func _copy_lamp_materials(root: Node) -> void:
 			if not _materials.has(copy.resource_name): _materials[copy.resource_name] = []
 			_materials[copy.resource_name].append(copy)
 
+var _lamp_applied: Dictionary = {} # lamp material name -> last applied on/off
+
 func update_lamps(snapshot: Dictionary, channels: Dictionary = {}) -> void:
 	var states: Dictionary = {}
 	for rule in _layout.get("lamps",[]):
@@ -124,6 +132,10 @@ func update_lamps(snapshot: Dictionary, channels: Dictionary = {}) -> void:
 			var field: String = rule["field"]
 			on = snapshot.has(field) and snapshot.get(field) == rule["equals"]
 		if not _lamp_specs.has(name): continue
+		# Material parameters are pushed to the RenderingServer only on a change: a setter call re-uploads the
+		# material's uniforms even with the same value, every frame for every lamp (perf, 2026-10-15).
+		if _lamp_applied.get(name, null) == on: continue
+		_lamp_applied[name] = on
 		var spec: Dictionary = _lamp_specs[name]
 		var rgb: Array = spec["emissive_on"]
 		for material in _materials.get(name,[]):
@@ -140,6 +152,23 @@ func _process_body(_delta: float) -> void:
 	if simulation != null and simulation.has_method("get_vehicle_powertrain"):
 		var channels: Dictionary = DriverState.channels(simulation) if simulation.has_method("get_control") else {}
 		update_lamps(simulation.get_vehicle_powertrain(vehicle_name),channels)
+	if simulation != null and simulation.has_method("get_control"):
+		update_poses(simulation)
+
+# Poses the switches listed under "poses" from their control channel (the shared DriverActions state: the O key and
+# any cockpit switch move the same channel). Visual only.
+func update_poses(sim: Object) -> void:
+	for p in _poses:
+		var angles: Array = p["angles"]
+		var index := clampi(int(round(float(sim.get_control(p["channel"])))),0,angles.size()-1)
+		(p["node"] as Node3D).transform.basis = (p["rest"] as Basis) * Basis(p["axis"],float(angles[index]))
+
+func pose_angle(node_name: String) -> float:
+	for p in _poses:
+		if (p["node"] as Node).name == node_name:
+			var n := p["node"] as Node3D
+			return ((p["rest"] as Basis).inverse() * n.transform.basis).get_euler().length()
+	return NAN
 
 func mounted_count() -> int:
 	return _mounted.size()

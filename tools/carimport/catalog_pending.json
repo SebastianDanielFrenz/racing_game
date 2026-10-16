@@ -1,0 +1,245 @@
+{
+  "format": "rg.catalog_pending/1",
+  "source": "Catalog entries for the five cars imported on 2026-10-15. They are not in data/vehicles/catalog.json yet because the catalog refuses an entry whose model file is missing and the GLBs (Git LFS) are generated locally: after `python3 tools/carimport/carimport.py`, insert these entries after car_phoenix_455 in catalog.json. Spawn heights: base car's spawn plus the larger wheel radius (+4 mm margin).",
+  "insert_after": "car_phoenix_455",
+  "vehicles": [
+    {
+      "id": "car_ace_11",
+      "title": "Ace 11",
+      "subtitle": "Three-door city car",
+      "description": "A small three-door city car on the Pico's 1.0 litre three and five-speed gearbox. Imported CC BY model by Daniel Zhabotinsky.",
+      "body_type": "hatchback",
+      "vehicle": "data/vehicles/car_ace_11.json",
+      "model": "data/models/imported/ace_11/ace_11.glb",
+      "engine_bay": "front",
+      "chassis": {
+        "mass_kg": 852.0,
+        "half_extents": [
+          1.6,
+          0.5,
+          0.12
+        ],
+        "spawn_z_m": 0.57,
+        "source": "car_city chassis, spawn 16 mm higher for the 16 mm larger wheel radius; the imported art is visual only"
+      },
+      "visual": {
+        "paint": "#c8a23a",
+        "rim": "#c4c8cf"
+      },
+      "setup": {
+        "tyre_fitment": {
+          "front": {
+            "rims_in": [
+              15
+            ],
+            "min_width_mm": 155,
+            "max_width_mm": 215,
+            "width_step_mm": 10,
+            "diameter_tolerance_mm": 12
+          },
+          "rear": {
+            "rims_in": [
+              15
+            ],
+            "min_width_mm": 155,
+            "max_width_mm": 215,
+            "width_step_mm": 10,
+            "diameter_tolerance_mm": 12
+          }
+        }
+      }
+    },
+    {
+      "id": "car_fairheaven_lt80",
+      "title": "Fairheaven LT 80",
+      "subtitle": "1980s rear-wheel-drive saloon",
+      "description": "A boxy 1980s saloon on the rear-wheel-drive 2.0 litre sedan drivetrain. Imported CC BY model by Daniel Zhabotinsky.",
+      "body_type": "sedan",
+      "displacement_l": 2.0,
+      "displacement_source": "physics_sim data/engines/i4_2l_na.json is a torque-map engine described as a 2.0 L I4 and carries no cylinder geometry",
+      "vehicle": "data/vehicles/car_fairheaven_lt80.json",
+      "model": "data/models/imported/fairheaven_lt80/fairheaven_lt80.glb",
+      "engine_bay": "front",
+      "chassis": {
+        "mass_kg": 1500.0,
+        "half_extents": [
+          2.0,
+          0.4,
+          0.15
+        ],
+        "spawn_z_m": 0.6,
+        "source": "car_sedan_rwd chassis; the imported art is visual only"
+      },
+      "visual": {
+        "paint": "#2f3d5c",
+        "rim": "#c4c8cf"
+      },
+      "setup": {
+        "tyre_fitment": {
+          "front": {
+            "rims_in": [
+              15
+            ],
+            "min_width_mm": 175,
+            "max_width_mm": 235,
+            "width_step_mm": 10,
+            "diameter_tolerance_mm": 12
+          },
+          "rear": {
+            "rims_in": [
+              15
+            ],
+            "min_width_mm": 175,
+            "max_width_mm": 235,
+            "width_step_mm": 10,
+            "diameter_tolerance_mm": 12
+          }
+        }
+      }
+    },
+    {
+      "id": "car_kiri_86",
+      "title": "Kiri 86",
+      "subtitle": "1980s rear-wheel-drive coupe",
+      "description": "A light 1980s coupe on the rear-wheel-drive 2.0 litre sedan drivetrain. Imported CC BY model by Daniel Zhabotinsky.",
+      "body_type": "coupe",
+      "displacement_l": 2.0,
+      "displacement_source": "physics_sim data/engines/i4_2l_na.json is a torque-map engine described as a 2.0 L I4 and carries no cylinder geometry",
+      "vehicle": "data/vehicles/car_kiri_86.json",
+      "model": "data/models/imported/kiri_86/kiri_86.glb",
+      "engine_bay": "front",
+      "chassis": {
+        "mass_kg": 1500.0,
+        "half_extents": [
+          2.0,
+          0.4,
+          0.15
+        ],
+        "spawn_z_m": 0.6,
+        "source": "car_sedan_rwd chassis; the imported art is visual only"
+      },
+      "visual": {
+        "paint": "#e8e4dc",
+        "rim": "#c4c8cf"
+      },
+      "setup": {
+        "tyre_fitment": {
+          "front": {
+            "rims_in": [
+              14
+            ],
+            "min_width_mm": 155,
+            "max_width_mm": 215,
+            "width_step_mm": 10,
+            "diameter_tolerance_mm": 12
+          },
+          "rear": {
+            "rims_in": [
+              14
+            ],
+            "min_width_mm": 155,
+            "max_width_mm": 215,
+            "width_step_mm": 10,
+            "diameter_tolerance_mm": 12
+          }
+        }
+      }
+    },
+    {
+      "id": "car_lct_3000",
+      "title": "LCT 3000",
+      "subtitle": "Full-size off-roader",
+      "description": "A long-wheelbase 1990s off-roader on the all-wheel-drive 2.0 litre sedan drivetrain with tall 225/70 R16 tyres. Imported CC BY model by Daniel Zhabotinsky.",
+      "body_type": "suv",
+      "displacement_l": 2.0,
+      "displacement_source": "physics_sim data/engines/i4_2l_na.json is a torque-map engine described as a 2.0 L I4 and carries no cylinder geometry",
+      "vehicle": "data/vehicles/car_lct_3000.json",
+      "model": "data/models/imported/lct_3000/lct_3000.glb",
+      "engine_bay": "front",
+      "chassis": {
+        "mass_kg": 1500.0,
+        "half_extents": [
+          2.0,
+          0.4,
+          0.15
+        ],
+        "spawn_z_m": 0.65,
+        "source": "car_sedan_awd chassis, spawn 50 mm higher for the 44 mm larger wheel radius; the imported art is visual only"
+      },
+      "visual": {
+        "paint": "#3d4a35",
+        "rim": "#c4c8cf"
+      },
+      "setup": {
+        "tyre_fitment": {
+          "front": {
+            "rims_in": [
+              16
+            ],
+            "min_width_mm": 195,
+            "max_width_mm": 255,
+            "width_step_mm": 10,
+            "diameter_tolerance_mm": 12
+          },
+          "rear": {
+            "rims_in": [
+              16
+            ],
+            "min_width_mm": 195,
+            "max_width_mm": 255,
+            "width_step_mm": 10,
+            "diameter_tolerance_mm": 12
+          }
+        }
+      }
+    },
+    {
+      "id": "car_shvan_92",
+      "title": "Shvan 92",
+      "subtitle": "1990s full-size saloon",
+      "description": "A large 1990s saloon on the rear-wheel-drive 2.0 litre sedan drivetrain. Imported CC BY model by Daniel Zhabotinsky.",
+      "body_type": "sedan",
+      "displacement_l": 2.0,
+      "displacement_source": "physics_sim data/engines/i4_2l_na.json is a torque-map engine described as a 2.0 L I4 and carries no cylinder geometry",
+      "vehicle": "data/vehicles/car_shvan_92.json",
+      "model": "data/models/imported/shvan_92/shvan_92.glb",
+      "engine_bay": "front",
+      "chassis": {
+        "mass_kg": 1500.0,
+        "half_extents": [
+          2.0,
+          0.4,
+          0.15
+        ],
+        "spawn_z_m": 0.64,
+        "source": "car_sedan_rwd chassis, spawn 40 mm higher for the 37 mm larger wheel radius; the imported art is visual only"
+      },
+      "visual": {
+        "paint": "#1d1d22",
+        "rim": "#c4c8cf"
+      },
+      "setup": {
+        "tyre_fitment": {
+          "front": {
+            "rims_in": [
+              16
+            ],
+            "min_width_mm": 185,
+            "max_width_mm": 245,
+            "width_step_mm": 10,
+            "diameter_tolerance_mm": 12
+          },
+          "rear": {
+            "rims_in": [
+              16
+            ],
+            "min_width_mm": 185,
+            "max_width_mm": 245,
+            "width_step_mm": 10,
+            "diameter_tolerance_mm": 12
+          }
+        }
+      }
+    }
+  ]
+}

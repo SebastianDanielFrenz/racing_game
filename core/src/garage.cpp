@@ -6,6 +6,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
+#include <cstdio>
 #include <filesystem>
 #include <fstream>
 #include <system_error>
@@ -24,6 +25,12 @@ std::uint64_t fnv1a(const std::string& s) {
         h *= 1099511628211ULL;
     }
     return h;
+}
+
+std::string fmt_kg(double kg) {
+    char buf[32];
+    std::snprintf(buf, sizeof(buf), "%.1f kg", kg);
+    return buf;
 }
 
 std::string hex16(std::uint64_t v) {
@@ -167,6 +174,74 @@ std::unique_ptr<Garage> Garage::open(const GarageConfig& config, std::string* er
         }
     }
     {
+        // Garage turbo kits (rg/turbo_kit.h): optional file, strict when present.
+        std::string path = config.turbo_kits_path;
+        if (path.empty()) {
+            const std::string dflt = config.repo_root + "/data/engines/turbo_kits.json";
+            std::error_code ec;
+            if (fs::is_regular_file(fs::path(dflt), ec)) path = dflt;
+        }
+        if (!path.empty()) {
+            auto cfg = load_turbo_kit_config(path, config.repo_root, &e);
+            if (!cfg) {
+                if (err != nullptr) *err = e;
+                return nullptr;
+            }
+            g->ctx_.turbo_kits = std::make_shared<const TurboKitConfig>(*cfg);
+        }
+    }
+    {
+        // Swappable engine internals (rg/engine_internals.h): optional file, strict when present.
+        std::string path = config.engine_internals_path;
+        if (path.empty()) {
+            const std::string dflt = config.repo_root + "/data/engines/engine_internals.json";
+            std::error_code ec;
+            if (fs::is_regular_file(fs::path(dflt), ec)) path = dflt;
+        }
+        if (!path.empty()) {
+            auto cfg = load_engine_internals(path, &e);
+            if (!cfg) {
+                if (err != nullptr) *err = e;
+                return nullptr;
+            }
+            g->ctx_.engine_internals = std::make_shared<const EngineInternalsConfig>(*cfg);
+        }
+    }
+    {
+        // Cooling system upgrades (rg/cooling_upgrades.h): optional file, strict when present.
+        std::string path = config.cooling_upgrades_path;
+        if (path.empty()) {
+            const std::string dflt = config.repo_root + "/data/cooling_systems/cooling_upgrades.json";
+            std::error_code ec;
+            if (fs::is_regular_file(fs::path(dflt), ec)) path = dflt;
+        }
+        if (!path.empty()) {
+            auto cfg = load_cooling_upgrades(path, &e);
+            if (!cfg) {
+                if (err != nullptr) *err = e;
+                return nullptr;
+            }
+            g->ctx_.cooling_upgrades = std::make_shared<const CoolingUpgradeConfig>(*cfg);
+        }
+    }
+    {
+        // Base part masses (rg/part_mass.h): optional file, strict when present.
+        std::string path = config.part_masses_path;
+        if (path.empty()) {
+            const std::string dflt = config.repo_root + "/data/vehicles/part_masses.json";
+            std::error_code ec;
+            if (fs::is_regular_file(fs::path(dflt), ec)) path = dflt;
+        }
+        if (!path.empty()) {
+            auto table = load_part_mass_table(path, &e);
+            if (!table) {
+                if (err != nullptr) *err = e;
+                return nullptr;
+            }
+            g->ctx_.part_masses = std::make_shared<const PartMassTable>(std::move(*table));
+        }
+    }
+    {
         const std::string cat = config.gearbox_catalog_path.empty() ? config.repo_root + "/data/gearboxes/gearbox_catalog.json"
                                                                      : config.gearbox_catalog_path;
         auto boxes = GearboxCatalog::open(cat, config.repo_root, &e);
@@ -175,6 +250,16 @@ std::unique_ptr<Garage> Garage::open(const GarageConfig& config, std::string* er
             return nullptr;
         }
         g->ctx_.gearboxes = std::shared_ptr<const GearboxCatalog>(std::move(boxes));
+    }
+    {
+        const std::string cat = config.driveline_catalog_path.empty() ? config.repo_root + "/data/drivetrains/driveline_catalog.json"
+                                                                       : config.driveline_catalog_path;
+        auto lines = DrivelineCatalog::open(cat, &e);
+        if (!lines) {
+            if (err != nullptr) *err = e;
+            return nullptr;
+        }
+        g->ctx_.drivelines = std::shared_ptr<const DrivelineCatalog>(std::move(lines));
     }
 
     // A crashed run can leave its drive materialisation behind: remove it.
@@ -242,9 +327,24 @@ std::optional<VehicleStats> Garage::stats(const std::string& id, std::string* er
     }
     // Presets share their base's vehicle file: one computation per file (and declared displacement).
     const std::string key = e->vehicle_path + "#" + (e->displacement_l ? std::to_string(*e->displacement_l) : std::string());
-    if (const auto it = stats_cache_.find(key); it != stats_cache_.end()) return it->second;
-    std::optional<VehicleStats> computed = compute_vehicle_stats(*e, err);
-    if (computed) stats_cache_.emplace(key, *computed); // a failure is not cached: its message is wanted every time
+    std::optional<VehicleStats> computed;
+    if (const auto it = stats_cache_.find(key); it != stats_cache_.end()) {
+        computed = it->second;
+    } else {
+        computed = compute_vehicle_stats(*e, err);
+        if (!computed) return computed; // a failure is not cached: its message is wanted every time
+        stats_cache_.emplace(key, *computed);
+    }
+    // A drivetrain swap: the layout the setup builds (only a setup that chooses a layout or a differential).
+    const VehicleSetup setup = editing() && edit_id_ == id ? working_ : effective_setup(id);
+    if (setup.values.count("drive_layout") != 0 || setup.values.count("diff_front") != 0 || setup.values.count("diff_rear") != 0) {
+        const SetupModel m = build_setup_model(*e, options_, context_for(*e), &setup);
+        if (m.error.empty() && m.driveline.driven_wheels > 0) {
+            computed->layout = m.driveline.layout;
+            computed->driven_wheels = m.driveline.driven_wheels;
+            computed->driveline = driveline_summary(m.driveline);
+        }
+    }
     return computed;
 }
 
@@ -411,9 +511,15 @@ void Garage::revalidate() {
     }
     SetupModel installed_model = build_setup_model(*e, options_, context_for(*e), &working_);
     if (installed_model.error.empty()) model_ = std::move(installed_model);
+    parts_ = model_.parts;
     if (working_.values.empty()) {
         validation_.ok = true;
         return;
+    }
+    if (ctx_.part_masses) {
+        // The whole working setup (a part choice the model does not install, a feature that adds parts).
+        CompiledSetup c = compile_setup(*e, options_, context_for(*e), working_);
+        if (c.ok && c.parts.ok) parts_ = std::move(c.parts);
     }
     validation_ = validate_setup(*e, options_, context_for(*e), working_, false);
 }
@@ -465,6 +571,7 @@ EditResult Garage::set_option(const std::string& option_id, const SetupValue& va
     }
     revalidate();
     if (option_id == "engine_install") r.notice = drop_unavailable_values();
+    if (option_id == "drive_layout") r.notice = drop_driveline_values();
     r.validation = validation_;
     return r;
 }
@@ -492,6 +599,8 @@ std::string Garage::drop_unavailable_values() {
         if (!gone && view->def.kind == OptionKind::FileChoice && std::holds_alternative<std::string>(value)) {
             const std::string& s = std::get<std::string>(value);
             gone = s != "stock" && std::find(view->choices.begin(), view->choices.end(), s) == view->choices.end();
+            // Listed but refused on the new engine (a bore step its block's wall cannot take): back to stock too.
+            for (const SetupPart& p : view->parts) if (!gone && s != "stock" && p.id == s && !p.fits) gone = true;
         }
         if (gone) drop.push_back(id);
     }
@@ -508,6 +617,36 @@ std::string Garage::drop_unavailable_values() {
     }
     if (!drop.empty()) revalidate();
     return notice.empty() ? notice : "The engine does not offer: " + notice + " (back to stock).";
+}
+
+std::string Garage::drop_driveline_values() {
+    const CatalogEntry* entry = catalog_.find(edit_id_);
+    if (entry == nullptr) return {};
+    VehicleSetup probe;
+    probe.vehicle_id = edit_id_;
+    if (const auto it = working_.values.find("drive_layout"); it != working_.values.end()) probe.values["drive_layout"] = it->second;
+    const SetupModel pm = build_setup_model(*entry, options_, context_for(*entry), &probe);
+    if (!pm.error.empty()) return {}; // the layout itself does not install: revalidate() reports it
+    std::string notice;
+    bool changed = false;
+    for (const char* id : {"diff_front", "diff_rear"}) {
+        const auto it = working_.values.find(id);
+        if (it == working_.values.end() || !std::holds_alternative<std::string>(it->second)) continue;
+        const OptionView* view = nullptr;
+        for (const OptionView& v : pm.options) if (v.def.id == id) view = &v;
+        if (view == nullptr) continue;
+        const std::string& s = std::get<std::string>(it->second);
+        if (!view->available) { // that axle is no longer driven
+            working_.values.erase(it);
+            changed = true;
+            notice += (notice.empty() ? "" : ", ") + (view->def.label.empty() ? std::string(id) : view->def.label);
+        } else if (s != "stock" && std::find(view->choices.begin(), view->choices.end(), s) == view->choices.end()) {
+            working_.values.erase(it); // the new layout already fits that kind on this axle: the choice is now stock
+            changed = true;
+        }
+    }
+    if (changed) revalidate();
+    return notice.empty() ? notice : "The new layout does not drive that axle: " + notice + " (back to stock).";
 }
 
 void Garage::reset_option(const std::string& option_id) {
@@ -593,6 +732,7 @@ void Garage::discard() {
     saved_at_begin_ = VehicleSetup{};
     model_ = SetupModel{};
     validation_ = ValidationResult{};
+    parts_ = PartTree{};
 }
 
 void Garage::remove_drive_dir() {
@@ -600,6 +740,25 @@ void Garage::remove_drive_dir() {
     std::error_code ec;
     fs::remove_all(fs::path(drive_dir_), ec);
     drive_dir_.clear();
+}
+
+PartTree Garage::part_tree(const std::string& id) const {
+    const CatalogEntry* e = catalog_.find(id);
+    if (e == nullptr) {
+        PartTree t;
+        t.error = "unknown vehicle \"" + id + "\"";
+        return t;
+    }
+    if (editing() && edit_id_ == id) return parts_;
+    const VehicleSetup setup = effective_setup(id);
+    if (setup.values.empty()) return stock_part_tree(*e, options_, context_for(*e));
+    CompiledSetup c = compile_setup(*e, options_, context_for(*e), setup);
+    if (!c.ok) {
+        PartTree t;
+        t.error = c.error;
+        return t;
+    }
+    return std::move(c.parts);
 }
 
 void Garage::cleanup() {
@@ -628,6 +787,7 @@ DriveSelection Garage::prepare_drive(const std::string& id) {
     std::vector<std::string> notices;
     const VehicleSetup setup = effective_setup_with_notices(id, &notices);
     for (const std::string& n : notices) d.warning += (d.warning.empty() ? "" : " ") + n;
+    bool setup_applied = false;
     if (!setup.values.empty()) {
         const std::string dir = config_.work_root + "/drive_" + id + "_" + hex16(fnv1a(setup_to_json(setup)));
         const MaterialisedSetup m = materialise_setup(*e, options_, context_for(*e), setup, dir);
@@ -639,7 +799,9 @@ DriveSelection Garage::prepare_drive(const std::string& id) {
         } else {
             d.engine_title = m.compiled.engine_title;
             d.swap_lines = m.compiled.swap_lines;
-            d.chassis.mass_kg += m.compiled.chassis_mass_delta_kg;
+            d.parts = m.compiled.parts;
+            setup_applied = true;
+            if (!d.parts.ok) d.chassis.mass_kg += m.compiled.chassis_mass_delta_kg; // no part-mass tree: the engine delta only
             if (m.compiled.vehicle_patch != "{}" || !m.compiled.patches.empty()) {
                 d.vehicle_path = m.vehicle_path;
                 drive_dir_ = dir;
@@ -660,6 +822,13 @@ DriveSelection Garage::prepare_drive(const std::string& id) {
                 d.modified = true;
             }
         }
+    }
+
+    // The chassis body mass is the part-mass tree's (rg/part_mass.h): the stock car's sums to the catalog figure.
+    if (!setup_applied) d.parts = stock_part_tree(*e, options_, context_for(*e));
+    if (d.parts.ok) {
+        d.chassis.mass_kg = d.parts.chassis_kg;
+        d.chassis.source = "part-mass tree: " + fmt_kg(d.parts.total_kg) + " total";
     }
 
     // Assist defaults of the vehicle file that will be driven (the setup may have changed them).

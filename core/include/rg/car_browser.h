@@ -227,7 +227,7 @@ private:
 // The cache key of a car's preview image: model file stem, paint and rim colours and the render
 // version, e.g. "car_sedan_7a8a99_c4c8cf_v1" - a file name safe string. Bump kThumbnailRenderVersion
 // whenever the preview's camera, lights or paint shader change, so old PNGs are not reused.
-inline constexpr int kThumbnailRenderVersion = 1;
+inline constexpr int kThumbnailRenderVersion = 2;
 std::string thumbnail_key(const std::string& model_path, const std::string& paint, const std::string& rim,
                           int render_version = kThumbnailRenderVersion);
 

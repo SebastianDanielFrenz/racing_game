@@ -357,5 +357,95 @@
       "modifications": "None by this attribution task",
       "evidence": "GLB JSON chunk: asset.extras"
     }
+  ],
+  "derived": [
+    {
+      "id": "ace_11",
+      "file": "data/models/imported/ace_11/ace_11.glb",
+      "source_file": "ace_11_-_low_poly_model.glb",
+      "source_sha256": "076823a82e8f3a615246c74e66b21fabb69c6144135b7985d536047e624a5a35",
+      "title": "Ace '11 - Low Poly model",
+      "author": "Daniel Zhabotinsky (https://sketchfab.com/DanielZhabotinsky)",
+      "license": "CC-BY-4.0",
+      "modifications": "Re-oriented to the game's axes and origin, wheels re-parented under suspension/steering/spin pivots at the wheel centres, brake calipers under the steering pivots, baked ground/shadow plane removed, lamp triangles moved to light_* material copies, paint/rim materials renamed, driver eye socket added (tools/carimport). Geometry and textures otherwise unchanged.",
+      "modified_on": "2026-10-15"
+    },
+    {
+      "id": "fairheaven_lt80",
+      "file": "data/models/imported/fairheaven_lt80/fairheaven_lt80.glb",
+      "source_file": "fairheaven_lt_80_-_low_poly_model.glb",
+      "source_sha256": "c392e59dc22d4bc65205e1a9129676e0d46a80c49379de13be111a5ea8fcf128",
+      "title": "Fairheaven LT '80 - Low poly model",
+      "author": "Daniel Zhabotinsky (https://sketchfab.com/DanielZhabotinsky)",
+      "license": "CC-BY-4.0",
+      "modifications": "Re-oriented to the game's axes and origin, wheels re-parented under suspension/steering/spin pivots at the wheel centres, brake calipers under the steering pivots, baked ground/shadow plane removed, lamp triangles moved to light_* material copies, paint/rim materials renamed, driver eye socket added (tools/carimport). Geometry and textures otherwise unchanged.",
+      "modified_on": "2026-10-15"
+    },
+    {
+      "id": "generic_suv",
+      "file": "data/models/imported/generic_suv/generic_suv.glb",
+      "source_file": "lowpoly_generic_suv.glb",
+      "source_sha256": "f44f2cf6183723a2d7ff67981c53ce20194565d4708b8491852a2c2a552590f0",
+      "title": "Lowpoly Generic SUV",
+      "author": "mk2design (https://sketchfab.com/mk2design)",
+      "license": "CC-BY-4.0",
+      "modifications": "Re-oriented to the game's axes and origin, wheels re-parented under suspension/steering/spin pivots at the wheel centres, brake calipers under the steering pivots, baked ground/shadow plane removed, lamp triangles moved to light_* material copies, paint/rim materials renamed, driver eye socket added (tools/carimport). Geometry and textures otherwise unchanged.",
+      "modified_on": "2026-10-15"
+    },
+    {
+      "id": "kiri_86",
+      "file": "data/models/imported/kiri_86/kiri_86.glb",
+      "source_file": "kiri_86_-_low_poly_model.glb",
+      "source_sha256": "234a81a5d68aec446da6fcd0bec50cc57dd5109811e122a443951f627d1c01c6",
+      "title": "Kiri '86 - Low poly model",
+      "author": "Daniel Zhabotinsky (https://sketchfab.com/DanielZhabotinsky)",
+      "license": "CC-BY-4.0",
+      "modifications": "Re-oriented to the game's axes and origin, wheels re-parented under suspension/steering/spin pivots at the wheel centres, brake calipers under the steering pivots, baked ground/shadow plane removed, lamp triangles moved to light_* material copies, paint/rim materials renamed, driver eye socket added (tools/carimport). Geometry and textures otherwise unchanged.",
+      "modified_on": "2026-10-15"
+    },
+    {
+      "id": "lct_3000",
+      "file": "data/models/imported/lct_3000/lct_3000.glb",
+      "source_file": "lct_3000_95_-_low_poly_model.glb",
+      "source_sha256": "df7b96fe65a4119cf2b71fdd59cd9e06d7ff98d95747ed94cce4695e65f3eb43",
+      "title": "LCT 3000 '95 - Low poly model",
+      "author": "Daniel Zhabotinsky (https://sketchfab.com/DanielZhabotinsky)",
+      "license": "CC-BY-4.0",
+      "modifications": "Re-oriented to the game's axes and origin, wheels re-parented under suspension/steering/spin pivots at the wheel centres, brake calipers under the steering pivots, baked ground/shadow plane removed, lamp triangles moved to light_* material copies, paint/rim materials renamed, driver eye socket added (tools/carimport). Geometry and textures otherwise unchanged.",
+      "modified_on": "2026-10-15"
+    },
+    {
+      "id": "phoenix_455",
+      "file": "data/models/imported/phoenix_455/phoenix_455.glb",
+      "source_file": "phoenix_455_71_-_low_poly_model.glb",
+      "source_sha256": "27b8591fd77ce208e2d48c5f7a87342607e3f78ba2bcffc800d5c2949377a9d8",
+      "title": "Phoenix 455 '71 - Low poly model",
+      "author": "Daniel Zhabotinsky (https://sketchfab.com/DanielZhabotinsky)",
+      "license": "CC-BY-4.0",
+      "modifications": "Re-oriented to the game's axes and origin, wheels re-parented under suspension/steering/spin pivots at the wheel centres, brake calipers under the steering pivots, baked ground/shadow plane removed, lamp triangles moved to light_* material copies, paint/rim materials renamed, driver eye socket added (tools/carimport). Geometry and textures otherwise unchanged.",
+      "modified_on": "2026-10-15"
+    },
+    {
+      "id": "shvan_92",
+      "file": "data/models/imported/shvan_92/shvan_92.glb",
+      "source_file": "shvan_92_-_low_poly_model.glb",
+      "source_sha256": "5f817b226678e538f6cae3622589911dd264882409d8533e06aed51719d826cc",
+      "title": "Shvan '92 - Low poly model",
+      "author": "Daniel Zhabotinsky (https://sketchfab.com/DanielZhabotinsky)",
+      "license": "CC-BY-4.0",
+      "modifications": "Re-oriented to the game's axes and origin, wheels re-parented under suspension/steering/spin pivots at the wheel centres, brake calipers under the steering pivots, baked ground/shadow plane removed, lamp triangles moved to light_* material copies, paint/rim materials renamed, driver eye socket added (tools/carimport). Geometry and textures otherwise unchanged.",
+      "modified_on": "2026-10-15"
+    },
+    {
+      "id": "toyama_xr",
+      "file": "data/models/imported/toyama_xr/toyama_xr.glb",
+      "source_file": "generic_toyama_xr_sedan.glb",
+      "source_sha256": "67e3f08ba690b912cb26b07d5a9aa5d719ebbec53158ad80976f8de613d1644e",
+      "title": "Generic Toyama XR Sedan",
+      "author": "mk2design (https://sketchfab.com/mk2design)",
+      "license": "CC-BY-4.0",
+      "modifications": "Re-oriented to the game's axes and origin, wheels re-parented under suspension/steering/spin pivots at the wheel centres, brake calipers under the steering pivots, baked ground/shadow plane removed, lamp triangles moved to light_* material copies, paint/rim materials renamed, driver eye socket added (tools/carimport). Geometry and textures otherwise unchanged.",
+      "modified_on": "2026-10-15"
+    }
   ]
 }

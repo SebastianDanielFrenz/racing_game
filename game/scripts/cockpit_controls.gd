@@ -14,11 +14,11 @@ extends Node3D
 # Control channels that reach the physics (steer, throttle, brake, clutch, handbrake, gear shifts, ignition,
 # starter) are not written here: main.gd's _forward_driving pulls them (get_overrides, consume_shift_up/down,
 # consume_ignition_request, starter_held) so the one place that sets controls stays the one place.
-# Cabin switches that DriverActions owns (hazard, indicator stalk, horn) submit ActionEvents through `driver_actions`
+# Cabin switches that DriverActions owns (hazard, indicator stalk, horn, light switch) submit ActionEvents through `driver_actions`
 # (main.gd sets it to the shared instance; source CockpitMouse) and are POSED from the shared projection
 # (DriverActions::state + the cabin.* channels), so a key press and a click show the same switch position. Without a
 # driver_actions object (garage, pure-GDScript tests) they fall back to the local cosmetic state below.
-# Everything else ("cosmetic:*" sources: lights, wipers, climate, radio, ...) is state kept here; get_cosmetic
+# Everything else ("cosmetic:*" sources: fog, wipers, climate, radio, ...) is state kept here; get_cosmetic
 # reads it (screens and lamps can follow it later).
 #
 # Frames: cockpit.json and rig.json are ISO 8855 (x forward, y left, z up); the .glb nodes use glTF axes,
@@ -35,9 +35,10 @@ var rig_path: String = ""
 const EYE_RADIUS_M := 0.9       # the camera must be this close to the driver eye for clicks to count
 # RgDriverActions enum values (godot_ext/src/rg_driver_actions.h); literals so this script parses without the GDExtension
 const KIND_RELEASE := 1
+const KIND_PRESS := 0
 const KIND_SET := 2
 const SOURCE_COCKPIT_MOUSE := 3
-const DRIVER_BACKED := ["hazard", "indicator", "horn"]   # channels with a DriverActions action
+const DRIVER_BACKED := ["hazard", "indicator", "horn", "lights"]   # channels with a DriverActions action
 const PRESS_TIME_S := 0.18      # how long a pressed button stays down
 const START_HOLD_S := 0.7       # an ignition key held in its start detent cranks this long, then springs back
 const DRAG_PX_FULL := 220.0     # vertical mouse travel for a pedal/lever's full range
@@ -160,8 +161,10 @@ func _shared_value(channel: String) -> Variant:
 	if driver_actions == null or simulation == null or not channel in DRIVER_BACKED:
 		return null
 	var channels := {}
-	for key in ["cabin.hazard", "cabin.horn", "cabin.indicator", "cabin.indicator_left", "cabin.indicator_right"]:
+	for key in ["cabin.hazard", "cabin.horn", "cabin.indicator", "cabin.indicator_left", "cabin.indicator_right", "cabin.lights"]:
 		channels[key] = simulation.get_control(key)
+	if channel == "lights": # 0 off, 1 dipped, 2 main beam: the switch shows on for either beam
+		return float(channels.get("cabin.lights", 0.0)) != 0.0
 	if channel == "indicator":
 		var dir := float(channels.get("cabin.indicator", 0.0)) # + = left (ISO), - = right, 0 = off
 		return "left" if dir > 0.0 else ("right" if dir < 0.0 else "off")
@@ -493,8 +496,11 @@ func activate(node_name: String, step: int = 1) -> bool:
 	var channel := str(action.get("channel", ""))
 	match str(action.get("type", "")):
 		"toggle":
+			if driver_actions != null and channel == "lights":
+				_submit(channel, KIND_PRESS, 1.0) # the same cycle as the lights key: auto -> on -> off -> auto
+				return true
 			if driver_actions != null and channel == "hazard":
-				_submit("hazard", KIND_SET, 0.0 if _truthy(get_cosmetic(channel)) else 1.0)
+				_submit(channel, KIND_SET, 0.0 if _truthy(get_cosmetic(channel)) else 1.0)
 				return true
 			var on := not _truthy(_cosmetic.get(channel, false))
 			var values: Array = _channel_values.get(channel, [])

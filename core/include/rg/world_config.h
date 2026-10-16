@@ -104,8 +104,18 @@ struct WorldConfig {
     DerivedStore derived_store;
     Spawn spawn;
     Lod lod;
+    // Optional top-level "render_classes": "osm" (default) or "served". "osm" paints each render chunk's land/road
+    // class window with the game's own OSM road raster (g2m::world::rasterize_chunk_road_classes). "served" adds
+    // g2m.terrain.class to the local release (WorldTerrain::open: LayerOptIn::classes, which also puts the carved
+    // layer in the release) and reads the window from it (ViewSource::terrain_classes). It changes the release id,
+    // so the derived store re-derives; "osm" keeps the release id and existing stores valid.
+    bool render_classes_served = false;
     TerrainSmoothing terrain_smoothing;
     double road_verge_drop_m=0.06;
+    // "road_separation" block (rg::RoadSeparation): grade-separated crossings in the road patch and approach decks.
+    double road_separation_clearance_m=2.5;
+    double road_separation_margin_m=3.0;
+    double road_separation_approach_reach_m=60.0;
     PhysicsTerrainConfig physics;
     std::string surface_map; // resolved to an absolute path (see below)
     std::string palette;     // resolved to an absolute path (see below)

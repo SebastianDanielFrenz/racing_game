@@ -2,7 +2,7 @@
   "format": "rg.control_profile/1",
   "class": "gamepad",
   "name": "Gamepad",
-  "note": "Built-in default profile (PLAN.md R5b) for XInput / standard-mapped pads (and wheels with a standard mapping): the pad bindings the game always had, unchanged. Reset car is deliberately not on the pad (owner 2026-10-05). Start (button 6) is hard-wired to the pause menu (owner 2026-10-06), and the starter has no pad default (owner: starter does not need a native controller key; bindable in Settings -> Controls).",
+  "note": "Built-in default profile (PLAN.md R5b) for XInput / standard-mapped pads (and wheels with a standard mapping): the pad bindings the game always had, unchanged, except that B7 (2026-10-14) added the driving actions that had no pad button, only on buttons no other action uses in the same mode (paddles 16-19, touchpad 20, MISC1 15, and D-pad right 14 / L3 7, shared only with actions live in other modes; the schema has no chords). Reset car is deliberately not on the pad (owner 2026-10-05). Start (button 6) is hard-wired to the pause menu (owner 2026-10-06), and the starter has no pad default (owner: starter does not need a native controller key; bindable in Settings -> Controls).",
   "bindings": {
     "steer": [{"type": "joy_axis", "axis": 0, "deadzone": 0.08}],
     "throttle": [{"type": "joy_axis", "axis": 5, "span": "positive", "deadzone": 0.02}],
@@ -26,6 +26,14 @@
     "cam_look_x": [{"type": "joy_axis", "axis": 2, "deadzone": 0.15}],
     "cam_look_y": [{"type": "joy_axis", "axis": 3, "deadzone": 0.15, "invert": true}],
     "jump": [{"type": "joy_button", "button": 0}],
+    "traction_control": [{"type": "joy_button", "button": 16}],
+    "drive_mode": [{"type": "joy_button", "button": 17}],
+    "toggle_launch_control": [{"type": "joy_button", "button": 18}],
+    "toggle_aero": [{"type": "joy_button", "button": 19}],
+    "hazard": [{"type": "joy_button", "button": 20}],
+    "indicator_left": [{"type": "joy_button", "button": 15}],
+    "indicator_right": [{"type": "joy_button", "button": 14}],
+    "horn": [{"type": "joy_button", "button": 7}],
     "interact": [{"type": "joy_button", "button": 2}],
     "menu_confirm": [{"type": "joy_button", "button": 0}],
     "menu_back": [{"type": "joy_button", "button": 1}]

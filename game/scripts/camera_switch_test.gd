@@ -25,15 +25,48 @@ extends Node
 #     and view direction), with and without a rebase in the switch frame; and
 #     free_cam -> B reproduces B's baseline.
 #
+#  5. DRONE (drone_follow, own car as the target): the drone does not sit at a
+#     fixed place on activation - it starts where the previous camera was and
+#     eases to its trailing position (exponential lag), so its checks differ:
+#     (a) A -> drone: the first frame moves at most the lag's share of the way
+#     (plus POS_TOL_M) from A's camera, also across a rebase in the switch
+#     frame; (b) once settled the drone camera equals its baseline whatever A
+#     was and whether or not a rebase crossed the switch; (c) drone -> B
+#     reproduces B's baseline; (d) a settled drone stays put across a rebase.
+#     The maths is rg::drone_* (tests/unit/test_camera_math.cpp [drone]).
+#
+#  6. FPV DRONE (fpv_drone mode, rg::FpvDrone): the camera is the drone's, so it
+#     does not continue the previous camera - the flyer appears above the car
+#     facing along it. Checks: (a) A -> fpv_drone, plain and with a rebase in
+#     the switch frame: once the drone exists (the simulation is unpaused for
+#     that, then paused) its camera equals the baseline whatever A was; (b)
+#     fpv_drone -> B reproduces B's baseline; (c) flying forward moves the
+#     camera along its view direction and the drone stops at the ground when
+#     it descends; (d) leaving the mode removes the drone.
+#
+#  7. WALKER (on_foot mode, rg::walker_cam_*): the rig needs a spawned walker, so
+#     the simulation is unpaused for the spawn (the car stands still, well
+#     below the get-out speed) and paused again once the camera settled. Like
+#     the FPV rig it does not continue the previous camera: on the first sight
+#     of the walker it looks at the car it got out of, from a fixed distance.
+#     Checks: (a) A -> on_foot, plain and with a rebase in the switch frame:
+#     once the walker exists the camera equals its baseline whatever A was;
+#     (b) on_foot -> B reproduces B's baseline and leaving the mode removes
+#     the walker; (c) a settled walker camera stays put across a rebase; (d) the
+#     look heading starts toward the car and is a horizontal unit vector;
+#     (e) first person sits at the eye height above the walker's feet.
+#     The maths is rg::walker_cam_* (tests/unit/test_camera_math.cpp [walker_cam]).
+#
 # Prints "RG_CAMERA_TEST ..." lines and a final PASS / FAIL line with the worst
-# position/rotation error seen; exit code 1 on a failure. Drone and walker rigs
-# are not in the matrix: they need a drone target / a spawned walker and share
-# the same activate()/shift_origin() contract; drive_smoke.gd switches to them.
+# position/rotation error seen; exit code 1 on a failure. drive_smoke.gd also
+# switches to the walker rig, with the car driven there first.
 
 const POS_TOL_M := 0.05
 const ROT_TOL_DEG := 0.5
 const REBASE_OFFSET_M := 900.0
-const TIMEOUT_S := 120.0
+const TIMEOUT_S := 300.0
+const DRONE_LAG := 4.0 # drone_rig.gd position_lag
+const DRONE_SETTLE_S := 2.5 # exp(-4 * 2.5) = 4.5e-5 of the fly-in left
 
 var main: Node
 var _checks := 0
@@ -108,6 +141,18 @@ func _view(view_name: String, rebase: bool) -> void:
 func _to_view(view_name: String, settle_frames: int = 3) -> void:
 	main.set_drive_view(view_name)
 	await _frames(settle_frames)
+
+# Waits wall-clock seconds (the drone's lag runs on frame deltas).
+func _settle(seconds: float) -> void:
+	var until := Time.get_ticks_msec() + int(seconds * 1000.0)
+	while Time.get_ticks_msec() < until:
+		await get_tree().process_frame
+
+func _to_drone(rebase: bool) -> void:
+	if rebase:
+		var moved := _force_rebase()
+		_check(moved >= REBASE_OFFSET_M * 0.9, "drone: the out-of-band rebase moved the origin by %.1f m" % moved)
+	main._simulation.set_player_mode("drone_follow")
 
 func _run() -> void:
 	var guard := get_tree().create_timer(TIMEOUT_S)
@@ -216,6 +261,184 @@ func _run() -> void:
 			await _frames(1)
 			_compare("free_cam -> %s" % a, _sample(), baseline[a])
 	print("RG_CAMERA_TEST free_cam_checks=%d rebases=%d rebase_count=%d" % [free_checks, _rebases_seen, director.rebase_count])
+
+	# ---- 5. drone follow ----
+	var drone_checks := 0
+	sim.set_player_mode("drone_follow")
+	await _settle(DRONE_SETTLE_S)
+	var drone_base := _sample()
+	_check(drone_base["rig"] == "drone", "drone_follow activates the drone rig (is '%s')" % drone_base["rig"])
+	_check(director.rigs.has("drone"), "the director has the drone rig")
+	sim.set_player_mode("drive")
+	await _frames(2)
+	for with_rebase in [false, true]:
+		for a in views:
+			main.set_drive_view("chase")
+			await _frames(3)
+			await _to_view(a)
+			var from := _sample()
+			var tag := "%s -> drone%s" % [a, " (rebase in the switch frame)" if with_rebase else ""]
+			var t0 := Time.get_ticks_msec()
+			_to_drone(with_rebase)
+			await _frames(1)
+			var dt_s := maxf(float(Time.get_ticks_msec() - t0) / 1000.0, 1.0 / 60.0)
+			var first := _sample()
+			_check(first["rig"] == "drone", "%s: the drone rig is active" % tag)
+			# starts where the previous camera was: at most the lag's share of the fly-in (two frame times of slack)
+			var fly: float = (drone_base["rel"] - from["rel"]).length()
+			var allowed: float = fly * (1.0 - exp(-DRONE_LAG * dt_s * 2.0)) + POS_TOL_M
+			var moved: float = (first["rel"] - from["rel"]).length()
+			_max_pos = maxf(_max_pos, maxf(moved - allowed, 0.0))
+			_check(moved <= allowed, "%s: first frame moved %.3f m of a %.2f m fly-in (allowed %.3f)" % [tag, moved, fly, allowed])
+			await _settle(DRONE_SETTLE_S)
+			_compare(tag + ", settled", _sample(), drone_base)
+			drone_checks += 1
+			sim.set_player_mode("drive")
+			await _frames(1)
+			main.set_drive_view("chase")
+			await _frames(2)
+			main.set_drive_view(a)
+			await _frames(1)
+			_compare("drone -> %s" % a, _sample(), baseline[a])
+	# a settled drone stays put across a rebase (its rig root and smoothed state follow the origin)
+	sim.set_player_mode("drone_follow")
+	await _settle(DRONE_SETTLE_S)
+	var before_rebase := _sample()
+	_force_rebase()
+	await _frames(2)
+	_compare("settled drone stays put across a rebase", _sample(), before_rebase)
+	sim.set_player_mode("drive")
+	await _frames(2)
+	print("RG_CAMERA_TEST drone_checks=%d" % drone_checks)
+
+	# ---- 6. FPV drone ----
+	var fpv_checks := 0
+	var fpv_base := {}
+	for with_rebase in [false, true]:
+		for a in views:
+			await _to_view(a)
+			if with_rebase:
+				var moved := _force_rebase()
+				_check(moved >= REBASE_OFFSET_M * 0.9, "fpv: the out-of-band rebase moved the origin by %.1f m" % moved)
+			sim.set_paused(false)
+			sim.set_player_mode("fpv_drone")
+			var got_drone: bool = await _wait_until(func(): return not sim.get_fpv_state().is_empty() and director.active_name == "fpv", 10.0)
+			await _frames(3)
+			sim.set_paused(true)
+			await _frames(3)
+			var tag := "%s -> fpv_drone%s" % [a, " (rebase in the switch frame)" if with_rebase else ""]
+			_check(got_drone, "%s: the drone exists and the fpv rig is active" % tag)
+			var s := _sample()
+			if fpv_base.is_empty():
+				fpv_base = s
+				print("RG_CAMERA_TEST fpv baseline rel=(%.3f, %.3f, %.3f)" % [s["rel"].x, s["rel"].y, s["rel"].z])
+				_check(float(s["rel"].y) > 1.5, "the drone hovers above the car (rel y %.2f)" % s["rel"].y)
+			else:
+				_compare(tag, s, fpv_base)
+			fpv_checks += 1
+			sim.set_player_mode("drive")
+			sim.set_paused(false)
+			await _frames(3)
+			_check(sim.get_fpv_state().is_empty(), "%s: leaving the mode removes the drone" % tag)
+			sim.set_paused(true)
+			await _frames(2)
+			main.set_drive_view("chase")
+			await _frames(2)
+			main.set_drive_view(a)
+			await _frames(1)
+			_compare("fpv_drone -> %s" % a, _sample(), baseline[a])
+	# flying: forward input moves the camera along its view direction; descending ends on the ground
+	sim.set_paused(false)
+	sim.set_player_mode("fpv_drone")
+	await _wait_until(func(): return not sim.get_fpv_state().is_empty(), 10.0)
+	var st0: Dictionary = sim.get_fpv_state()
+	sim.set_fpv_input(0.0, 0.0, 1.0, 0.0, 0.0)
+	await _settle(1.0)
+	var st1: Dictionary = sim.get_fpv_state()
+	var moved_v: Vector3 = st1["position"] - st0["position"]
+	_check(moved_v.length() > 3.0, "forward input moves the drone (%.1f m)" % moved_v.length())
+	_check(moved_v.normalized().dot(st0["facing"]) > 0.95, "... along its heading")
+	_check(float(st1["speed"]) <= 25.0 + 0.01, "... never above the maximum speed (%.2f m/s)" % float(st1["speed"]))
+	sim.set_fpv_input(0.0, -1.0, 0.0, 0.0, 0.0)
+	await _settle(4.0)
+	var st2: Dictionary = sim.get_fpv_state()
+	_check(bool(st2["on_ground"]), "descending ends on the ground (height %.2f m)" % float(st2["height_agl_m"]))
+	sim.set_fpv_input(0.0, 0.0, 0.0, 0.0, 0.0)
+	sim.set_player_mode("drive")
+	await _frames(3)
+	sim.set_paused(true)
+	await _frames(2)
+	print("RG_CAMERA_TEST fpv_checks=%d" % fpv_checks)
+
+	# ---- 7. walker (on_foot) ----
+	var walker_checks := 0
+	var walker_base := {}
+	var walker_rig: Node3D = director.rigs["walker"]
+	for with_rebase in [false, true]:
+		for a in views:
+			await _to_view(a)
+			if with_rebase:
+				var moved := _force_rebase()
+				_check(moved >= REBASE_OFFSET_M * 0.9, "walker: the out-of-band rebase moved the origin by %.1f m" % moved)
+			sim.set_paused(false)
+			var answer := str(sim.set_player_mode("on_foot"))
+			var got_walker: bool = await _wait_until(func(): return not sim.get_walker_state().is_empty() and director.active_name == "walker", 10.0)
+			await _settle(0.4) # the walker lands, the pivot smoothing (28 /s) converges
+			sim.set_paused(true)
+			await _settle(0.4)
+			var tag := "%s -> on_foot%s" % [a, " (rebase in the switch frame)" if with_rebase else ""]
+			_check(got_walker, "%s: the walker exists and the walker rig is active (mode answer '%s')" % [tag, answer])
+			var s := _sample()
+			if walker_base.is_empty():
+				walker_base = s
+				print("RG_CAMERA_TEST walker baseline rel=(%.3f, %.3f, %.3f)" % [s["rel"].x, s["rel"].y, s["rel"].z])
+				# third person: a few metres from the car, not inside it
+				_check(Vector2(s["rel"].x, s["rel"].z).length() > 1.5, "the walker camera is outside the car (rel %.2f, %.2f, %.2f)" % [s["rel"].x, s["rel"].y, s["rel"].z])
+				# (d) the look heading starts toward the car
+				var ws: Dictionary = sim.get_walker_state()
+				var to_car: Vector3 = ws["car_position"] - ws["position"]
+				to_car.y = 0.0
+				var look: Vector3 = walker_rig.get_look_forward()
+				_check(absf(look.length() - 1.0) < 0.001 and absf(look.y) < 0.001, "the look heading is a horizontal unit vector (%s)" % look)
+				_check(look.dot(to_car.normalized()) > 0.99, "the walker first looks at the car (dot %.4f)" % look.dot(to_car.normalized()))
+			else:
+				_compare(tag, s, walker_base)
+			walker_checks += 1
+			sim.set_player_mode("drive")
+			sim.set_paused(false)
+			await _frames(3)
+			_check(sim.get_walker_state().is_empty(), "%s: leaving the mode removes the walker" % tag)
+			sim.set_paused(true)
+			await _frames(2)
+			main.set_drive_view("chase")
+			await _frames(2)
+			main.set_drive_view(a)
+			await _frames(1)
+			_compare("on_foot -> %s" % a, _sample(), baseline[a])
+	# a settled walker camera stays put across a rebase; first person sits at the eye height
+	await _to_view("chase")
+	sim.set_paused(false)
+	sim.set_player_mode("on_foot")
+	await _wait_until(func(): return not sim.get_walker_state().is_empty() and director.active_name == "walker", 10.0)
+	await _settle(0.4)
+	sim.set_paused(true)
+	await _settle(0.4)
+	var walker_before := _sample()
+	_force_rebase()
+	await _frames(2)
+	_compare("settled walker camera stays put across a rebase", _sample(), walker_before)
+	walker_rig.toggle_first_person()
+	await _settle(0.4)
+	var ws1: Dictionary = sim.get_walker_state()
+	var eye: float = (director.active_camera().global_position - (ws1["position"] as Vector3)).length()
+	_check(absf(eye - walker_rig.eye_height_m) < 0.05, "first person: the camera is %.3f m from the feet (eye height %.2f)" % [eye, walker_rig.eye_height_m])
+	walker_rig.toggle_first_person()
+	sim.set_player_mode("drive")
+	sim.set_paused(false)
+	await _frames(3)
+	sim.set_paused(true)
+	await _frames(2)
+	print("RG_CAMERA_TEST walker_checks=%d" % walker_checks)
 
 	sim.set_paused(false)
 	if _failures == 0:

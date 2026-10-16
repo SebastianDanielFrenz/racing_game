@@ -1,5 +1,7 @@
 #include "rg/time_weather.h"
 
+#include "rg/climate.h"
+
 #include "json_util.h"
 #include "rg/world_config.h"
 
@@ -99,6 +101,10 @@ SkyLighting sky_lighting(const LightingConfig& c, const SkyPosition& sun, const 
                 key.ambient_energy = lerp(a.ambient_energy, b.ambient_energy, t);
                 key.sky_top_rgb = lerp(a.sky_top_rgb, b.sky_top_rgb, t);
                 key.sky_horizon_rgb = lerp(a.sky_horizon_rgb, b.sky_horizon_rgb, t);
+                // Illuminance spans eight decades: interpolate its logarithm.
+                key.illuminance_lux = a.illuminance_lux > 0 && b.illuminance_lux > 0
+                    ? std::exp(lerp(std::log(a.illuminance_lux), std::log(b.illuminance_lux), t))
+                    : lerp(a.illuminance_lux, b.illuminance_lux, t);
                 break;
             }
         }
@@ -121,6 +127,9 @@ SkyLighting sky_lighting(const LightingConfig& c, const SkyPosition& sun, const 
     const double sun_gone = out.sun_energy > 0 ? 0.0 : 1.0;
     out.moon_energy = c.moon_energy_full * moon.illuminated_fraction * moon_up * sun_gone * cloud_light;
     out.moon_rgb = c.moon_rgb;
+    const double cloud_lux = 1 - c.cloud_illuminance_dim * std::pow(cover, c.cloud_illuminance_exponent);
+    const double moon_sin = std::max(0.0, std::sin(moon.elevation_deg * kDeg));
+    out.illuminance_lux = (key.illuminance_lux + c.moon_illuminance_full_lux * moon.illuminated_fraction * moon_sin) * cloud_lux;
     return out;
 }
 
@@ -204,17 +213,30 @@ std::optional<SkyConfig> load_sky_config(const std::string& path, std::string* e
         !detail::get_number(*light, "cloud_sun_dim", L.cloud_sun_dim) || !detail::get_number(*light, "cloud_exponent", L.cloud_exponent) ||
         !detail::get_number(*light, "cloud_ambient_dim", L.cloud_ambient_dim) || !read_rgb(*light, "overcast_rgb", L.overcast_rgb))
         return bad("lighting needs moon_energy_full, moon_rgb, moon_fade_elevation_deg, cloud_sun_dim, cloud_exponent, cloud_ambient_dim, overcast_rgb");
+    if (!detail::get_number(*light, "cloud_illuminance_dim", L.cloud_illuminance_dim) || L.cloud_illuminance_dim < 0 || L.cloud_illuminance_dim >= 1 ||
+        !detail::get_number(*light, "cloud_illuminance_exponent", L.cloud_illuminance_exponent) || L.cloud_illuminance_exponent <= 0 ||
+        !detail::get_number(*light, "moon_illuminance_full_lux", L.moon_illuminance_full_lux) || L.moon_illuminance_full_lux < 0)
+        return bad("lighting needs cloud_illuminance_dim in [0, 1), cloud_illuminance_exponent > 0, moon_illuminance_full_lux >= 0");
     const auto keys = light->find("keys");
     if (keys == light->end() || !keys->is_array() || keys->size() < 2) return bad("lighting.keys needs at least two entries");
     for (const auto& k : *keys) {
         LightingKey key;
         if (!k.is_object() || !detail::get_number(k, "sun_elevation_deg", key.sun_elevation_deg) || !detail::get_number(k, "sun_energy", key.sun_energy) ||
             !read_rgb(k, "sun_rgb", key.sun_rgb) || !detail::get_number(k, "ambient_energy", key.ambient_energy) ||
-            !read_rgb(k, "sky_top_rgb", key.sky_top_rgb) || !read_rgb(k, "sky_horizon_rgb", key.sky_horizon_rgb))
-            return bad("each lighting key needs sun_elevation_deg, sun_energy, sun_rgb, ambient_energy, sky_top_rgb, sky_horizon_rgb");
+            !read_rgb(k, "sky_top_rgb", key.sky_top_rgb) || !read_rgb(k, "sky_horizon_rgb", key.sky_horizon_rgb) ||
+            !detail::get_number(k, "illuminance_lux", key.illuminance_lux) || !(key.illuminance_lux > 0))
+            return bad("each lighting key needs sun_elevation_deg, sun_energy, sun_rgb, ambient_energy, sky_top_rgb, sky_horizon_rgb, illuminance_lux > 0");
+        if (!L.keys.empty() && key.illuminance_lux < L.keys.back().illuminance_lux) return bad("lighting.keys illuminance_lux must not fall with sun elevation");
         if (!L.keys.empty() && key.sun_elevation_deg <= L.keys.back().sun_elevation_deg) return bad("lighting.keys must ascend in sun_elevation_deg");
         L.keys.push_back(key);
     }
+    const auto ex = j.find("exposure");
+    if (ex == j.end() || !ex->is_object() || !detail::get_number(*ex, "key", c.exposure.key) ||
+        !detail::get_number(*ex, "min_adapted_lux", c.exposure.min_adapted_lux) ||
+        !detail::get_number(*ex, "max_adapted_lux", c.exposure.max_adapted_lux) ||
+        !detail::get_number(*ex, "adapt_tau_s", c.exposure.adapt_tau_s))
+        return bad("exposure needs key, min_adapted_lux, max_adapted_lux, adapt_tau_s");
+    if (const auto msg = validate_exposure_config(c.exposure); !msg.empty()) return bad(msg);
     return c;
 }
 
@@ -244,10 +266,21 @@ void TimeController::set_local_time_h(double hours) {
     hours = std::fmod(hours, 24.0);
     if (hours < 0) hours += 24.0;
     seconds_ = hours * 3600.0;
+    ++revision_;
 }
 
 void TimeController::set_rate(double rate) {
-    if (std::isfinite(rate) && rate >= 0) rate_ = rate;
+    if (std::isfinite(rate) && rate >= 0 && rate != rate_) {
+        rate_ = rate;
+        ++revision_;
+    }
+}
+
+void TimeController::ut_instant(CivilDate& date_ut, double& ut_h) const {
+    date_ut = date_;
+    ut_h = local_time_h() - utc_offset_h();
+    if (ut_h < 0) { ut_h += 24; date_ut = add_days(date_ut, -1); }
+    if (ut_h >= 24) { ut_h -= 24; date_ut = add_days(date_ut, 1); }
 }
 
 double TimeController::utc_offset_h() const {
@@ -274,7 +307,8 @@ std::array<double, 3> grid_direction(const SkyPosition& body, double gamma_deg) 
     return {horiz * std::sin(az), horiz * std::cos(az), body.up};
 }
 
-TimeWeather::TimeWeather(SkyConfig config, GeoLocation location) : config_(std::move(config)), location_(location) {
+TimeWeather::TimeWeather(SkyConfig config, GeoLocation location)
+    : config_(std::move(config)), location_(location), exposure_(config_.exposure) {
     if (config_.latitude_deg) {
         location_.latitude_deg = *config_.latitude_deg;
         location_.longitude_deg = *config_.longitude_deg;
@@ -297,6 +331,7 @@ TimeWeather::TimeWeather(SkyConfig config, GeoLocation location) : config_(std::
 }
 
 bool TimeWeather::weather_wired(const WeatherPreset& p) const {
+    if (climate_ && climate_->weather.count(p.id)) return true;
     return p.state.precipitation == Precipitation::None && !p.state.thunder;
 }
 
@@ -318,6 +353,29 @@ TimeWeatherState TimeWeather::state() const {
     s.lighting = sky_lighting(config_.lighting, s.sun, s.moon, s.weather.cloud_cover);
     s.icon = weather_icon(s.weather, s.sun.elevation_deg, config_.icon);
     s.rate = clock_.rate();
+    if (climate_) {
+        CivilDate d;
+        double ut = 0;
+        clock_.ut_instant(d, ut);
+        s.air_temp_c = climate_station_temperature_c(*climate_, d, ut, location_.longitude_deg, s.weather.cloud_cover);
+    }
+    s.adapted_lux = clamp_adapted_lux(config_.exposure, s.lighting.illuminance_lux);
+    s.exposure = exposure_for_lux(config_.exposure, s.adapted_lux);
+    return s;
+}
+
+TimeWeatherState TimeWeather::sample() {
+    TimeWeatherState s = state();
+    if (clock_.revision() != exposure_revision_ || weather_ != exposure_weather_) {
+        exposure_.reset(s.lighting.illuminance_lux);
+        exposure_revision_ = clock_.revision();
+        exposure_weather_ = weather_;
+    } else {
+        exposure_.update(s.lighting.illuminance_lux, exposure_dt_);
+    }
+    exposure_dt_ = 0;
+    s.adapted_lux = exposure_.adapted_lux();
+    s.exposure = exposure_.exposure();
     return s;
 }
 

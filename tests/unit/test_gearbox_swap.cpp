@@ -216,12 +216,15 @@ TEST_CASE("gearbox catalogue: a bad catalogue is rejected with the reason", "[ge
     };
     CHECK_THAT(write(R"({"format":"x","gearboxes":[]})"), ContainsSubstring("format must be rg.gearbox_catalog/1"));
     const std::string row = R"({"id":"a","name":"A","kind":"manual","focus":"touring","gear_type":"helical","synchro":"cone",
-        "rating_nm":300,"file":"external/physics_sim/data/gearboxes/sedan_6mt.json")";
+        "rating_nm":300,"mass_kg":40,"file":"external/physics_sim/data/gearboxes/sedan_6mt.json")";
     CHECK(write(R"({"format":"rg.gearbox_catalog/1","gearboxes":[)" + row + "}]}").empty());
     CHECK_THAT(write(R"({"format":"rg.gearbox_catalog/1","gearboxes":[)" + row + "}," + row + "}]}"), ContainsSubstring("duplicate"));
     std::string no_rating = row;
     no_rating.replace(no_rating.find("\"rating_nm\":300"), 15, "\"rating_nm\":0");
     CHECK_THAT(write(R"({"format":"rg.gearbox_catalog/1","gearboxes":[)" + no_rating + "}]}"), ContainsSubstring("rating_nm"));
+    std::string no_mass = row;
+    no_mass.replace(no_mass.find("\"mass_kg\":40,"), 13, "");
+    CHECK_THAT(write(R"({"format":"rg.gearbox_catalog/1","gearboxes":[)" + no_mass + "}]}"), ContainsSubstring("mass_kg"));
     std::string wrong_kind = row;
     wrong_kind.replace(wrong_kind.find("\"manual\""), 8, "\"sequential\"");
     CHECK_THAT(write(R"({"format":"rg.gearbox_catalog/1","gearboxes":[)" + wrong_kind + "}]}"), ContainsSubstring("file's type is manual"));

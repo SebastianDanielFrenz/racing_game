@@ -100,6 +100,7 @@ rg::TerrainViewSource make_source(SyntheticStore& store) {
     source.n0 = kN0;
     source.lookup = &synthetic_lookup;
     source.ctx = &store;
+    source.colour = rg::chunk_colour_hook(); // the game's colours, as build_static_view_from_lookup applies them
     return source;
 }
 

@@ -117,7 +117,13 @@ func small_dial(center: Vector2, value: String, title: String, fraction: float, 
 	text(value,center+Vector2(0,3),28)
 	text(title,center+Vector2(0,25),15,Color(0.5,0.7,0.82))
 
+# _draw runs in the deferred canvas redraw after every _process (not inside the _process probe): timed on its own.
 func _draw() -> void:
+	var probe_t0 := Time.get_ticks_usec()
+	_draw_body()
+	FrameProbe.add("cluster_draw", Time.get_ticks_usec() - probe_t0)
+
+func _draw_body() -> void:
 	draw_rect(Rect2(0,0,1024,400),Color(0.008,0.016,0.026))
 	var blue := Color(0.5,0.7,0.82)
 	var has_fuel := capacity>0 and density>0
@@ -155,6 +161,14 @@ func _draw() -> void:
 			tc_label += " ACTIVE"
 		var tc_color := Color(1.0,0.65,0.15) if tc_intervening or not tc_on else Color(0.2,0.95,0.75)
 		text(tc_label,Vector2(490,266),20,tc_color)
+	if not cabin_lamps.is_empty():
+		# ABS / ESC (assist unit): green = on, amber = off or intervening (blink state comes from the shared ControlState).
+		var amber := Color(1.0,0.65,0.15)
+		var green := Color(0.2,0.95,0.75)
+		if cabin_lamps["abs"]["fitted"]:
+			text(str(cabin_lamps["abs"]["label"]),Vector2(330,330),18,green if cabin_lamps["abs"]["colour_role"] == "ok" else amber)
+		if cabin_lamps["esc"]["fitted"]:
+			text(str(cabin_lamps["esc"]["label"]),Vector2(330,354),18,green if cabin_lamps["esc"]["colour_role"] == "ok" else amber)
 	if launch_lamp > 0:
 		# Launch control (assists I4): gray = off, green = on, blinking amber = armed, solid amber = launching.
 		var lc_color := Color(0.45,0.5,0.55)

@@ -133,6 +133,20 @@ surfaces retain their original grades; bridge decks remain separate.
 The one-second drive log lacks wheel/attitude history, so causation of every
 reported rollover and the final driving behaviour require owner confirmation.
 
+## Grade-separated crossings (2026-10-15)
+
+Owner report: metre-scale spikes in the motorway ribbon under an overpass (utm32n/2/457/5422, E 468936 N 5552913).
+Cause: the OSM bridge way ends above the motorway's outer carriageway, so the overpass approach is a ground stretch
+there and nearest-road ownership (plus the same-layer blend) painted its embankment onto the motorway's cells. The
+render ribbon and the physics heightfield both read those carved L0 cells. Fix (`road_separation` in the world
+config, `rg::RoadSeparation`): in the patch a road more than `clearance_m` above (below) another road never lifts
+(lowers) terrain inside that road's footprint plus `margin_m` (the margin covers the ribbon roadbed beyond the patch
+core, the verge and one bilinear cell), and the approach gets an inferred deck up to `approach_reach_m` from the bridge
+end as far as it still overlaps the lower road. Synthetic scene (`test_road_overpass.cpp`, bridge ending 10 m from the
+crossing): 380 ribbon triangles over 1 m variation (worst 3.37 m) and 1.27 m collision steps per 0.5 m before, none
+over 0.18 m after. Ramps closer than `margin_m` to a road more than `clearance_m` below them follow the lower road's
+terrain at their edge.
+
 ## Road presentation and verges (2026-10-03)
 
 The real-world road overlay now uses accepted, completed road profiles rather

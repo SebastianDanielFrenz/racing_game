@@ -14,6 +14,7 @@
 
 #include <godot_cpp/core/class_db.hpp>
 #include <godot_cpp/classes/engine.hpp>
+#include <godot_cpp/variant/utility_functions.hpp>
 #include <godot_cpp/classes/multi_mesh.hpp>
 #include <godot_cpp/variant/plane.hpp>
 #include <cmath>
@@ -128,6 +129,7 @@ void RgSimulation::teardown_current() {
     drone_lost_seen_ = 0;
     walker_wanted_ = false; // the next Session starts without a walker; apply_mode_to_session() re-requests it
     walker_seen_ = {};
+    fpv_wanted_ = false;
     modes_.set_drone_target(std::nullopt);
     cancel_init();                   // R2.2 R9: cancel-then-join
     reap_init_thread(/*wait=*/true); // joins any in-flight worker first (see its own doc comment)
@@ -184,6 +186,16 @@ void RgSimulation::apply_mode_to_session() {
             session_->request_walker_spawn();
         } else {
             session_->request_walker_despawn();
+        }
+    }
+    // FPV drone: the flyer exists exactly while the mode is FpvDrone.
+    const bool want_fpv = modes_.mode() == rg::PlayerMode::FpvDrone;
+    if (want_fpv != fpv_wanted_) {
+        fpv_wanted_ = want_fpv;
+        if (want_fpv) {
+            session_->request_fpv_spawn();
+        } else {
+            session_->request_fpv_despawn();
         }
     }
 }
@@ -272,9 +284,11 @@ void RgSimulation::run_terrain_init_worker(std::string world_config_path, std::s
     config.vehicle_json_path = std::move(vehicle_json_path);
     configure_vehicle_chassis(config, overrides);
     reuse_vehicle_definition(config);
+    config.fpv_drone = fpv_config_;
     config.rolling_resistance_model=rolling_resistance_model_;
     config.aero_map_selection_path=aero_map_selection_path_;
     config.surface_table_path = std::move(surface_table_path);
+    config.weather = next_weather_;
     config.terrain = rg::make_terrain_mode(*world_config, terrain); // start-up blocks inside make_session below
     config.startup = progress;
     if (fetch_delay_ms > 0) {
@@ -323,9 +337,11 @@ void RgSimulation::run_flat_init_worker(std::string vehicle_json_path, std::stri
     config.vehicle_json_path = std::move(vehicle_json_path);
     configure_vehicle_chassis(config, overrides);
     reuse_vehicle_definition(config);
+    config.fpv_drone = fpv_config_;
     config.rolling_resistance_model = rolling_resistance_model_;
     config.aero_map_selection_path = aero_map_selection_path_;
     config.surface_table_path = std::move(surface_table_path);
+    config.weather = next_weather_;
     config.startup = progress;
     std::string err;
     std::unique_ptr<rg::Session> session = rg::make_session(config, &err);
@@ -343,6 +359,7 @@ void RgSimulation::run_flat_init_worker(std::string vehicle_json_path, std::stri
 
 bool RgSimulation::initialize(const String& vehicle_json_absolute_path, const String& surface_table_absolute_path) {
     teardown_current();
+    prepare_weather();
     last_error_ = String();
     init_message_.clear();
     world_load_serial_ = modes_.begin_world_load(rg::WorldKind::Flat);
@@ -365,6 +382,7 @@ bool RgSimulation::initialize_terrain(const String& world_config_absolute_path,
                                       const String& vehicle_json_absolute_path,
                                       const String& surface_table_absolute_path) {
     teardown_current();
+    prepare_weather();
     last_error_ = String();
     init_message_.clear();
     world_load_serial_ = modes_.begin_world_load(rg::WorldKind::RealWorld);
@@ -684,6 +702,70 @@ godot::Dictionary RgSimulation::get_aero_state() const {
     return d;
 }
 
+void RgSimulation::set_weather_source(const godot::Ref<RgSky>& sky) { weather_sky_ = sky; }
+
+void RgSimulation::prepare_weather() {
+    weather_sync_.reset();
+    next_weather_.reset();
+    const rg::TimeWeather* tw = weather_sky_.is_valid() ? weather_sky_->time_weather() : nullptr;
+    if (tw == nullptr || !tw->climate()) return;
+    std::string err;
+    auto w = rg::session_weather_for(*tw, &err);
+    if (!w) {
+        godot::UtilityFunctions::push_warning(String("weather: ") + String::utf8(err.c_str()) + " (no physics weather this load)");
+        return;
+    }
+    next_weather_ = std::make_shared<const rg::SessionWeather>(std::move(*w));
+}
+
+int RgSimulation::sync_weather() {
+    const rg::TimeWeather* tw = weather_sky_.is_valid() ? weather_sky_->time_weather() : nullptr;
+    if (!session_ || tw == nullptr) return 0;
+    return weather_sync_.sync(*tw, frame_snapshot().weather, *session_);
+}
+
+godot::String RgSimulation::load_wet_look(const godot::String& path) {
+    std::string err;
+    auto cfg = rg::load_wet_look_config(std::string(path.utf8().get_data()), &err);
+    if (!cfg) return godot::String::utf8(err.c_str());
+    wet_look_ = rg::WetLookFilter(*cfg);
+    return godot::String();
+}
+
+godot::Dictionary RgSimulation::get_wet_look(double dt_s) {
+    double water = 0.0, precip = 0.0, temp = 15.0;
+    if (session_) {
+        const rg::WeatherSnapshot& w = frame_snapshot().weather;
+        if (w.installed) { water = w.wheel_water_mm; precip = w.precip_mm_h; temp = w.air_temp_c; }
+    }
+    const rg::WetLook& v = wet_look_.update(water, precip, temp, dt_s);
+    godot::Dictionary d;
+    d["wetness"] = v.wetness;
+    d["puddles"] = v.puddles;
+    d["drops"] = v.drops;
+    d["flakes"] = v.flakes;
+    return d;
+}
+
+godot::Dictionary RgSimulation::get_weather_state() const {
+    godot::Dictionary d;
+    if (!session_) return d;
+    const rg::WeatherSnapshot& w = frame_snapshot().weather;
+    d["installed"] = w.installed;
+    d["env_time_s"] = w.env_time_s;
+    d["air_temp_c"] = w.air_temp_c;
+    d["precip_mm_h"] = w.precip_mm_h;
+    d["cloud_cover"] = w.cloud_cover;
+    d["rh"] = w.rh;
+    d["lightning_per_min"] = w.lightning_per_min;
+    d["wheel_surface"] = String(w.wheel_surface.c_str());
+    d["wheel_water_mm"] = w.wheel_water_mm;
+    d["wheel_snow_mm"] = w.wheel_snow_mm;
+    d["wheel_ice_mm"] = w.wheel_ice_mm;
+    d["wheel_condition_factor"] = w.wheel_condition_factor;
+    return d;
+}
+
 godot::Dictionary RgSimulation::get_steering_kinematics() const {
     godot::Dictionary result;
     if (!session_) return result;
@@ -859,8 +941,6 @@ godot::Dictionary RgSimulation::get_vehicle_powertrain(const String& vehicle_nam
         park_fitted = park_fitted || std::holds_alternative<ps::drivetrain::ParkLockDesc>(component.params);
     d["park_lock_fitted"] = park_fitted;
     d["park_lock_engaged"] = p.park_lock_engaged != 0;
-    // Current imported physics has no EPB component; reserve the state contract.
-    d["epb_fitted"] = false;
     d["gear"] = static_cast<int>(p.gear);
     d["gear_target"] = static_cast<int>(p.gear_target);
     d["shift_phase"] = String(shift_phase_name(p.shift_phase));
@@ -889,6 +969,19 @@ godot::Dictionary RgSimulation::get_vehicle_powertrain(const String& vehicle_nam
     d["traction_mode_requested"] = a.tc_requested;
     d["traction_mode_effective"] = a.tc_effective;
     d["traction_mode_name"] = String(rg::traction_mode_name(a.tc_effective));
+    // Electronic parking brake (Q3 / I8) and ABS / ESC (I5 part 2 / I6): fitted bits, switched state, interventions.
+    d["epb_fitted"] = a.epb_fitted;
+    d["epb_state"] = a.epb_state;
+    d["epb_refused"] = a.epb_refused;
+    d["abs_fitted"] = a.abs_fitted;
+    d["abs_on"] = a.abs_on;
+    d["abs_active"] = a.abs_intervening;
+    d["esc_fitted"] = a.esc_fitted;
+    d["esc_modes_available_bits"] = static_cast<int>(a.esc_available_bits);
+    d["esc_mode_requested"] = a.esc_requested;
+    d["esc_mode_effective"] = a.esc_effective;
+    d["esc_mode_name"] = String(rg::esc_mode_name(a.esc_effective));
+    d["esc_active"] = a.esc_intervening;
     d["aero_control_fitted"] = a.aero_fitted;
     d["aero_control_active"] = a.aero_active;
     d["aero_control_target_deg"] = a.aero_target_deg;
@@ -1016,6 +1109,7 @@ godot::Dictionary RgSimulation::get_mode_state() {
     d["camera_inputs_live"] = r.camera_inputs_live;
     d["camera_rig"] = String(rg::to_string(r.camera_rig));
     d["walking_inputs_live"] = r.walking_inputs_live;
+    d["flying_inputs_live"] = r.flying_inputs_live;
     d["get_out_refusals"] = static_cast<std::int64_t>(modes_.get_out_refusals());
     d["walker_enter_refused"] =
         session_ ? static_cast<std::int64_t>(session_->walker_counters().enter_refused) : std::int64_t{0};
@@ -1027,20 +1121,16 @@ godot::Dictionary RgSimulation::get_mode_state() {
     const std::optional<std::uint64_t> target = modes_.drone_target();
     d["drone_target_id"] = target ? static_cast<std::int64_t>(*target) : std::int64_t{-1};
     d["drone_target_own"] = !target.has_value();
-    String label("own car");
-    if (target && session_) {
-        if (*target == rg::Session::kNpcTruckVehicleId) {
-            label = String("NPC truck");
-        } else {
-            label = String("NPC car #") + String::num_int64(static_cast<std::int64_t>(*target));
-            for (const auto& actor : frame_snapshot().traffic.actors) {
-                if (actor.id == *target) {
-                    if (actor.truck) label = String("NPC lorry #") + String::num_int64(static_cast<std::int64_t>(*target));
-                    break;
-                }
+    bool target_is_lorry = false;
+    if (target && session_ && *target != rg::Session::kNpcTruckVehicleId) {
+        for (const auto& actor : frame_snapshot().traffic.actors) {
+            if (actor.id == *target) {
+                target_is_lorry = actor.truck;
+                break;
             }
         }
     }
+    const String label(rg::drone_target_label(session_ ? target : std::nullopt, rg::Session::kNpcTruckVehicleId, target_is_lorry).c_str());
     d["drone_target_label"] = label;
     return d;
 }
@@ -1111,6 +1201,49 @@ godot::Dictionary RgSimulation::get_walker_state() const {
     d["can_enter"] = w.can_enter;
     d["enter_distance_m"] = w.enter_distance_m;
     d["car_position"] = iso_to_godot(render_chassis_pose().position, origin);
+    return d;
+}
+
+String RgSimulation::set_fpv_drone_config(const String& path) {
+    std::string err;
+    const godot::CharString utf8 = path.utf8();
+    const auto c = rg::load_fpv_drone_config(utf8.get_data(), &err);
+    if (!c) return String(err.c_str());
+    fpv_config_ = *c;
+    return String();
+}
+
+void RgSimulation::set_fpv_input(double move_right, double move_up, double move_forward, double yaw, double pitch) {
+    if (!session_) return;
+    rg::FpvDroneInput in;
+    in.move_right = move_right;
+    in.move_up = move_up;
+    in.move_forward = move_forward;
+    in.yaw = yaw;
+    in.pitch = pitch;
+    session_->set_fpv_input(in);
+}
+
+godot::Dictionary RgSimulation::get_fpv_state() const {
+    godot::Dictionary d;
+    if (!session_) return d;
+    const rg::FpvDroneState& f = frame_snapshot().fpv;
+    if (!f.active) return d;
+    const ps::Vec3 origin = origin_rebase_ ? origin_rebase_->origin() : ps::Vec3{};
+    d["active"] = true;
+    d["position"] = iso_to_godot(f.position, origin);
+    d["velocity"] = godot::Vector3(static_cast<float>(-f.velocity.y), static_cast<float>(f.velocity.z),
+                                   static_cast<float>(-f.velocity.x));
+    const double cy = std::cos(f.yaw_rad), sy = std::sin(f.yaw_rad);
+    d["facing"] = godot::Vector3(static_cast<float>(-sy), 0.0f, static_cast<float>(-cy));
+    d["yaw_rad"] = f.yaw_rad;
+    d["pitch_rad"] = f.pitch_rad;
+    d["speed"] = f.speed_mps;
+    d["accel"] = f.accel_mps2;
+    d["activity"] = f.activity;
+    d["on_ground"] = f.on_ground;
+    d["hold"] = f.hold;
+    d["height_agl_m"] = f.height_agl_m;
     return d;
 }
 
@@ -1249,6 +1382,10 @@ void RgSimulation::_bind_methods() {
     godot::ClassDB::bind_method(D_METHOD("request_walker_jump"), &RgSimulation::request_walker_jump);
     godot::ClassDB::bind_method(D_METHOD("request_walker_enter"), &RgSimulation::request_walker_enter);
     godot::ClassDB::bind_method(D_METHOD("get_walker_state"), &RgSimulation::get_walker_state);
+    godot::ClassDB::bind_method(D_METHOD("set_fpv_drone_config", "path"), &RgSimulation::set_fpv_drone_config);
+    godot::ClassDB::bind_method(D_METHOD("set_fpv_input", "move_right", "move_up", "move_forward", "yaw", "pitch"),
+                                &RgSimulation::set_fpv_input);
+    godot::ClassDB::bind_method(D_METHOD("get_fpv_state"), &RgSimulation::get_fpv_state);
     godot::ClassDB::bind_method(D_METHOD("unload"), &RgSimulation::unload);
     godot::ClassDB::bind_method(D_METHOD("set_paused", "paused"), &RgSimulation::set_paused);
     godot::ClassDB::bind_method(D_METHOD("is_paused"), &RgSimulation::is_paused);
@@ -1259,7 +1396,9 @@ void RgSimulation::_bind_methods() {
     godot::ClassDB::bind_method(D_METHOD("set_road_ahead_wanted", "wanted"), &RgSimulation::set_road_ahead_wanted);
     godot::ClassDB::bind_method(D_METHOD("get_chassis_session_pose"), &RgSimulation::get_chassis_session_pose);
     godot::ClassDB::bind_method(D_METHOD("session_to_godot", "session_position"), &RgSimulation::session_to_godot);
-    godot::ClassDB::bind_method(D_METHOD("get_bumper_camera"), &RgSimulation::get_bumper_camera);
+    godot::ClassDB::bind_method(D_METHOD("get_bumper_camera", "rig_json_path", "model_offset"),
+                                &RgSimulation::get_bumper_camera, DEFVAL(String()), DEFVAL(godot::Vector3()));
+    godot::ClassDB::bind_method(D_METHOD("get_camera_motion_sample"), &RgSimulation::get_camera_motion_sample);
     godot::ClassDB::bind_method(D_METHOD("update_cinematic", "delta"), &RgSimulation::update_cinematic);
     godot::ClassDB::bind_method(D_METHOD("reset_cinematic"), &RgSimulation::reset_cinematic);
     godot::ClassDB::bind_method(D_METHOD("start"), &RgSimulation::start);
@@ -1296,6 +1435,11 @@ void RgSimulation::_bind_methods() {
     godot::ClassDB::bind_method(D_METHOD("set_rolling_resistance_model", "model"), &RgSimulation::set_rolling_resistance_model);
     godot::ClassDB::bind_method(D_METHOD("set_aero_map_selection_path", "path"), &RgSimulation::set_aero_map_selection_path);
     godot::ClassDB::bind_method(D_METHOD("get_aero_state"), &RgSimulation::get_aero_state);
+    godot::ClassDB::bind_method(D_METHOD("set_weather_source", "sky"), &RgSimulation::set_weather_source);
+    godot::ClassDB::bind_method(D_METHOD("sync_weather"), &RgSimulation::sync_weather);
+    godot::ClassDB::bind_method(D_METHOD("get_weather_state"), &RgSimulation::get_weather_state);
+    godot::ClassDB::bind_method(D_METHOD("load_wet_look", "path"), &RgSimulation::load_wet_look);
+    godot::ClassDB::bind_method(D_METHOD("get_wet_look", "dt_s"), &RgSimulation::get_wet_look);
     godot::ClassDB::bind_method(D_METHOD("configure_traffic","density","radius","minimum","grip","maximum"), &RgSimulation::configure_traffic);
     godot::ClassDB::bind_method(D_METHOD("set_visible_traffic","ids"), &RgSimulation::set_visible_traffic);
     godot::ClassDB::bind_method(D_METHOD("update_traffic_render", "cars", "trucks", "planes", "report_visibility"), &RgSimulation::update_traffic_render);

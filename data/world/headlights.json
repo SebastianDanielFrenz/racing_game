@@ -1,9 +1,74 @@
 {
   "format": "rg.headlights/1",
-  "description": "Headlamp beams (game/scripts/headlights.gd): one SpotLight3D per headlamp cluster of the car rig's lights.head materials. Visual tuning [AS], Godot units (energy, metres, degrees). lights_per_car 1 merges both lamps into one spot (half the GPU passes, see the cost note in headlights.gd). Shadows off: a shadowed spot renders a shadow map every frame.",
+  "description": "Car lamps (game/scripts/headlights.gd, exterior_lamps.gd). Photometric, constant physical intensity: spots in candela (intensity_cd, beam centre), lenses in cd/m2 (lens_luminance_nits per rig light kind). On screen they are multiplied by the scene exposure (data/world/sky.json \"exposure\", rg/exposure.h; game/scripts/light_exposure.gd converts to Godot units), so at noon (exposure ~5e-5) a dipped beam lighting the road with ~25 lux is invisible while at night (exposure ~0.09) it dominates; brake and tail lenses saturate red at night and fade into the body colour by day, headlamp and indicator lenses (high luminance) stay visibly lit by day. Values are typical-order figures [recalled, unverified]: UN R112/R48-era dipped beam hot spot ~10-20 kcd, main beam 40-100 kcd, tail 4-12 cd, brake 60-185 cd (EU single-lamp range), reverse 80-600 cd; lens luminances from intensity over lens area. fallback_exposure: used where no sky drives an exposure (garage, pure-GDScript runs) = sky.json key*pi/min_adapted_lux (checked by test_time_weather). attenuation = Godot spot_attenuation (falloff exponent: 2 = inverse square); Godot spots have no beam pattern, so the beams keep a flatter falloff (a real headlamp aims more light far than near) anchored at reference_m, where the spot gives exactly intensity_cd / reference_m^2 lux (light_exposure.gd spot_energy). lights_per_car 1 merges both lamps into one spot (half the GPU passes, see the cost note in headlights.gd). Shadows off: a shadowed spot renders a shadow map every frame. auto: the automatic headlamps (rg::CabinConfig auto_lights_*, merged into data/controls/cabin.json's config by input_map.gd): dipped beam on below on_lux for on_delay_s, off above off_lux for off_delay_s; thresholds after UN R48 6.2.7.6 (on below 1000 lux, off above 7000 lux) [recalled, unverified]; the light sensor reads rg::SkyLighting::illuminance_lux. The thresholds are universal: the same for every car and every weather (weather only changes the illuminance the sensor reads); nothing per car or per weather overrides them. They act only while the headlamp switch (rg::LightMode, key O cycles auto -> on -> off, hidden setting cabin.light_mode) is on auto.",
+  "auto": {
+    "enabled": true,
+    "on_lux": 1000.0,
+    "off_lux": 7000.0,
+    "on_delay_s": 2.0,
+    "off_delay_s": 10.0
+  },
+  "fallback_exposure": 0.0942478,
   "lights_per_car": 2,
   "shadows": false,
-  "colour": [1.0, 0.95, 0.85],
-  "dipped": {"range_m": 70.0, "angle_deg": 32.0, "angle_attenuation": 1.6, "attenuation": 0.9, "energy": 6.0, "pitch_down_deg": 2.5},
-  "main_beam": {"range_m": 160.0, "angle_deg": 22.0, "angle_attenuation": 1.4, "attenuation": 0.8, "energy": 12.0, "pitch_down_deg": 0.6}
+  "colour": [
+    1.0,
+    0.95,
+    0.85
+  ],
+  "dipped": {
+    "range_m": 90.0,
+    "angle_deg": 32.0,
+    "angle_attenuation": 1.6,
+    "attenuation": 0.9,
+    "reference_m": 25.0,
+    "intensity_cd": 15000.0,
+    "pitch_down_deg": 2.5
+  },
+  "main_beam": {
+    "range_m": 220.0,
+    "angle_deg": 22.0,
+    "angle_attenuation": 1.4,
+    "attenuation": 0.8,
+    "reference_m": 50.0,
+    "intensity_cd": 60000.0,
+    "pitch_down_deg": 0.6
+  },
+  "tail": {
+    "colour": [
+      1.0,
+      0.06,
+      0.03
+    ],
+    "range_m": 14.0,
+    "angle_deg": 65.0,
+    "angle_attenuation": 1.0,
+    "attenuation": 2.0,
+    "reference_m": 2.0,
+    "intensity_cd": 12.0,
+    "brake_intensity_cd": 150.0,
+    "pitch_down_deg": 18.0
+  },
+  "reverse": {
+    "colour": [
+      1.0,
+      1.0,
+      1.0
+    ],
+    "range_m": 16.0,
+    "angle_deg": 60.0,
+    "angle_attenuation": 1.0,
+    "attenuation": 2.0,
+    "reference_m": 2.0,
+    "intensity_cd": 300.0,
+    "pitch_down_deg": 20.0
+  },
+  "lens_luminance_nits": {
+    "head": 40000.0,
+    "tail": 800.0,
+    "brake": 8000.0,
+    "indicator_left": 25000.0,
+    "indicator_right": 25000.0,
+    "reverse": 10000.0
+  }
 }

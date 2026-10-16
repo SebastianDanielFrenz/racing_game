@@ -27,7 +27,7 @@
       "detail": "Simulated, with intake and exhaust pipes",
       "mass_kg": 110.0,
       "mass_source": "ASSUMED [AS]: a 2.0 L aluminium inline-four weighs about 100-120 kg; 110 kg used, no citation fetched.",
-      "peaks": { "torque_nm": 212.5, "torque_rpm": 4050.0, "power_kw": 118.7, "power_rpm": 6800.0 }
+      "peaks": { "torque_nm": 212.5, "torque_rpm": 4050.0, "power_kw": 118.7, "power_rpm": 6050.0 }
     },
     {
       "id": "toyota_a25a_fks_gen",

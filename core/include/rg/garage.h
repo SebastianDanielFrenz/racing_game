@@ -35,8 +35,13 @@ struct GarageConfig {
     std::string set_path;      // data/garage/garage_set.json
     std::string engine_catalog_path; // data/engines/engine_catalog.json ("" = <repo_root>/data/engines/engine_catalog.json)
     std::string gearbox_catalog_path; // data/gearboxes/gearbox_catalog.json ("" = <repo_root>/data/gearboxes/gearbox_catalog.json)
+    std::string driveline_catalog_path; // data/drivetrains/driveline_catalog.json ("" = <repo_root>/data/drivetrains/driveline_catalog.json)
     std::string tyre_families_path; // data/tyres/families.json ("" = no tyre choice)
     std::string turbo_map_extension_path; // data/engines/turbo_map_extension.json ("" = <repo_root>/data/engines/turbo_map_extension.json if it exists, else no extension)
+    std::string turbo_kits_path; // data/engines/turbo_kits.json ("" = <repo_root>/data/engines/turbo_kits.json if it exists, else no turbo kits)
+    std::string engine_internals_path; // data/engines/engine_internals.json ("" = <repo_root>/data/engines/engine_internals.json if it exists, else no internals options)
+    std::string cooling_upgrades_path; // data/cooling_systems/cooling_upgrades.json ("" = <repo_root>/data/cooling_systems/cooling_upgrades.json if it exists, else no cooling options)
+    std::string part_masses_path; // data/vehicles/part_masses.json ("" = <repo_root>/data/vehicles/part_masses.json if it exists, else no part-mass tree)
     std::string user_dir;      // selection and setups are saved under <user_dir>/garage/
     std::string work_root;     // scratch and drive materialisations
     std::string engine_map_cache_dir; // .psmaps cache for the loader ("" = the per-vehicle default rg::Session uses)
@@ -63,6 +68,7 @@ struct DriveSelection {
     bool manual_gearbox = true;      // the vehicle has a manual_tcu controller
     std::string engine_title;        // the installed engine's name when the setup swapped it ("" = the car's own)
     std::vector<std::string> swap_lines; // what the engine/fuel choice changed (for the wait screen and the garage)
+    PartTree parts;            // the driven car's part-mass tree (rg/part_mass.h); when parts.ok, chassis.mass_kg == parts.chassis_kg
     std::string warning;       // e.g. the saved setup no longer validates and the stock car is used
 };
 
@@ -102,6 +108,8 @@ public:
     [[nodiscard]] const std::string& selected_id() const { return selected_; }
     bool select(const std::string& id, std::string* err); // persists
     // ---- per-vehicle data ----
+    // The stats follow the car's drive layout as the setup leaves it (the working copy while that car is edited, else the
+    // saved setup on top of the preset): a drivetrain swap changes layout, driven_wheels and driveline.
     [[nodiscard]] std::optional<VehicleStats> stats(const std::string& id, std::string* err) const;
     // The engine the garage's bay view shows for this car: the edit session's installed engine while that car is
     // edited, else the car's own. nullptr when the engine is not in the store.
@@ -124,7 +132,7 @@ public:
     // with the stats of its vehicle file and the paint/rim a drive of it would use (the saved setup on top
     // of the preset overlay). The view state (group/sort/filter) lives in the model; the caller persists it
     // through CarBrowser::apply_settings / store_settings. The stats are those of the entry's vehicle file:
-    // a preset's overlay is not applied to them.
+    // a preset's overlay is not applied to them, except the drive layout, which follows a drivetrain swap (stats()).
     [[nodiscard]] CarBrowser& browser() { return browser_; }
     [[nodiscard]] const CarBrowser& browser() const { return browser_; }
     [[nodiscard]] std::vector<BrowserCar> browser_cars() const;
@@ -143,6 +151,12 @@ public:
     // What the installed engine/fuel choice changes (the swap package's lines), for the garage screen.
     [[nodiscard]] const std::vector<std::string>& swap_lines() const { return model_.swap_lines; }
     [[nodiscard]] double chassis_mass_delta_kg() const { return model_.chassis_mass_delta_kg; }
+    // The part-mass tree of the working copy (the whole setup, compiled; the installed parts only while the working copy
+    // does not compile) - what the garage's weight breakdown shows. !ok without a part mass table or a body mass.
+    [[nodiscard]] const PartTree& parts() const { return parts_; }
+    // The part-mass tree of a car as it would be driven (its preset overlay and saved setup applied), for screens outside
+    // the edit session.
+    [[nodiscard]] PartTree part_tree(const std::string& id) const;
     void reset_option(const std::string& option_id);
     void reset_all();
     [[nodiscard]] bool dirty() const; // the working copy differs from the saved one
@@ -170,6 +184,8 @@ private:
     void remove_drive_dir();
     void engines_changed();
     std::string drop_unavailable_values();
+    // After a drive layout change: an axle differential choice for an axle the new layout does not drive returns to stock.
+    std::string drop_driveline_values();
     // The overlay with legacy engine ids resolved to keys; an engine that no longer exists is dropped (named in *notices).
     void normalise_engine_values(VehicleSetup& setup, std::vector<std::string>* notices) const;
     [[nodiscard]] VehicleSetup effective_setup_with_notices(const std::string& id, std::vector<std::string>* notices) const;
@@ -188,6 +204,7 @@ private:
     VehicleSetup working_;
     VehicleSetup saved_at_begin_;
     ValidationResult validation_;
+    PartTree parts_;
 
     std::string drive_dir_;
     CarBrowser browser_;

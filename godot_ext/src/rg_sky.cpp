@@ -1,5 +1,7 @@
 #include "rg_sky.h"
 
+#include "rg/climate.h"
+
 #include "rg/world_config.h"
 
 #include <godot_cpp/core/class_db.hpp>
@@ -27,6 +29,16 @@ bool RgSky::initialize(const godot::String& sky_json_path, const godot::String& 
     }
     tw_ = std::make_unique<rg::TimeWeather>(std::move(*config), location);
     error_ = "";
+    const std::string sky_path = utf8(sky_json_path);
+    const auto slash = sky_path.find_last_of("/\\");
+    std::string climate_err;
+    auto climate = rg::load_climate_config(sky_path.substr(0, slash == std::string::npos ? 0 : slash + 1) + "climate.json", &climate_err);
+    if (climate) {
+        tw_->set_climate(std::make_shared<const rg::ClimateConfig>(std::move(*climate)));
+        climate_error_ = "";
+    } else {
+        climate_error_ = godot::String::utf8(climate_err.c_str());
+    }
     return true;
 }
 
@@ -34,10 +46,10 @@ void RgSky::advance(double dt) { if (tw_) tw_->advance(dt); }
 void RgSky::set_local_time_h(double h) { if (tw_) tw_->clock().set_local_time_h(h); }
 void RgSky::set_rate(double r) { if (tw_) tw_->clock().set_rate(r); }
 
-godot::Dictionary RgSky::get_state() const {
+godot::Dictionary RgSky::get_state() {
     godot::Dictionary d;
     if (!tw_) return d;
-    const auto s = tw_->state();
+    const auto s = tw_->sample();
     const double gamma = tw_->location().grid_convergence_deg;
     d["clock_text"] = godot::String(s.clock_text.c_str());
     d["date_text"] = godot::String(s.date_text.c_str());
@@ -59,6 +71,12 @@ godot::Dictionary RgSky::get_state() const {
     d["weather_id"] = godot::String(s.weather_id.c_str());
     d["weather_label"] = godot::String(s.weather_label.c_str());
     d["cloud_cover"] = s.weather.cloud_cover;
+    d["air_temp_c"] = s.air_temp_c; // NaN without a climate
+    d["physics_weather"] = tw_->climate() != nullptr;
+    d["illuminance_lux"] = s.lighting.illuminance_lux;
+    d["exposure"] = s.exposure;
+    d["adapted_lux"] = s.adapted_lux;
+    d["night_exposure"] = rg::night_exposure(tw_->config().exposure);
     return d;
 }
 
@@ -95,6 +113,7 @@ void RgSky::_bind_methods() {
     ClassDB::bind_method(D_METHOD("get_state"), &RgSky::get_state);
     ClassDB::bind_method(D_METHOD("get_menu"), &RgSky::get_menu);
     ClassDB::bind_method(D_METHOD("choose", "id"), &RgSky::choose);
+    ClassDB::bind_method(D_METHOD("get_climate_error"), &RgSky::get_climate_error);
     ClassDB::bind_static_method("RgSky", D_METHOD("format_temperature_c", "kelvin"), &RgSky::format_temperature_c);
 }
 

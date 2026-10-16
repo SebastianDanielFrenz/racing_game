@@ -18,6 +18,9 @@ public:
     godot::Array advance(const godot::Dictionary& snapshot, const godot::Dictionary& channels, bool enabled, double dt);
     void configure_auto_shift(bool enabled);
     bool get_auto_shift() const;
+    // Headlamp switch position "auto" | "on" | "off" (rg::LightMode); an unknown name is ignored.
+    void set_light_mode(const godot::String& mode);
+    godot::String get_light_mode() const;
     static godot::Dictionary state(const godot::String& id, const godot::Dictionary& snapshot, const godot::Dictionary& channels);
 protected:
     static void _bind_methods();

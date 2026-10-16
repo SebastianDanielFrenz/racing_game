@@ -55,6 +55,39 @@ TEST_CASE("settings: schema is consistent", "[settings]") {
     CHECK(rg::find_setting("nope") == nullptr);
     REQUIRE(rg::find_setting("map_data.store_dir") != nullptr);
     CHECK_FALSE(rg::find_setting("map_data.store_dir")->applies_live);
+    CHECK_FALSE(rg::find_setting("map_data.store_dir")->applies_on_restart);
+    // A restart-only setting is never live.
+    for (const rg::SettingDef& d : rg::settings_schema()) {
+        CAPTURE(d.key);
+        if (d.applies_on_restart) CHECK_FALSE(d.applies_live);
+    }
+}
+
+TEST_CASE("settings: renderer choice", "[settings][renderer]") {
+    const rg::SettingDef* def = rg::find_setting("graphics.renderer");
+    REQUIRE(def != nullptr);
+    CHECK(def->type == rg::SettingType::Choice);
+    CHECK(def->choices == std::vector<std::string>{"mobile", "compatibility", "forward_plus"});
+    CHECK(std::get<std::string>(def->default_value) == "mobile");
+    CHECK_FALSE(def->applies_live);
+    CHECK(def->applies_on_restart);
+    CHECK(def->shown);
+    rg::Settings s;
+    std::string err;
+    CHECK(s.get_string("graphics.renderer") == "mobile");
+    CHECK_FALSE(s.set("graphics.renderer", std::string("gl_compatibility"), &err)); // engine names are not choices
+    CHECK(s.set("graphics.renderer", std::string("compatibility"), &err));
+    rg::Settings back;
+    rg::SettingsLoadReport report = back.load_text(s.to_json());
+    CHECK(report.invalid_keys.empty());
+    CHECK(back.get_string("graphics.renderer") == "compatibility");
+    CHECK_FALSE(s.set("graphics.renderer", std::string("forward+"), &err)); // the engine's display name is not a choice
+    CHECK(s.set("graphics.renderer", std::string("forward_plus"), &err));
+    rg::Settings back2;
+    CHECK(back2.load_text(s.to_json()).invalid_keys.empty());
+    CHECK(back2.get_string("graphics.renderer") == "forward_plus");
+    s.reset("graphics.renderer");
+    CHECK(s.get_string("graphics.renderer") == "mobile");
 }
 
 TEST_CASE("settings: defaults and typed reads", "[settings]") {
@@ -251,4 +284,20 @@ TEST_CASE("settings: migrations run on an older document", "[settings]") {
     CHECK(contains(r2.unknown_keys, "graphics.framerate_limit"));
     CHECK(t.get_int("graphics.max_fps") == 0);
     CHECK(rg::default_settings_migrations().empty());
+}
+
+TEST_CASE("settings: the headlamp switch position persists as a hidden choice", "[settings][auto_lights]") {
+    const rg::SettingDef* d = rg::find_setting("cabin.light_mode");
+    REQUIRE(d != nullptr);
+    CHECK_FALSE(d->shown);
+    CHECK(d->type == rg::SettingType::Choice);
+    CHECK(d->choices == std::vector<std::string>{"auto", "on", "off"});
+    CHECK(std::get<std::string>(d->default_value) == "auto");
+    const auto sections = rg::settings_sections();
+    CHECK(std::find(sections.begin(), sections.end(), "cabin") == sections.end());
+    rg::Settings s;
+    CHECK(std::get<std::string>(s.get("cabin.light_mode")) == "auto");
+    CHECK(s.set("cabin.light_mode", std::string("off")));
+    CHECK_FALSE(s.set("cabin.light_mode", std::string("dipped")));
+    CHECK(s.to_json().find("light_mode") != std::string::npos);
 }

@@ -34,6 +34,8 @@ struct GearboxEntry {
     std::string synchro;      // cone | dog
     std::string description;
     double rating_nm = 0.0;   // maximum engine torque the box takes
+    double mass_kg = 0.0;     // dry mass without the differential (the part-mass tree, rg/part_mass.h)
+    std::string mass_source;
     std::string file;         // absolute, normalised path of the physics_sim gearbox file
     // Read from the gearbox file:
     int gears = 0;            // forward gears

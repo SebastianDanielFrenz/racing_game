@@ -1,0 +1,43 @@
+{
+  "format": "rg.climate/1",
+  "description": "Air temperature and the physics weather environment (rg::ClimateConfig, core/include/rg/climate.h). The ONE source of the air temperature: the weather widget shows climate_temperature_c(...) and the physics environment installed in rg::Session (V8) is pinned to the same value (WeatherPresetDesc::temp_override_c, lifted to the car's altitude by the ISA lapse). T = mean(day) + range(day)/2 * (1 - cloud_range_reduction * cloud) * cos(2 pi (solar_h - peak_solar_hour) / 24) - lapse_k_per_m * (altitude - station elevation); mean/range interpolated between the monthly midpoints; solar_h = UT + longitude/15 (local mean solar time).",
+  "station": {"elevation_m": 112.0},
+  "monthly": {
+    "temp_mean_c":  [2.0, 2.9, 6.5, 10.6, 14.7, 18.0, 20.0, 19.6, 15.4, 10.5, 5.9, 2.9],
+    "temp_range_k": [5.6, 7.3, 9.6, 12.2, 12.4, 12.6, 12.8, 12.8, 11.6, 8.9, 6.2, 5.0],
+    "rh_mean":      [0.85, 0.81, 0.75, 0.68, 0.69, 0.69, 0.68, 0.70, 0.76, 0.82, 0.86, 0.87],
+    "ground_temp_c": [5.0, 4.0, 5.0, 8.0, 11.0, 14.0, 16.0, 17.0, 16.0, 13.0, 9.0, 6.0],
+    "pressure_msl_hpa": 1015.0
+  },
+  "temperature": {"lapse_k_per_m": 0.0065, "peak_solar_hour": 14.5, "cloud_range_reduction": 0.6},
+  "surface_conditions": "../../external/physics_sim/data/surface_conditions/default.json",
+  "tyre_profile": "../../external/physics_sim/data/tyre_profiles/summer_generic.json",
+  "ground_surface": "asphalt",
+  "seed": 1,
+  "weather_ramp_s": 60.0,
+  "resync": {"temperature_k": 0.25, "clock_s": 120.0, "clock_real_s": 0.5},
+  "physics": {
+    "lags_s": {"cloud": 1200, "precip_on": 300, "precip_off": 600, "wind": 900, "temp_offset": 3600, "rh": 1800, "pressure": 3600},
+    "precip_phase": {"snow_below_c": 0.0, "rain_above_c": 2.0, "min_rate_mm_h": 0.01},
+    "humidity": {"precip_rh_floor": 0.95, "precip_full_mm_h": 0.5},
+    "diurnal_temperature": {"a_h": 1.86, "b": 2.2, "c_h": -0.17, "reference_cycle_s": 86400, "cloud_range_reduction": 0.6},
+    "lightning": {"distance_km": [0.5, 15.0]},
+    "condition": {"dt_env_s": 60.0, "spinup_s": 86400.0, "max_fast_forward_s": 2592000.0}
+  },
+  "weather": {
+    "clear":         {"format": "physics_sim.weather_preset/1", "regime": "clear", "cloud_cover": 0.0, "precip_mm_h": 0.0, "precip_type": "auto", "wind_mean_m_s": 2.0, "wind_dir_deg": 240.0, "gust_factor": 1.4, "rh": 0.6},
+    "partly_cloudy": {"format": "physics_sim.weather_preset/1", "regime": "partly_cloudy", "cloud_cover": 0.45, "precip_mm_h": 0.0, "precip_type": "auto", "wind_mean_m_s": 3.0, "wind_dir_deg": 240.0, "gust_factor": 1.4, "rh": 0.65},
+    "overcast":      {"format": "physics_sim.weather_preset/1", "regime": "overcast", "cloud_cover": 0.9, "precip_mm_h": 0.0, "precip_type": "auto", "wind_mean_m_s": 4.0, "wind_dir_deg": 240.0, "gust_factor": 1.5, "rh": 0.8},
+    "rain":          {"format": "physics_sim.weather_preset/1", "regime": "rain", "cloud_cover": 0.95, "precip_mm_h": 4.0, "precip_type": "rain", "wind_mean_m_s": 5.0, "wind_dir_deg": 240.0, "gust_factor": 1.6, "rh": 0.95},
+    "snow":          {"format": "physics_sim.weather_preset/1", "regime": "snow", "cloud_cover": 0.95, "precip_mm_h": 1.5, "precip_type": "snow", "wind_mean_m_s": 3.0, "wind_dir_deg": 60.0, "gust_factor": 1.4, "rh": 0.95},
+    "hail":          {"format": "physics_sim.weather_preset/1", "regime": "hail", "cloud_cover": 0.95, "precip_mm_h": 10.0, "precip_type": "hail", "hail_diameter_mm": 15.0, "wind_mean_m_s": 8.0, "wind_dir_deg": 240.0, "gust_factor": 1.8, "rh": 0.95},
+    "thunder":       {"format": "physics_sim.weather_preset/1", "regime": "thunderstorm", "cloud_cover": 1.0, "precip_mm_h": 15.0, "precip_type": "rain", "wind_mean_m_s": 7.0, "wind_dir_deg": 240.0, "gust_factor": 2.0, "rh": 0.97, "lightning_per_min": 4.0}
+  },
+  "source": {
+    "monthly": "ASSUMED approximations of the DWD 1991-2020 normals for Frankfurt/Main (monthly mean air temperature, mean daily maximum minus minimum, relative humidity); not re-read from the DWD tables. ground_temp_c: soil about 1 m deep [AS]. pressure: [AS].",
+    "temperature": "lapse 0.0065 K/m = ISA (the physics lifts the station value with the same lapse); peak 14:30 local mean solar time [AS, typical mid-afternoon maximum]; cloud_range_reduction 0.6 = physics_sim diurnal_temperature default.",
+    "resync": "rg::WeatherSync re-sends the pinned temperature when it moved by temperature_k, and the clock when the physics environment drifted from the game clock by more than max(clock_s, clock_real_s x rate) game seconds [AS].",
+    "physics": "lags/precip_phase/humidity/diurnal/lightning blocks copied from physics_sim data/climates/test_weather.json (required by its WeatherTimeline even in Preset mode; the diurnal curve is unused because every preset pins the temperature); condition.spinup_s 1 day [AS: shorter spin-up after a backward clock jump].",
+    "weather": "ASSUMED game presets per sky.json weather id: rain 4 mm/h (WMO moderate), thunder 15 mm/h with 4 strikes/min, snow 1.5 mm/h water equivalent, hail 10 mm/h of 15 mm stones; wind/rh plausible for the phenomenon."
+  }
+}

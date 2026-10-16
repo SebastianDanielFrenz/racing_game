@@ -5,6 +5,7 @@
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 
+#include <cmath>
 #include <string>
 
 using Catch::Approx;
@@ -71,4 +72,22 @@ TEST_CASE("address search: destination in the session frame", "[address_search]"
     CHECK(rg::check_destination(-1.0, 8.0, 32, 0, 0, 1e9).status == rg::DestinationStatus::OutsideUtmRange);
     CHECK(rg::check_destination(84.0, 8.0, 32, 0, 0, 1e9).status == rg::DestinationStatus::OutsideUtmRange);
     CHECK(rg::check_destination(50.0, 181.0, 32, 0, 0, 1e9).status == rg::DestinationStatus::OutsideUtmRange);
+}
+
+TEST_CASE("address search: UTM to lat/lon round trip", "[address_search]") {
+    // Frankfurt, zone 32: forward (check_destination with a zero origin) then the inverse must return the same point.
+    const auto d = rg::check_destination(50.1, 8.6, 32, 0.0, 0.0, 1e9);
+    REQUIRE(d.status == rg::DestinationStatus::Ok);
+    const auto back = rg::utm_to_latlon(32, d.session_x, d.session_y);
+    REQUIRE(back.has_value());
+    CHECK(back->lat == Approx(50.1).margin(1e-7));
+    CHECK(back->lon == Approx(8.6).margin(1e-7));
+    // Easting 500 km at the central meridian of zone 32 (9 E) on the equator.
+    const auto eq = rg::utm_to_latlon(32, 500000.0, 0.0);
+    REQUIRE(eq.has_value());
+    CHECK(eq->lat == Approx(0.0).margin(1e-9));
+    CHECK(eq->lon == Approx(9.0).margin(1e-9));
+    CHECK_FALSE(rg::utm_to_latlon(0, 500000.0, 0.0).has_value());
+    CHECK_FALSE(rg::utm_to_latlon(61, 500000.0, 0.0).has_value());
+    CHECK_FALSE(rg::utm_to_latlon(32, std::nan(""), 0.0).has_value());
 }

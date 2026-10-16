@@ -1,6 +1,7 @@
 #include "rg/driver_actions.h"
 #include <catch2/catch_test_macros.hpp>
 #include <array>
+#include <limits>
 #include <map>
 #include <utility>
 #include <fstream>
@@ -242,4 +243,170 @@ TEST_CASE("driver cabin: lights toggle dipped beam, Set picks main beam, project
     CHECK(rg::DriverActions::state("main_beam",snap,s).active);
     a.submit({"lights",rg::DriverActionKind::Hold,0}); a.submit({"lights",rg::DriverActionKind::Hold,1}); a.apply({snap,true},s); a.advance({snap,true},s,0);
     CHECK(s.get("cabin.lights")==0);
+}
+
+TEST_CASE("driver actions: ABS and ESC lamps follow the fitted state and interventions", "[driver_actions][abs][esc]") {
+    Sink sink;
+    rg::DriverSnapshot s;
+    auto abs = rg::DriverActions::state("abs", s, sink);
+    auto esc = rg::DriverActions::state("esc", s, sink);
+    CHECK_FALSE(abs.fitted);
+    CHECK_FALSE(esc.fitted);
+    CHECK(abs.label.empty());
+    CHECK(esc.label.empty());
+    s.abs_fitted = s.esc_fitted = true;
+    s.abs_on = true;
+    s.esc_effective = 1;
+    abs = rg::DriverActions::state("abs", s, sink);
+    esc = rg::DriverActions::state("esc", s, sink);
+    CHECK(abs.label == "ABS");
+    CHECK(abs.colour_role == "ok");
+    CHECK_FALSE(abs.blink);
+    CHECK(esc.label == "ESC ON");
+    s.abs_intervening = s.esc_intervening = true;
+    abs = rg::DriverActions::state("abs", s, sink);
+    esc = rg::DriverActions::state("esc", s, sink);
+    CHECK(abs.blink);
+    CHECK(abs.label == "ABS ACTIVE");
+    CHECK(esc.blink);
+    CHECK(esc.label == "ESC ON ACTIVE");
+    CHECK(esc.colour_role == "warning");
+    s.abs_on = false;
+    s.esc_effective = 0;
+    abs = rg::DriverActions::state("abs", s, sink);
+    esc = rg::DriverActions::state("esc", s, sink);
+    CHECK(abs.label == "ABS OFF");
+    CHECK_FALSE(abs.blink);
+    CHECK(esc.label == "ESC OFF");
+    CHECK_FALSE(esc.blink);
+}
+
+namespace {
+rg::CabinConfig auto_lights_config() {
+    auto cfg = cabin_config();
+    std::ifstream input(std::string(RG_SOURCE_DIR)+"/data/world/headlights.json");
+    const auto j = nlohmann::json::parse(input).at("auto");
+    cfg.auto_lights = j.at("enabled");
+    cfg.auto_lights_on_lux = j.at("on_lux");
+    cfg.auto_lights_off_lux = j.at("off_lux");
+    cfg.auto_lights_on_delay_s = j.at("on_delay_s");
+    cfg.auto_lights_off_delay_s = j.at("off_delay_s");
+    return cfg;
+}
+void step_lux(rg::DriverActions& a, Sink& s, rg::DriverSnapshot snap, double lux, double dt) {
+    snap.ambient_lux = lux;
+    a.advance({snap,true},s,dt);
+}
+}
+
+TEST_CASE("driver cabin: automatic headlamps follow the light sensor with hysteresis and delays", "[driver_actions][cabin][lights][auto_lights]") {
+    const auto cfg = auto_lights_config();
+    REQUIRE(cfg.auto_lights);
+    REQUIRE(cfg.auto_lights_on_lux < cfg.auto_lights_off_lux);
+    rg::DriverActions a; a.configure_cabin(cfg); Sink s; const auto snap=fitted();
+    // No reading yet: nothing changes.
+    a.advance({snap,true},s,0.1); CHECK(s.get("cabin.lights")==0);
+    // The first reading decides at once: a night spawn starts with dipped beam.
+    step_lux(a,s,snap,0.01,0.1); CHECK(s.get("cabin.lights")==1);
+    CHECK(rg::DriverActions::state("head_lamp",snap,s).active);
+    CHECK(rg::DriverActions::state("tail_lamp",snap,s).active);
+    // Between the thresholds nothing changes (hysteresis).
+    step_lux(a,s,snap,0.5*(cfg.auto_lights_on_lux+cfg.auto_lights_off_lux),60); CHECK(s.get("cabin.lights")==1);
+    // Bright, but shorter than the off delay: still on; a dark blip resets the timer.
+    step_lux(a,s,snap,cfg.auto_lights_off_lux*2,cfg.auto_lights_off_delay_s*0.6); CHECK(s.get("cabin.lights")==1);
+    step_lux(a,s,snap,cfg.auto_lights_on_lux*0.5,0.1);
+    step_lux(a,s,snap,cfg.auto_lights_off_lux*2,cfg.auto_lights_off_delay_s*0.6); CHECK(s.get("cabin.lights")==1);
+    step_lux(a,s,snap,cfg.auto_lights_off_lux*2,cfg.auto_lights_off_delay_s*0.6); CHECK(s.get("cabin.lights")==0);
+    // Dark again: on after the on delay.
+    step_lux(a,s,snap,cfg.auto_lights_on_lux*0.5,cfg.auto_lights_on_delay_s*0.5); CHECK(s.get("cabin.lights")==0);
+    step_lux(a,s,snap,cfg.auto_lights_on_lux*0.5,cfg.auto_lights_on_delay_s*0.6); CHECK(s.get("cabin.lights")==1);
+    // A sensor dropout (NaN) holds the state.
+    step_lux(a,s,snap,std::numeric_limits<double>::quiet_NaN(),100); CHECK(s.get("cabin.lights")==1);
+}
+
+TEST_CASE("driver cabin: the lights key cycles the switch auto -> on -> off -> auto", "[driver_actions][cabin][lights][auto_lights]") {
+    const auto cfg = auto_lights_config();
+    rg::DriverActions a; a.configure_cabin(cfg); Sink s; const auto snap=fitted();
+    const double day = cfg.auto_lights_off_lux*10, night = cfg.auto_lights_on_lux*0.001;
+    auto press = [&](double lux) { a.submit({"lights"}); a.apply({snap,true},s); step_lux(a,s,snap,lux,0.1); };
+    auto mode = [&] { return rg::DriverActions::state("light_mode",snap,s); };
+    // Default: auto. By day the lamps are off and the projection says AUTO.
+    CHECK(a.light_mode() == rg::LightMode::Auto);
+    step_lux(a,s,snap,day,0.1);
+    CHECK(s.get("cabin.lights")==0);
+    CHECK(s.get("cabin.light_mode")==0);
+    CHECK(mode().label=="AUTO"); CHECK(mode().active);
+    CHECK(rg::DriverActions::state("lights",snap,s).label=="AUTO");
+    // On: dipped beam in daylight, and it stays on however long it stays bright.
+    press(day); CHECK(a.light_mode()==rg::LightMode::On); CHECK(s.get("cabin.lights")==1);
+    CHECK(mode().label=="ON"); CHECK_FALSE(mode().active);
+    CHECK(rg::DriverActions::state("lights",snap,s).label=="LIGHTS");
+    step_lux(a,s,snap,day,600); CHECK(s.get("cabin.lights")==1);
+    // Off: dark, and night does not switch them on.
+    press(day); CHECK(a.light_mode()==rg::LightMode::Off); CHECK(s.get("cabin.lights")==0);
+    CHECK(mode().label=="OFF");
+    step_lux(a,s,snap,night,600); CHECK(s.get("cabin.lights")==0);
+    CHECK(rg::DriverActions::state("lights",snap,s).label.empty());
+    // Back to auto at night: on at once (the sensor already reads dark).
+    press(night); CHECK(a.light_mode()==rg::LightMode::Auto); CHECK(s.get("cabin.lights")==1);
+    CHECK(rg::DriverActions::state("lights",snap,s).label=="AUTO LIGHTS");
+    // Main beam in auto at night is kept while it stays dark; dawn switches everything off.
+    a.submit({"lights",rg::DriverActionKind::Set,2}); a.apply({snap,true},s); step_lux(a,s,snap,night,1);
+    CHECK(s.get("cabin.lights")==2); CHECK(a.light_mode()==rg::LightMode::On); // Set 2 = on with main beam
+    a.submit({"lights",rg::DriverActionKind::Set,-1}); a.apply({snap,true},s); step_lux(a,s,snap,night,1);
+    CHECK(a.light_mode()==rg::LightMode::Auto); CHECK(s.get("cabin.lights")==2);
+    step_lux(a,s,snap,day,cfg.auto_lights_off_delay_s+1); CHECK(s.get("cabin.lights")==0);
+    // Set 0 / 1 pick off / on, as the cockpit switch and scripts use them.
+    a.submit({"lights",rg::DriverActionKind::Set,0}); a.apply({snap,true},s); step_lux(a,s,snap,night,10);
+    CHECK(a.light_mode()==rg::LightMode::Off); CHECK(s.get("cabin.lights")==0);
+    a.submit({"lights",rg::DriverActionKind::Set,1}); a.apply({snap,true},s); step_lux(a,s,snap,day,10);
+    CHECK(a.light_mode()==rg::LightMode::On); CHECK(s.get("cabin.lights")==1);
+}
+
+TEST_CASE("driver cabin: the headlamp switch survives a vehicle change and restores from its saved name", "[driver_actions][cabin][lights][auto_lights]") {
+    rg::DriverActions a; a.configure_cabin(auto_lights_config()); Sink s; const auto snap=fitted();
+    a.submit({"lights"}); a.submit({"lights",rg::DriverActionKind::Release,0}); a.apply({snap,true},s);
+    a.submit({"lights"}); a.apply({snap,true},s);
+    CHECK(a.light_mode()==rg::LightMode::Off);
+    a.configure_auto_shift(true); // a new car: the cabin resets, the switch does not
+    CHECK(a.light_mode()==rg::LightMode::Off);
+    CHECK(a.cabin().auto_shift);
+    rg::LightMode m = rg::LightMode::Auto;
+    for (const char* name : {"auto", "on", "off"}) {
+        REQUIRE(rg::parse_light_mode(name, m));
+        CHECK(std::string(rg::light_mode_name(m)) == name);
+        a.set_light_mode(m);
+        CHECK(a.light_mode() == m);
+    }
+    CHECK_FALSE(rg::parse_light_mode("dipped", m));
+    // A restored "on" lights the lamps at the next tick without a key press.
+    a.set_light_mode(rg::LightMode::On); step_lux(a,s,snap,1e5,0.1); CHECK(s.get("cabin.lights")==1);
+    // Without the auto config (cabin.json alone) auto holds whatever the lamps were.
+    rg::DriverActions manual; manual.configure_cabin(cabin_config()); Sink m2;
+    step_lux(manual,m2,snap,0.001,10); CHECK(m2.get("cabin.lights")==0);
+}
+
+TEST_CASE("driver cabin: automatic headlamp thresholds are universal (one config, no car or weather input)", "[driver_actions][cabin][auto_lights]") {
+    // The sensor decision depends on the reading only: two different cars (snapshots) under the same
+    // illuminance switch identically; weather enters only through the illuminance itself.
+    const auto cfg = auto_lights_config();
+    for (double lux : {cfg.auto_lights_on_lux*0.99, cfg.auto_lights_on_lux*1.01, cfg.auto_lights_off_lux*1.01}) {
+        rg::DriverActions a, b; a.configure_cabin(cfg); b.configure_cabin(cfg); Sink sa, sb;
+        auto snap_a = fitted(); auto snap_b = rg::DriverSnapshot{}; snap_b.speed_mps = 40; snap_b.gear = 5;
+        step_lux(a,sa,snap_a,lux,0.1); step_lux(b,sb,snap_b,lux,0.1);
+        CHECK(sa.get("cabin.lights") == sb.get("cabin.lights"));
+        CHECK(sa.get("cabin.lights") == (lux < cfg.auto_lights_on_lux ? 1 : 0));
+    }
+}
+
+TEST_CASE("driver cabin: invalid automatic headlamp settings are rejected", "[driver_actions][cabin][auto_lights]") {
+    rg::DriverActions a;
+    auto cfg = auto_lights_config(); cfg.auto_lights_off_lux = cfg.auto_lights_on_lux*0.5;
+    CHECK_THROWS(a.configure_cabin(cfg));
+    cfg = auto_lights_config(); cfg.auto_lights_on_lux = 0;
+    CHECK_THROWS(a.configure_cabin(cfg));
+    cfg = auto_lights_config(); cfg.auto_lights_on_delay_s = -1;
+    CHECK_THROWS(a.configure_cabin(cfg));
+    cfg = auto_lights_config(); cfg.auto_lights = false; cfg.auto_lights_on_lux = -1; // ignored while off
+    CHECK_NOTHROW(a.configure_cabin(cfg));
 }

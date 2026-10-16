@@ -218,6 +218,10 @@ TEST_CASE("controls: the default profiles equal the bindings the game had before
         {"cam_move_y", "btn:9:-1, btn:10, axis:4:positive:dz0.02:s-1, axis:5:positive:dz0.02"}, {"cam_fast", "btn:7"},
         {"cam_look_x", "axis:2:full:dz0.15"}, {"cam_look_y", "axis:3:full:dz0.15:inv"},
         {"jump", "btn:0"}, {"interact", "btn:2"}, {"menu_confirm", "btn:0"}, {"menu_back", "btn:1"},
+        // B7 (2026-10-14): driving actions that had no pad button. Paddles 16-19, touchpad 20, MISC1 15; D-pad right 14 and L3 7
+        // are shared only with actions live in other modes (drone follow, free cam / on foot).
+        {"traction_control", "btn:16"}, {"drive_mode", "btn:17"}, {"toggle_launch_control", "btn:18"}, {"toggle_aero", "btn:19"},
+        {"hazard", "btn:20"}, {"indicator_left", "btn:15"}, {"indicator_right", "btn:14"}, {"horn", "btn:7"},
     };
     for (const auto& [action, expected] : gamepad) {
         CAPTURE(action);
