@@ -38,6 +38,7 @@
 #include "rg/gearbox_catalog.h"
 #include "rg/turbo_kit.h"
 #include "rg/engine_internals.h"
+#include "rg/cooling_upgrades.h"
 #include "rg/part_mass.h"
 #include "rg/turbo_map_extension.h"
 #include "rg/slider_map.h"
@@ -125,6 +126,12 @@ struct SetupOptionDef {
     std::string part_format; // required referenced file format
     bool no_turbo_override = false; // default engine turbo must not shadow a vehicle override
     std::string internal;              // "engine_internals" catalog: the part kind
+    // "cooling_upgrades" catalog (rg/cooling_upgrades.h, data/cooling_systems/cooling_upgrades.json): the cooling part kind
+    // (radiator, fan, oil_cooler, block_cooling) whose grades the option offers for the INSTALLED engine and the car's
+    // cooling_system file. The choice patches the cooling_system / engine thermal files (written by materialise_setup) and adds
+    // a mass node under "engine.cooling". Unavailable, with a reason, on a car whose vehicle file names no cooling_system or
+    // whose engine has no thermal data. Ids = the grade ids, "stock" = the car's own part.
+    std::string cooling_part;
     std::string axle;                  // TyreChoice and the "differentials" catalog: "front" | "rear"
     std::string slot;                  // PartChoice: the part slot (catalog "interior" key, tree node "trim.<slot>")
     // Scale only (garage numeric inputs): the option is shown and typed in ABSOLUTE units (rpm, bar, ms) on a linear or
@@ -198,6 +205,9 @@ struct SetupContext {
     // The swappable engine internals the "engine_internals" catalog options offer (rg/engine_internals.h). nullptr = those
     // options are unavailable and the setup check rates the engine with AdvisorConfig's one engine-wide piston speed.
     std::shared_ptr<const EngineInternalsConfig> engine_internals;
+    // The cooling system upgrades the "cooling_upgrades" catalog options offer (rg/cooling_upgrades.h). nullptr = those options
+    // are unavailable and the setup check skips the temperature rules.
+    std::shared_ptr<const CoolingUpgradeConfig> cooling_upgrades;
     // Base part masses (data/vehicles/part_masses.json, rg/part_mass.h). With it and the entry's body mass, every
     // model / compiled setup carries the car's part-mass tree and the drive takes its chassis mass from it.
     // nullptr = no tree: the drive uses the catalog chassis mass plus the engine swap's delta.
@@ -301,6 +311,9 @@ struct CompiledSetup {
     // The engine internals as installed (catalog "engine_internals"; every part, stock or swapped) with their limits for
     // this engine and masses; unset without an internals table or on an engine whose internals cannot be swapped.
     std::optional<EngineInternalsBuild> internals;
+    // The cooling parts as installed (catalog "cooling_upgrades"; every kind, stock or upgraded) with their masses; unset
+    // when the car has no cooling model or the context carries no upgrade table.
+    std::optional<CoolingBuild> cooling;
 };
 CompiledSetup compile_setup(const CatalogEntry& entry, const SetupOptionTable& table, const SetupContext& ctx,
                             const VehicleSetup& setup);

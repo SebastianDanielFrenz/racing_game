@@ -41,6 +41,7 @@ struct GarageConfig {
     std::string turbo_map_extension_path; // data/engines/turbo_map_extension.json ("" = <repo_root>/data/engines/turbo_map_extension.json if it exists, else no extension)
     std::string turbo_kits_path; // data/engines/turbo_kits.json ("" = <repo_root>/data/engines/turbo_kits.json if it exists, else no turbo kits)
     std::string engine_internals_path; // data/engines/engine_internals.json ("" = <repo_root>/data/engines/engine_internals.json if it exists, else no internals options)
+    std::string cooling_upgrades_path; // data/cooling_systems/cooling_upgrades.json ("" = <repo_root>/data/cooling_systems/cooling_upgrades.json if it exists, else no cooling options)
     std::string part_masses_path; // data/vehicles/part_masses.json ("" = <repo_root>/data/vehicles/part_masses.json if it exists, else no part-mass tree)
     std::string strip_visual_path; // data/vehicles/strip_visual.json ("" = <repo_root>/data/vehicles/strip_visual.json if it exists, else nothing is hidden)
     std::string user_dir;      // selection and setups are saved under <user_dir>/garage/

@@ -268,11 +268,86 @@ void set_part_limits(AdviceInput& input, const CompiledSetup& compiled) {
     input.turbo_max_shaft_rpm = kit.sizing.max_shaft_rpm;
 }
 
+void set_thermal_limits(AdviceInput& input, const ps::vehicle::VehicleDesc& desc, const CoolingCheckConfig& check, const CompiledSetup& compiled) {
+    if (compiled.cooling) {
+        for (const CoolingPartBuild& p : compiled.cooling->parts) {
+            if (p.kind == "radiator") {
+                input.radiator_part = lower_first(p.grade_label);
+                input.radiator_option = p.option_id;
+            } else if (p.kind == "oil_cooler") {
+                input.oil_cooler_part = lower_first(p.grade_label);
+                input.oil_cooler_option = p.option_id;
+            }
+        }
+    }
+    if (!desc.powertrain.thermal.has_value()) return;
+    const pd::EngineThermalConfig& thermal = *desc.powertrain.thermal;
+    double lhv = 0.0, limiter_rpm = 0.0;
+    for (const pd::ComponentDesc& c : desc.powertrain.components) {
+        if (const auto* s = std::get_if<pd::SimulatedEngineDesc>(&c.params)) {
+            if (!s->fuels.empty()) lhv = s->fuels.front().lhv_j_kg;
+            limiter_rpm = s->limiter.rpm;
+            break;
+        }
+    }
+    if (!(lhv > 0.0)) return;
+    input.thermal_ambient_c = check.ambient_c;
+    input.thermal_air_speed_m_s = check.ram_speed_m_s;
+    input.coolant_limit_c = thermal.cooling.warnings.overheat_k - pd::kCelsiusToKelvin;
+    input.oil_limit_c = check.oil_limit_c;
+    double hot_coolant = -1.0e9, hot_oil = -1.0e9, coolant_air = check.ram_speed_m_s, oil_air = check.ram_speed_m_s;
+    // Only the points up to max_rpm_fraction_of_limiter x the limiter (a car's top gear tops it out below the limiter: the
+    // hypercar's full-throttle run settles at 7384 rpm) and within check.power_band of the peak power: a car holds full power for minutes only near its power peak
+    // (gearing and drag put it there at top speed); the over-rev tail of the sweep is passed through in seconds.
+    double peak_power_kw = 0.0;
+    const double rpm_cap = limiter_rpm > 0.0 && check.max_rpm_fraction_of_limiter > 0.0 ? check.max_rpm_fraction_of_limiter * limiter_rpm : 1.0e9;
+    for (const pd::DynoPoint& p : input.points) {
+        if (p.rpm <= rpm_cap) peak_power_kw = std::max(peak_power_kw, static_cast<double>(p.power_kw));
+    }
+    for (const pd::DynoPoint& p : input.points) {
+        if (!std::isfinite(p.fuel_g_s) || !(p.fuel_g_s > 0.0)) continue;
+        if (p.rpm > rpm_cap || static_cast<double>(p.power_kw) < check.power_band * peak_power_kw) continue;
+        const double fuel_w = p.fuel_g_s * 1.0e-3 * lhv; // the released fuel energy per second
+        const double wall_w = thermal.engine.wall_heat_fraction * fuel_w;
+        const double friction_w = check.friction_power_fraction * std::max(0.0, static_cast<double>(p.power_kw)) * 1000.0;
+        const double power_kw = std::max(0.0, static_cast<double>(p.power_kw));
+        const double air = check.top_speed_m_s_per_cbrt_kw > 0.0 ? check.top_speed_m_s_per_cbrt_kw * std::cbrt(power_kw) : check.ram_speed_m_s;
+        const SteadyThermal t = steady_thermal(thermal, p.rpm, wall_w, friction_w, check.ambient_c, air);
+        const ThermalTransient tr = transient_thermal(thermal, p.rpm, wall_w, friction_w, check.ambient_c, air, input.coolant_limit_c,
+                                                      input.oil_limit_c, check.transient_horizon_s, check.transient_step_s);
+        // The point that reaches the limit soonest; while none does, the hottest steady state (shown only for the record).
+        const auto sooner = [](double t_new, double t_old) {
+            if (!std::isfinite(t_new)) return false;
+            return !std::isfinite(t_old) || t_new < t_old;
+        };
+        if (sooner(tr.coolant_limit_s, input.coolant_limit_time_s) || (!std::isfinite(input.coolant_limit_time_s) && !std::isfinite(tr.coolant_limit_s) && t.coolant_c > hot_coolant)) {
+            hot_coolant = t.coolant_c;
+            input.coolant_limit_time_s = tr.coolant_limit_s;
+            input.coolant_peak_rpm = p.rpm;
+            coolant_air = air;
+        }
+        if (sooner(tr.oil_limit_s, input.oil_limit_time_s) || (!std::isfinite(input.oil_limit_time_s) && !std::isfinite(tr.oil_limit_s) && t.oil_c > hot_oil)) {
+            hot_oil = t.oil_c;
+            input.oil_limit_time_s = tr.oil_limit_s;
+            input.oil_peak_rpm = p.rpm;
+            oil_air = air;
+        }
+    }
+    if (hot_coolant > -1.0e8) {
+        input.coolant_peak_c = hot_coolant;
+        input.oil_peak_c = hot_oil;
+        input.coolant_air_speed_m_s = coolant_air;
+        input.oil_air_speed_m_s = oil_air;
+    } else {
+        input.coolant_limit_c = input.oil_limit_c = std::numeric_limits<double>::quiet_NaN();
+    }
+}
+
 
 const std::vector<std::string>& known_advice_fact_names() {
     static const std::vector<std::string> names = {
         "target", "value", "limit", "value_pct", "limit_pct", "value_kpa", "limit_kpa", "rpm", "rpm_from", "rpm_to", "range",
-        "peak", "peak_rpm", "low", "low_rpm", "reach_rpm", "drop_rpm", "current", "required_min", "required", "ratio_min", "ratio", "message", "coverage", "uncovered", "choke_flow", "demand_flow", "units", "burst", "part", "part_kind", "limit_rpm"};
+        "peak", "peak_rpm", "low", "low_rpm", "reach_rpm", "drop_rpm", "current", "required_min", "required", "ratio_min", "ratio", "message", "coverage", "uncovered", "choke_flow", "demand_flow", "units", "burst", "part", "part_kind", "limit_rpm", "ambient", "air_speed", "time"};
     return names;
 }
 
@@ -313,7 +388,7 @@ std::optional<AdvisorConfig> parse_advisor_config(const std::string& json_text, 
         fail(err, origin, "\"format\" must be \"rg.garage_advisor/1\"");
         return std::nullopt;
     }
-    static const std::set<std::string> allowed = {"format", "source", "debounce_ms", "sweep", "merge_gap_rpm", "decimals", "remedy", "limit_policy", "kinds", "build_rules", "loader_warnings", "part_limits"};
+    static const std::set<std::string> allowed = {"format", "source", "debounce_ms", "sweep", "merge_gap_rpm", "decimals", "remedy", "limit_policy", "kinds", "build_rules", "loader_warnings", "part_limits", "thermal_time"};
     for (auto it = root.begin(); it != root.end(); ++it) {
         const std::string& key = it.key();
         const bool help = key.size() > 5 && key.compare(key.size() - 5, 5, "_help") == 0;
@@ -409,9 +484,9 @@ std::optional<AdvisorConfig> parse_advisor_config(const std::string& json_text, 
         }
         for (auto it = rules->begin(); it != rules->end(); ++it) {
             const std::string where = "build_rules." + it.key();
-            static const std::set<std::string> rule_names = {"TurboStageMapCoverage", "ChargePipingPressure", "TurboShaftSpeed", "MeanPistonSpeed", "ValveFloat", "CylinderWall"};
+            static const std::set<std::string> rule_names = {"TurboStageMapCoverage", "ChargePipingPressure", "TurboShaftSpeed", "MeanPistonSpeed", "ValveFloat", "CylinderWall", "CoolantTemperature", "OilTemperature"};
             if (rule_names.count(it.key()) == 0 || !it->is_object()) {
-                fail(err, origin, where + ": not a supported rule name (TurboStageMapCoverage, ChargePipingPressure, TurboShaftSpeed, MeanPistonSpeed, ValveFloat, CylinderWall) or not an object");
+                fail(err, origin, where + ": not a supported rule name (TurboStageMapCoverage, ChargePipingPressure, TurboShaftSpeed, MeanPistonSpeed, ValveFloat, CylinderWall, CoolantTemperature, OilTemperature) or not an object");
                 return std::nullopt;
             }
             AdviceKindConfig k;
@@ -437,6 +512,25 @@ std::optional<AdvisorConfig> parse_advisor_config(const std::string& json_text, 
             !detail::get_number(*limits, "max_mean_piston_speed_m_s", c.max_mean_piston_speed_m_s) ||
             !(c.max_mean_piston_speed_m_s > 5.0 && c.max_mean_piston_speed_m_s < 60.0)) {
             fail(err, origin, "part_limits needs near_fraction in (0, 1] and max_mean_piston_speed_m_s in (5, 60)");
+            return std::nullopt;
+        }
+    }
+    if (const auto tt = root.find("thermal_time"); tt != root.end()) {
+        if (!tt->is_object()) {
+            fail(err, origin, "\"thermal_time\" must be an object");
+            return std::nullopt;
+        }
+        for (auto it = tt->begin(); it != tt->end(); ++it) {
+            const std::string& key = it.key();
+            const bool help = key == "source" || (key.size() > 5 && key.compare(key.size() - 5, 5, "_help") == 0);
+            if (!help && key != "critical_within_s") {
+                fail(err, origin, "thermal_time: unknown key \"" + key + "\"");
+                return std::nullopt;
+            }
+        }
+        if (!detail::get_number(*tt, "critical_within_s", c.thermal_critical_within_s) ||
+            !(c.thermal_critical_within_s >= 0.0 && c.thermal_critical_within_s <= 3600.0)) {
+            fail(err, origin, "thermal_time needs critical_within_s in [0, 3600]");
             return std::nullopt;
         }
     }
@@ -831,6 +925,29 @@ std::vector<AdviceItem> build_advice(const AdviceInput& input, const AdvisorConf
                  {{"value", fixed(top_rpm, 0) + " RPM"}, {"limit", fixed(input.valve_float_rpm, 0) + " RPM"}, {"part", input.valve_part}},
                  top_rpm, "valve_springs", input.valve_option);
         }
+        // Coolant and oil temperature of the cooling check (rg::transient_thermal): the time from the warm spawn state to the
+        // limit at constant full power. Never = clean, later than thermal_critical_within_s = a warning, sooner = critical.
+        const auto temp_grade = [&](double time_s, double limit) -> std::optional<pd::LimitSeverity> {
+            if (!std::isfinite(time_s) || !std::isfinite(limit)) return std::nullopt;
+            return time_s <= config.thermal_critical_within_s ? pd::LimitSeverity::Exceeded : pd::LimitSeverity::Limiting;
+        };
+        const auto duration = [](double s) {
+            if (!std::isfinite(s)) return std::string();
+            if (s < 100.0) return fixed(std::max(1.0, std::round(s / 5.0) * 5.0), 0) + " s";
+            if (s < 600.0) return fixed(std::round(s / 10.0) * 10.0, 0) + " s";
+            return fixed(std::round(s / 60.0), 0) + " min";
+        };
+        const std::string ambient = fixed(input.thermal_ambient_c, 0) + " C";
+        const std::string air = fixed(input.coolant_air_speed_m_s * 3.6, 0) + " km/h";
+        const std::string oil_air = fixed(input.oil_air_speed_m_s * 3.6, 0) + " km/h";
+        emit("CoolantTemperature", temp_grade(input.coolant_limit_time_s, input.coolant_limit_c),
+             {{"value", fixed(input.coolant_peak_c, 0) + " C"}, {"time", duration(input.coolant_limit_time_s)}, {"limit", fixed(input.coolant_limit_c, 0) + " C"},
+              {"part", input.radiator_part.empty() ? std::string("radiator") : input.radiator_part}, {"ambient", ambient}, {"air_speed", air}},
+             input.coolant_peak_rpm, "engine_block", input.radiator_option);
+        emit("OilTemperature", temp_grade(input.oil_limit_time_s, input.oil_limit_c),
+             {{"value", fixed(input.oil_peak_c, 0) + " C"}, {"time", duration(input.oil_limit_time_s)}, {"limit", fixed(input.oil_limit_c, 0) + " C"},
+              {"part", input.oil_cooler_part.empty() ? std::string("oil cooling") : input.oil_cooler_part}, {"ambient", ambient}, {"air_speed", oil_air}},
+             input.oil_peak_rpm, "crankshaft", input.oil_cooler_option);
         if (std::isfinite(input.cylinder_wall_mm) && std::isfinite(input.cylinder_wall_safe_mm) &&
             input.cylinder_wall_mm < input.cylinder_wall_safe_mm) {
             // A geometry figure, not a sweep value: thinner than safe is a warning at any rpm.
@@ -1219,6 +1336,7 @@ void LimitAdvisor::run() {
             sweep.input.loader_warnings = std::move(loader_warnings);
             sweep.input.turbo_choke = turbo_choke;
             set_part_limits(sweep.input, material.compiled);
+            if (request.context.cooling_upgrades) set_thermal_limits(sweep.input, desc, request.context.cooling_upgrades->check, material.compiled);
             items = build_advice(sweep.input, config_);
         } catch (const ps::io::GenerationCancelled&) {
             continue; // a newer request (or cancel()) took over

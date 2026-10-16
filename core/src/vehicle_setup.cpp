@@ -263,6 +263,15 @@ struct Files {
     std::map<std::string, std::string> internals;
     // Parts a setup feature adds to the part-mass tree beyond what the vehicle file names (rg/part_mass.h).
     std::vector<PartAttachment> part_extras;
+    // Cooling system upgrades (catalog "cooling_upgrades"): part kind -> grade id; a kind not in the map is stock. The
+    // cooling_system file and the engine thermal file (refresh_cooling) are loaded as docs whose `work` the grades edit; the
+    // EFFECTIVE json (extends resolved) is what the grades read their numbers from.
+    std::map<std::string, std::string> cooling_grades;
+    std::optional<FileDoc> cooling;
+    std::optional<FileDoc> thermal;
+    nlohmann::json cooling_effective, thermal_effective;
+    std::string cooling_blocker;             // "" = the car has a cooling model the options can work on
+    std::optional<CoolingBuild> cooling_build;
     // Drivetrain swap: the driveline right after a drive layout choice (before an axle differential choice); unset =
     // the car's own. The differential options show the axle's kind here as their stock.
     std::optional<DrivelineInfo> layout_info;
@@ -526,6 +535,92 @@ std::string bore_blocker(const Files& files, const SetupContext& ctx, const std:
 }
 
 // File choices are never a filesystem picker: only declared compatible IDs can resolve a path.
+// The engine thermal file the installed engine uses: the vehicle's engine component "thermal" override, else the engine file's
+// default_thermal (followed through its extends chain; a relative path is relative to the file that names it). "" when none.
+std::string engine_thermal_path(const Files& files) {
+    const int idx = component_index(files.vehicle.work, "engine");
+    if (idx >= 0) {
+        std::string ref;
+        if (detail::get_string(files.vehicle.work["powertrain"]["components"][static_cast<std::size_t>(idx)], "thermal", ref) && !ref.empty()) {
+            return resolve_ref(dir_of(files.vehicle.path), ref);
+        }
+    }
+    if (!files.engine) return {};
+    std::string path = files.engine->path;
+    for (int depth = 0; depth < 8 && !path.empty(); ++depth) {
+        json doc;
+        if (!read_doc(path, doc, nullptr)) return {};
+        std::string ref;
+        if (detail::get_string(doc, "default_thermal", ref) && !ref.empty()) return resolve_ref(dir_of(path), ref);
+        std::string parent;
+        if (!detail::get_string(doc, "extends", parent) || parent.empty()) return {};
+        path = resolve_ref(dir_of(path), parent);
+    }
+    return {};
+}
+
+std::string cooling_system_path(const Files& files) {
+    std::string ref;
+    if (!detail::get_string(files.vehicle.work, "cooling_system", ref) || ref.empty()) return {};
+    return resolve_ref(dir_of(files.vehicle.path), ref);
+}
+
+// "" when the car has a cooling model the cooling options can work on, else the reason in the player's words.
+std::string cooling_blocker_of(const Files& files, const SetupContext& ctx) {
+    if (!ctx.cooling_upgrades) return "No cooling upgrades are available.";
+    if (cooling_system_path(files).empty()) {
+        return files.swapped ? "The installed engine has no thermal data, so the car has no cooling model to upgrade."
+                             : "This car has no cooling system model (its vehicle file names no cooling_system), so there is nothing to upgrade.";
+    }
+    if (engine_thermal_path(files).empty()) return "The installed engine has no thermal data, so the car has no cooling model to upgrade.";
+    return {};
+}
+
+// Loads the cooling_system and engine thermal files of the car as it stands (after any swap), applies the chosen grades to the
+// docs' `work`, rebuilds the cooling parts of the part-mass tree. `options`: part kind -> the option that swaps it.
+// Returns "" or the reason a chosen grade cannot be applied; files.cooling_blocker says whether the options are offered at all.
+std::string refresh_cooling(Files& files, const SetupContext& ctx, const std::map<std::string, std::string>& options = {}) {
+    files.part_extras.erase(std::remove_if(files.part_extras.begin(), files.part_extras.end(),
+                                           [](const PartAttachment& a) { return a.parent_id == "engine.cooling"; }),
+                            files.part_extras.end());
+    files.cooling.reset();
+    files.thermal.reset();
+    files.cooling_build.reset();
+    files.cooling_blocker = cooling_blocker_of(files, ctx);
+    if (!files.cooling_blocker.empty()) return files.cooling_grades.empty() ? std::string() : files.cooling_blocker;
+    std::string err;
+    FileDoc cool, therm;
+    cool.path = cooling_system_path(files);
+    therm.path = engine_thermal_path(files);
+    const auto cool_eff = load_effective_json(cool.path, &err);
+    const auto therm_eff = cool_eff ? load_effective_json(therm.path, &err) : std::nullopt;
+    if (!cool_eff || !therm_eff || !read_doc(cool.path, cool.base, &err) || !read_doc(therm.path, therm.base, &err)) {
+        files.cooling_blocker = "The cooling files cannot be read: " + err;
+        return files.cooling_grades.empty() ? std::string() : files.cooling_blocker;
+    }
+    cool.work = cool.base;
+    therm.work = therm.base;
+    double hint = 0.0;
+    if (files.engine) {
+        if (const auto facts = read_engine_facts(files.engine->path, nullptr)) hint = facts->displacement_l;
+    }
+    CoolingEdit edit;
+    auto build = build_cooling(*ctx.cooling_upgrades, files.cooling_grades, options, *cool_eff, *therm_eff, hint, &edit, &err);
+    if (!build) {
+        files.cooling_blocker = err;
+        return files.cooling_grades.empty() ? std::string() : err;
+    }
+    files.cooling_effective = *cool_eff;
+    files.thermal_effective = *therm_eff;
+    if (!edit.cooling.empty()) cool.work.merge_patch(edit.cooling);
+    if (!edit.thermal.empty()) therm.work.merge_patch(edit.thermal);
+    files.cooling = std::move(cool);
+    files.thermal = std::move(therm);
+    for (PartAttachment& a : cooling_parts(*build)) files.part_extras.push_back(std::move(a));
+    files.cooling_build = std::move(*build);
+    return {};
+}
+
 bool file_choice_fits(Files& files, const SetupOptionDef& def, const CatalogEntry& entry, const SetupContext& ctx) {
     if (!entry_offers(entry, def.id)) return false;
     if (is_driveline_catalog(def)) return driveline_fit_error(files, def, ctx).empty();
@@ -539,6 +634,8 @@ bool file_choice_fits(Files& files, const SetupOptionDef& def, const CatalogEntr
     } else if (def.catalog == "engine_internals") {
         if (def.internal == kCylinderBoreKind) return internals_blocker(files, ctx).empty() && ctx.engine_internals->bore.has_value();
         return internals_blocker(files, ctx).empty() && ctx.engine_internals->find(def.internal) != nullptr;
+    } else if (def.catalog == "cooling_upgrades") {
+        return cooling_blocker_of(files, ctx).empty() && ctx.cooling_upgrades->find(def.cooling_part) != nullptr;
     } else if (def.catalog == "charge_piping") {
         // Offered wherever a kit can go (the kit is chosen in the same visit); without a kit it changes nothing.
         return ctx.turbo_kits != nullptr && (files.kit_spec.has_value() || turbo_kit_blocker(files, ctx).empty());
@@ -731,6 +828,12 @@ std::string install_catalog_part(Files& files, const SetupOptionDef& def, const 
         refresh_internals_parts(files, ctx);
         return {};
     }
+    if (def.catalog == "cooling_upgrades") {
+        const CoolingPart* part = ctx.cooling_upgrades->find(def.cooling_part);
+        if (part == nullptr || part->find(id) == nullptr) return def.id + ": \"" + id + "\" is not a grade of the " + def.cooling_part;
+        files.cooling_grades[def.cooling_part] = id;
+        return {};
+    }
     if (def.catalog == "charge_piping") {
         if (ctx.turbo_kits->find_piping(id) == nullptr) return def.id + ": \"" + id + "\" is not a charge piping material";
         files.kit_piping = id;
@@ -753,7 +856,7 @@ std::string install_catalog_part(Files& files, const SetupOptionDef& def, const 
 std::string install_file_part(Files& files, const SetupOptionDef& def, const CatalogEntry& entry, const SetupContext& ctx,
                               const SetupValue& value) {
     if (!std::holds_alternative<std::string>(value)) return def.id + ": needs a component ID";
-    if ((def.catalog == "turbo_kits" || def.catalog == "charge_piping" || def.catalog == "engine_internals") &&
+    if ((def.catalog == "turbo_kits" || def.catalog == "charge_piping" || def.catalog == "engine_internals" || def.catalog == "cooling_upgrades") &&
         std::get<std::string>(value) == "stock") return {}; // nothing to check
     if (is_driveline_catalog(def) && entry_offers(entry, def.id)) {
         if (std::get<std::string>(value) == "stock") return {}; // keep the driveline as it is
@@ -763,6 +866,7 @@ std::string install_file_part(Files& files, const SetupOptionDef& def, const Cat
     if (!file_choice_fits(files, def, entry, ctx)) {
         if (def.catalog == "turbo_kits" && entry_offers(entry, def.id)) return def.id + ": " + turbo_kit_blocker(files, ctx);
         if (def.catalog == "engine_internals" && entry_offers(entry, def.id)) return def.id + ": " + internals_blocker(files, ctx);
+        if (def.catalog == "cooling_upgrades" && entry_offers(entry, def.id)) return def.id + ": " + cooling_blocker_of(files, ctx);
         return def.id + ": not compatible with this vehicle";
     }
     const auto& id = std::get<std::string>(value);
@@ -1513,8 +1617,15 @@ std::optional<SetupOptionTable> parse_setup_options(const std::string& json_text
             detail::get_string(o, "catalog", d.catalog);
             if (!d.catalog.empty() && d.catalog != "engines" && d.catalog != "fuels" && d.catalog != "gearboxes" &&
                 d.catalog != "drive_layouts" && d.catalog != "differentials" && d.catalog != "turbo_kits" && d.catalog != "charge_piping" &&
-                d.catalog != "engine_internals") {
-                return bad(where + ": \"catalog\" must be \"engines\", \"fuels\", \"gearboxes\", \"drive_layouts\", \"differentials\", \"turbo_kits\", \"charge_piping\" or \"engine_internals\"");
+                d.catalog != "engine_internals" && d.catalog != "cooling_upgrades") {
+                return bad(where + ": \"catalog\" must be \"engines\", \"fuels\", \"gearboxes\", \"drive_layouts\", \"differentials\", \"turbo_kits\", \"charge_piping\", \"engine_internals\" or \"cooling_upgrades\"");
+            }
+            detail::get_string(o, "cooling_part", d.cooling_part);
+            if ((d.catalog == "cooling_upgrades") != !d.cooling_part.empty()) {
+                return bad(where + ": \"cooling_part\" (the cooling part kind) goes with the cooling_upgrades catalog, and only there");
+            }
+            if (d.catalog == "cooling_upgrades" && (d.file != "vehicle" || d.part_format != "rg.cooling_upgrades/1")) {
+                return bad(where + ": a cooling option names the vehicle file with rg.cooling_upgrades/1 parts");
             }
             detail::get_string(o, "internal", d.internal);
             if ((d.catalog == "engine_internals") != !d.internal.empty()) {
@@ -1825,6 +1936,25 @@ std::vector<SetupPart> parts_of(const SetupOptionDef& def, const SetupContext& c
         }
         return out;
     }
+    if (def.catalog == "cooling_upgrades") {
+        if (!ctx.cooling_upgrades || !files.cooling_build) return out;
+        const CoolingPart* part = ctx.cooling_upgrades->find(def.cooling_part);
+        if (part == nullptr) return out;
+        double hint = 0.0;
+        if (files.engine) {
+            if (const auto facts = read_engine_facts(files.engine->path, nullptr)) hint = facts->displacement_l;
+        }
+        for (const CoolingGrade& g : part->grades) {
+            if (g.id == "stock") continue; // the stock card (build_setup_model)
+            SetupPart p;
+            p.id = g.id;
+            p.label = g.label;
+            p.path = "cooling_upgrades:" + part->kind + ":" + g.id; // the cooling files are patched on install
+            p.detail = cooling_grade_detail(*ctx.cooling_upgrades, part->kind, g.id, files.cooling_effective, files.thermal_effective, hint);
+            out.push_back(std::move(p));
+        }
+        return out;
+    }
     if (def.catalog == "charge_piping") {
         if (!ctx.turbo_kits) return out;
         for (const ChargePipingSpec& m : ctx.turbo_kits->piping) {
@@ -1985,6 +2115,13 @@ SetupModel build_setup_model(const CatalogEntry& entry, const SetupOptionTable& 
     }
     if (!load_turbo(files, &model.error)) return model;
     refresh_internals_parts(files, ctx); // after the swap: the limits and masses of the INSTALLED engine
+    {
+        std::map<std::string, std::string> cooling_options;
+        for (const SetupOptionDef& def : table.options) {
+            if (def.catalog == "cooling_upgrades" && entry_offers(entry, def.id)) cooling_options.emplace(def.cooling_part, def.id);
+        }
+        refresh_cooling(files, ctx, cooling_options); // the installed engine's thermal file and the car's cooling_system
+    }
     model.parts = part_tree_of(entry, ctx, files);
     model.driveline = detail::describe_driveline_json(files.vehicle.work);
     for (const SetupOptionDef& def : table.options) {
@@ -2111,6 +2248,17 @@ SetupModel build_setup_model(const CatalogEntry& entry, const SetupOptionTable& 
                         }
                     }
                     if (!v.available && entry_offers(entry, def.id)) v.unavailable_reason = internals_blocker(files, ctx);
+                }
+                if (def.catalog == "cooling_upgrades") {
+                    const CoolingPart* part = ctx.cooling_upgrades ? ctx.cooling_upgrades->find(def.cooling_part) : nullptr;
+                    if (part != nullptr) {
+                        v.parts.front().label = part->grades.front().label;
+                        v.parts.front().path = "cooling_upgrades:" + part->kind + ":stock";
+                        v.parts.front().detail = part->grades.front().source;
+                    }
+                    if (!v.available && entry_offers(entry, def.id)) {
+                        v.unavailable_reason = files.cooling_blocker.empty() ? std::string("No cooling upgrades are available.") : files.cooling_blocker;
+                    }
                 }
                 if (def.catalog == "charge_piping" && ctx.turbo_kits) {
                     const ChargePipingSpec* m = ctx.turbo_kits->find_piping(ctx.turbo_kits->default_piping);
@@ -2556,6 +2704,25 @@ CompiledSetup compile_setup_internal(const CatalogEntry& entry, const SetupOptio
             cycle["pressure_sampling"] = std::move(sampling);
         }
     }
+    std::map<std::string, std::string> cooling_options;
+    for (const SetupOptionDef& def : table.options) {
+        if (def.catalog == "cooling_upgrades" && entry_offers(entry, def.id)) cooling_options.emplace(def.cooling_part, def.id);
+    }
+    if (const std::string why = refresh_cooling(files, ctx, cooling_options); !why.empty()) {
+        out.error = "cooling: " + why;
+        return out;
+    }
+    if (files.thermal && make_merge_patch(files.thermal->base, files.thermal->work) != json::object()) {
+        // An engine thermal edit goes through the vehicle's engine component "thermal" override (physics_sim: path relative to
+        // the vehicle file, wins over the engine file's default_thermal, which an extending user engine does not even carry).
+        const int idx = component_index(files.vehicle.work, "engine");
+        if (idx < 0) {
+            out.error = "cooling: the car has no engine component to carry the thermal file";
+            return out;
+        }
+        files.vehicle.work["powertrain"]["components"][static_cast<std::size_t>(idx)]["thermal"] = files.thermal->path;
+        files.derived_subtrees.push_back("/powertrain/components");
+    }
     auto finish_file = [&](const char* kind, const FileDoc& f, bool is_vehicle) -> bool {
         const json patch = make_merge_patch(f.base, f.work);
         json merged = f.base;
@@ -2614,6 +2781,16 @@ CompiledSetup compile_setup_internal(const CatalogEntry& entry, const SetupOptio
         const json patch = make_merge_patch(f.base, f.work);
         if (!(patch.is_object() && patch.empty())) out.patches[basename_key("electronics", f)] = patch_text(patch);
     }
+    // Cooling system / engine thermal edits of the cooling_upgrades options (trusted code: the grades are the whitelist).
+    if (files.cooling) {
+        const json patch = make_merge_patch(files.cooling->base, files.cooling->work);
+        if (!(patch.is_object() && patch.empty())) out.patches[basename_key("cooling", *files.cooling)] = patch_text(patch);
+    }
+    if (files.thermal) {
+        const json patch = make_merge_patch(files.thermal->base, files.thermal->work);
+        if (!(patch.is_object() && patch.empty())) out.patches[basename_key("thermal", *files.thermal)] = patch_text(patch);
+    }
+    out.cooling = files.cooling_build;
     {
         // Engine internals for the installed engine (after any swap), each part naming the option that swaps it.
         std::map<std::string, std::string> internal_options;
@@ -2726,6 +2903,9 @@ MaterialisedSetup materialise_setup(const CatalogEntry& entry, const SetupOption
         moved[f.path] = path;
         return true;
     };
+    // The cooling_system and engine thermal copies come first: the engine and vehicle files name them (moved map).
+    if (files.cooling && !write_aux("cooling", *files.cooling)) return out;
+    if (files.thermal && !write_aux("thermal", *files.thermal)) return out;
     if (files.turbo && !write_aux("turbo", *files.turbo)) return out;
     if (files.gearbox && !write_aux("gearbox", *files.gearbox)) return out;
     if (files.engine && !write_aux("engine", *files.engine)) return out;
