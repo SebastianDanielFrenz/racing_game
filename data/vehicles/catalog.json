@@ -12,10 +12,11 @@
       "vehicle": "data/vehicles/car_hyper.json",
       "model": "external/physics_sim/data/models/car_hyper/car_hyper.glb",
       "engine_bay": "mid",
+      "interior": {"seat_driver": "seat_carbon_bucket", "seat_passenger": "seat_carbon_bucket", "audio": "audio_basic", "door_trim": "door_trim_hyper", "dashboard": "dash_hyper", "sound_deadening": "sound_deadening_hyper", "carpets": "carpets_hyper", "fasteners": "fasteners_small"},
       "chassis": {
-        "mass_kg": 1500.0,
-        "body_mass_kg": 918.951575,
-        "body_mass_source": "[AS] the body (shell, interior, glass, wiring, seats ...) of the part-mass tree (rg/part_mass.h): chosen so that the stock part tree (engine and gearbox catalogue figures, the vehicle file's wheel masses, data/vehicles/part_masses.json for the rest) sums to the previous chassis mass of 1500 kg, so the stock car keeps its mass.",
+        "mass_kg": 1220.3,
+        "body_mass_kg": 600.0,
+        "body_mass_source": "[AS] bare shell (owner on PR #22: interior ripped out, no engine assembly, no drivetrain, no wheels; the seats, trim, carpets, audio, spare wheel, bonnet and fasteners are the catalogue's interior parts, the engine, gearbox, driveline, suspension, brakes, steering, wheels, cooling and fuel system are their own parts): a carbon-tub mid-engined hypercar - tub and roll structure 150 kg, front and rear subframes and crash structures 110, carbon body panels 70, glass 25, active aero (wing, splitter, diffuser, actuators) 45, wiring loom, battery and control units 55, exhaust with silencers 35, air conditioning 20, the extra radiators and ducting of a 1 MW car beyond the cooling-system part 50, other fixed parts 40 = 600 kg (estimated).",
         "half_extents": [
           2.0,
           0.4,
@@ -69,10 +70,11 @@
       "vehicle": "data/vehicles/car_sedan.json",
       "model": "external/physics_sim/data/models/car_sedan/car_sedan.glb",
       "engine_bay": "front",
+      "interior": {"seat_driver": "seat_comfort", "seat_passenger": "seat_comfort", "rear_seats": "rear_bench", "audio": "audio_system", "door_trim": "door_trim_4door", "dashboard": "dash_full", "sound_deadening": "sound_deadening_sedan", "carpets": "carpets", "spare_wheel": "spare_wheel_compact", "fasteners": "fasteners_steel", "hood": "hood_steel"},
       "chassis": {
-        "mass_kg": 1500.0,
-        "body_mass_kg": 1039.60126,
-        "body_mass_source": "[AS] the body (shell, interior, glass, wiring, seats ...) of the part-mass tree (rg/part_mass.h): chosen so that the stock part tree (engine and gearbox catalogue figures, the vehicle file's wheel masses, data/vehicles/part_masses.json for the rest) sums to the previous chassis mass of 1500 kg, so the stock car keeps its mass.",
+        "mass_kg": 1329.4,
+        "body_mass_kg": 680.0,
+        "body_mass_source": "[AS] bare shell (owner on PR #22: interior ripped out, no engine assembly, no drivetrain, no wheels; the seats, trim, carpets, audio, spare wheel, bonnet and fasteners are the catalogue's interior parts, the engine, gearbox, driveline, suspension, brakes, steering, wheels, cooling and fuel system are their own parts): a steel monocoque four-door saloon of about 4.6 m - body in white with front and rear subframes 360 kg, doors and boot lid 110, glass 35, bumpers and lights 40, wiring loom, battery and control units 50, exhaust 32, heater and air conditioning 25, pedal box, washer system, jack points and other fixed parts 28 = 680 kg (recalled ranges for a mid-size saloon, nothing cited).",
         "half_extents": [
           2.0,
           0.4,
@@ -119,10 +121,11 @@
       "vehicle": "data/vehicles/car_sedan_rwd.json",
       "model": "external/physics_sim/data/models/car_sedan/car_sedan.glb",
       "engine_bay": "front",
+      "interior": {"seat_driver": "seat_manual", "seat_passenger": "seat_manual", "rear_seats": "rear_bench", "audio": "audio_system", "door_trim": "door_trim_4door", "dashboard": "dash_full", "sound_deadening": "sound_deadening_sedan", "carpets": "carpets", "spare_wheel": "spare_wheel_compact", "fasteners": "fasteners_steel", "hood": "hood_steel"},
       "chassis": {
-        "mass_kg": 1500.0,
-        "body_mass_kg": 1087.60126,
-        "body_mass_source": "[AS] the body (shell, interior, glass, wiring, seats ...) of the part-mass tree (rg/part_mass.h): chosen so that the stock part tree (engine and gearbox catalogue figures, the vehicle file's wheel masses, data/vehicles/part_masses.json for the rest) sums to the previous chassis mass of 1500 kg, so the stock car keeps its mass.",
+        "mass_kg": 1267.4,
+        "body_mass_kg": 680.0,
+        "body_mass_source": "[AS] bare shell (owner on PR #22: interior ripped out, no engine assembly, no drivetrain, no wheels; the seats, trim, carpets, audio, spare wheel, bonnet and fasteners are the catalogue's interior parts, the engine, gearbox, driveline, suspension, brakes, steering, wheels, cooling and fuel system are their own parts): a steel monocoque four-door saloon of about 4.6 m - body in white with front and rear subframes 360 kg, doors and boot lid 110, glass 35, bumpers and lights 40, wiring loom, battery and control units 50, exhaust 32, heater and air conditioning 25, pedal box, washer system, jack points and other fixed parts 28 = 680 kg (recalled ranges for a mid-size saloon, nothing cited).",
         "half_extents": [
           2.0,
           0.4,
@@ -169,10 +172,11 @@
       "vehicle": "data/vehicles/car_sedan_awd.json",
       "model": "external/physics_sim/data/models/car_sedan/car_sedan.glb",
       "engine_bay": "front",
+      "interior": {"seat_driver": "seat_manual", "seat_passenger": "seat_manual", "rear_seats": "rear_bench", "audio": "audio_system", "door_trim": "door_trim_4door", "dashboard": "dash_full", "sound_deadening": "sound_deadening_sedan", "carpets": "carpets", "spare_wheel": "spare_wheel_compact", "fasteners": "fasteners_steel", "hood": "hood_steel"},
       "chassis": {
-        "mass_kg": 1500.0,
-        "body_mass_kg": 1033.60126,
-        "body_mass_source": "[AS] the body (shell, interior, glass, wiring, seats ...) of the part-mass tree (rg/part_mass.h): chosen so that the stock part tree (engine and gearbox catalogue figures, the vehicle file's wheel masses, data/vehicles/part_masses.json for the rest) sums to the previous chassis mass of 1500 kg, so the stock car keeps its mass.",
+        "mass_kg": 1321.4,
+        "body_mass_kg": 680.0,
+        "body_mass_source": "[AS] bare shell (owner on PR #22: interior ripped out, no engine assembly, no drivetrain, no wheels; the seats, trim, carpets, audio, spare wheel, bonnet and fasteners are the catalogue's interior parts, the engine, gearbox, driveline, suspension, brakes, steering, wheels, cooling and fuel system are their own parts): a steel monocoque four-door saloon of about 4.6 m - body in white with front and rear subframes 360 kg, doors and boot lid 110, glass 35, bumpers and lights 40, wiring loom, battery and control units 50, exhaust 32, heater and air conditioning 25, pedal box, washer system, jack points and other fixed parts 28 = 680 kg (recalled ranges for a mid-size saloon, nothing cited).",
         "half_extents": [
           2.0,
           0.4,
@@ -217,10 +221,11 @@
       "vehicle": "data/vehicles/car_sedan_gen_n2o.json",
       "model": "external/physics_sim/data/models/car_sedan/car_sedan.glb",
       "engine_bay": "front",
+      "interior": {"seat_driver": "seat_manual", "seat_passenger": "seat_manual", "rear_seats": "rear_bench", "audio": "audio_system", "door_trim": "door_trim_4door", "dashboard": "dash_full", "sound_deadening": "sound_deadening_sedan", "carpets": "carpets", "spare_wheel": "spare_wheel_compact", "fasteners": "fasteners_steel", "hood": "hood_steel"},
       "chassis": {
-        "mass_kg": 1500.0,
-        "body_mass_kg": 1069.56526,
-        "body_mass_source": "[AS] the body (shell, interior, glass, wiring, seats ...) of the part-mass tree (rg/part_mass.h): chosen so that the stock part tree (engine and gearbox catalogue figures, the vehicle file's wheel masses, data/vehicles/part_masses.json for the rest) sums to the previous chassis mass of 1500 kg, so the stock car keeps its mass.",
+        "mass_kg": 1285.4,
+        "body_mass_kg": 680.0,
+        "body_mass_source": "[AS] bare shell (owner on PR #22: interior ripped out, no engine assembly, no drivetrain, no wheels; the seats, trim, carpets, audio, spare wheel, bonnet and fasteners are the catalogue's interior parts, the engine, gearbox, driveline, suspension, brakes, steering, wheels, cooling and fuel system are their own parts): a steel monocoque four-door saloon of about 4.6 m - body in white with front and rear subframes 360 kg, doors and boot lid 110, glass 35, bumpers and lights 40, wiring loom, battery and control units 50, exhaust 32, heater and air conditioning 25, pedal box, washer system, jack points and other fixed parts 28 = 680 kg (recalled ranges for a mid-size saloon, nothing cited).",
         "half_extents": [
           2.0,
           0.4,
@@ -265,10 +270,11 @@
       "vehicle": "data/vehicles/car_hyper_n2o.json",
       "model": "external/physics_sim/data/models/car_hyper/car_hyper.glb",
       "engine_bay": "mid",
+      "interior": {"seat_driver": "seat_carbon_bucket", "seat_passenger": "seat_carbon_bucket", "audio": "audio_basic", "door_trim": "door_trim_hyper", "dashboard": "dash_hyper", "sound_deadening": "sound_deadening_hyper", "carpets": "carpets_hyper", "fasteners": "fasteners_small"},
       "chassis": {
-        "mass_kg": 1500.0,
-        "body_mass_kg": 906.647575,
-        "body_mass_source": "[AS] the body (shell, interior, glass, wiring, seats ...) of the part-mass tree (rg/part_mass.h): chosen so that the stock part tree (engine and gearbox catalogue figures, the vehicle file's wheel masses, data/vehicles/part_masses.json for the rest) sums to the previous chassis mass of 1500 kg, so the stock car keeps its mass.",
+        "mass_kg": 1232.6,
+        "body_mass_kg": 600.0,
+        "body_mass_source": "[AS] bare shell (owner on PR #22: interior ripped out, no engine assembly, no drivetrain, no wheels; the seats, trim, carpets, audio, spare wheel, bonnet and fasteners are the catalogue's interior parts, the engine, gearbox, driveline, suspension, brakes, steering, wheels, cooling and fuel system are their own parts): a carbon-tub mid-engined hypercar - tub and roll structure 150 kg, front and rear subframes and crash structures 110, carbon body panels 70, glass 25, active aero (wing, splitter, diffuser, actuators) 45, wiring loom, battery and control units 55, exhaust with silencers 35, air conditioning 20, the extra radiators and ducting of a 1 MW car beyond the cooling-system part 50, other fixed parts 40 = 600 kg (estimated).",
         "half_extents": [
           2.0,
           0.4,
@@ -329,10 +335,11 @@
         "crank_axis": "y",
         "source": "data/models/pico/pico.rig.json engine_bay.box_m (620 x 900 x 560 mm under the closed hood), less 330 mm of its width for the transaxle at the left end of a transverse engine [AS]: the engine itself has 570 mm along the crank"
       },
+      "interior": {"seat_driver": "seat_manual", "seat_passenger": "seat_manual", "rear_seats": "rear_bench_small", "audio": "audio_basic", "door_trim": "door_trim_4door", "dashboard": "dash_compact", "sound_deadening": "sound_deadening_small", "carpets": "carpets_small", "spare_wheel": "spare_wheel_compact", "fasteners": "fasteners_small", "hood": "hood_steel_small"},
       "chassis": {
-        "mass_kg": 852.0,
-        "body_mass_kg": 518.8716,
-        "body_mass_source": "[AS] the body (shell, interior, glass, wiring, seats ...) of the part-mass tree (rg/part_mass.h): chosen so that the stock part tree (engine and gearbox catalogue figures, the vehicle file's wheel masses, data/vehicles/part_masses.json for the rest) sums to the previous chassis mass of 852 kg, so the stock car keeps its mass.",
+        "mass_kg": 888.6,
+        "body_mass_kg": 425.0,
+        "body_mass_source": "[AS] bare shell (owner on PR #22: interior ripped out, no engine assembly, no drivetrain, no wheels; the seats, trim, carpets, audio, spare wheel, bonnet and fasteners are the catalogue's interior parts, the engine, gearbox, driveline, suspension, brakes, steering, wheels, cooling and fuel system are their own parts): a five-door steel city car of about 3.6 m - body in white with subframes 230 kg, doors and tailgate 70, glass 22, bumpers and lights 25, wiring loom, battery and control units 30, exhaust 18, heater 15, other fixed parts 15 = 425 kg (estimated).",
         "half_extents": [
           1.6,
           0.5,
@@ -388,10 +395,11 @@
         "crank_axis": "x",
         "source": "data/models/ventura_gt/ventura_gt.rig.json engine_bay.box_m: firewall (x 0.44) to radiator (x 1.62) less the fan, between the inner fenders (|y| 0.45), crossmember (z 0.14) to the flat hood (720 mm); the gearbox sits behind the firewall in the tunnel"
       },
+      "interior": {"seat_driver": "seat_manual", "seat_passenger": "seat_manual", "rear_seats": "rear_bench_small", "audio": "audio_basic", "door_trim": "door_trim_2door", "dashboard": "dash_classic", "sound_deadening": "sound_deadening_classic", "carpets": "carpets", "spare_wheel": "spare_wheel_full", "fasteners": "fasteners_steel", "hood": "hood_steel_long"},
       "chassis": {
-        "mass_kg": 1282.0,
-        "body_mass_kg": 756.742,
-        "body_mass_source": "[AS] the body (shell, interior, glass, wiring, seats ...) of the part-mass tree (rg/part_mass.h): chosen so that the stock part tree (engine and gearbox catalogue figures, the vehicle file's wheel masses, data/vehicles/part_masses.json for the rest) sums to the previous chassis mass of 1282 kg, so the stock car keeps its mass.",
+        "mass_kg": 1345.8,
+        "body_mass_kg": 665.0,
+        "body_mass_source": "[AS] bare shell (owner on PR #22: interior ripped out, no engine assembly, no drivetrain, no wheels; the seats, trim, carpets, audio, spare wheel, bonnet and fasteners are the catalogue's interior parts, the engine, gearbox, driveline, suspension, brakes, steering, wheels, cooling and fuel system are their own parts): a 1970s steel two-door GT coupe of about 4.7 m - body in white with subframe 380 kg, long doors and boot lid 105, glass 35, chrome bumpers and lights 45, wiring and battery 30, twin exhaust 35, heater 15, other fixed parts 20 = 665 kg (estimated).",
         "half_extents": [
           2.1,
           0.5,
@@ -448,10 +456,11 @@
         "crank_axis": "x",
         "source": "data/models/runabout_t/runabout_t.rig.json engine_bay.box_m: under the bonnet between the dash (x 0.55) and the radiator (x 1.25), above the frame rails; the gearbox sits behind the dash"
       },
+      "interior": {"seat_driver": "seat_vintage", "seat_passenger": "seat_vintage", "rear_seats": "rear_bench_vintage", "dashboard": "dash_vintage", "carpets": "carpets_small", "spare_wheel": "spare_wheel_vintage", "fasteners": "fasteners_small", "hood": "hood_steel_vintage"},
       "chassis": {
-        "mass_kg": 644.0,
-        "body_mass_kg": 220.6028,
-        "body_mass_source": "[AS] the body (shell, interior, glass, wiring, seats ...) of the part-mass tree (rg/part_mass.h): chosen so that the stock part tree (engine and gearbox catalogue figures, the vehicle file's wheel masses, data/vehicles/part_masses.json for the rest) sums to the previous chassis mass of 644 kg, so the stock car keeps its mass.",
+        "mass_kg": 709.4,
+        "body_mass_kg": 215.0,
+        "body_mass_source": "[AS] bare shell (owner on PR #22: interior ripped out, no engine assembly, no drivetrain, no wheels; the seats, trim, carpets, audio, spare wheel, bonnet and fasteners are the catalogue's interior parts, the engine, gearbox, driveline, suspension, brakes, steering, wheels, cooling and fuel system are their own parts): a 1910s open tourer - steel ladder frame 90 kg, wooden-framed body tub 60, mudguards and running boards 25, windscreen 10, lamps 8, wiring 3, exhaust 8, other fixed parts 11 = 215 kg (estimated); the folding top is visual only and not counted.",
         "half_extents": [
           1.5,
           0.4,
@@ -466,7 +475,7 @@
       },
       "setup": {
         "options_note": "every option but brake_bias: the car has rear brakes only (no front corner to bias towards)",
-        "options": ["final_drive", "gear_ratios", "clutch_capacity", "brake_force", "spring_front", "spring_rear", "damper_front", "damper_rear", "arb_front", "arb_rear", "tyre_front", "tyre_rear", "assist_auto_clutch", "assist_auto_blip", "assist_auto_shift", "assist_unit", "paint", "rim", "folding_top", "engine_rev_limit", "engine_throttle_response", "engine_install", "fuel", "gearbox_install", "drive_layout", "diff_front", "diff_rear", "turbo_install", "turbo_install_n2o", "turbo_boost_target", "nitrous_install_hyper", "nitrous_install_sedan"],
+        "options": ["final_drive", "gear_ratios", "clutch_capacity", "brake_force", "spring_front", "spring_rear", "damper_front", "damper_rear", "arb_front", "arb_rear", "tyre_front", "tyre_rear", "assist_auto_clutch", "assist_auto_blip", "assist_auto_shift", "assist_unit", "paint", "rim", "folding_top", "engine_rev_limit", "engine_throttle_response", "engine_install", "fuel", "gearbox_install", "drive_layout", "diff_front", "diff_rear", "turbo_install", "turbo_install_n2o", "turbo_boost_target", "nitrous_install_hyper", "nitrous_install_sedan", "trim_driver_seat", "trim_passenger_seat", "trim_rear_seats", "trim_audio", "trim_door_trim", "trim_dashboard", "trim_sound_deadening", "trim_carpets", "trim_spare_wheel", "trim_fasteners", "trim_hood"],
         "tyre_fitment": {
           "front": {
             "rims_in": [
@@ -500,10 +509,11 @@
       "vehicle": "data/vehicles/car_toyama_xr.json",
       "model": "data/models/imported/toyama_xr/toyama_xr.glb",
       "engine_bay": "front",
+      "interior": {"seat_driver": "seat_comfort", "seat_passenger": "seat_comfort", "rear_seats": "rear_bench", "audio": "audio_system", "door_trim": "door_trim_4door", "dashboard": "dash_full", "sound_deadening": "sound_deadening_sedan", "carpets": "carpets", "spare_wheel": "spare_wheel_compact", "fasteners": "fasteners_steel", "hood": "hood_steel"},
       "chassis": {
-        "mass_kg": 1500.0,
-        "body_mass_kg": 1039.60126,
-        "body_mass_source": "[AS] the body (shell, interior, glass, wiring, seats ...) of the part-mass tree (rg/part_mass.h): chosen so that the stock part tree (engine and gearbox catalogue figures, the vehicle file's wheel masses, data/vehicles/part_masses.json for the rest) sums to the previous chassis mass of 1500 kg, so the stock car keeps its mass.",
+        "mass_kg": 1329.4,
+        "body_mass_kg": 680.0,
+        "body_mass_source": "[AS] bare shell (owner on PR #22: interior ripped out, no engine assembly, no drivetrain, no wheels; the seats, trim, carpets, audio, spare wheel, bonnet and fasteners are the catalogue's interior parts, the engine, gearbox, driveline, suspension, brakes, steering, wheels, cooling and fuel system are their own parts): a steel monocoque four-door saloon of about 4.6 m - body in white with front and rear subframes 360 kg, doors and boot lid 110, glass 35, bumpers and lights 40, wiring loom, battery and control units 50, exhaust 32, heater and air conditioning 25, pedal box, washer system, jack points and other fixed parts 28 = 680 kg (recalled ranges for a mid-size saloon, nothing cited).",
         "half_extents": [
           2.0,
           0.4,
@@ -550,10 +560,11 @@
       "vehicle": "data/vehicles/car_generic_suv.json",
       "model": "data/models/imported/generic_suv/generic_suv.glb",
       "engine_bay": "front",
+      "interior": {"seat_driver": "seat_comfort", "seat_passenger": "seat_comfort", "rear_seats": "rear_bench", "audio": "audio_system", "door_trim": "door_trim_4door", "dashboard": "dash_full", "sound_deadening": "sound_deadening_sedan", "carpets": "carpets", "spare_wheel": "spare_wheel_compact", "fasteners": "fasteners_steel", "hood": "hood_steel"},
       "chassis": {
-        "mass_kg": 1500.0,
-        "body_mass_kg": 1033.60126,
-        "body_mass_source": "[AS] the body (shell, interior, glass, wiring, seats ...) of the part-mass tree (rg/part_mass.h): chosen so that the stock part tree (engine and gearbox catalogue figures, the vehicle file's wheel masses, data/vehicles/part_masses.json for the rest) sums to the previous chassis mass of 1500 kg, so the stock car keeps its mass.",
+        "mass_kg": 1475.4,
+        "body_mass_kg": 820.0,
+        "body_mass_source": "[AS] bare shell (owner on PR #22: interior ripped out, no engine assembly, no drivetrain, no wheels; the seats, trim, carpets, audio, spare wheel, bonnet and fasteners are the catalogue's interior parts, the engine, gearbox, driveline, suspension, brakes, steering, wheels, cooling and fuel system are their own parts): a steel monocoque SUV of about 4.7 m with a high roof - body in white with subframes 430 kg, doors and tailgate 135, glass 45, bumpers and lights 50, wiring loom, battery and control units 55, exhaust 38, heater and air conditioning 30, roof rails, tow bar and other fixed parts 37 = 820 kg (recalled ranges, nothing cited).",
         "half_extents": [
           2.0,
           0.4,
@@ -598,10 +609,11 @@
       "vehicle": "data/vehicles/car_phoenix_455.json",
       "model": "data/models/imported/phoenix_455/phoenix_455.glb",
       "engine_bay": "front",
+      "interior": {"seat_driver": "seat_manual", "seat_passenger": "seat_manual", "rear_seats": "rear_bench_small", "audio": "audio_basic", "door_trim": "door_trim_2door", "dashboard": "dash_classic", "sound_deadening": "sound_deadening_classic", "carpets": "carpets", "spare_wheel": "spare_wheel_full", "fasteners": "fasteners_steel", "hood": "hood_steel_long"},
       "chassis": {
-        "mass_kg": 1282.0,
-        "body_mass_kg": 756.742,
-        "body_mass_source": "[AS] the body (shell, interior, glass, wiring, seats ...) of the part-mass tree (rg/part_mass.h): chosen so that the stock part tree (engine and gearbox catalogue figures, the vehicle file's wheel masses, data/vehicles/part_masses.json for the rest) sums to the previous chassis mass of 1282 kg, so the stock car keeps its mass.",
+        "mass_kg": 1345.8,
+        "body_mass_kg": 665.0,
+        "body_mass_source": "[AS] bare shell (owner on PR #22: interior ripped out, no engine assembly, no drivetrain, no wheels; the seats, trim, carpets, audio, spare wheel, bonnet and fasteners are the catalogue's interior parts, the engine, gearbox, driveline, suspension, brakes, steering, wheels, cooling and fuel system are their own parts): a 1970s steel two-door GT coupe of about 4.7 m - body in white with subframe 380 kg, long doors and boot lid 105, glass 35, chrome bumpers and lights 45, wiring and battery 30, twin exhaust 35, heater 15, other fixed parts 20 = 665 kg (estimated).",
         "half_extents": [
           2.1,
           0.5,
@@ -698,8 +710,8 @@
     {
       "id": "car_sedan_rwd_track",
       "title": "Sedan 2.0 RWD Track",
-      "subtitle": "Stiff and grippy",
-      "description": "The rear-wheel-drive sedan prepared for the track: stiff springs, dampers and anti-roll bars, strong brakes, sport tyres.",
+      "subtitle": "Stiff, grippy and stripped",
+      "description": "The rear-wheel-drive sedan prepared for the track: stiff springs, dampers and anti-roll bars, strong brakes, sport tyres, a sport bucket seat and the rear seats, audio, sound deadening and spare wheel taken out.",
       "body_type": "race",
       "preset_of": "car_sedan_rwd",
       "preset_setup": {
@@ -712,6 +724,11 @@
         "brake_force": 1.2,
         "tyre_front": "track_225_45r17",
         "tyre_rear": "track_225_45r17",
+        "trim_driver_seat": "sport_bucket",
+        "trim_rear_seats": "removed",
+        "trim_audio": "removed",
+        "trim_sound_deadening": "removed",
+        "trim_spare_wheel": "removed",
         "paint": "#1b1d22"
       }
     },

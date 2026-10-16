@@ -77,7 +77,8 @@ bool option_value_type_ok(OptionKind kind, const SetupValue& v) {
         case OptionKind::Bool: return std::holds_alternative<bool>(v);
         case OptionKind::FileChoice:
         case OptionKind::TyreChoice:
-        case OptionKind::Colour: return std::holds_alternative<std::string>(v);
+        case OptionKind::Colour:
+        case OptionKind::PartChoice: return std::holds_alternative<std::string>(v);
     }
     return false;
 }
@@ -294,6 +295,23 @@ std::optional<VehicleStats> Garage::stats(const std::string& id, std::string* er
             computed->driveline = driveline_summary(m.driveline);
         }
     }
+    // Owner on PR #22: a car's mass (a preset's too) is the sum of its parts with its setup applied.
+    const std::string mass_key = id + "#" + setup_to_json(setup);
+    if (const auto it = mass_cache_.find(mass_key); it != mass_cache_.end()) {
+        computed->mass_kg = it->second;
+    } else {
+        PartTree t;
+        if (setup.values.empty()) {
+            t = stock_part_tree(*e, options_, context_for(*e));
+        } else {
+            CompiledSetup c = compile_setup(*e, options_, context_for(*e), setup);
+            if (c.ok) t = std::move(c.parts);
+        }
+        if (t.ok) {
+            computed->mass_kg = t.total_kg;
+            mass_cache_.emplace(mass_key, t.total_kg);
+        }
+    }
     return computed;
 }
 
@@ -391,6 +409,7 @@ VehicleSetup Garage::effective_setup(const std::string& id) const { return effec
 
 void Garage::engines_changed() {
     ctx_.engines = std::make_shared<const EngineStore>(*store_);
+    mass_cache_.clear(); // a user engine's mass may have changed
     if (editing()) {
         std::vector<std::string> notices;
         normalise_engine_values(working_, &notices);
@@ -706,6 +725,16 @@ PartTree Garage::part_tree(const std::string& id) const {
         return t;
     }
     return std::move(c.parts);
+}
+
+PartTree Garage::stock_part_tree_of(const std::string& id) const {
+    const CatalogEntry* e = catalog_.find(id);
+    if (e == nullptr) {
+        PartTree t;
+        t.error = "unknown vehicle \"" + id + "\"";
+        return t;
+    }
+    return stock_part_tree(*e, options_, context_for(*e));
 }
 
 void Garage::cleanup() {

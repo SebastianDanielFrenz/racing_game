@@ -539,7 +539,7 @@ TEST_CASE("engine swap: engine-bound options follow the installed engine", "[eng
     const auto swapped = model_of(setup_of("car_hyper", {{"engine_install", std::string("sedan_i6")}}));
     REQUIRE(swapped.error.empty());
     CHECK_FALSE(availability(swapped, "turbo_install")); // the I6 has no turbo to install
-    CHECK(swapped.chassis_mass_delta_kg == Approx(165.0 - 230.0));
+    CHECK(swapped.chassis_mass_delta_kg == Approx(165.0 - 175.0));
     CHECK_FALSE(swapped.swap_lines.empty());
     CHECK(swapped.engine_title == "Inline-six 3.0");
 
@@ -563,9 +563,9 @@ TEST_CASE("engine swap: the chassis-mass delta is the catalog figure difference"
         return l.compiled.chassis_mass_delta_kg;
     };
     CHECK(delta("car_sedan", "default:i4_2l_na") == Approx(105.0 - 165.0));
-    CHECK(delta("car_sedan", "default:hyper_v8_one1_audio") == Approx(230.0 - 165.0));
+    CHECK(delta("car_sedan", "default:hyper_v8_one1_audio") == Approx(175.0 - 165.0));
     CHECK(delta("car_sedan_rwd", "default:n52b30_3l_na") == Approx(165.0 - 105.0));
-    CHECK(delta("car_hyper", "default:i4_2l_na") == Approx(105.0 - 230.0));
+    CHECK(delta("car_hyper", "default:i4_2l_na") == Approx(105.0 - 175.0));
     CHECK(delta("car_sedan_rwd", "default:i4_2l_na") == 0.0);
 }
 

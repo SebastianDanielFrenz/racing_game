@@ -259,6 +259,8 @@ struct Files {
     // Drivetrain swap: the driveline right after a drive layout choice (before an axle differential choice); unset =
     // the car's own. The differential options show the axle's kind here as their stock.
     std::optional<DrivelineInfo> layout_info;
+    // The removable / swappable parts as fitted (catalog "interior", then the part choices); a removed part is absent.
+    std::vector<FittedPart> trim;
 };
 
 bool read_doc(const std::string& path, json& out, std::string* err) {
@@ -333,6 +335,8 @@ bool load_files(const CatalogEntry& entry, Files& files, std::string* err) {
     files.vehicle.path = norm_path(entry.vehicle_path);
     if (!read_doc(files.vehicle.path, files.vehicle.base, err)) return false;
     files.vehicle.work = files.vehicle.base;
+    files.trim.clear();
+    for (const auto& [slot, key] : entry.interior) files.trim.push_back(FittedPart{slot, key, 1.0, ""});
     const std::string dir = dir_of(files.vehicle.path);
     if (!load_aux(files.vehicle.base, dir, "gearbox", files.gearbox, err)) return false;
     if (!load_aux(files.vehicle.base, dir, "engine", files.engine, err)) return false;
@@ -825,6 +829,33 @@ PartTree part_tree_of(const CatalogEntry& entry, const SetupContext& ctx, const 
         else in.gearbox = PartRef{stem_of_path(files.gearbox->path), 0.0, ""};
     }
     in.extras = files.part_extras;
+    // The installed engine's factory forced induction as its own parts below the (NA base) engine, sized from the
+    // turbo configuration and its hardware file. A turbo kit a setup feature adds (an extra "engine.turbo_kit")
+    // carries its own mass, so the configuration is not counted twice.
+    const bool kit_extra = std::any_of(in.extras.begin(), in.extras.end(), [](const PartAttachment& a) {
+        return a.parent_id == "engine" && a.node.id == "turbo_kit";
+    });
+    if (files.turbo && !kit_extra) {
+        double count = 0.0;
+        std::string hw_ref;
+        detail::get_number(files.turbo->work, "count", count);
+        detail::get_string(files.turbo->work, "turbo", hw_ref);
+        json hw;
+        if (count >= 1.0 && !hw_ref.empty() && read_doc(resolve_ref(dir_of(files.turbo->path), hw_ref), hw, nullptr)) {
+            double inertia = 0.0, flow = 0.0;
+            detail::get_number(hw, "rotor_inertia_kgm2", inertia);
+            detail::get_number(hw, "max_mass_flow_kg_s", flow);
+            TurboSystem t;
+            t.count = static_cast<int>(count);
+            t.label = t.count == 1 ? "Turbo system (single)" : t.count == 2 ? "Turbo system (twin)" : "Turbo system (" + std::to_string(t.count) + " units)";
+            // Rotor size s relative to the turbo-kit anchor unit (rotor 2.3e-4 kg m2, the hyper's GTX3582R class).
+            t.rotor_scale = inertia > 0.0 ? std::pow(inertia / 2.3e-4, 0.2) : 1.0;
+            t.flow_kg_s = flow * t.count;
+            t.source = "turbo configuration " + stem_of_path(files.turbo->path);
+            in.turbo = t;
+        }
+    }
+    in.trim = files.trim;
     in.stock_vehicle_json = files.vehicle.base.dump();
     return build_part_tree(*ctx.part_masses, in);
 }
@@ -997,6 +1028,7 @@ const char* to_string(OptionKind k) {
         case OptionKind::TyreChoice: return "tyre_choice";
         case OptionKind::Bool: return "bool";
         case OptionKind::Colour: return "colour";
+        case OptionKind::PartChoice: return "part_choice";
     }
     return "scale";
 }
@@ -1131,6 +1163,7 @@ std::optional<SetupOptionTable> parse_setup_options(const std::string& json_text
         else if (kind == "tyre_choice") d.kind = OptionKind::TyreChoice;
         else if (kind == "bool") d.kind = OptionKind::Bool;
         else if (kind == "colour") d.kind = OptionKind::Colour;
+        else if (kind == "part_choice") d.kind = OptionKind::PartChoice;
         else return bad(where + ": unknown kind \"" + kind + "\"");
         detail::get_number(o, "min", d.min);
         detail::get_number(o, "max", d.max);
@@ -1192,6 +1225,32 @@ std::optional<SetupOptionTable> parse_setup_options(const std::string& json_text
         }
         if (!d.model_option.empty() && (d.kind != OptionKind::Bool || !d.pointers.empty())) {
             return bad(where + ": a model_option is a bool that edits no file, so it has no pointers");
+        }
+        if (d.kind == OptionKind::PartChoice) {
+            // A part choice edits no file: it swaps or removes one part of the part-mass tree.
+            if (!d.pointers.empty()) return bad(where + ": a part choice edits no file, so it has no pointers");
+            if (!detail::get_string(o, "slot", d.slot) || d.slot.empty()) return bad(where + ": a part choice needs a \"slot\"");
+            if (!o.contains("parts") || !o["parts"].is_array() || o["parts"].empty()) return bad(where + ": parts missing");
+            std::set<std::string> part_ids;
+            for (const auto& part : o["parts"]) {
+                SetupPart p;
+                if (!part.is_object() || !detail::get_string(part, "id", p.id) || p.id.empty() || p.id == "stock" ||
+                    !part_ids.insert(p.id).second || !detail::get_string(part, "label", p.label) || p.label.empty())
+                    return bad(where + ": invalid or duplicate part (each needs an id other than \"stock\" and a label)");
+                detail::get_string(part, "image", p.image);
+                detail::get_string(part, "detail", p.detail);
+                detail::get_bool(part, "removed", p.removed);
+                detail::get_string(part, "mass_key", p.mass_key);
+                if (part.contains("mass_factor") && (!detail::get_number(part, "mass_factor", p.mass_factor) ||
+                                                     !(p.mass_factor > 0.0 && p.mass_factor <= 1.0)))
+                    return bad(where + ": part \"" + p.id + "\": mass_factor must be in (0, 1]");
+                const int ways = (p.removed ? 1 : 0) + (p.mass_key.empty() ? 0 : 1) + (part.contains("mass_factor") ? 1 : 0);
+                if (ways != 1)
+                    return bad(where + ": part \"" + p.id + "\" needs exactly one of mass_key, mass_factor or removed");
+                d.parts.push_back(std::move(p));
+            }
+            table.options.push_back(std::move(d));
+            continue;
         }
         if (d.kind != OptionKind::Colour && d.model_option.empty() && d.pointers.empty()) return bad(where + ": \"pointers\" (the whitelist) is empty");
         if (d.kind == OptionKind::Colour && !d.pointers.empty()) return bad(where + ": a colour edits no file, so it has no pointers");
@@ -1346,6 +1405,7 @@ std::optional<VehicleSetup> parse_setup(const std::string& json_text, const Setu
             case OptionKind::FileChoice:
             case OptionKind::TyreChoice:
             case OptionKind::Colour:
+            case OptionKind::PartChoice:
                 if (!v.is_string()) return bad("option \"" + it.key() + "\" must be a string");
                 out.values[it.key()] = v.get<std::string>();
                 break;
@@ -1534,6 +1594,28 @@ void driveline_choices(const SetupOptionDef& def, const SetupContext& ctx, const
     }
 }
 
+// A part choice (weight reduction): swaps, lightens or removes the fitted part of the option's slot.
+std::string apply_part_choice(Files& files, const SetupOptionDef& def, const SetupValue& value) {
+    if (!std::holds_alternative<std::string>(value)) return "option \"" + def.id + "\" needs a part id";
+    const std::string& id = std::get<std::string>(value);
+    if (id == "stock") return {};
+    const auto fitted = std::find_if(files.trim.begin(), files.trim.end(), [&](const FittedPart& f) { return f.slot == def.slot; });
+    if (fitted == files.trim.end()) return def.label + ": this car has no " + def.slot + " to change";
+    const auto part = std::find_if(def.parts.begin(), def.parts.end(), [&](const SetupPart& p) { return p.id == id; });
+    if (part == def.parts.end()) return def.label + ": unknown part \"" + id + "\"";
+    if (part->removed) {
+        files.trim.erase(fitted);
+    } else if (!part->mass_key.empty()) {
+        fitted->key = part->mass_key;
+        fitted->factor = 1.0;
+        fitted->label = part->label;
+    } else {
+        fitted->factor = part->mass_factor;
+        fitted->label = part->label;
+    }
+    return {};
+}
+
 } // namespace
 
 SetupModel build_setup_model(const CatalogEntry& entry, const SetupOptionTable& table, const SetupContext& ctx, const VehicleSetup* installed) {
@@ -1542,9 +1624,16 @@ SetupModel build_setup_model(const CatalogEntry& entry, const SetupOptionTable& 
     if (!load_files(entry, files, &model.error)) return model;
     if (installed) {
         for (const auto& def : table.options) {
-            if (def.kind != OptionKind::FileChoice) continue;
+            if (def.kind != OptionKind::FileChoice && def.kind != OptionKind::PartChoice) continue;
             const auto it = installed->values.find(def.id);
             if (it == installed->values.end()) continue;
+            if (def.kind == OptionKind::PartChoice) {
+                if (entry_offers(entry, def.id) && entry.interior.count(def.slot) != 0) {
+                    model.error = apply_part_choice(files, def, it->second);
+                    if (!model.error.empty()) return model;
+                }
+                continue;
+            }
             model.error = install_file_part(files, def, entry, ctx, it->second);
             if (!model.error.empty()) return model;
         }
@@ -1685,6 +1774,43 @@ SetupModel build_setup_model(const CatalogEntry& entry, const SetupOptionTable& 
             case OptionKind::Colour:
                 v.stock = def.id == "rim" ? entry.default_rim : entry.default_paint;
                 break;
+            case OptionKind::PartChoice: {
+                v.stock = std::string("stock");
+                const auto slot = entry.interior.find(def.slot);
+                const PartMassDef* own = (slot != entry.interior.end() && ctx.part_masses) ? ctx.part_masses->find(slot->second) : nullptr;
+                if (own == nullptr) {
+                    v.available = false;
+                    break;
+                }
+                const auto kg = [](double m) { return fmt_fixed(m, 1) + " kg"; };
+                SetupPart stock;
+                stock.id = "stock";
+                stock.label = own->label;
+                stock.detail = kg(own->mass_kg);
+                stock.mass_key = own->key;
+                v.parts.push_back(stock);
+                v.choices.push_back("stock");
+                for (const SetupPart& p : def.parts) {
+                    if (!p.mass_key.empty() && p.mass_key == own->key) continue; // the car's own part
+                    SetupPart q = p;
+                    double m = 0.0;
+                    if (p.removed) {
+                        m = 0.0;
+                    } else if (!p.mass_key.empty()) {
+                        const PartMassDef* d = ctx.part_masses->find(p.mass_key);
+                        if (d == nullptr) continue; // no figure: not offered (the tree would refuse it)
+                        m = d->mass_kg;
+                    } else {
+                        m = own->mass_kg * p.mass_factor;
+                    }
+                    const double saved = own->mass_kg - m;
+                    q.detail = (p.removed ? std::string("removed") : kg(m)) + (saved >= 0.0 ? ", saves " + kg(saved) : ", adds " + kg(-saved));
+                    v.parts.push_back(q);
+                    v.choices.push_back(q.id);
+                }
+                if (v.choices.size() < 2) v.available = false;
+                break;
+            }
         }
         model.options.push_back(std::move(v));
     }
@@ -1757,6 +1883,7 @@ std::string apply_option(const CatalogEntry& entry, const SetupOptionDef& def, c
 
     switch (def.kind) {
         case OptionKind::FileChoice: return install_file_part(files, def, entry, ctx, value);
+        case OptionKind::PartChoice: return apply_part_choice(files, def, value);
         case OptionKind::Scale: {
             if (!std::holds_alternative<double>(value)) return type_error("a number");
             const double s = std::get<double>(value);

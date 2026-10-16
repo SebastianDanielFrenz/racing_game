@@ -715,6 +715,207 @@
           "detail": "Nominal 19 kW shot"
         }
       ]
+    },
+    {
+      "id": "trim_driver_seat",
+      "label": "Driver seat",
+      "group": "Weight reduction",
+      "area": "overview",
+      "help": "Swap the driver's seat for a lighter bucket. Mass only: the part stays on the model (visual removal is not built yet).",
+      "kind": "part_choice",
+      "slot": "seat_driver",
+      "parts": [
+        {
+          "id": "sport_bucket",
+          "label": "Sport bucket seat",
+          "mass_key": "seat_sport_bucket"
+        },
+        {
+          "id": "carbon_bucket",
+          "label": "Carbon bucket seat",
+          "mass_key": "seat_carbon_bucket"
+        }
+      ]
+    },
+    {
+      "id": "trim_passenger_seat",
+      "label": "Passenger seat",
+      "group": "Weight reduction",
+      "area": "overview",
+      "help": "Swap the passenger seat for a lighter bucket, or take it out. Mass only: the part stays on the model (visual removal is not built yet).",
+      "kind": "part_choice",
+      "slot": "seat_passenger",
+      "parts": [
+        {
+          "id": "sport_bucket",
+          "label": "Sport bucket seat",
+          "mass_key": "seat_sport_bucket"
+        },
+        {
+          "id": "carbon_bucket",
+          "label": "Carbon bucket seat",
+          "mass_key": "seat_carbon_bucket"
+        },
+        {
+          "id": "removed",
+          "label": "Removed",
+          "removed": true
+        }
+      ]
+    },
+    {
+      "id": "trim_rear_seats",
+      "label": "Rear seats",
+      "group": "Weight reduction",
+      "area": "overview",
+      "help": "Take the rear seats out. Mass only: the part stays on the model (visual removal is not built yet).",
+      "kind": "part_choice",
+      "slot": "rear_seats",
+      "parts": [
+        {
+          "id": "removed",
+          "label": "Removed",
+          "removed": true
+        }
+      ]
+    },
+    {
+      "id": "trim_audio",
+      "label": "Audio system",
+      "group": "Weight reduction",
+      "area": "overview",
+      "help": "Take the head unit, amplifier and speakers out. Mass only: the part stays on the model (visual removal is not built yet).",
+      "kind": "part_choice",
+      "slot": "audio",
+      "parts": [
+        {
+          "id": "removed",
+          "label": "Removed",
+          "removed": true
+        }
+      ]
+    },
+    {
+      "id": "trim_door_trim",
+      "label": "Door trim",
+      "group": "Weight reduction",
+      "area": "overview",
+      "help": "Thin lightweight door cards, or bare door skins. Mass only: the part stays on the model (visual removal is not built yet).",
+      "kind": "part_choice",
+      "slot": "door_trim",
+      "parts": [
+        {
+          "id": "lightweight",
+          "label": "Lightweight door cards",
+          "mass_factor": 0.35
+        },
+        {
+          "id": "removed",
+          "label": "Removed",
+          "removed": true
+        }
+      ]
+    },
+    {
+      "id": "trim_dashboard",
+      "label": "Dashboard",
+      "group": "Weight reduction",
+      "area": "overview",
+      "help": "A stripped dashboard: gauges and switches only, no console, glovebox or trim panels. Mass only: the part stays on the model (visual removal is not built yet).",
+      "kind": "part_choice",
+      "slot": "dashboard",
+      "parts": [
+        {
+          "id": "stripped",
+          "label": "Stripped dashboard",
+          "mass_factor": 0.45
+        }
+      ]
+    },
+    {
+      "id": "trim_sound_deadening",
+      "label": "Sound deadening",
+      "group": "Weight reduction",
+      "area": "overview",
+      "help": "Strip the insulation from the floor, doors and bulkhead (louder cabin, not modelled). Mass only: the part stays on the model (visual removal is not built yet).",
+      "kind": "part_choice",
+      "slot": "sound_deadening",
+      "parts": [
+        {
+          "id": "removed",
+          "label": "Removed",
+          "removed": true
+        }
+      ]
+    },
+    {
+      "id": "trim_carpets",
+      "label": "Carpets",
+      "group": "Weight reduction",
+      "area": "overview",
+      "help": "Take the carpets and boot liner out. Mass only: the part stays on the model (visual removal is not built yet).",
+      "kind": "part_choice",
+      "slot": "carpets",
+      "parts": [
+        {
+          "id": "removed",
+          "label": "Removed",
+          "removed": true
+        }
+      ]
+    },
+    {
+      "id": "trim_spare_wheel",
+      "label": "Spare wheel",
+      "group": "Weight reduction",
+      "area": "overview",
+      "help": "Leave the spare wheel and jack at home. Mass only: the part stays on the model (visual removal is not built yet).",
+      "kind": "part_choice",
+      "slot": "spare_wheel",
+      "parts": [
+        {
+          "id": "removed",
+          "label": "Removed",
+          "removed": true
+        }
+      ]
+    },
+    {
+      "id": "trim_fasteners",
+      "label": "Fasteners",
+      "group": "Weight reduction",
+      "area": "overview",
+      "help": "Titanium bolts and aluminium brackets for the bolt-on parts. Mass only: the part stays on the model (visual removal is not built yet).",
+      "kind": "part_choice",
+      "slot": "fasteners",
+      "parts": [
+        {
+          "id": "titanium",
+          "label": "Titanium fasteners",
+          "mass_factor": 0.55
+        }
+      ]
+    },
+    {
+      "id": "trim_hood",
+      "label": "Bonnet",
+      "group": "Weight reduction",
+      "area": "overview",
+      "help": "An aluminium or carbon-fibre bonnet in place of the steel one. Mass only: the part stays on the model (visual removal is not built yet).",
+      "kind": "part_choice",
+      "slot": "hood",
+      "parts": [
+        {
+          "id": "aluminium",
+          "label": "Aluminium bonnet",
+          "mass_factor": 0.55
+        },
+        {
+          "id": "carbon",
+          "label": "Carbon-fibre bonnet",
+          "mass_factor": 0.3
+        }
+      ]
     }
   ]
 }

@@ -281,8 +281,40 @@ out/adaptive_setup_tests.log (structural checks through 30 bar requested boost).
 Owner on PR #19: each part has its own mass, a parent carries the cumulative mass of its children, and swaps change the
 car's mass through the parts. `rg/part_mass.h` builds the tree from data only (the vehicle file as the setup leaves it,
 the engine and gearbox catalogues' `mass_kg`, `data/vehicles/part_masses.json`, the catalog's per-car
-`chassis.body_mass_kg`); the drive's chassis mass is the tree's total (physics carries no part as a mass of its own:
-wheel_mass is spin inertia only). Body masses are chosen so every stock car keeps its previous chassis mass.
+`chassis.body_mass_kg`); the drive's chassis mass is the tree's total minus what physics carries itself (wheel_mass is
+spin inertia only, so today that is the tank and bottle contents).
+
+Body masses (owner on PR #22) are no longer back-calculated from an old total: each car's `body_mass_kg` is an
+independent [AS] bare-shell figure (interior ripped out, no engine assembly, no drivetrain, no wheels) with an itemised
+`body_mass_source`. The catalog's `chassis.mass_kg` is the stock tree's dry chassis mass. Stock totals with a full tank:
+
+| car | old chassis | new total | body |
+|---|---|---|---|
+| car_hyper | 1500 | 1265 | 600 |
+| car_hyper_n2o | 1500 | 1284 | 600 |
+| car_sedan, car_toyama_xr | 1500 | 1365 | 680 |
+| car_sedan_rwd | 1500 | 1303 | 680 |
+| car_sedan_awd | 1500 | 1357 | 680 |
+| car_sedan_gen_n2o | 1500 | 1326 | 680 |
+| car_generic_suv | 1500 | 1511 | 820 |
+| car_city | 852 | 909 | 425 |
+| car_gt70, car_phoenix_455 | 1282 | 1387 | 665 |
+| car_runabout | 644 | 732 | 215 |
+
+Contents mass: every game vehicle file sets physics_sim's `contents_mass` (threshold 0.1 kg), so the chassis body
+carries the fuel tank and N2O bottle contents and gets lighter as they are used. The tree shows them as
+`fuel_system.tank.contents` and `engine.nitrous_kit.bottle.contents` at the spawn fill (tank `initial_kg`, default the
+capacity: a full tank; bottle `initial_kg` of the component or bottle file, else full).
+
+Turbos: a factory forced-induction setup is its own `engine.turbo_system` group (one node per turbo, hot side,
+intercooler, charge piping; sized from rotor inertia and air flow, all [AS]). The engine catalogue's mass is the NA base
+(the hypercar's V8 175 kg, its twin-turbo system 54 kg), so a turbo conversion or removal changes the mass. A
+`turbo_kit` extra under the engine (PR #21) replaces this group.
+
+Weight reduction: `part_choice` options in setup_options.json (group "Weight reduction") swap, lighten (a mass factor)
+or remove one interior part per slot; the catalog's per-car `interior` map names the stock parts (masses in
+part_masses.json). Mass only: the model keeps showing the part. A preset's stats mass is its tree with its
+`preset_setup` applied.
 
 A drivetrain layout other than the stock one carries a penalty (owner: "the drivetrain needs to run across the entire
 car, like in an AWD setup"): the new axle's differential and half shafts and an AWD transfer case come from the file;

@@ -17,7 +17,9 @@
 #include <cstdio>
 #include <filesystem>
 #include <fstream>
+#include <map>
 #include <memory>
+#include <set>
 #include <string>
 #include <vector>
 
@@ -151,9 +153,9 @@ TEST_CASE("part mass table: the shipped file loads and the loader is strict", "[
     for (const auto& p : t.parts) {
         INFO(p.key);
         CHECK(p.mass_kg >= 0.0);
-        // Every figure names where it comes from; every invented figure is marked [AS].
+        // Every figure names where it comes from; every invented figure is marked [AS], a derived one [D].
         CHECK_FALSE(p.source.empty());
-        if (p.key != "wheel_default") CHECK_THAT(p.source, ContainsSubstring("[AS]"));
+        if (p.key != "wheel_default") CHECK((p.source.find("[AS]") != std::string::npos || p.source.find("[D]") != std::string::npos));
     }
     const json good = json::parse(table_text());
     CHECK(parse_error(good).empty());
@@ -354,8 +356,18 @@ TEST_CASE("part mass tree: physics_carries leaves a part out of the chassis body
     CHECK_FALSE(rg::build_part_tree(t, nobody).ok);
 }
 
-TEST_CASE("part mass tree: every stock catalog car sums to its previous chassis mass", "[part_mass][garage]") {
+// Owner on PR #22: the body is an independent bare-shell figure, so the stock total is no longer pinned to an old chassis
+// mass. Instead: every total lies in a plausible range for its class, the tree is the sum of its parts, the fuel and N2O
+// contents ride on the chassis through physics_sim's contents mass, and the catalog's fallback chassis mass is the
+// stock tree's chassis figure.
+TEST_CASE("part mass tree: every stock catalog car is a plausible sum of its parts", "[part_mass][garage]") {
     Fixture f;
+    // [AS] kerb masses of the class with fuel, wide on purpose: a gross error (a part counted twice, a missing body)
+    // leaves them, an honest re-estimate does not.
+    const std::map<std::string, std::pair<double, double>> range = {
+        {"hypercar", {1100.0, 1500.0}}, {"sedan", {1150.0, 1600.0}}, {"suv", {1300.0, 2000.0}},
+        {"hatchback", {750.0, 1150.0}}, {"coupe", {1150.0, 1650.0}}, {"tourer", {500.0, 900.0}},
+    };
     int base = 0;
     for (const rg::CatalogEntry& e : f.catalog.entries) {
         INFO(e.id);
@@ -367,8 +379,27 @@ TEST_CASE("part mass tree: every stock catalog car sums to its previous chassis 
         CHECK(tree.root.own_kg == Approx(*e.chassis.body_mass_kg));
         if (!e.preset_of.empty()) continue; // a preset's overlay may change parts; its base is checked
         ++base;
-        CHECK(tree.total_kg == Approx(e.chassis.mass_kg).margin(1e-6));
-        CHECK(tree.chassis_kg == Approx(e.chassis.mass_kg).margin(1e-6));
+        // the tree is the sum of its parts
+        CHECK(tree.total_kg == Approx(sum_leaves_and_own(tree.root)));
+        // the body is the bare shell: well under half the car, never most of it
+        CHECK(*e.chassis.body_mass_kg > 0.25 * tree.total_kg);
+        CHECK(*e.chassis.body_mass_kg < 0.55 * tree.total_kg);
+        const auto r = range.find(e.body_type);
+        REQUIRE(r != range.end());
+        CHECK(tree.total_kg >= r->second.first);
+        CHECK(tree.total_kg <= r->second.second);
+        // every catalog car's vehicle file lets physics carry its contents: the fuel (and N2O) are counted in the total
+        // and left out of the drive's chassis, which the physics body then carries on top
+        const rg::PartNode* fuel = tree.root.find("fuel_system.tank.contents");
+        REQUIRE(fuel != nullptr);
+        CHECK(fuel->carried_by_physics);
+        CHECK(fuel->own_kg > 0.0);
+        CHECK(tree.physics_carried_kg > 0.0);
+        CHECK(tree.chassis_kg == Approx(tree.total_kg - tree.physics_carried_kg));
+        CHECK(e.chassis.mass_kg == Approx(tree.chassis_kg).margin(0.5));
+        // the catalogue's interior is in the tree as its own group
+        CHECK(tree.root.find("trim") != nullptr);
+        CHECK(tree.root.find("trim")->children.size() == e.interior.size());
         // every stock engine and gearbox is a catalogue part (no fallback figure)
         CHECK(tree.root.find("engine")->source == "engine catalogue");
         const rg::PartNode* box = tree.root.find("drivetrain.gearbox");
@@ -376,6 +407,158 @@ TEST_CASE("part mass tree: every stock catalog car sums to its previous chassis 
         CHECK(box->source == "gearbox catalogue");
     }
     CHECK(base >= 12);
+}
+
+TEST_CASE("part mass tree: fuel and N2O contents, the factory turbo system and the interior", "[part_mass][garage]") {
+    rg::PartMassTable t = shipped_table();
+    auto kg = [&](const char* key) { return t.find(key)->mass_kg; };
+    // contents: a tank with an initial fill counts the fill, a tank without one is full; carried only with contents_mass
+    json v = synthetic_vehicle("FWD");
+    v["powertrain"]["components"][3]["initial_kg"] = 30.0;
+    rg::PartTreeInput in = synthetic_input("FWD");
+    in.vehicle_json = v.dump();
+    const rg::PartTree statically = rg::build_part_tree(t, in);
+    REQUIRE(statically.ok);
+    const rg::PartNode* fuel = statically.root.find("fuel_system.tank.contents");
+    REQUIRE(fuel != nullptr);
+    CHECK(fuel->own_kg == Approx(30.0));
+    CHECK_FALSE(fuel->carried_by_physics);
+    CHECK(statically.chassis_kg == Approx(statically.total_kg));
+    v["contents_mass"] = {{"enabled", true}, {"update_threshold_kg", 0.1}};
+    in.vehicle_json = v.dump();
+    const rg::PartTree live = rg::build_part_tree(t, in);
+    REQUIRE(live.ok);
+    CHECK(live.total_kg == Approx(statically.total_kg));
+    CHECK(live.physics_carried_kg == Approx(30.0));
+    CHECK(live.chassis_kg == Approx(statically.total_kg - 30.0));
+    v["powertrain"]["components"][3].erase("initial_kg");
+    in.vehicle_json = v.dump();
+    CHECK(rg::build_part_tree(t, in).root.find("fuel_system.tank.contents")->own_kg == Approx(50.0));
+
+    // the turbo system: units sized by the cube of the rotor scale, hot side per unit, intercooler by flow
+    rg::PartTreeInput turbo = synthetic_input("FWD");
+    turbo.turbo = rg::TurboSystem{"Turbo system (twin)", 2, 1.0, 1.2, "test"};
+    const rg::PartTree twin = rg::build_part_tree(t, turbo);
+    REQUIRE(twin.ok);
+    const rg::PartNode* sys = twin.root.find("engine.turbo_system");
+    REQUIRE(sys != nullptr);
+    const double unit = kg("turbo_unit") + t.find("turbo_unit")->per_capacity_kg;
+    const double expect = 2 * unit + 2 * t.find("turbo_hot_side")->per_capacity_kg + 1.2 * t.find("intercooler")->per_capacity_kg +
+                          kg("charge_piping") + t.find("charge_piping")->per_capacity_kg;
+    CHECK(sys->total_kg() == Approx(expect));
+    CHECK(sys->total_kg() == Approx(54.24).margin(0.01)); // the hyper's stock twin
+    CHECK(twin.total_kg == Approx(rg::build_part_tree(t, synthetic_input("FWD")).total_kg + expect));
+    turbo.turbo->count = 1;
+    turbo.turbo->rotor_scale = 1.2;
+    turbo.turbo->flow_kg_s = 0.6;
+    const rg::PartNode* single = rg::build_part_tree(t, turbo).root.find("engine.turbo_system.turbo");
+    REQUIRE(single != nullptr);
+    CHECK(single->own_kg == Approx(kg("turbo_unit") + t.find("turbo_unit")->per_capacity_kg * 1.2 * 1.2 * 1.2));
+
+    // interior parts: a factor lightens, an unknown key is an error
+    rg::PartTreeInput trim = synthetic_input("FWD");
+    trim.trim = {{"seat_driver", "seat_comfort", 1.0, ""}, {"hood", "hood_steel", 0.3, "Carbon bonnet"}};
+    const rg::PartTree with = rg::build_part_tree(t, trim);
+    REQUIRE(with.ok);
+    CHECK(with.root.find("trim")->total_kg() == Approx(kg("seat_comfort") + 0.3 * kg("hood_steel")));
+    CHECK(with.root.find("trim.hood")->label == "Carbon bonnet");
+    trim.trim.push_back({"x", "no_such_part", 1.0, ""});
+    CHECK_FALSE(rg::build_part_tree(t, trim).ok);
+}
+
+TEST_CASE("part mass tree: the hypercar's turbos are their own parts; the NA conversion drops them", "[part_mass][garage][turbo]") {
+    Fixture f;
+    const rg::CatalogEntry& hyper = f.entry("car_hyper");
+    const rg::PartTree stock = rg::stock_part_tree(hyper, f.table, f.ctx);
+    REQUIRE(stock.ok);
+    const rg::PartNode* sys = stock.root.find("engine.turbo_system");
+    REQUIRE(sys != nullptr);
+    CHECK(sys->children.size() == 5); // two units, hot side, intercooler, charge piping
+    CHECK(stock.root.find("engine")->own_kg == Approx(175.0));
+    // with the turbos the engine assembly is about the 230 kg the catalogue used to give it
+    CHECK(stock.root.find("engine")->own_kg + sys->total_kg() == Approx(229.24).margin(0.05));
+    // the NA conversion: no turbo parts, so the car is lighter by exactly the turbo system
+    rg::VehicleSetup s;
+    s.vehicle_id = hyper.id;
+    s.values["turbo_install"] = std::string("hyper_na");
+    const rg::CompiledSetup na = rg::compile_setup(hyper, f.table, f.ctx, s);
+    INFO(na.error);
+    REQUIRE(na.ok);
+    REQUIRE(na.parts.ok);
+    CHECK(na.parts.root.find("engine.turbo_system") == nullptr);
+    CHECK(na.parts.total_kg == Approx(stock.total_kg - sys->total_kg()));
+    // a sedan has no factory turbo
+    CHECK(rg::stock_part_tree(f.entry("car_sedan"), f.table, f.ctx).root.find("engine.turbo_system") == nullptr);
+}
+
+TEST_CASE("part mass tree: weight reduction part choices swap, lighten and remove interior parts", "[part_mass][garage][weight_reduction]") {
+    Fixture f;
+    const rg::PartMassTable& t = *f.ctx.part_masses;
+    auto kg = [&](const char* key) { return t.find(key)->mass_kg; };
+    const rg::CatalogEntry& sedan = f.entry("car_sedan");
+    const rg::PartTree stock = rg::stock_part_tree(sedan, f.table, f.ctx);
+    REQUIRE(stock.ok);
+    // every interior key and every option part key has a figure; every option names a slot some car has
+    std::set<std::string> slots;
+    for (const rg::CatalogEntry& e : f.catalog.entries) {
+        for (const auto& [slot, key] : e.interior) {
+            INFO(e.id + " " + slot);
+            CHECK(t.find(key) != nullptr);
+            slots.insert(slot);
+        }
+    }
+    int choices = 0;
+    for (const rg::SetupOptionDef& d : f.table.options) {
+        if (d.kind != rg::OptionKind::PartChoice) continue;
+        ++choices;
+        INFO(d.id);
+        CHECK(slots.count(d.slot) == 1);
+        CHECK(d.group == "Weight reduction");
+        for (const rg::SetupPart& p : d.parts) {
+            if (!p.mass_key.empty()) CHECK(t.find(p.mass_key) != nullptr);
+        }
+    }
+    CHECK(choices == 11);
+
+    auto compile = [&](const rg::CatalogEntry& e, std::initializer_list<std::pair<const char*, rg::SetupValue>> values) {
+        rg::VehicleSetup s;
+        s.vehicle_id = e.id;
+        for (const auto& kv : values) s.values[kv.first] = kv.second;
+        rg::CompiledSetup c = rg::compile_setup(e, f.table, f.ctx, s);
+        INFO(c.error);
+        REQUIRE(c.ok);
+        INFO(c.parts.error);
+        REQUIRE(c.parts.ok);
+        return c;
+    };
+    const auto light = compile(sedan, {{"trim_driver_seat", std::string("carbon_bucket")},
+                                       {"trim_rear_seats", std::string("removed")},
+                                       {"trim_hood", std::string("carbon")},
+                                       {"trim_dashboard", std::string("stock")}});
+    const double saved = (kg("seat_comfort") - kg("seat_carbon_bucket")) + kg("rear_bench") + 0.7 * kg("hood_steel");
+    CHECK(light.parts.total_kg == Approx(stock.total_kg - saved));
+    CHECK(light.parts.root.find("trim.rear_seats") == nullptr);
+    CHECK(light.parts.root.find("trim.seat_driver")->label == "Carbon bucket seat");
+    // the drive's chassis mass follows (the contents stay with physics)
+    CHECK(light.parts.chassis_kg == Approx(stock.chassis_kg - saved));
+    // the hypercar has no rear seats or bonnet: those choices are not offered there
+    const rg::SetupModel hm = rg::build_setup_model(f.entry("car_hyper"), f.table, f.ctx);
+    for (const rg::OptionView& v : hm.options) {
+        if (v.def.id == "trim_rear_seats" || v.def.id == "trim_hood") CHECK_FALSE(v.available);
+        if (v.def.id == "trim_driver_seat") {
+            // its stock part is the carbon bucket: only the sport bucket is offered besides it
+            CHECK(v.available);
+            CHECK(v.choices == std::vector<std::string>{"stock", "sport_bucket"});
+        }
+    }
+    // a choice for a slot the car lacks is refused with a message, an unknown part too
+    rg::VehicleSetup bad;
+    bad.vehicle_id = "car_hyper";
+    bad.values["trim_hood"] = std::string("carbon");
+    CHECK_FALSE(rg::compile_setup(f.entry("car_hyper"), f.table, f.ctx, bad).ok);
+    bad.values.clear();
+    bad.values["trim_audio"] = std::string("gold_plated");
+    CHECK_FALSE(rg::compile_setup(sedan, f.table, f.ctx, bad).ok);
 }
 
 TEST_CASE("part mass tree: setups and swaps change the tree and the drive's chassis mass", "[part_mass][garage]") {
@@ -525,23 +708,30 @@ TEST_CASE("part mass tree: the garage view and the prepared drive use the tree",
     auto g = rg::Garage::open(cfg, &err);
     INFO(err);
     REQUIRE(g != nullptr);
-    const double stock_mass = g->catalog().find("car_sedan_rwd")->chassis.mass_kg;
-    // stock drive: the tree's chassis mass is the catalog figure
+    double stock_mass = g->catalog().find("car_sedan_rwd")->chassis.mass_kg;
+    // stock drive: the tree's chassis mass is the catalog figure (dry: physics carries the fuel on top)
     const auto stock_drive = g->prepare_drive("car_sedan_rwd");
     REQUIRE(stock_drive.ok);
     REQUIRE(stock_drive.parts.ok);
-    CHECK(stock_drive.chassis.mass_kg == Approx(stock_mass));
+    CHECK(stock_drive.chassis.mass_kg == Approx(stock_mass).margin(0.5));
+    const double contents = stock_drive.parts.physics_carried_kg;
+    CHECK(contents > 0.0);
     // edit: the view follows every change
     REQUIRE(g->begin_edit("car_sedan_rwd", &err));
     REQUIRE(g->parts().ok);
-    CHECK(g->parts().total_kg == Approx(stock_mass));
+    CHECK(g->parts().total_kg == Approx(stock_mass + contents).margin(0.5));
+    stock_mass = stock_drive.chassis.mass_kg;
     REQUIRE(g->set_option("gearbox_install", std::string("heavy_duty_6mt")).accepted);
     const double box_delta = g->context().gearboxes->find("heavy_duty_6mt")->mass_kg - g->context().gearboxes->find("touring_6mt")->mass_kg;
-    CHECK(g->parts().total_kg == Approx(stock_mass + box_delta));
+    CHECK(g->parts().total_kg == Approx(stock_mass + contents + box_delta));
     REQUIRE(g->set_option("engine_install", std::string("default:n52b30_3l_na")).accepted);
-    CHECK(g->parts().total_kg == Approx(stock_mass + box_delta + 60.0));
+    CHECK(g->parts().total_kg == Approx(stock_mass + contents + box_delta + 60.0));
     REQUIRE(g->save(&err));
-    CHECK(g->part_tree("car_sedan_rwd").total_kg == Approx(stock_mass + box_delta + 60.0));
+    CHECK(g->part_tree("car_sedan_rwd").total_kg == Approx(stock_mass + contents + box_delta + 60.0));
+    // the stats (car browser, catalog stats) show the tree total with the saved setup
+    const auto st = g->stats("car_sedan_rwd", &err);
+    REQUIRE(st.has_value());
+    CHECK(st->mass_kg == Approx(stock_mass + contents + box_delta + 60.0));
     const auto drive = g->prepare_drive("car_sedan_rwd");
     INFO(drive.error);
     REQUIRE(drive.ok);
@@ -550,15 +740,48 @@ TEST_CASE("part mass tree: the garage view and the prepared drive use the tree",
     g->cleanup();
 }
 
+TEST_CASE("part mass tree: a preset's stats mass is its parts with its preset setup", "[part_mass][garage][car_browser]") {
+    rg::ScopedWorkDir user{fs::temp_directory_path().generic_string(), "rg_part_mass_user2"};
+    rg::ScopedWorkDir work{fs::temp_directory_path().generic_string(), "rg_part_mass_work2"};
+    rg::GarageConfig cfg;
+    cfg.repo_root = kRoot;
+    cfg.catalog_path = kRoot + "/data/vehicles/catalog.json";
+    cfg.options_path = kRoot + "/data/vehicles/setup_options.json";
+    cfg.set_path = kRoot + "/data/garage/garage_set.json";
+    cfg.tyre_families_path = kRoot + "/data/tyres/families.json";
+    cfg.user_dir = user.path();
+    cfg.work_root = work.path();
+    cfg.engine_map_cache_dir = kRoot + "/out/godot_engine_cache";
+    std::string err;
+    auto g = rg::Garage::open(cfg, &err);
+    INFO(err);
+    REQUIRE(g != nullptr);
+    const auto base = g->stats("car_sedan_rwd", &err);
+    const auto track = g->stats("car_sedan_rwd_track", &err);
+    REQUIRE(base.has_value());
+    REQUIRE(track.has_value());
+    CHECK(base->mass_kg == Approx(g->stock_part_tree_of("car_sedan_rwd").total_kg));
+    // the track preset takes out the rear seats, audio, sound deadening and spare wheel and fits a sport bucket seat
+    const rg::PartMassTable& t = *g->context().part_masses;
+    auto kg = [&](const char* key) { return t.find(key)->mass_kg; };
+    const double saved = (kg("seat_manual") - kg("seat_sport_bucket")) + kg("rear_bench") + kg("audio_system") +
+                         kg("sound_deadening_sedan") + kg("spare_wheel_compact");
+    CHECK(track->mass_kg == Approx(base->mass_kg - saved));
+    CHECK(g->part_tree("car_sedan_rwd_track").total_kg == Approx(track->mass_kg));
+    // a preset with only tuning values weighs what its base weighs
+    const auto drift = g->stats("car_sedan_rwd_drift", &err);
+    REQUIRE(drift.has_value());
+    CHECK(drift->mass_kg == Approx(base->mass_kg));
+}
+
 TEST_CASE("part mass tree: print every stock car's tree", "[.][diag][part_mass]") {
     Fixture f;
     for (const rg::CatalogEntry& e : f.catalog.entries) {
         if (!e.preset_of.empty()) continue;
-        rg::CatalogEntry probe = e;
-        probe.chassis.body_mass_kg = 100.0;
-        const rg::PartTree tree = rg::stock_part_tree(probe, f.table, f.ctx);
-        std::printf("== %s  catalog %.2f  parts without body %.6f  -> body %.6f  %s\n", e.id.c_str(), e.chassis.mass_kg,
-                    tree.total_kg - 100.0, e.chassis.mass_kg - (tree.total_kg - 100.0), tree.error.c_str());
+        const rg::PartTree tree = rg::stock_part_tree(e, f.table, f.ctx);
+        std::printf("== %s  body %.2f  total %.2f  chassis (dry) %.2f  contents %.2f  catalog chassis %.2f  %s\n", e.id.c_str(),
+                    e.chassis.body_mass_kg.value_or(0.0), tree.total_kg, tree.chassis_kg, tree.physics_carried_kg, e.chassis.mass_kg,
+                    tree.error.c_str());
         if (tree.ok) print_tree(tree.root, 1);
     }
 }
