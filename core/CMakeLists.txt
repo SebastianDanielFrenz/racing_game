@@ -156,7 +156,7 @@ target_link_libraries(rg_core
         g2m_ps_bridge
         ps_environment
         ps_environment_io
+        nlohmann_json::nlohmann_json
     PRIVATE
         rg_options
-        nlohmann_json::nlohmann_json
 )
