@@ -24,6 +24,7 @@ add_executable(rg_unit_tests
   test_world_terrain.cpp
   test_terrain_colours.cpp
   test_road_surface.cpp
+  test_underpass_decks.cpp
   test_road_structures.cpp
   test_road_overpass.cpp
   test_terrain_smoothing.cpp
@@ -45,6 +46,8 @@ add_executable(rg_unit_tests
   test_player_mode.cpp
   test_walker.cpp
   test_session_walker.cpp
+  test_fpv_drone.cpp
+  test_session_fpv.cpp
   test_vehicle_data.cpp
   test_route_grip.cpp
   test_tick_spikes.cpp
@@ -55,6 +58,7 @@ add_executable(rg_unit_tests
   test_spawn_presets.cpp
   test_shell_flow.cpp
   test_time_weather.cpp
+  test_exposure.cpp
   test_climate.cpp
   test_wet_look.cpp
   test_session_weather.cpp
@@ -87,6 +91,7 @@ add_executable(rg_unit_tests
   test_stutter_perf.cpp
   test_nitrous_spawn.cpp
   test_nitrous_gain.cpp
+  test_tc_owner_repro.cpp
   test_engine_thermal_info.cpp
   test_game_car_thermal.cpp
   test_assist_info.cpp

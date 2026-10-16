@@ -129,6 +129,7 @@ void RgSimulation::teardown_current() {
     drone_lost_seen_ = 0;
     walker_wanted_ = false; // the next Session starts without a walker; apply_mode_to_session() re-requests it
     walker_seen_ = {};
+    fpv_wanted_ = false;
     modes_.set_drone_target(std::nullopt);
     cancel_init();                   // R2.2 R9: cancel-then-join
     reap_init_thread(/*wait=*/true); // joins any in-flight worker first (see its own doc comment)
@@ -185,6 +186,16 @@ void RgSimulation::apply_mode_to_session() {
             session_->request_walker_spawn();
         } else {
             session_->request_walker_despawn();
+        }
+    }
+    // FPV drone: the flyer exists exactly while the mode is FpvDrone.
+    const bool want_fpv = modes_.mode() == rg::PlayerMode::FpvDrone;
+    if (want_fpv != fpv_wanted_) {
+        fpv_wanted_ = want_fpv;
+        if (want_fpv) {
+            session_->request_fpv_spawn();
+        } else {
+            session_->request_fpv_despawn();
         }
     }
 }
@@ -273,6 +284,7 @@ void RgSimulation::run_terrain_init_worker(std::string world_config_path, std::s
     config.vehicle_json_path = std::move(vehicle_json_path);
     configure_vehicle_chassis(config, overrides);
     reuse_vehicle_definition(config);
+    config.fpv_drone = fpv_config_;
     config.rolling_resistance_model=rolling_resistance_model_;
     config.aero_map_selection_path=aero_map_selection_path_;
     config.surface_table_path = std::move(surface_table_path);
@@ -325,6 +337,7 @@ void RgSimulation::run_flat_init_worker(std::string vehicle_json_path, std::stri
     config.vehicle_json_path = std::move(vehicle_json_path);
     configure_vehicle_chassis(config, overrides);
     reuse_vehicle_definition(config);
+    config.fpv_drone = fpv_config_;
     config.rolling_resistance_model = rolling_resistance_model_;
     config.aero_map_selection_path = aero_map_selection_path_;
     config.surface_table_path = std::move(surface_table_path);
@@ -1103,6 +1116,7 @@ godot::Dictionary RgSimulation::get_mode_state() {
     d["camera_inputs_live"] = r.camera_inputs_live;
     d["camera_rig"] = String(rg::to_string(r.camera_rig));
     d["walking_inputs_live"] = r.walking_inputs_live;
+    d["flying_inputs_live"] = r.flying_inputs_live;
     d["get_out_refusals"] = static_cast<std::int64_t>(modes_.get_out_refusals());
     d["walker_enter_refused"] =
         session_ ? static_cast<std::int64_t>(session_->walker_counters().enter_refused) : std::int64_t{0};
@@ -1114,20 +1128,16 @@ godot::Dictionary RgSimulation::get_mode_state() {
     const std::optional<std::uint64_t> target = modes_.drone_target();
     d["drone_target_id"] = target ? static_cast<std::int64_t>(*target) : std::int64_t{-1};
     d["drone_target_own"] = !target.has_value();
-    String label("own car");
-    if (target && session_) {
-        if (*target == rg::Session::kNpcTruckVehicleId) {
-            label = String("NPC truck");
-        } else {
-            label = String("NPC car #") + String::num_int64(static_cast<std::int64_t>(*target));
-            for (const auto& actor : frame_snapshot().traffic.actors) {
-                if (actor.id == *target) {
-                    if (actor.truck) label = String("NPC lorry #") + String::num_int64(static_cast<std::int64_t>(*target));
-                    break;
-                }
+    bool target_is_lorry = false;
+    if (target && session_ && *target != rg::Session::kNpcTruckVehicleId) {
+        for (const auto& actor : frame_snapshot().traffic.actors) {
+            if (actor.id == *target) {
+                target_is_lorry = actor.truck;
+                break;
             }
         }
     }
+    const String label(rg::drone_target_label(session_ ? target : std::nullopt, rg::Session::kNpcTruckVehicleId, target_is_lorry).c_str());
     d["drone_target_label"] = label;
     return d;
 }
@@ -1198,6 +1208,49 @@ godot::Dictionary RgSimulation::get_walker_state() const {
     d["can_enter"] = w.can_enter;
     d["enter_distance_m"] = w.enter_distance_m;
     d["car_position"] = iso_to_godot(render_chassis_pose().position, origin);
+    return d;
+}
+
+String RgSimulation::set_fpv_drone_config(const String& path) {
+    std::string err;
+    const godot::CharString utf8 = path.utf8();
+    const auto c = rg::load_fpv_drone_config(utf8.get_data(), &err);
+    if (!c) return String(err.c_str());
+    fpv_config_ = *c;
+    return String();
+}
+
+void RgSimulation::set_fpv_input(double move_right, double move_up, double move_forward, double yaw, double pitch) {
+    if (!session_) return;
+    rg::FpvDroneInput in;
+    in.move_right = move_right;
+    in.move_up = move_up;
+    in.move_forward = move_forward;
+    in.yaw = yaw;
+    in.pitch = pitch;
+    session_->set_fpv_input(in);
+}
+
+godot::Dictionary RgSimulation::get_fpv_state() const {
+    godot::Dictionary d;
+    if (!session_) return d;
+    const rg::FpvDroneState& f = frame_snapshot().fpv;
+    if (!f.active) return d;
+    const ps::Vec3 origin = origin_rebase_ ? origin_rebase_->origin() : ps::Vec3{};
+    d["active"] = true;
+    d["position"] = iso_to_godot(f.position, origin);
+    d["velocity"] = godot::Vector3(static_cast<float>(-f.velocity.y), static_cast<float>(f.velocity.z),
+                                   static_cast<float>(-f.velocity.x));
+    const double cy = std::cos(f.yaw_rad), sy = std::sin(f.yaw_rad);
+    d["facing"] = godot::Vector3(static_cast<float>(-sy), 0.0f, static_cast<float>(-cy));
+    d["yaw_rad"] = f.yaw_rad;
+    d["pitch_rad"] = f.pitch_rad;
+    d["speed"] = f.speed_mps;
+    d["accel"] = f.accel_mps2;
+    d["activity"] = f.activity;
+    d["on_ground"] = f.on_ground;
+    d["hold"] = f.hold;
+    d["height_agl_m"] = f.height_agl_m;
     return d;
 }
 
@@ -1336,6 +1389,10 @@ void RgSimulation::_bind_methods() {
     godot::ClassDB::bind_method(D_METHOD("request_walker_jump"), &RgSimulation::request_walker_jump);
     godot::ClassDB::bind_method(D_METHOD("request_walker_enter"), &RgSimulation::request_walker_enter);
     godot::ClassDB::bind_method(D_METHOD("get_walker_state"), &RgSimulation::get_walker_state);
+    godot::ClassDB::bind_method(D_METHOD("set_fpv_drone_config", "path"), &RgSimulation::set_fpv_drone_config);
+    godot::ClassDB::bind_method(D_METHOD("set_fpv_input", "move_right", "move_up", "move_forward", "yaw", "pitch"),
+                                &RgSimulation::set_fpv_input);
+    godot::ClassDB::bind_method(D_METHOD("get_fpv_state"), &RgSimulation::get_fpv_state);
     godot::ClassDB::bind_method(D_METHOD("unload"), &RgSimulation::unload);
     godot::ClassDB::bind_method(D_METHOD("set_paused", "paused"), &RgSimulation::set_paused);
     godot::ClassDB::bind_method(D_METHOD("is_paused"), &RgSimulation::is_paused);

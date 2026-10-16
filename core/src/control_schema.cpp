@@ -33,6 +33,7 @@ bool mode_from_name(const std::string& s, std::uint32_t& out) {
     else if (s == "free_cam") out = kModeFreeCam;
     else if (s == "drone_follow") out = kModeDroneFollow;
     else if (s == "on_foot") out = kModeOnFoot;
+    else if (s == "fpv_drone") out = kModeFpvDrone;
     else if (s == "menu") out = kModeMenu;
     else if (s == "in_world") out = kModeInWorld;
     else return false;

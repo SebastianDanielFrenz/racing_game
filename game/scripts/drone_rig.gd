@@ -19,10 +19,12 @@ extends Node3D
 #  - terrain clearance: simulation.get_camera_ground_height() probes.
 # When the target is not available (the Session lost it) the rig holds still
 # for the frame; rg_core returns the mode to the own car on its own.
-
-const SNAP_M := 60.0
-const MIN_DISTANCE_M := 4.0
-const MAX_DISTANCE_M := 60.0
+#
+# Display only (docs/unreal_port.md leak #10): the orbit-yaw target, the zoom law,
+# the lag filter, the snap and the terrain clearance are rg::drone_* in
+# core/include/rg/camera_math.h (RgCameraMath.drone_*). This script keeps the
+# state Dictionary RgCameraMath hands back, forwards input, probes the ground
+# (simulation.get_camera_ground_height) and places the Camera3D.
 
 @export var follow_distance_m: float = 12.0 # horizontal distance behind the target (the default zoom)
 @export var height_per_distance: float = 0.5 # follow_height = distance * this (12 m back -> 6 m up)
@@ -35,17 +37,23 @@ const MAX_DISTANCE_M := 60.0
 @export var zoom_key_rate: float = 1.2 # e-folds per second while PageUp/PageDown is held
 
 var camera: Camera3D
-var _distance_m: float = 12.0
-var _smoothed_pos: Vector3 = Vector3.ZERO # absolute, only until the first update after activate()
-var _smoothed_offset: Vector3 = Vector3.ZERO # camera - target, smoothed
-var _from_absolute: bool = false
-var _initialized: bool = false
-var _orbit_yaw: float = 0.0 # radians, + = looking right of the target's heading
-var _heading: Vector3 = Vector3.FORWARD # last horizontal heading of the target (Godot space)
-var _drain_wheel: bool = false
+var _state: Dictionary = {} # RgCameraMath.drone_* state
+
+func _params() -> Dictionary:
+	return {
+		"follow_distance_m": follow_distance_m,
+		"height_per_distance": height_per_distance,
+		"look_height_m": look_height_m,
+		"terrain_clearance_m": terrain_clearance_m,
+		"position_lag": position_lag,
+		"orbit_deadzone": orbit_deadzone,
+		"orbit_lag": orbit_lag,
+		"zoom_wheel_factor": zoom_wheel_factor,
+		"zoom_key_rate": zoom_key_rate,
+	}
 
 func _ready() -> void:
-	_distance_m = clampf(follow_distance_m, MIN_DISTANCE_M, MAX_DISTANCE_M)
+	_state = RgCameraMath.drone_initial_state(_params())
 	camera = Camera3D.new()
 	camera.name = "Camera"
 	camera.fov = 70.0
@@ -54,87 +62,45 @@ func _ready() -> void:
 	add_child(camera)
 
 # Starts from where the previous camera was and flies to the drone position
-# (the exponential lag; a jump beyond SNAP_M snaps instead).
+# (the exponential lag; a jump beyond the snap distance snaps instead).
 func activate(from: Transform3D) -> void:
-	_smoothed_pos = from.origin
-	_from_absolute = true
-	_initialized = true
-	_orbit_yaw = 0.0
-	_drain_wheel = true # wheel ticks made while another rig was active must not zoom this one
+	_state = RgCameraMath.drone_activate(_state, from.origin)
 
 func shift_origin(delta: Vector3) -> void:
 	position += delta
-	_smoothed_pos += delta
-
-func _target_orbit_yaw(input_map: Node) -> float:
-	var look: Vector2 = input_map.get_camera_key_look()
-	if absf(look.x) > 0.5:
-		return signf(look.x) * PI * 0.5
-	if look.y < -0.5:
-		return PI
-	var stick: Vector2 = input_map.get_camera_stick()
-	var mag: float = min(stick.length(), 1.0)
-	if mag <= orbit_deadzone:
-		return 0.0
-	return atan2(stick.x, stick.y)
-
-func _update_zoom(delta: float, input_map: Node, camera_input_live: bool) -> void:
-	if input_map == null:
-		return
-	# Always drain the wheel so ticks made while the camera inputs were off do
-	# not arrive later as one big zoom.
-	var wheel: float = input_map.consume_zoom_steps()
-	if _drain_wheel:
-		_drain_wheel = false
-		return
-	if not camera_input_live:
-		return
-	var key: float = input_map.get_camera_zoom_key()
-	_distance_m *= pow(zoom_wheel_factor, -wheel) * exp(-key * zoom_key_rate * delta)
-	_distance_m = clampf(_distance_m, MIN_DISTANCE_M, MAX_DISTANCE_M)
+	_state = RgCameraMath.drone_shift_origin(_state, delta)
 
 func update_rig(delta: float, simulation: Node, input_map: Node, camera_input_live: bool) -> void:
 	if simulation == null or int(simulation.get_step_count()) <= 0:
-		_initialized = false
+		_state = RgCameraMath.drone_hold(_state)
 		return
-	_update_zoom(delta, input_map, camera_input_live)
+	if input_map != null:
+		# The wheel is always drained so ticks made while the camera inputs were
+		# off do not arrive later as one big zoom.
+		_state = RgCameraMath.drone_zoom_step(_state, float(input_map.consume_zoom_steps()),
+			float(input_map.get_camera_zoom_key()), camera_input_live, delta, _params())
 	var target: Variant = simulation.get_drone_target_transform()
 	if target == null:
 		return # the Session lost the vehicle this frame; the mode falls back to the own car
 	var xform: Transform3D = target
-	var target_pos: Vector3 = xform.origin
-	# basis.x is the vehicle's FORWARD direction in Godot space (frame_convert.h:
-	# column i = the sim's local axis i, ISO 8855 x-forward); keep it horizontal
-	# so a pitching car does not swing the drone up and down.
-	var fwd := Vector3(xform.basis.x.x, 0.0, xform.basis.x.z)
-	if fwd.length() > 0.2:
-		_heading = fwd.normalized()
-	var behind := -_heading * _distance_m
-	var desired_offset := behind + Vector3.UP * (_distance_m * height_per_distance)
-	var look_at_pos := target_pos + Vector3.UP * look_height_m
-
-	if _from_absolute:
-		_smoothed_offset = _smoothed_pos - target_pos
-		_from_absolute = false
-	if not _initialized or _smoothed_offset.distance_to(desired_offset) > SNAP_M:
-		_smoothed_offset = desired_offset
-		_initialized = true
-	_smoothed_offset = _smoothed_offset.lerp(desired_offset, 1.0 - exp(-position_lag * delta))
-	_smoothed_pos = target_pos + _smoothed_offset
-
-	var target_yaw := 0.0
-	if camera_input_live and input_map != null:
-		target_yaw = _target_orbit_yaw(input_map)
-	if orbit_lag <= 0.0:
-		_orbit_yaw = target_yaw
-	else:
-		_orbit_yaw = lerp_angle(_orbit_yaw, target_yaw, 1.0 - exp(-orbit_lag * delta))
-	position = target_pos + _smoothed_offset.rotated(Vector3.UP, -_orbit_yaw)
-	# Terrain clearance after lag AND orbit (either can put the camera below
-	# rising terrain); probe the near-plane footprint like chase_rig.gd.
-	for probe in [Vector3.ZERO, Vector3(0.3, 0, 0), Vector3(-0.3, 0, 0), Vector3(0, 0, 0.3), Vector3(0, 0, -0.3)]:
-		var ground = simulation.get_camera_ground_height(position + probe)
-		if ground != null:
-			position.y = maxf(position.y, float(ground) + terrain_clearance_m)
-	if position.distance_to(look_at_pos) > 0.01:
-		look_at(look_at_pos, Vector3.UP)
+	var input := {
+		"target_position": xform.origin,
+		# basis.x is the vehicle's FORWARD direction in Godot space (frame_convert.h)
+		"target_forward": xform.basis.x,
+		"key_look": Vector2.ZERO,
+		"stick": Vector2.ZERO,
+		"live": camera_input_live and input_map != null,
+	}
+	if input["live"]:
+		input["key_look"] = input_map.get_camera_key_look()
+		input["stick"] = input_map.get_camera_stick()
+	var params := _params()
+	var frame: Dictionary = RgCameraMath.drone_follow_step(_state, input, delta, params)
+	_state = frame
+	var pos: Vector3 = frame["position"]
+	var grounds: Array = []
+	for probe in RgCameraMath.drone_probe_points(pos):
+		grounds.append(simulation.get_camera_ground_height(probe))
+	position = RgCameraMath.drone_apply_clearance(pos, grounds, params)
+	if bool(frame["has_look"]):
+		look_at(frame["look_at"], Vector3.UP)

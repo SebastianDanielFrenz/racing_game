@@ -3,7 +3,8 @@
 #include "g2m/world/road_structures.h"
 #include <memory>
 namespace rg {
-// Structure decks (bridges, tunnel floors, inferred tunnel roofs, approach decks of grade-separated crossings) are built
+// Structure decks (bridges, tunnel floors, inferred tunnel roofs, approach decks of grade-separated crossings, underpass
+// decks of roads.geom encoding 9 - one inferred deck per served span, no tunnel roof under it) are built
 // by geo2map's g2m_world since terrain migration phase 3a; the names stay available here for the game's callers.
 using RoadDeck = g2m::world::RoadDeck;
 // Grade separation between ground roads (world_config "road_separation"). Two roads whose surfaces differ by more than
