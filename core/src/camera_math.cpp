@@ -587,14 +587,249 @@ DroneFrame drone_follow_step(DroneState& s, const DroneFollowInput& in, double d
     return f;
 }
 
-std::vector<ps::Vec3> drone_probe_offsets() {
+std::vector<ps::Vec3> drone_probe_offsets() { return ground_probe_offsets(); }
+
+double drone_clear_terrain(double z, const std::vector<std::optional<double>>& grounds, double clearance_m) {
+    return clear_terrain_height(z, grounds, clearance_m);
+}
+
+// ------------------------------------------------- shared rig helpers ----
+
+std::vector<ps::Vec3> ground_probe_offsets() {
     return {ps::Vec3{0, 0, 0}, ps::Vec3{0.3, 0, 0}, ps::Vec3{-0.3, 0, 0}, ps::Vec3{0, -0.3, 0}, ps::Vec3{0, 0.3, 0}};
 }
 
-double drone_clear_terrain(double z, const std::vector<std::optional<double>>& grounds, double clearance_m) {
+double clear_terrain_height(double z, const std::vector<std::optional<double>>& grounds, double clearance_m) {
     for (const auto& g : grounds)
         if (g) z = std::max(z, *g + clearance_m);
     return z;
+}
+
+bool look_valid(const ps::Vec3& position, const ps::Vec3& target) {
+    return len3(ps::Vec3{position.x - target.x, position.y - target.y, position.z - target.z}) > 0.01;
+}
+
+double rig_orbit_yaw(double key_x, double key_y, double stick_x, double stick_y, double deadzone) {
+    return drone_target_orbit_yaw(key_x, key_y, stick_x, stick_y, deadzone);
+}
+
+namespace {
+ps::Vec3 add3(const ps::Vec3& a, const ps::Vec3& b) { return {a.x + b.x, a.y + b.y, a.z + b.z}; }
+ps::Vec3 sub3(const ps::Vec3& a, const ps::Vec3& b) { return {a.x - b.x, a.y - b.y, a.z - b.z}; }
+ps::Vec3 mul3(const ps::Vec3& a, double k) { return {a.x * k, a.y * k, a.z * k}; }
+// Godot's Vector3.normalized(): a zero vector stays zero.
+ps::Vec3 unit3(const ps::Vec3& a) {
+    const double l = len3(a);
+    return l > 0.0 ? mul3(a, 1.0 / l) : a;
+}
+// Rotation about +z (Godot: Vector3.rotated(UP, angle)).
+ps::Vec3 rotz(const ps::Vec3& v, double angle) {
+    const double c = std::cos(angle), sn = std::sin(angle);
+    return {v.x * c - v.y * sn, v.x * sn + v.y * c, v.z};
+}
+} // namespace
+
+// ------------------------------------------------------------------ chase ----
+
+void chase_reset(ChaseState& s) { s.initialized = false; }
+
+ChaseFrame chase_follow_step(ChaseState& s, const ChaseInput& in, double dt, const ChaseParams& p) {
+    const ps::Vec3 behind = mul3(unit3(in.forward), -p.follow_distance_m);
+    const ps::Vec3 side = mul3(unit3(in.left), p.side_offset_m);
+    const ps::Vec3 desired = add3(add3(behind, side), ps::Vec3{0, 0, p.follow_height_m});
+    const ps::Vec3 look_at = add3(in.target_pos, ps::Vec3{0, 0, p.look_height_m});
+
+    if (!s.initialized || len3(sub3(s.offset, desired)) > p.snap_m) {
+        s.offset = desired;
+        s.initialized = true;
+    }
+    s.offset = chase_follow_offset(s.offset, desired, dt, p.position_lag);
+
+    double target_yaw = 0.0;
+    if (in.live) target_yaw = rig_orbit_yaw(in.key_x, in.key_y, in.stick_x, in.stick_y, p.orbit_deadzone);
+    if (p.orbit_lag <= 0.0) s.orbit_yaw_rad = target_yaw;
+    else s.orbit_yaw_rad = lerp_angle_godot(s.orbit_yaw_rad, target_yaw, 1.0 - std::exp(-p.orbit_lag * dt));
+
+    ChaseFrame f;
+    f.position = add3(in.target_pos, rotz(s.offset, -s.orbit_yaw_rad));
+    f.look_at = look_at;
+    return f;
+}
+
+// ------------------------------------------------------------------- free ----
+
+namespace {
+void free_apply_limits(FreeState& s, const FreeParams& p) {
+    s.pitch_rad = std::clamp(s.pitch_rad, -p.pitch_limit_rad, p.pitch_limit_rad);
+}
+} // namespace
+
+void free_activate(FreeState& s, const ps::Vec3& position, const ps::Vec3& forward, const FreeParams& p) {
+    const ps::Vec3 f = unit3(forward);
+    s.position = position;
+    s.yaw_rad = std::atan2(-f.x, f.y);
+    s.pitch_rad = std::asin(std::clamp(f.z, -1.0, 1.0));
+    free_apply_limits(s, p);
+}
+
+void free_place(FreeState& s, const ps::Vec3& position, double yaw_rad, double pitch_rad, const FreeParams& p) {
+    s.position = position;
+    s.yaw_rad = yaw_rad;
+    s.pitch_rad = pitch_rad;
+    free_apply_limits(s, p);
+}
+
+void free_shift_origin(FreeState& s, const ps::Vec3& delta) { s.position = add3(s.position, delta); }
+
+void free_step(FreeState& s, const FreeInput& in, double dt, const FreeParams& p) {
+    if (!in.live) return;
+    s.yaw_rad -= in.mouse_x * p.mouse_sensitivity + in.look_x * p.look_rate_rad_s * dt;
+    s.pitch_rad -= in.mouse_y * p.mouse_sensitivity;
+    s.pitch_rad += in.look_y * p.look_rate_rad_s * dt;
+    free_apply_limits(s, p);
+
+    // Horizontal move relative to the heading (straight runs never dive), plus the vertical axis.
+    ps::Vec3 move = add3(rotz(ps::Vec3{in.move_right, in.move_forward, 0.0}, s.yaw_rad), ps::Vec3{0, 0, in.move_up});
+    if (len3(move) > 1.0) move = unit3(move);
+    const double speed = p.move_speed_mps * (in.fast ? p.fast_multiplier : 1.0);
+    s.position = add3(s.position, mul3(move, speed * dt));
+}
+
+// ----------------------------------------------------------------- walker ----
+
+WalkerCamState walker_cam_initial_state(const WalkerCamParams& p) {
+    WalkerCamState s;
+    s.pitch_rad = p.start_pitch_rad;
+    s.distance_m = std::clamp(p.third_person_distance_m, p.min_distance_m, p.max_distance_m);
+    return s;
+}
+
+void walker_cam_activate(WalkerCamState& s, const ps::Vec3& from_forward, const WalkerCamParams& p) {
+    s.have_walker = false;
+    s.drain_wheel = true;
+    const ps::Vec3 f = unit3(from_forward);
+    s.yaw_rad = std::atan2(-f.x, f.y);
+    s.pitch_rad = p.start_pitch_rad;
+}
+
+void walker_cam_shift_origin(WalkerCamState& s, const ps::Vec3& delta) { s.smoothed_feet = add3(s.smoothed_feet, delta); }
+
+void walker_cam_hold(WalkerCamState& s) { s.have_walker = false; }
+
+ps::Vec3 walker_cam_look_forward(const WalkerCamState& s) { return {-std::sin(s.yaw_rad), std::cos(s.yaw_rad), 0.0}; }
+
+WalkerCamFrame walker_cam_step(WalkerCamState& s, const WalkerCamInput& in, double dt, const WalkerCamParams& p) {
+    WalkerCamFrame f;
+    if (in.has_walker) {
+        if (!s.have_walker) {
+            s.have_walker = true;
+            s.smoothed_feet = in.feet;
+            // First sight of the walker: look at the car it just got out of.
+            ps::Vec3 to_car = sub3(in.car_position, in.feet);
+            to_car.z = 0.0;
+            if (len3(to_car) > 0.1) s.yaw_rad = std::atan2(-to_car.x, to_car.y);
+            s.pitch_rad = p.start_pitch_rad;
+        } else if (len3(sub3(s.smoothed_feet, in.feet)) > p.snap_m) {
+            s.smoothed_feet = in.feet;
+        } else {
+            const double a = 1.0 - std::exp(-p.follow_rate * dt);
+            s.smoothed_feet = add3(s.smoothed_feet, mul3(sub3(in.feet, s.smoothed_feet), a));
+        }
+    }
+
+    // The wheel is drained once after an activation even while the inputs are off.
+    double wheel = in.wheel_steps;
+    if (s.drain_wheel) {
+        s.drain_wheel = false;
+        wheel = 0.0;
+    }
+    if (in.live) {
+        s.yaw_rad -= in.mouse_x * p.mouse_sensitivity + in.look_x * p.look_rate_rad_s * dt;
+        s.pitch_rad -= in.mouse_y * p.mouse_sensitivity;
+        s.pitch_rad += in.look_y * p.look_rate_rad_s * dt;
+        if (in.first_person) {
+            s.pitch_rad = std::clamp(s.pitch_rad, -p.first_pitch_limit, p.first_pitch_limit);
+        } else {
+            s.pitch_rad = std::clamp(s.pitch_rad, p.third_pitch_min, p.third_pitch_max);
+            s.distance_m *= std::pow(p.zoom_wheel_factor, -wheel) * std::exp(-in.zoom_key * p.zoom_key_rate * dt);
+            s.distance_m = std::clamp(s.distance_m, p.min_distance_m, p.max_distance_m);
+        }
+    }
+
+    f.yaw_rad = s.yaw_rad;
+    f.pitch_rad = s.pitch_rad;
+    if (!in.has_walker) return f; // not spawned yet / already despawned: hold still, the look stays responsive
+    f.placed = true;
+    if (in.first_person) {
+        f.position = add3(s.smoothed_feet, ps::Vec3{0, 0, p.eye_height_m});
+        return f;
+    }
+    f.third_person = true;
+    f.pivot = add3(s.smoothed_feet, ps::Vec3{0, 0, p.head_height_m});
+    // The look direction: pitch about the right axis, then yaw about up (Godot: yaw * (pitch * forward)).
+    const double cp = std::cos(s.pitch_rad), sp = std::sin(s.pitch_rad);
+    const ps::Vec3 look_dir = rotz(ps::Vec3{0.0, cp, sp}, s.yaw_rad);
+    f.position = sub3(f.pivot, mul3(look_dir, s.distance_m));
+    return f;
+}
+
+WalkerCamAim walker_cam_aim(const ps::Vec3& pivot, const ps::Vec3& position, const WalkerCamParams& p) {
+    WalkerCamAim a;
+    const ps::Vec3 d = sub3(pivot, position);
+    const double flat = std::sqrt(d.x * d.x + d.y * d.y);
+    if (flat > 0.01) {
+        a.valid = true;
+        a.yaw_rad = std::atan2(-d.x, d.y);
+        a.pitch_rad = std::clamp(std::atan2(d.z, flat), p.third_pitch_min, p.third_pitch_max);
+    }
+    return a;
+}
+
+// ------------------------------------------------------------- orbit rig ----
+
+OrbitRigState orbit_rig_initial_state() {
+    OrbitRigState s;
+    const OrbitParams op;
+    s.orbit.elevation_rad = op.default_elevation_rad;
+    s.orbit.distance_m = op.default_distance_m;
+    return s;
+}
+
+void orbit_rig_activate(OrbitRigState& s) {
+    s = orbit_rig_initial_state();
+}
+
+void orbit_rig_reset(OrbitRigState& s) { s.initialized = false; }
+
+OrbitRigFrame orbit_rig_step(OrbitRigState& s, const OrbitRigInput& in, double dt, const OrbitRigParams& p) {
+    const ps::Vec3 focus_rel{0.0, 0.0, p.focus_height_m};
+    if (!s.initialized || len3(sub3(s.target_rel, focus_rel)) > p.snap_m) {
+        s.target_rel = focus_rel;
+        s.initialized = true;
+    }
+    const double a = 1.0 - std::exp(-p.follow_lag * dt);
+    s.target_rel = add3(s.target_rel, mul3(sub3(focus_rel, s.target_rel), a));
+    OrbitRigFrame f;
+    f.target = add3(in.chassis_pos, s.target_rel);
+
+    OrbitInput oi;
+    oi.live = in.live;
+    if (in.live) {
+        // Right/up moves the camera right/up; the captured mouse drags it the same way.
+        oi.look_x = std::clamp(in.look_x + in.mouse_x * p.mouse_look_per_px, -1.0, 1.0);
+        oi.look_y = std::clamp(in.look_y + in.mouse_y * p.mouse_look_per_px, -1.0, 1.0);
+        oi.zoom_steps = in.zoom_steps;
+        oi.zoom_key = in.zoom_key;
+    }
+    s.orbit = orbit_step(s.orbit, oi, dt);
+
+    // The offset is in the heading frame (x forward, y left, z up).
+    const ps::Vec3 o = orbit_offset(s.orbit);
+    ps::Vec3 fwd{in.forward.x, in.forward.y, 0.0};
+    fwd = len3(fwd) > 0.001 ? unit3(fwd) : ps::Vec3{0.0, 1.0, 0.0}; // Godot FORWARD (0, 0, -1)
+    const ps::Vec3 left{-fwd.y, fwd.x, 0.0};
+    f.position = add3(add3(add3(f.target, mul3(fwd, o.x)), mul3(left, o.y)), ps::Vec3{0, 0, o.z});
+    return f;
 }
 
 } // namespace rg
