@@ -3,7 +3,7 @@ extends RefCounted
 # and one more per sun-shadow cascade it reaches; the shipped car_hyper is 160 surfaces once the cockpit parts are
 # mounted. Two steps:
 #  1. merge(): the model is split into rigid groups - the model root plus every node that moves or is switched on its
-#     own (rig nodes with a joint, except doors / lids, which only the garage opens; rig "option" parts; wheels; the
+#     own (rig nodes with a joint, except doors / lids, which only the garage opens; rig "option" and "strip" parts; wheels; the
 #     jointed controls of the mounted cockpit parts; every node a .cockpit.json names). Inside each group, surfaces
 #     that share a material are baked, in the group node's frame, into one surface of a "MergedStatic" MeshInstance3D
 #     under that node, so they still move with it. Picture-identical: same vertices, same material objects. Kept as
@@ -171,8 +171,8 @@ static func merge(root: Node3D, rig_path: String, cockpit_path: String = "", all
 	for rig in [_json(rig_path), _json(ProjectSettings.globalize_path(PARTS_RIG))]:
 		for n in rig.get("nodes", []):
 			var name := str(n.get("name", ""))
-			if n.has("option"):
-				moving[name] = true
+			if n.has("option") or n.has("strip"):
+				moving[name] = true # a part switched on its own: an option, or one a weight-reduction choice can take off
 			elif n.has("joint") or n.has("wheel"):
 				var lid := false
 				for p in ([] if all_joints else STATIC_JOINT_PREFIXES):

@@ -344,20 +344,34 @@ def build_cabin(m, ck, body):
                  lean_deg=9.0, knob_r=0.024, ball=True)
     C.lever(m, ck, "handbrake", (0.08, 0.0, 0.51), (0.0, 1.0, 0.0), (0.26, 0.0, 0.03), "handbrake", 22.0,
             mat="dash_hard", grip_mat="dash_hard", label="handbrake", grip_r=0.017)
+    # ---- console tray and glovebox: own static nodes (rig extra "strip" = dashboard), so a stripped dashboard
+    # shows only gauges and switches (the dash body, the climate knobs and the gear lever stay).
+    m.node("dash_console", None, (0.25, 0.0, 0.52), None, strip="dashboard")
+    M.rounded_box(mb, (0.25, 0.0, 0.527), (0.20, 0.17, 0.028), 0.01, "dash_hard", "dash_console")   # cup tray
+    M.rounded_box(mb, (0.25, 0.0, 0.537), (0.15, 0.12, 0.012), 0.005, "trim_black", "dash_console")  # tray liner
+    m.node("dash_glovebox", None, (0.605, -0.40, 0.70), None, strip="dashboard")
+    M.rounded_box(mb, (0.605, -0.40, 0.70), (0.02, 0.44, 0.17), 0.01, "dash_hard", "dash_glovebox")  # lid
+    M.rounded_box(mb, (0.592, -0.40, 0.745), (0.012, 0.09, 0.012), 0.004, "trim_black", "dash_glovebox")  # handle
     # ---- pedals (clutch, brake, throttle)
     for name, yy, pc in (("clutch", eye_y + 0.13, (0.66, eye_y + 0.13, 0.36)),
                          ("brake", eye_y + 0.01, (0.65, eye_y + 0.01, 0.36)),
                          ("throttle", eye_y - 0.11, (0.70, eye_y - 0.11, 0.34))):
         C.pedal(m, ck, name, (0.80, yy, 0.62), pc, name, label=f"{name} pedal")
     # ---- seats
-    for yy in (0.36, -0.36):
+    # Own static nodes (rig extra "strip" = the garage weight-reduction slot) so a setup that takes a seat out can
+    # hide it: seat_driver (left, +y), seat_passenger, seat_rear (the bench). See docs/garage_ui.md "Visual removal".
+    for node_name, slot, yy in (("seat_driver", "seat_driver", 0.36), ("seat_passenger", "seat_passenger", -0.36)):
+        m.node(node_name, None, (-0.18, yy, 0.52), None, strip=slot)
         seat_closed(m, (-0.18, yy, 0.52), width=0.48, recline=0.30, mat="seat", accent="seat_accent",
-                    bolster=0.035)
+                    bolster=0.035, part=node_name)
+    m.node("seat_rear", None, (-1.05, 0.0, 0.50), None, strip="rear_seats")
     seat_closed(m, (-1.05, 0.0, 0.50), width=1.22, recline=0.26, mat="seat", accent=None, headrest=True,
-                headrest_split=2)
+                headrest_split=2, part="seat_rear")
     # ---- door cards (front cards carry the window switches)
     for name, side, x0, x1 in DOORS:
-        door_card(m, name, side, x0 + 0.05, x1 - 0.06, 0.40, 0.92, y=0.68, mat="dash_hard",
+        card = "door_card_" + name[-2:]          # own node under the door (strip = door_trim), moves with it
+        m.node(card, name, m.nodes[name].pivot, None, strip="door_trim")
+        door_card(m, card, side, x0 + 0.05, x1 - 0.06, 0.40, 0.92, y=0.68, mat="dash_hard",
                   top_mat="dash_paint" if name in ("door_FL", "door_FR") else "dash_hard",
                   bottle=True)
         if name in ("door_FL", "door_FR"):

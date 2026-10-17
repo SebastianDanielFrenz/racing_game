@@ -49,6 +49,7 @@ var rim_colour: Color = Color(0, 0, 0, 0)
 var _wheel_nodes: Array = []
 var _model_root: Node3D
 var model_options: Array = [] # optional model parts switched on (model_options.gd), applied with the colours
+var hidden_nodes: Array = [] # model nodes the setup's removed (weight-reduction) parts hide, chosen by rg_core (strip_visual.h)
 var _cockpit: Node3D # cockpit_controls.gd, for a model with a <model>.cockpit.json next to it
 var _load_ok: bool = false
 var _steering_wheel: Node3D
@@ -193,7 +194,7 @@ func _load_model() -> void:
 # never leaks into another car loaded from the same file.
 func apply_colours() -> void:
 	if _model_root != null:
-		preload("res://scripts/model_options.gd").apply(_model_root, model_absolute_path.get_basename() + ".rig.json", model_options)
+		preload("res://scripts/model_options.gd").apply(_model_root, model_absolute_path.get_basename() + ".rig.json", model_options, hidden_nodes)
 	if _model_root == null:
 		return
 	var stack: Array = [_model_root]

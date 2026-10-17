@@ -619,5 +619,5 @@
   ],
   "excluded": "inner skins and perimeter returns; cabin, cockpit controls, engine bay",
   "limitations": "Closed visual shells per node; arches, intake mouth and tail pipe open. Not a boolean union.",
-  "source_glb_sha256": "2725da882182d7293d70b81b9c6cae57c8dd2f6adbf446c424efc160bd5653bd"
+  "source_glb_sha256": "356ae3c945c2f1e6db3bed48c0ffcedab4c3f2773ee0950bbf5839a9321bfcc5"
 }

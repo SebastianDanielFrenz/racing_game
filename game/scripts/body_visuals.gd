@@ -39,6 +39,7 @@ var _chassis_root: Node3D
 var _chassis_box: MeshInstance3D
 var _vehicle_visual: Node3D
 var _model_options: Array = []
+var _hidden_nodes: Array = []
 var _ground_anchor: Node3D
 
 func _ready() -> void:
@@ -109,6 +110,7 @@ func _make_vehicle_visual() -> void:
 	_vehicle_visual.paint_colour = paint_colour
 	_vehicle_visual.rim_colour = rim_colour
 	_vehicle_visual.set("model_options", _model_options)
+	_vehicle_visual.set("hidden_nodes", _hidden_nodes)
 	_chassis_root.add_child(_vehicle_visual)
 
 # The clickable cockpit of the shown car (cockpit_controls.gd), or null.
@@ -118,18 +120,21 @@ func get_cockpit() -> Node3D:
 # R6: the garage's car for the next world (a different model, colours from its setup).
 # The same car again only re-binds; a different one replaces the visual.
 # `model_options`: the optional model parts the setup switches on (e.g. "roof", model_options.gd).
-func set_vehicle(name_in: String, model_path: String, paint_hex: String, rim_hex: String, model_options: Array = []) -> void:
+# `hidden_nodes`: the model nodes the setup's removed (weight-reduction) parts take off the car (rg_core strip_visual.h).
+func set_vehicle(name_in: String, model_path: String, paint_hex: String, rim_hex: String, model_options: Array = [], hidden_nodes: Array = []) -> void:
 	var same := _vehicle_visual != null and model_path == model_absolute_path
 	vehicle_name = name_in
 	model_absolute_path = model_path
 	paint_colour = Color.html(paint_hex)
 	rim_colour = Color.html(rim_hex)
 	_model_options = model_options
+	_hidden_nodes = hidden_nodes
 	if same:
 		_vehicle_visual.vehicle_name = name_in
 		_vehicle_visual.paint_colour = paint_colour
 		_vehicle_visual.rim_colour = rim_colour
 		_vehicle_visual.set("model_options", model_options)
+		_vehicle_visual.set("hidden_nodes", hidden_nodes)
 		_vehicle_visual.apply_colours()
 		return
 	if _vehicle_visual != null:

@@ -419,6 +419,15 @@ func _set_ignition_detent(spec: Dictionary, index: int) -> void:
 
 # ---- clicking -----------------------------------------------------------------
 
+# False when the node or one of its ancestors up to the model root is hidden (independent of the scene tree).
+func _shown(node: Node) -> bool:
+	var n: Node = node
+	while n != null:
+		if n is Node3D and not (n as Node3D).visible:
+			return false
+		n = n.get_parent()
+	return true
+
 # The control a ray (global space) hits, or "". Hit boxes come from cockpit.json and move with their node. The
 # nearest box wins, except that a smaller box whose entry point lies inside it wins over it: buttons sit inside
 # the steering wheel's box and must stay clickable.
@@ -426,8 +435,8 @@ func pick(origin: Vector3, direction: Vector3) -> String:
 	var hits: Array = [] # {t, volume, name, point (global entry point), box: [inverse transform, centre, half]}
 	for entry in _controls:
 		var h: Dictionary = entry["spec"].get("hit", {})
-		if h.is_empty():
-			continue
+		if h.is_empty() or not _shown(entry["node"]):
+			continue # a control the setup took off the car (rg_core strip_visual.h) cannot be clicked
 		var c: Array = h.get("center", [0, 0, 0])
 		var e: Array = h.get("half_extents", [0.02, 0.02, 0.02])
 		var centre := iso_to_gltf(Vector3(float(c[0]), float(c[1]), float(c[2])))

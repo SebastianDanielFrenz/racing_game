@@ -509,11 +509,11 @@
         "crank_axis": "x",
         "source": "data/models/ventura_gt/ventura_gt.rig.json engine_bay.box_m: firewall (x 0.44) to radiator (x 1.62) less the fan, between the inner fenders (|y| 0.45), crossmember (z 0.14) to the flat hood (720 mm); the gearbox sits behind the firewall in the tunnel"
       },
-      "interior": {"seat_driver": "seat_manual", "seat_passenger": "seat_manual", "rear_seats": "rear_bench_small", "audio": "audio_basic", "door_trim": "door_trim_2door", "dashboard": "dash_classic", "sound_deadening": "sound_deadening_classic", "carpets": "carpets", "spare_wheel": "spare_wheel_full", "fasteners": "fasteners_steel", "hood": "hood_steel_long"},
+      "interior": {"seat_driver": "seat_manual", "seat_passenger": "seat_manual", "audio": "audio_basic", "door_trim": "door_trim_2door", "dashboard": "dash_classic", "sound_deadening": "sound_deadening_classic", "carpets": "carpets", "spare_wheel": "spare_wheel_full", "fasteners": "fasteners_steel", "hood": "hood_steel_long"},
       "chassis": {
         "mass_kg": 1345.8,
-        "body_mass_kg": 665.0,
-        "body_mass_source": "[AS] bare shell (owner on PR #22: interior ripped out, no engine assembly, no drivetrain, no wheels; the seats, trim, carpets, audio, spare wheel, bonnet and fasteners are the catalogue's interior parts, the engine, gearbox, driveline, suspension, brakes, steering, wheels, cooling and fuel system are their own parts): a 1970s steel two-door GT coupe of about 4.7 m - body in white with subframe 380 kg, long doors and boot lid 105, glass 35, chrome bumpers and lights 45, wiring and battery 30, twin exhaust 35, heater 15, other fixed parts 20 = 665 kg (estimated).",
+        "body_mass_kg": 679.0,
+        "body_mass_source": "[AS] bare shell (owner on PR #22: interior ripped out, no engine assembly, no drivetrain, no wheels; the seats, trim, carpets, audio, spare wheel, bonnet and fasteners are the catalogue's interior parts, the engine, gearbox, driveline, suspension, brakes, steering, wheels, cooling and fuel system are their own parts): a 1970s steel two-door GT coupe of about 4.7 m - body in white with subframe 380 kg, long doors and boot lid 105, glass 35, chrome bumpers and lights 45, wiring and battery 30, twin exhaust 35, heater 15, other fixed parts 20 = 665 kg (estimated), plus 14 kg of rear-deck trim and luggage-deck panelling that stand where a rear bench would be (the model has no rear seats) = 679 kg.",
         "half_extents": [
           2.1,
           0.5,
@@ -570,11 +570,11 @@
         "crank_axis": "x",
         "source": "data/models/runabout_t/runabout_t.rig.json engine_bay.box_m: under the bonnet between the dash (x 0.55) and the radiator (x 1.25), above the frame rails; the gearbox sits behind the dash"
       },
-      "interior": {"seat_driver": "seat_vintage", "seat_passenger": "seat_vintage", "rear_seats": "rear_bench_vintage", "dashboard": "dash_vintage", "carpets": "carpets_small", "spare_wheel": "spare_wheel_vintage", "fasteners": "fasteners_small", "hood": "hood_steel_vintage"},
+      "interior": {"seat_driver": "seat_vintage_bench", "rear_seats": "rear_bench_vintage", "dashboard": "dash_vintage", "carpets": "carpets_small", "spare_wheel": "spare_wheel_vintage", "fasteners": "fasteners_small", "hood": "hood_steel_vintage"},
       "chassis": {
         "mass_kg": 709.4,
         "body_mass_kg": 215.0,
-        "body_mass_source": "[AS] bare shell (owner on PR #22: interior ripped out, no engine assembly, no drivetrain, no wheels; the seats, trim, carpets, audio, spare wheel, bonnet and fasteners are the catalogue's interior parts, the engine, gearbox, driveline, suspension, brakes, steering, wheels, cooling and fuel system are their own parts): a 1910s open tourer - steel ladder frame 90 kg, wooden-framed body tub 60, mudguards and running boards 25, windscreen 10, lamps 8, wiring 3, exhaust 8, other fixed parts 11 = 215 kg (estimated); the folding top is visual only and not counted.",
+        "body_mass_source": "[AS] bare shell (owner on PR #22: interior ripped out, no engine assembly, no drivetrain, no wheels; the seats, trim, carpets, audio, spare wheel, bonnet and fasteners are the catalogue's interior parts, the engine, gearbox, driveline, suspension, brakes, steering, wheels, cooling and fuel system are their own parts): a 1910s open tourer - steel ladder frame 90 kg, wooden-framed body tub 60, mudguards and running boards 25, windscreen 10, lamps 8, wiring 3, exhaust 8, other fixed parts 11 = 215 kg (estimated); the front bench is one seat part (driver and passenger share it); the folding top is visual only and not counted.",
         "half_extents": [
           1.5,
           0.4,
@@ -589,7 +589,7 @@
       },
       "setup": {
         "options_note": "every option but brake_bias: the car has rear brakes only (no front corner to bias towards)",
-        "options": ["final_drive", "gear_ratios", "clutch_capacity", "brake_force", "spring_front", "spring_rear", "damper_front", "damper_rear", "arb_front", "arb_rear", "tyre_front", "tyre_rear", "assist_auto_clutch", "assist_auto_blip", "assist_auto_shift", "assist_unit", "paint", "rim", "folding_top", "engine_rev_limit", "engine_throttle_response", "engine_install", "fuel", "gearbox_install", "drive_layout", "diff_front", "diff_rear", "turbo_install", "turbo_install_n2o", "turbo_kit", "charge_piping", "engine_bore", "engine_rods", "engine_pistons", "engine_crankshaft", "engine_valve_springs", "turbo_boost_target", "nitrous_install_hyper", "nitrous_install_sedan", "trim_driver_seat", "trim_passenger_seat", "trim_rear_seats", "trim_audio", "trim_door_trim", "trim_dashboard", "trim_sound_deadening", "trim_carpets", "trim_spare_wheel", "trim_fasteners", "trim_hood", "cooling_radiator", "cooling_fan", "cooling_oil_cooler", "cooling_block_cooling"],
+        "options": ["final_drive", "gear_ratios", "clutch_capacity", "brake_force", "spring_front", "spring_rear", "damper_front", "damper_rear", "arb_front", "arb_rear", "tyre_front", "tyre_rear", "assist_auto_clutch", "assist_auto_blip", "assist_auto_shift", "assist_unit", "paint", "rim", "folding_top", "engine_rev_limit", "engine_throttle_response", "engine_install", "fuel", "gearbox_install", "drive_layout", "diff_front", "diff_rear", "turbo_install", "turbo_install_n2o", "turbo_kit", "charge_piping", "engine_bore", "engine_rods", "engine_pistons", "engine_crankshaft", "engine_valve_springs", "turbo_boost_target", "nitrous_install_hyper", "nitrous_install_sedan", "cooling_radiator", "cooling_fan", "cooling_oil_cooler", "cooling_block_cooling", "trim_driver_seat", "trim_rear_seats", "trim_audio", "trim_door_trim", "trim_dashboard", "trim_sound_deadening", "trim_carpets", "trim_spare_wheel", "trim_fasteners", "trim_hood"],
         "tyre_fitment": {
           "front": {
             "rims_in": [
