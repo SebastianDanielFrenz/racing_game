@@ -845,9 +845,9 @@ func _draw_garage_options() -> void:
 		if str(opt["id"]) == "clutch_capacity": continue
 		if str(opt["area"]) != _active_area or not bool(opt["available"]):
 			continue
-		if str(opt["kind"]) in ["tyre_choice", "file_choice"]:
+		if str(opt["kind"]) in ["tyre_choice", "file_choice", "part_choice"]:
 			_option_box.add_child(_label("Installed " + str(opt["label"]).to_lower(),17,HORIZONTAL_ALIGNMENT_LEFT))
-			var installed := _label(_part_name(opt) if str(opt["kind"]) == "file_choice" else _display_value("tyre_choice",opt["value"]),14,HORIZONTAL_ALIGNMENT_LEFT,true)
+			var installed := _label(_part_name(opt) if str(opt["kind"]) != "tyre_choice" else _display_value("tyre_choice",opt["value"]),14,HORIZONTAL_ALIGNMENT_LEFT,true)
 			installed.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 			_option_box.add_child(installed)
 			count += 1
@@ -1304,9 +1304,11 @@ func _draw_upgrades() -> void:
 		return
 	if top == "Chassis":
 		if _garage_path.size() == 1:
-			_draw_tiles(["Weight", "Weight reduction", "Aero", "Suspension & brakes"],["Weight reduction"])
+			_draw_tiles(["Weight", "Weight reduction", "Aero", "Suspension & brakes"],["Weight reduction"] if _weight_reduction_options().is_empty() else [])
 		elif _garage_path[1] == "Weight":
 			_draw_mass_breakdown()
+		elif _garage_path[1] == "Weight reduction":
+			_draw_weight_reduction()
 		elif _garage_path[1] == "Aero":
 			_draw_tiles(["Front diffuser", "Rear wing"],["Front diffuser", "Rear wing"])
 		else:
@@ -1338,6 +1340,43 @@ func _draw_mass_breakdown() -> void:
 		if not id.begins_with("drivetrain.") or int(part["depth"]) > 3: continue
 		var indent := "    ".repeat(int(part["depth"]) - 2)
 		box.add_child(_label("%s%s  %.0f kg" % [indent, str(part["label"]), float(part["total_kg"])], 14, HORIZONTAL_ALIGNMENT_LEFT, true))
+
+# The part choices (setup_options.json kind part_choice, group "Weight reduction") this car offers: one row of cards per
+# slot, the fitted part marked. Mass only: the model keeps the part (visual removal is not built).
+func _weight_reduction_options() -> Array:
+	var out: Array = []
+	for opt in garage.get_options():
+		if str(opt["kind"]) == "part_choice" and bool(opt["available"]):
+			out.append(opt)
+	return out
+
+func _draw_weight_reduction() -> void:
+	var info: Dictionary = garage.get_mass_breakdown(garage.get_edit_id())
+	if bool(info.get("ok", false)):
+		var total := float(info["total_kg"])
+		var delta := total - float(info.get("stock_kg", total))
+		_option_box.add_child(_label("Total %.0f kg%s" % [total, ("  (%+.0f kg vs stock)" % delta) if absf(delta) >= 0.5 else ""], 16, HORIZONTAL_ALIGNMENT_LEFT))
+	var note := _label("Mass only: removed parts still show on the car.", 13, HORIZONTAL_ALIGNMENT_LEFT, true)
+	note.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_option_box.add_child(note)
+	for opt in _weight_reduction_options():
+		_option_box.add_child(_label(str(opt["label"]), 17, HORIZONTAL_ALIGNMENT_LEFT))
+		var grid := GridContainer.new()
+		grid.columns = 3
+		grid.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		_option_box.add_child(grid)
+		for part in opt["parts"]:
+			var installed := str(part["id"]) == str(opt["value"])
+			var card := _make_component_card(part, "INSTALLED" if installed else "Install")
+			card.custom_minimum_size = Vector2(0, 110)
+			card.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+			grid.add_child(card)
+			var opt_id := str(opt["id"])
+			var part_id := str(part["id"])
+			_buttons["part:" + opt_id + ":" + part_id] = card
+			card.pressed.connect(func(): _edit_option(opt_id, part_id); _draw_garage_options())
+			if _garage_preferred == null: _garage_preferred = card
+	_focus_garage.call_deferred()
 
 # G1: what the engine/fuel choice changed (fuel, clutch, shift points, weight) and what an engine change reset.
 func _draw_swap_summary() -> void:

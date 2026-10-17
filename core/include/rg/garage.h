@@ -114,6 +114,8 @@ public:
     [[nodiscard]] const std::string& selected_id() const { return selected_; }
     bool select(const std::string& id, std::string* err); // persists
     // ---- per-vehicle data ----
+    // mass_kg is the car's part-mass tree total with its setup applied (a preset: its overlay, owner on PR #22), the
+    // catalog chassis.mass_kg only when the tree cannot be built.
     // The stats follow the car's drive layout as the setup leaves it (the working copy while that car is edited, else the
     // saved setup on top of the preset): a drivetrain swap changes layout, driven_wheels and driveline.
     [[nodiscard]] std::optional<VehicleStats> stats(const std::string& id, std::string* err) const;
@@ -163,6 +165,8 @@ public:
     // The part-mass tree of a car as it would be driven (its preset overlay and saved setup applied), for screens outside
     // the edit session.
     [[nodiscard]] PartTree part_tree(const std::string& id) const;
+    // The car's stock part-mass tree (its base vehicle file, no setup; a preset: its base car without the overlay).
+    [[nodiscard]] PartTree stock_part_tree_of(const std::string& id) const;
     void reset_option(const std::string& option_id);
     void reset_all();
     [[nodiscard]] bool dirty() const; // the working copy differs from the saved one
@@ -227,6 +231,7 @@ private:
     std::string drive_dir_;
     CarBrowser browser_;
     mutable std::map<std::string, VehicleStats> stats_cache_; // by vehicle file + declared displacement (the files do not change while the game runs)
+    mutable std::map<std::string, double> mass_cache_; // the part-tree total by car id + setup JSON (stats mass_kg)
 };
 
 } // namespace rg

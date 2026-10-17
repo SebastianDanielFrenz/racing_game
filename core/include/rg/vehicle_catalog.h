@@ -88,6 +88,9 @@ struct CatalogEntry {
     // Optional model parts the car's art carries (rig.json nodes with an "option", e.g. "roof" = the Runabout's
     // folding top). A setup option with the same model_option shows or hides them; the physics never sees them.
     std::vector<std::string> model_options;
+    // The removable / swappable parts of the car (part-mass tree group "trim"): slot -> part_masses.json key of the
+    // stock part ("driver_seat" -> "seat_comfort"). The garage's weight reduction options act on these slots.
+    std::map<std::string, std::string> interior;
     std::optional<DeclaredEngineStats> declared_engine;
     std::string default_paint = "#8a8f98"; // visual only
     std::string default_rim = "#c4c8cf";

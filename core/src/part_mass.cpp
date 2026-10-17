@@ -5,6 +5,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdio>
 #include <filesystem>
 #include <map>
 #include <set>
@@ -22,7 +23,8 @@ constexpr const char* kRequiredParts[] = {
     "brake_rear",       "suspension_front", "suspension_rear", "wheel_default",   "cooling_system",
     "park_lock",        "fuel_tank",        "nitrous_kit",     "n2o_bottle",      "electronics_other",
     "engine_unknown",   "gearbox_unknown",  "diff_axle_open",  "diff_centre_open", "layout_conversion",
-    "conversion_driveline", "conversion_transfer",
+    "conversion_driveline", "conversion_transfer", "fuel",     "n2o",             "turbo_unit",
+    "turbo_hot_side",   "intercooler",      "charge_piping",
 };
 
 // Keys a node can carry besides the table's own (physics_carries may name them).
@@ -45,6 +47,12 @@ std::optional<json> read_json_file(const std::string& path) {
     auto doc = detail::parse_json(*text);
     if (!doc || !doc->is_object()) return std::nullopt;
     return doc;
+}
+
+std::string factor_text(double f) {
+    char buf[32];
+    std::snprintf(buf, sizeof buf, "%.2f", f);
+    return buf;
 }
 
 std::string lower_name(std::string s) {
@@ -274,6 +282,18 @@ PartTree build_part_tree(const PartMassTable& table, const PartTreeInput& in) {
         return false;
     };
 
+    // physics_sim's contents mass (vehicle.md "Contents mass"): with it the chassis body carries the fuel and N2O
+    // contents itself and lightens as they are used, so the tree's contents nodes are carried by physics.
+    bool contents_live = false;
+    if (const auto cm = veh.find("contents_mass"); cm != veh.end() && cm->is_object()) detail::get_bool(*cm, "enabled", contents_live);
+    auto contents_node = [&](const std::string& id, const std::string& key, double kg, const std::string& label) {
+        PartNode n = b.leaf(id, key, kg, label);
+        n.source += contents_live ? " (spawn fill; physics_sim carries it on the chassis and lightens it as it is used)"
+                                  : " (spawn fill, counted statically)";
+        n.carried_by_physics = n.carried_by_physics || contents_live;
+        return n;
+    };
+
     const json empty_array = json::array();
     const json* comps = &empty_array;
     const json* shafts = &empty_array;
@@ -392,20 +412,30 @@ PartTree build_part_tree(const PartMassTable& table, const PartTreeInput& in) {
             if (far) (front ? need_front_prop : need_rear_prop) = true;
             drivetrain.children.push_back(std::move(axle));
         } else if (type == "fuel_tank") {
-            double cap = 0.0;
+            double cap = 0.0, initial = 0.0;
             detail::get_number(c, "capacity_kg", cap);
-            fuel.children.push_back(b.leaf(unique_id("fuel_system.tank"), "fuel_tank", cap));
+            if (!detail::get_number(c, "initial_kg", initial)) initial = cap; // physics_sim's default fill
+            PartNode tank = b.leaf(unique_id("fuel_system.tank"), "fuel_tank", cap);
+            tank.children.push_back(contents_node(tank.id + ".contents", "fuel", std::clamp(initial, 0.0, std::max(cap, 0.0)), "Fuel"));
+            fuel.children.push_back(std::move(tank));
         } else if (type == "nitrous_kit") {
             nitrous_kit = b.leaf("engine.nitrous_kit", "nitrous_kit");
         } else if (type == "n2o_bottle") {
-            double cap = 0.0;
+            double cap = 0.0, initial = -1.0;
             if (!detail::get_number(c, "capacity_kg", cap)) {
                 std::string ref;
                 if (detail::get_string(c, "ref", ref)) {
-                    if (const auto bottle = read_json_file(resolve(in.vehicle_dir, ref))) detail::get_number(*bottle, "capacity_kg", cap);
+                    if (const auto bottle = read_json_file(resolve(in.vehicle_dir, ref))) {
+                        detail::get_number(*bottle, "capacity_kg", cap);
+                        detail::get_number(*bottle, "initial_kg", initial);
+                    }
                 }
             }
-            bottles.push_back(b.leaf("bottle", "n2o_bottle", cap));
+            detail::get_number(c, "initial_kg", initial); // the component's own fill wins
+            if (initial < 0.0) initial = cap;              // physics_sim: a bottle starts full
+            PartNode bottle = b.leaf("bottle", "n2o_bottle", cap);
+            bottle.children.push_back(contents_node("contents", "n2o", std::clamp(initial, 0.0, std::max(cap, 0.0)), "Nitrous oxide"));
+            bottles.push_back(std::move(bottle));
         } else {
             tree.error = "part_masses: no mass rule for the powertrain component type \"" + type + "\" (" + cid + ")";
             return tree;
@@ -465,6 +495,7 @@ PartTree build_part_tree(const PartMassTable& table, const PartTreeInput& in) {
         PartNode kit = nitrous_kit ? std::move(*nitrous_kit) : group("engine.nitrous_kit", "Nitrous system");
         for (std::size_t i = 0; i < bottles.size(); ++i) {
             bottles[i].id = kit.id + ".bottle" + (i == 0 ? std::string() : "_" + std::to_string(i + 1));
+            for (PartNode& ch : bottles[i].children) ch.id = bottles[i].id + "." + ch.id;
             kit.children.push_back(std::move(bottles[i]));
         }
         engine.children.push_back(std::move(kit));
@@ -515,11 +546,40 @@ PartTree build_part_tree(const PartMassTable& table, const PartTreeInput& in) {
         }
     }
 
+    // ---- the factory forced induction (the engine node itself is the NA base engine) ----
+    if (in.turbo && in.turbo->count > 0) {
+        const TurboSystem& t = *in.turbo;
+        PartNode sys = group("engine.turbo_system", t.label.empty() ? std::string("Turbo system") : t.label);
+        sys.source = t.source.empty() ? std::string("turbo configuration") : t.source;
+        const double s3 = t.rotor_scale * t.rotor_scale * t.rotor_scale;
+        for (int i = 0; i < t.count; ++i) {
+            PartNode u = b.leaf(sys.id + ".turbo" + (t.count == 1 ? std::string() : "_" + std::to_string(i + 1)), "turbo_unit", s3);
+            if (t.count > 1) u.label += " " + std::to_string(i + 1);
+            sys.children.push_back(std::move(u));
+        }
+        sys.children.push_back(b.leaf(sys.id + ".hot_side", "turbo_hot_side", static_cast<double>(t.count)));
+        sys.children.push_back(b.leaf(sys.id + ".intercooler", "intercooler", t.flow_kg_s));
+        sys.children.push_back(b.leaf(sys.id + ".charge_piping", "charge_piping", static_cast<double>(t.count - 1)));
+        engine.children.push_back(std::move(sys));
+    }
+
+    // ---- the removable / swappable interior and body parts ----
+    PartNode trim = group("trim", "Interior and panels");
+    for (const FittedPart& f : in.trim) {
+        PartNode n = b.leaf(unique_id("trim." + f.slot), f.key, 0.0, f.label);
+        if (f.factor != 1.0) {
+            n.own_kg *= std::max(0.0, f.factor);
+            n.source += " x " + factor_text(f.factor);
+        }
+        trim.children.push_back(std::move(n));
+    }
+
     root.children.push_back(std::move(engine));
     root.children.push_back(std::move(drivetrain));
     root.children.push_back(std::move(running));
     if (!fuel.children.empty()) root.children.push_back(std::move(fuel));
     if (!electronics.children.empty()) root.children.push_back(std::move(electronics));
+    if (!trim.children.empty()) root.children.push_back(std::move(trim));
 
     // ---- parts a setup feature adds (a turbo kit) ----
     for (const PartAttachment& a : in.extras) {

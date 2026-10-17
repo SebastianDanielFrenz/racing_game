@@ -112,7 +112,7 @@ TEST_CASE("garage: an edit is validated, saved, persisted and applied to the dri
     }
     CHECK(driven_ratio == Approx(stock_ratio * 1.12));
     CHECK(d.sim_name == "car_sedan");
-    CHECK(d.chassis.mass_kg == 1500.0);
+    CHECK(d.chassis.mass_kg == Approx(1329.4).margin(0.05)); // the dry part-tree chassis (PR #22)
 
     // an unmodified car drives from its original file, no copy
     const rg::DriveSelection plain = g2->prepare_drive("car_sedan_rwd");
