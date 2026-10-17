@@ -11,6 +11,7 @@
 #include <cmath>
 #include <cstdlib>
 #include <fstream>
+#include <filesystem>
 #include <utility>
 #include <string>
 
@@ -71,8 +72,9 @@ TEST_CASE("camera motion: loader rejects bad files", "[camera_motion]") {
     nlohmann::json j;
     in >> j;
     const std::string dir = kRepo + "/out/test_tmp";
-    std::string mk = "mkdir -p '" + dir + "'";
-    REQUIRE(std::system(mk.c_str()) == 0);
+    std::error_code ec;
+    std::filesystem::create_directories(dir, ec);
+    REQUIRE_FALSE(ec);
     auto try_load = [&](const nlohmann::json& doc) {
         const std::string p = dir + "/camera_motion_bad.json";
         std::ofstream(p) << doc.dump();
