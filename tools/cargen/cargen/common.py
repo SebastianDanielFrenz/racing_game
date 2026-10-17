@@ -6,7 +6,7 @@ interior passes the same topology audit as the exterior.
 from . import ASSETGEN  # noqa: F401  (sys.path setup)
 from assetgen import mesh as M
 from assetgen.parts import standard_materials
-from assetgen.vec import compose, translate, rot_axis
+from assetgen.vec import compose, translate, rot_axis, norm
 from assetgen.vehicles.hyper_shell import clean_degenerate
 from . import quality as Q
 from .normals import smooth_model
@@ -44,13 +44,22 @@ def materials(m, paint, roof=None, metallic=0.25, roughness=0.2):
     m.mat("brass", color=(0.78, 0.60, 0.25), metallic=1.0, roughness=0.3)
     m.mat("headliner", color=(0.55, 0.55, 0.53), roughness=0.95)
     m.mat("carpet", color=(0.07, 0.07, 0.075), roughness=1.0)
+    m.mat("deadening", color=(0.16, 0.16, 0.15), roughness=1.0)       # bitumen / felt insulation mats
 
 
 def cabin_shell(m, body, x_front, x_rear, floor_z, half_w, roof_drop=0.03, thickness=0.02):
-    """Carpeted floor slab and a headliner slab under the roof, both closed."""
+    """Carpeted floor slab and a headliner slab under the roof, both closed. The carpet is its own static node
+    "carpets" and the insulation under it (floor pad, rear bulkhead pad) the node "sound_deadening" (rig extra
+    "strip" = the garage weight-reduction slot), so a setup that takes them out can hide them."""
     mb = m.mb
-    M.rounded_box(mb, ((x_front + x_rear) / 2, 0.0, floor_z - thickness / 2),
-                  (x_front - x_rear, 2 * half_w, thickness), 0.008, "carpet")
+    xc, length = (x_front + x_rear) / 2, x_front - x_rear
+    m.node("carpets", None, (xc, 0.0, floor_z), None, strip="carpets")
+    M.rounded_box(mb, (xc, 0.0, floor_z - thickness / 2), (length, 2 * half_w, thickness), 0.008, "carpet", "carpets")
+    m.node("sound_deadening", None, (xc, 0.0, floor_z - thickness), None, strip="sound_deadening")
+    M.rounded_box(mb, (xc, 0.0, floor_z - thickness - 0.007), (length + 0.02, 2 * half_w + 0.02, 0.014), 0.004,
+                  "deadening", "sound_deadening")                                  # floor pad under the carpet
+    M.rounded_box(mb, (x_rear + 0.03, 0.0, floor_z + 0.18), (0.012, 2 * half_w - 0.12, 0.36), 0.004, "deadening",
+                  "sound_deadening")                                               # rear bulkhead pad
     g = body.green
     zmax = max(g["zroof"](x) for x in [x_rear + k * (x_front - x_rear) / 40 for k in range(41)])
     xs = []
@@ -128,7 +137,22 @@ def door_card(m, part, side, x0, x1, z0, z1, y, mat="interior", top_mat=None, bo
         M.rounded_box(mb, (xc, yc - side * 0.04, z0 + 0.08), ((x1 - x0) * 0.75, 0.05, 0.12), 0.012, mat, part)
 
 
-CABIN_MATS = {"seat", "seat_accent", "dash_hard", "dash_top", "dash_paint", "carpet", "headliner", "gauge_face",
+def spare_wheel(m, name, center, radius, width, axis=(0.0, 0.0, 1.0), slot="spare_wheel"):
+    """A spare wheel (tyre, steel rim, hub) as its own static node (rig extra "strip" = the weight-reduction slot).
+    `axis` is the wheel's axle direction (lying flat: z; upright at the tail: x)."""
+    mb = m.mb
+    m.node(name, None, center, None, strip=slot)
+    a = norm(axis)
+    p0 = tuple(c - a_i * width / 2 for c, a_i in zip(center, a))
+    p1 = tuple(c + a_i * width / 2 for c, a_i in zip(center, a))
+    M.cylinder(mb, p0, p1, radius, "cladding", name, count=32)
+    for k, (w, r) in enumerate(((width * 1.02, radius * 0.62), (width * 0.55, radius * 0.22))):
+        q0 = tuple(c - a_i * w / 2 for c, a_i in zip(center, a))
+        q1 = tuple(c + a_i * w / 2 for c, a_i in zip(center, a))
+        M.cylinder(mb, q0, q1, r, "brake_drum" if k == 0 else "chrome", name, count=24)
+
+
+CABIN_MATS = {"seat", "seat_accent", "dash_hard", "dash_top", "dash_paint", "carpet", "deadening", "headliner", "gauge_face",
               "gauge_tick", "gauge_needle", "button", "button_red", "knob", "boot", "pedal_rubber", "interior"}
 
 

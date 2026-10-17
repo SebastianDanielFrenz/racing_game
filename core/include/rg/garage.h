@@ -18,6 +18,7 @@
 #include "rg/car_browser.h"
 #include "rg/engine_store.h"
 #include "rg/garage_set.h"
+#include "rg/strip_visual.h"
 #include "rg/vehicle_catalog.h"
 #include "rg/vehicle_setup.h"
 
@@ -44,6 +45,7 @@ struct GarageConfig {
     std::string cooling_upgrades_path; // data/cooling_systems/cooling_upgrades.json ("" = <repo_root>/data/cooling_systems/cooling_upgrades.json if it exists, else no cooling options)
     std::string part_masses_path; // data/vehicles/part_masses.json ("" = <repo_root>/data/vehicles/part_masses.json if it exists, else no part-mass tree)
     std::string damage_config_path; // data/vehicles/damage.json ("" = <repo_root>/data/vehicles/damage.json if it exists, else no damage model)
+    std::string strip_visual_path; // data/vehicles/strip_visual.json ("" = <repo_root>/data/vehicles/strip_visual.json if it exists, else nothing is hidden)
     std::string user_dir;      // selection and setups are saved under <user_dir>/garage/
     std::string work_root;     // scratch and drive materialisations
     std::string engine_map_cache_dir; // .psmaps cache for the loader ("" = the per-vehicle default rg::Session uses)
@@ -61,6 +63,7 @@ struct DriveSelection {
     std::string paint;         // "#rrggbb", the setup's or the catalog default
     std::string rim;
     std::vector<std::string> model_options; // visual model parts switched on by the setup (e.g. "roof")
+    std::vector<std::string> hidden_nodes;  // model nodes the setup's weight reduction takes off the car (rg/strip_visual.h)
     std::string engine_map_cache_dir; // the .psmaps cache the world load should use (the vehicle's own default)
     std::string turbo_map_extension_path; // the turbo map extension policy the world load should use ("" = none)
     bool modified = false;     // a saved setup is applied
@@ -180,6 +183,8 @@ public:
     [[nodiscard]] std::string working_rim() const;
     // The model parts the working setup switches on (setup options with a model_option, e.g. "roof").
     [[nodiscard]] std::vector<std::string> working_model_options() const;
+    // The model nodes the working setup's weight reduction takes off the car (rg/strip_visual.h; empty without the table).
+    [[nodiscard]] std::vector<std::string> working_hidden_nodes() const;
 
     // ---- damage (rg/damage.h; owner: damage persists until repaired, repairs are free and need the player's action) ----
     [[nodiscard]] const DamageConfig* damage_config() const { return damage_ ? &*damage_ : nullptr; }
@@ -218,6 +223,8 @@ private:
     std::string turbo_map_extension_path_; // the loaded policy file, "" = none
     std::optional<DamageConfig> damage_;    // data/vehicles/damage.json, nullopt = no damage model
     std::string damage_config_path_;
+    std::shared_ptr<const StripVisualTable> strip_visual_; // null = nothing is hidden
+    [[nodiscard]] std::vector<std::string> hidden_nodes_for(const CatalogEntry& e, const VehicleSetup& setup) const;
     std::shared_ptr<EngineStore> store_;
     std::string selected_;
 

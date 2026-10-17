@@ -469,6 +469,9 @@ godot::Dictionary RgGarage::get_working_colours() const {
     godot::PackedStringArray parts;
     for (const std::string& o : garage_->working_model_options()) parts.push_back(from_std(o));
     d["model_options"] = parts;
+    godot::PackedStringArray hidden;
+    for (const std::string& n : garage_->working_hidden_nodes()) hidden.push_back(from_std(n));
+    d["hidden_nodes"] = hidden;
     return d;
 }
 
@@ -490,6 +493,9 @@ godot::Dictionary RgGarage::prepare_drive(const String& id) {
     godot::PackedStringArray model_options;
     for (const std::string& o : s.model_options) model_options.push_back(from_std(o));
     d["model_options"] = model_options;
+    godot::PackedStringArray hidden_nodes;
+    for (const std::string& n : s.hidden_nodes) hidden_nodes.push_back(from_std(n));
+    d["hidden_nodes"] = hidden_nodes;
     d["engine_map_cache_dir"] = from_std(s.engine_map_cache_dir);
     d["turbo_map_extension_path"] = from_std(s.turbo_map_extension_path);
     d["damage_config_path"] = from_std(s.damage_config_path);

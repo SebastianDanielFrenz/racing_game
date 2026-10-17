@@ -605,6 +605,50 @@
       }
     },
     {
+      "name": "carpets",
+      "parent": "ventura_gt",
+      "pivot": [
+        -0.69,
+        0.0,
+        0.18
+      ],
+      "bounds_local": {
+        "min": [
+          -1.11,
+          -0.74,
+          -0.02
+        ],
+        "max": [
+          1.11,
+          0.74,
+          0.248
+        ]
+      },
+      "strip": "carpets"
+    },
+    {
+      "name": "sound_deadening",
+      "parent": "ventura_gt",
+      "pivot": [
+        -0.69,
+        0.0,
+        0.16
+      ],
+      "bounds_local": {
+        "min": [
+          -1.12,
+          -0.75,
+          -0.014
+        ],
+        "max": [
+          1.12,
+          0.75,
+          0.38
+        ]
+      },
+      "strip": "sound_deadening"
+    },
+    {
       "name": "needle_speed",
       "parent": "ventura_gt",
       "pivot": [
@@ -1553,6 +1597,50 @@
       }
     },
     {
+      "name": "dash_console",
+      "parent": "ventura_gt",
+      "pivot": [
+        -0.12,
+        0.0,
+        0.447
+      ],
+      "bounds_local": {
+        "min": [
+          -0.075,
+          -0.095,
+          -0.01
+        ],
+        "max": [
+          0.081,
+          0.095,
+          0.02
+        ]
+      },
+      "strip": "dashboard"
+    },
+    {
+      "name": "dash_glovebox",
+      "parent": "ventura_gt",
+      "pivot": [
+        0.262,
+        -0.34,
+        0.69
+      ],
+      "bounds_local": {
+        "min": [
+          -0.018,
+          -0.25,
+          -0.08
+        ],
+        "max": [
+          0.01,
+          0.25,
+          0.08
+        ]
+      },
+      "strip": "dashboard"
+    },
+    {
       "name": "pedal_clutch",
       "parent": "ventura_gt",
       "pivot": [
@@ -1649,6 +1737,94 @@
       }
     },
     {
+      "name": "seat_driver",
+      "parent": "ventura_gt",
+      "pivot": [
+        -0.55,
+        0.38,
+        0.36
+      ],
+      "bounds_local": {
+        "min": [
+          -0.57,
+          -0.25,
+          -0.14
+        ],
+        "max": [
+          0.26,
+          0.25,
+          0.7361
+        ]
+      },
+      "strip": "seat_driver"
+    },
+    {
+      "name": "seat_passenger",
+      "parent": "ventura_gt",
+      "pivot": [
+        -0.55,
+        -0.38,
+        0.36
+      ],
+      "bounds_local": {
+        "min": [
+          -0.57,
+          -0.25,
+          -0.14
+        ],
+        "max": [
+          0.26,
+          0.25,
+          0.7361
+        ]
+      },
+      "strip": "seat_passenger"
+    },
+    {
+      "name": "spare_wheel",
+      "parent": "ventura_gt",
+      "pivot": [
+        -1.3,
+        0.0,
+        0.5
+      ],
+      "bounds_local": {
+        "min": [
+          -0.29,
+          -0.29,
+          -0.0714
+        ],
+        "max": [
+          0.29,
+          0.29,
+          0.0714
+        ]
+      },
+      "strip": "spare_wheel"
+    },
+    {
+      "name": "door_card_L",
+      "parent": "door_L",
+      "pivot": [
+        0.48,
+        0.84963,
+        0.55
+      ],
+      "bounds_local": {
+        "min": [
+          -1.13,
+          -0.1796,
+          -0.25
+        ],
+        "max": [
+          -0.08,
+          -0.0946,
+          0.29
+        ]
+      },
+      "strip": "door_trim"
+    },
+    {
       "name": "knob_crank_L",
       "parent": "door_L",
       "pivot": [
@@ -1679,6 +1855,28 @@
           0.03
         ]
       }
+    },
+    {
+      "name": "door_card_R",
+      "parent": "door_R",
+      "pivot": [
+        0.48,
+        -0.84963,
+        0.55
+      ],
+      "bounds_local": {
+        "min": [
+          -1.13,
+          0.0946,
+          -0.25
+        ],
+        "max": [
+          -0.08,
+          0.1796,
+          0.29
+        ]
+      },
+      "strip": "door_trim"
     },
     {
       "name": "knob_crank_R",
@@ -1948,24 +2146,24 @@
     {
       "level": 0,
       "glb": "ventura_gt.glb",
-      "triangles": 158166,
-      "bytes": 5434392,
+      "triangles": 159362,
+      "bytes": 5511948,
       "chord_tolerance_mm": 0.35,
       "use": "garage, showroom and close-up camera (< 15 m)"
     },
     {
       "level": 1,
       "glb": "ventura_gt_lod1.glb",
-      "triangles": 89354,
-      "bytes": 3326764,
+      "triangles": 90366,
+      "bytes": 3397292,
       "chord_tolerance_mm": 1.2,
       "use": "driving camera and nearby traffic (15 - 60 m)"
     },
     {
       "level": 2,
       "glb": "ventura_gt_lod2.glb",
-      "triangles": 41294,
-      "bytes": 1652124,
+      "triangles": 41658,
+      "bytes": 1689156,
       "chord_tolerance_mm": 6.0,
       "use": "distant traffic (> 60 m)"
     }

@@ -346,7 +346,7 @@
       "bounds_local": {
         "min": [
           -1.0064,
-          -0.19,
+          -0.126,
           -0.4247
         ],
         "max": [
@@ -378,7 +378,7 @@
       "bounds_local": {
         "min": [
           -0.7978,
-          -0.19,
+          -0.127,
           -0.3482
         ],
         "max": [
@@ -415,7 +415,7 @@
         ],
         "max": [
           0.0239,
-          0.19,
+          0.126,
           0.7472
         ]
       }
@@ -447,7 +447,7 @@
         ],
         "max": [
           -0.004,
-          0.19,
+          0.127,
           0.747
         ]
       }
@@ -675,6 +675,50 @@
           0.018
         ]
       }
+    },
+    {
+      "name": "carpets",
+      "parent": "pico",
+      "pivot": [
+        -0.26,
+        0.0,
+        0.27
+      ],
+      "bounds_local": {
+        "min": [
+          -1.16,
+          -0.7,
+          -0.02
+        ],
+        "max": [
+          1.16,
+          0.7,
+          0.0
+        ]
+      },
+      "strip": "carpets"
+    },
+    {
+      "name": "sound_deadening",
+      "parent": "pico",
+      "pivot": [
+        -0.26,
+        0.0,
+        0.25
+      ],
+      "bounds_local": {
+        "min": [
+          -1.17,
+          -0.71,
+          -0.014
+        ],
+        "max": [
+          1.17,
+          0.71,
+          0.38
+        ]
+      },
+      "strip": "sound_deadening"
     },
     {
       "name": "needle_speed",
@@ -1187,6 +1231,50 @@
       }
     },
     {
+      "name": "dash_console",
+      "parent": "pico",
+      "pivot": [
+        0.25,
+        0.0,
+        0.52
+      ],
+      "bounds_local": {
+        "min": [
+          -0.1,
+          -0.085,
+          -0.007
+        ],
+        "max": [
+          0.1,
+          0.085,
+          0.023
+        ]
+      },
+      "strip": "dashboard"
+    },
+    {
+      "name": "dash_glovebox",
+      "parent": "pico",
+      "pivot": [
+        0.605,
+        -0.4,
+        0.7
+      ],
+      "bounds_local": {
+        "min": [
+          -0.019,
+          -0.22,
+          -0.085
+        ],
+        "max": [
+          0.01,
+          0.22,
+          0.085
+        ]
+      },
+      "strip": "dashboard"
+    },
+    {
       "name": "pedal_clutch",
       "parent": "pico",
       "pivot": [
@@ -1283,6 +1371,94 @@
       }
     },
     {
+      "name": "seat_driver",
+      "parent": "pico",
+      "pivot": [
+        -0.18,
+        0.36,
+        0.52
+      ],
+      "bounds_local": {
+        "min": [
+          -0.5181,
+          -0.24,
+          -0.12
+        ],
+        "max": [
+          0.25,
+          0.24,
+          0.7497
+        ]
+      },
+      "strip": "seat_driver"
+    },
+    {
+      "name": "seat_passenger",
+      "parent": "pico",
+      "pivot": [
+        -0.18,
+        -0.36,
+        0.52
+      ],
+      "bounds_local": {
+        "min": [
+          -0.5181,
+          -0.24,
+          -0.12
+        ],
+        "max": [
+          0.25,
+          0.24,
+          0.7497
+        ]
+      },
+      "strip": "seat_passenger"
+    },
+    {
+      "name": "seat_rear",
+      "parent": "pico",
+      "pivot": [
+        -1.05,
+        0.0,
+        0.5
+      ],
+      "bounds_local": {
+        "min": [
+          -0.4896,
+          -0.61,
+          -0.12
+        ],
+        "max": [
+          0.25,
+          0.61,
+          0.7573
+        ]
+      },
+      "strip": "rear_seats"
+    },
+    {
+      "name": "door_card_FL",
+      "parent": "door_FL",
+      "pivot": [
+        0.93,
+        0.8,
+        0.62
+      ],
+      "bounds_local": {
+        "min": [
+          -0.94,
+          -0.19,
+          -0.22
+        ],
+        "max": [
+          -0.06,
+          -0.105,
+          0.3
+        ]
+      },
+      "strip": "door_trim"
+    },
+    {
       "name": "btn_window_FL",
       "parent": "door_FL",
       "pivot": [
@@ -1315,6 +1491,50 @@
       }
     },
     {
+      "name": "door_card_RL",
+      "parent": "door_RL",
+      "pivot": [
+        -0.08,
+        0.8,
+        0.62
+      ],
+      "bounds_local": {
+        "min": [
+          -0.73,
+          -0.19,
+          -0.22
+        ],
+        "max": [
+          -0.06,
+          -0.105,
+          0.3
+        ]
+      },
+      "strip": "door_trim"
+    },
+    {
+      "name": "door_card_FR",
+      "parent": "door_FR",
+      "pivot": [
+        0.93,
+        -0.8,
+        0.62
+      ],
+      "bounds_local": {
+        "min": [
+          -0.94,
+          0.105,
+          -0.22
+        ],
+        "max": [
+          -0.06,
+          0.19,
+          0.3
+        ]
+      },
+      "strip": "door_trim"
+    },
+    {
       "name": "btn_window_FR",
       "parent": "door_FR",
       "pivot": [
@@ -1345,6 +1565,28 @@
           0.0112
         ]
       }
+    },
+    {
+      "name": "door_card_RR",
+      "parent": "door_RR",
+      "pivot": [
+        -0.08,
+        -0.8,
+        0.62
+      ],
+      "bounds_local": {
+        "min": [
+          -0.73,
+          0.105,
+          -0.22
+        ],
+        "max": [
+          -0.06,
+          0.19,
+          0.3
+        ]
+      },
+      "strip": "door_trim"
     }
   ],
   "sockets": [
@@ -1512,24 +1754,24 @@
     {
       "level": 0,
       "glb": "pico.glb",
-      "triangles": 142660,
-      "bytes": 5027404,
+      "triangles": 143500,
+      "bytes": 5077860,
       "chord_tolerance_mm": 0.35,
       "use": "garage, showroom and close-up camera (< 15 m)"
     },
     {
       "level": 1,
       "glb": "pico_lod1.glb",
-      "triangles": 80668,
-      "bytes": 3070952,
+      "triangles": 81508,
+      "bytes": 3121404,
       "chord_tolerance_mm": 1.2,
       "use": "driving camera and nearby traffic (15 - 60 m)"
     },
     {
       "level": 2,
       "glb": "pico_lod2.glb",
-      "triangles": 36932,
-      "bytes": 1527164,
+      "triangles": 37212,
+      "bytes": 1546332,
       "chord_tolerance_mm": 6.0,
       "use": "distant traffic (> 60 m)"
     }

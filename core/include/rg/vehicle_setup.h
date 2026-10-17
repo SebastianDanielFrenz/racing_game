@@ -281,6 +281,11 @@ struct SetupModel {
     DrivelineInfo driveline;
 };
 // Builds the option views of an entry from its files.
+// Whether the car offers this weight-reduction choice: the option is in its list AND the car has that part at all
+// (catalog "interior" slot). A car without a separate passenger seat (a bench) or without rear seats (a two-seater)
+// does not offer the removal; a setup that still holds such a value ignores it.
+bool part_choice_offered(const CatalogEntry& entry, const SetupOptionDef& def);
+
 SetupModel build_setup_model(const CatalogEntry& entry, const SetupOptionTable& table, const SetupContext& ctx,
                              const VehicleSetup* installed = nullptr);
 

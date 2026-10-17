@@ -48,6 +48,7 @@ var _models_loaded: int = 0
 var _bay: Dictionary = {}
 var _bay_poll: float = 0.0
 var _model_options: Array = [] # optional parts the working setup switches on (model_options.gd)
+var _hidden_nodes: Array = [] # model nodes the working setup's removed parts take off the car (rg_core strip_visual.h)
 # The shell panel covers one side of the screen: the camera shifts sideways so the car
 # sits in the free part ("left" / "right" / "" and the panel's width in pixels).
 var panel_side: String = ""
@@ -120,6 +121,7 @@ func show_vehicle(info: Dictionary) -> bool:
 	vehicle_info = info
 	vehicle_id = str(info.get("id", ""))
 	_model_options = [] # the configurator sets the working setup's parts after this
+	_hidden_nodes = []
 	for id in _cars:
 		_cars[id]["real"].visible = (id == vehicle_id)
 		_cars[id]["mirror"].visible = (id == vehicle_id)
@@ -144,8 +146,9 @@ func set_colours(paint_hex: String, rim_hex: String) -> void:
 	_apply_tyre_widths()
 
 # Optional model parts the working setup switches on (model_options.gd), on the car and its mirror twin.
-func set_model_options(on: Array) -> void:
+func set_model_options(on: Array, hidden: Array = []) -> void:
 	_model_options = on
+	_hidden_nodes = hidden
 	_apply_parts()
 
 # The setup's parts plus the hood the bay engine needs.
@@ -158,7 +161,7 @@ func _apply_parts() -> void:
 		on.append(hood)
 	var rig := str(vehicle_info.get("model_path", "")).get_basename() + ".rig.json"
 	for instance in [_cars[vehicle_id]["real"], _cars[vehicle_id]["mirror"]]:
-		preload("res://scripts/model_options.gd").apply(instance, rig, on)
+		preload("res://scripts/model_options.gd").apply(instance, rig, on, _hidden_nodes)
 
 func _apply_tyre_widths() -> void:
 	var owner := get_parent()

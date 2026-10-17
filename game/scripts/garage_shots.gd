@@ -87,6 +87,10 @@ func _run() -> void:
 	while main.get_shell_ui().garage.get_dyno().get("busy",false) and Time.get_ticks_msec() < dyno_deadline:
 		await _frames(1)
 	await _seconds(0.25)
+	if OS.get_cmdline_user_args().has("--strip-shots-only"):
+		await _strip_shots()
+		get_tree().quit()
+		return
 	await _shot("overview")
 	_press("tile:Chassis")
 	_press("tile:Weight")
@@ -143,3 +147,30 @@ func _run() -> void:
 	await _shot("garage_exit")
 	print("RG_GARAGE_SHOT done")
 	get_tree().quit()
+
+# Render the real showroom model from the driver's seat, before and after removing cabin parts.
+func _strip_shots() -> void:
+	var scene: Node = main.get_garage_scene()
+	scene.set_process(false)
+	main.get_shell_ui().hide()
+	var holder: Node3D = scene.get("_cars")[vehicle]["real"]
+	var eye: Node3D = holder.find_child("socket_driver_eye", true, false)
+	var seat: Node3D = holder.find_child("seat_passenger", true, false)
+	var camera: Camera3D = scene.camera_node()
+	camera.h_offset = 0.0
+	camera.fov = 85.0
+	camera.global_position = eye.global_position + Vector3(0, 0.12, 0)
+	camera.look_at(seat.global_position + Vector3(0, 0.25, 0), Vector3.UP)
+	await _frames(4)
+	await RenderingServer.frame_post_draw
+	scene.capture_image().save_png(out_dir.path_join("cabin_stock.png"))
+	var g = main.get_shell_ui().garage
+	for option in ["trim_passenger_seat", "trim_rear_seats", "trim_audio", "trim_door_trim", "trim_carpets", "trim_sound_deadening"]:
+		var result: Dictionary = g.set_option(option, "removed")
+		print("RG_STRIP_SHOT %s %s" % [option, result])
+	var fitted: Dictionary = g.get_working_colours()
+	scene.set_model_options(Array(fitted.get("model_options", [])), Array(fitted.get("hidden_nodes", [])))
+	await _frames(4)
+	await RenderingServer.frame_post_draw
+	scene.capture_image().save_png(out_dir.path_join("cabin_stripped.png"))
+	print("RG_STRIP_SHOT done")

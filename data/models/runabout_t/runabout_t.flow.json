@@ -352,5 +352,5 @@
   ],
   "excluded": "cabin, cockpit controls, engine bay, hidden top",
   "limitations": "Closed visual shells per part; separate parts overlap and touch (coachbuilt), not a boolean union. The open car is selected; the hidden top and the cabin are not.",
-  "source_glb_sha256": "0548de8adca84af38047d5d5d065af90815870c02a17ee6eadfa863d5b9dfec2"
+  "source_glb_sha256": "d7ad895c35bcc4ca3aa7ff5069d3a7d507dff783de1cd8e4e8c95b591630d13e"
 }
