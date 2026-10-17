@@ -219,6 +219,8 @@ func _test_model(path: String) -> void:
 		parts.apply(root, rig_file, ["hood_scoop"])
 		check(root.find_child("hood_scoop", true, false).visible and not root.find_child("hood_bulge", true, false).visible, "ventura_gt: only the picked hood shows")
 	_test_strip(ck, root, rig_file, spec, eye, name)
+	preload("res://scripts/car_mesh_merge.gd").merge(root, rig_file, path.get_basename() + ".cockpit.json", true, false)
+	_test_strip(ck, root, rig_file, spec, eye, name + " (batched)")
 	holder.queue_free()
 	sim.queue_free()
 	await process_frame
@@ -228,7 +230,7 @@ func _test_model(path: String) -> void:
 func _test_strip(ck: Node3D, root: Node3D, rig_file: String, spec: Dictionary, eye: Node3D, name: String) -> void:
 	var parts := preload("res://scripts/model_options.gd")
 	var table: Variant = JSON.parse_string(FileAccess.get_file_as_string("res://../data/vehicles/strip_visual.json"))
-	var model: Dictionary = (table as Dictionary).get("models", {}).get(name, {})
+	var model: Dictionary = (table as Dictionary).get("models", {}).get(name.trim_suffix(" (batched)"), {})
 	var live := 0
 	var all_nodes: Array = []
 	for rule in model.get("rules", []):
