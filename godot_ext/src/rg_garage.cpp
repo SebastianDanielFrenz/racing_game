@@ -1,4 +1,5 @@
 #include "rg_garage.h"
+#include "rg_damage_convert.h"
 
 #include "rg/engine_swap.h"
 
@@ -497,6 +498,8 @@ godot::Dictionary RgGarage::prepare_drive(const String& id) {
     d["hidden_nodes"] = hidden_nodes;
     d["engine_map_cache_dir"] = from_std(s.engine_map_cache_dir);
     d["turbo_map_extension_path"] = from_std(s.turbo_map_extension_path);
+    d["damage_config_path"] = from_std(s.damage_config_path);
+    d["damage_state_path"] = from_std(s.damage_state_path);
     d["modified"] = s.modified;
     godot::Dictionary chassis;
     chassis["mass_kg"] = s.chassis.mass_kg;
@@ -513,6 +516,27 @@ godot::Dictionary RgGarage::prepare_drive(const String& id) {
     godot::PackedStringArray lines;
     for (const std::string& l : s.swap_lines) lines.push_back(from_std(l));
     d["swap_lines"] = lines;
+    return d;
+}
+
+// ---- damage ------------------------------------------------------------------
+
+godot::Dictionary RgGarage::get_damage(const String& id) const {
+    if (garage_ == nullptr || garage_->damage_config() == nullptr) return rg_godot::damage_view_to_dictionary(rg::DamageView{}, false);
+    std::string err;
+    const rg::DamageState state = garage_->damage_state(to_std(id), &err);
+    godot::Dictionary d = rg_godot::damage_view_to_dictionary(rg::damage_view(*garage_->damage_config(), state), true);
+    d["error"] = from_std(err);
+    d["state_path"] = from_std(garage_->damage_state_path(to_std(id)));
+    return d;
+}
+
+godot::Dictionary RgGarage::repair_damage(const String& id) {
+    if (garage_ == nullptr) return fail_reply("garage not initialised");
+    std::string err;
+    godot::Dictionary d;
+    d["ok"] = garage_->repair_damage(to_std(id), &err);
+    d["error"] = from_std(err);
     return d;
 }
 
@@ -838,6 +862,8 @@ void RgGarage::_bind_methods() {
     ClassDB::bind_method(D_METHOD("discard"), &RgGarage::discard);
     ClassDB::bind_method(D_METHOD("get_working_colours"), &RgGarage::get_working_colours);
     ClassDB::bind_method(D_METHOD("prepare_drive", "id"), &RgGarage::prepare_drive);
+    ClassDB::bind_method(D_METHOD("get_damage", "id"), &RgGarage::get_damage);
+    ClassDB::bind_method(D_METHOD("repair_damage", "id"), &RgGarage::repair_damage);
     ClassDB::bind_method(D_METHOD("cleanup"), &RgGarage::cleanup);
     ClassDB::bind_method(D_METHOD("get_work_file_count"), &RgGarage::get_work_file_count);
     ClassDB::bind_method(D_METHOD("setup_camera", "id", "model_min_iso", "model_max_iso", "has_model_bounds"), &RgGarage::setup_camera);

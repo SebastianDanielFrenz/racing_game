@@ -39,9 +39,10 @@ public:
                                  const godot::String& world_config_path);
 
     // ---- screen flow (rg::ShellFlow). Every event returns the transition:
-    // {accepted, from, to, actions: [{kind, screen, world, flag}]} with kind in
+    // {accepted, from, to, actions: [{kind, screen, world, flag, vehicle}]} with kind in
     // "show_screen" | "load_world" | "unload_world" | "set_paused" |
-    // "reset_car" | "save_settings" | "save_controls" | "quit" | "open_garage" | "close_garage"; world = {kind: "flat"|"real_world",
+    // "reset_car" | "save_settings" | "save_controls" | "quit" | "open_garage" | "close_garage" | "repair_car"
+    // (vehicle = the catalog id, "" = the car being driven); world = {kind: "flat"|"real_world",
     // has_spawn, x, y, yaw_deg, label, open_address_search}. ----
     [[nodiscard]] godot::String get_screen() const;
     [[nodiscard]] godot::String get_settings_return() const;
@@ -61,6 +62,8 @@ public:
     // R6 garage flow: a car chosen in vehicle select; "Drive" in the configurator.
     godot::Dictionary vehicle_chosen(const godot::String& id);
     godot::Dictionary garage_drive();
+    // PR #33: the garage's first page (vehicle select / change car) "Repair" on a car.
+    godot::Dictionary repair_chosen(const godot::String& vehicle_id);
     [[nodiscard]] godot::String get_garage_return() const;  // "main_menu" | "pause"
     [[nodiscard]] godot::String get_garage_vehicle() const; // the configurator's car
     [[nodiscard]] godot::Array get_main_menu_items() const; // [{id, label}]

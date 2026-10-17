@@ -226,6 +226,24 @@ std::unique_ptr<Garage> Garage::open(const GarageConfig& config, std::string* er
         }
     }
     {
+        // Damage model (rg/damage.h): optional file, strict when present.
+        std::string path = config.damage_config_path;
+        if (path.empty()) {
+            const std::string dflt = config.repo_root + "/data/vehicles/damage.json";
+            std::error_code ec;
+            if (fs::is_regular_file(fs::path(dflt), ec)) path = dflt;
+        }
+        if (!path.empty()) {
+            auto cfg = load_damage_config(path, &e);
+            if (!cfg) {
+                if (err != nullptr) *err = e;
+                return nullptr;
+            }
+            g->damage_ = std::move(*cfg);
+            g->damage_config_path_ = path;
+        }
+    }
+    {
         // Base part masses (rg/part_mass.h): optional file, strict when present.
         std::string path = config.part_masses_path;
         if (path.empty()) {
@@ -828,6 +846,33 @@ PartTree Garage::part_tree(const std::string& id) const {
     return std::move(c.parts);
 }
 
+std::string Garage::damage_state_path(const std::string& id) const {
+    if (!damage_ || config_.user_dir.empty()) return {};
+    return rg::damage_state_path(config_.user_dir, id);
+}
+
+DamageState Garage::damage_state(const std::string& id, std::string* err) const {
+    const std::string path = damage_state_path(id);
+    if (path.empty()) return {};
+    std::string e;
+    auto st = load_damage_state(path, &e);
+    if (!st) {
+        if (err != nullptr) *err = e;
+        return {};
+    }
+    return *st;
+}
+
+bool Garage::repair_damage(const std::string& id, std::string* err) {
+    if (catalog_.find(id) == nullptr) {
+        if (err != nullptr) *err = "unknown vehicle \"" + id + "\"";
+        return false;
+    }
+    const std::string path = damage_state_path(id);
+    if (path.empty()) return true; // no damage model: nothing to repair
+    return save_damage_state(path, DamageState{}, err);
+}
+
 PartTree Garage::stock_part_tree_of(const std::string& id) const {
     const CatalogEntry* e = catalog_.find(id);
     if (e == nullptr) {
@@ -859,6 +904,10 @@ DriveSelection Garage::prepare_drive(const std::string& id) {
     d.vehicle_path = e->vehicle_path;
     d.engine_map_cache_dir = context_for(*e).engine_map_cache_dir;
     d.turbo_map_extension_path = turbo_map_extension_path_;
+    if (damage_) {
+        d.damage_config_path = damage_config_path_;
+        d.damage_state_path = damage_state_path(e->id);
+    }
 
     remove_drive_dir();
     std::vector<std::string> notices;

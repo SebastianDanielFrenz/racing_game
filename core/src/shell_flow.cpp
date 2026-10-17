@@ -40,6 +40,7 @@ const std::vector<MenuItem>& pause_menu_items() {
     static const std::vector<MenuItem> items = {
         {"resume", "Resume"},
         {"reset_car", "Reset car"},
+        {"repair_car", "Repair car"},
         {"change_car", "Change car"},
         {"garage", "Garage (respawn)"},
         {"controls", "Controls"},
@@ -69,6 +70,13 @@ ShellAction simple(ShellActionKind k, bool flag = false) {
     ShellAction a;
     a.kind = k;
     a.flag = flag;
+    return a;
+}
+
+ShellAction repair(const std::string& vehicle) {
+    ShellAction a;
+    a.kind = ShellActionKind::RepairCar;
+    a.vehicle = vehicle;
     return a;
 }
 
@@ -178,6 +186,10 @@ ShellTransition ShellFlow::handle(const ShellEvent& e) {
                     return go(Screen::Drive,
                               {simple(ShellActionKind::ResetCar), simple(ShellActionKind::SetPaused, false)});
                 }
+                if (e.item == "repair_car") {
+                    // Free and at once; the menu stays up (the player sees the HUD's damage line go away on resume).
+                    return go(Screen::Pause, {simple(ShellActionKind::RepairCar)});
+                }
                 if (e.item == "garage") {
                     garage_return_ = Screen::Pause;
                     garage_vehicle_.clear();
@@ -210,6 +222,7 @@ ShellTransition ShellFlow::handle(const ShellEvent& e) {
                 garage_vehicle_ = e.item;
                 return go(Screen::Configurator, {});
             }
+            if (e.kind == ShellEventKind::RepairChosen && !e.item.empty()) return go(Screen::VehicleSelect, {repair(e.item)});
             return refuse();
 
         case Screen::Configurator:
@@ -230,6 +243,7 @@ ShellTransition ShellFlow::handle(const ShellEvent& e) {
 
         case Screen::ChangeCar:
             if (e.kind == ShellEventKind::Back) return go(Screen::Pause, {simple(ShellActionKind::CloseGarage)});
+            if (e.kind == ShellEventKind::RepairChosen && !e.item.empty()) return go(Screen::ChangeCar, {repair(e.item)});
             if (e.kind == ShellEventKind::VehicleChosen && !e.item.empty()) {
                 // The paused world reloads with the chosen car, which starts where the old one stood.
                 garage_vehicle_ = e.item;
@@ -319,6 +333,12 @@ ShellEvent ShellFlow::vehicle_chosen(std::string id) {
 ShellEvent ShellFlow::garage_drive() {
     ShellEvent e;
     e.kind = ShellEventKind::GarageDrive;
+    return e;
+}
+ShellEvent ShellFlow::repair_chosen(std::string vehicle_id) {
+    ShellEvent e;
+    e.kind = ShellEventKind::RepairChosen;
+    e.item = std::move(vehicle_id);
     return e;
 }
 ShellEvent ShellFlow::pause_toggle() {

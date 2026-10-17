@@ -155,8 +155,16 @@ public:
     //  engine_map_cache_dir, modified, chassis: {mass_kg, half_extents, z_m},
     //  assist_auto_clutch, assist_auto_blip, assist_auto_shift, manual_gearbox,
     //  engine_title ("" = the car's own engine), swap_lines: [String]}
+    // ..., damage_config_path, damage_state_path ("" = no damage model)
     godot::Dictionary prepare_drive(const godot::String& id);
     void cleanup();
+
+    // ---- damage (rg/damage.h) ----
+    // The car's saved part health: rg_damage_convert.h's dictionary plus error (a broken state file reads healthy).
+    [[nodiscard]] godot::Dictionary get_damage(const godot::String& id) const;
+    // Free repair: every part back to health 1 (the state file is removed). {ok, error}. A running world is repaired
+    // through RgSimulation.repair_damage().
+    godot::Dictionary repair_damage(const godot::String& id);
     // Number of regular files below the garage's work root (tests: nothing is left behind).
     [[nodiscard]] int get_work_file_count() const;
 
