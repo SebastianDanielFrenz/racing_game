@@ -109,6 +109,10 @@ func run() -> void:
 		var refused: Dictionary = RgDriverActions.selector_shift(rolling,0,2)
 		check(bool(refused.refused),box+": reverse is refused while rolling")
 		print("RG_AUTOMATIC_TEST box=%s selector=%s manual=%s" % [box,snapshot().get("transmission_selector"),snapshot().get("transmission_manual_mode")])
+		sim.set_control("brake",0.0)
+		sim.set_control("throttle",0.3)
+		check(await wait_for(func(): return float(snapshot().get("speedo_kmh",0.0)) > 3.6 and float(snapshot().get("drive_power_kw",0.0)) > 1.0), box+": moving car publishes positive dashboard power")
+		print("RG_AUTOMATIC_TEST box=%s power_kw=%.3f" % [box,float(snapshot().get("drive_power_kw",0.0))])
 		sim.stop()
 		sim.queue_free()
 		await process_frame
