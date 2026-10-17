@@ -458,7 +458,7 @@ std::optional<WorldConfig> load_world_config(const std::string& path, std::strin
         }
     }
 
-    // --- render_classes (optional; "osm" default, "served" = g2m.terrain.class) ---
+    // --- render_classes (optional; "osm" default, "served" or "none") ---
     if (root.contains("render_classes")) {
         std::string mode;
         if (!get_string(root, "render_classes", path, "top level", &mode, err)) {
@@ -466,8 +466,10 @@ std::optional<WorldConfig> load_world_config(const std::string& path, std::strin
         }
         if (mode == "served") {
             cfg.render_classes_served = true;
+        } else if (mode == "none") {
+            cfg.render_classes_none = true;
         } else if (mode != "osm") {
-            fail(err, path, "\"render_classes\" must be \"osm\" or \"served\" (got \"" + mode + "\")");
+            fail(err, path, "\"render_classes\" must be \"osm\", \"served\" or \"none\" (got \"" + mode + "\")");
             return std::nullopt;
         }
     }

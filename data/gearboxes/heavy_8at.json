@@ -1,0 +1,36 @@
+{
+  "format": "physics_sim.gearbox/1",
+  "name": "heavy_8at",
+  "type": "automatic",
+  "source": "Game-owned heavy-duty 8-speed planetary torque-converter automatic for big-torque engines (automatic gearbox swap, 2026-10-16), NOT a specific gearbox [AS]. Ratios and efficiencies are physics_sim's sedan_8at (data/gearboxes/sedan_8at.json: 4.70-0.67, spread ~7) so the step pattern stays the published 8-speed planetary one; the capacities are scaled for engines up to the 750 N*m catalogue rating: shift clutches 1000 N*m kinetic input-referred (1.33 x the rating, the sedan box's 400 N*m keeps 2 x its 200 N*m engine; heavier clutch packs [AS]), lock-up clutch 1000 N*m. Converter [AS]: K-factor 102 rpm/sqrt(N*m) at stall, chosen so a 600 N*m engine stalls the converter near 2500 rpm (n = K sqrt(T)); the K curve keeps sedan_8at's shape scaled by 102/179; torque ratio 2.0 at stall as sedan_8at. Bigger pump/turbine (0.12 / 0.05 kg*m^2) and input/output inertias than the sedan box [AS]. Shift timing as sedan_8at (torque phase 0.15 s, inertia-phase bound 0.6 s, engage 0.35 s) [AS].",
+  "forward_ratios":     [4.70, 3.13, 2.10, 1.67, 1.29, 1.00, 0.84, 0.67],
+  "forward_efficiency": [0.95, 0.955, 0.96, 0.965, 0.97, 0.975, 0.97, 0.965],
+  "reverse_ratios":     [-3.30],
+  "reverse_efficiency": [0.94],
+  "input_inertia_kgm2": 0.016,
+  "output_inertia_kgm2": 0.024,
+  "input_axis_local": [0, 1, 0],
+  "output_axis_local": [0, -1, 0],
+  "initial_gear": 0,
+  "rated_input_torque_nm": 750.0,
+  "gear_type": "helical",
+  "mesh_order": 23,
+  "shift_clutch": {
+    "capacity_nm": 1000.0,
+    "static_factor": 1.15,
+    "torque_phase_s": 0.15,
+    "max_inertia_phase_s": 0.6,
+    "sync_slip_rad_s": 3.0,
+    "engage_time_s": 0.35
+  },
+  "converter": {
+    "k_factor":     { "x": [0.0, 0.3, 0.5, 0.7, 0.8, 0.9], "y": [102.0, 103.1, 106.0, 114.0, 125.4, 159.6] },
+    "torque_ratio": { "x": [0.0, 0.3, 0.5, 0.7, 0.85, 1.0], "y": [2.0, 1.75, 1.5, 1.25, 1.0, 1.0] },
+    "pump_inertia_kgm2": 0.12,
+    "turbine_inertia_kgm2": 0.05,
+    "lockup_capacity_nm": 1000.0,
+    "lockup_static_factor": 1.1,
+    "lockup_engage_time_s": 0.6,
+    "lockup_release_time_s": 0.15
+  }
+}

@@ -171,9 +171,12 @@ func apply_terrain(mat: ShaderMaterial) -> void:
 func apply_road(mat: ShaderMaterial) -> void:
 	_set_common(mat)
 	var r: Dictionary = _config.get("road", {})
+	var t: Dictionary = _config.get("terrain", {})
 	for key in ["asphalt", "concrete", "sett", "unpaved", "verge"]:
 		mat.set_shader_parameter("layer_" + key, layer(str(r.get(key, ""))))
 	mat.set_shader_parameter("layer_paving", layer(str(r.get("paving_stones", ""))))
+	mat.set_shader_parameter("layer_dirt", layer(str(t.get("dirt", "dirt"))))
+	mat.set_shader_parameter("layer_grass", layer(str(t.get("grass", "grass"))))
 	mat.set_shader_parameter("layer_macro", layer(str(_config.get("terrain", {}).get("macro_layer", "dirt"))))
 	mat.set_shader_parameter("detail_far_m", float(r.get("detail_far_m", 400.0)))
 

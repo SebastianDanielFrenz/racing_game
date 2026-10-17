@@ -18,6 +18,8 @@ uniform int layer_concrete = 1;
 uniform int layer_paving = 2;
 uniform int layer_sett = 3;
 uniform int layer_unpaved = 4;
+uniform int layer_dirt = 6;
+uniform int layer_grass = 5;
 uniform int layer_verge = 4;
 uniform int layer_macro = 6;
 uniform float detail_far_m = 400.0;
@@ -58,6 +60,7 @@ void fragment() {
 	float half_width = width*0.5;
 	float lateral = UV.x;
 	float lanes = round(COLOR.r*32.0);
+	int surface_kind = int(round(lanes)); // Route overlays use this slot for g2m::SurfaceKind; marked ribbons use lane count.
 	float forward_lanes = round(COLOR.g*32.0);
 	// Bits as road_visual.h documents them: low byte in COLOR.b, high byte in COLOR.a (256 = verge strip).
 	int flags = int(round(COLOR.b*255.0)) + 256*int(round(COLOR.a*255.0));
@@ -84,8 +87,10 @@ void fragment() {
 		float joint = 1.0-smoothstep(0.0,0.02+aa,min(slab,5.0-slab));
 		asphalt = vec3(0.36,0.36,0.345)+vec3(grain*0.01*detail*UV2.y)-vec3(0.12*joint);
 	} else if ((flags & 8192)!=0) {
-		// Unpaved (a track's mouth in a junction patch): the terrain's dirt colour with a little gravel grain.
-		asphalt = vec3(0.36,0.28,0.16)+vec3(grain*0.02*detail);
+		// Explicit unpaved routes remain visually/materially distinct from terrain paint: unknown/dirt use soil,
+		// gravel uses the gravel set, and grass paths use the grass set.
+		asphalt = surface_kind==6 ? vec3(0.37,0.34,0.29) : (surface_kind==9 ? vec3(0.19,0.26,0.17) : vec3(0.36,0.28,0.16));
+		asphalt += vec3(grain*0.02*detail);
 	}
 	// The gravel verge strip beside the road bed (no paint there).
 	float edge = (flags & 256)!=0 ? 1.0 : 0.0;
@@ -99,7 +104,9 @@ void fragment() {
 		if (edge > 0.5) { layer = layer_verge; }
 		else if ((flags & 2048)!=0) { layer = (flags & 16384)!=0 ? layer_sett : layer_paving; }
 		else if ((flags & 4096)!=0) { layer = layer_concrete; }
-		else if ((flags & 8192)!=0) { layer = layer_unpaved; }
+		else if ((flags & 8192)!=0) {
+			layer = surface_kind==6 ? layer_unpaved : (surface_kind==9 ? layer_grass : layer_dirt);
+		}
 		float dist = length(VERTEX);
 		float far_w = smoothstep(detail_far_m*0.6,detail_far_m,dist);
 		vec3 uvw = vec3(vec2(UV.x,UV.y)/layer_tile_m[layer],float(layer));

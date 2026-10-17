@@ -324,6 +324,40 @@ TEST_CASE("terrain mode: HeightTileSharedFetch passes status and tile through", 
     CHECK_THROWS_AS(rg::HeightTileSharedFetch(g2m::world::HeightTileFetchFn{}), std::invalid_argument);
 }
 
+TEST_CASE("terrain mode: served road-class fetch keeps metadata and class tile on the physics entry", "[terrain_mode]") {
+    const g2m::TileKey key{k32N, 0, 1851, 21718};
+    auto height = std::make_shared<g2m::HeightTile>();
+    auto roads = std::make_shared<const std::vector<g2m::RoadSegment>>();
+    auto classes = std::make_shared<g2m::TerrainClassTile>();
+    classes->reset(key);
+    int road_calls = 0, class_calls = 0;
+    rg::HeightTileSharedFetch fetch(
+        [&](const g2m::TileKey& k) {
+            CHECK(k == key);
+            return g2m::world::HeightTileFetchResult{g2m::Status::Ok, height};
+        },
+        [&](const g2m::TileKey& k) {
+            ++road_calls;
+            CHECK(k == key.parent().parent());
+            return g2m::world::RoadSegmentsResult{g2m::world::RoadFetchStatus::Ok, roads};
+        },
+        [&](const g2m::TileKey& k) {
+            ++class_calls;
+            CHECK(k == key);
+            return std::shared_ptr<const g2m::TerrainClassTile>(classes);
+        });
+
+    CHECK(fetch.provides_roads());
+    CHECK(fetch.provides_classes());
+    const g2m::phys::FetchResult r = fetch.fetch(key);
+    CHECK(r.status == g2m::Status::Ok);
+    CHECK(r.tile == height);
+    CHECK(r.roads == roads);
+    CHECK(r.classes == classes);
+    CHECK(road_calls == 1);
+    CHECK(class_calls == 1);
+}
+
 TEST_CASE("terrain mode: make_terrain_mode converts the spawn into the session frame", "[terrain_mode]") {
     rg::WorldConfig wc;
     wc.spawn.e = 474123.25;

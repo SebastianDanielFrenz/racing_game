@@ -277,6 +277,8 @@ struct Files {
     std::optional<DrivelineInfo> layout_info;
     // The removable / swappable parts as fitted (catalog "interior", then the part choices); a removed part is absent.
     std::vector<FittedPart> trim;
+    // Automatic gearbox swap: what installing a clutch-to-clutch box changed on the car (for the player).
+    std::vector<std::string> gearbox_lines;
 };
 
 bool read_doc(const std::string& path, json& out, std::string* err) {
@@ -303,6 +305,8 @@ std::string resolve_ref(const std::string& dir, const std::string& ref) {
 }
 
 // Index of the powertrain component of `type` in the vehicle doc, or -1.
+int controller_of_type(const json& vehicle, const char* type);
+
 int component_index(const json& vehicle, const char* type) {
     const auto pt = vehicle.find("powertrain");
     if (pt == vehicle.end() || !pt->is_object()) return -1;
@@ -641,6 +645,8 @@ bool file_choice_fits(Files& files, const SetupOptionDef& def, const CatalogEntr
     return !expand_patterns(*base, pointers_for(entry, def)).empty() || def.insert_if_absent.has_value();
 }
 
+std::string install_clutch_to_clutch(Files& files, const GearboxEntry& g);
+
 // The installed engine's catalogue entry (a swapped-in one, else the car's own); nullptr when not in the list.
 const EngineEntry* installed_engine_entry(const Files& files, const SetupContext& ctx) {
     if (files.swapped) return &*files.swapped;
@@ -773,9 +779,6 @@ std::string install_catalog_part(Files& files, const SetupOptionDef& def, const 
     if (def.catalog == "gearboxes") {
         const GearboxEntry* g = ctx.gearboxes->find(id);
         if (g == nullptr) return def.id + ": \"" + id + "\" is not a gearbox in the catalogue";
-        if (g->kind != GearboxKind::Manual && g->kind != GearboxKind::Sequential) {
-            return def.id + ": " + g->name + " cannot be simulated yet";
-        }
         if (norm_path(g->file) == original_gearbox_path(files)) {
             // The car's own gearbox, chosen explicitly: nothing changes (also when it was swapped before in this session).
             return {};
@@ -789,6 +792,13 @@ std::string install_catalog_part(Files& files, const SetupOptionDef& def, const 
         }
         std::string err;
         if (!load_aux(files.vehicle.work, dir_of(files.vehicle.path), "gearbox", files.gearbox, &err)) return err;
+        const bool now_auto = controller_of_type(files.vehicle.work, "automatic_tcu") >= 0;
+        if (is_clutch_to_clutch(g->kind)) {
+            const std::string e = install_clutch_to_clutch(files, *g);
+            if (!e.empty()) return def.id + ": " + e;
+        } else if (now_auto) {
+            return def.id + ": " + g->name + " needs a clutch pedal, and this car has none (it was built with a clutch-to-clutch gearbox)";
+        }
         return {};
     }
     if (def.catalog == "turbo_kits") {
@@ -934,6 +944,168 @@ int controller_of_type(const json& vehicle, const char* type) {
     return -1;
 }
 
+// Automatic gearbox swap (2026-10-16): the car gets a clutch-to-clutch gearbox (automatic, dual_clutch or cvt, whose ref
+// install_catalog_part has already repointed). Trusted code, like a drive layout: the clutch component goes (its two
+// shafts become one, engine to gearbox), the manual_tcu becomes an automatic_tcu (same id, so the clutch assist
+// options no longer find their pointers and drop out of the setup), drive-mode and assist-fitment electronics that
+// need a manual_tcu are removed, and a park lock is fitted on the gearbox output when the car has none. The TCU's rpm
+// points follow the INSTALLED engine (engine_install runs before gearbox_install). Rows of an already clutch-to-clutch
+// car are rebuilt the same way (another automatic or dual-clutch box: the TCU template of the new box).
+std::string install_clutch_to_clutch(Files& files, const GearboxEntry& g) {
+    json& veh = files.vehicle.work;
+    if (!files.engine) return "the car has no engine for the gearbox controller to read";
+    std::string err;
+    const auto facts = read_engine_facts(files.engine->path, &err);
+    if (!facts) return err;
+    const AutomaticTcuPoints pts = derive_automatic_tcu_points(facts->idle_rpm, facts->limiter_rpm);
+    if (!pts.ok) return "the engine's idle and limiter rpm leave no room for a shift schedule";
+    json& pt = veh["powertrain"];
+    json& comps = pt["components"];
+    json& shafts = pt["shafts"];
+    if (!comps.is_array() || !shafts.is_array()) return "the vehicle has no powertrain components or shafts";
+    const int gi = component_of_type(veh, "gearbox");
+    const int ei = component_of_type(veh, "engine");
+    if (gi < 0 || ei < 0) return "the vehicle has no gearbox or engine component";
+    std::string gearbox_id, engine_id;
+    detail::get_string(comps[gi], "id", gearbox_id);
+    detail::get_string(comps[ei], "id", engine_id);
+
+    // The clutch: merge its input and output shafts, then remove it.
+    const int ci = component_of_type(veh, "clutch");
+    if (ci >= 0) {
+        std::string clutch_id;
+        detail::get_string(comps[ci], "id", clutch_id);
+        const std::string in = clutch_id + ".in", out = clutch_id + ".out";
+        int si = -1, so = -1;
+        for (std::size_t i = 0; i < shafts.size(); ++i) {
+            const json& ports = shafts[i]["ports"];
+            if (!ports.is_array()) continue;
+            for (const json& p : ports) {
+                if (p == in) si = static_cast<int>(i);
+                if (p == out) so = static_cast<int>(i);
+            }
+        }
+        if (si < 0 || so < 0 || si == so) return "the clutch is not between two shafts";
+        json merged = json::array();
+        for (const int idx : {si, so}) {
+            for (const json& p : shafts[idx]["ports"]) if (p != in && p != out) merged.push_back(p);
+        }
+        json kept = json::array();
+        for (std::size_t i = 0; i < shafts.size(); ++i) {
+            if (static_cast<int>(i) == si) {
+                json sh = shafts[i];
+                sh["ports"] = merged;
+                // A shaft compliance of either side is dropped with the clutch (the two shafts are one now).
+                sh.erase("stiffness_nm_per_rad");
+                sh.erase("damping_nm_s_per_rad");
+                kept.push_back(std::move(sh));
+            } else if (static_cast<int>(i) != so) {
+                kept.push_back(shafts[i]);
+            }
+        }
+        shafts = std::move(kept);
+        comps.erase(comps.begin() + ci);
+        files.gearbox_lines.push_back("Clutch removed: the gearbox shifts on its own clutches, no clutch pedal");
+    }
+
+    // The park lock on the gearbox output, unless the car has one.
+    if (component_of_type(veh, "park_lock") < 0) {
+        std::string pid = "park";
+        for (int n = 2; ; ++n) {
+            bool taken = false;
+            for (const json& c : comps) if (c.value("id", std::string()) == pid) taken = true;
+            if (!taken) break;
+            pid = "park" + std::to_string(n);
+        }
+        const std::string gout = gearbox_id + ".out";
+        bool placed = false;
+        for (json& sh : shafts) {
+            if (!sh["ports"].is_array()) continue;
+            for (const json& p : sh["ports"]) placed = placed || p == gout;
+            if (placed) { sh["ports"].push_back(pid + ".shaft"); break; }
+        }
+        if (!placed) return "the gearbox output is on no shaft";
+        // [AS] as physics_sim's automatic fixtures: 1500 N*m at the gearbox output (x the final drive at the wheels),
+        // engages below 1 rad/s.
+        comps.push_back(json{{"id", pid}, {"type", "park_lock"}, {"capacity_nm", 1500.0}, {"static_factor", 1.0},
+                             {"max_engage_speed_rad_s", 1.0}, {"channel", "park_lock"}});
+        files.gearbox_lines.push_back("Park lock fitted on the gearbox output (P on the selector)");
+    }
+
+    // The controller.
+    auto tpl = detail::parse_json(g.tcu_json);
+    if (!tpl || !tpl->is_object()) return "the catalogue has no controller data for " + g.name;
+    json tcu = *tpl;
+    std::string tcu_id = "tcu";
+    json& ctrls = veh["controllers"];
+    if (!ctrls.is_array()) ctrls = json::array();
+    int at = controller_of_type(veh, "manual_tcu");
+    if (at < 0) at = controller_of_type(veh, "automatic_tcu");
+    if (at >= 0) detail::get_string(ctrls[static_cast<std::size_t>(at)], "id", tcu_id);
+    tcu["id"] = tcu_id;
+    tcu["type"] = "automatic_tcu";
+    tcu["gearbox"] = gearbox_id;
+    tcu["engine"] = engine_id;
+    tcu["schedule"] = json{{"up_rpm_at_zero_throttle", pts.up_zero}, {"up_rpm_at_full_throttle", pts.up_full},
+                           {"down_rpm_at_zero_throttle", pts.down_zero}, {"down_rpm_at_full_throttle", pts.down_full}};
+    tcu["sport_schedule"] = json{{"up_rpm_at_zero_throttle", pts.sport_up_zero}, {"up_rpm_at_full_throttle", pts.sport_up_full},
+                                 {"down_rpm_at_zero_throttle", pts.sport_down_zero}, {"down_rpm_at_full_throttle", pts.sport_down_full}};
+    tcu["kickdown_max_rpm"] = pts.kickdown_max_rpm;
+    if (g.converter) { // a converter automatic or a converter CVT: lock-up
+        json lk = tcu.contains("lockup") ? tcu["lockup"] : json::object();
+        lk["engage_rpm"] = pts.lockup_engage_rpm;
+        lk["release_rpm"] = pts.lockup_release_rpm;
+        tcu["lockup"] = std::move(lk);
+    } else { // a dual-clutch box or a starting-clutch CVT: the launch clutch
+        tcu["launch"] = json{{"bite_rpm", pts.launch_bite_rpm}, {"full_rpm_min", pts.launch_full_rpm_min},
+                             {"full_rpm_max", pts.launch_full_rpm_max}, {"lock_slip_rpm", pts.launch_lock_slip_rpm},
+                             {"anti_stall_rpm", pts.launch_anti_stall_rpm}};
+    }
+    if (g.kind == GearboxKind::Cvt) {
+        // CVT ratio law (physics automatic_tcu "cvt"): the engine rpm the variator aims at, from the installed engine.
+        json c = tcu.contains("cvt") ? tcu["cvt"] : json::object();
+        json tx = json::array(), ty = json::array(), mx = json::array(), my = json::array();
+        for (int i = 0; i < 5; ++i) { tx.push_back(kCvtTargetThrottle[i]); ty.push_back(pts.cvt_target_rpm[i]); }
+        for (int i = 0; i < 3; ++i) { mx.push_back(kCvtMinOutputRpm[i]); my.push_back(pts.cvt_min_rpm[i]); }
+        c["target_rpm_vs_throttle"] = json{{"x", tx}, {"y", ty}};
+        c["min_rpm_vs_output_rpm"] = json{{"x", mx}, {"y", my}};
+        tcu["cvt"] = std::move(c);
+    }
+    const bool stepped = g.kind == GearboxKind::Cvt && tcu["cvt"].value("stepped_sport", true);
+    if (at >= 0) ctrls[static_cast<std::size_t>(at)] = std::move(tcu);
+    else ctrls.insert(ctrls.begin(), std::move(tcu));
+    char buf[220];
+    if (g.kind == GearboxKind::Cvt) {
+        std::snprintf(buf, sizeof(buf), "CVT: holds %.0f rpm at full throttle%s, P R N D on the selector, the shift keys select the steps",
+                      pts.cvt_target_rpm[4], stepped ? ", S steps through fixed ratios" : "");
+    } else {
+        std::snprintf(buf, sizeof(buf), "%s: shifts up at %.0f rpm at full throttle (sport %.0f), P R N D on the selector, the shift keys select manual mode",
+                      g.kind == GearboxKind::Automatic ? "Automatic" : "Dual-clutch", pts.up_full, pts.sport_up_full);
+    }
+    files.gearbox_lines.push_back(buf);
+
+    // Keep driving modes: the automatic TCU accepts their shift/close overrides too.
+    // Only fitment of the removed manual-clutch/shift assists is incompatible.
+    json kept = json::array();
+    for (const json& c : ctrls) {
+        std::string ty, ref, kind;
+        if (c.is_object() && detail::get_string(c, "type", ty) && ty == "electronics" && detail::get_string(c, "ref", ref)) {
+            json doc;
+            if (read_doc(resolve_ref(dir_of(files.vehicle.path), ref), doc, nullptr)) detail::get_string(doc, "kind", kind);
+            if (kind == "assist_fitment" && doc.dump().find("auto_") != std::string::npos) {
+                files.gearbox_lines.push_back("Clutch and shift assists removed with the manual gearbox");
+                continue;
+            }
+        }
+        kept.push_back(c);
+    }
+    ctrls = std::move(kept);
+    files.derived_subtrees.push_back("/powertrain/components");
+    files.derived_subtrees.push_back("/powertrain/shafts");
+    files.derived_subtrees.push_back("/controllers");
+    return {};
+}
+
 const char* const kEngineSlotKeys[] = {"ecu", "cam", "forced_induction", "installation", "thermal"};
 
 // Derives the swap package for the installed engine / chosen fuel and applies it to the working vehicle file.
@@ -987,6 +1159,17 @@ std::string apply_swap(Files& files, const CatalogEntry& entry, const SetupConte
     choices.boost_torque_factor = files.kit_torque_factor;
     pkg = derive_swap_package(car, eng, choices, files.swapped.has_value());
     if (!pkg.ok) return entry.id + ": " + pkg.error;
+    if (controller_of_type(veh, "manual_tcu") < 0) {
+        // Automatic gearbox plan A1: a clutch-to-clutch box has no manual_tcu, so there are no clutch-assist or
+        // auto-shift points to move (install_clutch_to_clutch derived the automatic_tcu's own from the engine).
+        pkg.set_tcu = false;
+        std::vector<std::string> kept;
+        for (std::string& l : pkg.lines) {
+            if (l.rfind("Clutch assist:", 0) == 0 || l.rfind("Auto shift:", 0) == 0) continue;
+            kept.push_back(std::move(l));
+        }
+        pkg.lines = std::move(kept);
+    }
     // A launch rpm is a second rev limit of the old engine: one outside the new engine's idle..limiter band is moved
     // to 60 % of the new limiter (at least idle + 300 rpm), else the loader rejects the car.
     files.electronics.clear();
@@ -1848,7 +2031,6 @@ std::vector<SetupPart> parts_of(const SetupOptionDef& def, const SetupContext& c
         for (const GearboxEntry& g : ctx.gearboxes->list()) {
             // The car's own box is always listed (it becomes "stock"); any other must take the engine's torque.
             if (norm_path(g.file) != original && !check_gearbox_rating(g, peak).empty()) continue;
-            if (g.kind != GearboxKind::Manual && g.kind != GearboxKind::Sequential) continue;
             SetupPart p;
             p.id = g.id;
             p.label = g.name;
@@ -2097,6 +2279,7 @@ SetupModel build_setup_model(const CatalogEntry& entry, const SetupOptionTable& 
         model.error = apply_swap(files, entry, ctx, pkg);
         if (!model.error.empty()) return model;
         model.swap_lines = pkg.lines;
+        model.swap_lines.insert(model.swap_lines.end(), files.gearbox_lines.begin(), files.gearbox_lines.end());
         model.chassis_mass_delta_kg = pkg.mass_delta_kg;
         if (files.swapped) model.engine_title = files.swapped->name;
         if (files.swapped) {
@@ -2626,6 +2809,7 @@ CompiledSetup compile_setup_internal(const CatalogEntry& entry, const SetupOptio
             return out;
         }
         out.swap_lines = pkg.lines;
+        out.swap_lines.insert(out.swap_lines.end(), files.gearbox_lines.begin(), files.gearbox_lines.end());
         out.chassis_mass_delta_kg = pkg.mass_delta_kg;
         if (files.swapped) out.engine_title = files.swapped->name;
     }

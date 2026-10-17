@@ -2,6 +2,7 @@
 // road in a DEM cutting carries an inferred deck over exactly that span. The game treats it like a bridge deck: the
 // ground under it is not carved to the (rim-chord) profile, terrain is kept below the slab, and the deck is the collider.
 #include "rg/road_surface.h"
+#include "g2m/layer/road_surface.h"
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/catch_approx.hpp>
 #include <algorithm>
@@ -107,5 +108,47 @@ TEST_CASE("The carved approach meets the underpass deck without a step (D59)", "
         // Through the fade the carve only falls from the road to the cutting: no overshoot either way.
         for(int x:{199,200,239,240}) { CHECK(at(*t,x,y)<=100+.05*(x+.5)+.01); CHECK(at(*t,x,y)>=90-.01); }
         CHECK(at(*t,200,y)<=at(*t,199,y)+1e-9);CHECK(at(*t,239,y)<=at(*t,240,y)+1e-9);
+    }
+}
+
+TEST_CASE("A served motorway cross-section defines the structural collider's full signed width", "[road_surface][deck][footprint]") {
+    auto tile=geometry(false);
+    auto& entry=tile.entries[0];auto& profile=*entry.profile;
+    profile.attributes.width_mm=13000;profile.attributes.crown_per_mille=25;
+    g2m::RoadGraphWay way;way.tags={{"highway","motorway"},{"lanes","4"},{"oneway","yes"}};
+    const auto section=g2m::resolve_cross_section_base(way,g2m::builtin_road_rules_de());REQUIRE(section);REQUIRE(section->xs);
+    entry.cross_section=*section->xs;entry.cross_section->length_m=profile.reference.length_m;
+    const auto f=g2m::carve_footprint(*entry.cross_section,220);
+    REQUIRE(f.roadbed_right < -profile.attributes.width_mm/2000.0-.5);
+    g2m::RoadUnderpass span;span.entry_index=0;span.start_m=200;span.end_m=240;span.depth_mm=6000;span.lower_ways={99};tile.underpasses.push_back(span);
+    const auto decks=rg::build_road_decks(tile);REQUIRE(decks.size()==1);
+    const auto& d=*decks[0];const auto& m=d.mesh;
+    // Every paved shoulder has a slab beneath it, including the asymmetric right edge outside the tag width.
+    double lo=1e9,hi=-1e9;for(std::size_t i=0;i<m.positions.size();i+=3){lo=std::min(lo,m.origin[1]+m.positions[i+1]-128.5);hi=std::max(hi,m.origin[1]+m.positions[i+1]-128.5);}
+    CHECK(lo==Catch::Approx(f.roadbed_right).margin(.001));CHECK(hi==Catch::Approx(f.roadbed_left).margin(.001));
+    const auto right=rg::road_deck_height(d,220,f.roadbed_right),left=rg::road_deck_height(d,220,f.roadbed_left);REQUIRE(right);REQUIRE(left);
+    CHECK(*right<*left); // one-way crossfall, not a roof crown
+    CHECK(*right==Catch::Approx(g2m::road_surface_height_m(tile,0,220,f.roadbed_right)).margin(.001));
+    auto high=terrain(130);const rg::RoadSurfacePatch patch(tile,.06);REQUIRE(patch.apply(*high)>0);
+    for(int y=110;y<=145;++y) {
+        const double lateral=y+.5-128.5;if(lateral<f.roadbed_right+.5||lateral>f.roadbed_left-.5)continue;
+        const auto top=rg::road_deck_height(d,220.5,lateral);REQUIRE(top);
+        // Clear exactly beneath the slab's own crown, without excavating its uphill shoulder as a roof crown.
+        CHECK(at(*high,220,y)==Catch::Approx(*top-.55).margin(1.0/256+.01));
+    }
+}
+
+TEST_CASE("Road carving protects the full served asymmetric motorway bed", "[road_surface][footprint]") {
+    auto tile=geometry(false);auto& entry=tile.entries[0];auto& profile=*entry.profile;
+    profile.attributes.width_mm=13000;profile.attributes.crown_per_mille=25;
+    g2m::RoadGraphWay way;way.tags={{"highway","motorway"},{"lanes","4"},{"oneway","yes"}};
+    const auto section=g2m::resolve_cross_section_base(way,g2m::builtin_road_rules_de());REQUIRE(section);REQUIRE(section->xs);
+    entry.cross_section=*section->xs;entry.cross_section->length_m=profile.reference.length_m;
+    auto t=terrain(90);const rg::RoadSurfacePatch patch(tile,.06);REQUIRE(patch.apply(*t)>0);
+    const auto f=g2m::carve_footprint(*entry.cross_section,100.5);
+    for(int y=120;y<=135;++y) {
+        const double lateral=y+.5-128.5;if(lateral<f.roadbed_right||lateral>f.roadbed_left)continue;
+        INFO("lateral="<<lateral);
+        CHECK(at(*t,100,y)==Catch::Approx(g2m::road_surface_height_m(tile,0,100.5,lateral)).margin(.01));
     }
 }

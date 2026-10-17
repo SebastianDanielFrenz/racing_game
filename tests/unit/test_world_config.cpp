@@ -594,9 +594,9 @@ TEST_CASE("load_world_config: lod is not an object", "[world_config]") {
     CHECK_FALSE(err.empty());
 }
 
-// --- "render_classes": osm (default) or served (g2m.terrain.class) ---
+// --- "render_classes": raw OSM, served classes or no terrain route paint ---
 
-TEST_CASE("load_world_config: render_classes defaults to osm, accepts served, rejects others", "[world_config]") {
+TEST_CASE("load_world_config: render_classes defaults to osm, accepts served/none, rejects others", "[world_config]") {
     ScopedEnvVar env("RG_G2M_HOME", "S:/some/test/g2m/home");
     auto load = [](const json& j, std::string* err) {
         TempFile file = TempFile::from_json(j);
@@ -618,6 +618,12 @@ TEST_CASE("load_world_config: render_classes defaults to osm, accepts served, re
     cfg = load(j, &err);
     REQUIRE(cfg.has_value());
     CHECK(cfg->render_classes_served);
+
+    j["render_classes"] = "none";
+    cfg = load(j, &err);
+    REQUIRE(cfg.has_value());
+    CHECK_FALSE(cfg->render_classes_served);
+    CHECK(cfg->render_classes_none);
 
     j["render_classes"] = "both";
     err.clear();

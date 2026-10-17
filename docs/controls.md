@@ -24,7 +24,7 @@ choosing the half; a pedal resting at +-1 is bound calibrated (rest -> opposite 
 
 ## Data
 
-- `data/controls/actions.json` (`rg.control_actions/1`): the one action schema, 48 actions. Fields: `id`,
+- `data/controls/actions.json` (`rg.control_actions/1`): the one action schema, 52 actions. Fields: `id`,
   `label`, `group` (driving/camera/on_foot/menus/global), `kind` (`button` | `axis`), `mode`
   (`held` | `edge`, buttons), `range` (`signed` | `unit` | `delta`, axes), `negative_label`/
   `positive_label`, `help`, `modes` (the player modes the action is live in; two bindings of one
@@ -71,6 +71,16 @@ L3 (7: `cam_fast`, free cam / on foot). A press in another mode is consumed and 
 Paddles, the touchpad and MISC1 are the back grips of Xbox Elite / Steam Deck / DualSense Edge pads and
 the share button of Xbox Series pads, reported by SDL as buttons 15-20. On a pad without them these
 actions are reachable only by rebinding. Not verified on hardware.
+
+Automatic and dual-clutch gearboxes (2026-10-16): the existing shift up / shift down actions (E / Q,
+pad B / X) step the selector one position per press along P <-> R <-> N <-> D (up from P goes R, N, D; down
+from D goes N, R, P). Stepping into P or R is refused while the car rolls faster than 1 m/s (a HUD message;
+physics refuses them too); D -> N and N -> D stay possible at speed. Y (`manual_mode`) toggles manual mode, only
+from D: there shift up / down change gears (tiptronic), the cluster shows M<gear>, and pressing Y again
+returns to D. Outside manual mode shift up in D does nothing. There are no separate P / R / N / D actions.
+Park keeps its key P (`park`) on every car; on an automatic it is the same as selecting P (neutral plus the
+park lock). `transmission_mode` (D / S shift schedule) has no default key. The cluster shows P R N D S or
+M<gear>. On a manual car all of this does nothing and the shift keys behave as before.
 
 Still keyboard-only (no free pad button without a chord): start/stop engine (F11), headlights (O), park
 (P), get out (G), truck ahead (T), zoom in/out (PageUp/PageDown, orbit / drone / third person), switch

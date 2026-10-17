@@ -1385,7 +1385,7 @@ func _draw_clutch_upgrades(opt: Dictionary) -> void:
 		if installed or _garage_preferred == null: _garage_preferred = card
 	_focus_garage.call_deferred()
 
-# The gearbox swap: the compatible boxes in sections (Manual incl. sequential, Automatic, CVT). A section with no entries
+# The gearbox swap: the compatible boxes in sections (Manual incl. sequential, Automatic, Dual-clutch, CVT). A section with no entries
 # yet says "Coming soon". The list is already filtered by the torque rating against the installed engine (RgGarage).
 func _draw_gearbox_choices(opt: Dictionary) -> void:
 	if opt.is_empty(): return
@@ -1395,7 +1395,7 @@ func _draw_gearbox_choices(opt: Dictionary) -> void:
 		if section.is_empty(): section = "Manual"
 		if not by_section.has(section): by_section[section] = []
 		by_section[section].append(part)
-	var order: Array = ["Manual", "Automatic", "CVT"]
+	var order: Array = ["Manual", "Automatic", "Dual-clutch", "CVT"]
 	for section in by_section.keys():
 		if not order.has(section): order.append(section)
 	var note := _label("Only gearboxes rated for the installed engine's torque are listed.",13,HORIZONTAL_ALIGNMENT_LEFT,true)

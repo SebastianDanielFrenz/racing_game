@@ -70,6 +70,7 @@ add_library(rg_core STATIC
     src/world_config.cpp
     src/world_terrain.cpp
     src/road_surface.cpp
+    src/route_surface_mesh.cpp
     src/terrain_smoothing.cpp
     src/road_structures.cpp
     src/fixed_rate_loop.cpp
@@ -156,7 +157,7 @@ target_link_libraries(rg_core
         g2m_ps_bridge
         ps_environment
         ps_environment_io
+        nlohmann_json::nlohmann_json
     PRIVATE
         rg_options
-        nlohmann_json::nlohmann_json
 )
