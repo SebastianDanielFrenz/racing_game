@@ -6,6 +6,7 @@
 
 #include "ps/io/vehicle_io.h"
 
+#include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/matchers/catch_matchers_string.hpp>
 
@@ -51,7 +52,7 @@ TEST_CASE("catalog: stats come from the data files", "[catalog][vehicle_select]"
     CHECK(sedan->driven_wheels == 2);
     CHECK(sedan->wheel_count == 4);
     CHECK(sedan->gear_count == 6);
-    CHECK(sedan->mass_kg == 1500.0);
+    CHECK(sedan->mass_kg == Catch::Approx(1329.4)); // the dry part-tree chassis (PR #22)
     CHECK(!sedan->engine_figures_declared); // a torque-map engine: read from its WOT curve
     CHECK(sedan->peak_torque_nm > 250.0);
     CHECK(sedan->peak_torque_nm < 400.0);

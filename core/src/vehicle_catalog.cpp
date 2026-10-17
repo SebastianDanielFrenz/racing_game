@@ -171,7 +171,7 @@ std::optional<VehicleCatalog> parse_vehicle_catalog(const std::string& json_text
                 fail(err, where, "\"preset_of\" \"" + preset_of + "\" names no base vehicle listed before this entry");
                 return std::nullopt;
             }
-            for (const char* inherited : {"vehicle", "model", "chassis", "engine_bay", "engine_bay_envelope", "model_options", "declared_engine", "setup"}) {
+            for (const char* inherited : {"vehicle", "model", "chassis", "engine_bay", "engine_bay_envelope", "model_options", "declared_engine", "setup", "interior"}) {
                 if (v.contains(inherited)) {
                     fail(err, where, std::string("a preset takes \"") + inherited + "\" from its base (\"" + preset_of + "\")");
                     return std::nullopt;
@@ -298,6 +298,19 @@ std::optional<VehicleCatalog> parse_vehicle_catalog(const std::string& json_text
                 }
                 if (!ok) {
                     fail(err, where, "\"model_options\" must be a list of model option names");
+                    return std::nullopt;
+                }
+            }
+            if (const auto in = v.find("interior"); in != v.end()) {
+                bool ok = in->is_object();
+                if (ok) {
+                    for (auto it = in->begin(); ok && it != in->end(); ++it) {
+                        ok = !it.key().empty() && it.value().is_string() && !it.value().get<std::string>().empty();
+                        if (ok) e.interior[it.key()] = it.value().get<std::string>();
+                    }
+                }
+                if (!ok) {
+                    fail(err, where, "\"interior\" must map part slots to part_masses.json keys");
                     return std::nullopt;
                 }
             }
