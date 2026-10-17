@@ -191,8 +191,11 @@ TEST_CASE("turbo map extension: the worker generates on its own thread and the s
         cv.wait(lock, [&] { return release; });
     };
     rg::TurboMapWorker worker;
+    // Loading a cold engine map and preparing disk storage are fixture work, not submit latency.
+    const auto desc = hyper_desc();
+    const auto cache = scratch("turbomap_worker");
     const auto t0 = std::chrono::steady_clock::now();
-    const auto job = worker.submit(hyper_desc(), kHyperN2o, scratch("turbomap_worker"), cfg, hooks);
+    const auto job = worker.submit(desc, kHyperN2o, cache, cfg, hooks);
     const double submit_ms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t0).count();
     {
         std::unique_lock lock(m);
