@@ -63,7 +63,7 @@ TEST_CASE("shell: menus hold exactly the shipped items", "[shell]") {
     for (const auto& m : rg::main_menu_items()) main_ids.push_back(m.id);
     for (const auto& m : rg::pause_menu_items()) pause_ids.push_back(m.id);
     CHECK(main_ids == std::vector<std::string>{"free_roam", "garage", "settings", "credits", "quit"});
-    CHECK(pause_ids == std::vector<std::string>{"resume", "reset_car", "change_car", "garage", "controls", "settings", "main_menu"});
+    CHECK(pause_ids == std::vector<std::string>{"resume", "reset_car", "repair_car", "change_car", "garage", "controls", "settings", "main_menu"});
     for (const auto& m : rg::main_menu_items()) CHECK_FALSE(m.label.empty());
     for (const auto& m : rg::pause_menu_items()) CHECK_FALSE(m.label.empty());
     CHECK(std::string(rg::to_string(Screen::SpawnPicker)) == "spawn_picker");
@@ -579,4 +579,45 @@ TEST_CASE("shell: Change car from the pause menu swaps the car in place", "[shel
     CHECK_FALSE(has_action(chosen, ShellActionKind::ResetCar)); // not a reset to the road
     CHECK(f.handle(ShellFlow::load_ready()).accepted);
     CHECK(f.screen() == Screen::Drive);
+}
+
+TEST_CASE("shell: Repair car from the pause menu and the garage's first page (damage model, PR #33)", "[shell][garage][damage]") {
+    // sabotage: the pause item resuming the drive, or the garage repair leaving the screen, fails
+    ShellFlow f;
+    to_drive(f);
+    f.handle(ShellFlow::pause_toggle());
+    const auto t = f.handle(ShellFlow::menu_item("repair_car"));
+    REQUIRE(t.accepted);
+    const auto* r = find_action(t, ShellActionKind::RepairCar);
+    REQUIRE(r != nullptr);
+    CHECK(r->vehicle.empty()); // the car being driven
+    CHECK(f.screen() == Screen::Pause);
+    CHECK_FALSE(has_action(t, ShellActionKind::SetPaused));
+    CHECK(f.world_loaded());
+    // Not while driving: the pause menu is where it lives.
+    f.handle(ShellFlow::pause_toggle());
+    CHECK_FALSE(f.handle(ShellFlow::menu_item("repair_car")).accepted);
+    CHECK_FALSE(f.handle(ShellFlow::repair_chosen("car_sedan")).accepted);
+
+    // The garage's first page (vehicle select from the main menu): repair the highlighted car, stay on the page.
+    ShellFlow g;
+    g.handle(ShellFlow::boot_finished());
+    g.handle(ShellFlow::menu_item("garage"));
+    REQUIRE(g.screen() == Screen::VehicleSelect);
+    CHECK_FALSE(g.handle(ShellFlow::repair_chosen("")).accepted);
+    const auto gr = g.handle(ShellFlow::repair_chosen("car_hyper"));
+    REQUIRE(gr.accepted);
+    REQUIRE(find_action(gr, ShellActionKind::RepairCar) != nullptr);
+    CHECK(find_action(gr, ShellActionKind::RepairCar)->vehicle == "car_hyper");
+    CHECK(g.screen() == Screen::VehicleSelect);
+    CHECK_FALSE(has_action(gr, ShellActionKind::CloseGarage));
+
+    // The pause menu's Change car page has the same button.
+    f.handle(ShellFlow::pause_toggle());
+    f.handle(ShellFlow::menu_item("change_car"));
+    REQUIRE(f.screen() == Screen::ChangeCar);
+    const auto cr = f.handle(ShellFlow::repair_chosen("car_sedan"));
+    REQUIRE(cr.accepted);
+    CHECK(find_action(cr, ShellActionKind::RepairCar)->vehicle == "car_sedan");
+    CHECK(f.screen() == Screen::ChangeCar);
 }

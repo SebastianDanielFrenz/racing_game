@@ -48,9 +48,15 @@ TEST_CASE("settings: schema is consistent", "[settings]") {
     }
     const auto sections = rg::settings_sections();
     // The built-in sections first; data-defined ones (rg/lod_settings.h, installed by another test) may follow.
-    REQUIRE(sections.size() >= 4);
-    CHECK(std::vector<std::string>(sections.begin(), sections.begin() + 4) ==
-          std::vector<std::string>{"graphics", "camera", "audio", "map_data"});
+    REQUIRE(sections.size() >= 5);
+    CHECK(std::vector<std::string>(sections.begin(), sections.begin() + 5) ==
+          std::vector<std::string>{"graphics", "camera", "audio", "difficulty", "map_data"});
+    // Difficulty (PR #33): the mechanical damage switch, on by default, live.
+    REQUIRE(rg::find_setting("difficulty.mechanical_damage") != nullptr);
+    CHECK(rg::find_setting("difficulty.mechanical_damage")->type == rg::SettingType::Bool);
+    CHECK(std::get<bool>(rg::find_setting("difficulty.mechanical_damage")->default_value));
+    CHECK(rg::find_setting("difficulty.mechanical_damage")->applies_live);
+    CHECK(rg::find_setting("difficulty.mechanical_damage")->shown);
     for (const auto& s : sections) CHECK(rg::settings_section_title(s) != s);
     CHECK(rg::find_setting("nope") == nullptr);
     REQUIRE(rg::find_setting("map_data.store_dir") != nullptr);

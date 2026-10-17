@@ -39,6 +39,7 @@
 #include "rg/deck_installer.h"
 #include "rg/drive_script.h"
 #include "rg/climate.h"
+#include "rg/damage.h"
 #include "rg/environment.h"
 #include "rg/npc_truck.h"
 #include "rg/npc_traffic.h"
@@ -197,6 +198,31 @@ struct SessionConfig {
     // becomes a mesh tagged with weather->ground_surface (an untagged box gets no wet grip). Null = none: every hash
     // stays as before.
     std::shared_ptr<const SessionWeather> weather;
+
+    // Damage model (rg/damage.h): the part-health rules and the car's saved health. Null = no damage model (tests,
+    // hash_check). A car without the engine thermal model keeps the state as it was (nothing wears, nothing is applied).
+    // Healthy parts never touch the physics, so a healthy car keeps every state hash.
+    struct Damage {
+        DamageConfig config;
+        DamageState state;
+        std::string state_path; // where the caller saves the state (informational: the Session never writes files)
+        // The difficulty setting difficulty.mechanical_damage. false: nothing wears and the stored damage is not applied
+        // (the car drives as new; the state is kept as it is). Session::set_damage_enabled changes it while driving.
+        bool enabled = true;
+    };
+    std::shared_ptr<const Damage> damage;
+};
+
+// The damage model as of the last tick (Session::damage_report).
+struct DamageReport {
+    bool present = false;      // SessionConfig::damage was set
+    bool thermal = false;      // the car has the engine thermal model (only then does anything wear)
+    std::uint64_t revision = 0; // +1 every tick a health changed, and on a repair
+    bool enabled = true;       // difficulty.mechanical_damage (Session::set_damage_enabled)
+    bool seized = false;       // a part has seized the engine: ignition and starter held at 0 until a repair
+    std::string seized_part;   // its id
+    DamageState state;
+    DamageScales applied;      // what the physics was last given (1, 1, 1 = never called)
 };
 
 // V8: the physics weather as of the last tick (WeatherSnapshot::installed false = no environment).
@@ -416,6 +442,16 @@ public:
     // publishes the same in FrameSnapshot::weather.
     WeatherSnapshot weather_state() const { return capture_weather(); }
     void set_road_ahead_wanted(bool wanted) { road_ahead_wanted_.store(wanted, std::memory_order_relaxed); }
+    // Damage model (no-ops without SessionConfig::damage). Any thread. damage_report() is a copy under a mutex, updated on
+    // the stepping thread whenever a health changes. request_damage_repair() publishes the repaired (healthy) state at
+    // once and resets the model and the physics cooling factors at the next tick (the garage repair while a world runs).
+    [[nodiscard]] DamageReport damage_report() const;
+    [[nodiscard]] const DamageConfig* damage_config() const { return config_.damage ? &config_.damage->config : nullptr; }
+    [[nodiscard]] std::string damage_state_path() const { return config_.damage ? config_.damage->state_path : std::string(); }
+    void request_damage_repair();
+    // difficulty.mechanical_damage, any thread, applied at the next tick: false stops all wear and gives the physics
+    // healthy factors (a seized engine runs again); true applies the stored state again.
+    void set_damage_enabled(bool enabled);
     [[nodiscard]] FixedRateLoop::LoopStats loop_stats() const { return loop_.stats(); }
 
     // --- Tick-spike diagnostics (owner drive 2026-09-27: ~170 ms sim-thread
@@ -847,6 +883,20 @@ private:
     std::mutex weather_mutex_;
     WeatherRequests weather_requests_;
     std::atomic<bool> weather_pending_{false};
+    // Damage model (stepping thread), its published report (mutex) and a pending repair.
+    void setup_damage();
+    void update_damage();
+    void apply_damage_scales(const DamageScales& scales);
+    void apply_damage_controls(); // a seized engine: ignition and starter to 0 right before the step
+    void publish_damage_locked();
+    std::optional<DamageModel> damage_;
+    DamageScales damage_applied_;
+    bool damage_seized_ = false;            // stepping thread
+    bool damage_enabled_applied_ = true;    // stepping thread: the enabled flag the last tick used
+    std::atomic<bool> damage_enabled_{true};
+    mutable std::mutex damage_mutex_;
+    DamageReport damage_report_;
+    std::atomic<bool> damage_repair_pending_{false};
     std::shared_ptr<ps::io::SurfaceTable> surface_table_;
     std::unique_ptr<ps::World> world_;
     // Built lazily by sync_road_decks; declared after world_ so it is destroyed first (its workers call into the World).

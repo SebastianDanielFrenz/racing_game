@@ -49,6 +49,38 @@ func _run() -> void:
 		main.get_shell_ui().browser().focus_car(vehicle)
 	await _seconds(2.5)
 	await _shot("vehicle_select")
+	if OS.get_cmdline_user_args().has("--damage-shots-only"):
+		var ui: CanvasLayer = main.get_shell_ui()
+		var g = ui.garage
+		var damage: Dictionary = g.get_damage(vehicle)
+		if not bool(damage.get("any_damaged", false)):
+			push_error("RG_DAMAGE_UI missing isolated damage fixture")
+			get_tree().quit(1)
+			return
+		await _shot("damage_browser")
+		var repair: Button = ui.browser().get_control("repair")
+		if repair == null:
+			push_error("RG_DAMAGE_UI repair button missing")
+			get_tree().quit(1)
+			return
+		repair.pressed.emit()
+		await _frames(5)
+		if bool(g.get_damage(vehicle).get("any_damaged", false)):
+			push_error("RG_DAMAGE_UI repair did not clear saved damage")
+			get_tree().quit(1)
+			return
+		await _shot("damage_repaired")
+		main._on_escape()
+		await _frames(2)
+		_press("settings")
+		await _frames(2)
+		if main.get_shell_ui().get_setting_control("difficulty.mechanical_damage") == null:
+			push_error("RG_DAMAGE_UI difficulty toggle missing")
+			get_tree().quit(1)
+			return
+		print("RG_DAMAGE_UI PASS repair persisted and difficulty toggle exists")
+		get_tree().quit()
+		return
 	_press("choose")
 	await _seconds(2.0)
 	var dyno_deadline := Time.get_ticks_msec() + 120000

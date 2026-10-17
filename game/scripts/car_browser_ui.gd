@@ -22,6 +22,7 @@ signal car_chosen(id: String)
 signal back_requested
 signal car_focused(id: String)
 signal state_changed # group/sort/filter changed: the caller persists RgGarage.browser_get_state()
+signal repair_requested(id: String) # "Repair (free)" on the focused car (damage model, rg/damage.h); main.gd carries it out
 
 const TILE_W := 300.0
 const THUMB_H := 169.0
@@ -517,6 +518,36 @@ func _fill_stats() -> void:
 	_stat_line("Drive", "%s  (%d of %d wheels driven)" % [str(st["layout"]), int(st["driven_wheels"]), int(st["wheel_count"])])
 	_stat_line("Gearbox", "%d-speed" % int(st["gear_count"]))
 	_stat_line("Engine", str(st["engine_name"]))
+	_fill_damage()
+
+# Damage (core damage.h): the focused car's worn parts and the free repair (owner on PR #33: repair is a garage feature on its
+# first page too). Nothing is shown for a healthy car.
+func _fill_damage() -> void:
+	_controls.erase("repair")
+	if garage == null or not garage.has_method("get_damage"):
+		return
+	var damage: Dictionary = garage.get_damage(_focus_id)
+	if not bool(damage.get("present", false)) or not bool(damage.get("any_damaged", false)):
+		return
+	_stats_box.add_child(HSeparator.new())
+	var head := "Engine seized - %s" % str(damage.get("seized_label", "")) if bool(damage.get("seized", false)) else "Damage"
+	_stats_box.add_child(_make_wrapped(head, 16, false))
+	for part in damage.get("parts", []):
+		if bool(part.get("damaged", false)):
+			_stat_line(str(part["label"]), "%.0f %%" % (float(part["health"]) * 100.0))
+	var repair := Button.new()
+	repair.text = "Repair (free)"
+	repair.add_theme_font_size_override("font_size", 18)
+	repair.focus_mode = Control.FOCUS_NONE
+	var id := _focus_id
+	repair.pressed.connect(func(): repair_requested.emit(id))
+	_stats_box.add_child(repair)
+	_controls["repair"] = repair
+
+# After a repair: draw the focused car's stats again.
+func refresh_stats() -> void:
+	_stats_for = ""
+	_fill_stats()
 
 func _stat_bar(label: String, value_text: String, ratio: float) -> void:
 	var box := VBoxContainer.new()

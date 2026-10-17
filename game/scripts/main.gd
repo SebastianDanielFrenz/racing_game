@@ -1770,6 +1770,8 @@ func _apply_vehicle(sel: Dictionary) -> void:
 		"z_m": float(chassis["z_m"]),
 		"engine_map_cache_dir": str(sel["engine_map_cache_dir"]),
 		"turbo_map_extension_path": str(sel.get("turbo_map_extension_path", "")),
+		"damage_config_path": str(sel.get("damage_config_path", "")),
+		"damage_state_path": str(sel.get("damage_state_path", "")),
 	})
 	# optional model parts: the setup's (a folding top) plus the raised hood a tall swapped-in engine needs
 	var parts: Array = Array(sel.get("model_options", []))
@@ -1896,6 +1898,28 @@ func _on_garage_option_changed(option_id: String) -> void:
 	var working: Dictionary = _garage.get_working_colours()
 	_garage_scene.set_model_options(Array(working.get("model_options", [])), Array(working.get("hidden_nodes", [])))
 
+func _on_damage_repaired(state_path: String) -> void:
+	if _simulation != null and _simulation.has_method("repair_damage"):
+		_simulation.repair_damage(state_path)
+
+# RgShell action repair_car (damage model, rg/damage.h; free): vehicle "" = the car being driven (pause menu "Repair car"),
+# else a catalog id from the garage's first page. The running car is repaired at once when it is that car.
+func _repair_car(vehicle_id: String) -> void:
+	if vehicle_id == "":
+		var ok := false
+		if _simulation != null and _simulation.has_method("repair_damage") and world_state == "running":
+			ok = _simulation.repair_damage("")
+		print("RG_DAMAGE repair running car ok=%s" % ok)
+		if ok and _hud != null and _hud.has_method("show_message"):
+			_hud.show_message("Car repaired")
+		return
+	var damage: Dictionary = _garage.get_damage(vehicle_id)
+	var reply: Dictionary = _garage.repair_damage(vehicle_id)
+	print("RG_DAMAGE repair %s ok=%s %s" % [vehicle_id, reply.get("ok", false), reply.get("error", "")])
+	if bool(reply.get("ok", false)):
+		_on_damage_repaired(str(damage.get("state_path", "")))
+	_shell_ui.refresh_browser()
+
 func _on_garage_save() -> void:
 	var saved: Dictionary = _garage.save()
 	print("RG_GARAGE save ok=%s %s" % [saved.get("ok", false), saved.get("error", "")])
@@ -2011,6 +2035,9 @@ func _build_shell(user_args: PackedStringArray) -> void:
 	_shell_ui.garage_area_chosen.connect(_on_garage_area_chosen)
 	_shell_ui.garage_option_changed.connect(_on_garage_option_changed)
 	_shell_ui.garage_save_requested.connect(_on_garage_save)
+	# A garage repair of the car that is running (pause -> garage) applies at once, not only at the next world load.
+	_shell_ui.damage_repaired.connect(_on_damage_repaired)
+	_shell_ui.repair_requested.connect(func(id: String): _apply_transition(_shell.repair_chosen(id)))
 	_shell_ui.garage_exit_requested.connect(_on_garage_exit)
 	add_child(_shell_ui)
 	if _xr_menu != null: _xr_menu.attach(_shell_ui)
@@ -2044,6 +2071,8 @@ func _apply_transition(transition: Dictionary) -> void:
 			"reset_car":
 				if world_state == "running":
 					_simulation.reset_vehicle_to_spawn()
+			"repair_car":
+				_repair_car(str(action.get("vehicle", "")))
 			"save_settings":
 				_shell.save_settings()
 			"save_controls":
@@ -2270,6 +2299,10 @@ func _apply_setting(key: String) -> void:
 		"graphics.rain_density":
 			if _weather_fx != null:
 				_weather_fx.density = float(value)
+		"difficulty.mechanical_damage":
+			# Live: the running car stops wearing (stored damage stops acting) or starts again; also every later load.
+			if _simulation != null and _simulation.has_method("set_damage_enabled"):
+				_simulation.set_damage_enabled(bool(value))
 		"camera.fov_deg":
 			_director.set_base_fov(float(value))
 		"camera.body_motion":

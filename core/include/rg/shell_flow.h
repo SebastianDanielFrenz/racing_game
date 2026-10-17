@@ -44,13 +44,13 @@ enum class Screen { Boot, MainMenu, SpawnPicker, Loading, Drive, Pause, Settings
 const char* to_string(Screen s);
 
 struct MenuItem {
-    std::string id;    // "free_roam", "garage", "settings", "credits", "quit", "resume", "reset_car", "change_car", "controls", "main_menu"
+    std::string id;    // "free_roam", "garage", "settings", "credits", "quit", "resume", "reset_car", "repair_car", "change_car", "controls", "main_menu"
     std::string label; // shown text
 };
 
 // Main menu: Free roam | Garage | Settings | Credits | Quit.
 const std::vector<MenuItem>& main_menu_items();
-// Pause menu: Resume | Reset car | Change car | Garage (respawn) | Controls | Settings | Main menu.
+// Pause menu: Resume | Reset car | Repair car | Change car | Garage (respawn) | Controls | Settings | Main menu.
 const std::vector<MenuItem>& pause_menu_items();
 
 enum class ShellEventKind {
@@ -65,6 +65,7 @@ enum class ShellEventKind {
     PauseToggle,    // Esc/P while driving or paused
     VehicleChosen,  // VehicleSelect: the highlighted car was chosen: id in `item`
     GarageDrive,    // Configurator: "Drive" (the chosen car, with its saved setup)
+    RepairChosen,   // VehicleSelect / ChangeCar (the garage's first page): "Repair" on the car in `item`
 };
 
 // What the player asked to load. WorldKind::Flat has no position.
@@ -96,6 +97,8 @@ enum class ShellActionKind {
     Quit,           // exit the application
     OpenGarage,     // show the garage scene (main menu: nothing behind it; pause: the paused world stays loaded)
     CloseGarage,    // remove the garage scene and every node it created
+    RepairCar,      // repair the damage model's parts (rg/damage.h; free): `vehicle` = the car's catalog id, empty = the
+                    // car being driven (pause menu "Repair car": its saved state and the running Session)
 };
 
 struct ShellAction {
@@ -106,6 +109,7 @@ struct ShellAction {
     // chosen car and the new car starts where the old one stood (the Godot layer swaps
     // the spawn for the current pose). SetPaused: the paused state.
     bool flag = false;
+    std::string vehicle; // RepairCar
 };
 
 struct ShellTransition {
@@ -150,6 +154,7 @@ public:
     static ShellEvent pause_toggle();
     static ShellEvent vehicle_chosen(std::string id);
     static ShellEvent garage_drive();
+    static ShellEvent repair_chosen(std::string vehicle_id);
 
 private:
     ShellTransition refuse() const;

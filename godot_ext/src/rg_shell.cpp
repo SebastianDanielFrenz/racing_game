@@ -61,6 +61,7 @@ const char* action_kind_name(rg::ShellActionKind k) {
         case rg::ShellActionKind::Quit: return "quit";
         case rg::ShellActionKind::OpenGarage: return "open_garage";
         case rg::ShellActionKind::CloseGarage: return "close_garage";
+        case rg::ShellActionKind::RepairCar: return "repair_car";
     }
     return "unknown";
 }
@@ -174,6 +175,7 @@ godot::Dictionary RgShell::transition_to_dict(const rg::ShellTransition& t) cons
         ad["screen"] = String(rg::to_string(a.screen));
         ad["world"] = world_request_to_dict(a.world);
         ad["flag"] = a.flag;
+        ad["vehicle"] = from_std(a.vehicle);
         actions.push_back(ad);
     }
     d["actions"] = actions;
@@ -200,6 +202,9 @@ godot::Dictionary RgShell::load_failed(const String& message) {
 godot::Dictionary RgShell::load_cancelled() { return transition_to_dict(flow_.handle(rg::ShellFlow::load_cancelled())); }
 godot::Dictionary RgShell::vehicle_chosen(const String& id) {
     return transition_to_dict(flow_.handle(rg::ShellFlow::vehicle_chosen(to_std(id))));
+}
+godot::Dictionary RgShell::repair_chosen(const String& vehicle_id) {
+    return transition_to_dict(flow_.handle(rg::ShellFlow::repair_chosen(to_std(vehicle_id))));
 }
 godot::Dictionary RgShell::garage_drive() { return transition_to_dict(flow_.handle(rg::ShellFlow::garage_drive())); }
 String RgShell::get_garage_return() const { return String(rg::to_string(flow_.garage_return())); }
@@ -402,6 +407,7 @@ void RgShell::_bind_methods() {
     ClassDB::bind_method(D_METHOD("pause_toggle"), &RgShell::pause_toggle);
     ClassDB::bind_method(D_METHOD("vehicle_chosen", "id"), &RgShell::vehicle_chosen);
     ClassDB::bind_method(D_METHOD("garage_drive"), &RgShell::garage_drive);
+    ClassDB::bind_method(D_METHOD("repair_chosen", "vehicle_id"), &RgShell::repair_chosen);
     ClassDB::bind_method(D_METHOD("get_garage_return"), &RgShell::get_garage_return);
     ClassDB::bind_method(D_METHOD("get_garage_vehicle"), &RgShell::get_garage_vehicle);
     ClassDB::bind_method(D_METHOD("get_main_menu_items"), &RgShell::get_main_menu_items);

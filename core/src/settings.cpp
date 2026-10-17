@@ -133,6 +133,14 @@ std::vector<SettingDef> build_schema() {
                            1.0, 0.0, 1.0, 0.05));
     s.push_back(make_float("audio", "tyre_volume", "Tyre volume", "Tyre noise level, before the master volume.", 1.0,
                            0.0, 1.0, 0.05));
+    // Difficulty (owner on PR #33): the mechanical damage model (rg/damage.h) - parts that wear when the engine runs too
+    // hot. Separate from any later collision damage, which gets its own switch here.
+    s.push_back(make_bool("difficulty", "mechanical_damage", "Mechanical damage",
+                          "Engine and cooling parts wear when they run too hot (radiator, fan, head gasket, crank "
+                          "bearings, pistons) and a worn-out engine seizes until the car is repaired (pause menu or "
+                          "garage). Off = nothing wears and stored damage has no effect; it is kept and acts again when "
+                          "this is switched back on. Collision damage is not part of this switch.",
+                          true));
     SettingDef store;
     store.section = "map_data";
     store.key = "map_data.store_dir";
@@ -322,6 +330,7 @@ std::string settings_section_title(const std::string& section) {
     if (section == "graphics") return "Graphics";
     if (section == "camera") return "Camera";
     if (section == "audio") return "Audio";
+    if (section == "difficulty") return "Difficulty";
     if (section == "map_data") return "Map data";
     if (const auto it = extension_titles().find(section); it != extension_titles().end()) return it->second;
     return section;

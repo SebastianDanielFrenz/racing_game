@@ -283,7 +283,7 @@ TEST_CASE("cooling: the setup check warns about a coolant or oil temperature abo
     const rg::AdviceItem* hot = find(items, "CoolantTemperature");
     REQUIRE(hot != nullptr);
     CHECK(hot->severity == rg::AdviceSeverity::Warning);
-    CHECK(hot->damage_part == "engine_block");
+    CHECK(hot->damage_part == "head_gasket");
     CHECK(hot->option_id == "cooling_radiator");
     REQUIRE_FALSE(hot->lines.empty());
     CHECK_THAT(hot->lines.front(), ContainsSubstring("after about 150 s"));
