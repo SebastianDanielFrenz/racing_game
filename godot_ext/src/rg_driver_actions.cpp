@@ -36,6 +36,7 @@ rg::DriverSnapshot convert(const godot::Dictionary& d) {
     s.transmission_selector = static_cast<int>(d.get("transmission_selector", 0));
     s.transmission_manual = static_cast<bool>(d.get("transmission_manual_mode", false));
     s.transmission_sport = static_cast<bool>(d.get("transmission_sport_mode", false));
+    s.electric_ready = static_cast<bool>(d.get("electric_ready",false));
     s.engine_running = godot::String(d.get("engine_state", "")) == "Running";
     s.speed_mps = static_cast<double>(d.get("speed_mps",0.0));
     s.steering_wheel_deg = static_cast<double>(d.get("steering_wheel_deg",0.0));

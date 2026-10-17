@@ -82,6 +82,7 @@ struct DriverSnapshot {
     bool transmission_manual = false; // paddles took over in D
     bool transmission_sport = false;
     bool engine_running = false;
+    bool electric_ready = false;
     double speed_mps = 0;
     double steering_wheel_deg = 0;
     // Light sensor reading (horizontal illuminance, lux; rg::SkyLighting::illuminance_lux).

@@ -936,6 +936,87 @@
         "paint": "#1b1d22",
         "rim": "#111111"
       }
+    },
+    {
+      "id": "car_electric",
+      "title": "Sedan E",
+      "subtitle": "600 kW dual-motor electric AWD",
+      "description": "Electric development sedan: two 300 kW axle motors, fixed 9:1 reductions and a shared 90 kWh battery. Select D to drive; K toggles READY. No turbo, clutch, idle or launch controller.",
+      "body_type": "sedan",
+      "vehicle": "data/vehicles/car_electric.json",
+      "model": "external/physics_sim/data/models/car_sedan/car_sedan.glb",
+      "engine_bay": "front",
+      "interior": {
+        "seat_driver": "seat_comfort",
+        "seat_passenger": "seat_comfort",
+        "rear_seats": "rear_bench",
+        "audio": "audio_system",
+        "door_trim": "door_trim_4door",
+        "dashboard": "dash_full",
+        "sound_deadening": "sound_deadening_sedan",
+        "carpets": "carpets",
+        "spare_wheel": "spare_wheel_compact",
+        "fasteners": "fasteners_steel",
+        "hood": "hood_steel"
+      },
+      "engine_bay_envelope": {
+        "size_mm": [
+          879,
+          975,
+          691
+        ],
+        "crank_axis": "x",
+        "source": "external/physics_sim/data/models/car_sedan/car_sedan.glb: firewall x 1.025 (rear edge of the hood node), front x 1.904 (body front 2.304), front tyres' inner faces |y| 0.668, underbody z 0.156, hood z 0.907 at x 1.46: 879 x 975 x 691 mm, longitudinal (holds the art's own engine block, x 1.325..1.875); measured on the art like the car_gt70 bay: firewall = rear edge of the hood / windscreen base, front = body front less 0.40 m for bumper beam, radiator and fan [AS] (the car_sedan figure: its modelled grille at x 2.22 less a 0.32 m radiator core and fan [AS]), half width = front tyre inner face less 0.18 m for inner fender and suspension (the car_gt70 figure), bottom = lowest underbody under the bay + 0.05 m crossmember [AS], top = hood outer surface within 0.15 m of the bay centre less 0.01 m skin [AS]"
+      },
+      "chassis": {
+        "mass_kg": 1786,
+        "body_mass_kg": 680.0,
+        "body_mass_source": "[AS] bare shell (owner on PR #22: interior ripped out, no engine assembly, no drivetrain, no wheels; the seats, trim, carpets, audio, spare wheel, bonnet and fasteners are the catalogue's interior parts, the engine, gearbox, driveline, suspension, brakes, steering, wheels, cooling and fuel system are their own parts): a steel monocoque four-door saloon of about 4.6 m - body in white with front and rear subframes 360 kg, doors and boot lid 110, glass 35, bumpers and lights 40, wiring loom, battery and control units 50, exhaust 32, heater and air conditioning 25, pedal box, washer system, jack points and other fixed parts 28 = 680 kg (recalled ranges for a mid-size saloon, nothing cited).",
+        "half_extents": [
+          2.0,
+          0.4,
+          0.15
+        ],
+        "spawn_z_m": 0.6,
+        "source": "[AS] Initial EV fallback; the garage derives actual mass from shell, battery, motors, running gear and interior."
+      },
+      "visual": {
+        "paint": "#3b9caa",
+        "rim": "#c4c8cf"
+      },
+      "setup": {
+        "tyre_fitment": {
+          "front": {
+            "rims_in": [
+              17
+            ],
+            "min_width_mm": 195,
+            "max_width_mm": 255,
+            "width_step_mm": 10,
+            "diameter_tolerance_mm": 12
+          },
+          "rear": {
+            "rims_in": [
+              17
+            ],
+            "min_width_mm": 195,
+            "max_width_mm": 255,
+            "width_step_mm": 10,
+            "diameter_tolerance_mm": 12
+          }
+        },
+        "options": [
+          "tyre_front",
+          "tyre_rear"
+        ]
+      },
+      "declared_engine": {
+        "peak_power_kw": 600,
+        "peak_power_rpm": 4775,
+        "peak_torque_nm": 1200,
+        "peak_torque_rpm": 0,
+        "source": "[AS] Two independent 300 kW / 600 Nm electric motors; aggregate shaft ratings before fixed reductions, not measured vehicle performance."
+      }
     }
   ],
   "tyre_fitment_source": "Initial conservative authored body-specific axle fitment, by dimensions only: the rim of the stock wheel, a width range in 10 mm steps (stock fits; +40 mm over hyper stock, +30 mm over sedan stock) and an overall-diameter tolerance of 12 mm around the axle's own wheel. Every tyre compound (data/tyres/families.json) is offered at every size this allows. Not measured fender clearance; tune against body geometry."

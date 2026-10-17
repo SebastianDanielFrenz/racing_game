@@ -79,6 +79,7 @@ var _brake: float = 0.0
 var _handbrake: float = 0.0
 var _clutch: float = 0.0
 var _ignition_on: bool = true # physics_sim's input_map_core default: spawn with the engine running
+var _electric_drive := false
 var _starter_held: bool = false
 var driver_actions := RgDriverActions.new()
 var _configured_vehicle_path: String = ""
@@ -152,6 +153,12 @@ func configure_vehicle(path: String, auto_shift_default = null) -> void:
 	var vehicle = JSON.parse_string(FileAccess.get_file_as_string(path))
 	if not vehicle is Dictionary:
 		return
+	var has_motor := false
+	var has_engine := false
+	for component in vehicle.get("powertrain",{}).get("components",[]):
+		has_motor = has_motor or str(component.get("type","")) == "electric_motor"
+		has_engine = has_engine or str(component.get("type","")) == "engine"
+	_electric_drive = has_motor and not has_engine
 	var manual := false
 	for controller in vehicle.get("controllers", []):
 		if controller is Dictionary and str(controller.get("type", "")) == "manual_tcu":
@@ -377,7 +384,9 @@ func poll() -> void:
 		_shift_down_count += 1
 	if _edge("ignition", held.call("ignition")):
 		_ignition_on = not _ignition_on
-	_starter_held = held.call("starter")
+	if _electric_drive and _edge("electric_ready",held.call("starter")):
+		driver_actions.submit("start_stop",RgDriverActions.PRESS,1.0,RgDriverActions.KEYBOARD)
+	_starter_held = held.call("starter") and not _electric_drive
 	# Sampled device levels only: rg_core owns rising edges and toggle/cycle state.
 	for action in ["auto_shift","traction_control","toggle_aero","drive_mode","toggle_launch_control","toggle_nitrous","park","epb","start_stop","hazard","indicator_left","indicator_right","horn","lights","transmission_mode","manual_mode"]:
 		var source: int = RgDriverActions.PAD if controls.get_source(action) >= 2 else RgDriverActions.KEYBOARD

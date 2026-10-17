@@ -144,7 +144,11 @@ void DriverActions::apply(const VehicleContext& context, ChannelSink& sink) {
         const int index = slot(event.id);
         if (!cabin_configured_) continue;
         if (index == 8) {
-            if (!snapshot.engine_running) {
+            if(snapshot.transmission_kind==4) {
+                if(!snapshot.electric_ready||std::abs(snapshot.speed_mps)<config_.stop_max_speed_mps)
+                    sink.set("electric.ready",snapshot.electric_ready?0:1);
+                cabin_.auto_cranking=false;sink.set("starter",0);
+            } else if (!snapshot.engine_running) {
                 cabin_.auto_cranking = true; cabin_.auto_crank_elapsed_s = 0;
                 sink.set("ignition",1);
             } else if (std::abs(snapshot.speed_mps) < config_.stop_max_speed_mps) {
@@ -333,10 +337,10 @@ ControlState DriverActions::state(std::string_view id, const DriverSnapshot& sna
     } else if (id == "hazard" || id == "indicator_left" || id == "indicator_right" || id == "horn" || id == "start_stop") {
         out.fitted = true; out.enabled = true;
         const auto channel = id == "hazard" ? "cabin.hazard" : id == "horn" ? "cabin.horn" : id == "start_stop" ? "ignition" : id == "indicator_left" ? "cabin.indicator_left" : "cabin.indicator_right";
-        out.value = sink.get(channel); out.active = out.value != 0;
-        out.lamp_segments = id == "hazard" ? (out.active && sink.get("cabin.indicator_left") != 0 ? 1 : 0) : id == "start_stop" ? (snapshot.engine_running ? 1 : 0) : out.active ? 1 : 0;
+        out.value = sink.get(id=="start_stop"&&snapshot.transmission_kind==4?"electric.ready":channel); out.active = out.value != 0;
+        out.lamp_segments = id == "hazard" ? (out.active && sink.get("cabin.indicator_left") != 0 ? 1 : 0) : id == "start_stop" ? ((snapshot.transmission_kind==4?snapshot.electric_ready:snapshot.engine_running) ? 1 : 0) : out.active ? 1 : 0;
         out.blink = id == "hazard" && out.active;
-        out.label = id == "start_stop" ? (snapshot.engine_running ? "RUNNING" : "OFF") : std::string(id);
+        out.label = id == "start_stop" ? (snapshot.transmission_kind==4?(snapshot.electric_ready?"READY":"OFF"):(snapshot.engine_running?"RUNNING":"OFF")) : std::string(id);
         out.colour_role = out.active ? "ok" : "off";
     } else if (id == "lights" || id == "head_lamp" || id == "tail_lamp" || id == "main_beam") {
         out.fitted = true; out.enabled = true;

@@ -97,6 +97,9 @@ func _process_body(delta: float) -> void:
 		if _gauge_info.is_empty():
 			_gauge_info = _simulation.get_vehicle_gauge_info(vehicle_name)
 		_last_pt = _simulation.get_vehicle_powertrain(vehicle_name)
+		if int(_last_pt.get("transmission_kind",0)) == 4:
+			_last_pt["engine_state"] = "running" if bool(_last_pt.get("electric_ready",false)) else "off"
+
 		_speed_limit = _simulation.get_vehicle_speed_limit(vehicle_name)
 		_thermal = _simulation.get_vehicle_thermal(vehicle_name)
 		_gps_kmh = _simulation.get_vehicle_ground_speed_mps(vehicle_name) * 3.6
@@ -189,6 +192,7 @@ func _dynamic_signature() -> Array:
 		DriveModeTheme.is_themed(_last_pt), DriveModeTheme.label(_last_pt) if DriveModeTheme.is_themed(_last_pt) else "",
 		DriveModeTheme.accent(_last_pt, COLOR_TICK_MINOR), int(round(float(_last_pt.get("speedo_kmh", 0.0)))), int(round(_gps_kmh)),
 		_speed_limit.get("kind", "unknown"), int(round(float(_speed_limit.get("kph", 0.0)))), bool(_speed_limit.get("conditional", false)),
+		int(round(float(_last_pt.get("battery_soc",0))*100)), int(round(float(_last_pt.get("electric_power_kw",0)))),
 		thermal, pedals, int(round(clampf(1.0 - float(_last_pt.get("clutch_engagement", 1.0)), 0.0, 1.0) * 400.0))]
 
 func _clock_rad(clock_deg: float) -> float:
@@ -396,13 +400,17 @@ func _draw_body() -> void:
 	# Left of the lamp row, under the speed readout; nothing for a car without a thermal model.
 	ThermalReadout.draw_bar(self, font, Vector2(center.x - radius * 1.55, center.y + radius * 1.28), scale, _thermal, blink_on)
 
+	if int(_last_pt.get("transmission_kind",0)) == 4:
+		var ready_text := "READY" if bool(_last_pt.get("electric_ready",false)) else "OFF"
+		var ev_text := "%s / %.0f%% / %+.0f kW" % [ready_text,100.0*float(_last_pt.get("battery_soc",0)),float(_last_pt.get("electric_power_kw",0))]
+		_draw_centered_text(font,Vector2(center.x-radius*0.6,center.y+radius*1.28),ev_text,int(round(20.0*scale)),accent)
 	_draw_pedals(font, vp_size, center, radius, margin, scale)
 
 	var warning: String = ""
 	if engine_state == "stalled":
 		warning = "ENGINE STALLED - hold Start / K to restart"
 	elif engine_state == "off":
-		warning = "IGNITION OFF - hold I"
+		warning = "DRIVE OFF - press K" if int(_last_pt.get("transmission_kind",0)) == 4 else "IGNITION OFF - hold I"
 	elif grind_active:
 		warning = "GRIND!"
 	var slow_blink_on: bool = fmod(Time.get_ticks_msec() / 1000.0, 1.0) < 0.7

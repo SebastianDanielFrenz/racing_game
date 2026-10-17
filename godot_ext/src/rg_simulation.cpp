@@ -928,6 +928,9 @@ godot::Dictionary RgSimulation::get_vehicle_gauge_info(const String& vehicle_nam
         } else if (const auto* simulated = std::get_if<ps::drivetrain::SimulatedEngineDesc>(&c.params)) {
             idle_rpm = simulated->idle_rpm;
             limiter_rpm = simulated->limiter.rpm;
+        } else if(const auto* motor=std::get_if<ps::drivetrain::ElectricMotorDesc>(&c.params)) {
+            if(session_->world().powertrain_state(session_->vehicle_id()).engines.empty())limiter_rpm=std::max(limiter_rpm,motor->max_rpm);
+            gear_count=1;
         } else if (const auto* tank = std::get_if<ps::drivetrain::FuelTankDesc>(&c.params)) {
             fuel_capacity_kg += tank->capacity_kg;
             fuel_density_kg_m3 = tank->fuel.density_kg_m3;
@@ -989,6 +992,13 @@ godot::Dictionary RgSimulation::get_vehicle_powertrain(const String& vehicle_nam
     d["traction_torque_fraction"] = p.traction_torque_fraction;
     d["traction_estimated_speed_m_s"] = p.traction_estimated_speed_m_s;
     d["traction_positive_slip"] = p.traction_positive_slip;
+    d["electric_fitted"]=p.electric_fitted;d["electric_ready"]=p.electric_ready;
+    d["electric_motor_count"]=p.electric_motor_count;d["motor_rpm"]=p.motor_rpm;
+    d["motor_torque_nm"]=p.motor_torque_nm;d["electric_power_kw"]=p.electric_power_w/1000;
+    d["battery_soc"]=p.battery_soc;d["battery_capacity_kwh"]=p.battery_capacity_kwh;
+    d["battery_power_kw"]=p.battery_power_w/1000;
+    if(p.transmission_kind==4)d["rpm"]=p.motor_rpm;
+
     // Assist unit (physics_sim assists I1/I5, rg/assist_info.h): modes the car offers (bit n = code n: 0 Off, 1 On,
     // 2 Relaxed, 3 Sport, 4 Drift), the requested and the effective mode, and the rear-wing automation.
     const rg::AssistHud a = rg::assist_hud(p);
