@@ -612,6 +612,10 @@ EditResult Garage::set_option(const std::string& option_id, const SetupValue& va
     }
     revalidate();
     if (option_id == "engine_install") r.notice = drop_unavailable_values();
+    if (option_id == "gearbox_install") {
+        const std::string dropped = drop_unavailable_values(true);
+        if (!dropped.empty()) r.notice = r.notice.empty() ? dropped : r.notice + " " + dropped;
+    }
     if (option_id == "drive_layout") r.notice = drop_driveline_values();
     r.validation = validation_;
     return r;
@@ -621,18 +625,21 @@ EditResult Garage::set_option(const std::string& option_id, const SetupValue& va
 // without a turbo, a fuel it does not list) are no longer meaningful; they return to stock and the player is told.
 // What the new engine offers is read from a probe model with only the engine installed: the working
 // model cannot be built while a now-incompatible value is still in the overlay.
-std::string Garage::drop_unavailable_values() {
+std::string Garage::drop_unavailable_values(bool gearbox_change) {
     const CatalogEntry* entry = catalog_.find(edit_id_);
     if (entry == nullptr) return {};
     VehicleSetup probe;
     probe.vehicle_id = edit_id_;
     if (const auto it = working_.values.find("engine_install"); it != working_.values.end()) probe.values["engine_install"] = it->second;
+    if (gearbox_change) {
+        if (const auto it = working_.values.find("gearbox_install"); it != working_.values.end()) probe.values["gearbox_install"] = it->second;
+    }
     const SetupModel pm = build_setup_model(*entry, options_, context_for(*entry), &probe);
     if (!pm.error.empty()) return {}; // the engine itself does not install: revalidate() reports it
     std::string notice;
     std::vector<std::string> drop;
     for (const auto& [id, value] : working_.values) {
-        if (id == "engine_install") continue;
+        if (id == "engine_install" || (gearbox_change && id == "gearbox_install")) continue;
         const OptionView* view = nullptr;
         for (const OptionView& v : pm.options) if (v.def.id == id) view = &v;
         if (view == nullptr) continue;
@@ -657,7 +664,8 @@ std::string Garage::drop_unavailable_values() {
         notice += (notice.empty() ? "" : ", ") + label;
     }
     if (!drop.empty()) revalidate();
-    return notice.empty() ? notice : "The engine does not offer: " + notice + " (back to stock).";
+    if (notice.empty()) return notice;
+    return (gearbox_change ? "The gearbox does not offer: " : "The engine does not offer: ") + notice + " (back to stock).";
 }
 
 std::string Garage::drop_driveline_values() {

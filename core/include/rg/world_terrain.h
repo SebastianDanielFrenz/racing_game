@@ -33,6 +33,8 @@
 #include <array>
 #include <atomic>
 #include <cstdint>
+#include <future>
+#include <list>
 #include <functional>
 #include <map>
 #include <memory>
@@ -111,6 +113,9 @@ public:
     // that interface exists in the pinned geo2map_engine submodule.
     std::shared_ptr<const g2m::OsmTile> source_osm_tile(const g2m::TileKey& key); // background consumers only
     g2m::world::RoadRibbonTile road_visual_tile(const g2m::TileKey& key,double lift_m);
+    // The immutable shared result avoids copying a large L2 mesh before the render adapter uploads its arrays.
+    std::shared_ptr<const g2m::world::RoadRibbonTile> road_visual_tile_shared(const g2m::TileKey& key,
+                                                                              double lift_m);
     std::vector<Building> buildings_tile(const g2m::TileKey& key,double min_height,double fallback_height,double storey_height);
     // `priority` is what a still-missing tile is requested at (a tile already cached returns at once):
     // Render for presentation callers, the physics priority (physics_priority()) for the physics fetch.
@@ -172,14 +177,14 @@ public:
     [[nodiscard]] int carve_max_level() const { return carve_max_level_; }
     void set_carve_max_level(int level) { carve_max_level_ = level < 0 ? 0 : (level > 2 ? 2 : level); }
 
-    // True when the render class window is read from the served g2m.terrain.class layer (WorldConfig::
-    // render_classes_served); view_source() and build_static_view() then set ViewSource::terrain_classes and the
-    // OSM road raster is not run. Physics grip is unchanged (still the OSM raster).
+    // True when geometry-derived surface classes are enabled for physics grip in both "served" and
+    // "none" render modes. In "none", classes are built directly from route meshes and terrain stays unpainted.
+    // The legacy OSM raster is retained only for world configs that explicitly select render_classes="osm".
     [[nodiscard]] bool served_terrain_class() const { return served_terrain_class_; }
-    // The decoded g2m.terrain.class tile `key` (blocking, render priority, from a non-pool thread; the service
-    // caches it). Null when the layer is not in the release, the tile is absent (outside coverage) or failed (a
-    // failure is reported once per call on stderr); the chunk window is then all-Unknown.
-    [[nodiscard]] std::shared_ptr<const g2m::TerrainClassTile> terrain_class_tile(const g2m::TileKey& key);
+    // The decoded g2m.terrain.class tile `key` (blocking, from a non-pool thread; the service caches it). Null when
+    // the layer is not in the release, the tile is absent (outside coverage) or failed (reported once per call).
+    [[nodiscard]] std::shared_ptr<const g2m::TerrainClassTile> terrain_class_tile(
+        const g2m::TileKey& key, g2m::world::Priority priority = g2m::world::Priority::Render);
 
     [[nodiscard]] const g2m::mesh::LodParams& lod_params() const { return lod_params_; }
     void set_lod_params(const g2m::mesh::LodParams& params) { lod_params_ = params; }
@@ -201,6 +206,15 @@ public:
         std::uint64_t server_miss = 0;  // Server::tile() calls that returned anything else
     };
     [[nodiscard]] FetchStats fetch_stats() const;
+
+    struct RouteMeshCacheStats {
+        std::uint64_t hits = 0;
+        std::uint64_t builds = 0;
+        std::uint64_t waits = 0;
+        std::uint64_t build_microseconds = 0;
+        std::size_t resident_bytes = 0;
+    };
+    [[nodiscard]] RouteMeshCacheStats route_mesh_cache_stats() const;
 
     // Thin wrapper around road_segments_shared (G2.5a-grip R-b) for the
     // render path, which only ever needs "does this tile have roads", never
@@ -250,6 +264,14 @@ public:
 private:
     WorldTerrain() = default;
 
+    using RouteMeshKey = std::pair<g2m::TileKey, double>;
+    struct RouteMeshCacheEntry {
+        std::shared_future<std::shared_ptr<const g2m::world::RoadRibbonTile>> future;
+        std::list<RouteMeshKey>::iterator lru;
+        std::size_t bytes = 0;
+        bool ready = false;
+    };
+
     // The game's height products, run on the service's pool (terrain migration phase 2). The carved
     // L0 tile (raw DEM -> smoothing -> road patch) and the road surface of one L2 tile are caller-defined
     // products of g2m::world::TerrainService; until phase 7 the carve stays here.
@@ -288,6 +310,18 @@ private:
     g2m::mesh::LodParams lod_params_;
     g2m::mesh::LodParams world_lod_params_;
     bool served_terrain_class_ = false;
+    bool render_classes_disabled_ = false;
+    // Explicit route meshes are reused by render requests and by each of the sixteen L0 physics tiles under an L2
+    // geometry tile. Single-flight futures deduplicate concurrent requests; the byte-bounded LRU holds only immutable
+    // completed meshes and never holds this lock while resolving geometry or sampling heights.
+    mutable std::mutex route_mesh_cache_mutex_;
+    std::map<RouteMeshKey, RouteMeshCacheEntry> route_mesh_cache_;
+    std::list<RouteMeshKey> route_mesh_cache_lru_;
+    std::size_t route_mesh_cache_resident_bytes_ = 0;
+    std::uint64_t route_mesh_cache_hits_ = 0, route_mesh_cache_builds_ = 0, route_mesh_cache_waits_ = 0;
+    std::uint64_t route_mesh_cache_build_microseconds_ = 0;
+    mutable std::mutex physics_class_overlay_mutex_;
+    std::map<g2m::TileKey, std::shared_ptr<const g2m::TerrainClassTile>> physics_class_overlay_cache_;
     mutable std::mutex road_lod_mutex_;
     std::shared_ptr<const g2m::RenderRoadLod> road_lod_;
 

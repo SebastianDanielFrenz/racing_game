@@ -4,6 +4,8 @@
 #include "rg/world_terrain.h"
 #include "rg/route_check.h"
 #include "g2m/world/height_sampler.h"
+#include "g2m/world/road_ribbons.h"
+#include <filesystem>
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/catch_approx.hpp>
 #include <cmath>
@@ -216,4 +218,59 @@ TEST_CASE("Bridge decks keep their last station whatever the span length", "[roa
         ++checked;
     }
     CHECK(checked==400);
+}
+
+TEST_CASE("A66 Unterliederbach approach has a full-width collider and no road ribbon on the retaining slope", "[.][realdata][a66_bridge]") {
+    std::string error;
+    auto config=rg::load_world_config(std::string(RG_SOURCE_DIR)+"/data/world/world_config_rhein_main_corridor.json",&error);
+    REQUIRE(config);
+    if(!std::filesystem::exists(config->source_store.dir)) SKIP("Local corridor source store required");
+    config->derived_store.dir=std::string(RG_SOURCE_DIR)+"/out/a66-bridge-regression-derived";
+    auto terrain=rg::WorldTerrain::open(*config,&error);INFO(error);REQUIRE(terrain);
+    const auto geometry=terrain->road_geometry_at(466651.65,5551546.78);REQUIRE(geometry);
+    const auto entry=std::find_if(geometry->entries.begin(),geometry->entries.end(),[](const auto& e){return e.way_id==23658591;});
+    REQUIRE(entry!=geometry->entries.end());REQUIRE(entry->profile);REQUIRE(entry->cross_section);
+    const auto& profile=*entry->profile;
+    const auto decks=terrain->road_decks();
+    const auto found=std::find_if(decks.begin(),decks.end(),[](const auto& d){return d->way_id==23658591&&d->inferred;});
+    REQUIRE(found!=decks.end());const auto& deck=**found;
+    // The lower slip road is still separated after the old fixed 60 m support cap. Infer to actual overlap's end.
+    CHECK(deck.start_station==0);CHECK(deck.end_station>120);CHECK(deck.end_station<=150);
+    const auto key=g2m::tile_key_at({32},2,466651.65,5551546.78);REQUIRE(key);
+    const auto ribbons=terrain->road_visual_tile(*key,.018);
+    std::size_t checked=0;double worst=0;
+    for(const auto& v:ribbons.vertices) {
+        if(v.lanes!=4||v.verge>.5f||(static_cast<int>(v.flags)&(16|32))!=0||v.v<20||v.v>120)continue;
+        const auto p=profile.reference.at(v.v);if(!p)continue;
+        const double dx=static_cast<double>(key->min_easting())+v.x-p->x,dy=static_cast<double>(key->min_northing())+v.y-p->y;
+        if(std::abs(dx*std::cos(p->heading)+dy*std::sin(p->heading))>.01)continue;
+        const double t=-dx*std::sin(p->heading)+dy*std::cos(p->heading);
+        const auto f=g2m::carve_footprint(*entry->cross_section,v.v);
+        if(t<f.roadbed_right-.01||t>f.roadbed_left+.01)continue;
+        const auto top=rg::road_deck_height(deck,v.v,t);REQUIRE(top);
+        worst=std::max(worst,std::abs(v.z-.018-*top));++checked;
+    }
+    INFO("ribbon samples="<<checked<<" maximum slab mismatch="<<worst);
+    CHECK(checked>1000);CHECK(worst<.002);
+    // Physics collision at the asymmetric paved shoulders, which used to overhang a slab only 13 m wide.
+    ps::WorldConfig wc;wc.job_workers=1;ps::World world(wc);
+    ps::MeshShape shape;const auto& mesh=deck.mesh;
+    for(std::size_t i=0;i<mesh.positions.size();i+=3)shape.vertices.push_back({mesh.positions[i],mesh.positions[i+1],mesh.positions[i+2]});
+    shape.indices.assign(mesh.indices.begin(),mesh.indices.end());
+    ps::BodyDesc body;body.motion=ps::BodyMotionType::Static;body.shape=std::move(shape);world.create_body(body);
+    for(double station:{20.,70.,120.}) {
+        const auto p=profile.reference.at(station);REQUIRE(p);
+        const auto f=g2m::carve_footprint(*entry->cross_section,station);
+        for(double t:{f.roadbed_right+.2,f.roadbed_left-.2}) {
+            const auto top=rg::road_deck_height(deck,station,t);REQUIRE(top);
+            const ps::Vec3 point{static_cast<ps::real>(p->x-std::sin(p->heading)*t-mesh.origin[0]),
+                static_cast<ps::real>(p->y+std::cos(p->heading)*t-mesh.origin[1]),static_cast<ps::real>(*top)};
+            const auto hit=world.backend().ray_cast(point+ps::Vec3{0,0,2},{0,0,-1},4);
+            CHECK(hit.hit);CHECK(hit.point.z==Catch::Approx(*top).margin(.02));
+            const auto contact=world.backend().shape_cast(ps::SphereShape{.05},ps::Pose{point+ps::Vec3{0,0,2}},{0,0,-1},4);
+            CHECK(contact.hit);CHECK(contact.normal.z>.95);
+        }
+    }
+    const auto lower=g2m::world::sample_height_exact([&](const auto& k){return terrain->height_tile(k);},{32},0,0,466651.65,5551546.78);
+    REQUIRE(lower);CHECK(*lower>108);CHECK(*lower<111); // B8 remains beneath the A66, with its measured floor.
 }

@@ -935,12 +935,19 @@ godot::Dictionary RgSimulation::get_vehicle_powertrain(const String& vehicle_nam
     d["fuel_flow_g_s"] = static_cast<double>(p.fuel_flow_g_s);
     d["fuel_mass_kg"] = static_cast<double>(p.fuel_mass_kg);
     d["boost_bar"] = p.engines.empty()?0.0:static_cast<double>(p.engines[0].boost_bar);
-    d["drive_power_kw"] = p.engines.empty()?0.0:static_cast<double>(-p.driveline.clutch_torque*p.engines[0].omega/1000.0);
+    d["drive_power_kw"] = static_cast<double>(p.drive_power_w / 1000.0);
     bool park_fitted = false;
     for (const auto& component : session_->vehicle_desc().powertrain.components)
         park_fitted = park_fitted || std::holds_alternative<ps::drivetrain::ParkLockDesc>(component.params);
     d["park_lock_fitted"] = park_fitted;
     d["park_lock_engaged"] = p.park_lock_engaged != 0;
+    // Automatic gearbox plan A1 (physics automatic_tcu): 0 manual, 1 automatic, 2 dual-clutch.
+    d["transmission_kind"] = static_cast<int>(p.transmission_kind);
+    d["transmission_selector"] = static_cast<int>(p.transmission_selector);
+    d["transmission_manual_mode"] = p.transmission_manual_mode != 0;
+    d["transmission_sport_mode"] = p.transmission_sport_mode != 0;
+    d["converter_speed_ratio"] = static_cast<double>(p.converter_speed_ratio);
+    d["lockup_engagement"] = static_cast<double>(p.lockup_engagement);
     d["gear"] = static_cast<int>(p.gear);
     d["gear_target"] = static_cast<int>(p.gear_target);
     d["shift_phase"] = String(shift_phase_name(p.shift_phase));

@@ -32,6 +32,10 @@ rg::DriverSnapshot convert(const godot::Dictionary& d) {
     s.esc_effective = static_cast<int>(d.get("esc_mode_effective", 0));
     s.esc_intervening = static_cast<bool>(d.get("esc_active", false));
     s.gear = static_cast<int>(d.get("gear",0));
+    s.transmission_kind = static_cast<int>(d.get("transmission_kind", 0));
+    s.transmission_selector = static_cast<int>(d.get("transmission_selector", 0));
+    s.transmission_manual = static_cast<bool>(d.get("transmission_manual_mode", false));
+    s.transmission_sport = static_cast<bool>(d.get("transmission_sport_mode", false));
     s.engine_running = godot::String(d.get("engine_state", "")) == "Running";
     s.speed_mps = static_cast<double>(d.get("speed_mps",0.0));
     s.steering_wheel_deg = static_cast<double>(d.get("steering_wheel_deg",0.0));
@@ -108,6 +112,16 @@ godot::Dictionary RgDriverActions::state(const godot::String& id, const godot::D
     d["aero_target_deg"] = s.aero_target_deg;
     return d;
 }
+godot::Dictionary RgDriverActions::selector_shift(const godot::Dictionary& snapshot, int up, int down) {
+    const rg::SelectorShift r = rg::selector_shift(convert(snapshot), up, down);
+    godot::Dictionary d;
+    d["gear_request"] = r.gear_request;
+    d["change"] = r.gear_request != rg::kGearRequestNoChange;
+    d["park_request"] = r.park_request;
+    d["refused"] = r.refused;
+    d["forward_counts"] = r.forward_counts;
+    return d;
+}
 void RgDriverActions::_bind_methods() {
     using godot::ClassDB;
     using godot::D_METHOD;
@@ -121,6 +135,7 @@ void RgDriverActions::_bind_methods() {
     ClassDB::bind_method(D_METHOD("set_light_mode", "mode"), &RgDriverActions::set_light_mode);
     ClassDB::bind_method(D_METHOD("get_light_mode"), &RgDriverActions::get_light_mode);
     ClassDB::bind_static_method("RgDriverActions", D_METHOD("state", "id", "snapshot", "channels"), &RgDriverActions::state);
+    ClassDB::bind_static_method("RgDriverActions", D_METHOD("selector_shift", "snapshot", "up", "down"), &RgDriverActions::selector_shift);
     BIND_ENUM_CONSTANT(PRESS); BIND_ENUM_CONSTANT(RELEASE); BIND_ENUM_CONSTANT(SET); BIND_ENUM_CONSTANT(HOLD);
     BIND_ENUM_CONSTANT(KEYBOARD); BIND_ENUM_CONSTANT(PAD); BIND_ENUM_CONSTANT(HUD); BIND_ENUM_CONSTANT(COCKPIT_MOUSE);
     BIND_ENUM_CONSTANT(VR_POKE); BIND_ENUM_CONSTANT(VR_GRAB); BIND_ENUM_CONSTANT(VR_RAY); BIND_ENUM_CONSTANT(SCRIPT);

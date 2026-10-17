@@ -16,6 +16,7 @@
 #include "g2m/world/tile_fetch.h"
 
 #include <memory>
+#include <functional>
 
 namespace rg {
 
@@ -45,16 +46,21 @@ namespace rg {
 // this instance was built with a road fetch function at all.
 class HeightTileSharedFetch final : public g2m::phys::IHeightTileFetch {
 public:
+    using ClassFetchFn = std::function<std::shared_ptr<const g2m::TerrainClassTile>(const g2m::TileKey&)>;
     // Throws std::invalid_argument on an empty `fn`.
     explicit HeightTileSharedFetch(g2m::world::HeightTileFetchFn fn);
     // Throws std::invalid_argument on an empty `fn` or `road_fn`.
     HeightTileSharedFetch(g2m::world::HeightTileFetchFn fn, g2m::world::RoadSegmentsFetchFn road_fn);
+    HeightTileSharedFetch(g2m::world::HeightTileFetchFn fn, g2m::world::RoadSegmentsFetchFn road_fn,
+                         ClassFetchFn class_fn);
     g2m::phys::FetchResult fetch(const g2m::TileKey& key) override;
     bool provides_roads() const override { return static_cast<bool>(road_fn_); }
+    bool provides_classes() const override { return static_cast<bool>(class_fn_); }
 
 private:
     g2m::world::HeightTileFetchFn fn_;
     g2m::world::RoadSegmentsFetchFn road_fn_; // empty = heights-only (provides_roads() false)
+    ClassFetchFn class_fn_;
 };
 
 // SessionConfig::terrain. Positions are session-local metres (x east of the
