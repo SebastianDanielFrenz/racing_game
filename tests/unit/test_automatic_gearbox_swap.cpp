@@ -431,6 +431,7 @@ struct AutoDrive {
     double end_kmh = 0.0, max_kmh = 0.0;
     bool stalled = false;
     int tc_interventions = 0;
+    double max_false_cut_s = 0.0;
 };
 // The car_sedan with an automatic on a flat tessellated ground: start the engine, select D, release the brake and creep
 // with no throttle for creep_s, then full throttle for drive_s.
@@ -499,6 +500,7 @@ AutoDrive drive_auto(const Fixture& f, const std::string& box, double creep_s, d
         if (world.powertrain_state(vid).engine_state != ps::drivetrain::EngineState::Running) out.stalled = true;
     }
     out.creep_mps = speed();
+    double false_cut_s = 0.0;
     world.set_control("throttle", 1.0);
     for (long i = 0; i < static_cast<long>(drive_s * 240.0); ++i) {
         if (corner_mode >= 0) {
@@ -513,6 +515,8 @@ AutoDrive drive_auto(const Fixture& f, const std::string& box, double creep_s, d
         out.top_gear = std::max(out.top_gear, static_cast<int>(pt.gear));
         out.max_kmh = std::max(out.max_kmh, speed() * 3.6);
         if (pt.traction_torque_fraction < 0.95) ++out.tc_interventions;
+        false_cut_s = pt.traction_torque_fraction < 0.95 && pt.traction_positive_slip < 0.02 ? false_cut_s + 1.0 / 240.0 : 0.0;
+        out.max_false_cut_s = std::max(out.max_false_cut_s, false_cut_s);
         out.transmission_kind = static_cast<int>(pt.transmission_kind);
         out.max_rpm = std::max(out.max_rpm, static_cast<double>(pt.engine_rpm));
         if (pt.transmission_kind == 3) {
@@ -766,7 +770,7 @@ TEST_CASE("hypercar DCT stays running through 10 kmh corners", "[automatic][dct_
         CHECK(d.started);
         CHECK(d.max_kmh > 7.0);
         CHECK_FALSE(d.stalled);
-        if (mode == 1) CHECK(d.tc_interventions > 0); // protection must not just disable TC
+        CHECK(d.max_false_cut_s < 0.2); // no sustained cut when the tyres are rolling without spin
         std::printf("RG_DCT_CORNER mode=%d max_kmh=%.2f end_kmh=%.2f tc_ticks=%d\n", mode, d.max_kmh, d.end_kmh, d.tc_interventions);
     }
 }
@@ -775,4 +779,13 @@ TEST_CASE("DCT respawn preserves idle and allows the starter after ignition cycl
     Fixture f;
     const auto result = drive_auto(f, "hyper_7dct", 0.0, 15.0, "car_hyper_n2o", 0, -1, true);
     CHECK(result.started);
+}
+
+TEST_CASE("hypercar DCT TC still intervenes during a full-throttle launch", "[automatic][traction_control]") {
+    Fixture f;
+    const auto d = drive_auto(f, "hyper_7dct", 0.0, 10.0, "car_hyper_n2o");
+    CHECK(d.started);
+    CHECK_FALSE(d.stalled);
+    CHECK(d.max_kmh > 30.0);
+    CHECK(d.tc_interventions > 0);
 }
