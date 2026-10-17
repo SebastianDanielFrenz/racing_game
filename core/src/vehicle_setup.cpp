@@ -1080,16 +1080,16 @@ std::string install_clutch_to_clutch(Files& files, const GearboxEntry& g) {
     }
     files.gearbox_lines.push_back(buf);
 
-    // Electronics that need a manual_tcu: drive modes (they set its shift points) and assist fitment of its assists.
+    // Keep driving modes: the automatic TCU accepts their shift/close overrides too.
+    // Only fitment of the removed manual-clutch/shift assists is incompatible.
     json kept = json::array();
     for (const json& c : ctrls) {
         std::string ty, ref, kind;
         if (c.is_object() && detail::get_string(c, "type", ty) && ty == "electronics" && detail::get_string(c, "ref", ref)) {
             json doc;
             if (read_doc(resolve_ref(dir_of(files.vehicle.path), ref), doc, nullptr)) detail::get_string(doc, "kind", kind);
-            if (kind == "drive_modes" || (kind == "assist_fitment" && doc.dump().find("auto_") != std::string::npos)) {
-                files.gearbox_lines.push_back(kind == "drive_modes" ? "Drive modes removed: they set a manual gearbox's shift points"
-                                                                    : "Clutch and shift assists removed with the manual gearbox");
+            if (kind == "assist_fitment" && doc.dump().find("auto_") != std::string::npos) {
+                files.gearbox_lines.push_back("Clutch and shift assists removed with the manual gearbox");
                 continue;
             }
         }
