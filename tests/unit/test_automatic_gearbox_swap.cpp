@@ -5,6 +5,7 @@
 // from rest through several gears on the selector alone.
 #include <cstdio>
 #include "rg/driver_actions.h"
+#include "rg/driveline_swap.h"
 #include "rg/engine_store.h"
 #include "rg/garage.h"
 #include "rg/gearbox_catalog.h"
@@ -427,16 +428,37 @@ struct AutoDrive {
     double max_cvt_ratio = 0.0, min_cvt_ratio = 1e9; // a cvt under throttle
     double max_rpm = 0.0;
     double creep_mps = 0.0;
-    double end_kmh = 0.0;
+    double end_kmh = 0.0, max_kmh = 0.0;
     bool stalled = false;
+    int tc_interventions = 0;
 };
 // The car_sedan with an automatic on a flat tessellated ground: start the engine, select D, release the brake and creep
 // with no throttle for creep_s, then full throttle for drive_s.
 AutoDrive drive_auto(const Fixture& f, const std::string& box, double creep_s, double drive_s,
-                     const std::string& car_id = "car_sedan", int stop_cycles = 0) {
+                     const std::string& car_id = "car_sedan", int stop_cycles = 0, int corner_mode = -1) {
     const rg::CatalogEntry& car = f.entry(car_id);
     rg::ScopedWorkDir dir(f.ctx.work_root, "drive_" + box);
-    const rg::MaterialisedSetup m = rg::materialise_setup(car, f.table, f.ctx, setup_of(car.id, box), dir.path());
+    auto setup = setup_of(car.id, box);
+    auto context = f.ctx;
+    if (corner_mode >= 0) {
+        std::string err;
+        auto drivelines = rg::DrivelineCatalog::open(kRoot + "/data/drivetrains/driveline_catalog.json", &err);
+        INFO(err);
+        REQUIRE(drivelines != nullptr);
+        context.drivelines = std::shared_ptr<const rg::DrivelineCatalog>(std::move(drivelines));
+        auto cooling = rg::load_cooling_upgrades(kRoot + "/data/cooling_systems/cooling_upgrades.json", &err);
+        INFO(err);
+        REQUIRE(cooling.has_value());
+        context.cooling_upgrades = std::make_shared<const rg::CoolingUpgradeConfig>(*cooling);
+        setup.values["drive_layout"] = std::string("awd_open");
+        setup.values["final_drive"] = 0.8;
+        setup.values["engine_rev_limit"] = 0.9939393939393939;
+        setup.values["tyre_front"] = std::string("drag_305_30r20");
+        setup.values["tyre_rear"] = std::string("drag_305_32r21");
+        setup.values["cooling_oil_cooler"] = std::string("race");
+        setup.values["cooling_radiator"] = std::string("race_ducted");
+    }
+    const rg::MaterialisedSetup m = rg::materialise_setup(car, f.table, context, setup, dir.path());
     INFO(m.error);
     REQUIRE(m.ok);
     rg::SessionConfig config;
@@ -462,6 +484,7 @@ AutoDrive drive_auto(const Fixture& f, const std::string& box, double creep_s, d
         if (world.powertrain_state(vid).engine_state == ps::drivetrain::EngineState::Running) out.started = true;
     }
     world.set_control("starter", 0.0);
+    if (corner_mode >= 0) world.set_control("assist.drive_mode", corner_mode);
     world.set_control("gear_request", 99.0); // D
     for (int i = 0; i < 120; ++i) session.step();
     world.set_control("brake", 0.0);
@@ -478,16 +501,33 @@ AutoDrive drive_auto(const Fixture& f, const std::string& box, double creep_s, d
     out.creep_mps = speed();
     world.set_control("throttle", 1.0);
     for (long i = 0; i < static_cast<long>(drive_s * 240.0); ++i) {
+        if (corner_mode >= 0) {
+            const double target = i < 240 * 5 ? 6.0 : 2.78;
+            world.set_control("throttle", std::clamp(0.02 + 0.20 * (target - speed()), 0.0, 0.30));
+            world.set_control("brake", speed() > target + 0.3 ? 0.1 : 0.0);
+            const double turn = i > 240 * 8 ? (i / (240 * 5) % 2 ? 0.9 : -0.9) : 0.0;
+            world.set_control("steer", turn);
+        }
         session.step();
         const auto pt = world.powertrain_state(vid);
         out.top_gear = std::max(out.top_gear, static_cast<int>(pt.gear));
+        out.max_kmh = std::max(out.max_kmh, speed() * 3.6);
+        if (pt.traction_torque_fraction < 0.95) ++out.tc_interventions;
         out.transmission_kind = static_cast<int>(pt.transmission_kind);
         out.max_rpm = std::max(out.max_rpm, static_cast<double>(pt.engine_rpm));
         if (pt.transmission_kind == 3) {
             out.max_cvt_ratio = std::max(out.max_cvt_ratio, static_cast<double>(pt.cvt_ratio));
             out.min_cvt_ratio = std::min(out.min_cvt_ratio, static_cast<double>(pt.cvt_ratio));
         }
-        if (pt.engine_state != ps::drivetrain::EngineState::Running) out.stalled = true;
+        if (pt.engine_state != ps::drivetrain::EngineState::Running) {
+            if (corner_mode >= 0 && !out.stalled) {
+                std::printf("RG_CORNER_STALL mode=%d t=%.3f speed=%.2f rpm=%.1f gear=%d "
+                            "clutch=%.4f steer=%.2f throttle=%.4f\n",
+                            corner_mode, i / 240.0, speed() * 3.6, double(pt.engine_rpm), int(pt.gear),
+                            double(pt.clutch_engagement), world.get_control("steer"), world.get_control("throttle"));
+            }
+            out.stalled = true;
+        }
     }
     for (int cycle = 0; cycle < stop_cycles; ++cycle) {
         for (int phase = 0; phase < 2; ++phase) {
@@ -698,5 +738,18 @@ TEST_CASE("N2O hypercar modes scale the DCT pedal and preserve the manual pedal 
             CHECK(double(pt.engines[0].throttle_command) == Approx(command).margin(1e-6));
             std::printf("RG_MODE_PEDAL box=%s mode=%d pedal=0.6 command=%.6f\n", box, mode, double(pt.engines[0].throttle_command));
         }
+    }
+}
+
+TEST_CASE("hypercar DCT stays running through 10 kmh corners", "[automatic][dct_corner]") {
+    Fixture f;
+    for (int mode = 0; mode < 4; ++mode) {
+        INFO(mode);
+        const auto d = drive_auto(f, "hyper_7dct", 0.0, 35.0, "car_hyper_n2o", 0, mode);
+        CHECK(d.started);
+        CHECK(d.max_kmh > 7.0);
+        CHECK_FALSE(d.stalled);
+        if (mode == 1) CHECK(d.tc_interventions > 0); // protection must not just disable TC
+        std::printf("RG_DCT_CORNER mode=%d max_kmh=%.2f end_kmh=%.2f tc_ticks=%d\n", mode, d.max_kmh, d.end_kmh, d.tc_interventions);
     }
 }
