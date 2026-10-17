@@ -5,8 +5,10 @@ extends Node3D
 # and calls update_rig() only while this rig is active (PHYS-008 rig contract).
 #
 # Where the camera sits is rg_core's call (RgSimulation.get_bumper_camera ->
-# rg::bumper_eye_local: just ahead of the front axle, low, looking very
-# slightly down the road, derived from the vehicle's own wheels); this script
+# rg::bumper_eye_from_model: just ahead of the visual model's own nose (rig.json
+# overall_bounds, or its socket_bumper_camera), low, centred, looking very
+# slightly down the road; the wheel-based rg::bumper_eye_local only until the
+# model has loaded); the mount is re-read whenever the model changes. This script
 # only mounts the camera rigidly on the chassis transform and lets the player
 # glance left/right/back with the same camera-group look input the cockpit rig
 # uses. There is no smoothing, so nothing here holds an absolute position that
@@ -23,6 +25,14 @@ const FOV_OFFSET_DEG := 10.0
 var camera: Camera3D
 var _yaw: float = 0.0
 var _mount: Dictionary = {}
+var _mount_key: Array = []
+var _base_fov: float = 70.0
+var body_visuals: Node # set by main.gd: the model's rig file and alignment offset
+# Speed effects from camera_director.gd (RgCameraMotion view "bumper"): shake
+# offset (car frame) and FOV widening; no head motion here (cockpit only).
+var motion: Dictionary = {}
+var motion_view := "bumper"
+var motion_enabled := true
 
 func _ready() -> void:
 	camera = Camera3D.new()
@@ -33,11 +43,13 @@ func _ready() -> void:
 	add_child(camera)
 
 func set_base_fov(base_fov_deg: float) -> void:
+	_base_fov = base_fov_deg
 	camera.fov = base_fov_deg + FOV_OFFSET_DEG
 
 func activate(_from: Transform3D) -> void:
 	_yaw = 0.0
 	_mount = {} # re-read: a new Session may carry another vehicle
+	_mount_key = []
 
 func shift_origin(delta: Vector3) -> void:
 	position += delta
@@ -45,8 +57,10 @@ func shift_origin(delta: Vector3) -> void:
 func update_rig(delta: float, simulation: Node, input_map: Node, input_live: bool) -> void:
 	if simulation == null or int(simulation.get_step_count()) <= 0:
 		return
-	if _mount.is_empty():
-		_mount = simulation.get_bumper_camera()
+	var key: Array = body_visuals.bumper_camera_inputs() if body_visuals != null else ["", Vector3.ZERO]
+	if _mount.is_empty() or key != _mount_key:
+		_mount = simulation.get_bumper_camera(key[0], key[1])
+		_mount_key = key
 		if _mount.is_empty():
 			return
 	var chassis: Transform3D = simulation.get_body_transform("chassis")
@@ -67,5 +81,11 @@ func update_rig(delta: float, simulation: Node, input_map: Node, input_live: boo
 	# Pitch down about the car's left axis: positive rotation about +y (left)
 	# tips the forward axis towards the ground (ISO x forward, y left, z up).
 	direction = direction.rotated(side, deg_to_rad(float(_mount.get("pitch_down_deg", 1.5))))
-	position = chassis * (_mount.get("eye_local", Vector3(2.0, 0.0, 0.2)) as Vector3)
+	var eye: Vector3 = _mount.get("eye_local", Vector3(2.0, 0.0, 0.2))
+	var fov_extra := 0.0
+	if motion_enabled and not motion.is_empty():
+		eye += motion["offset"]
+		fov_extra = float(motion["fov_extra_deg"])
+	camera.fov = _base_fov + FOV_OFFSET_DEG + fov_extra
+	position = chassis * eye
 	basis = Basis.looking_at(direction, up)

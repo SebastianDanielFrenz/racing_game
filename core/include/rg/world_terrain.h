@@ -12,8 +12,9 @@
 
 #include "rg/road_classes.h"
 #include "rg/buildings.h"
-#include "rg/road_visual.h"
+#include "g2m/world/road_ribbons.h"
 #include "rg/road_surface.h"
+#include "rg/terrain_colours.h"
 #include "rg/terrain_render.h"
 #include "rg/world_config.h"
 
@@ -22,13 +23,18 @@
 #include "g2m/layer/osm_roads.h"
 #include "g2m/mesh/lod_select.h"
 #include "g2m/mesh/terrain_chunk.h"
+#include "g2m/layer/terrain_class.h"
 #include "g2m/world/chunk_road_classes.h"
+#include "g2m/world/chunk_terrain_classes.h"
 #include "g2m/world/terrain_service.h"
 #include "g2m/world/tile_fetch.h"
+#include "g2m/world/view_streamer.h"
 
 #include <array>
 #include <atomic>
 #include <cstdint>
+#include <future>
+#include <list>
 #include <functional>
 #include <map>
 #include <memory>
@@ -41,91 +47,27 @@
 
 namespace rg {
 
-// The carve state of one height tile (a ChunkCarve value as uint8_t); `ctx` is the WorldTerrain.
-using TileCarveFn = std::uint8_t (*)(void* ctx, const g2m::TileKey&);
+// The render chunk selection and build moved to geo2map (g2m/world/view_streamer.h, terrain migration phase 3b).
+using g2m::world::TileCarveFn;
+using g2m::world::chunk_window_carve;
+using g2m::world::select_view_keys;
+// Everything a selection + build needs (LOD params, session origin, height/class lookups, carve state, colour hook,
+// road LOD). WorldTerrain::view_source() returns one over itself with the game's colours (rg::chunk_colour_hook).
+using TerrainViewSource = g2m::world::ViewSource;
 
-// The worst carve state over the height tiles a chunk's halo window touches (what RenderChunk::carve is built from).
-ChunkCarve chunk_window_carve(const g2m::mesh::ChunkKey& key, void* ctx, TileCarveFn fn);
-
-// Testable seam, independent of the Server/TileStore stack entirely (PLAN.md
-// R2.1 acceptance: "build_static_view over a synthetic in-memory store" -
-// tests/unit/test_world_terrain.cpp uses a plain std::map<TileKey,
-// HeightTile> as `ctx`/`lookup` here, no TileStore/Server/geo2map decode
-// machinery needed at all). WorldTerrain::build_static_view (below) is a
-// thin wrapper calling this with its own height_tile() as the lookup.
-//
-// (cam_x, cam_y) are SESSION-LOCAL metres (rg::WorldConfig::spawn's own
-// frame: x east of e0, y north of n0); e0/n0 are the session origin's own
-// UTM easting/northing (rg::WorldConfig::session_origin_utm). Builds every
-// selected chunk (g2m::mesh::select_chunks, then gather_window + build_chunk
-// per chunk) using up to `thread_count` std::thread workers (1 = no threads
-// spawned, runs on the caller's thread); `out` is resized to
-// `select_chunks`'s own key count and each worker writes directly into its
-// assigned index, so the result is byte-identical for any thread_count >= 1
-// (PLAN.md R2.1 acceptance: "same output for 1 vs N threads") - select_chunks'
-// own sort order is therefore also `out`'s final order.
-// `class_lookup` (R-2, roads_plan.md): a null (default) g2m::world::ClassLookup builds
-// every chunk exactly as before this parameter existed (byte-identical
-// output - see g2m/world/chunk_road_classes.h's ClassLookup comment); a real one
-// rasterises OSM road classes onto each chunk's vertices.
-// `surfaces` (G2.5a-grip R-b): resolves a rasterised LandClass to a surface
-// NAME for chunk_vertex_colors - a default-constructed RoadSurfaceMap
-// matches this repo's pre-existing hardcoded paved/unpaved colours exactly
-// (byte-identical output to before this parameter existed).
+// Thin wrappers over g2m::world::build_view_chunks / build_static_view with the game's colours
+// (rg::chunk_colour_hook(surfaces)) - the argument lists the game's callers and tests have used since R2.1/R8.
+// Byte-identical for any thread_count >= 1; `cancel` checked before each chunk (false = `out` partial).
 void build_static_view_from_lookup(double cam_x, double cam_y, const g2m::mesh::LodParams& params, double e0,
                                    double n0, g2m::mesh::TileLookup lookup, void* ctx, unsigned thread_count,
                                    std::vector<RenderChunk>& out, const g2m::world::ClassLookup& class_lookup = {},
-                                   const RoadSurfaceMap& surfaces = {}, TileCarveFn carve_state = nullptr);
-
-// The two halves build_static_view_from_lookup is made of (R2.2 R8 split
-// them out so rg::TerrainViewStreamer can select, diff by key, and then build
-// ONLY the chunks that are new):
-//
-// select_view_keys: g2m::mesh::select_chunks around the session-local point
-// (cam_x, cam_y) - `out` in select_chunks' own order (level desc, cy, cx).
-void select_view_keys(double cam_x, double cam_y, const g2m::mesh::LodParams& params, double e0, double n0,
-                      std::vector<g2m::mesh::ChunkKey>& out);
-
-// build_render_chunks: builds one RenderChunk per key into `out` (resized to
-// keys.size(), out[i] <-> keys[i]) with up to `thread_count` workers, each
-// writing only its own indices - byte-identical for any thread_count >= 1.
-// `cancel` (optional): checked before each chunk; once it reads true the
-// remaining chunks are skipped and the function returns false (`out` is then
-// partially built and must be discarded). Returns true when every chunk was
-// built.
-// `class_lookup` (R-2, roads_plan.md): see build_static_view_from_lookup's
-// own comment above - null (default) is byte-identical to before this
-// parameter existed. `surfaces` (G2.5a-grip R-b): ditto, see that function's
-// own comment.
+                                   const RoadSurfaceMap& surfaces = {}, TileCarveFn carve_state = nullptr,
+                                   const g2m::world::TerrainClassLookup& terrain_classes = {});
 bool build_render_chunks(const std::vector<g2m::mesh::ChunkKey>& keys, g2m::mesh::TileLookup lookup, void* ctx,
                          double e0, double n0, unsigned thread_count, std::vector<RenderChunk>& out,
                          const std::atomic<bool>* cancel = nullptr, const g2m::world::ClassLookup& class_lookup = {},
-                         const RoadSurfaceMap& surfaces = {}, TileCarveFn carve_state = nullptr);
-
-// Everything a chunk selection + build needs, bundled: the LOD params, the
-// session origin (e0, n0) and the tile lookup. `lookup(ctx, key)` must be
-// safe to call from several threads at once (WorldTerrain::height_tile is;
-// so is the tests' synthetic store) and `ctx` must outlive whoever holds this
-// struct. WorldTerrain::view_source() returns one over itself.
-struct TerrainViewSource {
-    g2m::mesh::LodParams params;
-    double e0 = 0.0;
-    double n0 = 0.0;
-    g2m::mesh::TileLookup lookup = nullptr;
-    void* ctx = nullptr;
-    // R-2 (roads_plan.md): null = every chunk built exactly as before this
-    // field existed (byte-identical output). WorldTerrain::view_source()
-    // populates a real one over the same WorldTerrain.
-    g2m::world::ClassLookup class_lookup{};
-    // G2.5a-grip R-b: default-constructed = byte-identical to before this
-    // field existed. WorldTerrain::view_source() populates this from the
-    // WorldConfig::PhysicsTerrainConfig::road_surfaces this WorldTerrain was
-    // opened with.
-    RoadSurfaceMap surfaces{};
-    // How a height tile was carved (a ChunkCarve value); null = every chunk reports NotCarved. A chunk's RenderChunk::carve
-    // is the worst state over the tiles its height window touches. WorldTerrain::view_source() populates it.
-    TileCarveFn carve_state = nullptr;
-};
+                         const RoadSurfaceMap& surfaces = {}, TileCarveFn carve_state = nullptr,
+                         const g2m::world::TerrainClassLookup& terrain_classes = {});
 
 class WorldTerrain {
 public:
@@ -170,7 +112,10 @@ public:
     // existing g2m types - R4 adapts it to g2m::phys::IHeightTileFetch once
     // that interface exists in the pinned geo2map_engine submodule.
     std::shared_ptr<const g2m::OsmTile> source_osm_tile(const g2m::TileKey& key); // background consumers only
-    RoadVisualMesh road_visual_tile(const g2m::TileKey& key,double lift_m);
+    g2m::world::RoadRibbonTile road_visual_tile(const g2m::TileKey& key,double lift_m);
+    // The immutable shared result avoids copying a large L2 mesh before the render adapter uploads its arrays.
+    std::shared_ptr<const g2m::world::RoadRibbonTile> road_visual_tile_shared(const g2m::TileKey& key,
+                                                                              double lift_m);
     std::vector<Building> buildings_tile(const g2m::TileKey& key,double min_height,double fallback_height,double storey_height);
     // `priority` is what a still-missing tile is requested at (a tile already cached returns at once):
     // Render for presentation callers, the physics priority (physics_priority()) for the physics fetch.
@@ -196,7 +141,9 @@ public:
     // way ids, node ids and ALL tags - no profile fitting, no DEM), cached. A key outside the release's
     // coverage yields an empty tile (like road_surface_patch); a fetch/decode failure yields nullptr and
     // is not cached. Used by the route generator (tools/rg_route_gen) and the route planner tests.
-    std::shared_ptr<const g2m::RoadGraphTile> road_graph_tile(const g2m::TileKey& key);
+    // `priority`: what a missing tile is requested at (the route planner's region build asks at Warm).
+    std::shared_ptr<const g2m::RoadGraphTile> road_graph_tile(const g2m::TileKey& key,
+                                                              g2m::world::Priority priority = g2m::world::Priority::Render);
 
     // Builds every LOD-selected chunk around (cam_x, cam_y) (session-local
     // metres) using this WorldTerrain's own store/server and
@@ -230,8 +177,23 @@ public:
     [[nodiscard]] int carve_max_level() const { return carve_max_level_; }
     void set_carve_max_level(int level) { carve_max_level_ = level < 0 ? 0 : (level > 2 ? 2 : level); }
 
+    // True when geometry-derived surface classes are enabled for physics grip in both "served" and
+    // "none" render modes. In "none", classes are built directly from route meshes and terrain stays unpainted.
+    // The legacy OSM raster is retained only for world configs that explicitly select render_classes="osm".
+    [[nodiscard]] bool served_terrain_class() const { return served_terrain_class_; }
+    // The decoded g2m.terrain.class tile `key` (blocking, from a non-pool thread; the service caches it). Null when
+    // the layer is not in the release, the tile is absent (outside coverage) or failed (reported once per call).
+    [[nodiscard]] std::shared_ptr<const g2m::TerrainClassTile> terrain_class_tile(
+        const g2m::TileKey& key, g2m::world::Priority priority = g2m::world::Priority::Render);
+
     [[nodiscard]] const g2m::mesh::LodParams& lod_params() const { return lod_params_; }
     void set_lod_params(const g2m::mesh::LodParams& params) { lod_params_ = params; }
+    // The LodParams as open() made them from the world config (before any in-game LOD setting).
+    [[nodiscard]] const g2m::mesh::LodParams& world_lod_params() const { return world_lod_params_; }
+    // The render road LOD policy (in-game setting; null = g2m::default_render_road_lod()) that view_source() and
+    // build_static_view() build road classes with from now on. Thread-safe.
+    void set_render_road_lod(std::shared_ptr<const g2m::RenderRoadLod> lod);
+    [[nodiscard]] std::shared_ptr<const g2m::RenderRoadLod> render_road_lod() const;
 
     [[nodiscard]] const g2m::geo::SessionFrame& frame() const { return *frame_; }
     [[nodiscard]] const g2m::ReleaseId& release_id() const { return manifest_rid_; }
@@ -244,6 +206,15 @@ public:
         std::uint64_t server_miss = 0;  // Server::tile() calls that returned anything else
     };
     [[nodiscard]] FetchStats fetch_stats() const;
+
+    struct RouteMeshCacheStats {
+        std::uint64_t hits = 0;
+        std::uint64_t builds = 0;
+        std::uint64_t waits = 0;
+        std::uint64_t build_microseconds = 0;
+        std::size_t resident_bytes = 0;
+    };
+    [[nodiscard]] RouteMeshCacheStats route_mesh_cache_stats() const;
 
     // Thin wrapper around road_segments_shared (G2.5a-grip R-b) for the
     // render path, which only ever needs "does this tile have roads", never
@@ -293,6 +264,14 @@ public:
 private:
     WorldTerrain() = default;
 
+    using RouteMeshKey = std::pair<g2m::TileKey, double>;
+    struct RouteMeshCacheEntry {
+        std::shared_future<std::shared_ptr<const g2m::world::RoadRibbonTile>> future;
+        std::list<RouteMeshKey>::iterator lru;
+        std::size_t bytes = 0;
+        bool ready = false;
+    };
+
     // The game's height products, run on the service's pool (terrain migration phase 2). The carved
     // L0 tile (raw DEM -> smoothing -> road patch) and the road surface of one L2 tile are caller-defined
     // products of g2m::world::TerrainService; until phase 7 the carve stays here.
@@ -312,6 +291,7 @@ private:
     std::shared_ptr<const RoadSurface> road_surface(const g2m::TileKey& key, g2m::world::Priority priority);
     TerrainSmoothing smoothing_;
     double verge_drop_m_=0.06;
+    RoadSeparation separation_;
     std::mutex decks_mutex_;
     std::map<std::tuple<std::int64_t,int,int>,std::shared_ptr<const RoadDeck>> published_decks_;
     std::mutex graph_mutex_;
@@ -328,6 +308,22 @@ private:
     g2m::ReleaseId manifest_rid_{};
     std::string terrain_height_layer_;
     g2m::mesh::LodParams lod_params_;
+    g2m::mesh::LodParams world_lod_params_;
+    bool served_terrain_class_ = false;
+    bool render_classes_disabled_ = false;
+    // Explicit route meshes are reused by render requests and by each of the sixteen L0 physics tiles under an L2
+    // geometry tile. Single-flight futures deduplicate concurrent requests; the byte-bounded LRU holds only immutable
+    // completed meshes and never holds this lock while resolving geometry or sampling heights.
+    mutable std::mutex route_mesh_cache_mutex_;
+    std::map<RouteMeshKey, RouteMeshCacheEntry> route_mesh_cache_;
+    std::list<RouteMeshKey> route_mesh_cache_lru_;
+    std::size_t route_mesh_cache_resident_bytes_ = 0;
+    std::uint64_t route_mesh_cache_hits_ = 0, route_mesh_cache_builds_ = 0, route_mesh_cache_waits_ = 0;
+    std::uint64_t route_mesh_cache_build_microseconds_ = 0;
+    mutable std::mutex physics_class_overlay_mutex_;
+    std::map<g2m::TileKey, std::shared_ptr<const g2m::TerrainClassTile>> physics_class_overlay_cache_;
+    mutable std::mutex road_lod_mutex_;
+    std::shared_ptr<const g2m::RenderRoadLod> road_lod_;
 
     std::mutex cache_mutex_;
     std::map<g2m::TileKey, std::shared_ptr<const g2m::HeightTile>> height_cache_;

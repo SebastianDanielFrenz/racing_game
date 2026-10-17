@@ -1,8 +1,10 @@
 # Adaptive steering
 
-Keyboard and gamepad inputs pass through `game/scripts/adaptive_steering.gd`.
+Keyboard and gamepad inputs pass through `rg::SteeringAssist` (`core/include/rg/steering_assist.h`;
+`game/scripts/adaptive_steering.gd` only forwards).
 This translates driver input only; it never steers automatically. Settings
-live in `data/controls/steering.json` and apply after restarting the game.
+live in `data/controls/steering.json` and apply after restarting the game; every key is required (a broken file
+disables the assist with a warning).
 
 Normal steering uses a progressive stick curve (exponent 1.8) and a
 speed-dependent limit based on vehicle wheelbase, maximum wheel angle, and

@@ -8,6 +8,7 @@
 // No C++ exception is thrown or caught here (godot-cpp's -D_HAS_EXCEPTIONS=0).
 
 #include "rg_simulation.h"
+#include "rg_damage_convert.h"
 
 #include "frame_convert.h"
 
@@ -16,6 +17,8 @@
 #include "g2m/world/height_sampler.h"
 
 #include <godot_cpp/variant/dictionary.hpp>
+#include <godot_cpp/variant/packed_float64_array.hpp>
+#include <godot_cpp/variant/utility_functions.hpp>
 #include <godot_cpp/variant/string.hpp>
 #include <godot_cpp/variant/vector3.hpp>
 
@@ -74,6 +77,13 @@ void RgSimulation::set_vehicle_overrides(const godot::Dictionary& overrides) {
     }
     if (overrides.has("engine_map_cache_dir"))
         o.engine_map_cache_dir = std::string(godot::String(overrides["engine_map_cache_dir"]).utf8().get_data());
+    if (overrides.has("turbo_map_extension_path"))
+        o.turbo_map_extension_path = std::string(godot::String(overrides["turbo_map_extension_path"]).utf8().get_data());
+    if (overrides.has("damage_config_path"))
+        o.damage_config_path = std::string(godot::String(overrides["damage_config_path"]).utf8().get_data());
+    if (overrides.has("damage_state_path"))
+        o.damage_state_path = std::string(godot::String(overrides["damage_state_path"]).utf8().get_data());
+    o.damage_enabled = vehicle_overrides_.damage_enabled; // a setting, not part of the garage selection
     vehicle_overrides_ = std::move(o);
 }
 
@@ -106,14 +116,45 @@ Vector3 RgSimulation::session_to_godot(const Vector3& session_position) const {
                         origin_rebase_->origin());
 }
 
-Dictionary RgSimulation::get_bumper_camera() const {
+Dictionary RgSimulation::get_bumper_camera(const String& rig_json_path, const Vector3& model_offset) const {
     Dictionary d;
     if (!session_) return d;
     const rg::BumperParams params;
-    const ps::Vec3 eye = rg::bumper_eye_local(rg::vehicle_bounds(session_->vehicle_desc()), params);
+    ps::Vec3 eye = rg::bumper_eye_local(rg::vehicle_bounds(session_->vehicle_desc()), params);
+    String source = "wheels";
+    if (!rig_json_path.is_empty()) {
+        std::string err;
+        const auto model = rg::load_model_bounds(std::string(rig_json_path.utf8().get_data()), &err);
+        if (model) {
+            eye = rg::bumper_eye_from_model(*model, ps::Vec3{model_offset.x, model_offset.y, model_offset.z}, params);
+            source = model->bumper_socket ? "socket" : "model";
+        } else {
+            godot::UtilityFunctions::push_warning(String("bumper camera: ") + String(err.c_str()));
+        }
+    }
+    d["source"] = source;
     d["eye_local"] = Vector3(static_cast<float>(eye.x), static_cast<float>(eye.y), static_cast<float>(eye.z));
     d["pitch_down_deg"] = params.pitch_down_deg;
     d["fov_deg"] = params.fov_deg;
+    return d;
+}
+
+Dictionary RgSimulation::get_camera_motion_sample() const {
+    Dictionary d;
+    if (!session_) return d;
+    const rg::FrameSnapshot& f = frame_snapshot();
+    const ps::Pose pose = render_chassis_pose();
+    auto v3 = [](const ps::Vec3& v) {
+        return Vector3(static_cast<float>(v.x), static_cast<float>(v.y), static_cast<float>(v.z));
+    };
+    d["sim_time"] = f.sim_time;
+    d["velocity"] = v3(f.chassis_motion.linear);
+    d["forward"] = v3(pose.orientation.rotate(ps::Vec3{1.0, 0.0, 0.0}));
+    d["left"] = v3(pose.orientation.rotate(ps::Vec3{0.0, 1.0, 0.0}));
+    d["up"] = v3(pose.orientation.rotate(ps::Vec3{0.0, 0.0, 1.0}));
+    godot::PackedFloat64Array c;
+    for (const auto& w : f.wheels) c.push_back(static_cast<double>(w.state.suspension_travel));
+    d["compression"] = c;
     return d;
 }
 
@@ -178,6 +219,64 @@ void RgSimulation::sync_cinematic_obstacles(double car_x, double car_y) {
         cinematic_.set_obstacles(cinematic_obstacles_.get());
     }
     if (cinematic_obstacles_) cinematic_obstacles_->request_around(car_x, car_y);
+}
+
+
+// ---- damage model persistence (rg/damage.h) ----------------------------------------------------------------------
+
+void RgSimulation::save_damage() {
+    if (!session_) return;
+    const std::string path = session_->damage_state_path();
+    if (path.empty()) return;
+    const rg::DamageReport r = session_->damage_report();
+    if (!r.present || r.revision == damage_saved_revision_) return; // nothing changed since the load or the last save
+    const auto now = std::chrono::steady_clock::now();
+    std::string err;
+    if (!rg::save_damage_state(path, r.state, &err)) {
+        std::fprintf(stderr, "RG_DAMAGE state not saved: %s\n", err.c_str());
+        return;
+    }
+    damage_saved_revision_ = r.revision;
+    damage_saved_at_ = now;
+}
+
+godot::Dictionary RgSimulation::get_damage_state() {
+    if (!session_ || session_->damage_config() == nullptr) {
+        godot::Dictionary d = rg_godot::damage_view_to_dictionary(rg::DamageView{}, false);
+        d["state_path"] = godot::String();
+        d["thermal"] = false;
+        return d;
+    }
+    const rg::DamageReport r = session_->damage_report();
+    const rg::DamageConfig& cfg = *session_->damage_config();
+    // Periodic save while driving, so a crash loses at most save_interval_s of wear.
+    if (r.revision != damage_saved_revision_ &&
+        std::chrono::steady_clock::now() - damage_saved_at_ >= std::chrono::duration<double>(cfg.save_interval_s)) {
+        save_damage();
+    }
+    godot::Dictionary d = rg_godot::damage_view_to_dictionary(rg::damage_view(cfg, r.state), true);
+    d["state_path"] = godot::String::utf8(session_->damage_state_path().c_str());
+    d["thermal"] = r.thermal;
+    d["enabled"] = r.enabled;
+    // What the Session holds (the view's own seized follows the state alone; with the setting off nothing is held).
+    d["seized"] = r.seized;
+    d["seized_part"] = godot::String::utf8(r.seized_part.c_str());
+    if (!r.enabled) d["warning"] = godot::String(); // stored damage has no effect: no HUD line
+    return d;
+}
+
+bool RgSimulation::repair_damage(const godot::String& state_path) {
+    if (!session_ || session_->damage_config() == nullptr) return false;
+    const std::string path(state_path.utf8().get_data());
+    if (!path.empty() && path != session_->damage_state_path()) return false;
+    session_->request_damage_repair();
+    save_damage(); // the file stays removed (healthy)
+    return true;
+}
+
+void RgSimulation::set_damage_enabled(bool enabled) {
+    vehicle_overrides_.damage_enabled = enabled;
+    if (session_) session_->set_damage_enabled(enabled);
 }
 
 } // namespace rg_godot

@@ -38,15 +38,19 @@
 #include "rg/channel_mirror.h"
 #include "rg/deck_installer.h"
 #include "rg/drive_script.h"
+#include "rg/climate.h"
+#include "rg/damage.h"
 #include "rg/environment.h"
 #include "rg/npc_truck.h"
 #include "rg/npc_traffic.h"
 #include "rg/traffic_stuck.h"
+#include "rg/turbo_map_extension.h"
 #include <thread>
 #include "rg/fixed_rate_loop.h"
 #include "rg/player_mode.h"
 #include "rg/road_ahead.h"
 #include "rg/terrain_mode.h"
+#include "rg/fpv_drone.h"
 #include "rg/walker.h"
 
 #include "ps/drivetrain/powertrain_state.h"
@@ -170,12 +174,17 @@ struct SessionConfig {
     // Non-empty: the .psmaps cache directory to use (R6: a materialised garage setup lives outside
     // physics_sim's tree, so the path-derived default would put its cache in the work directory).
     std::string engine_map_cache_dir;
+    // Set: a turbo stage map the engine's air demand runs past is extended at start-up and cached under the engine map cache
+    // dir (rg/turbo_map_extension.h). Null = maps are used as loaded (tests, hash_check).
+    std::shared_ptr<const TurboMapExtensionConfig> turbo_map_extension;
     std::string vehicle_json_path;  // e.g. .../data/vehicles/car_sedan.json
     std::string surface_table_path; // e.g. .../data/surfaces/surfaces.json
 
     // On foot (R9c): the walker's size/speeds (rg/walker.h). Only used once a
     // walker is spawned (request_walker_spawn).
     WalkerConfig walker;
+    // FPV drone (PlayerMode::FpvDrone, rg/fpv_drone.h): flight limits, used once a drone is spawned.
+    FpvDroneConfig fpv_drone;
 
     // Terrain mode (R2.2 R4) when set; flat mode otherwise.
     std::optional<TerrainModeConfig> terrain;
@@ -183,6 +192,47 @@ struct SessionConfig {
     // Start-up progress/cancellation (R2.2 R9, terrain mode only; see
     // StartupProgress). Null = none.
     std::shared_ptr<StartupProgress> startup;
+
+    // V8 weather: when set, a ps::environment::Environment (Preset weather, surface conditions, wet grip) is installed
+    // in the World in flat and terrain mode, and it - not `environment` above - provides the air. The flat ground then
+    // becomes a mesh tagged with weather->ground_surface (an untagged box gets no wet grip). Null = none: every hash
+    // stays as before.
+    std::shared_ptr<const SessionWeather> weather;
+
+    // Damage model (rg/damage.h): the part-health rules and the car's saved health. Null = no damage model (tests,
+    // hash_check). A car without the engine thermal model keeps the state as it was (nothing wears, nothing is applied).
+    // Healthy parts never touch the physics, so a healthy car keeps every state hash.
+    struct Damage {
+        DamageConfig config;
+        DamageState state;
+        std::string state_path; // where the caller saves the state (informational: the Session never writes files)
+        // The difficulty setting difficulty.mechanical_damage. false: nothing wears and the stored damage is not applied
+        // (the car drives as new; the state is kept as it is). Session::set_damage_enabled changes it while driving.
+        bool enabled = true;
+    };
+    std::shared_ptr<const Damage> damage;
+};
+
+// The damage model as of the last tick (Session::damage_report).
+struct DamageReport {
+    bool present = false;      // SessionConfig::damage was set
+    bool thermal = false;      // the car has the engine thermal model (only then does anything wear)
+    std::uint64_t revision = 0; // +1 every tick a health changed, and on a repair
+    bool enabled = true;       // difficulty.mechanical_damage (Session::set_damage_enabled)
+    bool seized = false;       // a part has seized the engine: ignition and starter held at 0 until a repair
+    std::string seized_part;   // its id
+    DamageState state;
+    DamageScales applied;      // what the physics was last given (1, 1, 1 = never called)
+};
+
+// V8: the physics weather as of the last tick (WeatherSnapshot::installed false = no environment).
+struct WeatherSnapshot {
+    bool installed = false;
+    double env_time_s = 0, time_scale = 0;
+    double air_temp_c = 0, precip_mm_h = 0, cloud_cover = 0, rh = 0, lightning_per_min = 0;
+    // The surface under wheel 0 (empty when it has no contact or no surface id) and its condition.
+    std::string wheel_surface;
+    double wheel_water_mm = 0, wheel_snow_mm = 0, wheel_ice_mm = 0, wheel_condition_factor = 1;
 };
 
 struct WheelSnapshot {
@@ -241,10 +291,13 @@ struct FrameSnapshot {
     std::vector<WheelSnapshot> wheels;
     ps::drivetrain::PowertrainSnapshot powertrain{};
     AeroSnapshot aero;
+    WeatherSnapshot weather;
     TruckSnapshot truck;
     TrafficSnapshot traffic;
     g2m::RoadSpeedMatch road_speed_limit{};
     WalkerSnapshot walker;
+    // The FPV drone (state.active false = none). Positions session metres.
+    FpvDroneState fpv;
     // The road under and ahead of the car (session coordinates, first point
     // = the car's projection onto its road), refreshed ~20 Hz, only while
     // set_road_ahead_wanted(true). Empty when not wanted, in the flat world,
@@ -378,7 +431,27 @@ public:
     [[nodiscard]] bool paused() const { return paused_.load(std::memory_order_relaxed); }
     // The cinematic camera wants FrameSnapshot::road_ahead. Off by default so a
     // session that never asks does no road tracing and allocates nothing.
+    // V8 weather (no-ops without SessionConfig::weather). Thread-safe: applied on the stepping thread at the next tick.
+    // set_weather replaces the manual weather (all overrides cleared, the preset ramps in over ramp_s);
+    // set_environment_clock jumps the environment clock (env seconds, rg::env_clock_point) and its scale and
+    // locks the calendar to fixed_day_index.
+    void set_weather(const ps::environment::WeatherPresetDesc& preset, double ramp_s);
+    void set_environment_clock(double env_s, int fixed_day_index, double time_scale);
+    bool weather_installed() const { return weather_installed_; }
+    // The weather now, read on the caller's thread: only while the real-time loop is NOT running (tests); the loop
+    // publishes the same in FrameSnapshot::weather.
+    WeatherSnapshot weather_state() const { return capture_weather(); }
     void set_road_ahead_wanted(bool wanted) { road_ahead_wanted_.store(wanted, std::memory_order_relaxed); }
+    // Damage model (no-ops without SessionConfig::damage). Any thread. damage_report() is a copy under a mutex, updated on
+    // the stepping thread whenever a health changes. request_damage_repair() publishes the repaired (healthy) state at
+    // once and resets the model and the physics cooling factors at the next tick (the garage repair while a world runs).
+    [[nodiscard]] DamageReport damage_report() const;
+    [[nodiscard]] const DamageConfig* damage_config() const { return config_.damage ? &config_.damage->config : nullptr; }
+    [[nodiscard]] std::string damage_state_path() const { return config_.damage ? config_.damage->state_path : std::string(); }
+    void request_damage_repair();
+    // difficulty.mechanical_damage, any thread, applied at the next tick: false stops all wear and gives the physics
+    // healthy factors (a seized engine runs again); true applies the stored state again.
+    void set_damage_enabled(bool enabled);
     [[nodiscard]] FixedRateLoop::LoopStats loop_stats() const { return loop_.stats(); }
 
     // --- Tick-spike diagnostics (owner drive 2026-09-27: ~170 ms sim-thread
@@ -566,6 +639,23 @@ public:
     [[nodiscard]] const WalkerController* walker_controller() const { return walker_.get(); }
     // The own car's footprint as of the latest walker update (stepping thread / tests only).
     [[nodiscard]] OrientedRect own_car_footprint() const;
+
+    // --- FPV drone (rg/fpv_drone.h). A kinematic flyer stepped on the stepping thread; requests are any-thread and
+    // consumed past the terrain gate like the walker's. While it exists it is physics interest point kPlayerInterestId
+    // and the parked car the second (kParkedCarInterestId), exactly like the walker; the car's driving stays
+    // Unattended for as long as the caller wants. A spawn places the drone above the chassis, facing along it.
+    void request_fpv_spawn() { fpv_request_.store(1, std::memory_order_release); }
+    void request_fpv_despawn() { fpv_request_.store(3, std::memory_order_release); }
+    void set_fpv_input(const FpvDroneInput& input);
+    struct FpvCounters {
+        std::uint64_t spawned = 0;
+        std::uint64_t despawned = 0;
+        std::uint64_t spawn_failed = 0;
+    };
+    [[nodiscard]] FpvCounters fpv_counters() const;
+    [[nodiscard]] bool fpv_active() const { return fpv_active_.load(std::memory_order_acquire); }
+    // Stepping thread / tests only (not while running()).
+    [[nodiscard]] const FpvDrone& fpv_drone() const { return fpv_; }
     static constexpr double kRelocateParkZ = 4000.0;
 
     // Flip the car upright IN PLACE, keeping its current position and
@@ -728,7 +818,12 @@ private:
     // request (after the gate and any relocation); update: one controller tick
     // before World::step; spawn_walker places the body.
     void process_walker_request();
+    void install_weather();
+    void apply_weather_requests();
+    WeatherSnapshot capture_weather() const;
     void update_walker();
+    void process_fpv_request();
+    void update_fpv();
     void spawn_walker();
     void remove_walker();
     [[nodiscard]] ps::Vec3 traffic_anchor() const; // the walker while one exists, else the chassis
@@ -779,6 +874,29 @@ private:
     double truck_station_=0,truck_speed_=0;
     SessionConfig config_;
     EnvironmentSample environment_sample_;
+    bool weather_installed_ = false;
+    int weather_day_ = -1;
+    struct WeatherRequests {
+        std::optional<std::pair<ps::environment::WeatherPresetDesc, double>> preset;
+        std::optional<std::tuple<double, int, double>> clock;
+    };
+    std::mutex weather_mutex_;
+    WeatherRequests weather_requests_;
+    std::atomic<bool> weather_pending_{false};
+    // Damage model (stepping thread), its published report (mutex) and a pending repair.
+    void setup_damage();
+    void update_damage();
+    void apply_damage_scales(const DamageScales& scales);
+    void apply_damage_controls(); // a seized engine: ignition and starter to 0 right before the step
+    void publish_damage_locked();
+    std::optional<DamageModel> damage_;
+    DamageScales damage_applied_;
+    bool damage_seized_ = false;            // stepping thread
+    bool damage_enabled_applied_ = true;    // stepping thread: the enabled flag the last tick used
+    std::atomic<bool> damage_enabled_{true};
+    mutable std::mutex damage_mutex_;
+    DamageReport damage_report_;
+    std::atomic<bool> damage_repair_pending_{false};
     std::shared_ptr<ps::io::SurfaceTable> surface_table_;
     std::unique_ptr<ps::World> world_;
     // Built lazily by sync_road_decks; declared after world_ so it is destroyed first (its workers call into the World).
@@ -799,6 +917,13 @@ private:
     std::atomic<int> walker_jump_{0};
     std::atomic<int> walker_request_{0}; // 0 none, 1 spawn, 2 enter, 3 despawn
     std::atomic<bool> walker_active_{false};
+    // FPV drone.
+    FpvDrone fpv_;
+    std::mutex fpv_input_mutex_;
+    FpvDroneInput fpv_input_;
+    std::atomic<int> fpv_request_{0}; // 0 none, 1 spawn, 3 despawn
+    std::atomic<bool> fpv_active_{false};
+    std::atomic<std::uint64_t> fpv_spawned_{0}, fpv_despawned_{0}, fpv_spawn_failed_{0};
     std::atomic<std::uint64_t> walker_spawned_{0}, walker_entered_{0}, walker_enter_refused_{0}, walker_despawned_{0},
         walker_spawn_failed_{0};
     OrientedRect walker_footprint_{};      // latest own-car footprint (stepping thread)

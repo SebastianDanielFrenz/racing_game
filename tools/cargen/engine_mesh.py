@@ -136,6 +136,8 @@ def materials(m, looks):
     m.mat("steel", color=(0.5, 0.5, 0.52), metallic=0.9, roughness=0.35)
     m.mat("turbo", color=(0.45, 0.43, 0.40), metallic=0.8, roughness=0.5)
     m.mat("brass", color=(0.78, 0.60, 0.25), metallic=1.0, roughness=0.3)
+    m.mat("coil", color=(0.04, 0.04, 0.045), roughness=0.6)
+    m.mat("filter", color=(0.10, 0.22, 0.55), metallic=0.3, roughness=0.5)
 
 
 def dims(d):
@@ -190,13 +192,13 @@ def build_piston(m, d):
         M.rounded_box(mb, (bx, 0, k["deck"] + k["head_h"] / 2), (bl + 0.03, k["head_w"], k["head_h"]), 0.012,
                       "head", xf=xf)
         if k["cover_h"] > 0:
-            M.rounded_box(mb, (bx, 0, k["deck"] + k["head_h"] + k["cover_h"] / 2),
-                          (bl + 0.01, k["head_w"] - 0.02, k["cover_h"]), 0.02, "cover", xf=xf)
+            cover_parts(mb, d, k, bx, bl, x0, xf)
         else:  # side-valve: the flat head carries the spark plugs; valves and ports live in the block side
             for i in range(k["per_bank"]):
                 x = x0 + i * k["pitch"]
                 M.cylinder(mb, xform_point(xf, (x, 0, k["deck"] + k["head_h"])),
                            xform_point(xf, (x, 0, k["deck"] + k["head_h"] + 0.03)), 0.008, "brass", count=10)
+        block_ribs(mb, k, bx, bl, x0, xf, d)
         for i in range(k["per_bank"]):
             x = x0 + i * k["pitch"]
             if d["layout"] == "v":
@@ -214,13 +216,127 @@ def build_piston(m, d):
                 ports.append((bi, (x, k["head_w"] / 2, pz), (x, -k["head_w"] / 2, pz), -1.0))
     intake(m, d, k, ports, xc)
     exhaust(m, d, k, ports)
+    port_flanges(mb, d, k, ports)
     # accessories on the front: water pump and alternator
     M.cylinder(mb, (Lb + 0.005, 0, k["deck"] * 0.55), (Lb + k["front"] + 0.02, 0, k["deck"] * 0.55), 0.05,
                "block", count=16)
     alt_y = -(k["case_w"] / 2 + 0.05) if d["layout"] != "inline" or d["side_valve"] else (k["head_w"] / 2 + 0.03)
-    M.cylinder(mb, (Lb - 0.10, alt_y, k["deck"] * 0.35), (Lb + k["front"] - 0.005, alt_y, k["deck"] * 0.35), 0.06,
+    M.cylinder(mb, (Lb - 0.10, alt_y, k["deck"] * 0.35), (Lb + k["front"] - 0.005, alt_y, k["deck"] * 0.35), 0.057,
                "steel", count=16)
+    for j in range(3):                                         # alternator cooling slots (dark bands)
+        xx = Lb - 0.08 + 0.028 * j
+        M.cylinder(mb, (xx, alt_y, k["deck"] * 0.35), (xx + 0.008, alt_y, k["deck"] * 0.35), 0.06, "rubber",
+                   count=16)
+    if d["valves"] > 2 and d["layout"] == "inline" and not d["side_valve"]:
+        # cam drive cover over the front of block and head (chain / belt case), up to below the cam cover
+        zt = k["deck"] + k["head_h"] + k["cover_h"] * 0.5
+        M.rounded_box(mb, (Lb + k["front"] * 0.4, 0, (zt + k["deck"] * 0.15) / 2),
+                      (k["front"] * 0.8, k["head_w"] * 0.9, zt - k["deck"] * 0.15), 0.02, "cover")
+    xp = Lb + k["front"]
+    belt_drive(mb, xp, [(0.0, 0.0, 0.075), (0.0, k["deck"] * 0.55, 0.052), (alt_y, k["deck"] * 0.35, 0.034)])
+    block_extras(mb, d, k)
     return k
+
+
+def cover_parts(mb, d, k, bx, bl, x0, xf):
+    """Cam / rocker cover. Overhead cams: a lower cover with two cam-tunnel ridges and a coil pack per cylinder
+    between them (all up to the old cover top). Two-valve: a rocker cover with a flange, hold-down bolts and
+    stiffening ribs. Nothing rises above deck + head_h + cover_h (the envelope stays the same)."""
+    top = k["deck"] + k["head_h"] + k["cover_h"]
+    zb = k["deck"] + k["head_h"]
+    w = k["head_w"] - 0.02
+    if d["valves"] > 2:
+        hb = k["cover_h"] * 0.55
+        M.rounded_box(mb, (bx, 0, zb + hb / 2), (bl + 0.01, w, hb), 0.012, "cover", xf=xf)
+        for sy in (-1, 1):
+            M.rounded_box(mb, (bx, sy * w * 0.27, zb + k["cover_h"] / 2), (bl, w * 0.36, k["cover_h"]), 0.018, "cover",
+                          xf=xf)
+        for i in range(k["per_bank"]):
+            x = x0 + i * k["pitch"]
+            M.rounded_box(mb, (x, 0, zb + hb + (top - zb - hb) / 2 - 0.001), (0.05, w * 0.16, top - zb - hb - 0.002),
+                          0.006, "coil", xf=xf)
+        M.cylinder(mb, xform_point(xf, (bx + bl * 0.3, w * 0.27, top - 0.004)),
+                   xform_point(xf, (bx + bl * 0.3, w * 0.27, top - 0.0005)), 0.022, "rubber", count=16)  # oil cap
+        return
+    # two-valve rocker cover: flange, body with ribs, bolts along the flange
+    M.rounded_box(mb, (bx, 0, zb + 0.006), (bl + 0.012, w + 0.008, 0.012), 0.004, "cover", xf=xf)
+    M.rounded_box(mb, (bx, 0, zb + k["cover_h"] / 2), (bl + 0.0, w - 0.012, k["cover_h"]), 0.022, "cover", xf=xf)
+    for f in (0.3, 0.55, 0.8):
+        zz = zb + k["cover_h"] * f
+        M.rounded_box(mb, (bx, 0, zz), (bl - 0.04, w - 0.002, 0.008), 0.003, "cover", xf=xf)
+    nb = max(2, k["per_bank"])
+    for i in range(nb + 1):
+        x = bx - bl / 2 + 0.01 + (bl - 0.02) * i / nb
+        for sy in (-1, 1):
+            M.cylinder(mb, xform_point(xf, (x, sy * (w / 2 + 0.0015), zb + 0.012)),
+                       xform_point(xf, (x, sy * (w / 2 + 0.0015), zb + 0.022)), 0.005, "steel", count=8)
+    M.cylinder(mb, xform_point(xf, (bx + bl * 0.3, 0, top - 0.004)), xform_point(xf, (bx + bl * 0.3, 0, top)), 0.024,
+               "steel", count=16)                                                                     # oil filler
+
+
+def block_ribs(mb, k, bx, bl, x0, xf, d):
+    """Cast stiffening ribs between the cylinders on both block sides, and head bolts for a side-valve head."""
+    for i in range(k["per_bank"] + 1):
+        x = x0 - k["pitch"] / 2 + i * k["pitch"]
+        for sy in (-1, 1):
+            M.rounded_box(mb, (x, sy * (k["block_w"] / 2 + 0.004), k["deck"] * 0.55), (0.014, 0.012, k["deck"] * 0.6),
+                          0.004, "block", xf=xf)
+    if d["side_valve"]:
+        for i in range(k["per_bank"] * 2 + 1):
+            x = bx - bl / 2 + 0.012 + (bl - 0.024) * i / (k["per_bank"] * 2)
+            for sy in (-1, 1):
+                p = xform_point(xf, (x, sy * (k["head_w"] / 2 - 0.015), k["deck"] + k["head_h"]))
+                q = xform_point(xf, (x, sy * (k["head_w"] / 2 - 0.015), k["deck"] + k["head_h"] + 0.012))
+                M.cylinder(mb, p, q, 0.008, "steel", count=6)
+
+
+def port_flanges(mb, d, k, ports):
+    """Exhaust port flanges where each primary leaves the head (or block, side-valve)."""
+    for _, _, ep, out in ports:
+        if d["layout"] == "v":
+            continue          # the V's primaries leave the head at an angle; their flange is the tube root
+        M.rounded_box(mb, (ep[0], ep[1] + out * 0.004, ep[2]), (0.06, 0.010, 0.05), 0.004, "exhaust")
+
+
+def belt_drive(mb, xp, pulleys):
+    """Front accessory drive: grooved pulleys at x = xp..xp+0.03 and one closed belt around their outside.
+    pulleys: [(y, z, r)] (crank damper first)."""
+    xb = xp + 0.015
+    for (y, z, r) in pulleys[1:]:
+        M.cylinder(mb, (xp - 0.004, y, z), (xp + 0.026, y, z), r, "steel", count=20)
+        M.cylinder(mb, (xp + 0.026, y, z), (xp + 0.029, y, z), r * 0.45, "steel", count=12)
+    # convex order around the centroid, outer tangent points sampled on each pulley
+    cy = sum(p[0] for p in pulleys) / len(pulleys)
+    cz = sum(p[1] for p in pulleys) / len(pulleys)
+    ps = sorted(pulleys, key=lambda p: math.atan2(p[1] - cz, p[0] - cy))
+    n = len(ps)
+    path = []
+    for i, (y, z, r) in enumerate(ps):
+        prv, nxt = ps[i - 1], ps[(i + 1) % n]
+        a_in = math.atan2(z - prv[1], y - prv[0]) - math.pi / 2       # outward normal of the incoming span
+        a_out = math.atan2(nxt[1] - z, nxt[0] - y) - math.pi / 2      # outward normal of the outgoing span
+        while a_out < a_in:
+            a_out += 2 * math.pi
+        steps = max(2, int((a_out - a_in) / 0.25))
+        for j in range(steps + 1):
+            a = a_in + (a_out - a_in) * j / steps
+            path.append((xb, y + (r + 0.003) * math.cos(a), z + (r + 0.003) * math.sin(a)))
+    M.tube(mb, path, 0.004, "rubber", count=6, closed=True)
+
+
+def block_extras(mb, d, k):
+    """Oil filter canister, dipstick and two engine mounts."""
+    Lb = k["length"]
+    ys = k["case_w"] / 2
+    if not d["side_valve"]:   # a 1910s side-valve has no full-flow filter
+        M.cylinder(mb, (Lb * 0.45, ys - 0.01, -0.02), (Lb * 0.45, ys + 0.07, -0.05), 0.038, "filter", count=18)
+        M.cylinder(mb, (Lb * 0.45, ys + 0.07, -0.05), (Lb * 0.45, ys + 0.074, -0.0515), 0.03, "steel", count=14)
+    yd = k["block_w"] / 2 + 0.02 if d["layout"] == "inline" else -(k["case_w"] / 2 + 0.01)
+    M.tube(mb, [(Lb * 0.62, yd, -0.02), (Lb * 0.62, yd, k["deck"] * 0.8)], 0.004, "steel", count=6)
+    M.tube(mb, [(Lb * 0.62, yd, k["deck"] * 0.8), (Lb * 0.62 + 0.018, yd, k["deck"] * 0.8 + 0.012),
+                (Lb * 0.62 + 0.036, yd, k["deck"] * 0.8)], 0.005, "filter", count=6)
+    for sy in (-1, 1):
+        M.rounded_box(mb, (Lb * 0.55, sy * ys, 0.0), (0.07, 0.03, 0.06), 0.008, "rubber")
 
 
 def intake(m, d, k, ports, xc):

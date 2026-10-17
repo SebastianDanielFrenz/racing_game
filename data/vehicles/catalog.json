@@ -12,8 +12,20 @@
       "vehicle": "data/vehicles/car_hyper.json",
       "model": "external/physics_sim/data/models/car_hyper/car_hyper.glb",
       "engine_bay": "mid",
+      "interior": {"seat_driver": "seat_carbon_bucket", "seat_passenger": "seat_carbon_bucket", "audio": "audio_basic", "door_trim": "door_trim_hyper", "dashboard": "dash_hyper", "sound_deadening": "sound_deadening_hyper", "carpets": "carpets_hyper", "fasteners": "fasteners_small"},
+      "engine_bay_envelope": {
+        "size_mm": [
+          700,
+          966,
+          711
+        ],
+        "crank_axis": "x",
+        "source": "external/physics_sim/data/models/car_hyper/car_hyper.glb, mid engine: from the cabin bulkhead (x -1.05, rear end of the cabin carpet) to the rear end of the art's engine/transaxle block (x -2.20, material engine) less 0.45 m for the transaxle (gearbox + differential, inline with the crank) [AS] = 700 mm; the rear axle (x -1.35) lies at the front end of that block and nothing outside the block (diffuser below, exhaust behind) has room for a gearbox, so the transaxle shares the block length with the engine; between the rear tyres' inner faces (|y| 0.663) less 0.18 m each side = 966 mm; from the flat underbody (z 0.10) + 0.05 m [AS] to the inner skin of the engine_cover node (z 0.861) = 711 mm"
+      },
       "chassis": {
-        "mass_kg": 1500.0,
+        "mass_kg": 1220.3,
+        "body_mass_kg": 600.0,
+        "body_mass_source": "[AS] bare shell (owner on PR #22: interior ripped out, no engine assembly, no drivetrain, no wheels; the seats, trim, carpets, audio, spare wheel, bonnet and fasteners are the catalogue's interior parts, the engine, gearbox, driveline, suspension, brakes, steering, wheels, cooling and fuel system are their own parts): a carbon-tub mid-engined hypercar - tub and roll structure 150 kg, front and rear subframes and crash structures 110, carbon body panels 70, glass 25, active aero (wing, splitter, diffuser, actuators) 45, wiring loom, battery and control units 55, exhaust with silencers 35, air conditioning 20, the extra radiators and ducting of a 1 MW car beyond the cooling-system part 50, other fixed parts 40 = 600 kg (estimated).",
         "half_extents": [
           2.0,
           0.4,
@@ -67,8 +79,20 @@
       "vehicle": "data/vehicles/car_sedan.json",
       "model": "external/physics_sim/data/models/car_sedan/car_sedan.glb",
       "engine_bay": "front",
+      "interior": {"seat_driver": "seat_comfort", "seat_passenger": "seat_comfort", "rear_seats": "rear_bench", "audio": "audio_system", "door_trim": "door_trim_4door", "dashboard": "dash_full", "sound_deadening": "sound_deadening_sedan", "carpets": "carpets", "spare_wheel": "spare_wheel_compact", "fasteners": "fasteners_steel", "hood": "hood_steel"},
+      "engine_bay_envelope": {
+        "size_mm": [
+          879,
+          975,
+          691
+        ],
+        "crank_axis": "x",
+        "source": "external/physics_sim/data/models/car_sedan/car_sedan.glb: firewall x 1.025 (rear edge of the hood node), front x 1.904 (body front 2.304), front tyres' inner faces |y| 0.668, underbody z 0.156, hood z 0.907 at x 1.46: 879 x 975 x 691 mm, longitudinal (holds the art's own engine block, x 1.325..1.875); measured on the art like the car_gt70 bay: firewall = rear edge of the hood / windscreen base, front = body front less 0.40 m for bumper beam, radiator and fan [AS] (the car_sedan figure: its modelled grille at x 2.22 less a 0.32 m radiator core and fan [AS]), half width = front tyre inner face less 0.18 m for inner fender and suspension (the car_gt70 figure), bottom = lowest underbody under the bay + 0.05 m crossmember [AS], top = hood outer surface within 0.15 m of the bay centre less 0.01 m skin [AS]"
+      },
       "chassis": {
-        "mass_kg": 1500.0,
+        "mass_kg": 1329.4,
+        "body_mass_kg": 680.0,
+        "body_mass_source": "[AS] bare shell (owner on PR #22: interior ripped out, no engine assembly, no drivetrain, no wheels; the seats, trim, carpets, audio, spare wheel, bonnet and fasteners are the catalogue's interior parts, the engine, gearbox, driveline, suspension, brakes, steering, wheels, cooling and fuel system are their own parts): a steel monocoque four-door saloon of about 4.6 m - body in white with front and rear subframes 360 kg, doors and boot lid 110, glass 35, bumpers and lights 40, wiring loom, battery and control units 50, exhaust 32, heater and air conditioning 25, pedal box, washer system, jack points and other fixed parts 28 = 680 kg (recalled ranges for a mid-size saloon, nothing cited).",
         "half_extents": [
           2.0,
           0.4,
@@ -115,8 +139,20 @@
       "vehicle": "data/vehicles/car_sedan_rwd.json",
       "model": "external/physics_sim/data/models/car_sedan/car_sedan.glb",
       "engine_bay": "front",
+      "interior": {"seat_driver": "seat_manual", "seat_passenger": "seat_manual", "rear_seats": "rear_bench", "audio": "audio_system", "door_trim": "door_trim_4door", "dashboard": "dash_full", "sound_deadening": "sound_deadening_sedan", "carpets": "carpets", "spare_wheel": "spare_wheel_compact", "fasteners": "fasteners_steel", "hood": "hood_steel"},
+      "engine_bay_envelope": {
+        "size_mm": [
+          879,
+          975,
+          691
+        ],
+        "crank_axis": "x",
+        "source": "the car_sedan bay (same art): external/physics_sim/data/models/car_sedan/car_sedan.glb: firewall x 1.025 (rear edge of the hood node), front x 1.904 (body front 2.304), front tyres' inner faces |y| 0.668, underbody z 0.156, hood z 0.907 at x 1.46: 879 x 975 x 691 mm, longitudinal (holds the art's own engine block, x 1.325..1.875); measured on the art like the car_gt70 bay: firewall = rear edge of the hood / windscreen base, front = body front less 0.40 m for bumper beam, radiator and fan [AS] (the car_sedan figure: its modelled grille at x 2.22 less a 0.32 m radiator core and fan [AS]), half width = front tyre inner face less 0.18 m for inner fender and suspension (the car_gt70 figure), bottom = lowest underbody under the bay + 0.05 m crossmember [AS], top = hood outer surface within 0.15 m of the bay centre less 0.01 m skin [AS]"
+      },
       "chassis": {
-        "mass_kg": 1500.0,
+        "mass_kg": 1267.4,
+        "body_mass_kg": 680.0,
+        "body_mass_source": "[AS] bare shell (owner on PR #22: interior ripped out, no engine assembly, no drivetrain, no wheels; the seats, trim, carpets, audio, spare wheel, bonnet and fasteners are the catalogue's interior parts, the engine, gearbox, driveline, suspension, brakes, steering, wheels, cooling and fuel system are their own parts): a steel monocoque four-door saloon of about 4.6 m - body in white with front and rear subframes 360 kg, doors and boot lid 110, glass 35, bumpers and lights 40, wiring loom, battery and control units 50, exhaust 32, heater and air conditioning 25, pedal box, washer system, jack points and other fixed parts 28 = 680 kg (recalled ranges for a mid-size saloon, nothing cited).",
         "half_extents": [
           2.0,
           0.4,
@@ -163,8 +199,20 @@
       "vehicle": "data/vehicles/car_sedan_awd.json",
       "model": "external/physics_sim/data/models/car_sedan/car_sedan.glb",
       "engine_bay": "front",
+      "interior": {"seat_driver": "seat_manual", "seat_passenger": "seat_manual", "rear_seats": "rear_bench", "audio": "audio_system", "door_trim": "door_trim_4door", "dashboard": "dash_full", "sound_deadening": "sound_deadening_sedan", "carpets": "carpets", "spare_wheel": "spare_wheel_compact", "fasteners": "fasteners_steel", "hood": "hood_steel"},
+      "engine_bay_envelope": {
+        "size_mm": [
+          879,
+          975,
+          691
+        ],
+        "crank_axis": "x",
+        "source": "the car_sedan bay (same art): external/physics_sim/data/models/car_sedan/car_sedan.glb: firewall x 1.025 (rear edge of the hood node), front x 1.904 (body front 2.304), front tyres' inner faces |y| 0.668, underbody z 0.156, hood z 0.907 at x 1.46: 879 x 975 x 691 mm, longitudinal (holds the art's own engine block, x 1.325..1.875); measured on the art like the car_gt70 bay: firewall = rear edge of the hood / windscreen base, front = body front less 0.40 m for bumper beam, radiator and fan [AS] (the car_sedan figure: its modelled grille at x 2.22 less a 0.32 m radiator core and fan [AS]), half width = front tyre inner face less 0.18 m for inner fender and suspension (the car_gt70 figure), bottom = lowest underbody under the bay + 0.05 m crossmember [AS], top = hood outer surface within 0.15 m of the bay centre less 0.01 m skin [AS]"
+      },
       "chassis": {
-        "mass_kg": 1500.0,
+        "mass_kg": 1321.4,
+        "body_mass_kg": 680.0,
+        "body_mass_source": "[AS] bare shell (owner on PR #22: interior ripped out, no engine assembly, no drivetrain, no wheels; the seats, trim, carpets, audio, spare wheel, bonnet and fasteners are the catalogue's interior parts, the engine, gearbox, driveline, suspension, brakes, steering, wheels, cooling and fuel system are their own parts): a steel monocoque four-door saloon of about 4.6 m - body in white with front and rear subframes 360 kg, doors and boot lid 110, glass 35, bumpers and lights 40, wiring loom, battery and control units 50, exhaust 32, heater and air conditioning 25, pedal box, washer system, jack points and other fixed parts 28 = 680 kg (recalled ranges for a mid-size saloon, nothing cited).",
         "half_extents": [
           2.0,
           0.4,
@@ -209,8 +257,20 @@
       "vehicle": "data/vehicles/car_sedan_gen_n2o.json",
       "model": "external/physics_sim/data/models/car_sedan/car_sedan.glb",
       "engine_bay": "front",
+      "interior": {"seat_driver": "seat_manual", "seat_passenger": "seat_manual", "rear_seats": "rear_bench", "audio": "audio_system", "door_trim": "door_trim_4door", "dashboard": "dash_full", "sound_deadening": "sound_deadening_sedan", "carpets": "carpets", "spare_wheel": "spare_wheel_compact", "fasteners": "fasteners_steel", "hood": "hood_steel"},
+      "engine_bay_envelope": {
+        "size_mm": [
+          879,
+          975,
+          691
+        ],
+        "crank_axis": "x",
+        "source": "the car_sedan bay (same art): external/physics_sim/data/models/car_sedan/car_sedan.glb: firewall x 1.025 (rear edge of the hood node), front x 1.904 (body front 2.304), front tyres' inner faces |y| 0.668, underbody z 0.156, hood z 0.907 at x 1.46: 879 x 975 x 691 mm, longitudinal (holds the art's own engine block, x 1.325..1.875); measured on the art like the car_gt70 bay: firewall = rear edge of the hood / windscreen base, front = body front less 0.40 m for bumper beam, radiator and fan [AS] (the car_sedan figure: its modelled grille at x 2.22 less a 0.32 m radiator core and fan [AS]), half width = front tyre inner face less 0.18 m for inner fender and suspension (the car_gt70 figure), bottom = lowest underbody under the bay + 0.05 m crossmember [AS], top = hood outer surface within 0.15 m of the bay centre less 0.01 m skin [AS]"
+      },
       "chassis": {
-        "mass_kg": 1500.0,
+        "mass_kg": 1285.4,
+        "body_mass_kg": 680.0,
+        "body_mass_source": "[AS] bare shell (owner on PR #22: interior ripped out, no engine assembly, no drivetrain, no wheels; the seats, trim, carpets, audio, spare wheel, bonnet and fasteners are the catalogue's interior parts, the engine, gearbox, driveline, suspension, brakes, steering, wheels, cooling and fuel system are their own parts): a steel monocoque four-door saloon of about 4.6 m - body in white with front and rear subframes 360 kg, doors and boot lid 110, glass 35, bumpers and lights 40, wiring loom, battery and control units 50, exhaust 32, heater and air conditioning 25, pedal box, washer system, jack points and other fixed parts 28 = 680 kg (recalled ranges for a mid-size saloon, nothing cited).",
         "half_extents": [
           2.0,
           0.4,
@@ -255,8 +315,20 @@
       "vehicle": "data/vehicles/car_hyper_n2o.json",
       "model": "external/physics_sim/data/models/car_hyper/car_hyper.glb",
       "engine_bay": "mid",
+      "interior": {"seat_driver": "seat_carbon_bucket", "seat_passenger": "seat_carbon_bucket", "audio": "audio_basic", "door_trim": "door_trim_hyper", "dashboard": "dash_hyper", "sound_deadening": "sound_deadening_hyper", "carpets": "carpets_hyper", "fasteners": "fasteners_small"},
+      "engine_bay_envelope": {
+        "size_mm": [
+          700,
+          966,
+          711
+        ],
+        "crank_axis": "x",
+        "source": "the car_hyper bay (same art): external/physics_sim/data/models/car_hyper/car_hyper.glb, mid engine: from the cabin bulkhead (x -1.05, rear end of the cabin carpet) to the rear end of the art's engine/transaxle block (x -2.20, material engine) less 0.45 m for the transaxle (gearbox + differential, inline with the crank) [AS] = 700 mm; the rear axle (x -1.35) lies at the front end of that block and nothing outside the block (diffuser below, exhaust behind) has room for a gearbox, so the transaxle shares the block length with the engine; between the rear tyres' inner faces (|y| 0.663) less 0.18 m each side = 966 mm; from the flat underbody (z 0.10) + 0.05 m [AS] to the inner skin of the engine_cover node (z 0.861) = 711 mm"
+      },
       "chassis": {
-        "mass_kg": 1500.0,
+        "mass_kg": 1232.6,
+        "body_mass_kg": 600.0,
+        "body_mass_source": "[AS] bare shell (owner on PR #22: interior ripped out, no engine assembly, no drivetrain, no wheels; the seats, trim, carpets, audio, spare wheel, bonnet and fasteners are the catalogue's interior parts, the engine, gearbox, driveline, suspension, brakes, steering, wheels, cooling and fuel system are their own parts): a carbon-tub mid-engined hypercar - tub and roll structure 150 kg, front and rear subframes and crash structures 110, carbon body panels 70, glass 25, active aero (wing, splitter, diffuser, actuators) 45, wiring loom, battery and control units 55, exhaust with silencers 35, air conditioning 20, the extra radiators and ducting of a 1 MW car beyond the cooling-system part 50, other fixed parts 40 = 600 kg (estimated).",
         "half_extents": [
           2.0,
           0.4,
@@ -317,8 +389,71 @@
         "crank_axis": "y",
         "source": "data/models/pico/pico.rig.json engine_bay.box_m (620 x 900 x 560 mm under the closed hood), less 330 mm of its width for the transaxle at the left end of a transverse engine [AS]: the engine itself has 570 mm along the crank"
       },
+      "interior": {"seat_driver": "seat_manual", "seat_passenger": "seat_manual", "rear_seats": "rear_bench_small", "audio": "audio_basic", "door_trim": "door_trim_4door", "dashboard": "dash_compact", "sound_deadening": "sound_deadening_small", "carpets": "carpets_small", "spare_wheel": "spare_wheel_compact", "fasteners": "fasteners_small", "hood": "hood_steel_small"},
       "chassis": {
-        "mass_kg": 852.0,
+        "mass_kg": 888.6,
+        "body_mass_kg": 425.0,
+        "body_mass_source": "[AS] bare shell (owner on PR #22: interior ripped out, no engine assembly, no drivetrain, no wheels; the seats, trim, carpets, audio, spare wheel, bonnet and fasteners are the catalogue's interior parts, the engine, gearbox, driveline, suspension, brakes, steering, wheels, cooling and fuel system are their own parts): a five-door steel city car of about 3.6 m - body in white with subframes 230 kg, doors and tailgate 70, glass 22, bumpers and lights 25, wiring loom, battery and control units 30, exhaust 18, heater 15, other fixed parts 15 = 425 kg (estimated).",
+        "half_extents": [
+          1.6,
+          0.5,
+          0.12
+        ],
+        "spawn_z_m": 0.55,
+        "source": "sprung mass of data/vehicles/car_city.json (900 kg kerb minus four 12 kg wheels); collision box inside the body, centred on the CoG; spawn height = CoG height + 3 cm [AS]"
+      },
+      "visual": {
+        "paint": "#d8473a",
+        "rim": "#b8bcc2"
+      },
+      "setup": {
+        "tyre_fitment": {
+          "front": {
+            "rims_in": [
+              14,
+              15
+            ],
+            "min_width_mm": 145,
+            "max_width_mm": 185,
+            "width_step_mm": 10,
+            "diameter_tolerance_mm": 12
+          },
+          "rear": {
+            "rims_in": [
+              14,
+              15
+            ],
+            "min_width_mm": 145,
+            "max_width_mm": 185,
+            "width_step_mm": 10,
+            "diameter_tolerance_mm": 12
+          }
+        }
+      }
+    },
+    {
+      "id": "car_city_bigbay",
+      "title": "Pico Big Bay",
+      "subtitle": "City car with a bigger engine bay",
+      "description": "The Pico with a longer, wider front clip and a raised hood, so the engine bay takes a transverse four, a rotary or a compact V8 as well as its own three-cylinder. Same car otherwise: 1.0 litre three-cylinder as standard, five-speed manual, front-wheel drive.",
+      "body_type": "hatchback",
+      "vehicle": "data/vehicles/car_city.json",
+      "model": "data/models/pico/pico.glb",
+      "engine_bay": "front",
+      "engine_bay_envelope": {
+        "size_mm": [
+          700,
+          700,
+          660
+        ],
+        "crank_axis": "y",
+        "source": "variant of car_city: reuses data/models/pico/pico.glb and data/vehicles/car_city.json unchanged (no new art, the garage and the drive show the plain Pico body). Declared bay [AS]: data/models/pico/pico.rig.json engine_bay.box_m (620 x 900 x 560 mm) with the front clip 80 mm longer (700 mm fore-aft), 130 mm wider (1030 mm across: wider wings, the track and suspension in the physics unchanged) and the hood raised 100 mm (660 mm tall, a hood bulge), less the same 330 mm transaxle at the left end of the transverse engine as car_city = 700 mm along the crank. Mass and drag stay those of car_city."
+      },
+      "interior": {"seat_driver": "seat_manual", "seat_passenger": "seat_manual", "rear_seats": "rear_bench_small", "audio": "audio_basic", "door_trim": "door_trim_4door", "dashboard": "dash_compact", "sound_deadening": "sound_deadening_small", "carpets": "carpets_small", "spare_wheel": "spare_wheel_compact", "fasteners": "fasteners_small", "hood": "hood_steel_small"},
+      "chassis": {
+        "mass_kg": 888.6,
+        "body_mass_kg": 425.0,
+        "body_mass_source": "[AS] bare shell (owner on PR #22: interior ripped out, no engine assembly, no drivetrain, no wheels; the seats, trim, carpets, audio, spare wheel, bonnet and fasteners are the catalogue's interior parts, the engine, gearbox, driveline, suspension, brakes, steering, wheels, cooling and fuel system are their own parts): a five-door steel city car of about 3.6 m - body in white with subframes 230 kg, doors and tailgate 70, glass 22, bumpers and lights 25, wiring loom, battery and control units 30, exhaust 18, heater 15, other fixed parts 15 = 425 kg (estimated).",
         "half_extents": [
           1.6,
           0.5,
@@ -374,8 +509,11 @@
         "crank_axis": "x",
         "source": "data/models/ventura_gt/ventura_gt.rig.json engine_bay.box_m: firewall (x 0.44) to radiator (x 1.62) less the fan, between the inner fenders (|y| 0.45), crossmember (z 0.14) to the flat hood (720 mm); the gearbox sits behind the firewall in the tunnel"
       },
+      "interior": {"seat_driver": "seat_manual", "seat_passenger": "seat_manual", "audio": "audio_basic", "door_trim": "door_trim_2door", "dashboard": "dash_classic", "sound_deadening": "sound_deadening_classic", "carpets": "carpets", "spare_wheel": "spare_wheel_full", "fasteners": "fasteners_steel", "hood": "hood_steel_long"},
       "chassis": {
-        "mass_kg": 1282.0,
+        "mass_kg": 1345.8,
+        "body_mass_kg": 679.0,
+        "body_mass_source": "[AS] bare shell (owner on PR #22: interior ripped out, no engine assembly, no drivetrain, no wheels; the seats, trim, carpets, audio, spare wheel, bonnet and fasteners are the catalogue's interior parts, the engine, gearbox, driveline, suspension, brakes, steering, wheels, cooling and fuel system are their own parts): a 1970s steel two-door GT coupe of about 4.7 m - body in white with subframe 380 kg, long doors and boot lid 105, glass 35, chrome bumpers and lights 45, wiring and battery 30, twin exhaust 35, heater 15, other fixed parts 20 = 665 kg (estimated), plus 14 kg of rear-deck trim and luggage-deck panelling that stand where a rear bench would be (the model has no rear seats) = 679 kg.",
         "half_extents": [
           2.1,
           0.5,
@@ -432,8 +570,11 @@
         "crank_axis": "x",
         "source": "data/models/runabout_t/runabout_t.rig.json engine_bay.box_m: under the bonnet between the dash (x 0.55) and the radiator (x 1.25), above the frame rails; the gearbox sits behind the dash"
       },
+      "interior": {"seat_driver": "seat_vintage_bench", "rear_seats": "rear_bench_vintage", "dashboard": "dash_vintage", "carpets": "carpets_small", "spare_wheel": "spare_wheel_vintage", "fasteners": "fasteners_small", "hood": "hood_steel_vintage"},
       "chassis": {
-        "mass_kg": 644.0,
+        "mass_kg": 709.4,
+        "body_mass_kg": 215.0,
+        "body_mass_source": "[AS] bare shell (owner on PR #22: interior ripped out, no engine assembly, no drivetrain, no wheels; the seats, trim, carpets, audio, spare wheel, bonnet and fasteners are the catalogue's interior parts, the engine, gearbox, driveline, suspension, brakes, steering, wheels, cooling and fuel system are their own parts): a 1910s open tourer - steel ladder frame 90 kg, wooden-framed body tub 60, mudguards and running boards 25, windscreen 10, lamps 8, wiring 3, exhaust 8, other fixed parts 11 = 215 kg (estimated); the front bench is one seat part (driver and passenger share it); the folding top is visual only and not counted.",
         "half_extents": [
           1.5,
           0.4,
@@ -448,7 +589,7 @@
       },
       "setup": {
         "options_note": "every option but brake_bias: the car has rear brakes only (no front corner to bias towards)",
-        "options": ["final_drive", "gear_ratios", "clutch_capacity", "brake_force", "spring_front", "spring_rear", "damper_front", "damper_rear", "arb_front", "arb_rear", "tyre_front", "tyre_rear", "assist_auto_clutch", "assist_auto_blip", "assist_auto_shift", "assist_unit", "paint", "rim", "folding_top", "engine_rev_limit", "engine_throttle_response", "engine_install", "fuel", "gearbox_install", "turbo_install", "turbo_install_n2o", "turbo_boost_target", "nitrous_install_hyper", "nitrous_install_sedan"],
+        "options": ["final_drive", "gear_ratios", "clutch_capacity", "brake_force", "spring_front", "spring_rear", "damper_front", "damper_rear", "arb_front", "arb_rear", "tyre_front", "tyre_rear", "assist_auto_clutch", "assist_auto_blip", "assist_auto_shift", "assist_unit", "paint", "rim", "folding_top", "engine_rev_limit", "engine_throttle_response", "engine_install", "fuel", "gearbox_install", "drive_layout", "diff_front", "diff_rear", "turbo_install", "turbo_install_n2o", "turbo_kit", "charge_piping", "engine_bore", "engine_rods", "engine_pistons", "engine_crankshaft", "engine_valve_springs", "turbo_boost_target", "nitrous_install_hyper", "nitrous_install_sedan", "cooling_radiator", "cooling_fan", "cooling_oil_cooler", "cooling_block_cooling", "trim_driver_seat", "trim_rear_seats", "trim_audio", "trim_door_trim", "trim_dashboard", "trim_sound_deadening", "trim_carpets", "trim_spare_wheel", "trim_fasteners", "trim_hood"],
         "tyre_fitment": {
           "front": {
             "rims_in": [
@@ -466,6 +607,184 @@
             "min_width_mm": 76,
             "max_width_mm": 102,
             "width_step_mm": 13,
+            "diameter_tolerance_mm": 12
+          }
+        }
+      }
+    },
+    {
+      "id": "car_toyama_xr",
+      "title": "Toyama XR",
+      "subtitle": "Front-wheel-drive saloon",
+      "description": "A generic mid-size saloon with the 3.0 litre six and six-speed manual of the Sedan 3.0. Imported CC BY model by mk2design.",
+      "body_type": "sedan",
+      "displacement_l": 3.0,
+      "displacement_source": "data/engines/n52b30_3l_na.json is a torque-map engine named 3.0 L (I6) and carries no cylinder geometry",
+      "vehicle": "data/vehicles/car_toyama_xr.json",
+      "model": "data/models/imported/toyama_xr/toyama_xr.glb",
+      "engine_bay": "front",
+      "interior": {"seat_driver": "seat_comfort", "seat_passenger": "seat_comfort", "rear_seats": "rear_bench", "audio": "audio_system", "door_trim": "door_trim_4door", "dashboard": "dash_full", "sound_deadening": "sound_deadening_sedan", "carpets": "carpets", "spare_wheel": "spare_wheel_compact", "fasteners": "fasteners_steel", "hood": "hood_steel"},
+      "engine_bay_envelope": {
+        "size_mm": [
+          809,
+          923,
+          765
+        ],
+        "crank_axis": "x",
+        "source": "data/models/imported/toyama_xr/toyama_xr.glb: firewall x 1.011 (windscreen base), front x 1.821 (body front 2.221), front tyres' inner faces |y| 0.641, underbody z 0.178, hood z 1.003 at x 1.42: 809 x 923 x 765 mm, longitudinal; measured on the art like the car_gt70 bay: firewall = rear edge of the hood / windscreen base, front = body front less 0.40 m for bumper beam, radiator and fan [AS] (the car_sedan figure: its modelled grille at x 2.22 less a 0.32 m radiator core and fan [AS]), half width = front tyre inner face less 0.18 m for inner fender and suspension (the car_gt70 figure), bottom = lowest underbody under the bay + 0.05 m crossmember [AS], top = hood outer surface within 0.15 m of the bay centre less 0.01 m skin [AS]"
+      },
+      "chassis": {
+        "mass_kg": 1329.4,
+        "body_mass_kg": 680.0,
+        "body_mass_source": "[AS] bare shell (owner on PR #22: interior ripped out, no engine assembly, no drivetrain, no wheels; the seats, trim, carpets, audio, spare wheel, bonnet and fasteners are the catalogue's interior parts, the engine, gearbox, driveline, suspension, brakes, steering, wheels, cooling and fuel system are their own parts): a steel monocoque four-door saloon of about 4.6 m - body in white with front and rear subframes 360 kg, doors and boot lid 110, glass 35, bumpers and lights 40, wiring loom, battery and control units 50, exhaust 32, heater and air conditioning 25, pedal box, washer system, jack points and other fixed parts 28 = 680 kg (recalled ranges for a mid-size saloon, nothing cited).",
+        "half_extents": [
+          2.0,
+          0.4,
+          0.15
+        ],
+        "spawn_z_m": 0.6,
+        "source": "car_sedan chassis; the imported art is visual only"
+      },
+      "visual": {
+        "paint": "#9aa4ad",
+        "rim": "#c4c8cf"
+      },
+      "setup": {
+        "tyre_fitment": {
+          "front": {
+            "rims_in": [
+              17
+            ],
+            "min_width_mm": 195,
+            "max_width_mm": 255,
+            "width_step_mm": 10,
+            "diameter_tolerance_mm": 12
+          },
+          "rear": {
+            "rims_in": [
+              17
+            ],
+            "min_width_mm": 195,
+            "max_width_mm": 255,
+            "width_step_mm": 10,
+            "diameter_tolerance_mm": 12
+          }
+        }
+      }
+    },
+    {
+      "id": "car_generic_suv",
+      "title": "Generic SUV",
+      "subtitle": "All-wheel-drive SUV",
+      "description": "A generic SUV on the all-wheel-drive 2.0 litre sedan drivetrain with tall 235/65 R18 tyres. Imported CC BY model by mk2design.",
+      "body_type": "suv",
+      "displacement_l": 2.0,
+      "displacement_source": "physics_sim data/engines/i4_2l_na.json is a torque-map engine described as a 2.0 L I4 and carries no cylinder geometry",
+      "vehicle": "data/vehicles/car_generic_suv.json",
+      "model": "data/models/imported/generic_suv/generic_suv.glb",
+      "engine_bay": "front",
+      "interior": {"seat_driver": "seat_comfort", "seat_passenger": "seat_comfort", "rear_seats": "rear_bench", "audio": "audio_system", "door_trim": "door_trim_4door", "dashboard": "dash_full", "sound_deadening": "sound_deadening_sedan", "carpets": "carpets", "spare_wheel": "spare_wheel_compact", "fasteners": "fasteners_steel", "hood": "hood_steel"},
+      "engine_bay_envelope": {
+        "size_mm": [
+          976,
+          871,
+          850
+        ],
+        "crank_axis": "x",
+        "source": "data/models/imported/generic_suv/generic_suv.glb: firewall x 0.942 (windscreen base), front x 1.918 (body front 2.318), front tyres' inner faces |y| 0.616, underbody z 0.221, hood z 1.130 at x 1.43: 976 x 871 x 850 mm, longitudinal; measured on the art like the car_gt70 bay: firewall = rear edge of the hood / windscreen base, front = body front less 0.40 m for bumper beam, radiator and fan [AS] (the car_sedan figure: its modelled grille at x 2.22 less a 0.32 m radiator core and fan [AS]), half width = front tyre inner face less 0.18 m for inner fender and suspension (the car_gt70 figure), bottom = lowest underbody under the bay + 0.05 m crossmember [AS], top = hood outer surface within 0.15 m of the bay centre less 0.01 m skin [AS]"
+      },
+      "chassis": {
+        "mass_kg": 1475.4,
+        "body_mass_kg": 820.0,
+        "body_mass_source": "[AS] bare shell (owner on PR #22: interior ripped out, no engine assembly, no drivetrain, no wheels; the seats, trim, carpets, audio, spare wheel, bonnet and fasteners are the catalogue's interior parts, the engine, gearbox, driveline, suspension, brakes, steering, wheels, cooling and fuel system are their own parts): a steel monocoque SUV of about 4.7 m with a high roof - body in white with subframes 430 kg, doors and tailgate 135, glass 45, bumpers and lights 50, wiring loom, battery and control units 55, exhaust 38, heater and air conditioning 30, roof rails, tow bar and other fixed parts 37 = 820 kg (recalled ranges, nothing cited).",
+        "half_extents": [
+          2.0,
+          0.4,
+          0.15
+        ],
+        "spawn_z_m": 0.67,
+        "source": "car_sedan_awd chassis, spawn 7 cm higher for the 64 mm larger wheel radius; the imported art is visual only"
+      },
+      "visual": {
+        "paint": "#5b6770",
+        "rim": "#c4c8cf"
+      },
+      "setup": {
+        "tyre_fitment": {
+          "front": {
+            "rims_in": [
+              18
+            ],
+            "min_width_mm": 205,
+            "max_width_mm": 265,
+            "width_step_mm": 10,
+            "diameter_tolerance_mm": 12
+          },
+          "rear": {
+            "rims_in": [
+              18
+            ],
+            "min_width_mm": 205,
+            "max_width_mm": 265,
+            "width_step_mm": 10,
+            "diameter_tolerance_mm": 12
+          }
+        }
+      }
+    },
+    {
+      "id": "car_phoenix_455",
+      "title": "Phoenix 455",
+      "subtitle": "1970s V8 coupe",
+      "description": "A long, low 1970s coupe on the Ventura GT's 5.0 litre V8, close-ratio six-speed and limited-slip rear axle. Imported CC BY model by Daniel Zhabotinsky.",
+      "body_type": "coupe",
+      "vehicle": "data/vehicles/car_phoenix_455.json",
+      "model": "data/models/imported/phoenix_455/phoenix_455.glb",
+      "engine_bay": "front",
+      "interior": {"seat_driver": "seat_manual", "seat_passenger": "seat_manual", "rear_seats": "rear_bench_small", "audio": "audio_basic", "door_trim": "door_trim_2door", "dashboard": "dash_classic", "sound_deadening": "sound_deadening_classic", "carpets": "carpets", "spare_wheel": "spare_wheel_full", "fasteners": "fasteners_steel", "hood": "hood_steel_long"},
+      "engine_bay_envelope": {
+        "size_mm": [
+          1312,
+          1061,
+          759
+        ],
+        "crank_axis": "x",
+        "source": "data/models/imported/phoenix_455/phoenix_455.glb: firewall x 0.559 (windscreen base, behind the hood node's rear edge), front x 1.872 (body front 2.272), front tyres' inner faces |y| 0.710, underbody z 0.124, hood node z 0.943 at x 1.22: 1312 x 1061 x 759 mm, longitudinal; measured on the art like the car_gt70 bay: firewall = rear edge of the hood / windscreen base, front = body front less 0.40 m for bumper beam, radiator and fan [AS] (the car_sedan figure: its modelled grille at x 2.22 less a 0.32 m radiator core and fan [AS]), half width = front tyre inner face less 0.18 m for inner fender and suspension (the car_gt70 figure), bottom = lowest underbody under the bay + 0.05 m crossmember [AS], top = hood outer surface within 0.15 m of the bay centre less 0.01 m skin [AS]"
+      },
+      "chassis": {
+        "mass_kg": 1345.8,
+        "body_mass_kg": 665.0,
+        "body_mass_source": "[AS] bare shell (owner on PR #22: interior ripped out, no engine assembly, no drivetrain, no wheels; the seats, trim, carpets, audio, spare wheel, bonnet and fasteners are the catalogue's interior parts, the engine, gearbox, driveline, suspension, brakes, steering, wheels, cooling and fuel system are their own parts): a 1970s steel two-door GT coupe of about 4.7 m - body in white with subframe 380 kg, long doors and boot lid 105, glass 35, chrome bumpers and lights 45, wiring and battery 30, twin exhaust 35, heater 15, other fixed parts 20 = 665 kg (estimated).",
+        "half_extents": [
+          2.1,
+          0.5,
+          0.12
+        ],
+        "spawn_z_m": 0.51,
+        "source": "car_gt70 chassis; the imported art is visual only"
+      },
+      "visual": {
+        "paint": "#7a1f1f",
+        "rim": "#c9ccd1"
+      },
+      "setup": {
+        "tyre_fitment": {
+          "front": {
+            "rims_in": [
+              15
+            ],
+            "min_width_mm": 185,
+            "max_width_mm": 245,
+            "width_step_mm": 10,
+            "diameter_tolerance_mm": 12
+          },
+          "rear": {
+            "rims_in": [
+              15
+            ],
+            "min_width_mm": 195,
+            "max_width_mm": 255,
+            "width_step_mm": 10,
             "diameter_tolerance_mm": 12
           }
         }
@@ -532,8 +851,8 @@
     {
       "id": "car_sedan_rwd_track",
       "title": "Sedan 2.0 RWD Track",
-      "subtitle": "Stiff and grippy",
-      "description": "The rear-wheel-drive sedan prepared for the track: stiff springs, dampers and anti-roll bars, strong brakes, sport tyres.",
+      "subtitle": "Stiff, grippy and stripped",
+      "description": "The rear-wheel-drive sedan prepared for the track: stiff springs, dampers and anti-roll bars, strong brakes, sport tyres, a sport bucket seat and the rear seats, audio, sound deadening and spare wheel taken out.",
       "body_type": "race",
       "preset_of": "car_sedan_rwd",
       "preset_setup": {
@@ -546,6 +865,11 @@
         "brake_force": 1.2,
         "tyre_front": "track_225_45r17",
         "tyre_rear": "track_225_45r17",
+        "trim_driver_seat": "sport_bucket",
+        "trim_rear_seats": "removed",
+        "trim_audio": "removed",
+        "trim_sound_deadening": "removed",
+        "trim_spare_wheel": "removed",
         "paint": "#1b1d22"
       }
     },

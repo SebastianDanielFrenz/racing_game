@@ -1,21 +1,19 @@
 extends Node3D
 # Same tyre model, live engine voice and Windows object backend as physics_sim.
 # Each source is relative to the active camera, including the tracked VR head.
-const TyreModel = preload("res://scripts/tyre_sound_model.gd")
 const RATE := 48000
 var simulation: Node
 var director: Node
 var vehicle_name := "car_hyper"
-var tyres: Array = []
+var tyre_bank: RgTyreSound # native tyre voices (rg/tyre_sound.h)
+var _wheel_count := 0
 var tyre_points := PackedVector3Array()
-var tyre_values := PackedFloat32Array()
 var tyre_spatial: RefCounted
 var engine_spatial: RefCounted
 var fallback_players: Array[AudioStreamPlayer3D] = []
 var engine_players: Array[AudioStreamPlayer3D] = []
 var engine_points := PackedVector3Array()
 var engine_rate := 0
-var _sample_even := true
 var _capacity := 0
 var _engine_capacity := 0
 var _initialized := false
@@ -48,8 +46,9 @@ func _open_spatial(rate: int, channels: int) -> RefCounted:
 	var backend: RefCounted = ClassDB.instantiate("PsSpatialAudio")
 	backend.set_reference_distance_m(8.0)
 	backend.set_reflections_gain(0.15)
+	var t0 := Time.get_ticks_usec()
 	var opened: bool = backend.open(rate, channels)
-	print("RG_AUDIO ", backend.get_status())
+	print("RG_AUDIO ", backend.get_status(), " open_ms=%.1f" % ((Time.get_ticks_usec() - t0) / 1000.0))
 	if not opened:
 		backend.close()
 		return null
@@ -70,20 +69,28 @@ func _player(rate: int, point: Vector3) -> AudioStreamPlayer3D:
 
 func _initialize_audio() -> void:
 	_initialized = true
+	var init_t0 := Time.get_ticks_usec()
 	if not "--no-tyre-audio" in OS.get_cmdline_user_args():
-		for wheel in range(simulation.get_vehicle_wheel_count(vehicle_name)):
-			tyres.append(TyreModel.new(1234 + wheel * 997))
+		_wheel_count = simulation.get_vehicle_wheel_count(vehicle_name)
+		tyre_bank = RgTyreSound.new()
+		var squeal_pcm := PackedByteArray()
+		var wav := AudioStreamWAV.load_from_file(ProjectSettings.globalize_path("res://../external/physics_sim/adapters/godot/demo/audio/tyres/asphalt_squeal.wav"))
+		if wav != null:
+			squeal_pcm = wav.data
+		tyre_bank.setup(_wheel_count, 1234, squeal_pcm)
+		for wheel in range(_wheel_count):
 			var point: Vector3 = simulation.get_wheel_attachment_local(vehicle_name, wheel)
 			point.z -= simulation.get_wheel_radius(vehicle_name, wheel)
 			tyre_points.append(point)
-			tyre_values.append(0.0)
-		if not tyres.is_empty():
-			tyre_spatial = _open_spatial(RATE, tyres.size())
+		if _wheel_count > 0:
+			tyre_spatial = _open_spatial(RATE, _wheel_count)
 			if tyre_spatial == null:
 				for point in tyre_points:
 					fallback_players.append(_player(RATE, point))
+	var tyres_ms := (Time.get_ticks_usec() - init_t0) / 1000.0
+	var voice_t0 := Time.get_ticks_usec()
 	var voice: Dictionary = simulation.start_engine_audio()
-	print("RG_AUDIO engine voice: ", voice.get("reason", "unknown"))
+	print("RG_AUDIO engine voice: ", voice.get("reason", "unknown"), " start_ms=%.1f tyres_ms=%.1f" % [(Time.get_ticks_usec() - voice_t0) / 1000.0, tyres_ms])
 	if voice.get("active", false):
 		engine_rate = int(voice.rate)
 		engine_points = simulation.get_engine_audio_positions()
@@ -135,14 +142,14 @@ func _output(samples: PackedFloat32Array, channels: int, backend: RefCounted, pl
 		var playback := players[channel].get_stream_playback() as AudioStreamGeneratorPlayback
 		if playback == null:
 			continue
-		var buffer := PackedVector2Array()
-		buffer.resize(samples.size() / channels)
-		for frame in range(buffer.size()):
-			var sample := samples[frame * channels + channel]
-			buffer[frame] = Vector2(sample, sample)
-		playback.push_buffer(buffer)
+		playback.push_buffer(RgTyreSound.channel_to_stereo(samples, channels, channel))
 
+const FrameProbe := preload("res://scripts/frame_probe.gd")
 func _process(delta: float) -> void:
+	var probe_t0 := Time.get_ticks_usec()
+	_process_body(delta)
+	FrameProbe.add("audio", Time.get_ticks_usec() - probe_t0)
+func _process_body(delta: float) -> void:
 	if _horn != null:
 		var sounding: bool = not muted and simulation.is_running() and simulation.get_control("cabin.horn") != 0
 		_horn.volume_db = float(_horn.get_meta("gain_db")) + linear_to_db(maxf(master_volume,0.0001))
@@ -168,30 +175,21 @@ func _process(delta: float) -> void:
 		for point in engine_points:
 			engine_players.append(_player(engine_rate, point))
 	var frozen: bool = simulation.get_streaming_status().get("frozen", false)
-	for wheel in range(tyres.size()):
+	var tyre_speed: float = simulation.get_body_speed_mps("chassis")
+	for wheel in range(_wheel_count):
 		var radius: float = simulation.get_wheel_radius(vehicle_name, wheel)
-		tyres[wheel].update(simulation.get_body_speed_mps("chassis"), simulation.get_wheel_omega(vehicle_name, wheel) * radius,
+		tyre_bank.update_wheel(wheel, tyre_speed, simulation.get_wheel_omega(vehicle_name, wheel) * radius,
 			simulation.get_wheel_slip_ratio(vehicle_name, wheel), simulation.get_wheel_slip_angle(vehicle_name, wheel),
 			0.0 if frozen else simulation.get_wheel_load_n(vehicle_name, wheel), simulation.get_wheel_fx(vehicle_name, wheel),
-			simulation.get_wheel_fy(vehicle_name, wheel), simulation.get_wheel_surface_name(vehicle_name, wheel), 0.0)
+			simulation.get_wheel_fy(vehicle_name, wheel), 0.0)
 	var needed := 0
 	if tyre_spatial != null:
 		tyre_spatial.set_positions(_relative(tyre_points))
 		needed = tyre_spatial.get_frames_needed()
 	else:
 		needed = _fallback_needed(fallback_players, RATE, false)
-	var pcm := PackedFloat32Array()
-	var tyre_gain := _applied_tyre_gain()
-	pcm.resize(needed * tyres.size())
-	for frame in range(needed):
-		for wheel in range(tyres.size()):
-			# Preserve the demo's 24 kHz sample pitch when feeding 48 kHz output.
-			if _sample_even:
-				tyre_values[wheel] += (tyres[wheel].sample(1.0 / 24000.0) - tyre_values[wheel]) * 0.65
-			pcm[frame * tyres.size() + wheel] = tyre_values[wheel] * tyre_gain
-		_sample_even = not _sample_even
-	if not tyres.is_empty():
-		_output(pcm, tyres.size(), tyre_spatial, fallback_players)
+	if _wheel_count > 0:
+		_output(tyre_bank.render(needed, _applied_tyre_gain()), _wheel_count, tyre_spatial, fallback_players)
 	if engine_rate > 0:
 		simulation.update_engine_audio()
 		if engine_spatial != null:
@@ -209,10 +207,7 @@ func _process(delta: float) -> void:
 		if _engine_native:
 			engine_spatial.set_native_gain(_applied_engine_gain() / 15.0)
 		else:
-			var engine_pcm: PackedFloat32Array = simulation.read_engine_audio(needed)
-			var applied_gain := _applied_engine_gain()
-			for i in range(engine_pcm.size()):
-				engine_pcm[i] *= applied_gain
+			var engine_pcm: PackedFloat32Array = RgTyreSound.scaled(simulation.read_engine_audio(needed), _applied_engine_gain())
 			_output(engine_pcm, engine_points.size(), engine_spatial, engine_players)
 	_diagnostic_elapsed += delta
 	if _diagnostic_elapsed >= 5.0:
@@ -239,7 +234,7 @@ func shutdown() -> void:
 		player.stop()
 	if is_instance_valid(simulation):
 		simulation.stop_engine_audio()
-	tyres.clear()
+	tyre_bank = null
 	fallback_players.clear()
 	engine_players.clear()
 	tyre_spatial = null

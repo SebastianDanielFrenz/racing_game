@@ -8,13 +8,13 @@
       "node": "runabout_t",
       "material": "frame",
       "first_triangle": 0,
-      "triangle_count": 1476
+      "triangle_count": 5424
     },
     {
       "node": "runabout_t",
       "material": "paint",
       "first_triangle": 0,
-      "triangle_count": 8204
+      "triangle_count": 17268
     },
     {
       "node": "runabout_t",
@@ -26,55 +26,67 @@
       "node": "runabout_t",
       "material": "brass",
       "first_triangle": 0,
-      "triangle_count": 876
+      "triangle_count": 5232
     },
     {
       "node": "runabout_t",
       "material": "radiator",
       "first_triangle": 0,
-      "triangle_count": 252
+      "triangle_count": 324
+    },
+    {
+      "node": "runabout_t",
+      "material": "lamp_reflector",
+      "first_triangle": 0,
+      "triangle_count": 2304
     },
     {
       "node": "runabout_t",
       "material": "light_head",
       "first_triangle": 0,
-      "triangle_count": 184
+      "triangle_count": 880
+    },
+    {
+      "node": "runabout_t",
+      "material": "lens_clear",
+      "first_triangle": 0,
+      "triangle_count": 1632
     },
     {
       "node": "hood_L",
       "material": "paint",
       "first_triangle": 0,
-      "triangle_count": 2876
+      "triangle_count": 1756
     },
     {
       "node": "hood_L",
       "material": "brass",
       "first_triangle": 0,
-      "triangle_count": 36
+      "triangle_count": 60
     },
     {
       "node": "hood_R",
       "material": "paint",
       "first_triangle": 0,
-      "triangle_count": 2876
+      "triangle_count": 1756
     },
     {
       "node": "hood_R",
       "material": "brass",
       "first_triangle": 0,
-      "triangle_count": 36
+      "triangle_count": 60
     },
     {
       "node": "runabout_t",
       "material": "light_drl",
       "first_triangle": 0,
-      "triangle_count": 120
+      "triangle_count": 528
     },
     {
       "node": "runabout_t",
       "material": "leather",
       "first_triangle": 0,
-      "triangle_count": 748
+      "triangle_count": 1500
     },
     {
       "node": "door_L",
@@ -86,7 +98,7 @@
       "node": "door_L",
       "material": "leather",
       "first_triangle": 0,
-      "triangle_count": 392
+      "triangle_count": 424
     },
     {
       "node": "door_L",
@@ -104,7 +116,7 @@
       "node": "door_R",
       "material": "leather",
       "first_triangle": 0,
-      "triangle_count": 392
+      "triangle_count": 424
     },
     {
       "node": "door_R",
@@ -116,19 +128,31 @@
       "node": "runabout_t",
       "material": "plate",
       "first_triangle": 0,
+      "triangle_count": 140
+    },
+    {
+      "node": "runabout_t",
+      "material": "plate_text",
+      "first_triangle": 0,
       "triangle_count": 252
     },
     {
       "node": "runabout_t",
       "material": "light_tail",
       "first_triangle": 0,
-      "triangle_count": 60
+      "triangle_count": 264
+    },
+    {
+      "node": "runabout_t",
+      "material": "lens_red",
+      "first_triangle": 0,
+      "triangle_count": 576
     },
     {
       "node": "runabout_t",
       "material": "light_brake",
       "first_triangle": 0,
-      "triangle_count": 44
+      "triangle_count": 176
     },
     {
       "node": "runabout_t",
@@ -152,169 +176,169 @@
       "node": "wheel_FL",
       "material": "tyre_sidewall",
       "first_triangle": 0,
-      "triangle_count": 2048
+      "triangle_count": 2592
     },
     {
       "node": "wheel_FL",
       "material": "tyre_tread_F",
       "first_triangle": 0,
-      "triangle_count": 1920
+      "triangle_count": 1728
     },
     {
       "node": "wheel_FL",
       "material": "rim_F",
       "first_triangle": 0,
-      "triangle_count": 576
+      "triangle_count": 768
     },
     {
       "node": "wheel_FL",
       "material": "wheel_wood",
       "first_triangle": 0,
-      "triangle_count": 816
+      "triangle_count": 912
     },
     {
       "node": "wheel_FL",
       "material": "wheel_hub",
       "first_triangle": 0,
-      "triangle_count": 344
+      "triangle_count": 408
     },
     {
       "node": "wheel_FL",
       "material": "brass",
       "first_triangle": 0,
-      "triangle_count": 240
+      "triangle_count": 280
     },
     {
       "node": "wheel_FL",
       "material": "brake_drum",
       "first_triangle": 0,
-      "triangle_count": 256
+      "triangle_count": 880
     },
     {
       "node": "wheel_FR",
       "material": "tyre_sidewall",
       "first_triangle": 0,
-      "triangle_count": 2048
+      "triangle_count": 2592
     },
     {
       "node": "wheel_FR",
       "material": "tyre_tread_F",
       "first_triangle": 0,
-      "triangle_count": 1920
+      "triangle_count": 1728
     },
     {
       "node": "wheel_FR",
       "material": "rim_F",
       "first_triangle": 0,
-      "triangle_count": 576
+      "triangle_count": 768
     },
     {
       "node": "wheel_FR",
       "material": "wheel_wood",
       "first_triangle": 0,
-      "triangle_count": 816
+      "triangle_count": 912
     },
     {
       "node": "wheel_FR",
       "material": "wheel_hub",
       "first_triangle": 0,
-      "triangle_count": 344
+      "triangle_count": 408
     },
     {
       "node": "wheel_FR",
       "material": "brass",
       "first_triangle": 0,
-      "triangle_count": 240
+      "triangle_count": 280
     },
     {
       "node": "wheel_FR",
       "material": "brake_drum",
       "first_triangle": 0,
-      "triangle_count": 256
+      "triangle_count": 880
     },
     {
       "node": "wheel_RL",
       "material": "tyre_sidewall",
       "first_triangle": 0,
-      "triangle_count": 2048
+      "triangle_count": 2592
     },
     {
       "node": "wheel_RL",
       "material": "tyre_tread_R",
       "first_triangle": 0,
-      "triangle_count": 1920
+      "triangle_count": 1728
     },
     {
       "node": "wheel_RL",
       "material": "rim_R",
       "first_triangle": 0,
-      "triangle_count": 576
+      "triangle_count": 768
     },
     {
       "node": "wheel_RL",
       "material": "wheel_wood",
       "first_triangle": 0,
-      "triangle_count": 816
+      "triangle_count": 912
     },
     {
       "node": "wheel_RL",
       "material": "wheel_hub",
       "first_triangle": 0,
-      "triangle_count": 344
+      "triangle_count": 408
     },
     {
       "node": "wheel_RL",
       "material": "brass",
       "first_triangle": 0,
-      "triangle_count": 240
+      "triangle_count": 280
     },
     {
       "node": "wheel_RL",
       "material": "brake_drum",
       "first_triangle": 0,
-      "triangle_count": 256
+      "triangle_count": 880
     },
     {
       "node": "wheel_RR",
       "material": "tyre_sidewall",
       "first_triangle": 0,
-      "triangle_count": 2048
+      "triangle_count": 2592
     },
     {
       "node": "wheel_RR",
       "material": "tyre_tread_R",
       "first_triangle": 0,
-      "triangle_count": 1920
+      "triangle_count": 1728
     },
     {
       "node": "wheel_RR",
       "material": "rim_R",
       "first_triangle": 0,
-      "triangle_count": 576
+      "triangle_count": 768
     },
     {
       "node": "wheel_RR",
       "material": "wheel_wood",
       "first_triangle": 0,
-      "triangle_count": 816
+      "triangle_count": 912
     },
     {
       "node": "wheel_RR",
       "material": "wheel_hub",
       "first_triangle": 0,
-      "triangle_count": 344
+      "triangle_count": 408
     },
     {
       "node": "wheel_RR",
       "material": "brass",
       "first_triangle": 0,
-      "triangle_count": 240
+      "triangle_count": 280
     },
     {
       "node": "wheel_RR",
       "material": "brake_drum",
       "first_triangle": 0,
-      "triangle_count": 256
+      "triangle_count": 880
     }
   ],
   "selected": [
@@ -328,5 +352,5 @@
   ],
   "excluded": "cabin, cockpit controls, engine bay, hidden top",
   "limitations": "Closed visual shells per part; separate parts overlap and touch (coachbuilt), not a boolean union. The open car is selected; the hidden top and the cabin are not.",
-  "source_glb_sha256": "f4e8f4b5393155ecb3a534ff9fd722f5007d76681fdf83db9757d9f232f93216"
+  "source_glb_sha256": "d7ad895c35bcc4ca3aa7ff5069d3a7d507dff783de1cd8e4e8c95b591630d13e"
 }

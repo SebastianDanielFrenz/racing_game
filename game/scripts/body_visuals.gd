@@ -1,4 +1,5 @@
 extends Node3D
+const SurfaceMaterials := preload("res://scripts/surface_materials.gd")
 # game/scripts/body_visuals.gd â€” places the placeholder/real meshes of the
 # sim's bodies (the chassis; the flat world's static ground box) from
 # RgSimulation.get_body_transform() every frame. Default process priority, so
@@ -38,6 +39,7 @@ var _chassis_root: Node3D
 var _chassis_box: MeshInstance3D
 var _vehicle_visual: Node3D
 var _model_options: Array = []
+var _hidden_nodes: Array = []
 var _ground_anchor: Node3D
 
 func _ready() -> void:
@@ -64,8 +66,11 @@ func _ready() -> void:
 	ground_mesh.size = Vector3(GROUND_HALF_EXTENT_M * 2.0, GROUND_HALF_EXTENT_M * 2.0, 1.0)
 	ground.mesh = ground_mesh
 	ground.position = Vector3(0.0, 0.0, -0.5)
-	var ground_mat := StandardMaterial3D.new()
-	ground_mat.albedo_color = Color(0.25, 0.32, 0.22)
+	# Textured test ground (terrain.gdshader with one forced layer and a 50 m grid, data/textures/surface_textures.json
+	# "flat_ground"); the ground box sits at the sim origin, so its own local x/y place the texture.
+	var ground_mat := ShaderMaterial.new()
+	ground_mat.shader = load("res://shaders/terrain.gdshader")
+	SurfaceMaterials.shared().apply_ground(ground_mat)
 	ground.material_override = ground_mat
 	_ground_anchor.add_child(ground)
 
@@ -105,6 +110,7 @@ func _make_vehicle_visual() -> void:
 	_vehicle_visual.paint_colour = paint_colour
 	_vehicle_visual.rim_colour = rim_colour
 	_vehicle_visual.set("model_options", _model_options)
+	_vehicle_visual.set("hidden_nodes", _hidden_nodes)
 	_chassis_root.add_child(_vehicle_visual)
 
 # The clickable cockpit of the shown car (cockpit_controls.gd), or null.
@@ -114,18 +120,21 @@ func get_cockpit() -> Node3D:
 # R6: the garage's car for the next world (a different model, colours from its setup).
 # The same car again only re-binds; a different one replaces the visual.
 # `model_options`: the optional model parts the setup switches on (e.g. "roof", model_options.gd).
-func set_vehicle(name_in: String, model_path: String, paint_hex: String, rim_hex: String, model_options: Array = []) -> void:
+# `hidden_nodes`: the model nodes the setup's removed (weight-reduction) parts take off the car (rg_core strip_visual.h).
+func set_vehicle(name_in: String, model_path: String, paint_hex: String, rim_hex: String, model_options: Array = [], hidden_nodes: Array = []) -> void:
 	var same := _vehicle_visual != null and model_path == model_absolute_path
 	vehicle_name = name_in
 	model_absolute_path = model_path
 	paint_colour = Color.html(paint_hex)
 	rim_colour = Color.html(rim_hex)
 	_model_options = model_options
+	_hidden_nodes = hidden_nodes
 	if same:
 		_vehicle_visual.vehicle_name = name_in
 		_vehicle_visual.paint_colour = paint_colour
 		_vehicle_visual.rim_colour = rim_colour
 		_vehicle_visual.set("model_options", model_options)
+		_vehicle_visual.set("hidden_nodes", hidden_nodes)
 		_vehicle_visual.apply_colours()
 		return
 	if _vehicle_visual != null:
@@ -165,7 +174,12 @@ func vehicle_model_ok() -> bool:
 func get_wheel_visual_steer_angle_rad(wheel_index: int) -> float:
 	return _vehicle_visual.get_wheel_visual_steer_angle_rad(wheel_index) if _vehicle_visual != null else 0.0
 
+const FrameProbe := preload("res://scripts/frame_probe.gd")
 func _process(_delta: float) -> void:
+	var probe_t0 := Time.get_ticks_usec()
+	_process_body(_delta)
+	FrameProbe.add("body_visuals", Time.get_ticks_usec() - probe_t0)
+func _process_body(_delta: float) -> void:
 	var live: bool = simulation != null and int(simulation.get_step_count()) > 0
 	_chassis_root.visible = live
 	_ground_anchor.visible = live and show_ground
@@ -182,6 +196,9 @@ var seat_offset := Vector3(0.20, 0.0, 0.0)
 func driver_eye_local() -> Vector3:
 	var base: Vector3 = _vehicle_visual.driver_eye_local() if _vehicle_visual != null else Vector3(-0.35, 0.38, 0.6)
 	return base + seat_offset
+
+func bumper_camera_inputs() -> Array:
+	return _vehicle_visual.bumper_camera_inputs() if _vehicle_visual != null else ["", Vector3.ZERO]
 
 func get_steering_wheel_angle_rad() -> float:
 	return _vehicle_visual.get_steering_wheel_angle_rad() if _vehicle_visual != null else 0.0

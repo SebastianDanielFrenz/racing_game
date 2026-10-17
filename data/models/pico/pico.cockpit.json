@@ -3,7 +3,7 @@
   "model": "pico.glb",
   "frame": "ISO 8855 model frame (x forward, y left, z up), rest pose; hit centres relative to the node pivot, axes as at rest, moved with the node at runtime",
   "steering": {
-    "lock_to_lock_turns": 3.0,
+    "steering_wheel_lock_deg": 540.0,
     "road_wheel_lock_deg": 37.0
   },
   "controls": [
@@ -187,8 +187,8 @@
       "label": "steering wheel",
       "source": "wheel_steer_angle",
       "map": {
-        "ratio": "lock_to_lock",
-        "lock_to_lock_turns": 3.0,
+        "ratio": "steering_wheel_lock_deg",
+        "steering_wheel_lock_deg": 540.0,
         "road_wheel_lock_deg": 37.0
       },
       "joint": "revolute",
@@ -211,7 +211,7 @@
           -1.0,
           1.0
         ],
-        "turns_full_range": 3.0
+        "steering_wheel_lock_deg": 540.0
       }
     },
     {
@@ -774,5 +774,5 @@
   "notes": [
     "Pedals and the handbrake follow the applied control channels; the gear lever follows the selected gear through its gate; the speedometer follows the snapshot speed."
   ],
-  "source_glb_sha256": "af8b948c68b6544844b8c8a5fc759e98dbc02136aa7f4bcfdf38f56554e602e1"
+  "source_glb_sha256": "356ae3c945c2f1e6db3bed48c0ffcedab4c3f2773ee0950bbf5839a9321bfcc5"
 }

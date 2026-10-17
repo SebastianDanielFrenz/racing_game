@@ -1,6 +1,8 @@
 #include "rg/session.h"
 #include "rg/aero_map_selection.h"
+#include "rg/engine_thermal_info.h"
 #include "rg/flat_ground.h"
+#include "rg/surface_kinds.h"
 #include "rg/vehicle_load.h"
 
 #include "g2m/phys/height_tile_loader.h"
@@ -9,6 +11,7 @@
 #include "g2m/phys/resident_heights.h"
 #include "g2m/layer/osm_roads.h"
 #include "g2m/ps_bridge/g2m_terrain_source.h"
+#include "g2m/world/surface_id_table.h"
 
 #include "ps/backend/shape_desc.h"
 #include "ps/io/vehicle_io.h"
@@ -66,9 +69,14 @@ const char* const kControlChannelNames[] = {
     "cabin.horn",
     "park_lock",
     "gear_request", // -100 means no absolute request; zero is neutral
-    "transmission.selector", // reserved until automatic transmission support
+    "transmission.selector", // reserved (the automatic's selector rides on gear_request + park_lock)
+    "transmission.mode", // physics automatic_tcu: >= 0.5 = sport shift schedule; only automatic/dual-clutch cars register it
     "epb", // physics owns edge detection and the parking latch
+    "assist.abs", // physics_sim assists I5 part 2: ABS on/off (>= 0.5); only a car whose assist unit has the abs block registers it
+    "assist.esc", // physics_sim assists I6: ESC mode 0 off, 1 on, 2 sport; only a car whose unit has the esc block registers it
     "nitrous_arm", // N2O arm switch, a plain 0/1 level (owner 2026-10-05; only cars with a nitrous kit declare it)
+    "cabin.lights", // 0 off, 1 dipped, 2 main beam (DriverActions "lights"); visual only
+    "cabin.light_mode", // headlamp switch 0 auto, 1 on, 2 off (DriverActions "lights"); visual only
 };
 const std::size_t kControlChannelCount = sizeof(kControlChannelNames) / sizeof(kControlChannelNames[0]);
 
@@ -106,10 +114,25 @@ struct Session::Terrain {
         interest_points.reserve(4);
     }
 
-    static g2m::phys::LoaderConfig loader_config(const TerrainModeConfig& cfg, bool require_roads) {
+    // Served class mode: road grip and render colour resolve the same terrain.class cell, which is built from the
+    // completed roads.geom cross-section/carve footprint. Road metadata remains resident for speed limits and
+    // navigation; class tiles are required alongside it so a missing material map cannot quietly become grass.
+    Terrain(const TerrainModeConfig& cfg, g2m::ps_bridge::ClassSurfaceConfig classes)
+        : config(cfg),
+          grid(cfg.frame),
+          resident(std::make_shared<g2m::phys::ResidentHeightSet>()),
+          loader(cfg.fetch, loader_config(cfg, /*require_roads=*/true, /*require_classes=*/true)),
+          streamer(grid, *resident, loader, g2m::phys::StreamerConfig{}),
+          source(std::make_shared<g2m::ps_bridge::G2mTerrainSource>(grid, resident, std::move(classes))) {
+        interest_points.reserve(4);
+    }
+
+    static g2m::phys::LoaderConfig loader_config(const TerrainModeConfig& cfg, bool require_roads,
+                                                 bool require_classes = false) {
         g2m::phys::LoaderConfig lc;
         lc.workers = cfg.physics.loader_workers;
         lc.require_roads = require_roads;
+        lc.require_classes = require_classes;
         return lc;
     }
 
@@ -219,9 +242,10 @@ Session::Session(const SessionConfig& config)
     if(have_vehicle_) {
         // A drive_modes part writes the mode's TC / LC defaults into the channels itself on a mode change (assists I7c);
         // adopt_physics_channel_writes mirrors that back into this store after every step.
-        for(const char* name:{"assist.traction_control","assist.aero_control","assist.drive_mode","assist.launch_control"})
+        for(const char* name:{"assist.traction_control","assist.aero_control","assist.drive_mode","assist.launch_control","assist.abs","assist.esc"})
             control_channels_[name].store(world_->get_control(name),std::memory_order_relaxed);
     }
+    install_weather();
 }
 
 Session::~Session() { stop(); truck_cancel_.store(true); traffic_cancel_.store(true); if(truck_worker_.joinable())truck_worker_.join(); if(traffic_worker_.joinable())traffic_worker_.join(); }
@@ -244,10 +268,19 @@ void Session::build_world_contents(const SessionConfig& config) {
         // external/physics_sim/data/scenarios/vehicle_step_steer.json's own
         // "ground" body exactly (see session.h's SessionConfig comment).
         ps::BodyDesc desc;
-        if (config.ground_tessellated) {
+        // V8: wet grip needs a surface id on the ground; only a mesh carries one, so weather turns the box into one.
+        const bool tag_ground = config.weather && !config.weather->ground_surface.empty();
+        if (config.ground_tessellated || tag_ground) {
             // PHYS-047: a huge ground must be a mesh with small triangles, not one big box.
             const double half_y = config.ground_half_extent_y_m > 0.0 ? config.ground_half_extent_y_m : config.ground_half_extent_m;
-            desc.shape = flat_ground_mesh(config.ground_half_extent_m, half_y);
+            ps::MeshShape mesh = flat_ground_mesh(config.ground_half_extent_m, half_y);
+            if (tag_ground) {
+                const ps::SurfaceId id = surface_table_->id_for(config.weather->ground_surface);
+                if (id == ps::kInvalidSurfaceId)
+                    throw std::invalid_argument("Session: weather ground_surface '" + config.weather->ground_surface + "' is not in the surface table");
+                mesh.triangle_surface_ids.assign(mesh.indices.size() / 3, id);
+            }
+            desc.shape = std::move(mesh);
             desc.pose.position = ps::Vec3{0.0, 0.0, 0.0};
         } else {
             if (config.ground_half_extent_m > kMaxFlatGroundBoxHalfExtentM) {
@@ -305,6 +338,19 @@ void Session::build_world_contents(const SessionConfig& config) {
             }
         }
         vehicle_desc_ = rg::load_vehicle(config.vehicle_json_path, options);
+        if (config.turbo_map_extension) {
+            // Start-up runs on a worker, never the main thread. An extended map is cached next to the engine maps.
+            if(config.startup) config.startup->stage.store(StartupProgress::EngineMaps,std::memory_order_relaxed);
+            const rg::TurboExtensionResult ext = rg::extend_turbo_maps(vehicle_desc_, config.vehicle_json_path, options.cache_dir,
+                                                                       *config.turbo_map_extension, &world_->job_system(),
+                                                                       config.startup ? &config.startup->cancel : nullptr);
+            throw_if_cancelled();
+            if (ext.status != rg::TurboExtensionResult::Status::NotApplicable)
+                std::fprintf(stderr, "RG_TURBO_MAP status=%s uncovered=%d->%d chokes=%d choke_kg_s=%.4f demand_kg_s=%.4f key=%016llx seconds=%.2f %s\n",
+                             rg::to_string(ext.status), ext.uncovered_steps_before, ext.uncovered_steps_after, ext.choke.chokes ? 1 : 0,
+                             ext.choke.choke_flow_kg_s, ext.choke.demand_flow_kg_s, static_cast<unsigned long long>(ext.cache_key),
+                             ext.seconds, ext.message.c_str());
+        }
         std::fprintf(stderr, "RG_ENGINE_MAP_CACHE enabled=%s generated=%zu dir=%s\n",
                      config.engine_map_cache_enabled ? "yes" : "no", generated, options.cache_dir.c_str());
     }
@@ -332,6 +378,7 @@ void Session::build_world_contents(const SessionConfig& config) {
     }
     if(!vehicle_desc_.aero.fans.empty()&&config_.environment.fan_battery_energy_j>0)
         world_->credit_aero_fan_energy(vehicle_id_,config_.environment.fan_battery_energy_j);
+    setup_damage();
     spawn_tick_ = world_->tick();
     throw_if_cancelled();
     if(config.startup) config.startup->stage.store(StartupProgress::Done,std::memory_order_relaxed);
@@ -356,23 +403,49 @@ ps::Pose Session::setup_terrain(const TerrainModeConfig& tm) {
     // priority.
     if (tm.world_terrain) tm.world_terrain->set_physics_priority(g2m::world::Priority::Gate);
     if (phys.road_surfaces.enabled) {
-        // G2.5a-grip R-c: grip comes from per-cell OSM road classes instead
-        // of one uniform terrain_surface. Both hard errors below fail fast
-        // rather than silently falling back to "everything off-road".
+        // Both hard errors below fail fast rather than silently falling back to "everything off-road".
         if (!tm.road_layer_available) {
             throw std::invalid_argument(
                 "Session: physics.road_surfaces.enabled but this release has no g2m.src.osm road layer");
         }
-        if (!tm.fetch->provides_roads()) {
-            throw std::invalid_argument(
-                "Session: physics.road_surfaces.enabled but the terrain fetch does not provide roads");
+        if (tm.world_terrain != nullptr && tm.world_terrain->served_terrain_class()) {
+            if (!tm.fetch->provides_classes()) {
+                throw std::invalid_argument(
+                    "Session: class-based road physics is enabled but the terrain fetch does not provide g2m.terrain.class");
+            }
+            const ps::SurfaceId paved = resolve_grip_surface(*surface_table_, "paved", phys.road_surfaces.paved);
+            const ps::SurfaceId unpaved = resolve_grip_surface(*surface_table_, "unpaved", phys.road_surfaces.unpaved);
+            const ps::SurfaceId off_road = resolve_grip_surface(*surface_table_, "off_road", phys.road_surfaces.off_road);
+            const auto classes = g2m::classes::SurfaceIdTable::build(
+                [this, paved](g2m::SurfaceKind kind) -> std::uint16_t {
+                    if (kind == g2m::SurfaceKind::Unknown) return static_cast<std::uint16_t>(paved);
+                    const std::string name(rg::surface_name_for_kind(kind));
+                    const ps::SurfaceId id = surface_table_->id_for(name);
+                    if (id == ps::kInvalidSurfaceId) {
+                        throw std::invalid_argument("Session: terrain.class surface kind '" + name +
+                                                    "' is not in the surface table");
+                    }
+                    return static_cast<std::uint16_t>(id);
+                },
+                [paved, unpaved, off_road](g2m::LandClass land) -> std::uint16_t {
+                    if (land == g2m::LandClass::PavedRoad) return static_cast<std::uint16_t>(paved);
+                    if (land == g2m::LandClass::UnpavedRoad) return static_cast<std::uint16_t>(unpaved);
+                    return static_cast<std::uint16_t>(off_road);
+                });
+            terrain_ = std::make_unique<Terrain>(
+                tm, g2m::ps_bridge::ClassSurfaceConfig{classes, static_cast<ps::SurfaceId>(off_road)});
+        } else {
+            if (!tm.fetch->provides_roads()) {
+                throw std::invalid_argument(
+                    "Session: physics.road_surfaces.enabled but the terrain fetch does not provide roads");
+            }
+            const ps::SurfaceId paved = resolve_grip_surface(*surface_table_, "paved", phys.road_surfaces.paved);
+            const ps::SurfaceId unpaved = resolve_grip_surface(*surface_table_, "unpaved", phys.road_surfaces.unpaved);
+            const ps::SurfaceId off_road = resolve_grip_surface(*surface_table_, "off_road", phys.road_surfaces.off_road);
+            const g2m::RoadValueLut lut = g2m::RoadValueLut::by_land_class(
+                off_road, {{g2m::LandClass::PavedRoad, paved}, {g2m::LandClass::UnpavedRoad, unpaved}});
+            terrain_ = std::make_unique<Terrain>(tm, g2m::ps_bridge::RoadSurfaceConfig{lut, off_road});
         }
-        const ps::SurfaceId paved = resolve_grip_surface(*surface_table_, "paved", phys.road_surfaces.paved);
-        const ps::SurfaceId unpaved = resolve_grip_surface(*surface_table_, "unpaved", phys.road_surfaces.unpaved);
-        const ps::SurfaceId off_road = resolve_grip_surface(*surface_table_, "off_road", phys.road_surfaces.off_road);
-        const g2m::RoadValueLut lut = g2m::RoadValueLut::by_land_class(
-            off_road, {{g2m::LandClass::PavedRoad, paved}, {g2m::LandClass::UnpavedRoad, unpaved}});
-        terrain_ = std::make_unique<Terrain>(tm, g2m::ps_bridge::RoadSurfaceConfig{lut, off_road});
     } else {
         const ps::SurfaceId surface = surface_table_->id_for(phys.terrain_surface);
         if (surface == ps::kInvalidSurfaceId) {
@@ -593,6 +666,7 @@ void Session::finish_relocation() {
                             : ps::drivetrain::EngineState::Running;
     world_->reset_vehicle(vehicle_id_, opts);
     if (walker_ && walker_->active()) walker_->halt(); // the priming ticks above stepped the World
+    if (fpv_.active()) fpv_.halt();
     status_.relocations.fetch_add(1, std::memory_order_relaxed);
 }
 
@@ -628,6 +702,14 @@ std::span<const g2m::phys::InterestPoint> Session::physics_interest_points() {
         const ps::Vec3 feet = walker_->state().feet;
         const ps::Vec3 wv = walker_->state().velocity;
         out.push_back(g2m::phys::InterestPoint{kPlayerInterestId, feet.x, feet.y, wv.x, wv.y, t.config.physics.radius_m});
+        out.push_back(g2m::phys::InterestPoint{kParkedCarInterestId, x, y, vx, vy, t.config.physics.radius_m});
+        return out;
+    }
+    if (fpv_.active()) {
+        // FPV drone: like the walker, the flyer is point 0 and the parked car point 1.
+        const ps::Vec3 fp = fpv_.state().position;
+        const ps::Vec3 fv = fpv_.state().velocity;
+        out.push_back(g2m::phys::InterestPoint{kPlayerInterestId, fp.x, fp.y, fv.x, fv.y, t.config.physics.radius_m});
         out.push_back(g2m::phys::InterestPoint{kParkedCarInterestId, x, y, vx, vy, t.config.physics.radius_m});
         return out;
     }
@@ -817,6 +899,8 @@ bool Session::step_once(bool from_loop) {
     // On foot (R9c): a pending get-out/get-in is handled here, past the gate and
     // any relocation, so a spawn only ever happens with the car's terrain resident.
     process_walker_request();
+    process_fpv_request();
+    apply_weather_requests();
 
     if (have_vehicle_ && drive_script_) {
         drive_script_->apply(DriveTickContext{drive_tick(), chassis_body_, vehicle_id_}, *world_);
@@ -836,19 +920,133 @@ bool Session::step_once(bool from_loop) {
         update_traffic();
         check_followed_alive(); // despawned at its route end / truck removed this tick
         update_walker();
-        environment_sample_=sample_environment(config_.environment,world_->get_pose(chassis_body_).position.z,world_->sim_time());
-        if(config_.environment.enabled)world_->set_ambient({environment_sample_.pressure_pa,environment_sample_.temperature_k});
-        world_->set_aero_environment({environment_sample_.air_density,environment_sample_.wind_world_m_s});
+        update_fpv();
+        if(weather_installed_) {
+            // V8: the environment provides the air (World refuses set_ambient/set_aero_environment); report what it computed last tick.
+            const ps::environment::VehicleAir air=world_->vehicle_air(vehicle_id_);
+            if(air.valid)environment_sample_={air.pressure_pa,air.temperature_k,air.density_kg_m3,air.wind_world};
+        } else {
+            environment_sample_=sample_environment(config_.environment,world_->get_pose(chassis_body_).position.z,world_->sim_time());
+            if(config_.environment.enabled)world_->set_ambient({environment_sample_.pressure_pa,environment_sample_.temperature_k});
+            world_->set_aero_environment({environment_sample_.air_density,environment_sample_.wind_world_m_s});
+        }
         // The rear wing is physics_sim's: the assist unit's aero_control (channel assist.aero_control) owns the surface.
         for(std::size_t i=0;i<vehicle_desc_.aero.fans.size();++i)
             world_->set_aero_fan_command(vehicle_id_,i,config_.environment.fan_command);
     }
+    if (have_vehicle_) apply_damage_controls();
     world_->step();
     adopt_physics_channel_writes();
+    if (have_vehicle_) update_damage();
     spike.step_ms = lap();
     post_step(from_loop);
     spike.post_ms = lap();
     return finish(TickSpikeKind::Stepped, true);
+}
+
+// ---- damage model (rg/damage.h) -------------------------------------------------------------------------------------
+
+void Session::setup_damage() {
+    if (!config_.damage) return;
+    const EngineThermalInfo info = engine_thermal_info(vehicle_desc_);
+    damage_.emplace(config_.damage->config, config_.damage->state, info.overheat_c);
+    damage_enabled_.store(config_.damage->enabled, std::memory_order_relaxed);
+    damage_enabled_applied_ = config_.damage->enabled;
+    damage_seized_ = info.present && damage_enabled_applied_ && damage_->seized() != nullptr;
+    {
+        std::lock_guard<std::mutex> lock(damage_mutex_);
+        damage_report_.present = true;
+        damage_report_.thermal = info.present;
+        publish_damage_locked();
+    }
+    // A car brought in damaged drives damaged from its first tick (the queued factors apply at the first tick boundary).
+    if (info.present && damage_enabled_applied_) apply_damage_scales(damage_->scales());
+}
+
+void Session::publish_damage_locked() {
+    damage_report_.enabled = damage_enabled_applied_;
+    damage_report_.state = damage_->state();
+    const DamagePartConfig* seized = damage_->seized();
+    damage_report_.seized = damage_seized_;
+    damage_report_.seized_part = damage_seized_ && seized != nullptr ? seized->id : std::string();
+}
+
+void Session::apply_damage_scales(const DamageScales& scales) {
+    if (scales == damage_applied_) return; // healthy and never damaged: the physics is never called
+    // Each seam is called only when its own factors changed, so a cooling-only damage never touches the friction.
+    if (scales.radiator_ua != damage_applied_.radiator_ua || scales.fan_flow != damage_applied_.fan_flow)
+        world_->set_engine_cooling_capacity(vehicle_id_, ps::drivetrain::CoolingCapacity{scales.radiator_ua, scales.fan_flow});
+    if (scales.friction != damage_applied_.friction)
+        world_->set_engine_wear(vehicle_id_, ps::drivetrain::EngineWear{scales.friction});
+    damage_applied_ = scales;
+    std::lock_guard<std::mutex> lock(damage_mutex_);
+    damage_report_.applied = scales;
+}
+
+void Session::apply_damage_controls() {
+    if (!damage_seized_) return;
+    // A seized engine: no ignition, no cranking, whatever the player or the drive script asks for. Not a physics write
+    // (the mirror is told, like the unattended override), so the player's own ignition setting survives the repair.
+    const auto hold = [this](const char* name) {
+        world_->set_control(name, 0.0);
+        if (channels_pushed_) note_world_override(control_channels_, channel_mirror_, name, 0.0);
+    };
+    hold("ignition");
+    hold("starter");
+}
+
+void Session::update_damage() {
+    if (!damage_) return;
+    const bool thermal = vehicle_desc_.powertrain.thermal.has_value();
+    bool publish = false;
+    const bool enabled = damage_enabled_.load(std::memory_order_relaxed);
+    if (enabled != damage_enabled_applied_) {
+        damage_enabled_applied_ = enabled;
+        publish = true;
+    }
+    if (damage_repair_pending_.exchange(false, std::memory_order_acq_rel)) {
+        damage_->repair();
+        publish = true;
+    }
+    if (thermal && enabled) {
+        const ps::drivetrain::PowertrainSnapshot& pt = world_->powertrain_state(vehicle_id_);
+        const ps::drivetrain::EngineThermalSnapshot& t = pt.thermal;
+        DamageInputs in;
+        in.engine_running = pt.engine_state == ps::drivetrain::EngineState::Running;
+        in.has_thermal = t.has_thermal;
+        in.coolant_c = t.coolant_c;
+        in.oil_c = t.oil_c;
+        in.fan_on = t.fan_on;
+        if (damage_->step(world_->dt(), in)) publish = true;
+    }
+    if (!publish) return;
+    if (thermal) apply_damage_scales(enabled ? damage_->scales() : DamageScales{});
+    damage_seized_ = thermal && enabled && damage_->seized() != nullptr;
+    std::lock_guard<std::mutex> lock(damage_mutex_);
+    publish_damage_locked();
+    ++damage_report_.revision;
+}
+
+DamageReport Session::damage_report() const {
+    std::lock_guard<std::mutex> lock(damage_mutex_);
+    return damage_report_;
+}
+
+void Session::request_damage_repair() {
+    if (!config_.damage) return;
+    {
+        std::lock_guard<std::mutex> lock(damage_mutex_);
+        damage_report_.state = DamageState{};
+        damage_report_.seized = false;
+        damage_report_.seized_part.clear();
+        ++damage_report_.revision;
+    }
+    damage_repair_pending_.store(true, std::memory_order_release);
+}
+
+void Session::set_damage_enabled(bool enabled) {
+    if (!config_.damage) return;
+    damage_enabled_.store(enabled, std::memory_order_relaxed);
 }
 
 bool Session::sync_road_decks(int budget) {
@@ -1173,7 +1371,9 @@ FrameSnapshot Session::capture_frame_snapshot() const {
         out.car_x=walker_footprint_.cx;out.car_y=walker_footprint_.cy;out.car_half_x=walker_footprint_.half_x;out.car_half_y=walker_footprint_.half_y;
         out.car_yaw_rad=ps::math::atan2(walker_footprint_.sin_yaw,walker_footprint_.cos_yaw);
     }
+    if(fpv_.active())snap.fpv=fpv_.state();
     snap.aero.environment = environment_sample_;
+    snap.weather = capture_weather();
     const auto& aero=world_->vehicle_aero_telemetry(vehicle_id_);
     snap.aero.enabled=!vehicle_desc_.aero.surfaces.empty()||!vehicle_desc_.aero.fans.empty()||vehicle_desc_.aero.body.reference_area_m2>0;
     snap.aero.airspeed_m_s=aero.body_airspeed_m_s;
@@ -1402,6 +1602,7 @@ OrientedRect Session::own_car_footprint() const {
 
 ps::Vec3 Session::traffic_anchor() const {
     if (walker_ && walker_->active()) return walker_->state().feet;
+    if (fpv_.active()) return fpv_.state().position;
     return world_->get_pose(chassis_body_).position;
 }
 
@@ -1485,6 +1686,70 @@ void Session::process_walker_request() {
             break;
         default: break;
     }
+}
+
+// ---------------------------------------------------------------------------
+// FPV drone (rg/fpv_drone.h)
+// ---------------------------------------------------------------------------
+
+void Session::set_fpv_input(const FpvDroneInput& input) {
+    std::lock_guard<std::mutex> lock(fpv_input_mutex_);
+    fpv_input_ = input;
+}
+
+Session::FpvCounters Session::fpv_counters() const {
+    FpvCounters c;
+    c.spawned = fpv_spawned_.load(std::memory_order_acquire);
+    c.despawned = fpv_despawned_.load(std::memory_order_acquire);
+    c.spawn_failed = fpv_spawn_failed_.load(std::memory_order_acquire);
+    return c;
+}
+
+void Session::process_fpv_request() {
+    const int request = fpv_request_.exchange(0, std::memory_order_acq_rel);
+    if (request == 0) return;
+    switch (request) {
+        case 1: {
+            if (fpv_.active()) break;
+            if (!have_vehicle_) {
+                fpv_spawn_failed_.fetch_add(1, std::memory_order_release);
+                break;
+            }
+            const ps::Pose pose = world_->get_pose(chassis_body_);
+            const ps::Vec3 fwd = pose.orientation.rotate(ps::Vec3::unit_x());
+            const double yaw = ps::math::atan2(fwd.y, fwd.x);
+            fpv_ = FpvDrone(config_.fpv_drone);
+            fpv_.spawn(pose.position + ps::Vec3{0.0, 0.0, config_.fpv_drone.spawn_height_above_car_m}, yaw);
+            fpv_active_.store(true, std::memory_order_release);
+            fpv_spawned_.fetch_add(1, std::memory_order_release);
+            break;
+        }
+        case 3:
+            if (fpv_.active()) {
+                fpv_.despawn();
+                fpv_active_.store(false, std::memory_order_release);
+                fpv_despawned_.fetch_add(1, std::memory_order_release);
+            }
+            break;
+        default: break;
+    }
+}
+
+void Session::update_fpv() {
+    if (!fpv_.active()) return;
+    FpvDroneInput input;
+    {
+        std::lock_guard<std::mutex> lock(fpv_input_mutex_);
+        input = fpv_input_;
+    }
+    // The ground below the drone: a ray straight down through the World from z_top (terrain, decks, the cars).
+    const FpvGroundProbe probe = [this](double x, double y, double z_top) -> std::optional<double> {
+        constexpr double kProbeDistanceM = 6000.0;
+        const ps::RayCastHit hit = world_->backend().ray_cast(ps::Vec3{x, y, z_top}, ps::Vec3{0.0, 0.0, -1.0}, kProbeDistanceM);
+        if (!hit.hit) return std::nullopt;
+        return hit.point.z;
+    };
+    fpv_.step(input, 1.0 / config_.tick_rate_hz, probe);
 }
 
 void Session::update_walker() {
@@ -1752,3 +2017,85 @@ void Session::note_stuck_events(const std::vector<std::uint64_t>& declared,doubl
  }
 }
 }
+
+namespace rg {
+// ---- V8 weather -------------------------------------------------------------
+void Session::install_weather() {
+    if (!config_.weather) return;
+    ps::environment::EnvironmentConfig cfg = config_.weather->config;
+    cfg.surface_names = surface_table_->names();
+    // Session z: flat = height above the station (z 0 = the climate's elevation); terrain = metres above sea level.
+    cfg.altitude_offset_m = config_.terrain ? -config_.weather->climate.location.elevation_m : 0.0;
+    world_->install_environment(std::make_shared<ps::environment::Environment>(config_.weather->climate, cfg));
+    weather_installed_ = true;
+    weather_day_ = cfg.fixed_day_of_year;
+}
+
+void Session::set_weather(const ps::environment::WeatherPresetDesc& preset, double ramp_s) {
+    if (!weather_installed_) return;
+    std::lock_guard<std::mutex> lock(weather_mutex_);
+    weather_requests_.preset = std::make_pair(preset, std::isfinite(ramp_s) && ramp_s >= 0 ? ramp_s : 0.0);
+    weather_pending_.store(true, std::memory_order_release);
+}
+
+void Session::set_environment_clock(double env_s, int fixed_day_index, double time_scale) {
+    if (!weather_installed_ || !std::isfinite(env_s) || !std::isfinite(time_scale) || time_scale < 0) return;
+    std::lock_guard<std::mutex> lock(weather_mutex_);
+    weather_requests_.clock = std::make_tuple(env_s, fixed_day_index, time_scale);
+    weather_pending_.store(true, std::memory_order_release);
+}
+
+void Session::apply_weather_requests() {
+    if (!weather_installed_ || !weather_pending_.exchange(false, std::memory_order_acq_rel)) return;
+    WeatherRequests req;
+    {
+        std::lock_guard<std::mutex> lock(weather_mutex_);
+        req = std::move(weather_requests_);
+        weather_requests_ = {};
+    }
+    try {
+        if (req.clock) {
+            const auto [env_s, day, scale] = *req.clock;
+            const int days = static_cast<int>(world_->environment()->calendar().days_per_year());
+            if (day >= 0 && day < days && day != weather_day_) {
+                world_->set_environment_calendar_lock("", day);
+                weather_day_ = day;
+            }
+            world_->set_environment_time(env_s);
+            world_->set_environment_time_scale(scale);
+        }
+        if (req.preset) {
+            world_->clear_weather_overrides();
+            world_->add_weather_override_to_season_end(req.preset->first, req.preset->second);
+        }
+    } catch (const std::exception& e) {
+        std::fprintf(stderr, "RG_WEATHER request rejected: %s\n", e.what());
+    }
+}
+
+WeatherSnapshot Session::capture_weather() const {
+    WeatherSnapshot w;
+    const ps::environment::EnvironmentSnapshot* e = weather_installed_ ? world_->environment_snapshot() : nullptr;
+    if (e == nullptr) return w;
+    w.installed = true;
+    w.env_time_s = e->t_env_s;
+    w.time_scale = e->time_scale;
+    w.air_temp_c = e->air_temp_c;
+    w.precip_mm_h = e->precip_mm_h;
+    w.cloud_cover = e->cloud_cover;
+    w.rh = e->rh;
+    w.lightning_per_min = e->lightning_per_min;
+    if (have_vehicle_ && world_->vehicle_wheel_count(vehicle_id_) > 0) {
+        const ps::SurfaceId id = world_->wheel_telemetry(vehicle_id_, 0).surface;
+        if (id != ps::kInvalidSurfaceId && e->has_surfaces && static_cast<std::int32_t>(id) < e->surface_count) {
+            const auto& sc = e->surfaces[id];
+            w.wheel_surface = surface_table_->name_for(id);
+            w.wheel_water_mm = sc.water_mm;
+            w.wheel_snow_mm = sc.snow_mm;
+            w.wheel_ice_mm = sc.ice_mm;
+            w.wheel_condition_factor = sc.condition_factor;
+        }
+    }
+    return w;
+}
+} // namespace rg

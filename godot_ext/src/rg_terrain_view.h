@@ -42,10 +42,13 @@
 #pragma once
 #include <tuple>
 
+#include "rg/lod_settings.h"
+#include "rg/synthetic_terrain.h"
 #include "rg/terrain_render.h"
 #include "rg/terrain_stream.h"
 #include "rg/terrain_view_streamer.h"
 #include "rg/world_terrain.h"
+#include "terrain_surface_pack.h"
 
 #include <godot_cpp/classes/node3d.hpp>
 #include <godot_cpp/variant/basis.hpp>
@@ -57,6 +60,7 @@
 
 #include <chrono>
 #include <cstdint>
+#include <deque>
 #include <future>
 #include <map>
 #include <memory>
@@ -131,6 +135,10 @@ public:
     // runs through a fresh rg::TerrainViewStreamer's build_initial (the same
     // chunk set and order), which then streams from update_focus() on.
     bool load_preview(float spawn_x, float spawn_y);
+    // Headless benchmark scene (C9): drops any terrain, then streams rg::SyntheticTerrain (rolling hills, no map store)
+    // exactly like load_preview + update_focus stream a real world (same LodParams defaults; max_distance_m > 0
+    // overrides). The terrain-only queries (bed/ground checks, road and building tiles, decks, heal) see no terrain.
+    bool load_synthetic_preview(double spawn_x, double spawn_y, double max_distance_m);
 
     // The session-local (E - E0, N - N0, U) point every queued/uploaded
     // chunk's instance transform is currently expressed relative to (PLAN.md
@@ -179,6 +187,10 @@ public:
     // streamer orders each diff's adds by what the car reaches first, and the
     // upload budget grows with the speed. Call instead of update_focus.
     void update_focus_moving(double session_x, double session_y, double vx, double vy, double ref_x, double ref_y);
+    // In-game LOD settings (rg/lod_settings.h; RgShell.get_lod_choice()): {view_distance_m, terrain_detail,
+    // road_detail, map_detail}. Kept across release()/initialize and applied at every load_preview; while streaming,
+    // the streamer reselects at once and rebuilds only the chunk levels whose road-class LOD changed (swapped in place).
+    void set_view_lod(const godot::Dictionary& choice);
     // Adaptive upload budget (default on): base upload_budget_ms (0.8) with
     // nothing pending, rising to upload_budget_max_ms (3.0) with the backlog
     // and the speed (rg::adaptive_upload_budget_ms). Off = the fixed budget.
@@ -208,10 +220,14 @@ public:
     // (and 100 m behind): {samples, above_max_m, above_p95_m, above_tolerance, worst_level, worst_carve (0 not carved,
     // 1 carved, 2 fallback), worst_x, worst_y (session), l<k>_above_max_m / l<k>_samples (k = level of the highest chunk)}.
     // Unlike get_ground_check this reaches the coarse levels. -1000 / 0 samples when nothing could be compared.
-    [[nodiscard]] godot::Dictionary get_bed_check(double px, double py, double dx, double dy, double ahead_m);
+    [[nodiscard]] godot::Dictionary get_bed_check(double px, double py, double dx, double dy, double ahead_m, std::int64_t max_samples = 800);
     // Hides / shows every uploaded terrain chunk (debug: look at the ribbons without the ground, or the reverse).
     void set_terrain_visible(bool visible);
     [[nodiscard]] bool get_terrain_visible() const { return terrain_visible_; }
+    // Whether the terrain chunks cast shadows (default on; RG_PERF_AB=terrain_shadows switches it to measure the cost
+    // of drawing the terrain into the sun's shadow splits). Applies to every uploaded chunk and every later upload.
+    void set_cast_shadows(bool on);
+    [[nodiscard]] bool get_cast_shadows() const { return cast_shadows_; }
     // Window statistics since the last call, then cleared: {upload_ms_avg,
     // upload_ms_max, frames, chunks_uploaded, chunk_latency_p95_ms,
     // chunk_latency_max_ms, budget_ms_avg}. Meant for a 1 Hz log line.
@@ -228,6 +244,7 @@ public:
     //  selections_started, last_build_ms, streamer_phase (0 Idle, 1 Building,
     //  2 Ready, 3 Applying), resident_chunks, diff_errors}
     [[nodiscard]] godot::Dictionary get_stream_stats() const;
+    [[nodiscard]] godot::Dictionary get_frame_costs() const;
 
     // The material RenderingServer attaches to every uploaded chunk's mesh
     // surface (mesh_surface_set_material) - GDScript builds this from
@@ -264,8 +281,20 @@ private:
     // within budget, then (all adds in) free removals within budget, then
     // (all removals done) commit.
     void apply_diff(std::chrono::steady_clock::time_point frame_start);
+    void apply_view_lod_to_terrain(); // lod_choice_ -> terrain_'s LodParams and road LOD policy
     void remove_chunk_at(std::size_t index);
-    void upload_one_chunk(const rg::RenderChunk& chunk);
+    // `prepacked`: the chunk's surface arrays from the pack worker (moved from); null = pack here (decks, swaps).
+    void upload_one_chunk(const rg::RenderChunk& chunk, godot::Array* prepacked = nullptr);
+    // Off-main-thread surface packing (C9): every chunk appended to chunks_ is packed by pack_job_; finished surfaces
+    // move to surfaces_ (for chunks_[next_upload_index_ ...], in order). See the .cpp.
+    void drain_packed();
+    bool pack_idle();
+    void start_packing(std::size_t first);
+    void reset_packing();
+    bool upload_next_chunk();
+    SurfacePackJob pack_job_;
+    std::size_t pack_taken_ = 0;
+    std::deque<godot::Array> surfaces_;
     [[nodiscard]] godot::Transform3D chunk_instance_transform(const rg::RenderChunk& chunk) const;
 
     // R2.2 R7: shared_ptr (not unique_ptr) so initialize_shared() can hold
@@ -274,6 +303,7 @@ private:
     // initialize() still owns its copy outright (refcount 1) exactly as
     // before, just via a shared_ptr now.
     std::shared_ptr<rg::WorldTerrain> terrain_;
+    std::unique_ptr<rg::SyntheticTerrain> synthetic_; // load_synthetic_preview only; outlives streamer_ (declared before it)
     // Declared AFTER terrain_ so it is destroyed (worker cancelled + joined)
     // BEFORE the WorldTerrain its TerrainViewSource points into.
     std::unique_ptr<rg::TerrainViewStreamer> streamer_;
@@ -297,10 +327,17 @@ private:
     std::int64_t chunks_uploaded_total_ = 0;
     double ground_check_max_m_ = -1000.0;
     bool terrain_visible_ = true;
+    bool cast_shadows_ = true;
     // Re-carving of Fallback tiles (road surface was missing when the coarse tile was built) and the rebuild of the
     // resident chunks built from them; see heal_tick().
     void heal_tick();
     void replace_chunk_at(std::size_t index, rg::RenderChunk&& fresh);
+    void cancel_heal_rebuild();
+    static constexpr std::size_t kHealBatch = 8;          // chunks per background rebuild batch
+    static constexpr std::size_t kHealSwapsPerFrame = 2;  // finished chunks swapped in per frame (upload cost bound)
+    rg::ChunkRebuildJob heal_job_;
+    std::vector<rg::RenderChunk> heal_ready_;
+    double heal_swap_ms_ = 0.0;
     std::future<std::size_t> heal_future_;
     double heal_next_check_s_ = 0.0;
     std::int64_t healed_tiles_total_ = 0;
@@ -310,12 +347,18 @@ private:
     bool diff_in_progress_ = false;
     std::uint64_t diff_serial_ = 0;
     std::vector<g2m::mesh::ChunkKey> diff_removed_;
+    std::vector<rg::RenderChunk> diff_replaced_; // road LOD rebuilds of the diff in progress, swapped before removals
+    rg::LodChoice lod_choice_;
+    bool has_lod_choice_ = false;
+    std::int64_t lod_rebuilt_chunks_total_ = 0;
     std::size_t diff_remove_next_ = 0; // cursor into diff_removed_
     std::int64_t last_diff_added_ = 0;
     std::int64_t last_diff_removed_ = 0;
     std::int64_t diffs_applied_ = 0;
     std::int64_t diff_errors_ = 0; // a removed key that was not resident (never expected)
     double upload_ms_this_frame_ = 0.0;
+    double heal_ms_this_frame_ = 0.0;
+    double decks_ms_this_frame_ = 0.0;
     double last_remove_ms_ = 0.0; // the current/last diff's RID frees, summed over frames
 
     godot::Vector3 render_origin_session_{}; // raw (east, north, up), see set_render_origin's doc comment
@@ -325,6 +368,11 @@ private:
     godot::String last_error_;
     double last_build_time_ms_ = 0.0;
     double total_upload_time_ms_ = 0.0;
+    // Main-thread upload cost split (get_frame_costs; C9 measurement): since the view was created.
+    std::int64_t uploads_total_ = 0;
+    double upload_pack_ms_total_ = 0.0;
+    double upload_surface_ms_total_ = 0.0;
+    double upload_instance_ms_total_ = 0.0;
 };
 
 } // namespace rg_godot

@@ -69,7 +69,7 @@ Focused Godot check (no build or engine-map generation):
 . ./tools/common.ps1
 $exe = Find-GodotConsoleExe
 & $exe --headless --path game --script res://scripts/cockpit_common_test.gd
-& $exe --path game --rendering-method gl_compatibility --script res://scripts/cockpit_common_test.gd -- --capture
+& $exe --path game --script res://scripts/cockpit_common_test.gd -- --capture
 ```
 
 The second command saves `out/cockpit_common_in_car.png`. The check loads the

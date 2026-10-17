@@ -130,7 +130,7 @@ float value(const Controls& c, const rg::ActionState& s, const std::string& acti
 TEST_CASE("controls: the shipped schema and default profiles load and are consistent", "[controls]") {
     Controls c = make_controls();
     CHECK(c.ready());
-    CHECK(c.schema().size() == 47);
+    CHECK(c.schema().size() == 50);
     // Every action has a label, every signed axis names both directions.
     for (const rg::ActionDef& a : c.schema().actions()) {
         CAPTURE(a.id);
@@ -183,7 +183,7 @@ TEST_CASE("controls: the default profiles equal the bindings the game had before
     // Keyboard: the keys of the old project.godot [input] section and input_map.gd (plus N = nitrous arm, S1 2026-10-06: B is taken by the driving view, N is the drone-follow target key only in another mode).
     const std::map<std::string, std::string> keyboard = {
         {"steer", "key:A:-1, key:D"}, {"throttle", "key:W"}, {"brake", "key:S"}, {"handbrake", "key:Space"}, {"clutch", "key:C"},
-        {"shift_up", "key:E"}, {"shift_down", "key:Q"}, {"park", "key:P"}, {"start_stop", "key:F11"}, {"hazard", "key:F12"}, {"indicator_left", "key:Z"}, {"indicator_right", "key:X"}, {"horn", "key:J"}, {"ignition", "key:I"}, {"starter", "key:K"}, {"auto_shift", "key:F5"}, {"traction_control", "key:F4"}, {"drive_mode", "key:M"}, {"toggle_aero", "key:H"}, {"toggle_launch_control", "key:L"},
+        {"shift_up", "key:E"}, {"shift_down", "key:Q"}, {"park", "key:P"}, {"start_stop", "key:F11"}, {"hazard", "key:F12"}, {"indicator_left", "key:Z"}, {"indicator_right", "key:X"}, {"horn", "key:J"}, {"lights", "key:O"}, {"ignition", "key:I"}, {"starter", "key:K"}, {"auto_shift", "key:F5"}, {"traction_control", "key:F4"}, {"drive_mode", "key:M"}, {"toggle_aero", "key:H"}, {"toggle_launch_control", "key:L"}, {"manual_mode", "key:Y"},
         {"toggle_nitrous", "key:N"}, {"flip_upright", "key:F"}, {"npc_truck", "key:T"}, {"get_out", "key:G"}, {"cycle_view", "key:B"},
         {"cycle_camera", "key:Tab"}, {"cycle_drone_target", "key:N"}, {"cam_zoom_in", "key:PageUp"}, {"cam_zoom_out", "key:PageDown"},
         {"cam_move_x", "key:A:-1, key:D"}, {"cam_move_z", "key:S:-1, key:W"},
@@ -218,6 +218,10 @@ TEST_CASE("controls: the default profiles equal the bindings the game had before
         {"cam_move_y", "btn:9:-1, btn:10, axis:4:positive:dz0.02:s-1, axis:5:positive:dz0.02"}, {"cam_fast", "btn:7"},
         {"cam_look_x", "axis:2:full:dz0.15"}, {"cam_look_y", "axis:3:full:dz0.15:inv"},
         {"jump", "btn:0"}, {"interact", "btn:2"}, {"menu_confirm", "btn:0"}, {"menu_back", "btn:1"},
+        // B7 (2026-10-14): driving actions that had no pad button. Paddles 16-19, touchpad 20, MISC1 15; D-pad right 14 and L3 7
+        // are shared only with actions live in other modes (drone follow, free cam / on foot).
+        {"traction_control", "btn:16"}, {"drive_mode", "btn:17"}, {"toggle_launch_control", "btn:18"}, {"toggle_aero", "btn:19"},
+        {"hazard", "btn:20"}, {"indicator_left", "btn:15"}, {"indicator_right", "btn:14"}, {"horn", "btn:7"},
     };
     for (const auto& [action, expected] : gamepad) {
         CAPTURE(action);

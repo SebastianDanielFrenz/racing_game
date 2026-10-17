@@ -116,6 +116,10 @@ public:
     [[nodiscard]] bool is_dirty() const;
     // Engine garage G1: {lines: [String], mass_delta_kg, engine_title} - what the engine/fuel choice changes
     [[nodiscard]] godot::Dictionary get_swap_info() const;
+    // Part-mass tree of a car (the edit session's working setup while editing it, else its saved setup):
+    // {ok, error, total_kg, chassis_kg, physics_carried_kg, stock_kg (catalog chassis mass), layout, stock_layout,
+    //  groups: [{id, label, kg}], parts: [{id, label, own_kg, total_kg, depth, source}] (depth-first, root depth 0)}
+    [[nodiscard]] godot::Dictionary get_mass_breakdown(const godot::String& id) const;
     // The engine list (defaults, each followed by its user engines):
     // [{key, name, family, class, image, detail, user, base_key, base_name, mass_kg, idle_rpm, limiter_rpm,
     //   torque_nm, torque_rpm, power_kw, power_rpm, fuels: [String]}]
@@ -151,8 +155,16 @@ public:
     //  engine_map_cache_dir, modified, chassis: {mass_kg, half_extents, z_m},
     //  assist_auto_clutch, assist_auto_blip, assist_auto_shift, manual_gearbox,
     //  engine_title ("" = the car's own engine), swap_lines: [String]}
+    // ..., damage_config_path, damage_state_path ("" = no damage model)
     godot::Dictionary prepare_drive(const godot::String& id);
     void cleanup();
+
+    // ---- damage (rg/damage.h) ----
+    // The car's saved part health: rg_damage_convert.h's dictionary plus error (a broken state file reads healthy).
+    [[nodiscard]] godot::Dictionary get_damage(const godot::String& id) const;
+    // Free repair: every part back to health 1 (the state file is removed). {ok, error}. A running world is repaired
+    // through RgSimulation.repair_damage().
+    godot::Dictionary repair_damage(const godot::String& id);
     // Number of regular files below the garage's work root (tests: nothing is left behind).
     [[nodiscard]] int get_work_file_count() const;
 

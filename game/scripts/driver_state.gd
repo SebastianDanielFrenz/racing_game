@@ -1,7 +1,7 @@
 extends RefCounted
 # Adapter-only conversion: every display consumes rg::DriverActions::state.
-const CHANNELS := ["assist.auto_shift","assist.traction_control","assist.aero_control","assist.launch_control","assist.drive_mode","nitrous_arm","park_lock","gear_request","transmission.selector","epb","ignition","starter","brake","cabin.blink_lit","cabin.hazard","cabin.indicator","cabin.indicator_left","cabin.indicator_right","cabin.brake_lamp","cabin.horn"]
-const ACTIONS := {"tc":"traction_control","lc":"toggle_launch_control","dm":"drive_mode","aero":"toggle_aero","auto_shift":"auto_shift","nitrous":"toggle_nitrous","park":"park","epb":"epb","hazard":"hazard","left":"indicator_left","right":"indicator_right","horn":"horn","start":"start_stop"}
+const CHANNELS := ["assist.auto_shift","assist.traction_control","assist.aero_control","assist.launch_control","assist.drive_mode","nitrous_arm","park_lock","gear_request","transmission.selector","epb","assist.abs","assist.esc","ignition","starter","brake","cabin.blink_lit","cabin.hazard","cabin.indicator","cabin.indicator_left","cabin.indicator_right","cabin.brake_lamp","cabin.horn","cabin.lights","transmission.mode","cabin.light_mode","shift_up_count","shift_down_count"]
+const ACTIONS := {"tc":"traction_control","lc":"toggle_launch_control","dm":"drive_mode","aero":"toggle_aero","auto_shift":"auto_shift","nitrous":"toggle_nitrous","park":"park","epb":"epb","abs":"abs","esc":"esc","hazard":"hazard","left":"indicator_left","right":"indicator_right","horn":"horn","start":"start_stop","lights":"lights","transmission":"transmission","light_mode":"light_mode"}
 
 static func channels(simulation: Node) -> Dictionary:
 	var values: Dictionary = {}

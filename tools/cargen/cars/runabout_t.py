@@ -23,9 +23,11 @@ choke knob, horn bulb, speedometer and ammeter needles.
 import math
 
 from cargen import controls as C
+from cargen import quality as Q
+from cargen import detail as D
 from cargen.flow import FlowRecorder
 from cargen.wheels import Wheel, corner
-from cargen.common import materials, finish, seat_closed, loft_path, tube_path
+from cargen.common import materials, finish, seat_closed, spare_wheel, loft_path, tube_path
 from assetgen.scene import Model
 from assetgen import mesh as M
 from assetgen.vec import norm, compose, translate, rot_axis, xform_point, add, mul
@@ -37,7 +39,7 @@ TYRE = Wheel(radius=R, width=0.089, rim_radius=0.2667, style="artillery", tread=
              disc=False, drum=True, spokes=12)
 BLACK = (0.015, 0.015, 0.017)    # gloss black enamel
 STEER_LOCK_DEG = 38.0
-LOCK_TO_LOCK_TURNS = 1.25        # period steering: about a turn and a quarter (planetary reduction)
+STEERING_WHEEL_LOCK_DEG = 225.0        # period steering: about a turn and a quarter (planetary reduction)
 EYE_Y = 0.30                     # left-hand drive
 X_DASH = 0.42                    # dash board / windscreen base
 TUB_X0, TUB_X1, TUB_W = -1.28, 0.55, 0.62
@@ -95,7 +97,7 @@ def build():
     m = Model("runabout_t", "Runabout T (1910s tourer)",
               "1910s-20s open touring car, 3.40 m, 30 x 3.5 in cord tyres on wooden wheels, front 2.9 L side-valve I4.",
               "Ground plane below the wheel centres, x = 0 midway between the axles, y = 0 on the centreline.")
-    materials(m, BLACK)
+    materials(m, BLACK, metallic=0.0, roughness=0.12)
     m.mat("paint", color=BLACK, metallic=0.1, roughness=0.12, role="paint")
     m.mat("leather", color=(0.06, 0.04, 0.03), roughness=0.6, tex=("fabric", {"color": (0.06, 0.04, 0.03)}),
           tile=0.08)
@@ -107,7 +109,7 @@ def build():
     m.mat("dash_board", color=(0.02, 0.02, 0.022), roughness=0.35)
     m.mat("horn_bulb", color=(0.05, 0.04, 0.035), roughness=0.8)
     flow = FlowRecorder(m)
-    ck = C.Cockpit(m, LOCK_TO_LOCK_TURNS, STEER_LOCK_DEG)
+    ck = C.Cockpit(m, STEERING_WHEEL_LOCK_DEG, STEER_LOCK_DEG)
     mb = m.mb
 
     # ---- chassis: frame rails, axles, transverse leaf springs, splash aprons
@@ -158,12 +160,35 @@ def build():
             M.box(mb, (xb, s * 0.52, 0.49), (0.04, 0.26, 0.03), "frame")
         # splash apron between the board and the frame
         M.box(mb, ((end_f[0] + start_r[0]) / 2, s * 0.50, 0.535), (end_f[0] - start_r[0], 0.18, 0.01), "paint")
+    # ---- detail: beaded wing edges, ribbed running boards, tool box and carbide generator on the boards
+    for s in (1, -1):
+        ylo, yhi = (yf0, yf1) if s > 0 else (-yf1, -yf0)
+        for path in (pf, pr):
+            for yy in (ylo, yhi):
+                tube_path(mb, [(x, yy, z) for (x, z) in path], 0.0075, "paint", count=8)
+        for k in range(4):
+            M.rounded_box(mb, ((end_f[0] + start_r[0]) / 2, s * (TRACK / 2 - 0.08 + 0.055 * k), 0.531),
+                          (end_f[0] - start_r[0] - 0.08, 0.012, 0.008), 0.003, "frame")
+    tb = (start_r[0] + 0.30, TRACK / 2 + 0.01, 0.61)                         # tool box, left board
+    M.rounded_box(mb, tb, (0.42, 0.18, 0.17), 0.012, "paint")
+    M.rounded_box(mb, (tb[0], tb[1], tb[2] + 0.09), (0.44, 0.20, 0.02), 0.006, "paint")
+    for dx in (-0.12, 0.12):
+        M.rounded_box(mb, (tb[0] + dx, tb[1] + 0.092, tb[2] + 0.04), (0.03, 0.008, 0.05), 0.003, "brass")
+    gx = start_r[0] + 0.25                                                   # carbide gas generator, right board
+    M.cylinder(mb, (gx, -(TRACK / 2 + 0.02), 0.53), (gx, -(TRACK / 2 + 0.02), 0.84), 0.065, "brass", count=20)
+    M.ellipsoid(mb, (gx, -(TRACK / 2 + 0.02), 0.838), (0.0635, 0.0635, 0.03), "brass", count=20, rings=6)
+    for zz in (0.58, 0.79):
+        M.cylinder(mb, (gx, -(TRACK / 2 + 0.02), zz), (gx, -(TRACK / 2 + 0.02), zz + 0.012), 0.069, "frame", count=20)
     flow.mark("wings and running boards")
 
     # ---- radiator (brass shell, black core), filler cap, starting crank
     rx = XF + 0.02
     M.rounded_box(mb, (rx, 0.0, 1.05), (0.10, 0.62, 0.66), 0.03, "brass")
     M.rounded_box(mb, (rx + 0.046, 0.0, 1.03), (0.012, 0.50, 0.54), 0.01, "radiator")
+    for k in range(23):                                                        # core tubes
+        M.box(mb, (rx + 0.054, -0.23 + 0.46 * k / 22, 1.03), (0.006, 0.006, 0.50), "frame")
+    for k in range(6):                                                         # cross fins
+        M.box(mb, (rx + 0.0565, 0.0, 0.81 + 0.088 * k), (0.004, 0.48, 0.004), "radiator")
     M.cylinder(mb, (rx, 0.0, 1.38), (rx, 0.0, 1.43), 0.03, "brass", count=16)
     M.ellipsoid(mb, (rx, 0.0, 1.445), (0.02, 0.02, 0.025), "brass", count=12, rings=6)
     M.tube(mb, [(rx + 0.08, 0.0, 0.62), (rx + 0.20, 0.0, 0.62), (rx + 0.20, 0.0, 0.52), (rx + 0.24, 0.0, 0.52)],
@@ -174,10 +199,23 @@ def build():
     M.tube(mb, [(hx - 0.04, -0.62, 0.86), (hx - 0.04, 0.0, 0.84), (hx - 0.04, 0.62, 0.86)], 0.014, "frame", count=8)
     for s in (1, -1):
         c = (hx, s * 0.44, 0.97)
-        M.lathe(mb, [(0.0, -0.12), (0.075, -0.11), (0.095, -0.06), (0.098, 0.0), (0.0, 0.0)], "paint",
-                axis_xf=compose(translate(c), rot_axis((0, 1, 0), math.pi / 2)), count=24, closed_profile=True)
-        M.cylinder(mb, (c[0] - 0.002, c[1], c[2]), (c[0] + 0.012, c[1], c[2]), 0.102, "brass", count=24)
-        M.cylinder(mb, (c[0] + 0.012, c[1], c[2]), (c[0] + 0.018, c[1], c[2]), 0.088, "light_head", count=24)
+        hxf = compose(translate(c), rot_axis((0, 1, 0), math.pi / 2))
+        # open drum (the reflector sits in it) and a brass bezel ring round the lens
+        M.lathe(mb, [(0.0, -0.12), (0.075, -0.11), (0.095, -0.06), (0.098, 0.0), (0.091, 0.0), (0.089, -0.05),
+                     (0.0, -0.10)], "paint", axis_xf=hxf, count=24, closed_profile=True)
+        M.lathe(mb, [(0.089, -0.002), (0.102, -0.002), (0.102, 0.008), (0.096, 0.014), (0.089, 0.014)], "brass",
+                axis_xf=hxf, count=24, closed_profile=True)
+        # silvered parabolic reflector, the lamp bulb at its focus, a clear domed lens in front
+        M.lathe(mb, [(0.004, -0.085), (0.04, -0.075), (0.07, -0.045), (0.088, 0.008), (0.088, 0.011),
+                     (0.084, 0.008), (0.066, -0.042), (0.037, -0.071), (0.004, -0.081)], "lamp_reflector",
+                axis_xf=hxf, count=24, closed_profile=True)                     # open bowl, 4 mm wall
+        if Q.detail() >= 1:
+            M.ellipsoid(mb, xform_point(hxf, (0, 0, -0.045)), (0.013, 0.013, 0.02), "light_head")
+            M.cylinder(mb, xform_point(hxf, (0, 0, -0.08)), xform_point(hxf, (0, 0, -0.06)), 0.006, "brass")
+        M.lathe(mb, [(0.0005, 0.040), (0.030, 0.038), (0.062, 0.032), (0.086, 0.020), (0.088, 0.013),
+                     (0.0005, 0.013)], "lens_clear", axis_xf=hxf, count=24, closed_profile=True)    # domed lens
+        M.lathe(mb, [(0.0, 0.040), (0.012, 0.040), (0.012, 0.046), (0.0, 0.046)], "brass",
+                axis_xf=compose(translate(c), rot_axis((0, 1, 0), math.pi / 2)), count=12, closed_profile=True)
         M.tube(mb, [(c[0] - 0.05, c[1], 0.86), (c[0] - 0.05, c[1], c[2] - 0.08)], 0.010, "frame", count=8)
     flow.mark("radiator, headlamps")
 
@@ -216,7 +254,8 @@ def build():
     for s in (1, -1):
         c = (X_DASH + 0.02, s * (TUB_W + 0.06), 1.16)
         M.rounded_box(mb, c, (0.10, 0.09, 0.15), 0.02, "paint")
-        M.cylinder(mb, (c[0] + 0.05, c[1], c[2]), (c[0] + 0.058, c[1], c[2]), 0.032, "light_drl", count=16)
+        D.round_lamp(m, (c[0] + 0.052, c[1], c[2]), (1.0, 0.0, 0.0), 0.032, "light_drl", bezel_mat="brass",
+                     depth=0.03)                                                # carriage lamp
         M.cylinder(mb, (c[0], c[1], c[2] + 0.075), (c[0], c[1], c[2] + 0.11), 0.016, "paint", count=10)
         M.box(mb, (c[0], s * (TUB_W + 0.01), c[2]), (0.03, 0.04, 0.03), "frame")
     flow.mark("bonnet, scuttle, carriage lamps")
@@ -252,14 +291,16 @@ def build():
         M.rounded_box(mb, (DOOR_X0 + 0.10, side * (TUB_W - 0.025), 0.95), (0.14, 0.008, 0.025), 0.004, "leather",
                       name)
     # tail: number plate and one tail lamp on the left rear wing
-    M.rounded_box(mb, (TUB_X0 - 0.12, 0.0, 0.66), (0.01, 0.30, 0.14), 0.005, "plate")
+    D.plate_free(m, (TUB_X0 - 0.12, 0.0, 0.66), (-1.0, 0.0, 0.0), 0.30, 0.14, "A 1912", plate_mat="plate",
+                 frame_mat="brass")
     M.box(mb, (TUB_X0 - 0.07, 0.0, 0.66), (0.10, 0.04, 0.03), "frame")
     tl = (XR - 0.35, 0.62, 0.86)
     M.rounded_box(mb, tl, (0.08, 0.07, 0.09), 0.015, "paint")
     M.tube(mb, [(TUB_X0 + 0.01, 0.52, 0.80), (tl[0] + 0.035, tl[1], tl[2] - 0.03)], 0.008, "frame", count=8)
-    M.cylinder(mb, (tl[0] - 0.04, tl[1], tl[2]), (tl[0] - 0.048, tl[1], tl[2]), 0.026, "light_tail", count=16)
-    M.cylinder(mb, (tl[0] - 0.04, tl[1], tl[2] - 0.035), (tl[0] - 0.046, tl[1], tl[2] - 0.035), 0.014,
-               "light_brake", count=12)
+    D.round_lamp(m, (tl[0] - 0.042, tl[1], tl[2] + 0.008), (-1.0, 0.0, 0.0), 0.026, "light_tail", lens_mat="lens_red",
+                 bezel_mat="brass", depth=0.02)
+    D.round_lamp(m, (tl[0] - 0.042, tl[1], tl[2] - 0.033), (-1.0, 0.0, 0.0), 0.013, "light_brake",
+                 lens_mat="lens_red", bezel_mat="brass", depth=0.012)
     flow.mark("tub, doors, tail")
 
     # ---- windscreen: brass frame, fixed lower pane, tilting upper pane
@@ -290,7 +331,8 @@ def build():
     flow.mark("wheels")
 
     build_top(m)
-    build_cabin(m, ck)
+    with Q.coarse(1.5):     # seen through glass: looser chord tolerance
+        build_cabin(m, ck)
     flow.skip("cabin, cockpit controls, engine bay, hidden top")
 
     m.socket("socket_driver_eye", None, (-0.40, EYE_Y, 1.60), "driver eye point (camera)")
@@ -300,6 +342,10 @@ def build():
     m.socket("socket_tow_rear", None, (XR - 0.16, 0.0, 0.53), "rear towing point (rear cross member)")
     m.socket("socket_exhaust", None, (XR - 0.30, -0.30, 0.42), "exhaust outlet, flow along -x")
     M.tube(mb, [(0.60, -0.25, 0.55), (0.20, -0.30, 0.40), (XR - 0.30, -0.30, 0.42)], 0.022, "exhaust_tip", count=10)
+    M.lathe(mb, [(0.021, 0.0), (0.026, 0.05), (0.034, 0.10), (0.036, 0.105), (0.031, 0.10), (0.019, 0.04),
+                 (0.017, 0.0)], "exhaust_tip", axis_xf=compose(translate((XR - 0.27, -0.30, 0.418)),
+                                                                rot_axis((0, 1, 0), -math.pi / 2)),
+            closed_profile=True)                                        # flared tail pipe end
     m.extra_rig["engine_bay"] = {
         "envelope_mm": [700, 600, 700],
         "box_m": {"min": [0.55, -0.30, 0.58], "max": [1.25, 0.30, 1.28]},
@@ -349,6 +395,9 @@ def build_cabin(m, ck):
     mb = m.mb
     M.rounded_box(mb, ((TUB_X0 + X_DASH) / 2, 0.0, FLOOR_Z - 0.01), (X_DASH - TUB_X0 - 0.04, 2 * TUB_W - 0.04, 0.025),
                   0.004, "floorboard")
+    m.node("carpets", None, ((TUB_X0 + X_DASH) / 2, 0.0, FLOOR_Z), None, strip="carpets")
+    M.rounded_box(mb, ((TUB_X0 + X_DASH) / 2, 0.0, FLOOR_Z + 0.004), (X_DASH - TUB_X0 - 0.10, 2 * TUB_W - 0.14, 0.008),
+                  0.002, "carpet", "carpets")                                          # floor mat over the boards
     M.box(mb, (X_DASH - 0.04, 0.0, FLOOR_Z + 0.12), (0.20, 1.0, 0.02), "floorboard")   # sloped toe board
     M.box(mb, (X_DASH + 0.035, 0.0, (FLOOR_Z - 0.03 + 0.98) / 2), (0.02, 2 * TUB_W - 0.06, 0.98 - FLOOR_Z + 0.03),
           "wood")                                                                    # firewall
@@ -368,6 +417,12 @@ def build_cabin(m, ck):
                   source="control:ignition")
     C.slider(m, ck, "choke", (X_DASH - 0.018, 0.22, 1.04), (-1, 0, 0), (-1.0, 0.0, 0.0), 0.05, "choke", [0, 1],
              mat="frame", knob_mat="brass", label="choke pull", up_hint=(0, 0, 1))
+    # tool tray under the dash on the passenger side (strip = dashboard)
+    m.node("dash_glovebox", None, (X_DASH - 0.08, -0.30, 0.90), None, strip="dashboard")
+    M.rounded_box(mb, (X_DASH - 0.08, -0.30, 0.90), (0.12, 0.36, 0.14), 0.01, "wood", "dash_glovebox")
+    M.rounded_box(mb, (X_DASH - 0.145, -0.30, 0.92), (0.012, 0.10, 0.012), 0.003, "brass", "dash_glovebox")
+    # spare wheel upright on the tail (strip = spare_wheel)
+    spare_wheel(m, "spare_wheel", (TUB_X0 - 0.10, 0.0, 0.86), 0.36, 0.11, axis=(1.0, 0.0, 0.0))
     # horn bulb on the driver's side of the scuttle
     C.push_button(m, ck, "horn", (X_DASH - 0.05, TUB_W - 0.06, 1.24), (-0.5, -0.4, 0.7), (0.05, 0.05, 0.05), "horn",
                   mat="horn_bulb", momentary=True, round_r=0.032, label="horn bulb", travel=0.015)
@@ -396,10 +451,13 @@ def build_cabin(m, ck):
     C.lever(m, ck, "handbrake", (-0.10, TUB_W - 0.08, FLOOR_Z + 0.02), (0.0, 1.0, 0.0), (0.06, 0.0, 0.48),
             "handbrake", 20.0, mat="frame", grip_mat="wood", label="handbrake", grip_r=0.016)
     # ---- buttoned leather benches
+    # The front bench seats driver and passenger in one piece, so it stays on the body; the rear bench is its own
+    # static node (rig extra "strip" = the garage weight-reduction slot rear_seats).
     seat_closed(m, (-0.42, 0.0, FLOOR_Z + 0.34), width=1.12, recline=0.22, mat="leather", headrest=False,
-                depth=0.46, height=0.16)
+                depth=0.46, height=0.16, pleats=6)
+    m.node("seat_rear", None, (-1.02, 0.0, FLOOR_Z + 0.36), None, strip="rear_seats")
     seat_closed(m, (-1.02, 0.0, FLOOR_Z + 0.36), width=1.12, recline=0.24, mat="leather", headrest=False,
-                depth=0.44, height=0.16)
+                depth=0.44, height=0.16, pleats=6, part="seat_rear")
     for xs in (-0.42, -1.02):
         for k in range(5):
             for j in range(2):

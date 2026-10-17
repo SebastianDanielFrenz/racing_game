@@ -1,3 +1,4 @@
+#include "g2m/world/road_ribbons.h"
 #include "rg/npc_traffic.h"
 #include "rg/world_terrain.h"
 #include "rg/road_structures.h"
@@ -101,14 +102,9 @@ std::pair<double,double> junction_turn_cuts(double turn,double width_in_m,double
  const auto pick=[&](double trim,double width){return std::min(cap,std::max(least,trim>=0?trim:straight?2.:.5*std::max(0.,width)+3));};
  return {pick(trim_in_m,width_out_m),pick(trim_out_m,width_in_m)};
 }
-int traffic_road_rank(const g2m::RoadGraphWay& w){
- const auto highway=tag(w,"highway");
- // A link yields where it ends: onto its road (merging, StVO 18(3)) and at the ramp terminal onto any road but a
- // living street (an exit ramp ends at a give-way line or a signal, never with priority).
- if(highway.ends_with("_link"))return 1;
- static const std::map<std::string,int> rank={{"motorway",14},{"trunk",12},{"primary",10},{"secondary",8},{"tertiary",6},{"unclassified",4},{"road",4},{"residential",2},{"living_street",0}};
- const auto it=rank.find(highway);return it==rank.end()?0:it->second;
-}
+// One rank table for traffic and road paint (the ribbons' give-way and through-road rules): geo2map owns it since
+// terrain migration phase 3a.
+int traffic_road_rank(const g2m::RoadGraphWay& w){return g2m::world::road_priority_rank(w);}
 bool junction_yields(const TrafficJunction& a,const TrafficJunction& b,bool b_from_right){
  if(a.sign_yield!=b.sign_yield)return a.sign_yield;
  if(a.rank!=b.rank)return a.rank<b.rank;

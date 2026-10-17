@@ -12,8 +12,8 @@
       "family": "V8 twin turbo",
       "image": "res://assets/components/engines/engine_i6.png",
       "detail": "Simulated from its cycle model",
-      "mass_kg": 230.0,
-      "mass_source": "ASSUMED [AS]: a 5.1 L aluminium twin-turbo V8 with its turbochargers, comparable engines weigh 200-250 kg; 230 kg used, no citation fetched.",
+      "mass_kg": 175.0,
+      "mass_source": "ASSUMED [AS]: the bare naturally aspirated 5.1 L aluminium V8 (block, heads, crank, flywheel, intake and NA exhaust manifolds, ancillaries) without its turbochargers, intercooler and charge piping, which the part-mass tree counts as their own turbo_system parts sized from the turbo configuration (part_masses.json turbo_unit/turbo_hot_side/intercooler/charge_piping, about 54 kg for the stock twin). The earlier 230 kg (comparable twin-turbo V8s weigh 200-250 kg with their turbos) less those 54 kg, rounded to 175 kg; no citation fetched.",
       "peaks": { "torque_nm": 1387.3, "torque_rpm": 5450.0, "power_kw": 1011.1, "power_rpm": 7450.0 }
     },
     {
@@ -27,7 +27,7 @@
       "detail": "Simulated, with intake and exhaust pipes",
       "mass_kg": 110.0,
       "mass_source": "ASSUMED [AS]: a 2.0 L aluminium inline-four weighs about 100-120 kg; 110 kg used, no citation fetched.",
-      "peaks": { "torque_nm": 212.5, "torque_rpm": 4050.0, "power_kw": 118.7, "power_rpm": 6800.0 }
+      "peaks": { "torque_nm": 212.5, "torque_rpm": 4050.0, "power_kw": 118.7, "power_rpm": 6050.0 }
     },
     {
       "id": "toyota_a25a_fks_gen",

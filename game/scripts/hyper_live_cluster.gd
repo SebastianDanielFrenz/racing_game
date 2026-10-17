@@ -5,7 +5,9 @@ func _ready() -> void:
 	var viewport := SubViewport.new()
 	viewport.size = Vector2i(1024,400)
 	viewport.disable_3d = true
-	viewport.render_target_update_mode = SubViewport.UPDATE_ALWAYS
+	# The cluster redraws at 20 Hz (digital_cluster.gd): the viewport renders once per redraw instead of every frame
+	# (perf 2026-10-15; it was a 1024x400 canvas render per frame, also in chase view).
+	viewport.render_target_update_mode = SubViewport.UPDATE_ONCE
 	add_child(viewport)
 	var cluster := Control.new()
 	cluster.set_script(load("res://scripts/digital_cluster.gd"))
@@ -13,6 +15,7 @@ func _ready() -> void:
 	cluster.set("vehicle_name",vehicle_name)
 	cluster.size = Vector2(1024,400)
 	viewport.add_child(cluster)
+	cluster.draw.connect(func() -> void: viewport.render_target_update_mode = SubViewport.UPDATE_ONCE)
 	var panel := MeshInstance3D.new()
 	var quad := QuadMesh.new()
 	quad.size = Vector2(0.40,0.15625)

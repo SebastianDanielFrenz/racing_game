@@ -78,6 +78,9 @@
       "help": "Front share of the total brake torque; the total stays the same.",
       "kind": "brake_bias",
       "max_shift": 0.1,
+      "max_shift_bound": 0.5,
+      "share_min": 0.2,
+      "share_max": 0.85,
       "step": 0.005,
       "file": "vehicle",
       "pointers": [
@@ -259,16 +262,20 @@
       "label": "Driver assists",
       "group": "Assists",
       "area": "overview",
-      "help": "The car's assist electronics (physics_sim assist unit). Street offers traction control Off/On; Sport adds the Relaxed and Sport modes; Racing adds Drift and the rear-wing automation. The F4 key cycles only through the modes the fitted unit offers.",
+      "help": "The car's assist electronics (physics_sim assist unit). Street offers traction control Off/On; Sport adds the Relaxed and Sport modes; Racing adds Drift and the rear-wing automation; the + ABS/ESC variants add anti-lock braking and stability control (lamps on the dash). The F4 key cycles only through the modes the fitted unit offers.",
       "kind": "file_choice",
       "file": "vehicle",
       "part_format": "physics_sim.electronics/1",
       "compatible_engines": ["*"],
       "pointers": ["/controllers/[id=assists]/ref"],
+      "insert_if_absent": {"array": "/controllers", "entry": {"id": "assists", "type": "electronics"}, "ref_key": "ref", "stock_label": "No assist unit"},
       "parts": [
         {"id": "assists_street", "label": "Street Assists", "path": "../../external/physics_sim/data/electronics/assist_unit_street.json", "detail": "Traction control: Off, On. No wing automation."},
         {"id": "assists_sport", "label": "Sport Assists", "path": "../../external/physics_sim/data/electronics/assist_unit_sport.json", "detail": "Traction control: Off, On, Relaxed, Sport. No wing automation."},
-        {"id": "assists_racing", "label": "Racing Assists", "path": "../../external/physics_sim/data/electronics/assist_unit_racing.json", "detail": "Traction control: Off, On, Relaxed, Sport, Drift. Rear-wing automation."}
+        {"id": "assists_racing", "label": "Racing Assists", "path": "../../external/physics_sim/data/electronics/assist_unit_racing.json", "detail": "Traction control: Off, On, Relaxed, Sport, Drift. Rear-wing automation."},
+        {"id": "assists_street_abs_esc", "label": "Street Assists + ABS/ESC", "path": "../electronics/assist_unit_street_abs_esc.json", "detail": "Traction control: Off, On. ABS, and stability control Off/On/Sport."},
+        {"id": "assists_sport_abs_esc", "label": "Sport Assists + ABS/ESC", "path": "../electronics/assist_unit_sport_abs_esc.json", "detail": "Traction control: Off, On, Relaxed, Sport. ABS, and stability control Off/On/Sport."},
+        {"id": "assists_racing_abs_esc", "label": "Racing Assists + ABS/ESC", "path": "../electronics/assist_unit_racing_abs_esc.json", "detail": "Traction control: Off, On, Relaxed, Sport, Drift. Rear-wing automation. ABS, and stability control Off/On/Sport."}
       ]
     },
     {
@@ -365,6 +372,51 @@
         "/powertrain/components/[type=gearbox]/ref"
       ],
       "help": "Swap the gearbox. Manual boxes (and the sequential ones) are listed; automatic and CVT follow once the physics supports them. A box is offered only if its torque rating covers the installed engine's peak torque; the car's own box is always there. The box brings its own gear ratios (the gear ratio sliders then scale them), the shift points of the auto-shift assist stay."
+    },
+    {
+      "id": "drive_layout",
+      "label": "Drive layout",
+      "group": "Drivetrain",
+      "area": "rear",
+      "kind": "file_choice",
+      "catalog": "drive_layouts",
+      "file": "vehicle",
+      "part_format": "rg.driveline_catalog/1",
+      "pointers": [
+        "/powertrain/components/[type=differential]/kind",
+        "/powertrain/shafts"
+      ],
+      "help": "Which wheels the engine drives: front, rear or all four (with an open, viscous or locked centre differential). The new axle differentials copy the car's own (ratio and kind), so the overall gearing stays. Offered on every car whose driveline is one gearbox output into one or two axle differentials."
+    },
+    {
+      "id": "diff_front",
+      "label": "Front differential",
+      "group": "Drivetrain",
+      "area": "wheels",
+      "kind": "file_choice",
+      "catalog": "differentials",
+      "axle": "front",
+      "file": "vehicle",
+      "part_format": "rg.driveline_catalog/1",
+      "pointers": [
+        "/powertrain/components/[type=differential]/kind"
+      ],
+      "help": "The front axle's differential: open, clutch-type LSD, Torsen, viscous or locked. Offered while the front wheels are driven."
+    },
+    {
+      "id": "diff_rear",
+      "label": "Rear differential",
+      "group": "Drivetrain",
+      "area": "rear",
+      "kind": "file_choice",
+      "catalog": "differentials",
+      "axle": "rear",
+      "file": "vehicle",
+      "part_format": "rg.driveline_catalog/1",
+      "pointers": [
+        "/powertrain/components/[type=differential]/kind"
+      ],
+      "help": "The rear axle's differential: open, clutch-type LSD, Torsen, viscous or locked. Offered while the rear wheels are driven."
     },
     {
       "id": "turbo_install",
@@ -587,6 +639,110 @@
       ]
     },
     {
+      "id": "engine_bore",
+      "label": "Cylinder bore",
+      "group": "Engine internals",
+      "area": "engine",
+      "kind": "file_choice",
+      "catalog": "engine_internals",
+      "internal": "cylinder_bore",
+      "file": "engine",
+      "part_format": "rg.engine_internals/1",
+      "pointers": [
+        "/bore_mm",
+        "/cycle/compression_ratio"
+      ],
+      "help": "Bores every cylinder oversize (+0.5 mm, +1.0 mm, or a re-sleeved big bore of +3.0 mm): more swept volume, so more torque and power at the same rpm. The engine file's bore changes, its maps are generated again, and the compression ratio rises because the head's combustion chamber stays as it was. A bored block takes pistons of the new diameter only: every piston grade is then sized to it and weighs more, which loads the connecting rods harder (a lower rod-limited rpm). A step that would leave too thin a wall between two cylinders is not offered; a thin wall makes the setup check warn. A turbo kit fitted to the bored engine is sized for its larger displacement. Figures in data/engines/engine_internals.json (\"bore\")."
+    },
+    {
+      "id": "turbo_kit",
+      "label": "Turbo kit",
+      "group": "Turbo system",
+      "area": "engine",
+      "kind": "file_choice",
+      "catalog": "turbo_kits",
+      "file": "engine",
+      "part_format": "physics_sim.turbo_configuration/1",
+      "pointers": [
+        "/default_forced_induction"
+      ],
+      "help": "Fit a turbo system to an engine that has none: the turbo, intercooler and wastegate are sized for the installed engine's air flow (data/engines/turbo_kits.json), the boost map is regenerated and a compression ratio above 10:1 is lowered. Boost pressure is adjusted separately in Tuning. Torque-curve engines cannot take a kit; the garage says why."
+    },
+    {
+      "id": "charge_piping",
+      "label": "Charge piping",
+      "group": "Turbo system",
+      "area": "engine",
+      "kind": "file_choice",
+      "catalog": "charge_piping",
+      "file": "engine",
+      "part_format": "physics_sim.turbo_configuration/1",
+      "pointers": [
+        "/default_forced_induction"
+      ],
+      "help": "The pipes and couplers from the compressor through the intercooler to the throttle. A kit comes with plastic piping rated for street boost; aluminium and steel take more pressure and weigh more. The setup check warns when the boost target is above the piping's rating (data/engines/turbo_kits.json); nothing breaks yet."
+    },
+    {
+      "id": "engine_rods",
+      "label": "Connecting rods",
+      "group": "Engine internals",
+      "area": "engine",
+      "kind": "file_choice",
+      "catalog": "engine_internals",
+      "internal": "connecting_rods",
+      "file": "engine",
+      "part_format": "rg.engine_internals/1",
+      "pointers": [
+        "/stroke_mm"
+      ],
+      "help": "The rods between pistons and crankshaft. Forged steel and titanium (as in F1) survive a higher mean piston speed; titanium is also 35 % lighter. The engine's piston-speed limit is that of its WEAKEST part: rods, pistons and crankshaft. Limits and masses are in data/engines/engine_internals.json; the choice changes no engine data, only the setup check's limits and the car's mass. Nothing breaks yet (damage model to come); the setup check names the part that would fail."
+    },
+    {
+      "id": "engine_pistons",
+      "label": "Pistons",
+      "group": "Engine internals",
+      "area": "engine",
+      "kind": "file_choice",
+      "catalog": "engine_internals",
+      "internal": "pistons",
+      "file": "engine",
+      "part_format": "rg.engine_internals/1",
+      "pointers": [
+        "/stroke_mm"
+      ],
+      "help": "Hypereutectic and forged pistons survive a higher mean piston speed and weigh less than stock cast ones. The engine's piston-speed limit is that of its WEAKEST part: rods, pistons and crankshaft. Limits and masses are in data/engines/engine_internals.json; the choice changes no engine data, only the setup check's limits and the car's mass. Nothing breaks yet (damage model to come); the setup check names the part that would fail."
+    },
+    {
+      "id": "engine_crankshaft",
+      "label": "Crankshaft",
+      "group": "Engine internals",
+      "area": "engine",
+      "kind": "file_choice",
+      "catalog": "engine_internals",
+      "internal": "crankshaft",
+      "file": "engine",
+      "part_format": "rg.engine_internals/1",
+      "pointers": [
+        "/stroke_mm"
+      ],
+      "help": "Forged and billet steel cranks survive a higher mean piston speed; billet is 10 % lighter. The engine's piston-speed limit is that of its WEAKEST part: rods, pistons and crankshaft. Limits and masses are in data/engines/engine_internals.json; the choice changes no engine data, only the setup check's limits and the car's mass. Nothing breaks yet (damage model to come); the setup check names the part that would fail."
+    },
+    {
+      "id": "engine_valve_springs",
+      "label": "Valve springs",
+      "group": "Engine internals",
+      "area": "engine",
+      "kind": "file_choice",
+      "catalog": "engine_internals",
+      "internal": "valve_springs",
+      "file": "engine",
+      "part_format": "rg.engine_internals/1",
+      "pointers": [
+        "/stroke_mm"
+      ],
+      "help": "Stiffer springs keep the valves on the cam at higher rpm; above the springs' limit the valves float and can hit the pistons. Stock springs hold the factory limiter plus a margin. Limits and masses are in data/engines/engine_internals.json; the choice changes no engine data, only the setup check's limits and the car's mass. Nothing breaks yet (damage model to come); the setup check names the part that would fail."
+    },
+    {
       "id": "turbo_boost_target",
       "label": "Boost target",
       "group": "Turbo calibration",
@@ -663,6 +819,211 @@
           "detail": "Nominal 19 kW shot"
         }
       ]
-    }
+    },
+    {
+      "id": "trim_driver_seat",
+      "label": "Driver seat",
+      "group": "Weight reduction",
+      "area": "overview",
+      "help": "Swap the driver's seat for a lighter bucket. The car shows it only where its model has a separate part for it.",
+      "kind": "part_choice",
+      "slot": "seat_driver",
+      "parts": [
+        {
+          "id": "sport_bucket",
+          "label": "Sport bucket seat",
+          "mass_key": "seat_sport_bucket"
+        },
+        {
+          "id": "carbon_bucket",
+          "label": "Carbon bucket seat",
+          "mass_key": "seat_carbon_bucket"
+        }
+      ]
+    },
+    {
+      "id": "trim_passenger_seat",
+      "label": "Passenger seat",
+      "group": "Weight reduction",
+      "area": "overview",
+      "help": "Swap the passenger seat for a lighter bucket, or take it out. The car shows it only where its model has a separate part for it.",
+      "kind": "part_choice",
+      "slot": "seat_passenger",
+      "parts": [
+        {
+          "id": "sport_bucket",
+          "label": "Sport bucket seat",
+          "mass_key": "seat_sport_bucket"
+        },
+        {
+          "id": "carbon_bucket",
+          "label": "Carbon bucket seat",
+          "mass_key": "seat_carbon_bucket"
+        },
+        {
+          "id": "removed",
+          "label": "Removed",
+          "removed": true
+        }
+      ]
+    },
+    {
+      "id": "trim_rear_seats",
+      "label": "Rear seats",
+      "group": "Weight reduction",
+      "area": "overview",
+      "help": "Take the rear seats out. The car shows it only where its model has a separate part for it.",
+      "kind": "part_choice",
+      "slot": "rear_seats",
+      "parts": [
+        {
+          "id": "removed",
+          "label": "Removed",
+          "removed": true
+        }
+      ]
+    },
+    {
+      "id": "trim_audio",
+      "label": "Audio system",
+      "group": "Weight reduction",
+      "area": "overview",
+      "help": "Take the head unit, amplifier and speakers out. The car shows it only where its model has a separate part for it.",
+      "kind": "part_choice",
+      "slot": "audio",
+      "parts": [
+        {
+          "id": "removed",
+          "label": "Removed",
+          "removed": true
+        }
+      ]
+    },
+    {
+      "id": "trim_door_trim",
+      "label": "Door trim",
+      "group": "Weight reduction",
+      "area": "overview",
+      "help": "Thin lightweight door cards, or bare door skins. The car shows it only where its model has a separate part for it.",
+      "kind": "part_choice",
+      "slot": "door_trim",
+      "parts": [
+        {
+          "id": "lightweight",
+          "label": "Lightweight door cards",
+          "mass_factor": 0.35
+        },
+        {
+          "id": "removed",
+          "label": "Removed",
+          "removed": true
+        }
+      ]
+    },
+    {
+      "id": "trim_dashboard",
+      "label": "Dashboard",
+      "group": "Weight reduction",
+      "area": "overview",
+      "help": "A stripped dashboard: gauges and switches only, no console, glovebox or trim panels. The car shows it only where its model has a separate part for it.",
+      "kind": "part_choice",
+      "slot": "dashboard",
+      "parts": [
+        {
+          "id": "stripped",
+          "label": "Stripped dashboard",
+          "mass_factor": 0.45
+        }
+      ]
+    },
+    {
+      "id": "trim_sound_deadening",
+      "label": "Sound deadening",
+      "group": "Weight reduction",
+      "area": "overview",
+      "help": "Strip the insulation from the floor, doors and bulkhead (louder cabin, not modelled). The car shows it only where its model has a separate part for it.",
+      "kind": "part_choice",
+      "slot": "sound_deadening",
+      "parts": [
+        {
+          "id": "removed",
+          "label": "Removed",
+          "removed": true
+        }
+      ]
+    },
+    {
+      "id": "trim_carpets",
+      "label": "Carpets",
+      "group": "Weight reduction",
+      "area": "overview",
+      "help": "Take the carpets and boot liner out. The car shows it only where its model has a separate part for it.",
+      "kind": "part_choice",
+      "slot": "carpets",
+      "parts": [
+        {
+          "id": "removed",
+          "label": "Removed",
+          "removed": true
+        }
+      ]
+    },
+    {
+      "id": "trim_spare_wheel",
+      "label": "Spare wheel",
+      "group": "Weight reduction",
+      "area": "overview",
+      "help": "Leave the spare wheel and jack at home. The car shows it only where its model has a separate part for it.",
+      "kind": "part_choice",
+      "slot": "spare_wheel",
+      "parts": [
+        {
+          "id": "removed",
+          "label": "Removed",
+          "removed": true
+        }
+      ]
+    },
+    {
+      "id": "trim_fasteners",
+      "label": "Fasteners",
+      "group": "Weight reduction",
+      "area": "overview",
+      "help": "Titanium bolts and aluminium brackets for the bolt-on parts. The car shows it only where its model has a separate part for it.",
+      "kind": "part_choice",
+      "slot": "fasteners",
+      "parts": [
+        {
+          "id": "titanium",
+          "label": "Titanium fasteners",
+          "mass_factor": 0.55
+        }
+      ]
+    },
+    {
+      "id": "trim_hood",
+      "label": "Bonnet",
+      "group": "Weight reduction",
+      "area": "overview",
+      "help": "An aluminium or carbon-fibre bonnet in place of the steel one. The car shows it only where its model has a separate part for it.",
+      "kind": "part_choice",
+      "slot": "hood",
+      "parts": [
+        {
+          "id": "aluminium",
+          "label": "Aluminium bonnet",
+          "mass_factor": 0.55
+        },
+        {
+          "id": "carbon",
+          "label": "Carbon-fibre bonnet",
+          "mass_factor": 0.3
+        }
+      ]
+    },
+    {"id": "cooling_radiator", "label": "Radiator", "group": "Cooling", "area": "engine", "kind": "file_choice", "catalog": "cooling_upgrades", "cooling_part": "radiator", "file": "vehicle", "part_format": "rg.cooling_upgrades/1", "pointers": ["/cooling_system"], "help": "Radiator grades scale the car's own radiator: frontal area, heat exchange per area and, for the race grade, the ram air coefficient (data/cooling_systems/cooling_upgrades.json). A bigger radiator lowers the steady coolant temperature when the engine burns more fuel (a turbo kit, a higher boost target, N2O). It weighs more: the part-mass tree gets a node under the cooling system."},
+    {"id": "cooling_fan", "label": "Cooling fan", "group": "Cooling", "area": "engine", "kind": "file_choice", "catalog": "cooling_upgrades", "cooling_part": "fan", "file": "vehicle", "part_format": "rg.cooling_upgrades/1", "pointers": ["/cooling_system"], "help": "A stronger fan moves more air through the radiator when the car is slow; above about 10 m/s the ram air is faster than the fan and the fan changes nothing. It also switches on a few degrees earlier."},
+    {"id": "cooling_oil_cooler", "label": "Oil cooler", "group": "Cooling", "area": "engine", "kind": "file_choice", "catalog": "cooling_upgrades", "cooling_part": "oil_cooler", "file": "vehicle", "part_format": "rg.cooling_upgrades/1", "pointers": ["/cooling_system"], "help": "An oil-to-air cooler adds heat rejection from the oil that grows with the speed of the air, per litre of displacement. The thermostat only regulates the coolant, so a cooler is the way to keep a hard-driven engine's oil down."},
+    {"id": "cooling_block_cooling", "label": "Block cooling", "group": "Cooling", "area": "engine", "kind": "file_choice", "catalog": "cooling_upgrades", "cooling_part": "block_cooling", "file": "vehicle", "part_format": "rg.cooling_upgrades/1", "pointers": ["/cooling_system"], "help": "The engine thermal model has no water-jacket geometry, so the block is cooled by what it does have: a stronger coolant pump, more coolant in the block (slower to heat up, same steady state) and a thermostat that opens earlier. The setup check names the engine block as the part at risk when the coolant runs hotter than its limit."}
   ]
 }

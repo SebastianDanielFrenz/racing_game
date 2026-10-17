@@ -23,7 +23,7 @@ extends CanvasLayer
 
 const LAYER_REAL := 1
 const LAYER_MIRROR := 2
-const PALETTE_ROUGHNESS := 0.3
+const CarMaterials := preload("res://scripts/car_materials.gd")
 
 var garage: Node # RgGarage, set by main.gd before add_child
 var vehicle_id: String = ""
@@ -48,6 +48,7 @@ var _models_loaded: int = 0
 var _bay: Dictionary = {}
 var _bay_poll: float = 0.0
 var _model_options: Array = [] # optional parts the working setup switches on (model_options.gd)
+var _hidden_nodes: Array = [] # model nodes the working setup's removed parts take off the car (rg_core strip_visual.h)
 # The shell panel covers one side of the screen: the camera shifts sideways so the car
 # sits in the free part ("left" / "right" / "" and the panel's width in pixels).
 var panel_side: String = ""
@@ -120,6 +121,7 @@ func show_vehicle(info: Dictionary) -> bool:
 	vehicle_info = info
 	vehicle_id = str(info.get("id", ""))
 	_model_options = [] # the configurator sets the working setup's parts after this
+	_hidden_nodes = []
 	for id in _cars:
 		_cars[id]["real"].visible = (id == vehicle_id)
 		_cars[id]["mirror"].visible = (id == vehicle_id)
@@ -144,8 +146,9 @@ func set_colours(paint_hex: String, rim_hex: String) -> void:
 	_apply_tyre_widths()
 
 # Optional model parts the working setup switches on (model_options.gd), on the car and its mirror twin.
-func set_model_options(on: Array) -> void:
+func set_model_options(on: Array, hidden: Array = []) -> void:
 	_model_options = on
+	_hidden_nodes = hidden
 	_apply_parts()
 
 # The setup's parts plus the hood the bay engine needs.
@@ -158,7 +161,7 @@ func _apply_parts() -> void:
 		on.append(hood)
 	var rig := str(vehicle_info.get("model_path", "")).get_basename() + ".rig.json"
 	for instance in [_cars[vehicle_id]["real"], _cars[vehicle_id]["mirror"]]:
-		preload("res://scripts/model_options.gd").apply(instance, rig, on)
+		preload("res://scripts/model_options.gd").apply(instance, rig, on, _hidden_nodes)
 
 func _apply_tyre_widths() -> void:
 	var owner := get_parent()
@@ -179,9 +182,26 @@ func _apply_tyre_widths() -> void:
 				if not wheel.has_meta("stock_width_scale"):
 					wheel.set_meta("stock_width_scale",wheel.scale.x)
 				var front: bool = str(corner).begins_with("F")
-				var reference: float = (0.265 if front else 0.325) if str(garage.get_vehicle(str(id)).get("model_path", "")).get_file() == "car_hyper.glb" else 0.225
+				var model_path := str(garage.get_vehicle(str(id)).get("model_path", ""))
+				var reference: float = (0.265 if front else 0.325) if model_path.get_file() == "car_hyper.glb" else 0.225
+				reference = float(_rig_wheel_widths(model_path).get("wheel_" + corner, reference))
 				var width: float = widths.x if front else widths.y
 				wheel.scale.x = float(wheel.get_meta("stock_width_scale")) * width / reference if width > 0.0 else float(wheel.get_meta("stock_width_scale"))
+
+# Modelled wheel widths of a rig with "wheel_width_scale": "rig" (imported models), else {}.
+var _rig_width_cache := {}
+func _rig_wheel_widths(model_path: String) -> Dictionary:
+	if not _rig_width_cache.has(model_path):
+		var out := {}
+		var rig_path := model_path.get_basename() + ".rig.json"
+		if model_path != "" and FileAccess.file_exists(rig_path):
+			var rig = JSON.parse_string(FileAccess.get_file_as_string(rig_path))
+			if rig is Dictionary and rig.get("wheel_width_scale", "") == "rig":
+				for node in rig.get("nodes", []):
+					if node.has("wheel"):
+						out[node["name"]] = float(node["wheel"].get("tyre_width", node["wheel"]["width"]))
+		_rig_width_cache[model_path] = out
+	return _rig_width_cache[model_path]
 
 func go_to_area(area_id: String, instant: bool = false) -> void:
 	garage.camera_go_to(area_id, instant)
@@ -726,6 +746,9 @@ func _load_car(info: Dictionary) -> bool:
 	preload("res://scripts/model_options.gd").apply(model, path.get_basename() + ".rig.json", [])
 	var bounds := _model_bounds_iso(model)
 	_car_pivot.add_child(holder)
+	# Draw calls (perf, 2026-10-15): bake the static parts per material before the twin is copied (car_mesh_merge.gd).
+	if OS.get_environment("RG_CAR_MERGE") != "0":
+		preload("res://scripts/car_mesh_merge.gd").merge(model as Node3D, path.get_basename() + ".rig.json", path.get_basename() + ".cockpit.json", true, false)
 	for mi in _mesh_instances(holder):
 		mi.layers = LAYER_REAL
 		mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_ON
@@ -790,14 +813,6 @@ func _unique_materials(model: Node) -> void:
 			copy.resource_name = src.resource_name
 			mi.set_surface_override_material(s, copy)
 
-func _material_role(mat: Material) -> String:
-	var n := mat.resource_name.to_lower()
-	if n == "paint" or n.begins_with("paint"):
-		return "paint"
-	if n.begins_with("rim"):
-		return "rim"
-	return ""
-
 func _apply_colours() -> void:
 	if not _cars.has(vehicle_id):
 		return
@@ -810,21 +825,7 @@ func _apply_colours() -> void:
 			var mat := mi.get_surface_override_material(s)
 			if not mat is StandardMaterial3D:
 				continue
-			var std := mat as StandardMaterial3D
-			var role := _material_role(std)
-			if role == "paint":
-				std.vertex_color_use_as_albedo = false
-				std.albedo_texture = null
-				std.albedo_color = _paint
-				std.metallic = 0.55
-				std.roughness = PALETTE_ROUGHNESS
-				std.clearcoat_enabled = true
-				std.clearcoat = 1.0
-				std.clearcoat_roughness = 0.06
-			elif role == "rim":
-				std.vertex_color_use_as_albedo = false
-				std.albedo_texture = null
-				std.albedo_color = _rim
-				std.metallic = 0.9
-				std.roughness = 0.25
+			var role := CarMaterials.role_of(mat)
+			if role != "":
+				CarMaterials.style(mat as StandardMaterial3D, role, _paint if role == "paint" else (_rim if role == "rim" else Color(0, 0, 0, 0)))
 

@@ -144,7 +144,9 @@ void GarageDyno::run() {
                     if(revision==revision_ && !cancel->load())result_.provisional_points=partial;
                 });
             };
-            const auto desc=rg::load_vehicle(material.vehicle_path,maps);
+            auto desc=rg::load_vehicle(material.vehicle_path,maps);
+            if(request.context.turbo_map_extension) // the dyno uses the same extended (cached) stage map as the drive
+                (void)rg::extend_turbo_maps(desc,material.vehicle_path,request.context.engine_map_cache_dir,*request.context.turbo_map_extension,&pool,cancel.get());
             const ps::drivetrain::SimulatedEngineDesc* simulated=nullptr;
             const ps::drivetrain::TorqueMapEngineDesc* mapped=nullptr;
             for(const auto& component:desc.powertrain.components) {

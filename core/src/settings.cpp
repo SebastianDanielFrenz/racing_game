@@ -76,17 +76,71 @@ std::vector<SettingDef> build_schema() {
     s.push_back(make_choice("graphics", "window_mode", "Window mode",
                             "Windowed, borderless full screen, or exclusive full screen.", "windowed",
                             {"windowed", "fullscreen", "exclusive_fullscreen"}));
+    {
+        // Mobile renderer (2026-10-15): the engine renderer. The choice ids are engine-neutral words; the Godot
+        // adapter maps them to its rendering methods (main.gd, user://renderer_override.cfg).
+        SettingDef r = make_choice("graphics", "renderer", "Renderer",
+                                   "mobile = the Vulkan renderer (default, the one VR uses; fewer draw calls). "
+                                   "compatibility = the OpenGL renderer the game used before, as a fallback for "
+                                   "drivers where Vulkan fails or looks wrong. forward_plus = the desktop quality "
+                                   "renderer (Vulkan/D3D12; more lights per object, room for screen-space effects; "
+                                   "costs more GPU time; not for the standalone headset). A --rendering-method on the "
+                                   "command line wins over this setting.",
+                                   "mobile", {"mobile", "compatibility", "forward_plus"});
+        r.applies_live = false;
+        r.applies_on_restart = true;
+        s.push_back(std::move(r));
+    }
     s.push_back(make_bool("graphics", "vsync", "Vertical sync", "Wait for the display refresh (no tearing).", true));
     s.push_back(make_int("graphics", "max_fps", "Maximum frame rate",
                          "Caps the render rate. 0 = unlimited. The simulation runs at its own fixed rate either way.", 0,
                          0.0, 360.0, 10.0));
+    s.push_back(make_choice("graphics", "surface_detail", "Surface detail",
+                            "Ground and road textures. off = plain colours (cheapest), low = colour textures, high = "
+                            "colour and relief (normal) textures, wet-road reflections.",
+                            "high", {"off", "low", "high"}));
+    // perf (2026-10-15): both default to the look before they existed.
+    s.push_back(make_choice("graphics", "shadow_quality", "Sun shadows",
+                            "high = four shadow cascades to 300 m, terrain casts (the full look). medium = two "
+                            "cascades. low = two cascades to 150 m, terrain does not cast. off = no sun shadows. "
+                            "Each cascade draws every shadow caster again.",
+                            "high", {"off", "low", "medium", "high"}));
+    s.push_back(make_float("graphics", "render_scale", "3D resolution scale",
+                           "Renders the 3D world at this share of the window resolution and scales it up; menus and "
+                           "the HUD stay sharp. 1 = native. Helps when the graphics card is the limit (4K).",
+                           1.0, 0.5, 1.0, 0.05));
+    {
+        SettingDef lod = make_choice("graphics", "car_lod", "Car detail at a distance",
+                                     "full = every car model at full detail at any distance (the full look). high / "
+                                     "medium / low = cars whose model has coarser LOD files switch to them beyond the "
+                                     "model's own distances for that tier (high: 15 m and 60 m for the shipped cars); "
+                                     "small details such as plate text drop out first. Applies when a car is loaded.",
+                                     "full", {"full", "high", "medium", "low"});
+        lod.applies_live = false;
+        s.push_back(lod);
+    }
+    s.push_back(make_float("graphics", "rain_density", "Rain drops",
+                           "Density of the falling rain and snow around the camera. 0 = none (the road still gets wet).",
+                           1.0, 0.0, 1.0, 0.1));
     s.push_back(make_float("camera", "fov_deg", "Field of view",
                            "Vertical field of view of the driving cameras, in degrees.", 70.0, 50.0, 110.0, 1.0));
+    s.push_back(make_float("camera", "body_motion", "Driver body motion",
+                           "How strongly the driver's head moves with the car's forces in the cockpit views (VR "
+                           "included). 0 = off, 1 = full.",
+                           1.0, 0.0, 1.0, 0.05));
     s.push_back(make_float("audio", "master_volume", "Master volume", "Scales every sound.", 1.0, 0.0, 1.0, 0.05));
     s.push_back(make_float("audio", "engine_volume", "Engine volume", "Engine sound level, before the master volume.",
                            1.0, 0.0, 1.0, 0.05));
     s.push_back(make_float("audio", "tyre_volume", "Tyre volume", "Tyre noise level, before the master volume.", 1.0,
                            0.0, 1.0, 0.05));
+    // Difficulty (owner on PR #33): the mechanical damage model (rg/damage.h) - parts that wear when the engine runs too
+    // hot. Separate from any later collision damage, which gets its own switch here.
+    s.push_back(make_bool("difficulty", "mechanical_damage", "Mechanical damage",
+                          "Engine and cooling parts wear when they run too hot (radiator, fan, head gasket, crank "
+                          "bearings, pistons) and a worn-out engine seizes until the car is repaired (pause menu or "
+                          "garage). Off = nothing wears and stored damage has no effect; it is kept and acts again when "
+                          "this is switched back on. Collision damage is not part of this switch.",
+                          true));
     SettingDef store;
     store.section = "map_data";
     store.key = "map_data.store_dir";
@@ -118,6 +172,14 @@ std::vector<SettingDef> build_schema() {
         d.default_value = std::string();
         s.push_back(hidden(std::move(d)));
     }
+    // Headlamp switch position (rg::LightMode, the lights action cycles it): persisted like the
+    // auto-shift preference survives, not shown on the settings screen.
+    SettingDef light = make_choice("cabin", "light_mode", "Headlamp switch", "", "auto", {"auto", "on", "off"});
+    light.shown = false;
+    light.help = "Headlamp switch position: auto (light sensor), on (dipped beam) or off. The lights key cycles it.";
+    s.push_back(std::move(light));
+    // Garage upgrade lists: show the choices the car cannot fit too (greyed out with the reason). Persisted, hidden.
+    s.push_back(hidden(make_bool("garage", "show_all_upgrades", "Show all upgrades", "", false)));
     return s;
 }
 
@@ -224,9 +286,28 @@ json json_from_value(const SettingValue& v) {
 
 } // namespace
 
-const std::vector<SettingDef>& settings_schema() {
-    static const std::vector<SettingDef> schema = build_schema();
+namespace {
+std::vector<SettingDef>& mutable_schema() {
+    static std::vector<SettingDef> schema = build_schema();
     return schema;
+}
+std::map<std::string, std::string>& extension_titles() {
+    static std::map<std::string, std::string> titles;
+    return titles;
+}
+} // namespace
+
+const std::vector<SettingDef>& settings_schema() { return mutable_schema(); }
+
+void extend_settings_schema(const std::vector<SettingDef>& defs, const std::string& section,
+                            const std::string& section_title) {
+    std::vector<SettingDef>& schema = mutable_schema();
+    for (const SettingDef& d : defs) {
+        const auto it = std::find_if(schema.begin(), schema.end(), [&](const SettingDef& e) { return e.key == d.key; });
+        if (it != schema.end()) *it = d;
+        else schema.push_back(d);
+    }
+    if (!section.empty()) extension_titles()[section] = section_title;
 }
 
 const SettingDef* find_setting(const std::string& key) {
@@ -249,7 +330,9 @@ std::string settings_section_title(const std::string& section) {
     if (section == "graphics") return "Graphics";
     if (section == "camera") return "Camera";
     if (section == "audio") return "Audio";
+    if (section == "difficulty") return "Difficulty";
     if (section == "map_data") return "Map data";
+    if (const auto it = extension_titles().find(section); it != extension_titles().end()) return it->second;
     return section;
 }
 
@@ -332,7 +415,8 @@ std::string Settings::display_value(const std::string& key) const {
             if (key == "graphics.max_fps" && get_int(key) == 0) return "unlimited";
             return std::to_string(get_int(key));
         case SettingType::Float:
-            std::snprintf(buf, sizeof(buf), def->max <= 1.0 ? "%.2f" : "%.0f", get_float(key));
+            if (def->decimals >= 0) std::snprintf(buf, sizeof(buf), "%.*f", def->decimals, get_float(key));
+            else std::snprintf(buf, sizeof(buf), def->max <= 1.0 ? "%.2f" : "%.0f", get_float(key));
             return buf;
         case SettingType::Choice: return get_string(key);
         case SettingType::Path: return get_string(key).empty() ? "(default)" : get_string(key);

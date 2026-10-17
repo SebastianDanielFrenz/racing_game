@@ -1,4 +1,5 @@
 extends Node3D
+const CarMaterials := preload("res://scripts/car_materials.gd")
 # game/scripts/vehicle_visual.gd â€” near-copy port of physics_sim's
 # external/physics_sim/adapters/godot/demo/scripts/vehicle_visual.gd (read-
 # only reference): shows the real car_sedan.glb art instead of the red
@@ -48,6 +49,7 @@ var rim_colour: Color = Color(0, 0, 0, 0)
 var _wheel_nodes: Array = []
 var _model_root: Node3D
 var model_options: Array = [] # optional model parts switched on (model_options.gd), applied with the colours
+var hidden_nodes: Array = [] # model nodes the setup's removed (weight-reduction) parts hide, chosen by rg_core (strip_visual.h)
 var _cockpit: Node3D # cockpit_controls.gd, for a model with a <model>.cockpit.json next to it
 var _load_ok: bool = false
 var _steering_wheel: Node3D
@@ -59,6 +61,7 @@ var _wing_flap: Node3D
 var _wing_lift: Node3D
 var _wing_rest_rotation := Vector3.ZERO
 var _wing_rest_position := Vector3.ZERO
+var _rig_wheel_width := {} # wheel node name -> modelled width (m), for rigs with "wheel_width_scale": "rig"
 
 func _ready() -> void:
 	_load_model()
@@ -74,6 +77,13 @@ func get_cockpit() -> Node3D:
 
 func model_loaded() -> bool:
 	return _load_ok
+
+# [rig_json_path, the model origin in the chassis frame (ISO)]: the inputs of
+# RgSimulation.get_bumper_camera (the eye sits ahead of the model's own nose).
+func bumper_camera_inputs() -> Array:
+	if not _load_ok or _model_root == null:
+		return ["", Vector3.ZERO]
+	return [model_absolute_path.get_basename() + ".rig.json", global_transform.affine_inverse() * _model_root.global_position]
 
 # carvis steering-proof fix (2026-09-27): the steer_<corner> node's own local
 # Y rotation, exactly as _process below last set it (or 0.0 if that wheel has
@@ -118,6 +128,11 @@ func _load_model() -> void:
 	# A pure axis permutation (determinant +1: an even permutation of the
 	# three axes), so this never mirrors the mesh.
 	_model_root.transform.basis = Basis(Vector3(0, 1, 0), Vector3(0, 0, 1), Vector3(1, 0, 0))
+	# Coarser LODs of the car by camera distance where the rig lists them and the graphics.car_lod setting asks for
+	# them (car_lods.gd; default "full" = none).
+	var lod_parts: int = preload("res://scripts/car_lods.gd").attach(_model_root, model_absolute_path)
+	if lod_parts > 0:
+		print("rg_godot vehicle_visual.gd: %d LOD parts for %s" % [lod_parts, model_absolute_path.get_file()])
 	if model_absolute_path.get_file() == "car_hyper.glb":
 		load("res://scripts/cockpit_common.gd").attach_to(_model_root,simulation,vehicle_name,model_absolute_path)
 		var cluster := Node3D.new()
@@ -143,6 +158,7 @@ func _load_model() -> void:
 		_wing_rest_rotation = _wing_flap.rotation
 	if _wing_lift != null:
 		_wing_rest_position = _wing_lift.position
+	_add_missing_sockets()
 	load("res://scripts/exterior_lamps.gd").attach_to(_model_root,simulation,vehicle_name,model_absolute_path)
 	_steering_wheel = _model_root.find_child("steering_wheel",true,false)
 	if _steering_wheel != null:
@@ -154,17 +170,32 @@ func _load_model() -> void:
 			if node.get("name","") == "steering_wheel":
 				var axis: Array = node["joint"]["axis"]
 				_steering_axis = Vector3(axis[1],axis[2],axis[0]).normalized()
+	var rig_path := model_absolute_path.get_basename() + ".rig.json"
+	if FileAccess.file_exists(rig_path):
+		var rig_data = JSON.parse_string(FileAccess.get_file_as_string(rig_path))
+		if rig_data is Dictionary and rig_data.get("wheel_width_scale", "") == "rig":
+			for node in rig_data.get("nodes", []):
+				if node.has("wheel"):
+					_rig_wheel_width[node["name"]] = float(node["wheel"].get("tyre_width", node["wheel"]["width"]))
 	_load_ok = true
 	apply_colours()
+	# Draw calls (perf, 2026-10-15): bake the parts that never move on their own into one surface per material and
+	# take the sun shadow off small cockpit parts (car_mesh_merge.gd). RG_CAR_MERGE=0 keeps the model as loaded.
+	if OS.get_environment("RG_CAR_MERGE") != "0":
+		var merged: Dictionary = preload("res://scripts/car_mesh_merge.gd").merge(_model_root, rig_path, cockpit_json)
+		print("rg_godot vehicle_visual.gd: merged %d static surfaces into %d, kept %d, %d small cockpit parts without shadow, %d shadow surfaces in %d proxies" % [
+			merged["merged_surfaces"], merged["merged_into"], merged["kept_surfaces"], merged["small_parts_shadow_off"],
+			merged["shadow_surfaces_proxied"], merged["shadow_proxies"]])
 	print("rg_godot vehicle_visual.gd: loaded model ", model_absolute_path)
 
-# Paints the model's `paint` and `rim_*` materials with the setup's colours (visual only,
+# Paints the model's `paint` and `rim_*` materials with the setup's colours and styles paint,
+# rims and glass from data/garage/car_materials.json (car_materials.gd; visual only,
 # the physics never sees them). Every surface gets its own material copy first so a colour
 # never leaks into another car loaded from the same file.
 func apply_colours() -> void:
 	if _model_root != null:
-		preload("res://scripts/model_options.gd").apply(_model_root, model_absolute_path.get_basename() + ".rig.json", model_options)
-	if _model_root == null or (paint_colour.a == 0.0 and rim_colour.a == 0.0):
+		preload("res://scripts/model_options.gd").apply(_model_root, model_absolute_path.get_basename() + ".rig.json", model_options, hidden_nodes)
+	if _model_root == null:
 		return
 	var stack: Array = [_model_root]
 	while not stack.is_empty():
@@ -178,23 +209,16 @@ func apply_colours() -> void:
 			var mat: Material = mi.get_active_material(s)
 			if not mat is StandardMaterial3D:
 				continue
-			var role := ""
-			var lname := mat.resource_name.to_lower()
-			if lname.begins_with("paint"):
-				role = "paint"
-			elif lname.begins_with("rim"):
-				role = "rim"
-			if role == "" or (role == "paint" and paint_colour.a == 0.0) or (role == "rim" and rim_colour.a == 0.0):
+			var role := CarMaterials.role_of(mat)
+			if role == "":
 				continue
 			var copy := mi.get_surface_override_material(s)
 			if copy == null:
 				copy = mat.duplicate()
 				copy.resource_name = mat.resource_name
 				mi.set_surface_override_material(s, copy)
-			var std := copy as StandardMaterial3D
-			std.vertex_color_use_as_albedo = false
-			std.albedo_texture = null
-			std.albedo_color = paint_colour if role == "paint" else rim_colour
+			var colour := paint_colour if role == "paint" else (rim_colour if role == "rim" else Color(0, 0, 0, 0))
+			CarMaterials.style(copy as StandardMaterial3D, role, colour)
 
 func _bind_wheel_nodes() -> void:
 	if simulation == null or _model_root == null or vehicle_name == "":
@@ -235,6 +259,7 @@ func _bind_wheel_nodes() -> void:
 			var reference := 0.265 if entry["is_front"] else 0.325
 			if model_absolute_path.get_file() != "car_hyper.glb":
 				reference = 0.225
+			reference = float(_rig_wheel_width.get("wheel_" + wname, reference))
 			if not wheel.has_meta("stock_width_scale"):
 				wheel.set_meta("stock_width_scale", wheel.scale.x)
 			wheel.scale.x = float(wheel.get_meta("stock_width_scale")) * simulation.get_wheel_width(vehicle_name,i) / reference
@@ -283,7 +308,12 @@ func _align_model_to_physics_wheels() -> void:
 	for i in range(_wheel_nodes.size()):
 		_wheel_nodes[i]["susp_bias"] = (diffs[i] - d_mean) if diffs[i] != null else Vector3.ZERO
 
+const FrameProbe := preload("res://scripts/frame_probe.gd")
 func _process(delta: float) -> void:
+	var probe_t0 := Time.get_ticks_usec()
+	_process_body(delta)
+	FrameProbe.add("vehicle_visual", Time.get_ticks_usec() - probe_t0)
+func _process_body(delta: float) -> void:
 	# A car with a clickable cockpit (cockpit_controls.gd) has that node pose its steering wheel (per-car turns, mouse drag);
 	# only the other cars (the hypercar) get the configured-lock wheel here.
 	if _cockpit != null and is_instance_valid(_cockpit) and _cockpit.owns_node("steering_wheel"):
@@ -349,6 +379,24 @@ func _process(delta: float) -> void:
 
 	if simulation.has_method("add_adapter_time_us"):
 		simulation.add_adapter_time_us(Time.get_ticks_usec() - t0)
+
+# A rig socket the .glb lacks (a model exported before the socket was added) becomes a plain
+# Node3D at the rig's position, so cameras and mounts never depend on the glb export date.
+func _add_missing_sockets() -> void:
+	var rig = JSON.parse_string(FileAccess.get_file_as_string(model_absolute_path.get_basename() + ".rig.json"))
+	if not rig is Dictionary:
+		return
+	for socket in rig.get("sockets", []):
+		if not socket is Dictionary or not socket.has("position") or _model_root.find_child(str(socket["name"]), true, false) != null:
+			continue
+		var parent: Node = _model_root.find_child(str(socket.get("parent", "")), true, false)
+		if parent == null:
+			parent = _model_root
+		var p: Array = socket["position"]
+		var node := Node3D.new()
+		node.name = str(socket["name"])
+		node.position = Vector3(p[1], p[2], p[0]) # ISO -> glTF axes, see the rig's frame note
+		parent.add_child(node)
 
 func has_driver_eye() -> bool:
 	return _model_root != null and _model_root.find_child("socket_driver_eye", true, false) != null

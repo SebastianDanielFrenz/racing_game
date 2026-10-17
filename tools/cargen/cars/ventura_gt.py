@@ -23,10 +23,13 @@ window cranks, wipers.
 import math
 
 from cargen import controls as C
+from cargen import quality as Q
+from cargen import detail as D
 from cargen.closed_body import ClosedCarBody
 from cargen.flow import FlowRecorder
 from cargen.wheels import Wheel, corner
-from cargen.common import materials, finish, door_card, seat_closed, cabin_shell, top_z, surface_path
+from cargen.common import (spare_wheel, materials, finish, door_card, seat_closed, cabin_shell, top_z, surface_path, arch_lip,
+                           door_part_of, blade_path)
 from assetgen.scene import Model
 from assetgen.carbody import Panel
 from assetgen.parts import mirror  # noqa: F401  (bullet mirrors are drawn here)
@@ -48,7 +51,7 @@ HOOD_X0, HOOD_X1 = 0.47, 1.82       # hood panel; the nose header ahead of it ca
 HATCH_X = -0.65                      # hatch glass behind this x (hinged at the roof)
 POD_X0, POD_X1, POD_Y, POD_W = 1.86, 2.08, 0.60, 0.30
 STEER_LOCK_DEG = 34.0
-LOCK_TO_LOCK_TURNS = 3.4
+STEERING_WHEEL_LOCK_DEG = 612.0
 EYE_Y = 0.38
 
 
@@ -56,8 +59,7 @@ def build():
     m = Model("ventura_gt", "Ventura GT (1970s grand tourer)",
               "1970s front-engine fastback GT, 4.45 m, 215/60 R15 + 225/60 R15, front-mid longitudinal V8 bay.",
               "Ground plane below the wheel centres, x = 0 midway between the axles, y = 0 on the centreline.")
-    materials(m, PAINT)
-    m.mat("paint", color=PAINT, metallic=0.55, roughness=0.28, role="paint")
+    materials(m, PAINT, metallic=0.55, roughness=0.22)
     m.mat("seat", color=(0.10, 0.07, 0.05), roughness=0.75, tex=("fabric", {"color": (0.10, 0.07, 0.05)}), tile=0.2)
     m.mat("seat_accent", color=(0.62, 0.55, 0.42), roughness=0.85, tex=("fabric", {"color": (0.6, 0.52, 0.4)}),
           tile=0.05)
@@ -66,7 +68,7 @@ def build():
     m.mat("wood", color=(0.36, 0.18, 0.07), roughness=0.35, metallic=0.0)
     m.mat("rubber_bumper", color=(0.04, 0.04, 0.04), roughness=0.85)
     flow = FlowRecorder(m)
-    ck = C.Cockpit(m, LOCK_TO_LOCK_TURNS, STEER_LOCK_DEG)
+    ck = C.Cockpit(m, STEERING_WHEEL_LOCK_DEG, STEER_LOCK_DEG)
 
     wheels = [dict(x=XF, z=RF, r=RF, y_out=TRACK / 2 + TYRE_F.width / 2, y_in=TRACK / 2 - TYRE_F.width / 2),
               dict(x=XR, z=RR, r=RR, y_out=TRACK / 2 + TYRE_R.width / 2, y_in=TRACK / 2 - TYRE_R.width / 2)]
@@ -80,6 +82,7 @@ def build():
             (1.45, 0.88), (1.75, 0.86), (2.05, 0.80), (X_FRONT, 0.72)],
         exp=[(X_REAR, 4.0), (-1.8, 4.5), (1.6, 4.5), (X_FRONT, 3.5)],
         end_r=(0.10, 0.18), wheels=wheels, arch_clear=0.045,
+        seams=[DOORS[0][2], DOORS[0][3], HOOD_X0, HOOD_X1], around_scale=0.84,
         green=dict(x0=-1.90, x1=0.42,
                    zroof=[(-1.90, 0.93), (-1.6, 0.99), (-1.2, 1.08), (-0.8, 1.165), (-0.45, 1.215), (-0.15, 1.22),
                           (0.05, 1.17), (0.25, 1.04), (0.42, 0.90)],
@@ -87,24 +90,26 @@ def build():
                    wr=[(-1.90, 0.55), (-1.3, 0.62), (-0.5, 0.64), (0.0, 0.63), (0.42, 0.60)],
                    r=0.08, crown=0.03))
     W = body.W
+    # material borders at a constant body ls follow the loft grid (smooth lines, no staircase)
+    LS_LOW, LS_DOOR, LS_SILL = body.ls_at(0.0, 0.25), body.ls_at(0.0, 0.27), body.ls_at(0.0, 0.22)
 
     # ---- opening panels
     def door_inside(side, x0, x1):
         def f(c, n):
             return (x0 - 0.012 < c[0] < x1 + 0.012 and c[1] * side > 0 and n[1] * side > 0.3 and n[2] < 0.75
-                    and c[2] > 0.25 and not body.in_arch(c, margin=0.004))
+                    and body.ls > LS_LOW and not body.in_arch(c, margin=0.004))
         return f
 
     def door_border(side, x0, x1):
         def f(c, n):
-            return c[0] < x0 + 0.008 or c[0] > x1 - 0.008 or c[2] < 0.27
+            return body.on_seam(c[0], x0) or body.on_seam(c[0], x1) or body.ls < LS_DOOR
         return f
 
     for name, side, x0, x1 in DOORS:
         body.panels.append(Panel(name, door_inside(side, x0, x1), door_border(side, x0, x1)))
     body.panels.append(Panel(
         "hood", lambda c, n: HOOD_X0 - 0.01 < c[0] < HOOD_X1 + 0.01 and body.ls > 0.70 and n[2] > 0.3,
-        lambda c, n: c[0] < HOOD_X0 + 0.012 or c[0] > HOOD_X1 - 0.012 or body.ls < 0.72))
+        lambda c, n: body.on_seam(c[0], HOOD_X0) or body.on_seam(c[0], HOOD_X1) or body.ls < 0.72))
 
     def lower(c, n, b):
         x, y, z = c
@@ -112,7 +117,7 @@ def build():
             return "underbody"
         if b.in_arch(c):
             return "arch_liner"
-        if z < 0.22 and abs(n[1]) > 0.4:
+        if b.ls < LS_SILL and abs(n[1]) > 0.4:
             return "trim_black"          # thin black sill line
         return Ellipsis
 
@@ -148,32 +153,53 @@ def build():
 
     # ---- front: recessed grille, indicators, plate; rear: twin round lamps, plate
     rr, circ = M.rrect, M.circle
-    body.patch(rr(1.18, 0.14, 0.03, 4, 0.0, 0.56), "grille", "front", offset=0.003, skirt_mat="chrome")
+    body.patch(rr(1.06, 0.14, 0.03, 4, 0.0, 0.56), "grille", "front", offset=0.0015, skirt_mat="chrome")
+    D.lattice(m, body, "front", -0.47, 0.47, 0.512, 0.608, 24, 0, "trim_black", offset=0.005, bar=0.004, depth=0.008)
     for s in (1, -1):
         ind = "light_indicator_left" if s > 0 else "light_indicator_right"
-        body.patch(rr(0.10, 0.04, 0.018, 3, s * 0.60, 0.40), ind, "front", offset=0.004, skirt_mat="chrome")
+        D.lamp(m, body, "front", rr(0.10, 0.04, 0.018, 3, s * 0.60, 0.40), ind, "lens_amber",
+               elements=[(s * 0.60, 0.40, 0.015, ind, "bowl")], bezel_mat="chrome", lens_height=0.006)
         for yy in (0.42, 0.62):
-            body.patch(circ(0.055, 20, s * yy, 0.72), "light_tail", "rear", offset=0.004, skirt_mat="chrome")
-            body.patch(circ(0.028, 16, s * yy, 0.72), "light_brake", "rear", offset=0.008, skirt=0.0)
-        body.patch(rr(0.07, 0.035, 0.012, 3, s * 0.52, 0.56), "light_reverse", "rear", offset=0.004, skirt=0.0)
+            # round tail lamp: red base, reflector bowl with the brake emitter, red domed lens, chrome bezel
+            D.lamp(m, body, "rear", circ(0.055, 20, s * yy, 0.72), "light_tail", "lens_red",
+                   elements=[(s * yy, 0.72, 0.03, "light_brake", "bowl")], bezel_mat="chrome", lens_height=0.014)
+        D.lamp(m, body, "rear", rr(0.07, 0.035, 0.012, 3, s * 0.52, 0.56), "light_reverse", "lens_clear",
+               elements=[(s * 0.52, 0.56, 0.012, "light_reverse", "bowl")], bezel_mat="chrome", lens_height=0.005)
         # side markers (amber front, red rear) on the fenders
-        body.patch(rr(0.06, 0.025, 0.01, 3, 1.95, 0.62), "light_indicator_left" if s > 0 else
-                   "light_indicator_right", "left" if s > 0 else "right", offset=0.003, skirt=0.0)
-        body.patch(rr(0.06, 0.025, 0.01, 3, -1.95, 0.66), "light_tail", "left" if s > 0 else "right",
-                   offset=0.003, skirt=0.0)
-    body.patch(rr(0.52, 0.11, 0.01, 2, 0.0, 0.58), "plate", "rear", skirt_mat="trim_black")
-    body.patch(rr(0.46, 0.10, 0.01, 2, 0.0, 0.33), "plate", "front", offset=0.006, skirt_mat="trim_black")
+        D.lamp(m, body, "left" if s > 0 else "right", rr(0.06, 0.025, 0.01, 3, 1.95, 0.62),
+               "light_indicator_left" if s > 0 else "light_indicator_right", "lens_amber", bezel_mat="chrome",
+               lens_height=0.004)
+        D.lamp(m, body, "left" if s > 0 else "right", rr(0.06, 0.025, 0.01, 3, -1.95, 0.66), "light_tail",
+               "lens_red", bezel_mat="chrome", lens_height=0.004)
+    D.plate(m, body, "rear", 0.0, 0.58, 0.52, 0.11, "EG 1973", offset=0.004)
+    D.plate(m, body, "front", 0.0, 0.33, 0.46, 0.10, "EG 1973", offset=0.007)
+    # ---- detail: grille bars and badge, fender gills, chin spoiler, flared arch lips
+    for zz in (0.525, 0.56, 0.595):
+        ys = [-0.48 + 0.96 * k / 24 for k in range(25)]
+        blade_path(m.mb, [(body.surface_x(y, zz, 1) + 0.002, y, zz) for y in ys], 0.008, 0.012, "chrome",
+                   normal=(1.0, 0.0, 0.0))
+    body.patch(circ(0.032, 20, 0.0, 0.56), "chrome", "front", offset=0.016, skirt=0.014)          # nose badge
+    body.patch(circ(0.022, 16, 0.0, 0.56), "paint", "front", offset=0.019, skirt=0.0)
+    for s in (1, -1):
+        face = "left" if s > 0 else "right"
+        body.patch(rr(0.20, 0.10, 0.02, 3, 0.70, 0.63), "trim_black", face, offset=0.002, skirt_mat="chrome")
+        for zz in (0.605, 0.63, 0.655):
+            body.patch(rr(0.18, 0.010, 0.004, 2, 0.70, zz), "chrome", face, offset=0.006, skirt=0.0)
+    ys = [-0.74 + 1.48 * k / 30 for k in range(31)]
+    blade_path(m.mb, [(body.surface_x(y, 0.33, 1) - 0.01, y, 0.305) for y in ys], 0.07, 0.016, "trim_black",
+               normal=(0.0, 0.0, 1.0))
+    ys = [-0.70 + 1.40 * k / 28 for k in range(29)]                   # rear valance under the bumper
+    blade_path(m.mb, [(body.surface_x(y, 0.40, -1) + 0.012, y, 0.375) for y in ys], 0.05, 0.05, "trim_black",
+               normal=(0.0, 0.0, 1.0))
+    for w in body.wheels:
+        for s in (1, -1):
+            arch_lip(m, body, w, s, "paint", width=0.035, proud=0.016, a0=-6.0, a1=186.0,
+                     part_of=door_part_of(DOORS, s))
     flow.mark("lamps, grille, plates")
 
     # ---- bumpers: chrome tubes wrapping round the corners, rubber over-riders
     def bumper(end, z, r, half):
-        ys = [half * (-1 + 2 * k / 24) for k in range(25)]
-        pts = [(body.surface_x(y, z, end) + end * (r + 0.012), y, z) for y in ys]
-        for s in (-1, 1):
-            yy = s * half
-            xe = body.surface_x(yy, z, end)
-            wrap = [(xe - end * d, s * (body.surface_y(xe - end * d, z) + r + 0.01), z) for d in (0.06, 0.16)]
-            pts = (list(reversed(wrap)) + pts) if s < 0 else (pts + wrap)
+        pts = D.plan_offset_path(body, end, z, half, 0.16, r + 0.012)
         M.tube(m.mb, pts, r, "chrome", count=12)
         for s in (1, -1):
             yy = s * 0.36
@@ -211,8 +237,12 @@ def build():
         m.node(name, None, (x1, side * (W(x1) - 0.02), 0.55), m.revolute((0, 0, -side), 0, 68, "door opening angle"))
         hx = x0 + 0.16
         zh = crease_z(hx) - 0.035
+        D.handle_recess(m, body, "left" if side > 0 else "right", hx, zh - 0.004, 0.15, 0.05, part=name)
         M.rounded_box(m.mb, (hx, side * (body.surface_y(hx, zh) + 0.008), zh), (0.13, 0.016, 0.022), 0.008,
                       "chrome", name)                                     # chrome pull handle
+        # belt seal under the frameless door glass, chrome-capped
+        D.seal_line(m, body, [(x0 + 0.03 + (min(x1, 0.40) - x0 - 0.04) * k / 12, 0.10) for k in range(13)], side,
+                    part=name, r=0.005, mat="chrome", off=0.006)
     m.node("hood", None, (HOOD_X0, 0.0, body.zt(HOOD_X0)), m.revolute((0, -1, 0), 0, 60, "hood opening angle"))
     m.node("hatch", None, (HATCH_X, 0.0, body.green["zroof"](HATCH_X)),
            m.revolute((0, 1, 0), 0, 70, "hatch opening angle"))
@@ -239,7 +269,8 @@ def build():
     M.cylinder(m.mb, (xf_, yf_ - 0.004, zf_), (xf_, yf_ + 0.010, zf_), 0.045, "chrome", count=24)
     # twin exhaust tips under the rear bumper
     for s in (1, -1):
-        M.lathe(m.mb, [(0.032, 0.0), (0.032, 0.22), (0.027, 0.22), (0.027, 0.0)], "exhaust_tip",
+        M.lathe(m.mb, [(0.032, 0.0), (0.032, 0.17), (0.037, 0.19), (0.038, 0.22), (0.033, 0.222), (0.029, 0.205),
+                       (0.027, 0.17), (0.027, 0.0)], "exhaust_tip",                     # rolled, flared tip
                 axis_xf=compose(translate((-1.93, s * 0.45, 0.30)), rot_axis((0, 1, 0), -math.pi / 2)), count=18,
                 closed_profile=True)
     flow.mark("handles, mirrors, wipers, fuel cap, tail pipes")
@@ -247,7 +278,8 @@ def build():
     build_popups(m, body)
     flow.mark("pop-up headlamp pods")
 
-    build_cabin(m, ck, body)
+    with Q.coarse(3.0):     # seen through glass: looser chord tolerance
+        build_cabin(m, ck, body)
     build_hood_variants(m, body)
     flow.skip("cabin, cockpit controls, engine bay, hidden hood variants")
 
@@ -309,8 +341,8 @@ def build_popups(m, body):
         for k in (-1, 1):
             cx, cy = (POD_X0 + POD_X1) / 2 + 0.005, yc + k * 0.072
             zb = pivot[2]
-            M.cylinder(mb, (cx, cy, zb - 0.002), (cx, cy, zb - 0.020), 0.060, "chrome", name, count=24)
-            M.cylinder(mb, (cx, cy, zb - 0.020), (cx, cy, zb - 0.026), 0.054, "light_head", name, count=24)
+            D.round_lamp(m, (cx, cy, zb - 0.030), (0.0, 0.0, -1.0), 0.056, "light_head", name, depth=0.024,
+                         lens_height=0.010)
 
 
 def build_hood_variants(m, body):
@@ -424,6 +456,13 @@ def build_cabin(m, ck, body):
                  knob_r=0.022, ball=True)
     C.lever(m, ck, "handbrake", (-0.32, 0.0, 0.445), (0.0, 1.0, 0.0), (0.24, 0.0, 0.03), "handbrake", 22.0,
             mat="chrome", grip_mat="dash_hard", label="handbrake", grip_r=0.016)
+    # ---- console lid and glovebox: own static nodes (rig extra "strip" = dashboard)
+    m.node("dash_console", None, (-0.12, 0.0, 0.447), None, strip="dashboard")
+    M.rounded_box(mb, (-0.12, 0.0, 0.452), (0.15, 0.19, 0.03), 0.01, "dash_hard", "dash_console")    # storage lid
+    M.rounded_box(mb, (-0.045, 0.0, 0.452), (0.012, 0.05, 0.012), 0.003, "chrome", "dash_console")   # latch
+    m.node("dash_glovebox", None, (0.262, -0.34, 0.69), None, strip="dashboard")
+    M.rounded_box(mb, (0.262, -0.34, 0.69), (0.02, 0.50, 0.16), 0.01, "dash_hard", "dash_glovebox")  # lid
+    M.rounded_box(mb, (0.250, -0.34, 0.70), (0.012, 0.10, 0.012), 0.003, "chrome", "dash_glovebox")  # catch
     # ---- pedals: hanging clutch and brake, floor-hinged organ throttle
     for name, yy, pc, organ in (("clutch", EYE_Y + 0.13, (0.30, EYE_Y + 0.13, 0.30), False),
                                 ("brake", EYE_Y + 0.01, (0.29, EYE_Y + 0.01, 0.29), False),
@@ -431,15 +470,21 @@ def build_cabin(m, ck, body):
         piv = (0.40, yy, 0.58) if not organ else (0.36, yy, 0.20)
         C.pedal(m, ck, name, piv, pc, name, organ=organ, label=f"{name} pedal")
     # ---- bucket seats, luggage deck behind them
-    for yy in (EYE_Y, -EYE_Y):
+    # Own static nodes (rig extra "strip" = the garage weight-reduction slot): seat_driver (left, +y), seat_passenger.
+    for node_name, yy in (("seat_driver", EYE_Y), ("seat_passenger", -EYE_Y)):
+        m.node(node_name, None, (-0.55, yy, 0.36), None, strip=node_name)
         seat_closed(m, (-0.55, yy, 0.36), width=0.50, recline=0.36, mat="seat", accent="seat_accent", depth=0.52,
-                    height=0.14)
-    M.rounded_box(mb, (-1.30, 0.0, 0.40), (0.70, 1.30, 0.04), 0.01, "carpet")
+                    height=0.14, bolster=0.05, part=node_name)
+    # luggage deck: its carpet joins the "carpets" node; the spare wheel lies on it (strip = spare_wheel)
+    M.rounded_box(mb, (-1.30, 0.0, 0.40), (0.70, 1.30, 0.04), 0.01, "carpet", "carpets")
     for yy in (0.25, -0.25):
-        M.rounded_box(mb, (-1.30, yy, 0.425), (0.66, 0.025, 0.006), 0.002, "trim_black")  # luggage straps
+        M.rounded_box(mb, (-1.30, yy, 0.425), (0.66, 0.025, 0.006), 0.002, "trim_black", "carpets")  # luggage straps
+    spare_wheel(m, "spare_wheel", (-1.30, 0.0, 0.50), 0.29, 0.14)
     # ---- door cards with window cranks and chrome pulls
     for name, side, x0, x1 in DOORS:
-        door_card(m, name, side, x0 + 0.05, x1 - 0.08, 0.30, 0.84, y=0.74, mat="dash_hard", top_mat="dash_top")
+        card = "door_card_" + name[-1]            # own node under the door (strip = door_trim), moves with it
+        m.node(card, name, m.nodes[name].pivot, None, strip="door_trim")
+        door_card(m, card, side, x0 + 0.05, x1 - 0.08, 0.30, 0.84, y=0.74, mat="dash_hard", top_mat="dash_top")
         C.rotary_knob(m, ck, f"crank_{name[-1]}", (0.02, side * 0.69, 0.56), (0, -side, 0), 0.03, 0.012,
                       f"window_{name[-1].lower()}", list(range(9)), sweep_deg=1440.0, mat="chrome", part=name,
                       label=f"window crank {name[-1]}", up_hint=(0, 0, 1))

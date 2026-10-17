@@ -26,6 +26,30 @@ class FakeSim:
 	func get_vehicle_thermal(_n: String) -> Dictionary:
 		return {"present": true, "coolant_c": 90.0}
 
+# Stand-in for RgDriverActions: records submitted events and applies them to the stand-in simulation's cabin.* channels
+# (what DriverActions::apply/advance do), so the cockpit's posed switches read the "projected" state back.
+class FakeActions:
+	extends RefCounted
+	var sim: Node
+	var events: Array = []
+	var light_mode := 0 # 0 auto (a daylit stand-in: lamps off), 1 on, 2 off - the rg::LightMode cycle
+	func submit(id: String, kind: int, value: float, source: int) -> bool:
+		events.append({"id": id, "kind": kind, "value": value, "source": source})
+		match id:
+			"hazard": sim.controls["cabin.hazard"] = 1.0 if value != 0.0 else 0.0
+			"indicator_left": sim.controls["cabin.indicator"] = 1.0 if value != 0.0 else 0.0
+			"indicator_right": sim.controls["cabin.indicator"] = -1.0 if value != 0.0 else 0.0
+			"horn": sim.controls["cabin.horn"] = 1.0 if (kind == 2 and value != 0.0) else 0.0
+			"lights":
+				if kind == 0: # Press cycles auto -> on -> off -> auto
+					light_mode = (light_mode + 1) % 3
+					sim.controls["cabin.lights"] = 1.0 if light_mode == 1 else 0.0
+				else:
+					sim.controls["cabin.lights"] = value
+		return true
+	func state(id: String, _snapshot: Dictionary, channels: Dictionary) -> Dictionary:
+		return {"active": float(channels.get("cabin." + id, 0.0)) != 0.0}
+
 var checks := 0
 var failures := 0
 
@@ -128,6 +152,7 @@ func _test_model(path: String) -> void:
 				ck.activate(str(c["node"]), 1)
 				ck.activate(str(c["node"]), -1)
 				check(ck.consume_shift_up() == 2 and ck.consume_shift_down() == 1, "%s: gear lever shifts" % name)
+	await _test_shared_switches(ck, sim, spec, name)
 	# ignition key: off, then (four-position keys) start -> starter held, springs back to run
 	var key := ""
 	var detents: Array = []
@@ -162,7 +187,7 @@ func _test_model(path: String) -> void:
 	sim.gear = 1
 	for _i in 30:
 		await process_frame
-	var turns := 0.5 * float(spec["steering"]["lock_to_lock_turns"])
+	var turns := float(spec["steering"]["steering_wheel_lock_deg"]) / 360.0
 	var axis_iso: Array = []
 	var rig: Dictionary = JSON.parse_string(FileAccess.get_file_as_string(path.get_basename() + ".rig.json"))
 	for n in rig["nodes"]:
@@ -193,6 +218,122 @@ func _test_model(path: String) -> void:
 		check(parts.hood_variant(rig_file, 820.0) == "hood_scoop", "ventura_gt: an 820 mm engine gets the scoop")
 		parts.apply(root, rig_file, ["hood_scoop"])
 		check(root.find_child("hood_scoop", true, false).visible and not root.find_child("hood_bulge", true, false).visible, "ventura_gt: only the picked hood shows")
+	_test_strip(ck, root, rig_file, spec, eye, name)
+	preload("res://scripts/car_mesh_merge.gd").merge(root, rig_file, path.get_basename() + ".cockpit.json", true, false)
+	_test_strip(ck, root, rig_file, spec, eye, name + " (batched)")
 	holder.queue_free()
 	sim.queue_free()
 	await process_frame
+
+# Weight reduction (rg_core strip_visual.h, data/vehicles/strip_visual.json): the nodes of a removed part are hidden by
+# model_options.apply, a hidden control cannot be picked, and the next apply shows everything again.
+func _test_strip(ck: Node3D, root: Node3D, rig_file: String, spec: Dictionary, eye: Node3D, name: String) -> void:
+	var parts := preload("res://scripts/model_options.gd")
+	var table: Variant = JSON.parse_string(FileAccess.get_file_as_string("res://../data/vehicles/strip_visual.json"))
+	var model: Dictionary = (table as Dictionary).get("models", {}).get(name.trim_suffix(" (batched)"), {})
+	var live := 0
+	var all_nodes: Array = []
+	for rule in model.get("rules", []):
+		all_nodes.append_array(rule["hide"])
+		if bool(rule.get("after_regeneration", false)):
+			continue
+		live += 1
+		var hide: Array = rule["hide"]
+		parts.apply(root, rig_file, [], hide)
+		for n in hide:
+			var node: Node3D = root.find_child(str(n), true, false)
+			check(node != null and not node.visible, "%s: %s/%s hides %s" % [name, rule["slot"], rule["part"], n])
+		for c in spec["controls"]:
+			if not c.has("hit") or not hide.has(str(c["node"])):
+				continue
+			var node: Node3D = root.find_child(str(c["node"]), true, false)
+			var hc: Array = c["hit"]["center"]
+			var centre: Vector3 = node.global_transform * Vector3(float(hc[1]), float(hc[2]), float(hc[0]))
+			var dir := (eye.global_position - centre).normalized()
+			check(ck.pick(centre + dir * 0.12, -dir) != str(c["node"]), "%s: hidden control %s is not clickable" % [name, c["node"]])
+		parts.apply(root, rig_file, [], [])
+		for n in hide:
+			check((root.find_child(str(n), true, false) as Node3D).visible, "%s: %s shows again once the part is back" % [name, n])
+	# names a model has no node for (nodes of a model not regenerated yet) are ignored, the rest still works
+	parts.apply(root, rig_file, [], all_nodes + ["no_such_node"])
+	parts.apply(root, rig_file, [], [])
+	print("RG_COCKPIT %s strip rules=%d live=%d" % [name, model.get("rules", []).size(), live])
+
+# Hazard / indicator stalk / horn switches submit ActionEvents (source CockpitMouse = 3) and follow the projected state.
+func _test_shared_switches(ck: Node3D, sim: FakeSim, spec: Dictionary, name: String) -> void:
+	var fake := FakeActions.new()
+	fake.sim = sim
+	ck.set("driver_actions", fake)
+	for c in spec["controls"]:
+		var action: Dictionary = c.get("action", {})
+		var ch := str(action.get("channel", ""))
+		var node := str(c["node"])
+		if ch == "hazard":
+			fake.events.clear()
+			check(ck.activate(node, 1), "%s: %s clicks" % [name, node])
+			check(fake.events.size() == 1 and fake.events[0] == {"id": "hazard", "kind": 2, "value": 1.0, "source": 3}, "%s: hazard click submits Set 1 from the cockpit mouse (%s)" % [name, fake.events])
+			check(ck.get_cosmetic("hazard") == true, name + ": hazard switch follows the projection (on)")
+			sim.controls["cabin.hazard"] = 0.0 # a key press (or anything else) clears it: the switch follows
+			check(ck.get_cosmetic("hazard") == false, name + ": hazard switch follows a change made elsewhere")
+			ck.activate(node, 1)
+			ck.activate(node, 1)
+			check(fake.events[-1]["value"] == 0.0 and ck.get_cosmetic("hazard") == false, name + ": second click switches it off")
+		elif ch == "lights":
+			fake.events.clear()
+			check(ck.activate(node, 1), "%s: %s clicks" % [name, node])
+			check(fake.events.size() == 1 and fake.events[0] == {"id": "lights", "kind": 0, "value": 1.0, "source": 3}, "%s: light switch click submits a lights Press (the auto/on/off cycle) from the cockpit mouse (%s)" % [name, fake.events])
+			check(ck.get_cosmetic("lights") == true, name + ": light switch follows the projection (on)")
+			sim.controls["cabin.lights"] = 2.0 # O key held for main beam: still on
+			check(ck.get_cosmetic("lights") == true, name + ": light switch shows on for main beam")
+			sim.controls["cabin.lights"] = 0.0 # O key switched them off: the switch follows
+			check(ck.get_cosmetic("lights") == false, name + ": light switch follows a change made elsewhere")
+			ck.activate(node, 1)
+			ck.activate(node, 1)
+			check(fake.events.size() == 3 and fake.events[-1]["kind"] == 0 and ck.get_cosmetic("lights") == false, name + ": two more clicks cycle on -> off -> auto (daylight: off)")
+		elif ch == "indicator":
+			fake.events.clear()
+			ck.activate(node, 1) # off -> left
+			check(fake.events.size() == 1 and fake.events[0]["id"] == "indicator_left" and fake.events[0]["value"] == 1.0 and fake.events[0]["source"] == 3, "%s: stalk up submits indicator_left (%s)" % [name, fake.events])
+			check(ck.get_cosmetic("indicator") == "left", name + ": stalk follows the projection (left)")
+			sim.controls["cabin.indicator"] = 0.0 # self-cancel by wheel return
+			check(ck.get_cosmetic("indicator") == "off", name + ": stalk follows the self-cancel")
+			fake.events.clear()
+			ck.activate(node, -1) # off -> right
+			check(fake.events.size() == 1 and fake.events[0]["id"] == "indicator_right" and ck.get_cosmetic("indicator") == "right", name + ": stalk down submits indicator_right")
+			ck.activate(node, 1) # right -> off
+			check(fake.events[-1]["id"] == "indicator_left" and fake.events[-1]["value"] == 0.0 and ck.get_cosmetic("indicator") == "off", name + ": stalk back to off clears")
+		elif ch == "horn":
+			fake.events.clear()
+			ck.activate(node, 1)
+			check(fake.events.size() == 1 and fake.events[0] == {"id": "horn", "kind": 2, "value": 1.0, "source": 3}, "%s: horn click submits Set 1 (%s)" % [name, fake.events])
+			check(ck.get_cosmetic("horn") == true, name + ": horn follows the projection")
+			ck.submit_held()
+			check(fake.events.size() == 2 and fake.events[1]["value"] == 1.0, name + ": held horn re-asserts its level")
+			await create_timer(0.4).timeout
+			check(fake.events[-1]["id"] == "horn" and fake.events[-1]["kind"] == 1 and ck.get_cosmetic("horn") == false, name + ": horn released after the press time")
+			# button held: the level stays up across frames, mouse-up (anywhere) releases
+			fake.events.clear()
+			ck.activate(node, 1)
+			ck.hold_horn()
+			await create_timer(0.4).timeout
+			ck.submit_held()
+			check(ck.is_horn_held() and ck.get_cosmetic("horn") == true and fake.events[-1]["kind"] == 2 and fake.events[-1]["value"] == 1.0, name + ": held horn stays up past the press time")
+			var up := InputEventMouseButton.new()
+			up.button_index = MOUSE_BUTTON_LEFT
+			up.pressed = false
+			ck._input(up)
+			check(not ck.is_horn_held() and fake.events[-1]["kind"] == 1 and ck.get_cosmetic("horn") == false, name + ": mouse-up releases the horn")
+			ck.submit_held()
+			check(fake.events[-1]["kind"] == 1, name + ": nothing re-asserts after release")
+			ck.activate(node, 1)
+			ck.hold_horn()
+			ck._notification(Node.NOTIFICATION_APPLICATION_FOCUS_OUT)
+			check(not ck.is_horn_held() and fake.events[-1]["kind"] == 1, name + ": focus loss releases the horn")
+	# non driver-backed switches (fog, wipers) stay local
+	fake.events.clear()
+	for c in spec["controls"]:
+		var ch2 := str(c.get("action", {}).get("channel", ""))
+		if ch2 in ["wipers", "fog"]:
+			ck.activate(str(c["node"]), 1)
+	check(fake.events.is_empty(), name + ": fog/wiper switches submit nothing")
+	ck.set("driver_actions", null)

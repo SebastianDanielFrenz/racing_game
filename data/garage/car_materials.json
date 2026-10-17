@@ -1,0 +1,7 @@
+{
+  "format": "rg.car_materials/1",
+  "source": "Look of the recoloured car materials, shared by the garage (garage_scene.gd) and the drive (vehicle_visual.gd) through game/scripts/car_materials.gd. Roles come from the material name: paint*, rim*; glass = a transparent material whose name contains one of glass.match and none of glass.exclude. paint_tinted* keeps its albedo texture (an atlas whose paint area is white) and multiplies it by the paint colour; every other paint/rim material drops its texture. Values are art choices [AS]: metallic flake paint under a clear coat, polished alloy rims, smooth window glass.",
+  "paint": {"metallic": 0.55, "roughness": 0.3, "clearcoat": 1.0, "clearcoat_roughness": 0.06, "metallic_specular": 0.5},
+  "rim": {"metallic": 0.9, "roughness": 0.25},
+  "glass": {"match": ["glass", "vetro", "window"], "exclude": ["light_", "lights"], "roughness": 0.03, "metallic": 0.0, "metallic_specular": 0.9}
+}

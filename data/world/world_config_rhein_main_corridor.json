@@ -25,8 +25,10 @@
   },
   "surface_map": "data/world/landclass_surfaces.json",
   "palette": "data/world/landclass_palette.json",
+  "render_classes": "none",
   "physics": {
     "engine_map_cache_enabled": true,
+    "loader_workers": 12,
     "prefetch_margin_tiles": 1,
     "prefetch_max_tiles": 24,
     "road_surfaces": {
@@ -49,6 +51,11 @@
     "skyline_distance_m": 40000.0,
     "fallback_height_m": 8.0,
     "storey_height_m": 3.0
+  },
+  "road_separation": {
+    "clearance_m": 2.5,
+    "margin_m": 3.0,
+    "approach_reach_m": 150.0
   },
   "road_visuals": {
     "enabled": true,

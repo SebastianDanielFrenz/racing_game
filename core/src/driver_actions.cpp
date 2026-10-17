@@ -9,8 +9,9 @@ namespace rg {
 namespace {
 // Preserve the original forwarding order; per-action events chain through the
 // last value written, irrespective of which device submitted them.
-constexpr std::array<std::string_view, 13> ids = {
-    "auto_shift", "traction_control", "toggle_aero", "toggle_launch_control", "drive_mode", "toggle_nitrous", "park", "epb", "start_stop", "hazard", "indicator_left", "indicator_right", "horn"
+constexpr std::array<std::string_view, 16> ids = {
+    "auto_shift", "traction_control", "toggle_aero", "toggle_launch_control", "drive_mode", "toggle_nitrous", "park", "epb", "start_stop", "hazard", "indicator_left", "indicator_right", "horn", "lights",
+    "transmission_mode", "manual_mode"
 };
 constexpr std::array<std::string_view, 8> channels = {
     "assist.auto_shift", "assist.traction_control", "assist.aero_control", "assist.launch_control", "assist.drive_mode", "nitrous_arm", "park_lock", "epb"
@@ -35,9 +36,6 @@ int next_offered(std::uint32_t bits, int current) {
 }
 std::uint32_t segment(int value) {
     return value >= 0 && value < 32 ? (std::uint32_t{1} << value) : 0;
-}
-std::string drive_name(int value) {
-    return value == 3 ? "RACING" : drive_mode_name(value);
 }
 } // namespace
 
@@ -110,12 +108,36 @@ void DriverActions::apply(const VehicleContext& context, ChannelSink& sink) {
             if (index == 6) {
                 if (!snapshot.park_fitted) continue;
                 next = event.kind == DriverActionKind::Set ? (event.value != 0 ? 1 : 0) : 1;
+                // An automatic's P = N + park lock (physics automatic_tcu).
+                if (snapshot.transmission_kind != 0 && next != 0) sink.set("gear_request", 0);
             } else if (index == 7) {
                 if (!snapshot.epb_fitted) continue;
                 // Switch LEVEL only; never reconstruct or retry the physics latch.
                 next = event.kind == DriverActionKind::Set ? (event.value != 0 ? 1 : 0) : 1 - current;
             }
             sink.set(channels[index], next);
+        }
+    }
+    for (const auto& event : pending_) {
+        // Automatic gearbox plan A1: the S/D schedule and manual (tiptronic) mode, only on an automatic or dual-clutch box.
+        const int index = slot(event.id);
+        if (index < 14 || snapshot.transmission_kind == 0) continue;
+        if (index == 14) {
+            const double current = sink.get("transmission.mode");
+            sink.set("transmission.mode", event.kind == DriverActionKind::Set ? (event.value >= 0.5 ? 1 : 0) : (current >= 0.5 ? 0 : 1));
+            continue;
+        }
+        // index 15, manual mode: only from D. The state is the physics' own (snapshot), not a latch of ours.
+        if (snapshot.transmission_selector <= 0) continue;
+        const bool want = event.kind == DriverActionKind::Set ? event.value >= 0.5 : !snapshot.transmission_manual;
+        if (want == snapshot.transmission_manual) continue;
+        if (want) {
+            // Physics enters manual mode on a shift count in D; one up plus one down changes no gear.
+            sink.set("shift_up_count", sink.get("shift_up_count") + 1);
+            sink.set("shift_down_count", sink.get("shift_down_count") + 1);
+        } else {
+            // Back to D: a changed gear_request ends manual mode (any value >= the gear count is plain D).
+            sink.set("gear_request", sink.get("gear_request") == kGearRequestDrive ? kGearRequestDrive - 1 : kGearRequestDrive);
         }
     }
     for (const auto& event : pending_) {
@@ -136,8 +158,67 @@ void DriverActions::apply(const VehicleContext& context, ChannelSink& sink) {
             cabin_.indicator = event.kind == DriverActionKind::Set ? (event.value != 0 ? direction : 0) : cabin_.indicator == direction ? 0 : direction;
             cabin_.indicator_turned = false; cabin_.blink_elapsed_s = 0;
         } else if (index == 12) cabin_.horn = event.value != 0;
+        else if (index == 13) {
+            // Press cycles the switch Auto -> On -> Off -> Auto. Set picks a position:
+            // < 0 auto, 0 off, 1 on (dipped), 2 on with main beam.
+            if (event.kind == DriverActionKind::Set) {
+                const long v = std::lround(event.value);
+                if (v < 0) cabin_.light_mode = LightMode::Auto;
+                else if (v == 0) { cabin_.light_mode = LightMode::Off; cabin_.lights = 0; }
+                else { cabin_.light_mode = LightMode::On; cabin_.lights = v >= 2 ? 2 : 1; }
+            } else {
+                cabin_.light_mode = cabin_.light_mode == LightMode::Auto ? LightMode::On
+                                  : cabin_.light_mode == LightMode::On ? LightMode::Off : LightMode::Auto;
+            }
+            apply_light_mode();
+        }
     }
     discard_pending();
+}
+
+namespace {
+// Selector positions in lever order.
+enum Pos { PosP = 0, PosR = 1, PosN = 2, PosD = 3 };
+int selector_pos(const DriverSnapshot& s) {
+    if (s.transmission_selector < 0) return PosR;
+    if (s.transmission_selector > 0) return PosD;
+    return s.park_fitted && s.park_engaged ? PosP : PosN;
+}
+} // namespace
+
+SelectorShift selector_shift(const DriverSnapshot& snapshot, int up, int down) {
+    SelectorShift out;
+    if (snapshot.transmission_kind == 0 || (up <= 0 && down <= 0)) return out;
+    int pos = selector_pos(snapshot);
+    if (pos == PosD && snapshot.transmission_manual) return out; // tiptronic: the counters change gears in physics
+    out.forward_counts = false;
+    const bool standstill = std::abs(snapshot.speed_mps) <= kSelectorStandstillMps;
+    const int lowest = snapshot.park_fitted ? PosP : PosR;
+    const int start = pos;
+    // One step per press, up first then down; P and R are refused while rolling (physics refuses them too).
+    for (int i = 0; i < up && pos < PosD; ++i) ++pos;
+    for (int i = 0; i < down; ++i) {
+        const int next = pos - 1;
+        if (next < lowest) break;
+        if (!standstill && (next == PosP || next == PosR)) { out.refused = true; break; }
+        pos = next;
+    }
+    if (pos == start) return out;
+    switch (pos) {
+    case PosP: out.gear_request = 0.0; out.park_request = 1; break;
+    case PosR: out.gear_request = -1.0; out.park_request = 0; break;
+    case PosN: out.gear_request = 0.0; out.park_request = 0; break;
+    default: out.gear_request = kGearRequestDrive; out.park_request = 0; break;
+    }
+    return out;
+}
+
+std::string selector_label(const DriverSnapshot& snapshot) {
+    if (snapshot.transmission_kind == 0) return {};
+    if (snapshot.transmission_selector < 0) return "R";
+    if (snapshot.transmission_selector == 0) return snapshot.park_engaged ? "P" : "N";
+    if (snapshot.transmission_manual) return "M" + std::to_string(std::max(1, snapshot.gear));
+    return snapshot.transmission_sport ? "S" : "D";
 }
 
 void DriverActions::configure_cabin(const CabinConfig& c) {
@@ -148,6 +229,11 @@ void DriverActions::configure_cabin(const CabinConfig& c) {
         c.indicator_cancel_deg < 0 || c.indicator_arm_deg <= c.indicator_cancel_deg ||
         !std::isfinite(c.brake_lamp_threshold) || c.brake_lamp_threshold < 0 || c.brake_lamp_threshold > 1)
         throw std::invalid_argument("invalid cabin control configuration");
+    if (c.auto_lights &&
+        (!std::isfinite(c.auto_lights_on_lux) || !std::isfinite(c.auto_lights_off_lux) || c.auto_lights_on_lux <= 0 ||
+         c.auto_lights_off_lux < c.auto_lights_on_lux || !std::isfinite(c.auto_lights_on_delay_s) ||
+         !std::isfinite(c.auto_lights_off_delay_s) || c.auto_lights_on_delay_s < 0 || c.auto_lights_off_delay_s < 0))
+        throw std::invalid_argument("invalid automatic headlamp configuration (0 < on_lux <= off_lux, delays >= 0)");
     config_ = c;
     cabin_configured_ = true;
 }
@@ -183,6 +269,59 @@ void DriverActions::advance(const VehicleContext& context, ChannelSink& sink, do
     sink.set("cabin.indicator_right",lit && (cabin_.hazard || cabin_.indicator < 0) ? 1 : 0);
     sink.set("cabin.brake_lamp",sink.get("brake") > config_.brake_lamp_threshold ? 1 : 0);
     sink.set("cabin.horn",cabin_.horn ? 1 : 0);
+    update_auto_lights(context.snapshot.ambient_lux, dt);
+    apply_light_mode();
+    sink.set("cabin.lights",cabin_.lights);
+    sink.set("cabin.light_mode",static_cast<int>(cabin_.light_mode));
+}
+
+const char* light_mode_name(LightMode mode) {
+    switch (mode) {
+    case LightMode::Auto: return "auto";
+    case LightMode::On: return "on";
+    case LightMode::Off: return "off";
+    }
+    return "auto";
+}
+
+bool parse_light_mode(std::string_view name, LightMode& out) {
+    for (LightMode m : {LightMode::Auto, LightMode::On, LightMode::Off})
+        if (name == light_mode_name(m)) { out = m; return true; }
+    return false;
+}
+
+void DriverActions::set_light_mode(LightMode mode) {
+    cabin_.light_mode = mode;
+    apply_light_mode();
+}
+
+void DriverActions::apply_light_mode() {
+    switch (cabin_.light_mode) {
+    case LightMode::Off: cabin_.lights = 0; break;
+    case LightMode::On: cabin_.lights = std::max(cabin_.lights, 1); break;
+    case LightMode::Auto:
+        if (config_.auto_lights && cabin_.light_sensor_valid)
+            cabin_.lights = cabin_.light_sensor_dark ? std::max(cabin_.lights, 1) : 0;
+        break;
+    }
+}
+
+void DriverActions::update_auto_lights(double lux, double dt) {
+    if (!config_.auto_lights || !std::isfinite(lux)) return;
+    auto decide = [&](bool dark) {
+        cabin_.light_sensor_dark = dark;
+        cabin_.light_sensor_timer_s = 0;
+    };
+    if (!cabin_.light_sensor_valid) {
+        cabin_.light_sensor_valid = true;
+        decide(lux < config_.auto_lights_on_lux);
+        return;
+    }
+    const bool flip = cabin_.light_sensor_dark ? lux > config_.auto_lights_off_lux : lux < config_.auto_lights_on_lux;
+    if (!flip) { cabin_.light_sensor_timer_s = 0; return; }
+    cabin_.light_sensor_timer_s += dt;
+    const double delay = cabin_.light_sensor_dark ? config_.auto_lights_off_delay_s : config_.auto_lights_on_delay_s;
+    if (cabin_.light_sensor_timer_s >= delay) decide(!cabin_.light_sensor_dark);
 }
 
 ControlState DriverActions::state(std::string_view id, const DriverSnapshot& snapshot, const ChannelSink& sink) {
@@ -199,6 +338,24 @@ ControlState DriverActions::state(std::string_view id, const DriverSnapshot& sna
         out.blink = id == "hazard" && out.active;
         out.label = id == "start_stop" ? (snapshot.engine_running ? "RUNNING" : "OFF") : std::string(id);
         out.colour_role = out.active ? "ok" : "off";
+    } else if (id == "lights" || id == "head_lamp" || id == "tail_lamp" || id == "main_beam") {
+        out.fitted = true; out.enabled = true;
+        out.value = sink.get("cabin.lights");
+        out.active = id == "main_beam" ? out.value >= 2 : out.value != 0;
+        out.lamp_segments = out.active ? 1 : 0;
+        out.label = out.value >= 2 ? "MAIN BEAM" : out.value != 0 ? "LIGHTS" : "";
+        if (sink.get("cabin.light_mode") == static_cast<int>(LightMode::Auto))
+            out.label = out.label.empty() ? "AUTO" : "AUTO " + out.label;
+        out.colour_role = !out.active ? "off" : out.value >= 2 ? "info" : "ok";
+    } else if (id == "light_mode") {
+        out.fitted = true; out.enabled = true;
+        out.value = sink.get("cabin.light_mode");
+        const auto mode = static_cast<LightMode>(std::clamp(static_cast<int>(std::lround(out.value)), 0, 2));
+        out.active = mode == LightMode::Auto;
+        out.lamp_state = static_cast<int>(mode);
+        out.lamp_segments = mode == LightMode::Auto ? 1 : 0;
+        out.label = mode == LightMode::Auto ? "AUTO" : mode == LightMode::On ? "ON" : "OFF";
+        out.colour_role = mode == LightMode::Auto ? "info" : mode == LightMode::On ? "ok" : "off";
     } else if (id == "park") {
         out.fitted = snapshot.park_fitted;
         out.enabled = out.fitted;
@@ -207,6 +364,16 @@ ControlState DriverActions::state(std::string_view id, const DriverSnapshot& sna
         out.lamp_segments = out.active ? 1 : 0;
         out.label = out.active ? "P" : "";
         out.colour_role = out.active ? "warning" : "off";
+    } else if (id == "transmission") {
+        // Automatic gearbox plan A1: the selector letter (P R N D S M<n>) of an automatic or dual-clutch box.
+        out.fitted = snapshot.transmission_kind != 0;
+        out.enabled = out.fitted;
+        out.value = snapshot.transmission_selector;
+        out.active = out.fitted && snapshot.transmission_selector != 0;
+        out.lamp_segments = out.fitted ? 1 : 0;
+        out.label = selector_label(snapshot);
+        out.lamp_state = snapshot.transmission_kind;
+        out.colour_role = !out.fitted ? "off" : snapshot.transmission_sport ? "sport" : "normal";
     } else if (id == "epb") {
         out.fitted = snapshot.epb_fitted;
         out.enabled = out.fitted;
@@ -231,8 +398,26 @@ ControlState DriverActions::state(std::string_view id, const DriverSnapshot& sna
         out.value = snapshot.drive_mode_effective;
         out.active = out.fitted;
         out.lamp_segments = out.fitted ? segment(snapshot.drive_mode_effective) : 0;
-        out.label = out.fitted ? drive_name(snapshot.drive_mode_effective) : "";
+        out.label = out.fitted ? drive_mode_name(snapshot.drive_mode_effective) : "";
         out.colour_role = out.value == 0 ? "eco" : out.value == 1 ? "normal" : out.value == 2 ? "sport" : "racing";
+    } else if (id == "abs") {
+        out.fitted = snapshot.abs_fitted;
+        out.enabled = out.fitted;
+        out.active = out.fitted && snapshot.abs_on;
+        out.value = out.active ? 1 : 0;
+        out.blink = out.active && snapshot.abs_intervening;
+        out.lamp_segments = out.active ? 1 : 0;
+        out.label = !out.fitted ? "" : !out.active ? "ABS OFF" : out.blink ? "ABS ACTIVE" : "ABS";
+        out.colour_role = !out.active ? "warning" : out.blink ? "warning" : "ok";
+    } else if (id == "esc") {
+        out.fitted = snapshot.esc_fitted;
+        out.enabled = out.fitted;
+        out.value = snapshot.esc_effective;
+        out.active = out.fitted && snapshot.esc_effective != 0;
+        out.blink = out.active && snapshot.esc_intervening;
+        out.lamp_segments = out.fitted ? segment(snapshot.esc_effective) : 0;
+        out.label = !out.fitted ? "" : !out.active ? "ESC OFF" : std::string("ESC ") + (snapshot.esc_effective == 2 ? "SPORT" : "ON") + (out.blink ? " ACTIVE" : "");
+        out.colour_role = !out.active || out.blink ? "warning" : "ok";
     } else if (id == "toggle_aero") {
         out.fitted = (snapshot.fitted_bits & kAssistBitAeroControl) != 0;
         out.enabled = out.fitted;

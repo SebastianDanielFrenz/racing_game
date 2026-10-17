@@ -458,11 +458,38 @@ std::optional<WorldConfig> load_world_config(const std::string& path, std::strin
         }
     }
 
+    // --- render_classes (optional; "osm" default, "served" or "none") ---
+    if (root.contains("render_classes")) {
+        std::string mode;
+        if (!get_string(root, "render_classes", path, "top level", &mode, err)) {
+            return std::nullopt;
+        }
+        if (mode == "served") {
+            cfg.render_classes_served = true;
+        } else if (mode == "none") {
+            cfg.render_classes_none = true;
+        } else if (mode != "osm") {
+            fail(err, path, "\"render_classes\" must be \"osm\", \"served\" or \"none\" (got \"" + mode + "\")");
+            return std::nullopt;
+        }
+    }
+
     if(root.contains("road_visuals")) {
         const auto& visual=root.at("road_visuals");
         if(!require_object(visual,path,"road_visuals",err))return std::nullopt;
         if(visual.contains("verge_drop_m")&&!get_number(visual,"verge_drop_m",path,"road_visuals",&cfg.road_verge_drop_m,err))return std::nullopt;
         if(cfg.road_verge_drop_m<0||cfg.road_verge_drop_m>.15){fail(err,path,"road_visuals.verge_drop_m must be in [0,0.15]");return std::nullopt;}
+    }
+
+    if(root.contains("road_separation")) {
+        const auto& sep=root.at("road_separation");
+        if(!require_object(sep,path,"road_separation",err))return std::nullopt;
+        if(sep.contains("clearance_m")&&!get_number(sep,"clearance_m",path,"road_separation",&cfg.road_separation_clearance_m,err))return std::nullopt;
+        if(sep.contains("margin_m")&&!get_number(sep,"margin_m",path,"road_separation",&cfg.road_separation_margin_m,err))return std::nullopt;
+        if(sep.contains("approach_reach_m")&&!get_number(sep,"approach_reach_m",path,"road_separation",&cfg.road_separation_approach_reach_m,err))return std::nullopt;
+        if(!(cfg.road_separation_clearance_m>=.5&&cfg.road_separation_clearance_m<=10)){fail(err,path,"road_separation.clearance_m must be in [0.5,10]");return std::nullopt;}
+        if(!(cfg.road_separation_margin_m>=0&&cfg.road_separation_margin_m<=10)){fail(err,path,"road_separation.margin_m must be in [0,10]");return std::nullopt;}
+        if(!(cfg.road_separation_approach_reach_m>=0&&cfg.road_separation_approach_reach_m<=500)){fail(err,path,"road_separation.approach_reach_m must be in [0,500]");return std::nullopt;}
     }
 
     // Optional terrain smoothing is validated before any tile work begins.

@@ -26,9 +26,12 @@
 //     physics_sim's solve_remedy). The Godot layer only starts, polls and shows.
 #pragma once
 
+#include "rg/cooling_upgrades.h"
+#include "rg/turbo_map_extension.h"
 #include "rg/vehicle_setup.h"
 
 #include "ps/drivetrain/engine_dyno.h"
+#include "ps/drivetrain/engine_rules.h"
 #include "ps/drivetrain/limit_findings.h"
 #include "ps/drivetrain/limit_policy.h"
 #include "ps/drivetrain/limit_remedies.h"
@@ -70,6 +73,7 @@ struct AdviceKindConfig {
     bool hidden = false;
     std::optional<ps::drivetrain::LimitSeverity> min_severity;
     std::string option_id; // the garage option that changes it ("" = none); the UI may point at it
+    std::string rule_name; // build_rules entries only: the physics BuildRule name ("TurboStageMapCoverage"); kind is unused there
     AdviceText text;
     std::map<std::string, AdviceText> variants; // fields left empty fall back to `text`
 };
@@ -87,13 +91,33 @@ struct AdvisorConfig {
     std::map<std::string, int> decimals; // quantity name -> decimals (missing = the built-in default)
     std::vector<std::string> solve_points = {"worst", "last"};
     std::vector<AdviceKindConfig> kinds; // file order = the order of equal-severity items
+    // Static build-rule issues (ps::drivetrain::BuildIssue TurboStageMapCoverage, and the game's part limits above) shown after the sweep findings of
+    // equal severity; same text/variant/min_severity vocabulary as `kinds`. The variant "beyond_map" is used for Limiting.
+    std::vector<AdviceKindConfig> build_rules;
+    // Engine-map loader warnings (EngineMapOptions::warnings_out) passed through as lines of ONE advice item
+    // (`loader_notice.text.lines` rendered once per warning with {message}); a warning containing any of
+    // `loader_ignore` is dropped (the stage-map advisory is already a build rule above).
+    std::optional<AdviceKindConfig> loader_notice;
+    std::vector<std::string> loader_ignore;
     // The limit policy (physics_sim.limit_policy/1): which severities are worth telling (warns), which a garage would
     // refuse (refuses), and every physics threshold. A default-constructed policy is physics' compiled default.
     // `limit_policy` in the file names the policy file (relative to the advisor file); load_advisor_config loads it.
     std::string policy_file;
     ps::drivetrain::LimitPolicy policy;
+    // Part limits (damage-model data, docs/garage_ui.md "Damage model data"): the game-side build rules ChargePipingPressure,
+    // TurboShaftSpeed, MeanPistonSpeed and ValveFloat. A value at `part_near_fraction` x its rating or above is Near, above
+    // the rating Limiting, at a burst figure (piping) Exceeded. The piping and turbo figures come with the parts
+    // (rg/turbo_kit.h), the piston-speed and valve-float figures with the engine internals (rg/engine_internals.h: the
+    // weakest installed part). `max_mean_piston_speed_m_s` ("part_limits" in the file) is the engine-wide fallback for an
+    // engine without internals data.
+    double part_near_fraction = 0.9;
+    double max_mean_piston_speed_m_s = 25.0;
+    // "thermal_time" (owner answer on PR #28): a coolant / oil limit reached at constant full power within this many seconds
+    // of the warm spawn state is critical, later a warning, never = clean.
+    double thermal_critical_within_s = 60.0;
 
     [[nodiscard]] const AdviceKindConfig* find(ps::drivetrain::LimitKind kind) const;
+    [[nodiscard]] const AdviceKindConfig* find_rule(const std::string& rule_name) const;
     [[nodiscard]] int decimals_for(const std::string& quantity, int fallback) const;
 };
 
@@ -136,7 +160,8 @@ struct AdviceRange {
 struct AdviceItem {
     std::string id;        // "<Kind>" or "<Kind>@<field>" (stable across runs)
     ps::drivetrain::LimitKind kind = ps::drivetrain::LimitKind::WastegateSaturated;
-    std::string kind_name;
+    std::string kind_name;  // the LimitKind name, or the BuildRule name / "LoaderNotice" (then `kind` is meaningless)
+    std::string rule_name;  // non-empty for build-rule and loader-notice items
     AdviceSeverity severity = AdviceSeverity::Advice;
     std::vector<AdviceRange> ranges; // merged contiguous rpm ranges, ascending
     double rpm_from = 0.0;           // ranges.front().from_rpm
@@ -146,6 +171,10 @@ struct AdviceItem {
     std::vector<std::string> lines;
     std::string suggestion; // "" = none
     std::string option_id;
+    // Damage-model hook: the part a part-limit item says would take the damage ("charge_piping", "turbo_unit",
+    // "connecting_rods", "pistons", "crankshaft", "valve_springs", "cylinder_block", "engine_internals" for the engine-wide fallback); "" for
+    // physics limit kinds and the loader notice. A future damage model wears or breaks exactly this part.
+    std::string damage_part;
     RemedyState remedy_state = RemedyState::None;
     std::string remedy_text;
     bool can_solve = false; // a "Find fix" search exists for this item
@@ -158,7 +187,51 @@ struct AdviceInput {
     std::vector<ps::drivetrain::LimitFinding> findings;
     std::vector<ps::drivetrain::DynoPoint> points; // the swept points (peak boost, sweep extent)
     double target_boost_bar = std::numeric_limits<double>::quiet_NaN(); // configured, gauge; NaN = no turbo
+    std::vector<ps::drivetrain::BuildIssue> build_issues; // check_turbo_stage_coverage of the engine (physics, with the policy)
+    std::vector<std::string> loader_warnings;             // EngineMapOptions::warnings_out of the load
+    // Set when the load extended the turbo stage map (rg/turbo_map_extension.h): a demand still outside the extended map is the
+    // compressor's choke, reported as such (variant "choke") instead of "map too narrow"; a fully covered demand shows no item.
+    std::optional<TurboChoke> turbo_choke;
+    // Part limits of the fitted parts (NaN = no such part): a garage turbo kit's charge piping and rotor (CompiledSetup::
+    // turbo_kit), and the engine's stroke for the mean piston speed (run_advice_sweep; 0 = unknown).
+    double piping_rated_bar = std::numeric_limits<double>::quiet_NaN();
+    double piping_burst_bar = std::numeric_limits<double>::quiet_NaN();
+    std::string piping_label;
+    double turbo_max_shaft_rpm = std::numeric_limits<double>::quiet_NaN();
+    double stroke_m = 0.0;
+    // Engine internals (CompiledSetup::internals): the weakest piston-speed part (NaN = use the config's engine-wide
+    // figure) and the valve springs' float rpm (NaN = no check). *_kind = the part kind (damage_part), *_option = the
+    // garage option that swaps it ("" = the rule's own option_id).
+    double piston_speed_limit_m_s = std::numeric_limits<double>::quiet_NaN();
+    std::string piston_speed_part, piston_speed_kind, piston_speed_kind_label, piston_speed_option;
+    double valve_float_rpm = std::numeric_limits<double>::quiet_NaN();
+    std::string valve_part, valve_option;
+    // Cooling check (rg/cooling_upgrades.h transient_thermal + steady_thermal, set by set_thermal_limits): for the sweep's
+    // full-power points on the check's day and air speed, the SOONEST time from the warm spawn state to the coolant / oil
+    // limit (*_limit_time_s, NaN = never reached: clean) with that point's rpm, air speed and steady temperature
+    // (*_peak_c, what it would settle at), and the limits (the car's own overheat warning for the coolant, the check's oil
+    // limit). coolant_limit_c / oil_limit_c NaN = no check (a car without the thermal model, a torque-curve engine).
+    double coolant_limit_time_s = std::numeric_limits<double>::quiet_NaN(), oil_limit_time_s = std::numeric_limits<double>::quiet_NaN();
+    double coolant_peak_c = std::numeric_limits<double>::quiet_NaN(), coolant_limit_c = std::numeric_limits<double>::quiet_NaN();
+    double coolant_peak_rpm = 0.0;
+    double oil_peak_c = std::numeric_limits<double>::quiet_NaN(), oil_limit_c = std::numeric_limits<double>::quiet_NaN();
+    double oil_peak_rpm = 0.0;
+    double thermal_ambient_c = 0.0, thermal_air_speed_m_s = 0.0, coolant_air_speed_m_s = 0.0, oil_air_speed_m_s = 0.0;
+    std::string radiator_part, oil_cooler_part;               // installed grade labels ("stock radiator")
+    std::string radiator_option, oil_cooler_option;           // the garage options that swap them
+    // A bored block (EngineInternalsBuild::bore): the wall left between two cylinders and the [AS] safe figure (NaN = not
+    // bored). Below the safe figure the CylinderWall build rule warns (damage_part "cylinder_block").
+    double cylinder_wall_mm = std::numeric_limits<double>::quiet_NaN();
+    double cylinder_wall_safe_mm = std::numeric_limits<double>::quiet_NaN();
+    std::string bore_label, bore_option;
 };
+// Fills the part-limit fields of `input` from a compiled setup's turbo kit and engine internals (none = left NaN).
+void set_part_limits(AdviceInput& input, const CompiledSetup& compiled);
+// Fills the cooling-check fields of `input` from the loaded car (its VehicleDesc carries the engine thermal model with the
+// installed cooling parts), the sweep's points (`input.points`: fuel flow and power per rpm) and the check settings; the grade
+// labels and options come from `compiled.cooling`. Leaves the fields NaN when the car has no thermal model or the engine no
+// fuel model (a torque map without fuel flow).
+void set_thermal_limits(AdviceInput& input, const ps::vehicle::VehicleDesc& desc, const CoolingCheckConfig& check, const CompiledSetup& compiled);
 
 // Groups the findings per kind (and part field), drops what the config hides, merges contiguous rpm ranges, renders
 // the templates; worst severity first (then the config's kind order, then rpm).

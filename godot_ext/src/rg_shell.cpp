@@ -1,5 +1,6 @@
 #include "rg_shell.h"
 
+#include "rg/lod_settings.h"
 #include "rg/world_config.h"
 
 #include <godot_cpp/core/class_db.hpp>
@@ -60,6 +61,7 @@ const char* action_kind_name(rg::ShellActionKind k) {
         case rg::ShellActionKind::Quit: return "quit";
         case rg::ShellActionKind::OpenGarage: return "open_garage";
         case rg::ShellActionKind::CloseGarage: return "close_garage";
+        case rg::ShellActionKind::RepairCar: return "repair_car";
     }
     return "unknown";
 }
@@ -142,6 +144,12 @@ godot::Dictionary RgShell::initialize(const String& data_dir, const String& user
         problems.push_back(from_std(err));
     }
 
+    // In-game LOD settings (data/settings/lod_settings.json) join the schema before the file is read.
+    if (auto lod = rg::load_lod_settings_spec(data + "/settings/lod_settings.json", &err)) {
+        rg::install_lod_settings(*lod);
+    } else {
+        problems.push_back(from_std(err));
+    }
     settings_ = rg::Settings{};
     settings_report_ = settings_.load_file(settings_path_);
     out["problems"] = problems;
@@ -167,6 +175,7 @@ godot::Dictionary RgShell::transition_to_dict(const rg::ShellTransition& t) cons
         ad["screen"] = String(rg::to_string(a.screen));
         ad["world"] = world_request_to_dict(a.world);
         ad["flag"] = a.flag;
+        ad["vehicle"] = from_std(a.vehicle);
         actions.push_back(ad);
     }
     d["actions"] = actions;
@@ -193,6 +202,9 @@ godot::Dictionary RgShell::load_failed(const String& message) {
 godot::Dictionary RgShell::load_cancelled() { return transition_to_dict(flow_.handle(rg::ShellFlow::load_cancelled())); }
 godot::Dictionary RgShell::vehicle_chosen(const String& id) {
     return transition_to_dict(flow_.handle(rg::ShellFlow::vehicle_chosen(to_std(id))));
+}
+godot::Dictionary RgShell::repair_chosen(const String& vehicle_id) {
+    return transition_to_dict(flow_.handle(rg::ShellFlow::repair_chosen(to_std(vehicle_id))));
 }
 godot::Dictionary RgShell::garage_drive() { return transition_to_dict(flow_.handle(rg::ShellFlow::garage_drive())); }
 String RgShell::get_garage_return() const { return String(rg::to_string(flow_.garage_return())); }
@@ -269,6 +281,7 @@ godot::Array RgShell::get_settings_schema() const {
             for (const std::string& c : def.choices) choices.push_back(from_std(c));
             d["choices"] = choices;
             d["applies_live"] = def.applies_live;
+            d["applies_on_restart"] = def.applies_on_restart;
             list.push_back(d);
         }
         sd["settings"] = list;
@@ -337,6 +350,16 @@ godot::Dictionary RgShell::get_settings_report() const {
 
 // ---- credits -----------------------------------------------------------------
 
+godot::Dictionary RgShell::get_lod_choice() const {
+    const rg::LodChoice c = rg::lod_choice_from(settings_);
+    godot::Dictionary d;
+    d["view_distance_m"] = c.view_distance_m;
+    d["terrain_detail"] = c.terrain_detail;
+    d["road_detail"] = from_std(c.road_detail);
+    d["map_detail"] = c.map_detail;
+    return d;
+}
+
 String RgShell::get_attribution_line() const { return from_std(rg::attribution_line(credits_)); }
 
 godot::Array RgShell::get_credits_sections() const {
@@ -384,6 +407,7 @@ void RgShell::_bind_methods() {
     ClassDB::bind_method(D_METHOD("pause_toggle"), &RgShell::pause_toggle);
     ClassDB::bind_method(D_METHOD("vehicle_chosen", "id"), &RgShell::vehicle_chosen);
     ClassDB::bind_method(D_METHOD("garage_drive"), &RgShell::garage_drive);
+    ClassDB::bind_method(D_METHOD("repair_chosen", "vehicle_id"), &RgShell::repair_chosen);
     ClassDB::bind_method(D_METHOD("get_garage_return"), &RgShell::get_garage_return);
     ClassDB::bind_method(D_METHOD("get_garage_vehicle"), &RgShell::get_garage_vehicle);
     ClassDB::bind_method(D_METHOD("get_main_menu_items"), &RgShell::get_main_menu_items);
@@ -400,6 +424,7 @@ void RgShell::_bind_methods() {
     ClassDB::bind_method(D_METHOD("get_settings_report"), &RgShell::get_settings_report);
     ClassDB::bind_method(D_METHOD("get_settings_path"), &RgShell::get_settings_path);
     ClassDB::bind_method(D_METHOD("get_attribution_line"), &RgShell::get_attribution_line);
+    ClassDB::bind_method(D_METHOD("get_lod_choice"), &RgShell::get_lod_choice);
     ClassDB::bind_method(D_METHOD("get_credits_sections"), &RgShell::get_credits_sections);
     ClassDB::bind_method(D_METHOD("get_credits_entry_count"), &RgShell::get_credits_entry_count);
 }

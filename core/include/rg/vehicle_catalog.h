@@ -33,7 +33,11 @@ namespace rg {
 using SetupValue = std::variant<double, bool, std::string, std::vector<double>>;
 
 struct VehicleChassis {
-    double mass_kg = 1500.0;
+    double mass_kg = 1500.0; // the stock car's chassis body mass (the part-mass tree of the stock car sums to it)
+    // The body alone (shell, interior, glass, wiring ...): the root of the part-mass tree (rg/part_mass.h). Chosen so
+    // that the stock tree sums to mass_kg. None = no tree: the drive uses mass_kg plus the engine swap's delta.
+    std::optional<double> body_mass_kg;
+    std::string body_mass_source;
     std::array<double, 3> half_extents{2.0, 0.4, 0.15}; // chassis collision box, ISO (x fwd, y left, z up)
     double spawn_z_m = 0.6;                              // chassis height above the ground at spawn
     std::string source;                                  // where the numbers come from
@@ -84,6 +88,9 @@ struct CatalogEntry {
     // Optional model parts the car's art carries (rig.json nodes with an "option", e.g. "roof" = the Runabout's
     // folding top). A setup option with the same model_option shows or hides them; the physics never sees them.
     std::vector<std::string> model_options;
+    // The removable / swappable parts of the car (part-mass tree group "trim"): slot -> part_masses.json key of the
+    // stock part ("driver_seat" -> "seat_comfort"). The garage's weight reduction options act on these slots.
+    std::map<std::string, std::string> interior;
     std::optional<DeclaredEngineStats> declared_engine;
     std::string default_paint = "#8a8f98"; // visual only
     std::string default_rim = "#c4c8cf";
@@ -131,6 +138,7 @@ struct VehicleStats {
     std::string layout;               // "FWD" | "RWD" | "AWD" | "other"
     int driven_wheels = 0;
     int wheel_count = 0;
+    std::string driveline;            // "RWD · Torsen rear" (rg::driveline_summary); the layout alone for a driveline the swap does not read
     int gear_count = 0;               // forward gears of the gearbox file
     // Displacement in litres: computed from the engine file's cylinders x bore x stroke
     // when it has them, else the catalog entry's own figure, else unknown ("-" in the UI).

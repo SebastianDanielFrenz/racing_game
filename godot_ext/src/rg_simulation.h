@@ -19,6 +19,9 @@
 #include "rg/session.h"
 #include "rg/world_config.h"
 #include "rg/world_terrain.h"
+#include "rg/weather_sync.h"
+#include "rg/wet_look.h"
+#include "rg_sky.h"
 
 #include <godot_cpp/classes/node.hpp>
 #include <godot_cpp/variant/dictionary.hpp>
@@ -31,6 +34,7 @@
 #include <godot_cpp/variant/vector3.hpp>
 
 #include <atomic>
+#include <chrono>
 #include <memory>
 #include <optional>
 #include <string>
@@ -39,6 +43,7 @@
 namespace rg_godot {
 
 class RgTerrainView; // shared_world_terrain() friend access, see below
+class RgNavigation;  // ditto (R4 route planner / minimap)
 
 // R6: what the garage tells the next vehicle load (see RgSimulation::set_vehicle_overrides).
 struct VehicleOverrides {
@@ -47,6 +52,10 @@ struct VehicleOverrides {
     ps::Vec3 chassis_half_extents{2.0, 0.4, 0.15};
     ps::real chassis_z_m = 0.6;
     std::string engine_map_cache_dir;
+    std::string turbo_map_extension_path; // "" = stage maps are used as loaded
+    std::string damage_config_path;       // data/vehicles/damage.json ("" = no damage model)
+    std::string damage_state_path;        // <user dir>/garage/damage/<id>.json (may not exist: a healthy car)
+    bool damage_enabled = true;           // difficulty.mechanical_damage (RgSimulation::set_damage_enabled)
 };
 
 class RgSimulation : public godot::Node {
@@ -73,8 +82,11 @@ public:
     // rg_core" reasoning as SessionConfig's own doc comment. Returns false
     // and sets get_last_error() on failure (e.g. a malformed vehicle JSON)
     // instead of letting rg::io::load_vehicle_json's std::runtime_error
-    // cross the GDExtension boundary uncaught. Synchronous (flat start-up is
-    // fast - no worker thread, unlike initialize_terrain() below).
+    // cross the GDExtension boundary uncaught. Non-blocking like
+    // initialize_terrain() below: the Session (a turbo car's first engine
+    // construction builds a full-load envelope, seconds) is built on the init
+    // worker; returns true once it STARTED, poll get_init_status() for
+    // ready/error before start().
     //
     // Re-entrant (R2.2 R7 "runtime world switch"): may be called again on an
     // object that already holds a Session (flat or terrain, loading or
@@ -174,6 +186,18 @@ public:
     void request_walker_enter();
     [[nodiscard]] godot::Dictionary get_walker_state() const;
 
+    // --- FPV drone (PlayerMode "fpv_drone", rg/fpv_drone.h, rg::Session's kinematic flyer). The mode machine decides
+    // WHEN (set_player_mode("fpv_drone") / cycle_player_mode()); this object forwards the lifecycle to the Session
+    // (spawn above the car on entering, despawn on leaving). Input is plain values, the flight model is in rg_core.
+    //  set_fpv_drone_config(path): data/controls/fpv_drone.json; returns "" or the error. Before the world loads.
+    //  set_fpv_input: move_right / move_up / move_forward / yaw (+ = left) / pitch (+ = nose up), each in [-1, 1].
+    //  get_fpv_state: {active, position (Godot, origin-relative), velocity (Godot), facing (Godot horizontal unit
+    //   vector), yaw_rad (ISO), pitch_rad, speed, accel, activity (0..1, rotor load), on_ground, hold, height_agl_m};
+    //   {} while no drone exists.
+    godot::String set_fpv_drone_config(const godot::String& path);
+    void set_fpv_input(double move_right, double move_up, double move_forward, double yaw, double pitch);
+    [[nodiscard]] godot::Dictionary get_fpv_state() const;
+
     // --- Shell (R5, rg_simulation_shell.cpp) ---
     // Back to "no world": cancels and joins an init in flight, stops and
     // destroys the Session (sim thread, streaming, engine audio), resets the
@@ -211,9 +235,15 @@ public:
     // like get_body_transform). Without a Session the input is returned as is.
     [[nodiscard]] godot::Vector3 session_to_godot(const godot::Vector3& session_position) const;
     // {eye_local (chassis frame, ISO: x forward / y left / z up), pitch_down_deg,
-    //  fov_deg}: the bumper camera from the vehicle's own wheels
-    // (rg::bumper_eye_local); {} without a Session.
-    [[nodiscard]] godot::Dictionary get_bumper_camera() const;
+    //  fov_deg, source}: the bumper camera just ahead of the visual model's nose
+    // (rg::bumper_eye_from_model; rig_json_path = the model's .rig.json,
+    // model_offset = the model origin in the chassis frame, ISO), or from the
+    // wheels (rg::bumper_eye_local) without a rig file; {} without a Session.
+    [[nodiscard]] godot::Dictionary get_bumper_camera(const godot::String& rig_json_path = godot::String(),
+                                                      const godot::Vector3& model_offset = godot::Vector3()) const;
+    // {sim_time, velocity, forward, left, up (session frame, ISO), compression
+    // (PackedFloat64Array, m per wheel)}: the input of RgCameraMotion.update.
+    [[nodiscard]] godot::Dictionary get_camera_motion_sample() const;
     // One frame of the cinematic director (rg::CinematicDirector): {serial, cut,
     // source ("road_ahead" | "predicted_path"), side, session_x, session_y,
     // height_above_ground_m, fov_deg}; {} without a Session. The rig converts
@@ -291,6 +321,19 @@ public:
     void set_render_interpolation(bool enabled) { render_interpolation_ = enabled; }
     [[nodiscard]] godot::Dictionary get_render_diagnostics() const;
     godot::Dictionary get_aero_state() const;
+    // V8 weather: the RgSky whose clock/weather/climate the NEXT initialize()/initialize_terrain() installs as the
+    // physics environment (null = none), and the per-tick feed of its clock and weather into the running Session
+    // (sky_controller.gd calls sync_weather at its update rate; returns rg::WeatherSync::Sent bits).
+    void set_weather_source(const godot::Ref<RgSky>& sky);
+    int sync_weather();
+    // {installed, env_time_s, air_temp_c, precip_mm_h, cloud_cover, rh, lightning_per_min, wheel_surface,
+    //  wheel_water_mm, wheel_snow_mm, wheel_ice_mm, wheel_condition_factor}; {} without a Session.
+    godot::Dictionary get_weather_state() const;
+    // Wet look (rg/wet_look.h): load_wet_look(data/world/wet_look.json) -> "" or the loader error; get_wet_look(dt)
+    // advances the smoothing filter on the current weather snapshot -> {wetness, puddles, drops, flakes} (all 0 with no
+    // Session or no physics weather).
+    godot::String load_wet_look(const godot::String& path);
+    godot::Dictionary get_wet_look(double dt_s);
     void configure_traffic(double density,double radius,double minimum,double grip,int maximum);
     void set_visible_traffic(const godot::Array& ids);
     godot::Dictionary get_traffic_state() const;
@@ -351,6 +394,18 @@ public:
     [[nodiscard]] godot::Dictionary get_vehicle_powertrain(const godot::String& vehicle_name) const;
     // Nitrous kit state for the HUD; {present: false} for a car without a kit (see the .cpp).
     [[nodiscard]] godot::Dictionary get_vehicle_nitrous(const godot::String& vehicle_name) const;
+    // Damage model (rg/damage.h): rg_damage_convert.h's dictionary for the running car plus state_path ("" = none) and
+    // thermal (the car has the thermal model). Polled by the HUD; also saves a changed state every
+    // DamageConfig::save_interval_s (the state is also saved when the world is torn down and on exit).
+    godot::Dictionary get_damage_state();
+    // The garage repaired the car whose state file is `state_path`: if that is the running car, its parts are healthy
+    // from the next tick (free, owner rule). Returns true when the running car was repaired.
+    // "" = the running car, whatever its file (the pause menu's "Repair car").
+    bool repair_damage(const godot::String& state_path);
+    // difficulty.mechanical_damage: false = nothing wears and the stored damage has no effect (kept on disk). Applies to
+    // the running car at its next tick and to every later load.
+    void set_damage_enabled(bool enabled);
+    [[nodiscard]] bool is_damage_enabled() const { return vehicle_overrides_.damage_enabled; }
     // Engine temperature for dashboards (rg::engine_thermal_hud); {present: false} for a car without a thermal model.
     [[nodiscard]] godot::Dictionary get_vehicle_thermal(const godot::String& vehicle_name) const;
     [[nodiscard]] float get_vehicle_ground_speed_mps(const godot::String& vehicle_name) const;
@@ -359,6 +414,11 @@ protected:
     static void _bind_methods();
 
 private:
+    godot::Ref<RgSky> weather_sky_;
+    std::shared_ptr<const rg::SessionWeather> next_weather_; // written before an init worker starts, read by it
+    rg::WeatherSync weather_sync_;
+    rg::WetLookFilter wet_look_;
+    void prepare_weather();
     mutable std::optional<rg::FrameSnapshot> render_snapshot_;
     mutable std::uint64_t render_snapshot_frame_ = static_cast<std::uint64_t>(-1);
     const rg::FrameSnapshot& frame_snapshot() const;
@@ -372,6 +432,7 @@ private:
     bool render_interpolation_ = true;
 
     friend class RgTerrainView; // shared_world_terrain() below
+    friend class RgNavigation;  // ditto
 
     [[nodiscard]] bool has_vehicle(const godot::String& vehicle_name) const;
 
@@ -389,6 +450,11 @@ private:
     enum class InitPhase : int { Idle, Loading, Ready, Error };
 
     VehicleOverrides vehicle_overrides_;
+    // Damage persistence (rg_simulation_shell.cpp): the revision of the running Session's damage that is on disk, and when
+    // it was last saved.
+    void save_damage(); // writes the running Session's damage state when its revision changed since the last write
+    std::uint64_t damage_saved_revision_ = 0;
+    std::chrono::steady_clock::time_point damage_saved_at_{};
 
     struct SpawnOverride {
         double x = 0.0;
@@ -455,11 +521,17 @@ private:
                                  std::int64_t fetch_delay_ms, std::optional<SpawnOverride> spawn,
                                  std::string store_dir, VehicleOverrides overrides);
 
+    void run_flat_init_worker(std::string vehicle_json_path, std::string surface_table_path,
+                              std::shared_ptr<rg::StartupProgress> progress, VehicleOverrides overrides);
+    std::optional<SpawnOverride> pending_flat_spawn_; // relocation applied when a flat init is adopted
+
     // Access is serialized by init-worker join or Ready acquire. A running
     // world never writes this cache. Different paths invalidate its identity.
     void reuse_vehicle_definition(rg::SessionConfig& config) const;
     void remember_vehicle_definition(const rg::SessionConfig& config, const rg::Session& session);
     std::string rolling_resistance_model_ = "quadratic";
+    rg::FpvDroneConfig fpv_config_{};      // set_fpv_drone_config; copied into every new Session
+    bool fpv_wanted_ = false;              // last FPV spawn/despawn request sent to the Session (per Session)
     std::string aero_map_selection_path_;
     std::string cached_vehicle_path_;
     std::shared_ptr<const ps::vehicle::VehicleDesc> cached_vehicle_definition_;
