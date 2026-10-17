@@ -490,5 +490,5 @@
   "notes": [
     "The hand throttle feeds the hand_throttle channel; the spark lever is cosmetic; pedals, gear lever and handbrake follow the applied controls; the speedometer reads km/h."
   ],
-  "source_glb_sha256": "0548de8adca84af38047d5d5d065af90815870c02a17ee6eadfa863d5b9dfec2"
+  "source_glb_sha256": "d7ad895c35bcc4ca3aa7ff5069d3a7d507dff783de1cd8e4e8c95b591630d13e"
 }

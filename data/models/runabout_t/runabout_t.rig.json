@@ -485,6 +485,28 @@
       "variant": "roof"
     },
     {
+      "name": "carpets",
+      "parent": "runabout_t",
+      "pivot": [
+        -0.43,
+        0.0,
+        0.6
+      ],
+      "bounds_local": {
+        "min": [
+          -0.8,
+          -0.55,
+          0.0
+        ],
+        "max": [
+          0.8,
+          0.55,
+          0.008
+        ]
+      },
+      "strip": "carpets"
+    },
+    {
       "name": "needle_speed",
       "parent": "runabout_t",
       "pivot": [
@@ -611,6 +633,50 @@
           0.007
         ]
       }
+    },
+    {
+      "name": "dash_glovebox",
+      "parent": "runabout_t",
+      "pivot": [
+        0.34,
+        -0.3,
+        0.9
+      ],
+      "bounds_local": {
+        "min": [
+          -0.071,
+          -0.18,
+          -0.07
+        ],
+        "max": [
+          0.06,
+          0.18,
+          0.07
+        ]
+      },
+      "strip": "dashboard"
+    },
+    {
+      "name": "spare_wheel",
+      "parent": "runabout_t",
+      "pivot": [
+        -1.38,
+        0.0,
+        0.86
+      ],
+      "bounds_local": {
+        "min": [
+          -0.0561,
+          -0.36,
+          -0.36
+        ],
+        "max": [
+          0.0561,
+          0.36,
+          0.36
+        ]
+      },
+      "strip": "spare_wheel"
     },
     {
       "name": "btn_horn",
@@ -919,6 +985,28 @@
           0.486
         ]
       }
+    },
+    {
+      "name": "seat_rear",
+      "parent": "runabout_t",
+      "pivot": [
+        -1.02,
+        0.0,
+        0.96
+      ],
+      "bounds_local": {
+        "min": [
+          -0.4028,
+          -0.56,
+          -0.16
+        ],
+        "max": [
+          0.22,
+          0.56,
+          0.568
+        ]
+      },
+      "strip": "rear_seats"
     }
   ],
   "sockets": [
@@ -1053,24 +1141,24 @@
     {
       "level": 0,
       "glb": "runabout_t.glb",
-      "triangles": 87360,
-      "bytes": 2905356,
+      "triangles": 88424,
+      "bytes": 2964800,
       "chord_tolerance_mm": 0.35,
       "use": "garage, showroom and close-up camera (< 15 m)"
     },
     {
       "level": 1,
       "glb": "runabout_t_lod1.glb",
-      "triangles": 53052,
-      "bytes": 2086400,
+      "triangles": 53756,
+      "bytes": 2136184,
       "chord_tolerance_mm": 1.2,
       "use": "driving camera and nearby traffic (15 - 60 m)"
     },
     {
       "level": 2,
       "glb": "runabout_t_lod2.glb",
-      "triangles": 34864,
-      "bytes": 1489724,
+      "triangles": 35276,
+      "bytes": 1526268,
       "chord_tolerance_mm": 6.0,
       "use": "distant traffic (> 60 m)"
     }
