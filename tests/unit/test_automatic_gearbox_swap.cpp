@@ -432,16 +432,17 @@ struct AutoDrive {
     bool stalled = false;
     int tc_interventions = 0;
     double max_false_cut_s = 0.0;
+    double t50 = -1.0;
 };
 // The car_sedan with an automatic on a flat tessellated ground: start the engine, select D, release the brake and creep
 // with no throttle for creep_s, then full throttle for drive_s.
 AutoDrive drive_auto(const Fixture& f, const std::string& box, double creep_s, double drive_s,
-                     const std::string& car_id = "car_sedan", int stop_cycles = 0, int corner_mode = -1, bool respawn_check = false) {
+                     const std::string& car_id = "car_sedan", int stop_cycles = 0, int corner_mode = -1, bool respawn_check = false, int launch_mode = -1, bool with_lc = false) {
     const rg::CatalogEntry& car = f.entry(car_id);
     rg::ScopedWorkDir dir(f.ctx.work_root, "drive_" + box);
     auto setup = setup_of(car.id, box);
     auto context = f.ctx;
-    if (corner_mode >= 0) {
+    if (corner_mode >= 0 || launch_mode >= 0) {
         std::string err;
         auto drivelines = rg::DrivelineCatalog::open(kRoot + "/data/drivetrains/driveline_catalog.json", &err);
         INFO(err);
@@ -486,8 +487,15 @@ AutoDrive drive_auto(const Fixture& f, const std::string& box, double creep_s, d
     }
     world.set_control("starter", 0.0);
     if (corner_mode >= 0) world.set_control("assist.drive_mode", corner_mode);
+    if (launch_mode >= 0) world.set_control("assist.drive_mode", launch_mode);
     world.set_control("gear_request", 99.0); // D
     for (int i = 0; i < 120; ++i) session.step();
+    if (with_lc) {
+        world.set_control("assist.launch_control", 1.0);
+        world.set_control("throttle", 1.0);
+        for (int i=0;i<720;++i) session.step();
+        CHECK(world.powertrain_state(vid).launch_phase == 1);
+    }
     world.set_control("brake", 0.0);
     world.set_control("handbrake", 0.0);
     world.set_control("throttle", 0.0);
@@ -512,6 +520,7 @@ AutoDrive drive_auto(const Fixture& f, const std::string& box, double creep_s, d
         }
         session.step();
         const auto pt = world.powertrain_state(vid);
+        if (out.t50 < 0 && speed()*3.6 >= 50) out.t50=(i+1)/240.0;
         out.top_gear = std::max(out.top_gear, static_cast<int>(pt.gear));
         out.max_kmh = std::max(out.max_kmh, speed() * 3.6);
         if (pt.traction_torque_fraction < 0.95) ++out.tc_interventions;
@@ -788,4 +797,15 @@ TEST_CASE("hypercar DCT TC still intervenes during a full-throttle launch", "[au
     CHECK_FALSE(d.stalled);
     CHECK(d.max_kmh > 30.0);
     CHECK(d.tc_interventions > 0);
+}
+TEST_CASE("Racing hypercar DCT launch control reaches 50 kmh promptly", "[automatic][racing_lc]") {
+    Fixture f;
+    const auto plain=drive_auto(f,"hyper_7dct",0,12,"car_hyper_n2o",0,-1,false,3,false);
+    const auto lc=drive_auto(f,"hyper_7dct",0,12,"car_hyper_n2o",0,-1,false,3,true);
+    std::printf("RG_LC_RESULT plain_t50=%.3f lc_t50=%.3f\n",plain.t50,lc.t50);
+    CHECK(plain.started);CHECK(lc.started);
+    CHECK_FALSE(plain.stalled);CHECK_FALSE(lc.stalled);
+    REQUIRE(plain.t50>0);REQUIRE(lc.t50>0);
+    CHECK(lc.t50<3.0);
+    CHECK(lc.t50<=plain.t50);
 }
