@@ -56,6 +56,18 @@ func _run() -> void:
 		await _frames(1)
 	await _seconds(0.25)
 	await _shot("overview")
+	_press("tile:Chassis")
+	_press("tile:Weight")
+	await _seconds(0.5)
+	await _shot("part_mass")
+	main._on_escape()
+	_press("tile:Weight reduction")
+	await _seconds(0.5)
+	await _shot("weight_reduction")
+	for i in range(2): main._on_escape()
+	if OS.get_cmdline_user_args().has("--mass-shots-only"):
+		get_tree().quit()
+		return
 	# The setup check: an extreme (owner-like) turbo setup is allowed and flagged. Only for cars that have those options.
 	var shell_garage = main.get_shell_ui().garage
 	var extreme: Dictionary = shell_garage.set_option("turbo_boost_target", 8.600083819796385)
