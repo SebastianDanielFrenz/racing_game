@@ -14,7 +14,11 @@ extends Node3D
 # Control channels that reach the physics (steer, throttle, brake, clutch, handbrake, gear shifts, ignition,
 # starter) are not written here: main.gd's _forward_driving pulls them (get_overrides, consume_shift_up/down,
 # consume_ignition_request, starter_held) so the one place that sets controls stays the one place.
-# Everything else ("cosmetic:*" sources: lights, wipers, climate, radio, ...) is state kept here; get_cosmetic
+# Cabin switches that DriverActions owns (hazard, indicator stalk, horn, light switch) submit ActionEvents through `driver_actions`
+# (main.gd sets it to the shared instance; source CockpitMouse) and are POSED from the shared projection
+# (DriverActions::state + the cabin.* channels), so a key press and a click show the same switch position. Without a
+# driver_actions object (garage, pure-GDScript tests) they fall back to the local cosmetic state below.
+# Everything else ("cosmetic:*" sources: fog, wipers, climate, radio, ...) is state kept here; get_cosmetic
 # reads it (screens and lamps can follow it later).
 #
 # Frames: cockpit.json and rig.json are ISO 8855 (x forward, y left, z up); the .glb nodes use glTF axes,
@@ -23,11 +27,18 @@ extends Node3D
 
 var simulation: Node
 var vehicle_name: String = ""
+var driver_actions: Object = null # RgDriverActions (submit/state), set by main.gd; null = local cosmetic state
 var model_root: Node3D
 var cockpit_path: String = ""
 var rig_path: String = ""
 
 const EYE_RADIUS_M := 0.9       # the camera must be this close to the driver eye for clicks to count
+# RgDriverActions enum values (godot_ext/src/rg_driver_actions.h); literals so this script parses without the GDExtension
+const KIND_RELEASE := 1
+const KIND_PRESS := 0
+const KIND_SET := 2
+const SOURCE_COCKPIT_MOUSE := 3
+const DRIVER_BACKED := ["hazard", "indicator", "horn", "lights"]   # channels with a DriverActions action
 const PRESS_TIME_S := 0.18      # how long a pressed button stays down
 const START_HOLD_S := 0.7       # an ignition key held in its start detent cranks this long, then springs back
 const DRAG_PX_FULL := 220.0     # vertical mouse travel for a pedal/lever's full range
@@ -44,7 +55,9 @@ var _shift_up := 0
 var _shift_down := 0
 var _ignition_request := -1     # -1 none, 0 off, 1 on
 var _starter_left := 0.0
-var _steer_turns := 1.5         # half range of the steering wheel, in turns
+var _horn_held := false         # the left mouse button is down on the horn: the level stays up until released
+var _horn_left := 0.0           # seconds a clicked horn button keeps the horn level up
+var _steer_lock_deg := 540.0    # steering wheel angle from centre to one lock, degrees (per-car, cockpit file; else cabin.json)
 var _eye: Node3D
 var _gear_pose := Vector2.ZERO  # smoothed (side, fore) of the gear lever
 var _loaded := false
@@ -81,7 +94,7 @@ func load_spec() -> bool:
 				if n.has("joint"):
 					joints[str(n["name"])] = n["joint"]
 	_eye = model_root.find_child("socket_driver_eye", true, false)
-	_steer_turns = 0.5 * float(ck.get("steering", {}).get("lock_to_lock_turns", 3.0))
+	_steer_lock_deg = float(ck.get("steering", {}).get("steering_wheel_lock_deg", _cabin_lock_deg()))
 	_controls.clear()
 	_by_node.clear()
 	for spec in ck.get("controls", []):
@@ -113,6 +126,18 @@ func load_spec() -> bool:
 			_cosmetic[channel] = _off_value(_channel_values[channel])
 	return not _controls.is_empty()
 
+# The default lock for a car whose cockpit file does not carry one (data/controls/cabin.json, same field and unit).
+static func _cabin_lock_deg() -> float:
+	var path := ProjectSettings.globalize_path("res://../data/controls/cabin.json")
+	if FileAccess.file_exists(path):
+		var cfg: Variant = JSON.parse_string(FileAccess.get_file_as_string(path))
+		if cfg is Dictionary and cfg.has("steering_wheel_lock_deg"):
+			return float(cfg["steering_wheel_lock_deg"])
+	return 540.0
+
+func get_steering_wheel_lock_deg() -> float:
+	return _steer_lock_deg
+
 static func iso_to_gltf(v: Vector3) -> Vector3:
 	return Vector3(v.y, v.z, v.x)
 
@@ -128,7 +153,62 @@ func control_names() -> Array:
 	return _by_node.keys()
 
 func get_cosmetic(channel: String) -> Variant:
-	return _cosmetic.get(channel, null)
+	var shared: Variant = _shared_value(channel)
+	return shared if shared != null else _cosmetic.get(channel, null)
+
+# The switch position from the shared DriverActions projection, or null when this channel is not driver-backed.
+func _shared_value(channel: String) -> Variant:
+	if driver_actions == null or simulation == null or not channel in DRIVER_BACKED:
+		return null
+	var channels := {}
+	for key in ["cabin.hazard", "cabin.horn", "cabin.indicator", "cabin.indicator_left", "cabin.indicator_right", "cabin.lights"]:
+		channels[key] = simulation.get_control(key)
+	if channel == "lights": # 0 off, 1 dipped, 2 main beam: the switch shows on for either beam
+		return float(channels.get("cabin.lights", 0.0)) != 0.0
+	if channel == "indicator":
+		var dir := float(channels.get("cabin.indicator", 0.0)) # + = left (ISO), - = right, 0 = off
+		return "left" if dir > 0.0 else ("right" if dir < 0.0 else "off")
+	return bool(driver_actions.state(channel, {}, channels).get("active", false))
+
+func _submit(id: String, kind: int, value: float) -> void:
+	driver_actions.submit(id, kind, value, SOURCE_COCKPIT_MOUSE)
+
+# main.gd calls this every frame just before DriverActions.apply: the horn is a held level and the keyboard adapter
+# submits its own level each frame, so a clicked horn button has to keep asserting its level after that.
+func submit_held() -> void:
+	if driver_actions != null and (_horn_held or _horn_left > 0.0):
+		_submit("horn", KIND_SET, 1.0)
+
+# A left click that landed on the horn keeps it sounding until release_horn().
+func hold_horn() -> void:
+	if driver_actions != null:
+		_horn_held = true
+
+func is_horn_held() -> bool:
+	return _horn_held
+
+func release_horn() -> void:
+	if not _horn_held:
+		return
+	_horn_held = false
+	_horn_left = 0.0
+	for k in _press_left.keys():
+		if str(_by_node.get(k, {}).get("spec", {}).get("action", {}).get("channel", "")) == "horn":
+			_press_left.erase(k)
+	if driver_actions != null:
+		_submit("horn", KIND_RELEASE, 0.0)
+
+func _exit_tree() -> void:
+	release_horn()
+
+func _notification(what: int) -> void:
+	if what == NOTIFICATION_APPLICATION_FOCUS_OUT or what == NOTIFICATION_WM_WINDOW_FOCUS_OUT:
+		release_horn()
+
+# Mouse-up anywhere (also outside the hit box or over a UI control) lets go of the horn.
+func _input(event: InputEvent) -> void:
+	if _horn_held and event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT and not event.pressed:
+		release_horn()
 
 # Channel -> value for every control currently dragged (and a hand throttle that is set).
 func get_overrides() -> Dictionary:
@@ -158,13 +238,30 @@ func starter_held() -> bool:
 
 # ---- per frame: pose the controls from the car --------------------------------
 
+const FrameProbe := preload("res://scripts/frame_probe.gd")
 func _process(delta: float) -> void:
+	var probe_t0 := Time.get_ticks_usec()
+	_process_body(delta)
+	FrameProbe.add("cockpit_controls", Time.get_ticks_usec() - probe_t0)
+func _process_body(delta: float) -> void:
 	if not _loaded:
 		return
 	for k in _press_left.keys():
 		_press_left[k] = float(_press_left[k]) - delta
 		if float(_press_left[k]) <= 0.0:
 			_press_left.erase(k)
+	if _horn_held:
+		var cam := get_viewport().get_camera_3d() if is_inside_tree() else null
+		if Input.mouse_mode == Input.MOUSE_MODE_CAPTURED or (cam != null and not _in_car(cam)):
+			release_horn() # cursor taken away or the view left the cockpit
+		else:
+			for k in _by_node.keys():
+				if str(_by_node[k]["spec"].get("action", {}).get("channel", "")) == "horn":
+					_press_left[k] = PRESS_TIME_S # the button stays down while held
+	if _horn_left > 0.0:
+		_horn_left -= delta
+		if _horn_left <= 0.0 and driver_actions != null:
+			_submit("horn", KIND_RELEASE, 0.0)
 	if _starter_left > 0.0:
 		_starter_left -= delta
 		if _starter_left <= 0.0:
@@ -200,7 +297,7 @@ func _live_values() -> Dictionary:
 func _source_value(spec: Dictionary, live: Dictionary) -> Variant:
 	var source := str(spec.get("source", ""))
 	if source.begins_with("cosmetic:"):
-		return _cosmetic.get(source.substr(9), 0.0)
+		return get_cosmetic(source.substr(9)) if _cosmetic.has(source.substr(9)) else 0.0
 	if source.begins_with("control:"):
 		var channel := source.substr(8)
 		if _overrides.has(channel):
@@ -246,7 +343,7 @@ func _pose(entry: Dictionary, live: Dictionary, delta: float) -> void:
 		"button":
 			j = float(m.get("pressed_m", 0.003)) if (_press_left.has(str(spec["node"])) or _truthy(value) and str(spec.get("action", {}).get("type", "")) == "toggle") else 0.0
 		"steering_wheel":
-			j = float(simulation.get_control("steer") if simulation != null and not _overrides.has("steer") else _overrides.get("steer", 0.0)) * _steer_turns * TAU
+			j = float(simulation.get_control("steer") if simulation != null and not _overrides.has("steer") else _overrides.get("steer", 0.0)) * deg_to_rad(_steer_lock_deg)
 			_wheel_angle_rad = j
 		"gear_lever":
 			var gate: Dictionary = m.get("gate", {})
@@ -399,6 +496,12 @@ func activate(node_name: String, step: int = 1) -> bool:
 	var channel := str(action.get("channel", ""))
 	match str(action.get("type", "")):
 		"toggle":
+			if driver_actions != null and channel == "lights":
+				_submit(channel, KIND_PRESS, 1.0) # the same cycle as the lights key: auto -> on -> off -> auto
+				return true
+			if driver_actions != null and channel == "hazard":
+				_submit(channel, KIND_SET, 0.0 if _truthy(get_cosmetic(channel)) else 1.0)
+				return true
 			var on := not _truthy(_cosmetic.get(channel, false))
 			var values: Array = _channel_values.get(channel, [])
 			if values.is_empty():
@@ -407,6 +510,10 @@ func activate(node_name: String, step: int = 1) -> bool:
 				_cosmetic[channel] = _on_value(values) if on else _off_value(values)
 		"press":
 			_press_left[node_name] = PRESS_TIME_S
+			if driver_actions != null and channel == "horn":
+				_horn_left = PRESS_TIME_S
+				_submit("horn", KIND_SET, 1.0)
+				return true
 			_cosmetic[channel] = int(_cosmetic.get(channel, 0)) + 1 # a press count other code can watch
 		"step":
 			var values: Array = action.get("values", [])
@@ -415,6 +522,13 @@ func activate(node_name: String, step: int = 1) -> bool:
 			if channel == "ignition":
 				var cur: Variant = _source_value(spec, {})
 				_set_ignition_detent(spec, maxi(values.find(cur), 0) + step)
+				return true
+			if driver_actions != null and channel == "indicator":
+				var target: Variant = values[clampi(values.find(get_cosmetic(channel)) + step, 0, values.size() - 1)]
+				if target == "off":
+					_submit("indicator_left", KIND_SET, 0.0)
+				else:
+					_submit("indicator_left" if target == "left" else "indicator_right", KIND_SET, 1.0)
 				return true
 			var idx := values.find(_cosmetic.get(channel, values[0]))
 			_cosmetic[channel] = values[clampi(idx + step, 0, values.size() - 1)]
@@ -461,7 +575,7 @@ func drag_to(at: Vector2) -> void:
 	var v: float
 	if str(action.get("type", "")) == "rotate":
 		# dragging right turns the wheel right (steer is positive to the left)
-		v = float(_drag["value0"]) - moved.x / (WHEEL_PX_TURN * _steer_turns)
+		v = float(_drag["value0"]) - moved.x / (WHEEL_PX_TURN * _steer_lock_deg / 360.0)
 	else:
 		v = float(_drag["value0"]) + moved.y / DRAG_PX_FULL * (float(r[1]) - float(r[0]))
 	v = clampf(v, float(r[0]), float(r[1]))
@@ -517,6 +631,8 @@ func _unhandled_input(event: InputEvent) -> void:
 			handled = begin_drag(hit, mb.position)
 			if not handled:
 				handled = activate(hit, -1 if mb.shift_pressed else 1)
+				if handled and str(_by_node.get(hit, {}).get("spec", {}).get("action", {}).get("channel", "")) == "horn":
+					hold_horn()
 		MOUSE_BUTTON_WHEEL_UP:
 			handled = activate(hit, 1)
 		MOUSE_BUTTON_WHEEL_DOWN:

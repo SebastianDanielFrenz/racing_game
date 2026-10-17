@@ -1,4 +1,5 @@
 // rg/terrain_stream.cpp - see rg/terrain_stream.h.
+#include <chrono>
 #include "rg/terrain_stream.h"
 
 #include <algorithm>
@@ -10,9 +11,6 @@ namespace rg {
 
 namespace {
 
-constexpr double kMinDirectionSpeedMps = 2.0;
-constexpr double kBehindPenaltyS = 1000.0;
-constexpr double kTimeBinS = 0.25;
 constexpr double kNoDataZ = -1.0e6;
 
 double clamp01(double v) { return std::clamp(v, 0.0, 1.0); }
@@ -27,78 +25,6 @@ double adaptive_upload_budget_ms(std::size_t pending, double speed_mps, const Up
         clamp01((static_cast<double>(pending) - p.backlog_lo) / std::max(1e-9, p.backlog_hi - p.backlog_lo));
     const double speed = clamp01((speed_mps - p.speed_lo_mps) / std::max(1e-9, p.speed_hi_mps - p.speed_lo_mps));
     return p.base_ms + (std::max(p.max_ms, p.base_ms) - p.base_ms) * std::max(backlog, speed);
-}
-
-double reselect_distance_for_speed(double base_m, double speed_mps, double min_fraction, double speed_lo_mps,
-                                   double speed_hi_mps) {
-    if (!(speed_mps > speed_lo_mps)) {
-        return base_m;
-    }
-    const double t = clamp01((speed_mps - speed_lo_mps) / std::max(1e-9, speed_hi_mps - speed_lo_mps));
-    return base_m * (1.0 - (1.0 - clamp01(min_fraction)) * t);
-}
-
-double chunk_time_to_reach_s(const g2m::mesh::ChunkKey& key, double e0, double n0, double px, double py, double vx,
-                             double vy) {
-    const double size = static_cast<double>(g2m::mesh::kChunkQuads) * std::ldexp(1.0, key.level);
-    const double half = size * 0.5;
-    // Chunk centre relative to the car, in session-local axes.
-    const double cx = static_cast<double>(key.cx) * size + half - e0 - px;
-    const double cy = static_cast<double>(key.cy) * size + half - n0 - py;
-    const double speed = std::hypot(vx, vy);
-    if (!(speed >= kMinDirectionSpeedMps)) {
-        const double gx = std::max(0.0, std::abs(cx) - half);
-        const double gy = std::max(0.0, std::abs(cy) - half);
-        return std::hypot(gx, gy) / kMinDirectionSpeedMps;
-    }
-    const double ux = vx / speed;
-    const double uy = vy / speed;
-    const double along = cx * ux + cy * uy;
-    const double lateral = std::abs(-cx * uy + cy * ux);
-    const double r = half * (std::abs(ux) + std::abs(uy)); // footprint half-extent along u and across it
-    const double lateral_gap = std::max(0.0, lateral - r);
-    if (along + r < 0.0) {
-        return kBehindPenaltyS + std::hypot(-(along + r), lateral_gap) / speed;
-    }
-    const double ahead = std::max(0.0, along - r);
-    return std::hypot(ahead, lateral_gap) / speed;
-}
-
-void sort_adds_by_urgency(std::vector<RenderChunk>& added, double e0, double n0, double px, double py, double vx,
-                          double vy) {
-    if (added.size() < 2) {
-        return;
-    }
-    struct Entry {
-        double time_s;
-        long long bin;
-        std::size_t index;
-    };
-    std::vector<Entry> order(added.size());
-    for (std::size_t i = 0; i < added.size(); ++i) {
-        const double t = chunk_time_to_reach_s(added[i].key, e0, n0, px, py, vx, vy);
-        order[i] = Entry{t, static_cast<long long>(std::floor(t / kTimeBinS)), i};
-    }
-    std::sort(order.begin(), order.end(), [&added](const Entry& a, const Entry& b) {
-        if (a.bin != b.bin) {
-            return a.bin < b.bin;
-        }
-        const auto& ka = added[a.index].key;
-        const auto& kb = added[b.index].key;
-        if (ka.level != kb.level) {
-            return ka.level < kb.level; // finest level first
-        }
-        if (a.time_s != b.time_s) {
-            return a.time_s < b.time_s;
-        }
-        return ka < kb;
-    });
-    std::vector<RenderChunk> sorted;
-    sorted.reserve(added.size());
-    for (const Entry& e : order) {
-        sorted.push_back(std::move(added[e.index]));
-    }
-    added = std::move(sorted);
 }
 
 LodCoverage lod_coverage_ahead(const std::vector<g2m::mesh::ChunkKey>& keys, double e0, double n0, double px,
@@ -210,10 +136,21 @@ BedCheck rendered_vs_bed(const std::vector<RenderChunk>& chunks, std::size_t cou
     std::vector<double> above;
     above.reserve(beds.size());
     const std::size_t n = std::min(count, chunks.size());
+    // Contiguous chunk footprints: the plain scan touched every RenderChunk (~8 us per bed point at 1500 chunks, so a
+    // few thousand bed points cost tens of ms on the main thread once per second); the bounds prefilter is ~1 us.
+    struct Bounds { double e0, e1, n0, n1; };
+    std::vector<Bounds> bounds(n);
+    for (std::size_t i = 0; i < n; ++i) {
+        const auto& mesh = chunks[i].mesh;
+        const double extent = std::ldexp(1.0, mesh.key.level) * g2m::mesh::kChunkQuads;
+        bounds[i] = {mesh.origin[0], mesh.origin[0] + extent, mesh.origin[1], mesh.origin[1] + extent};
+    }
     for (const auto& bed : beds) {
         double visible = -1.0e9;
         std::size_t best = n;
         for (std::size_t i = 0; i < n; ++i) {
+            const Bounds& b = bounds[i];
+            if (bed[0] < b.e0 || bed[0] > b.e1 || bed[1] < b.n0 || bed[1] > b.n1) continue;
             double z = 0.0;
             if (chunk_surface_height(chunks[i], bed[0], bed[1], z) && z > visible) {
                 visible = z;
@@ -251,6 +188,32 @@ std::vector<std::size_t> stale_fallback_chunks(const std::vector<RenderChunk>& c
         if (chunks[i].carve == ChunkCarve::Fallback && state_now(chunks[i].key) != ChunkCarve::Fallback) stale.push_back(i);
     }
     return stale;
+}
+
+bool ChunkRebuildJob::start(std::vector<g2m::mesh::ChunkKey> keys, BuildFn build) {
+    if (future_.valid() || keys.empty() || !build) return false;
+    cancel_.store(false, std::memory_order_relaxed);
+    future_ = std::async(std::launch::async, [this, keys = std::move(keys), build = std::move(build)]() {
+        std::vector<RenderChunk> built;
+        if (!build(keys, built, &cancel_) || built.size() != keys.size()) built.clear();
+        return built;
+    });
+    return true;
+}
+
+bool ChunkRebuildJob::take(std::vector<RenderChunk>& out) {
+    if (!future_.valid() || future_.wait_for(std::chrono::seconds(0)) != std::future_status::ready) return false;
+    std::vector<RenderChunk> built = future_.get();
+    if (built.empty()) return false;
+    out = std::move(built);
+    return true;
+}
+
+void ChunkRebuildJob::cancel_and_join() {
+    if (!future_.valid()) return;
+    cancel_.store(true, std::memory_order_relaxed);
+    future_.wait();
+    future_ = {};
 }
 
 void SampleWindow::add(double value) {

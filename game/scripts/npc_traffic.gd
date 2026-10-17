@@ -122,7 +122,12 @@ func _build_batches() -> void:
   _part(true, Vector3(0.04,0.35,0.2), Vector3(6.52,y,-0.8), Color(1,0.95,0.75))
   _part(true, Vector3(0.04,0.3,0.2), Vector3(-6.52,y,-0.8), Color(0.9,0.035,0.025))
 
+const FrameProbe := preload("res://scripts/frame_probe.gd")
 func _process(delta: float) -> void:
+  var probe_t0 := Time.get_ticks_usec()
+  _process_body(delta)
+  FrameProbe.add("npc_traffic", Time.get_ticks_usec() - probe_t0)
+func _process_body(delta: float) -> void:
  if simulation == null:
   return
  var ticks: int = simulation.get_step_count()
@@ -141,7 +146,7 @@ func _process(delta: float) -> void:
   _visibility_elapsed = 0.0
  _diagnostic_elapsed += delta
  _render_max_ms = maxf(_render_max_ms, float(state.get("render_ms", 0.0)))
- if _diagnostic_elapsed >= 5.0:
+ if _diagnostic_elapsed >= 5.0 and FrameProbe.enabled: # RG_PERF=1 only (main.gd)
   print("RG_TRAFFIC_RENDER active=%d rendered=%d max_ms=%.3f" % [state.get("active",0),state.get("rendered",0),_render_max_ms])
   _diagnostic_elapsed = 0.0
   _render_max_ms = 0.0

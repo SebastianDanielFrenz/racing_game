@@ -16,6 +16,8 @@
 #include "g2m/world/height_sampler.h"
 
 #include <godot_cpp/variant/dictionary.hpp>
+#include <godot_cpp/variant/packed_float64_array.hpp>
+#include <godot_cpp/variant/utility_functions.hpp>
 #include <godot_cpp/variant/string.hpp>
 #include <godot_cpp/variant/vector3.hpp>
 
@@ -74,6 +76,8 @@ void RgSimulation::set_vehicle_overrides(const godot::Dictionary& overrides) {
     }
     if (overrides.has("engine_map_cache_dir"))
         o.engine_map_cache_dir = std::string(godot::String(overrides["engine_map_cache_dir"]).utf8().get_data());
+    if (overrides.has("turbo_map_extension_path"))
+        o.turbo_map_extension_path = std::string(godot::String(overrides["turbo_map_extension_path"]).utf8().get_data());
     vehicle_overrides_ = std::move(o);
 }
 
@@ -106,14 +110,45 @@ Vector3 RgSimulation::session_to_godot(const Vector3& session_position) const {
                         origin_rebase_->origin());
 }
 
-Dictionary RgSimulation::get_bumper_camera() const {
+Dictionary RgSimulation::get_bumper_camera(const String& rig_json_path, const Vector3& model_offset) const {
     Dictionary d;
     if (!session_) return d;
     const rg::BumperParams params;
-    const ps::Vec3 eye = rg::bumper_eye_local(rg::vehicle_bounds(session_->vehicle_desc()), params);
+    ps::Vec3 eye = rg::bumper_eye_local(rg::vehicle_bounds(session_->vehicle_desc()), params);
+    String source = "wheels";
+    if (!rig_json_path.is_empty()) {
+        std::string err;
+        const auto model = rg::load_model_bounds(std::string(rig_json_path.utf8().get_data()), &err);
+        if (model) {
+            eye = rg::bumper_eye_from_model(*model, ps::Vec3{model_offset.x, model_offset.y, model_offset.z}, params);
+            source = model->bumper_socket ? "socket" : "model";
+        } else {
+            godot::UtilityFunctions::push_warning(String("bumper camera: ") + String(err.c_str()));
+        }
+    }
+    d["source"] = source;
     d["eye_local"] = Vector3(static_cast<float>(eye.x), static_cast<float>(eye.y), static_cast<float>(eye.z));
     d["pitch_down_deg"] = params.pitch_down_deg;
     d["fov_deg"] = params.fov_deg;
+    return d;
+}
+
+Dictionary RgSimulation::get_camera_motion_sample() const {
+    Dictionary d;
+    if (!session_) return d;
+    const rg::FrameSnapshot& f = frame_snapshot();
+    const ps::Pose pose = render_chassis_pose();
+    auto v3 = [](const ps::Vec3& v) {
+        return Vector3(static_cast<float>(v.x), static_cast<float>(v.y), static_cast<float>(v.z));
+    };
+    d["sim_time"] = f.sim_time;
+    d["velocity"] = v3(f.chassis_motion.linear);
+    d["forward"] = v3(pose.orientation.rotate(ps::Vec3{1.0, 0.0, 0.0}));
+    d["left"] = v3(pose.orientation.rotate(ps::Vec3{0.0, 1.0, 0.0}));
+    d["up"] = v3(pose.orientation.rotate(ps::Vec3{0.0, 0.0, 1.0}));
+    godot::PackedFloat64Array c;
+    for (const auto& w : f.wheels) c.push_back(static_cast<double>(w.state.suspension_travel));
+    d["compression"] = c;
     return d;
 }
 

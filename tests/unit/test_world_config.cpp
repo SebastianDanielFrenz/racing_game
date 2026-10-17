@@ -594,6 +594,48 @@ TEST_CASE("load_world_config: lod is not an object", "[world_config]") {
     CHECK_FALSE(err.empty());
 }
 
+// --- "render_classes": raw OSM, served classes or no terrain route paint ---
+
+TEST_CASE("load_world_config: render_classes defaults to osm, accepts served/none, rejects others", "[world_config]") {
+    ScopedEnvVar env("RG_G2M_HOME", "S:/some/test/g2m/home");
+    auto load = [](const json& j, std::string* err) {
+        TempFile file = TempFile::from_json(j);
+        return rg::load_world_config(file.path(), err);
+    };
+    std::string err;
+    json j = valid_world_config_json();
+    REQUIRE_FALSE(j.contains("render_classes"));
+    auto cfg = load(j, &err);
+    REQUIRE(cfg.has_value());
+    CHECK_FALSE(cfg->render_classes_served);
+
+    j["render_classes"] = "osm";
+    cfg = load(j, &err);
+    REQUIRE(cfg.has_value());
+    CHECK_FALSE(cfg->render_classes_served);
+
+    j["render_classes"] = "served";
+    cfg = load(j, &err);
+    REQUIRE(cfg.has_value());
+    CHECK(cfg->render_classes_served);
+
+    j["render_classes"] = "none";
+    cfg = load(j, &err);
+    REQUIRE(cfg.has_value());
+    CHECK_FALSE(cfg->render_classes_served);
+    CHECK(cfg->render_classes_none);
+
+    j["render_classes"] = "both";
+    err.clear();
+    CHECK_FALSE(load(j, &err).has_value());
+    CHECK(err.find("render_classes") != std::string::npos);
+
+    j["render_classes"] = true;
+    err.clear();
+    CHECK_FALSE(load(j, &err).has_value());
+    CHECK(err.find("render_classes") != std::string::npos);
+}
+
 // --- "physics" (R2.2 plan section 3: PhysicsTerrainConfig, the terrain
 // streaming gate's tuning knobs - not yet consumed by anything, R3 is
 // config-only) ---

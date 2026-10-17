@@ -15,11 +15,19 @@ HeightTileSharedFetch::HeightTileSharedFetch(g2m::world::HeightTileFetchFn fn, g
     if (!road_fn_) throw std::invalid_argument("HeightTileSharedFetch: empty road fetch function");
 }
 
+HeightTileSharedFetch::HeightTileSharedFetch(
+    g2m::world::HeightTileFetchFn fn, g2m::world::RoadSegmentsFetchFn road_fn, ClassFetchFn class_fn)
+    : fn_(std::move(fn)), road_fn_(std::move(road_fn)), class_fn_(std::move(class_fn)) {
+    if (!fn_) throw std::invalid_argument("HeightTileSharedFetch: empty height fetch function");
+    if (!road_fn_) throw std::invalid_argument("HeightTileSharedFetch: empty road fetch function");
+    if (!class_fn_) throw std::invalid_argument("HeightTileSharedFetch: empty class fetch function");
+}
+
 g2m::phys::FetchResult HeightTileSharedFetch::fetch(const g2m::TileKey& key) {
     g2m::world::HeightTileFetchResult r = fn_(key);
     // Keep the contract "tile non-null iff Ok" on the physics side too.
-    if (r.status != g2m::Status::Ok) return g2m::phys::FetchResult{r.status, nullptr, nullptr};
-    if (r.tile == nullptr) return g2m::phys::FetchResult{g2m::Status::Internal, nullptr, nullptr};
+    if (r.status != g2m::Status::Ok) return g2m::phys::FetchResult{r.status, nullptr, nullptr, nullptr};
+    if (r.tile == nullptr) return g2m::phys::FetchResult{g2m::Status::Internal, nullptr, nullptr, nullptr};
 
     std::shared_ptr<const std::vector<g2m::RoadSegment>> roads;
     if (road_fn_) {
@@ -32,7 +40,9 @@ g2m::phys::FetchResult HeightTileSharedFetch::fetch(const g2m::TileKey& key) {
         const g2m::world::RoadSegmentsResult rr = road_fn_(l2);
         if (rr.status != g2m::world::RoadFetchStatus::Failed) roads = rr.segments;
     }
-    return g2m::phys::FetchResult{r.status, std::move(r.tile), std::move(roads)};
+    std::shared_ptr<const g2m::TerrainClassTile> classes;
+    if (class_fn_) classes = class_fn_(key);
+    return g2m::phys::FetchResult{r.status, std::move(r.tile), std::move(roads), std::move(classes)};
 }
 
 TerrainModeConfig make_terrain_mode(const WorldConfig& config, const g2m::geo::SessionFrame& frame,
@@ -51,9 +61,20 @@ TerrainModeConfig make_terrain_mode(const WorldConfig& config, std::shared_ptr<W
     const g2m::geo::SessionFrame frame = terrain->frame();
     std::shared_ptr<HeightTileSharedFetch> fetch;
     if (config.physics.road_surfaces.enabled) {
-        fetch = std::make_shared<HeightTileSharedFetch>(
-            [terrain](const g2m::TileKey& key) { return terrain->height_tile_shared(key, terrain->physics_priority()); },
-            [terrain](const g2m::TileKey& l2) { return terrain->road_segments_shared(l2, terrain->physics_priority()); });
+        auto heights = [terrain](const g2m::TileKey& key) {
+            return terrain->height_tile_shared(key, terrain->physics_priority());
+        };
+        auto roads = [terrain](const g2m::TileKey& l2) {
+            return terrain->road_segments_shared(l2, terrain->physics_priority());
+        };
+        if (terrain->served_terrain_class()) {
+            fetch = std::make_shared<HeightTileSharedFetch>(std::move(heights), std::move(roads),
+                [terrain](const g2m::TileKey& key) {
+                    return terrain->terrain_class_tile(key, terrain->physics_priority());
+                });
+        } else {
+            fetch = std::make_shared<HeightTileSharedFetch>(std::move(heights), std::move(roads));
+        }
     } else {
         fetch = std::make_shared<HeightTileSharedFetch>(
             [terrain](const g2m::TileKey& key) { return terrain->height_tile_shared(key, terrain->physics_priority()); });

@@ -1,0 +1,23 @@
+{
+  "format": "rg.turbo_map_extension/1",
+  "source": "Policy for growing a turbo stage map around the engine's air demand (physics_sim ps::drivetrain::meanline::ExtensionPolicy; owner rule 2026-10-14: turbo maps recompute and cache when out of range). Numbers are physics_sim's [AS] defaults: dense speed lines every 500 rpm [D] (the car_hyper_n2o demand at 1.8 bar sits 376 rpm above the choke edge), flow knots every 0.01 kg/s, margins 5 % in speed and 10 % in flow, budgets = the generator's adaptive budgets (129 speed lines, 257 flow points).",
+  "enabled": true,
+  "policy": {
+    "flow_margin": 0.10,
+    "speed_margin": 0.05,
+    "speed_step_rpm": 500.0,
+    "flow_step_kg_s": 0.01,
+    "max_speed_lines": 129,
+    "max_flow_points": 257
+  },
+  "cache": {
+    "subdir": "turbo_stage_maps",
+    "subdir_help": "Under the engine map cache directory; a file is turbo_stage_<cache key>.json, written atomically. The key is physics_sim's meanline::cache_key of geometry and extended axes, so equal demand = equal file."
+  },
+  "choke": {
+    "rpm_step": 500.0,
+    "bisect_iterations": 40,
+    "flow_scan_max_factor": 1.5,
+    "help": "The choke message of the setup check: largest per-turbo flow at which the compressor still reaches the target pressure ratio, found by scanning corrected speed in rpm_step steps for the first valid point, bisecting onto the choke edge, and bisecting the flow up to the largest demand x flow_scan_max_factor."
+  }
+}

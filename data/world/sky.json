@@ -1,0 +1,48 @@
+{
+  "format": "rg.sky/1",
+  "description": "Time of day and visual weather (rg::TimeWeather, core/include/rg/time_weather.h). location: omit to use the world config's session origin (UTM -> lat/lon). start.date: \"today\" (system clock, UTC date) or YYYY-MM-DD. rate: game seconds per real second. Lighting keys are Godot light energies by sun elevation; values are visual tuning [AS], not photometry, EXCEPT illuminance_lux: the clear-sky horizontal illuminance per key (approximate textbook values [recalled, unverified]: ~0.002 lux starlit night, 3.4 lux end of civil twilight at -6 deg, ~600 lux sun on the horizon, ~1e5 lux high sun), interpolated in log space, dimmed by clouds (x (1 - cloud_illuminance_dim * cover^cloud_illuminance_exponent): ~0.3 at overcast) plus moonlight (moon_illuminance_full_lux x illuminated fraction x sin(moon elevation)). The automatic headlamps (data/world/headlights.json \"auto\") and the camera exposure read it. exposure (rg/exposure.h): display value = luminance (cd/m2) x key x pi / A, A = illuminance adapted over adapt_tau_s and clamped to [min_adapted_lux, max_adapted_lux]; lamps keep a constant physical intensity, so they vanish against daylight and dominate at night. Every weather preset also drives the physics weather environment (data/world/climate.json maps the ids to physics presets; V8); a preset with precipitation or thunder that climate.json does not map stays greyed out with unwired_reason.",
+  "time_zone": {"standard_offset_h": 1.0, "eu_summer_time": true},
+  "start": {"date": "today", "local_time_h": 14.0},
+  "rate": {"default": 1.0, "options": [0.0, 1.0, 10.0, 60.0, 600.0]},
+  "time_presets": [
+    {"id": "dawn", "label": "Dawn 06:30", "local_time_h": 6.5},
+    {"id": "morning", "label": "Morning 09:00", "local_time_h": 9.0},
+    {"id": "noon", "label": "Noon 13:00", "local_time_h": 13.0},
+    {"id": "evening", "label": "Evening 18:30", "local_time_h": 18.5},
+    {"id": "dusk", "label": "Dusk 20:30", "local_time_h": 20.5},
+    {"id": "night", "label": "Night 23:30", "local_time_h": 23.5}
+  ],
+  "weather_presets": [
+    {"id": "clear", "label": "Clear", "cloud_cover": 0.0, "precipitation": "none", "thunder": false},
+    {"id": "partly_cloudy", "label": "Partly cloudy", "cloud_cover": 0.45, "precipitation": "none", "thunder": false},
+    {"id": "overcast", "label": "Overcast", "cloud_cover": 0.9, "precipitation": "none", "thunder": false},
+    {"id": "rain", "label": "Rain", "cloud_cover": 0.95, "precipitation": "rain", "thunder": false},
+    {"id": "snow", "label": "Snow", "cloud_cover": 0.95, "precipitation": "snow", "thunder": false},
+    {"id": "hail", "label": "Hail", "cloud_cover": 0.95, "precipitation": "hail", "thunder": false},
+    {"id": "thunder", "label": "Thunderstorm", "cloud_cover": 1.0, "precipitation": "rain", "thunder": true}
+  ],
+  "default_weather": "clear",
+  "unwired_reason": "not wired: data/world/climate.json has no physics preset for it",
+  "icon": {"partly_cloudy_min": 0.2, "overcast_min": 0.7, "night_sun_elevation_deg": -3.0},
+  "lighting": {
+    "moon_energy_full": 0.12,
+    "moon_rgb": [0.65, 0.75, 1.0],
+    "moon_fade_elevation_deg": 5.0,
+    "cloud_sun_dim": 0.75,
+    "cloud_exponent": 3.4,
+    "cloud_ambient_dim": 0.3,
+    "overcast_rgb": [0.55, 0.57, 0.6],
+    "cloud_illuminance_dim": 0.8,
+    "cloud_illuminance_exponent": 1.5,
+    "moon_illuminance_full_lux": 0.25,
+    "keys": [
+      {"sun_elevation_deg": -18.0, "sun_energy": 0.0, "sun_rgb": [1.0, 0.5, 0.3], "ambient_energy": 0.04, "sky_top_rgb": [0.008, 0.012, 0.03], "sky_horizon_rgb": [0.02, 0.025, 0.045], "illuminance_lux": 0.002},
+      {"sun_elevation_deg": -6.0, "sun_energy": 0.0, "sun_rgb": [1.0, 0.5, 0.3], "ambient_energy": 0.12, "sky_top_rgb": [0.06, 0.08, 0.18], "sky_horizon_rgb": [0.35, 0.22, 0.18], "illuminance_lux": 3.4},
+      {"sun_elevation_deg": 0.0, "sun_energy": 0.15, "sun_rgb": [1.0, 0.55, 0.3], "ambient_energy": 0.3, "sky_top_rgb": [0.18, 0.28, 0.5], "sky_horizon_rgb": [0.9, 0.55, 0.35], "illuminance_lux": 600.0},
+      {"sun_elevation_deg": 10.0, "sun_energy": 0.8, "sun_rgb": [1.0, 0.85, 0.7], "ambient_energy": 0.65, "sky_top_rgb": [0.3, 0.42, 0.62], "sky_horizon_rgb": [0.72, 0.7, 0.66], "illuminance_lux": 15000.0},
+      {"sun_elevation_deg": 30.0, "sun_energy": 1.1, "sun_rgb": [1.0, 0.97, 0.92], "ambient_energy": 0.9, "sky_top_rgb": [0.385, 0.454, 0.55], "sky_horizon_rgb": [0.646, 0.656, 0.67], "illuminance_lux": 55000.0},
+      {"sun_elevation_deg": 60.0, "sun_energy": 1.2, "sun_rgb": [1.0, 1.0, 0.97], "ambient_energy": 1.0, "sky_top_rgb": [0.36, 0.45, 0.58], "sky_horizon_rgb": [0.646, 0.656, 0.67], "illuminance_lux": 100000.0}
+    ]
+  },
+  "exposure": {"key": 1.5, "min_adapted_lux": 50.0, "max_adapted_lux": 150000.0, "adapt_tau_s": 1.5}
+}

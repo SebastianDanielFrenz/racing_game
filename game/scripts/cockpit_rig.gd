@@ -6,6 +6,12 @@ var _config: Dictionary = {}
 var body_visuals: Node
 var camera: Camera3D
 var _yaw: float = 0.0
+var _base_fov: float = 70.0
+# The driver's virtual body (camera_director.gd, RgCameraMotion view
+# "cockpit"): head offset (car frame), pitch/roll, speed shake and FOV.
+var motion: Dictionary = {}
+var motion_view := "cockpit"
+var motion_enabled := true
 
 func _ready() -> void:
 	_config = JSON.parse_string(FileAccess.get_file_as_string(ProjectSettings.globalize_path("res://../data/controls/cabin.json")))
@@ -22,6 +28,7 @@ func _ready() -> void:
 const FOV_OFFSET_DEG := 5.0
 
 func set_base_fov(base_fov_deg: float) -> void:
+	_base_fov = base_fov_deg
 	camera.fov = base_fov_deg + FOV_OFFSET_DEG
 
 func activate(_from: Transform3D) -> void:
@@ -50,5 +57,13 @@ func update_rig(delta: float, simulation: Node, input_map: Node, input_live: boo
 	var direction: Vector3 = chassis.basis.x.normalized().rotated(up,-_yaw)
 	var side: Vector3 = chassis.basis.y.normalized().rotated(up,-_yaw)
 	direction = direction.rotated(side,-deg_to_rad(look_pitch_deg))
+	var fov_extra := 0.0
+	if motion_enabled and not motion.is_empty():
+		eye += motion["offset"] # ISO car frame, like eye
+		# nod down about the (look-yawed) left axis, lean right about the view axis
+		direction = direction.rotated(side, float(motion["pitch_down_rad"]))
+		up = up.rotated(direction.normalized(), float(motion["roll_right_rad"]))
+		fov_extra = float(motion["fov_extra_deg"])
+	camera.fov = _base_fov + FOV_OFFSET_DEG + fov_extra
 	position = chassis*eye
 	basis = Basis.looking_at(direction,up)

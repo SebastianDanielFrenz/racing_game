@@ -20,6 +20,12 @@ func _run() -> void:
 		push_error("TC simulation initialization failed")
 		quit(1)
 		return
+	while str(sim.get_init_status().get("state", "")) == "loading":
+		await process_frame
+	if str(sim.get_init_status().get("state", "")) != "ready":
+		push_error("TC simulation init failed: %s" % str(sim.get_init_status()))
+		quit(1)
+		return
 	var name: String = sim.get_vehicle_names()[0]
 	var info: Dictionary = sim.get_vehicle_gauge_info(name)
 	var ok: bool = "TC" in info.get("fitted_assists", [])

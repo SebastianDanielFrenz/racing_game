@@ -1,6 +1,36 @@
 shader_type spatial;
-render_mode cull_disabled, diffuse_lambert, specular_disabled;
+render_mode cull_disabled, diffuse_lambert, specular_schlick_ggx;
 uniform float line_width_m = 0.15;
+// Surface textures (data/textures/surface_textures.json, game/scripts/surface_materials.gd): layer per ribbon surface,
+// placed by the ribbon's own UV (metres: u across, v along the road), so the floating origin never matters here.
+global uniform int rg_surface_detail;   // 0 off (the old procedural colours), 1 colour textures, 2 + relief + puddles
+global uniform float rg_wetness;
+global uniform float rg_puddles;
+uniform sampler2DArray surface_albedo : source_color, filter_linear_mipmap_anisotropic, repeat_enable;
+uniform sampler2DArray surface_normal : hint_normal, filter_linear_mipmap_anisotropic, repeat_enable;
+uniform float layer_tile_m[8];
+uniform vec3 layer_tint[8];
+uniform vec3 layer_mean[8];
+uniform float layer_roughness[8];
+uniform float layer_normal_strength[8];
+uniform int layer_asphalt = 0;
+uniform int layer_concrete = 1;
+uniform int layer_paving = 2;
+uniform int layer_sett = 3;
+uniform int layer_unpaved = 4;
+uniform int layer_dirt = 6;
+uniform int layer_grass = 5;
+uniform int layer_verge = 4;
+uniform int layer_macro = 6;
+uniform float detail_far_m = 400.0;
+uniform float wet_darken = 0.62;
+uniform float wet_roughness = 0.18;
+uniform float wet_specular = 0.5;
+uniform float puddle_roughness = 0.04;
+uniform float puddle_darken = 0.45;
+uniform float puddle_tile_m = 16.0;
+uniform float puddle_cover = 0.35;
+uniform float puddle_spread = 0.1;
 // Distance-growing depth pull toward the camera along the view ray (the
 // screen position is unchanged, only the depth moves): the terrain far away is
 // a coarse chunk (L2+: 4 m grid and up) whose triangles cut the road by metres,
@@ -30,6 +60,7 @@ void fragment() {
 	float half_width = width*0.5;
 	float lateral = UV.x;
 	float lanes = round(COLOR.r*32.0);
+	int surface_kind = int(round(lanes)); // Route overlays use this slot for g2m::SurfaceKind; marked ribbons use lane count.
 	float forward_lanes = round(COLOR.g*32.0);
 	// Bits as road_visual.h documents them: low byte in COLOR.b, high byte in COLOR.a (256 = verge strip).
 	int flags = int(round(COLOR.b*255.0)) + 256*int(round(COLOR.a*255.0));
@@ -56,12 +87,60 @@ void fragment() {
 		float joint = 1.0-smoothstep(0.0,0.02+aa,min(slab,5.0-slab));
 		asphalt = vec3(0.36,0.36,0.345)+vec3(grain*0.01*detail*UV2.y)-vec3(0.12*joint);
 	} else if ((flags & 8192)!=0) {
-		// Unpaved (a track's mouth in a junction patch): the terrain's dirt colour with a little gravel grain.
-		asphalt = vec3(0.36,0.28,0.16)+vec3(grain*0.02*detail);
+		// Explicit unpaved routes remain visually/materially distinct from terrain paint: unknown/dirt use soil,
+		// gravel uses the gravel set, and grass paths use the grass set.
+		asphalt = surface_kind==6 ? vec3(0.37,0.34,0.29) : (surface_kind==9 ? vec3(0.19,0.26,0.17) : vec3(0.36,0.28,0.16));
+		asphalt += vec3(grain*0.02*detail);
 	}
 	// The gravel verge strip beside the road bed (no paint there).
 	float edge = (flags & 256)!=0 ? 1.0 : 0.0;
 	ALBEDO = mix(asphalt,vec3(0.27,0.25,0.22),edge);
+	float rough = 0.94;
+	float wet = 0.0;
+	float puddle = 0.0;
+	vec3 relief_n = NORMAL;
+	if (rg_surface_detail > 0) {
+		int layer = layer_asphalt;
+		if (edge > 0.5) { layer = layer_verge; }
+		else if ((flags & 2048)!=0) { layer = (flags & 16384)!=0 ? layer_sett : layer_paving; }
+		else if ((flags & 4096)!=0) { layer = layer_concrete; }
+		else if ((flags & 8192)!=0) {
+			layer = surface_kind==6 ? layer_unpaved : (surface_kind==9 ? layer_grass : layer_dirt);
+		}
+		float dist = length(VERTEX);
+		float far_w = smoothstep(detail_far_m*0.6,detail_far_m,dist);
+		vec3 uvw = vec3(vec2(UV.x,UV.y)/layer_tile_m[layer],float(layer));
+		vec3 mean = layer_mean[layer]*layer_tint[layer];
+		vec3 tex = far_w<1.0 ? texture(surface_albedo,uvw).rgb*layer_tint[layer] : mean;
+		ALBEDO = mix(tex,mean,far_w);
+		if ((flags & 4096)!=0 && edge<0.5) {
+			float slab = mod(UV.y,5.0);
+			float aa = max(fwidth(UV.y),0.01);
+			ALBEDO *= 1.0-0.35*(1.0-smoothstep(0.0,0.02+aa,min(slab,5.0-slab)));
+		}
+		rough = layer_roughness[layer];
+		wet = rg_wetness;
+		if (rg_surface_detail > 1 && far_w < 1.0) {
+			if (rg_puddles > 0.0 && edge < 0.5) {
+				// Water collects off the crown, nearer the edges, in the low spots of a coarse noise.
+				float noise = texture(surface_albedo,vec3(vec2(UV.x,UV.y)/puddle_tile_m+vec2(0.37,0.71),float(layer_macro)),3.0).r;
+				float side = smoothstep(0.2,0.9,abs(lateral)/max(half_width,0.5));
+				float t = layer_mean[layer_macro].r+puddle_spread*(2.0*puddle_cover*rg_puddles*(0.5+side)-1.0);
+				puddle = smoothstep(t+0.015,t-0.015,noise)*smoothstep(0.0,0.2,rg_puddles)*(1.0-far_w);
+			}
+			vec2 r = (texture(surface_normal,uvw).rg*2.0-1.0)*layer_normal_strength[layer]*(1.0-far_w)*(1.0-puddle);
+			// Cotangent frame from screen derivatives (ribbon meshes carry no tangents).
+			vec3 dp1 = dFdx(VERTEX); vec3 dp2 = dFdy(VERTEX);
+			vec2 duv1 = dFdx(UV); vec2 duv2 = dFdy(UV);
+			vec3 n = normalize(NORMAL);
+			vec3 dp2perp = cross(dp2,n); vec3 dp1perp = cross(n,dp1);
+			vec3 t = dp2perp*duv1.x+dp1perp*duv2.x;
+			vec3 b = dp2perp*duv1.y+dp1perp*duv2.y;
+			float inv = inversesqrt(max(max(dot(t,t),dot(b,b)),1e-12));
+			// OpenGL normal maps: green points up the image (towards -v).
+			relief_n = normalize(n+(t*r.x-b*r.y)*inv);
+		}
+	}
 	float paint = 0.0;
 	if ((flags & 1)!=0) {
 		if ((flags & 2)!=0) {
@@ -101,7 +180,12 @@ void fragment() {
 	// Junction overlay: only the paint, the junction patch below shows everywhere else.
 	if ((flags & 32)!=0 && paint < 0.5) { discard; }
 	ALBEDO = mix(ALBEDO,vec3(0.85,0.86,0.83),paint);
-	ROUGHNESS = 0.94;
-	SPECULAR = 0.0;
+	// Wet: darker and glossier (paint darkens less), puddles near mirrors.
+	ALBEDO *= mix(1.0,mix(wet_darken,0.85,paint),wet);
+	ALBEDO *= mix(1.0,puddle_darken/max(wet_darken,0.01),puddle*wet);
+	rough = mix(mix(rough,0.6,paint),wet_roughness,wet);
+	ROUGHNESS = mix(rough,puddle_roughness,puddle);
+	SPECULAR = rg_surface_detail > 0 ? mix(0.25,wet_specular,max(wet,puddle)) : 0.0;
+	NORMAL = relief_n;
 	if (!FRONT_FACING) { NORMAL = -NORMAL; }
 }

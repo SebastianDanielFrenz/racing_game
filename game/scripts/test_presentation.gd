@@ -46,6 +46,9 @@ func _test() -> void:
 	var data := ProjectSettings.globalize_path("res://../external/physics_sim/data/")
 	var vehicle := "car_hyper" if "--hyper-voice" in OS.get_cmdline_user_args() else "car_sedan_pipes"
 	assert(native.initialize(data + "vehicles/" + vehicle + ".json", data + "surfaces/surfaces.json"))
+	while str(native.get_init_status().get("state", "")) == "loading":
+		await process_frame
+	assert(str(native.get_init_status().get("state", "")) == "ready")
 	native.set_control("ignition", 1.0)
 	native.start()
 	await create_timer(0.1).timeout

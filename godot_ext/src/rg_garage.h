@@ -116,6 +116,10 @@ public:
     [[nodiscard]] bool is_dirty() const;
     // Engine garage G1: {lines: [String], mass_delta_kg, engine_title} - what the engine/fuel choice changes
     [[nodiscard]] godot::Dictionary get_swap_info() const;
+    // Part-mass tree of a car (the edit session's working setup while editing it, else its saved setup):
+    // {ok, error, total_kg, chassis_kg, physics_carried_kg, stock_kg (catalog chassis mass), layout, stock_layout,
+    //  groups: [{id, label, kg}], parts: [{id, label, own_kg, total_kg, depth, source}] (depth-first, root depth 0)}
+    [[nodiscard]] godot::Dictionary get_mass_breakdown(const godot::String& id) const;
     // The engine list (defaults, each followed by its user engines):
     // [{key, name, family, class, image, detail, user, base_key, base_name, mass_kg, idle_rpm, limiter_rpm,
     //   torque_nm, torque_rpm, power_kw, power_rpm, fuels: [String]}]

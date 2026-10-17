@@ -24,15 +24,15 @@ choosing the half; a pedal resting at +-1 is bound calibrated (rest -> opposite 
 
 ## Data
 
-- `data/controls/actions.json` (`rg.control_actions/1`): the one action schema, 35 actions. Fields: `id`,
+- `data/controls/actions.json` (`rg.control_actions/1`): the one action schema, 52 actions. Fields: `id`,
   `label`, `group` (driving/camera/on_foot/menus/global), `kind` (`button` | `axis`), `mode`
   (`held` | `edge`, buttons), `range` (`signed` | `unit` | `delta`, axes), `negative_label`/
   `positive_label`, `help`, `modes` (the player modes the action is live in; two bindings of one
   device conflict only when their actions' modes overlap). Strictly validated; a bad file refuses to
   start the controls layer.
 - `data/controls/defaults/{keyboard,mouse,gamepad}.json` (`rg.control_profile/1`): the built-in default per
-  device class. They equal the bindings the game had before R5b (frozen in `test_controls.cpp`), so
-  nothing changes for a player who never opens the screen. A Generic pad (unknown SDL mapping) has no
+  device class. The keyboard and pad defaults equal the bindings the game had before R5b (frozen in
+  `test_controls.cpp`) plus the B7 pad additions below, so nothing changes for a player who never opens the screen. A Generic pad (unknown SDL mapping) has no
   default and does nothing until the player binds it.
 - `data/controls/fixed_keys.json` (`rg.fixed_keys/1`): description of the keys handled directly in scripts.
   Kept in step by hand.
@@ -47,7 +47,46 @@ Assists (physics_sim assist unit): the action `traction_control` (key F4) steps 
 
 Launch control (physics_sim assists I4/I7b): the action `toggle_launch_control` (key L) flips the `assist.launch_control` channel from its CURRENT value (`rg::toggled_launch_control`; a car without launch control ignores it). A drive-mode change also writes the mode's defaults into `assist.traction_control` and `assist.launch_control` itself (assists I7c; car_hyper_n2o: launch control on in SPORT, off in ECO and NORMAL), and the Session adopts those writes after the tick (`rg/channel_mirror.h`), so the HUD lamps follow without a key press and a key press made meanwhile wins.
 
-Drive modes (physics_sim assists I7): the action `drive_mode` (key M, no gamepad button) cycles the requested drive mode ECO, NORMAL, SPORT through the modes the car's `drive_modes` part offers (`rg::next_drive_mode`; a mode the car does not offer is never selected, and on a car without the part the key does nothing). Only car_hyper_n2o carries the part (ECO / NORMAL / SPORT, default NORMAL). The game writes only the `assist.drive_mode` channel: physics_sim sets the traction-control request of the new mode itself (ECO and NORMAL On, SPORT Relaxed) and gates launch control and the N2O arm to SPORT, so the game never writes `assist.traction_control` on a mode change; F4 still takes over TC afterwards. The running mode is shown by a theme colour (ECO blue, NORMAL gray, SPORT orange; `game/scripts/drive_mode_theme.gd`) on the tach gauge, the hypercar cluster and the HUD readout, with the mode name bottom right under the tach dial. A launch-control lamp (`LC`) follows the snapshot's `launch_phase` (off, on, armed, launching); the game has no key for the `assist.launch_control` switch yet.
+Drive modes (physics_sim assists I7): the action `drive_mode` (key M, pad button 17) cycles the requested drive mode ECO, NORMAL, SPORT through the modes the car's `drive_modes` part offers (`rg::next_drive_mode`; a mode the car does not offer is never selected, and on a car without the part the key does nothing). Only car_hyper_n2o carries the part (ECO / NORMAL / SPORT, default NORMAL). The game writes only the `assist.drive_mode` channel: physics_sim sets the traction-control request of the new mode itself (ECO and NORMAL On, SPORT Relaxed) and gates launch control and the N2O arm to SPORT, so the game never writes `assist.traction_control` on a mode change; F4 still takes over TC afterwards. The running mode is shown by a theme colour (ECO blue, NORMAL gray, SPORT orange; `game/scripts/drive_mode_theme.gd`) on the tach gauge, the hypercar cluster and the HUD readout, with the mode name bottom right under the tach dial. A launch-control lamp (`LC`) follows the snapshot's `launch_phase` (off, on, armed, launching). The `assist.launch_control` switch is the action `toggle_launch_control` (key L, pad button 18; B7 added the pad button).
+
+## Gamepad coverage (B7, 2026-10-14)
+
+Every keyboard default now has a pad default except the list below. The schema has no chords or held
+modifiers (an action's bindings are alternatives, not combinations; `combine` only joins two axes into
+pedals), so B7 used only buttons that no other action uses in the same mode. Two shared buttons are
+shared only across modes that never overlap: D-pad right (14: `cycle_drone_target`, drone follow) and
+L3 (7: `cam_fast`, free cam / on foot). A press in another mode is consumed and ignored by `main.gd`.
+
+| action | keyboard | pad (B7) | button index | note |
+|---|---|---|---|---|
+| traction control (cycle) | F4 | paddle 1 | 16 | |
+| drive mode (cycle) | M | paddle 2 | 17 | |
+| launch control on / off | L | paddle 3 | 18 | |
+| aero automation on / off | H | paddle 4 | 19 | |
+| hazard lights | F12 | touchpad click | 20 | |
+| left indicator | Z | MISC1 (Xbox share) | 15 | |
+| right indicator | X | D-pad right | 14 | shared with drone target (other mode) |
+| horn (hold) | J | L3 | 7 | shared with free cam fast (other modes) |
+
+Paddles, the touchpad and MISC1 are the back grips of Xbox Elite / Steam Deck / DualSense Edge pads and
+the share button of Xbox Series pads, reported by SDL as buttons 15-20. On a pad without them these
+actions are reachable only by rebinding. Not verified on hardware.
+
+Automatic and dual-clutch gearboxes (2026-10-16): the existing shift up / shift down actions (E / Q,
+pad B / X) step the selector one position per press along P <-> R <-> N <-> D (up from P goes R, N, D; down
+from D goes N, R, P). Stepping into P or R is refused while the car rolls faster than 1 m/s (a HUD message;
+physics refuses them too); D -> N and N -> D stay possible at speed. Y (`manual_mode`) toggles manual mode, only
+from D: there shift up / down change gears (tiptronic), the cluster shows M<gear>, and pressing Y again
+returns to D. Outside manual mode shift up in D does nothing. There are no separate P / R / N / D actions.
+Park keeps its key P (`park`) on every car; on an automatic it is the same as selecting P (neutral plus the
+park lock). `transmission_mode` (D / S shift schedule) has no default key. The cluster shows P R N D S or
+M<gear>. On a manual car all of this does nothing and the shift keys behave as before.
+
+Still keyboard-only (no free pad button without a chord): start/stop engine (F11), headlights (O), park
+(P), get out (G), truck ahead (T), zoom in/out (PageUp/PageDown, orbit / drone / third person), switch
+world (F8), log marker (Delete); owner rules keep reset car (R) and the starter (K) off the pad. EPB has
+no key or pad default (physics support missing). Fixed keys (`fixed_keys.json`) are unchanged by B7;
+no pad button used here is a fixed key (pad Start stays pause).
 
 A binding: `{type: key|joy_button|joy_axis|mouse_button|mouse_motion, key|button|axis, span:
 full|positive|negative, sign, deadzone, saturation, curve, sensitivity, invert, calibrated, cal_min,

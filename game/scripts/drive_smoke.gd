@@ -122,7 +122,7 @@ func _process(_delta: float) -> void:
 			if main.world_state == "failed":
 				_finish(1, "world did not load")
 			elif main.world_state == "running" and main.world_kind == "real_world":
-				main.scripted_controls = {"throttle": 0.5, "steer": 0.0, "brake": 0.0, "handbrake": 0.0, "clutch": 0.0}
+				main.scripted_controls = {"throttle": 0.5, "steer": 0.0, "brake": 0.0, "handbrake": 0.0, "clutch": 0.0, "ignition": 1.0, "assist.auto_shift": 1.0}
 				print("RG_SPEED_LIMIT spawn car=%s data=%s" % [main.VEHICLE_NAME, JSON.stringify(sim.get_vehicle_speed_limit(main.VEHICLE_NAME))])
 				_drive_start = main.chassis_session_position()
 				_phase = "drive"
@@ -131,6 +131,9 @@ func _process(_delta: float) -> void:
 				var p: Vector3 = main.chassis_session_position()
 				_drove_m = Vector2(p.x, p.y).distance_to(Vector2(_drive_start.x, _drive_start.y))
 				print(main.status_line("RG_DRIVE smoke drove %.1f m in %.1f s:" % [_drove_m, DRIVE_S]))
+				if _drove_m < 5.0:
+					_finish(1, "the drive phase did not propel the car (%.2f m)" % _drove_m)
+					return
 				# Flip upright IN PLACE, already upright (this script has no
 				# way to roll the car over) - an end-to-end wiring check that
 				# the binding relocates without sending the car back to spawn.

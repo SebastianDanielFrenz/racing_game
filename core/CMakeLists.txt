@@ -56,6 +56,8 @@ add_library(rg_core STATIC
     src/environment.cpp
     src/npc_truck.cpp
     src/walker.cpp
+    src/fpv_drone.cpp
+    src/fpv_drone_sound.cpp
     src/npc_traffic.cpp
     src/traffic_stuck.cpp
     src/building_footprints.cpp
@@ -67,22 +69,34 @@ add_library(rg_core STATIC
     src/terrain_mode.cpp
     src/world_config.cpp
     src/world_terrain.cpp
-    src/buildings.cpp
-    src/road_visual.cpp
     src/road_surface.cpp
+    src/route_surface_mesh.cpp
     src/terrain_smoothing.cpp
     src/road_structures.cpp
     src/fixed_rate_loop.cpp
-    src/terrain_view_streamer.cpp
+    src/terrain_colours.cpp
+    src/synthetic_terrain.cpp
     src/terrain_stream.cpp
     src/render_focus.cpp
+    src/steering_assist.cpp
+    src/address_search.cpp
     src/route_check.cpp
     src/route_follower.cpp
     src/road_network.cpp
     src/credits.cpp
     src/settings.cpp
+    src/lod_settings.cpp
+    src/route_planner.cpp
+    src/map_view.cpp
     src/spawn_presets.cpp
     src/shell_flow.cpp
+    src/sky.cpp
+    src/time_weather.cpp
+    src/exposure.cpp
+    src/climate.cpp
+    src/wet_look.cpp
+    src/weather_sync.cpp
+    src/crops.cpp
     src/control_binding.cpp
     src/control_schema.cpp
     src/controls.cpp
@@ -96,13 +110,21 @@ add_library(rg_core STATIC
     src/engine_store.cpp
     src/engine_swap.cpp
     src/gearbox_catalog.cpp
+    src/part_mass.cpp
+    src/driveline_swap.cpp
     src/crt_guard.cpp
     src/garage_set.cpp
     src/garage.cpp
     src/garage_dyno.cpp
     src/limit_advisor.cpp
+    src/turbo_map_extension.cpp
+    src/turbo_kit.cpp
+    src/engine_internals.cpp
+    src/cooling_upgrades.cpp
     src/road_ahead.cpp
     src/camera_math.cpp
+    src/camera_motion.cpp
+    src/tyre_sound.cpp
     "${PS_ADAPTER_SRC_DIR}/frame_convert_core.cpp"
 )
 
@@ -131,8 +153,11 @@ target_link_libraries(rg_core
         g2m_mesh
         g2m_phys
         g2m_world
+        g2m_route
         g2m_ps_bridge
+        ps_environment
+        ps_environment_io
+        nlohmann_json::nlohmann_json
     PRIVATE
         rg_options
-        nlohmann_json::nlohmann_json
 )

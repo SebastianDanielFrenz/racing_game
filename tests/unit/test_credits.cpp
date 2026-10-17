@@ -4,6 +4,7 @@
 #include "rg/credits.h"
 
 #include <catch2/catch_test_macros.hpp>
+#include <nlohmann/json.hpp>
 
 #include <algorithm>
 #include <filesystem>
@@ -136,6 +137,35 @@ TEST_CASE("credits: shipped data/credits.json", "[credits]") {
         CHECK_FALSE(e->in_game);
         CHECK_FALSE(e->on_attribution_line);
     }
+}
+
+// CC BY 4.0: every catalog car drawn with an imported third-party model (data/models/imported/<id>/) is credited
+// as "model_<id>" with creator, title, licence and the modification note (tools/carimport).
+TEST_CASE("credits: every imported car model is credited", "[credits]") {
+    std::string err;
+    const auto c = rg::load_credits(kRoot + "/data/credits.json", &err);
+    INFO(err);
+    REQUIRE(c.has_value());
+    const auto catalog = nlohmann::json::parse(read_file(kRoot + "/data/vehicles/catalog.json"), nullptr, false);
+    REQUIRE(catalog.is_object());
+    const std::string prefix = "data/models/imported/";
+    int imported = 0;
+    for (const auto& v : catalog["vehicles"]) {
+        const std::string model = v.value("model", "");
+        if (model.rfind(prefix, 0) != 0) continue;
+        ++imported;
+        const std::string id = "model_" + model.substr(prefix.size(), model.find('/', prefix.size()) - prefix.size());
+        CAPTURE(id);
+        const auto it = std::find_if(c->entries.begin(), c->entries.end(), [&](const auto& e) { return e.id == id; });
+        REQUIRE(it != c->entries.end());
+        CHECK(it->kind == rg::CreditKind::Assets);
+        CHECK(it->in_game);
+        CHECK(it->attribution_required);
+        CHECK(it->licence == "CC BY 4.0");
+        CHECK(it->attribution_text.find("modified") != std::string::npos);
+        CHECK(it->attribution_text.find(" by ") != std::string::npos);
+    }
+    CHECK(imported >= 3);
 }
 
 TEST_CASE("credits: README table parser", "[credits]") {

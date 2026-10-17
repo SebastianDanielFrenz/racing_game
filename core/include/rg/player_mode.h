@@ -44,15 +44,20 @@
 // nearly stopped (kGetOutMaxSpeedMps): the speed-aware request_mode()/
 // cycle_mode() overloads refuse OnFoot above it (Result::Refused; cycle_mode
 // skips it and counts the refusal so a HUD can say why). Mode cycle: drive ->
-// free_cam -> drone_follow -> on_foot -> drive (Cockpit stays unused - the
+// free_cam -> drone_follow -> on_foot -> fpv_drone -> drive (Cockpit stays unused - the
 // cockpit is a Drive view toggle). Leaving OnFoot by the cycle (or any
 // request_mode) puts the player back into the car wherever the walker is -
 // the range-checked "get in" is the interact action, handled by the Session.
+//
+// FPV drone: a pilotable kinematic flyer (rg/fpv_drone.h, owned by rg::Session). The car is Unattended like in free
+// cam, the driving inputs are off, the flying inputs (move, up/down, yaw, pitch) are live. Never speed-gated: the
+// parked car just brakes. Mode cycle: drive -> free_cam -> drone_follow -> on_foot -> fpv_drone -> drive.
 #pragma once
 
 #include <cstdint>
 #include <optional>
 #include <span>
+#include <string>
 #include <string_view>
 
 namespace rg {
@@ -63,13 +68,14 @@ enum class PlayerMode : std::uint8_t {
     DroneFollow = 2, // R9b: drone camera trailing a target vehicle (own car: the player keeps driving)
     Cockpit = 3,     // reserved, unused (the cockpit is a Drive view toggle, not a mode)
     OnFoot = 4,      // R9c: walker beside the car, interact gets back in (own car only)
+    FpvDrone = 5,    // pilotable FPV drone (rg/fpv_drone.h); the car is parked (Unattended)
 };
-inline constexpr int kPlayerModeCount = 5;
+inline constexpr int kPlayerModeCount = 6;
 
 enum class WorldKind : std::uint8_t { Flat = 0, RealWorld = 1 };
 enum class WorldPhase : std::uint8_t { None = 0, Loading = 1, Ready = 2, Failed = 3 };
 enum class VehicleControl : std::uint8_t { Player = 0, Unattended = 1 };
-enum class CameraRig : std::uint8_t { Chase = 0, Free = 1, Drone = 2, Seat = 3, Walker = 4 };
+enum class CameraRig : std::uint8_t { Chase = 0, Free = 1, Drone = 2, Seat = 3, Walker = 4, Fpv = 5 };
 
 struct ModeRules {
     bool implemented = false;
@@ -77,6 +83,7 @@ struct ModeRules {
     bool driving_inputs_live = false;
     bool camera_inputs_live = false;
     bool walking_inputs_live = false; // R9c: move/run/jump/interact reach the walker
+    bool flying_inputs_live = false;  // FPV drone: the six translation axes, yaw and pitch reach the drone
     CameraRig camera_rig = CameraRig::Free;
 };
 
@@ -139,6 +146,12 @@ struct DroneCandidate {
 [[nodiscard]] std::optional<std::uint64_t> next_drone_target(std::optional<std::uint64_t> current,
                                                              std::span<const DroneCandidate> candidates,
                                                              double ref_x, double ref_y, double max_range_m);
+
+// The HUD label of a drone target: "own car" (nullopt), "NPC truck" (the id of the NPC truck), "NPC lorry #n" (a
+// traffic actor that is a lorry) or "NPC car #n". `npc_truck_id` is Session::kNpcTruckVehicleId; `is_lorry` is the
+// traffic actor's own flag (only consulted for ids other than the truck).
+[[nodiscard]] std::string drone_target_label(std::optional<std::uint64_t> target, std::uint64_t npc_truck_id,
+                                             bool is_lorry);
 
 class PlayerModeMachine {
 public:

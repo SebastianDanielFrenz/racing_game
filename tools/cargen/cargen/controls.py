@@ -53,12 +53,12 @@ def _r(v, k=4):
 
 
 class Cockpit:
-    def __init__(self, model, steering_lock_to_lock_turns, road_wheel_lock_deg):
+    def __init__(self, model, steering_wheel_lock_deg, road_wheel_lock_deg):
         self.model = model
         self.controls = []
         self.screens = []
         self.notes = []
-        self.steering = {"lock_to_lock_turns": steering_lock_to_lock_turns,
+        self.steering = {"steering_wheel_lock_deg": steering_wheel_lock_deg,
                          "road_wheel_lock_deg": road_wheel_lock_deg}
 
     def add(self, node, kind, source, mapping, hit=None, action=None, label=""):
@@ -182,6 +182,11 @@ def pedal(m, ck, name, pivot, pad_center, channel, travel_deg=18.0, pad_size=(0.
 
 # ---------------------------------------------------------- steering wheel
 
+def _blade(mb, path, widths, thicks, normal, mat, part):
+    from .common import blade_path
+    blade_path(mb, path, widths, thicks, mat, part, normal=normal)
+
+
 def steering_wheel(m, ck, center, column_dir, radius, spokes, rim_mat, spoke_mat, hub_mat, rim_r=0.016,
                    lock_deg=None, part=None, spoke_angles=None, dish=0.0, hub_r=None, column_mat=None,
                    column_len=0.32):
@@ -190,7 +195,7 @@ def steering_wheel(m, ck, center, column_dir, radius, spokes, rim_mat, spoke_mat
     dish: how far the hub sits forward of the rim plane (deep-dish 70s wheels ~0.05)."""
     mb = m.mb
     axis = norm(mul(column_dir, -1))
-    lock = lock_deg if lock_deg is not None else ck.steering["lock_to_lock_turns"] * 180.0
+    lock = lock_deg if lock_deg is not None else ck.steering["steering_wheel_lock_deg"]
     node = m.node("steering_wheel", part, center, m.revolute(axis, -lock, lock, "steering wheel angle, + = left"))
     f = frame_z_to(axis, center)
     rim = [xform_point(f, (radius * math.cos(2 * math.pi * k / 40), radius * math.sin(2 * math.pi * k / 40), 0))
@@ -201,7 +206,10 @@ def steering_wheel(m, ck, center, column_dir, radius, spokes, rim_mat, spoke_mat
     for a in angles:
         tip = xform_point(f, (radius * 0.97 * math.cos(a), radius * 0.97 * math.sin(a), 0))
         mid = xform_point(f, (radius * 0.55 * math.cos(a), radius * 0.55 * math.sin(a), -dish * 0.45))
-        M.tube(mb, [hub, mid, tip], 0.009, spoke_mat, node, count=8)
+        # flat blade spoke, wide at the hub, slim where it meets the rim
+        root = xform_point(f, (radius * 0.12 * math.cos(a), radius * 0.12 * math.sin(a), -dish - 0.02))
+        _blade(mb, [root, mid, tip], [radius * 0.26, radius * 0.17, radius * 0.12], [0.012, 0.010, 0.010], axis,
+               spoke_mat, node)
     hr = hub_r or radius * 0.28
     M.cylinder(mb, xform_point(f, (0, 0, -dish - 0.06)), xform_point(f, (0, 0, -dish + 0.005)), hr, hub_mat, node,
                count=20)
@@ -209,11 +217,11 @@ def steering_wheel(m, ck, center, column_dir, radius, spokes, rim_mat, spoke_mat
     M.cylinder(mb, xform_point(f, (0, 0, -dish - 0.06)), col_end, 0.028, column_mat or "trim_black",
                "" if part is None else part, count=12)
     ck.add(node, "steering_wheel", "wheel_steer_angle",
-           {"ratio": "lock_to_lock", "lock_to_lock_turns": ck.steering["lock_to_lock_turns"],
+           {"ratio": "steering_wheel_lock_deg", "steering_wheel_lock_deg": ck.steering["steering_wheel_lock_deg"],
             "road_wheel_lock_deg": ck.steering["road_wheel_lock_deg"]},
            hit=(center, (radius * 0.3, radius + rim_r, radius + rim_r)),
            action={"type": "rotate", "channel": "steer", "range": [-1.0, 1.0],
-                   "turns_full_range": ck.steering["lock_to_lock_turns"]}, label="steering wheel")
+                   "steering_wheel_lock_deg": ck.steering["steering_wheel_lock_deg"]}, label="steering wheel")
     return node, f
 
 

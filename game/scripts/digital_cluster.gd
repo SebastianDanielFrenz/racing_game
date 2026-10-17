@@ -7,6 +7,7 @@ var drive_kw := 0.0
 var boost_bar := -1.0
 var gear := 0
 var park_engaged := false
+var selector_label := "" # automatic / dual-clutch: P R N D S M<n> (rg::selector_label), "" on a manual
 var cabin_lamps: Dictionary = {}
 var capacity := 0.0
 var density := 0.0
@@ -42,7 +43,12 @@ func _ready() -> void:
 	capacity = info.get("fuel_capacity_kg",0.0)
 	density = info.get("fuel_density_kg_m3",0.0)
 
+const FrameProbe := preload("res://scripts/frame_probe.gd")
 func _process(delta: float) -> void:
+	var probe_t0 := Time.get_ticks_usec()
+	_process_body(delta)
+	FrameProbe.add("cluster", Time.get_ticks_usec() - probe_t0)
+func _process_body(delta: float) -> void:
 	if not simulation.is_running() or simulation.get_step_count() <= 0:
 		return
 	if capacity <= 0.0:
@@ -79,6 +85,7 @@ func _process(delta: float) -> void:
 	boost_bar = pt.get("boost_bar",-1.0)
 	gear = int(pt.get("gear",0))
 	park_engaged = controls["park"]["active"]
+	selector_label = str(controls["transmission"]["label"]) if controls.has("transmission") and controls["transmission"]["fitted"] else ""
 	fuel = pt.get("fuel_mass_kg",0.0)
 	if capacity>0.0 and (initial_fuel<0.0 or fuel>initial_fuel+0.01):
 		initial_fuel = fuel
@@ -112,7 +119,13 @@ func small_dial(center: Vector2, value: String, title: String, fraction: float, 
 	text(value,center+Vector2(0,3),28)
 	text(title,center+Vector2(0,25),15,Color(0.5,0.7,0.82))
 
+# _draw runs in the deferred canvas redraw after every _process (not inside the _process probe): timed on its own.
 func _draw() -> void:
+	var probe_t0 := Time.get_ticks_usec()
+	_draw_body()
+	FrameProbe.add("cluster_draw", Time.get_ticks_usec() - probe_t0)
+
+func _draw_body() -> void:
 	draw_rect(Rect2(0,0,1024,400),Color(0.008,0.016,0.026))
 	var blue := Color(0.5,0.7,0.82)
 	var has_fuel := capacity>0 and density>0
@@ -136,7 +149,12 @@ func _draw() -> void:
 	if themed:
 		# Drive mode, small, under the tach dial (between its lower end and the information strip).
 		text(drive_mode_label,Vector2(735,299),22,drive_mode_accent)
-	text("P" if park_engaged else ("R" if gear<0 else ("N" if gear==0 else str(gear))),Vector2(490,174),90)
+	if selector_label != "":
+		# Automatic gearboxes: the selector letter, with the running gear after D/S (M already carries it).
+		var shown := selector_label + (str(gear) if (selector_label == "D" or selector_label == "S") and gear > 0 else "")
+		text(shown,Vector2(490,174),90 if shown.length() < 2 else 70)
+	else:
+		text("P" if park_engaged else ("R" if gear<0 else ("N" if gear==0 else str(gear))),Vector2(490,174),90)
 	text("GEAR",Vector2(490,207),18,blue)
 	if not cabin_lamps.is_empty():
 		text("<",Vector2(330,32),28,Color.GREEN if cabin_lamps["left"]["active"] else Color(0.15,0.15,0.15))
@@ -150,6 +168,14 @@ func _draw() -> void:
 			tc_label += " ACTIVE"
 		var tc_color := Color(1.0,0.65,0.15) if tc_intervening or not tc_on else Color(0.2,0.95,0.75)
 		text(tc_label,Vector2(490,266),20,tc_color)
+	if not cabin_lamps.is_empty():
+		# ABS / ESC (assist unit): green = on, amber = off or intervening (blink state comes from the shared ControlState).
+		var amber := Color(1.0,0.65,0.15)
+		var green := Color(0.2,0.95,0.75)
+		if cabin_lamps["abs"]["fitted"]:
+			text(str(cabin_lamps["abs"]["label"]),Vector2(330,330),18,green if cabin_lamps["abs"]["colour_role"] == "ok" else amber)
+		if cabin_lamps["esc"]["fitted"]:
+			text(str(cabin_lamps["esc"]["label"]),Vector2(330,354),18,green if cabin_lamps["esc"]["colour_role"] == "ok" else amber)
 	if launch_lamp > 0:
 		# Launch control (assists I4): gray = off, green = on, blinking amber = armed, solid amber = launching.
 		var lc_color := Color(0.45,0.5,0.55)

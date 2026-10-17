@@ -25,10 +25,21 @@ rg::DriverSnapshot convert(const godot::Dictionary& d) {
     s.epb_fitted = static_cast<bool>(d.get("epb_fitted", false));
     s.epb_state = static_cast<int>(d.get("epb_state", 0));
     s.epb_refused = static_cast<bool>(d.get("epb_refused", false));
+    s.abs_fitted = static_cast<bool>(d.get("abs_fitted", false));
+    s.abs_on = static_cast<bool>(d.get("abs_on", false));
+    s.abs_intervening = static_cast<bool>(d.get("abs_active", false));
+    s.esc_fitted = static_cast<bool>(d.get("esc_fitted", false));
+    s.esc_effective = static_cast<int>(d.get("esc_mode_effective", 0));
+    s.esc_intervening = static_cast<bool>(d.get("esc_active", false));
     s.gear = static_cast<int>(d.get("gear",0));
+    s.transmission_kind = static_cast<int>(d.get("transmission_kind", 0));
+    s.transmission_selector = static_cast<int>(d.get("transmission_selector", 0));
+    s.transmission_manual = static_cast<bool>(d.get("transmission_manual_mode", false));
+    s.transmission_sport = static_cast<bool>(d.get("transmission_sport_mode", false));
     s.engine_running = godot::String(d.get("engine_state", "")) == "Running";
     s.speed_mps = static_cast<double>(d.get("speed_mps",0.0));
     s.steering_wheel_deg = static_cast<double>(d.get("steering_wheel_deg",0.0));
+    if (d.has("ambient_lux")) s.ambient_lux = static_cast<double>(d.get("ambient_lux", s.ambient_lux));
     return s;
 }
 class Sink final : public rg::ChannelSink {
@@ -65,6 +76,11 @@ void RgDriverActions::configure_cabin(const godot::Dictionary& d) {
     c.indicator_arm_deg = d.get("indicator_arm_deg",c.indicator_arm_deg);
     c.indicator_cancel_deg = d.get("indicator_cancel_deg",c.indicator_cancel_deg);
     c.brake_lamp_threshold = d.get("brake_lamp_threshold",c.brake_lamp_threshold);
+    c.auto_lights = d.get("auto_lights",c.auto_lights);
+    c.auto_lights_on_lux = d.get("auto_lights_on_lux",c.auto_lights_on_lux);
+    c.auto_lights_off_lux = d.get("auto_lights_off_lux",c.auto_lights_off_lux);
+    c.auto_lights_on_delay_s = d.get("auto_lights_on_delay_s",c.auto_lights_on_delay_s);
+    c.auto_lights_off_delay_s = d.get("auto_lights_off_delay_s",c.auto_lights_off_delay_s);
     try { actions_.configure_cabin(c); } catch (const std::exception& e) { ERR_PRINT(e.what()); }
 }
 godot::Array RgDriverActions::advance(const godot::Dictionary& snapshot, const godot::Dictionary& channels, bool enabled, double dt) {
@@ -75,6 +91,11 @@ godot::Array RgDriverActions::advance(const godot::Dictionary& snapshot, const g
 void RgDriverActions::discard_pending() { actions_.discard_pending(); }
 void RgDriverActions::configure_auto_shift(bool enabled) { actions_.configure_auto_shift(enabled); }
 bool RgDriverActions::get_auto_shift() const { return actions_.cabin().auto_shift; }
+void RgDriverActions::set_light_mode(const godot::String& name) {
+    rg::LightMode mode;
+    if (rg::parse_light_mode(name.utf8().get_data(), mode)) actions_.set_light_mode(mode);
+}
+godot::String RgDriverActions::get_light_mode() const { return godot::String(rg::light_mode_name(actions_.light_mode())); }
 godot::Dictionary RgDriverActions::state(const godot::String& id, const godot::Dictionary& snapshot, const godot::Dictionary& channels) {
     const Sink sink(channels);
     const auto s = rg::DriverActions::state(id.utf8().get_data(), convert(snapshot), sink);
@@ -91,6 +112,16 @@ godot::Dictionary RgDriverActions::state(const godot::String& id, const godot::D
     d["aero_target_deg"] = s.aero_target_deg;
     return d;
 }
+godot::Dictionary RgDriverActions::selector_shift(const godot::Dictionary& snapshot, int up, int down) {
+    const rg::SelectorShift r = rg::selector_shift(convert(snapshot), up, down);
+    godot::Dictionary d;
+    d["gear_request"] = r.gear_request;
+    d["change"] = r.gear_request != rg::kGearRequestNoChange;
+    d["park_request"] = r.park_request;
+    d["refused"] = r.refused;
+    d["forward_counts"] = r.forward_counts;
+    return d;
+}
 void RgDriverActions::_bind_methods() {
     using godot::ClassDB;
     using godot::D_METHOD;
@@ -101,7 +132,10 @@ void RgDriverActions::_bind_methods() {
     ClassDB::bind_method(D_METHOD("discard_pending"), &RgDriverActions::discard_pending);
     ClassDB::bind_method(D_METHOD("configure_auto_shift", "enabled"), &RgDriverActions::configure_auto_shift);
     ClassDB::bind_method(D_METHOD("get_auto_shift"), &RgDriverActions::get_auto_shift);
+    ClassDB::bind_method(D_METHOD("set_light_mode", "mode"), &RgDriverActions::set_light_mode);
+    ClassDB::bind_method(D_METHOD("get_light_mode"), &RgDriverActions::get_light_mode);
     ClassDB::bind_static_method("RgDriverActions", D_METHOD("state", "id", "snapshot", "channels"), &RgDriverActions::state);
+    ClassDB::bind_static_method("RgDriverActions", D_METHOD("selector_shift", "snapshot", "up", "down"), &RgDriverActions::selector_shift);
     BIND_ENUM_CONSTANT(PRESS); BIND_ENUM_CONSTANT(RELEASE); BIND_ENUM_CONSTANT(SET); BIND_ENUM_CONSTANT(HOLD);
     BIND_ENUM_CONSTANT(KEYBOARD); BIND_ENUM_CONSTANT(PAD); BIND_ENUM_CONSTANT(HUD); BIND_ENUM_CONSTANT(COCKPIT_MOUSE);
     BIND_ENUM_CONSTANT(VR_POKE); BIND_ENUM_CONSTANT(VR_GRAB); BIND_ENUM_CONSTANT(VR_RAY); BIND_ENUM_CONSTANT(SCRIPT);

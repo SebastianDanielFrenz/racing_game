@@ -1,4 +1,6 @@
 extends Node3D
+const SurfaceMaterials := preload("res://scripts/surface_materials.gd")
+const DriverState := preload("res://scripts/driver_state.gd") # preloaded once: this is called several times per frame
 # game/scripts/main.gd — the one game scene (R2.2 R9), built procedurally in
 # _ready() rather than hand-authored as a .tscn (a script-built scene stays in
 # sync with RgSimulation's evolving method surface; game/scenes/main.tscn is
@@ -61,8 +63,8 @@ extends Node3D
 # credits) and loading_overlay.gd (loading); the Drive screen is the world
 # itself with the HUD. Esc pauses, Esc backs out of every other screen.
 #
-# World load flow: flat = RgSimulation.initialize() + start() at once. Real
-# world = initialize_terrain() (start-up runs on a worker thread) -> poll
+# World load flow: both worlds build their Session on a worker thread (flat =
+# initialize(), real = initialize_terrain()) -> poll
 # get_init_status() each frame, the loading overlay shows its numbers ->
 # "ready": initial controls, start() -> first tick: RgTerrainView.
 # initialize_shared(sim), load_preview at the chassis -> "running". F8 at any
@@ -95,6 +97,7 @@ var _input_map: Node
 var _drive_view: String = "chase" # chase / bumper / cockpit / orbit / cinematic (rg::DriveView)
 var _drone_target_seen: int = -1 # last drone_target_id printed (-1 = own car)
 var _walker_rig: Node3D
+var _fpv_audio: Node
 var _walker_visual: Node3D
 var _refusals_seen: int = 0 # get_mode_state()["get_out_refusals"] already reported to the HUD
 var _enter_refused_seen: int = 0 # ... ["walker_enter_refused"]
@@ -102,6 +105,9 @@ var _mode_seen: String = "drive"
 var _seat_ui: CanvasLayer
 var _director: Node
 var _hud: Node
+var _sky: Node            # sky_controller.gd
+var _weather_widget: CanvasLayer # weather_widget.gd (top right)
+var _weather_fx: Node3D          # weather_fx.gd (wet look, rain / snow)
 var _overlay: Node
 var _visuals: Node
 var _roads: Node3D
@@ -110,7 +116,37 @@ var _world_view: Node # RgTerrainView shared with the real-world Session
 var _load_started_ms: int = 0
 var _last_report_ms: int = 0
 const FRAME_SPIKE_S := 0.05
+const FrameProbe := preload("res://scripts/frame_probe.gd")
+var _fd_spike_s := FRAME_SPIKE_S # env RG_FRAME_SPIKE_MS overrides (set in _ready)
+var _fd_frames := PackedFloat32Array()
+var _fd_probe_sum: Dictionary = {}
+var _fd_probe_max: Dictionary = {}
+var _fd_process_sum := 0.0
+var _fd_process_max := 0.0
+var _fd_last_report_ms := 0
+# Render A/B (frame-time diagnosis 2026-10-15): env RG_PERF_AB=<feature> switches one feature off and on again every
+# RG_PERF_AB_S seconds (default 5) while a world runs, and RG_FRAME_STATS carries ab=<feature>:on|off, so one log
+# compares the same scene with and without it. Features: shadows (sun shadow), terrain_shadows (terrain chunks drawn
+# into the sun's shadow splits), 3d (the main viewport's whole 3D render), terrain, roads, buildings, car, hud, audio
+# (vehicle_audio _process), sky (sky background -> clear colour), navigation (minimap + guidance layer), traffic (NPC
+# traffic visuals). RG_PERF_AB may name several features separated by commas, or "all": they are measured one after
+# the other (feature 1 on, off, feature 2 on, off, ...) and repeat; tools/perf_summary.py prints the on/off table.
+var _ab_feature := ""
+var _perf := false # RG_PERF=1 (or RG_PERF_AB / RG_BENCH_SURFACES): frame probes, render timers, 1 Hz perf lines
+var _render_timing := true # viewport render times + draw-phase probes (off with RG_RENDER_TIMING=0 or a separate render thread)
+var _ab_list := PackedStringArray()
+var _ab_index := 0
+const AB_ALL := ["3d", "shadows", "terrain_shadows", "terrain", "roads", "buildings", "car", "traffic", "hud", "navigation", "sky", "audio"]
+var _traffic_visual: Node
+var _ab_period_ms := 5000
+var _ab_off := false
+var _ab_switched_ms := 0
+var _ab_saved_bg := -1
 var _spawn_reported: bool = false
+var _drive_diag_history: Array[Dictionary] = []
+var _drive_diag_last_sample_s: float = -1.0e9
+const DRIVE_DIAG_HISTORY_S := 5.2
+const DRIVE_DIAG_SAMPLE_PERIOD_S := 0.1
 
 # --- shell (R5) ---
 var _shell: Node # RgShell: flow, settings, credits, spawn presets
@@ -141,6 +177,8 @@ var shell_log: PackedStringArray = PackedStringArray() # "from>to" of every acce
 var _terrain_material: ShaderMaterial
 # --terrain-preview only.
 var _terrain_view: Node
+# R4 minimap + route guidance (navigation_hud.gd; follows the real world itself).
+var _navigation: CanvasLayer
 var _terrain_preview_reported: bool = false
 # --terrain-preview without --screenshots/--stream-test: the fly camera whose
 # position drives RgTerrainView.update_focus every frame (R2.2 R8).
@@ -176,7 +214,34 @@ func _ready() -> void:
 	# Window close is handled in _notification: the audio players are stopped and the
 	# audio thread given time to release their generator playbacks before quitting.
 	get_tree().set_auto_accept_quit(false)
+	var ab_env := OS.get_environment("RG_PERF_AB").strip_edges().to_lower()
+	for f in (",".join(AB_ALL) if ab_env == "all" else ab_env).split(",", false):
+		_ab_list.append(f.strip_edges())
+	_ab_feature = _ab_list[0] if not _ab_list.is_empty() else ""
+	var ab_s := OS.get_environment("RG_PERF_AB_S")
+	if ab_s.is_valid_float() and float(ab_s) >= 1.0:
+		_ab_period_ms = int(float(ab_s) * 1000.0)
+	# Performance diagnostics are opt-in (owner, 2026-10-15: no cost in a normal game): RG_PERF=1 turns on the frame
+	# probes, the GPU/CPU render timers, frame_probe_end.gd and the 1 Hz RG_FRAME_STATS / RG_TERRAIN_STREAM /
+	# RG_ROAD_STREAM / RG_TRAFFIC_RENDER lines; RG_PERF_AB and RG_BENCH_SURFACES imply it. Without it only RG_FRAME_SPIKE
+	# stays (a delta comparison per frame; the line then has no probe or render-timer fields).
+	_perf = OS.get_environment("RG_PERF") == "1" or not _ab_list.is_empty() or OS.get_environment("RG_BENCH_SURFACES") != ""
+	FrameProbe.enabled = _perf
+	var spike_env := OS.get_environment("RG_FRAME_SPIKE_MS")
+	if spike_env.is_valid_float() and float(spike_env) > 0.0:
+		_fd_spike_s = float(spike_env) / 1000.0
+	# With --render-thread separate, reading the render times (and the draw signals' phase split) would make the main
+	# thread wait for the render thread every frame, i.e. undo the overlap; there frame_ms is the measure.
+	_render_timing = _perf and OS.get_environment("RG_RENDER_TIMING") != "0" and _render_thread_mode() != "separate"
+	if _render_timing:
+		RenderingServer.viewport_set_measure_render_time(get_viewport().get_viewport_rid(), true) # RG_FRAME_SPIKE render_cpu/gpu_ms
 	preload("res://scripts/ui_scale.gd").apply(get_tree())
+	if _perf:
+		var probe_end := Node.new()
+		probe_end.name = "FrameProbeEnd"
+		probe_end.set_script(preload("res://scripts/frame_probe_end.gd"))
+		probe_end.set("draw_phases", _render_timing)
+		add_child(probe_end)
 	var user_args := OS.get_cmdline_user_args()
 	if "--bindings-test" in user_args:
 		_run_bindings_test()
@@ -184,6 +249,21 @@ func _ready() -> void:
 		_build_terrain_preview_scene()
 	else:
 		_build_scene(user_args)
+
+# Flat initialize() builds its Session on a worker: wait for get_init_status() "ready".
+func _bindings_wait_ready(sim: Node) -> bool:
+	var began := Time.get_ticks_msec()
+	while true:
+		var st: Dictionary = sim.get_init_status()
+		var state := str(st.get("state", ""))
+		if state == "ready":
+			return true
+		if state == "error" or Time.get_ticks_msec() - began > 120000:
+			push_error("bindings test: flat init did not become ready: %s" % str(st))
+			get_tree().quit(1)
+			return false
+		await get_tree().process_frame
+	return false
 
 func _run_bindings_test() -> void:
 	# R2.2 R7 smoke-only check (tools/smoke_test.ps1 -BindingsTest, task 3 of
@@ -207,6 +287,8 @@ func _run_bindings_test() -> void:
 	if not ok:
 		push_error("bindings test: first initialize() failed: %s" % sim.get_last_error())
 		get_tree().quit(1)
+		return
+	if not await _bindings_wait_ready(sim):
 		return
 	sim.start()
 
@@ -251,6 +333,8 @@ func _run_bindings_test() -> void:
 	if not ok:
 		push_error("bindings test: second initialize() (re-init) failed: %s" % sim.get_last_error())
 		get_tree().quit(1)
+		return
+	if not await _bindings_wait_ready(sim):
 		return
 	sim.start()
 	if not bool(sim.is_running()):
@@ -307,6 +391,7 @@ func _build_terrain_preview_scene() -> void:
 	# visible at all (Godot's default material ignores vertex COLOR).
 	_terrain_material = ShaderMaterial.new()
 	_terrain_material.shader = load("res://shaders/terrain.gdshader")
+	SurfaceMaterials.shared().apply_terrain(_terrain_material)
 	terrain_view.set_material(_terrain_material.get_rid())
 
 	var spawn_x: float = terrain_view.get_spawn_x()
@@ -332,6 +417,7 @@ func _build_terrain_preview_scene() -> void:
 	# this one home region, roughly 90-880 m ASL, is still far below float
 	# precision concerns at these chunk sizes).
 	terrain_view.set_render_origin(Vector3(roundf(spawn_x), roundf(spawn_y), 0.0))
+	SurfaceMaterials.set_render_origin(Vector3(roundf(spawn_x), roundf(spawn_y), 0.0))
 
 	# --- lighting + sky (same minimal setup as _build_scene's, standalone
 	# here since this branch never calls _build_scene) ---
@@ -402,27 +488,43 @@ func _build_terrain_preview_scene() -> void:
 		# and its 5 poses unchanged.
 		_terrain_focus_camera = camera
 
+# Sun, moon, sky and ambient follow the time of day (sky_controller.gd, RgSky,
+# data/world/sky.json); the weather/time widget sits top right.
 func _add_sun_and_sky() -> void:
-	var sun := DirectionalLight3D.new()
-	sun.name = "Sun"
-	sun.rotation_degrees = Vector3(-55.0, -35.0, 0.0)
-	sun.light_energy = 1.1
-	sun.shadow_enabled = true
-	sun.directional_shadow_max_distance = 300.0
-	add_child(sun)
-	var env_node := WorldEnvironment.new()
-	var env := Environment.new()
-	env.background_mode = Environment.BG_SKY
-	env.sky = Sky.new()
-	env.sky.sky_material = ProceduralSkyMaterial.new()
-	env_node.environment = env
-	add_child(env_node)
+	_sky = load("res://scripts/sky_controller.gd").new()
+	_sky.name = "Sky"
+	add_child(_sky)
+	_sky.setup(ProjectSettings.globalize_path("res://../data/world/sky.json").simplify_path(), _world_config_path())
+	# V8: the next world load installs this sky's clock, weather and climate as the physics environment.
+	if _sky.sky != null and _simulation != null and _simulation.has_method("set_weather_source"):
+		_simulation.set_weather_source(_sky.sky)
+		_sky.simulation = _simulation
+	_weather_widget = CanvasLayer.new()
+	_weather_widget.name = "WeatherWidget"
+	_weather_widget.set_script(load("res://scripts/weather_widget.gd"))
+	_weather_widget.sky_controller = _sky
+	_weather_widget.simulation = _simulation
+	add_child(_weather_widget)
+	# Wet road look + rain / snow particles (weather_fx.gd, rg/wet_look.h).
+	if _simulation != null and _simulation.has_method("get_wet_look"):
+		_weather_fx = load("res://scripts/weather_fx.gd").new()
+		_weather_fx.name = "WeatherFx"
+		_weather_fx.simulation = _simulation
+		add_child(_weather_fx)
+
+func get_sky_controller() -> Node:
+	return _sky
 
 func _build_scene(user_args: PackedStringArray) -> void:
 	_teleport_dialog = CanvasLayer.new()
 	_teleport_dialog.set_script(load("res://scripts/address_teleport.gd"))
 	_teleport_dialog.main = self
 	add_child(_teleport_dialog)
+	_navigation = CanvasLayer.new()
+	_navigation.set_script(load("res://scripts/navigation_hud.gd"))
+	_navigation.main = self
+	_navigation.config_path = ProjectSettings.globalize_path("res://../data/world/route_planner.json")
+	add_child(_navigation)
 	set_process_priority(-2000)
 	var start_world := "real_world" if "--drive" in user_args else "flat"
 	var start_mode := "free_cam" if "--free-cam" in user_args else "drive"
@@ -442,6 +544,9 @@ func _build_scene(user_args: PackedStringArray) -> void:
 	if rolling_config is Dictionary:
 		_simulation.set_rolling_resistance_model(str(rolling_config.get("physics", {}).get("rolling_resistance_model", "quadratic")))
 	_simulation.set_aero_map_selection_path(ProjectSettings.globalize_path("res://../data/aero/hypercar_map.json"))
+	var fpv_err: String = _simulation.set_fpv_drone_config(ProjectSettings.globalize_path("res://../data/controls/fpv_drone.json"))
+	if fpv_err != "":
+		push_warning("fpv drone config: " + fpv_err + " (built-in defaults)")
 	add_child(_simulation)
 	if fetch_delay_ms > 0:
 		_simulation.set_fetch_delay_ms(fetch_delay_ms)
@@ -464,6 +569,7 @@ func _build_scene(user_args: PackedStringArray) -> void:
 	add_child(truck_visual)
 	add_child(_input_map)
 	var traffic := preload("res://scripts/npc_traffic.gd").new()
+	_traffic_visual = traffic
 	traffic.simulation = _simulation
 	add_child(traffic)
 
@@ -504,6 +610,7 @@ func _build_scene(user_args: PackedStringArray) -> void:
 	var bumper := Node3D.new()
 	bumper.name = "BumperRig"
 	bumper.set_script(load("res://scripts/bumper_rig.gd"))
+	bumper.body_visuals = _visuals
 	add_child(bumper)
 	_director.add_rig("bumper", bumper)
 	var orbit := Node3D.new()
@@ -521,6 +628,11 @@ func _build_scene(user_args: PackedStringArray) -> void:
 	free.set_script(load("res://scripts/free_rig.gd"))
 	add_child(free)
 	_director.add_rig("free", free)
+	var fpv := Node3D.new()
+	fpv.name = "FpvRig"
+	fpv.set_script(load("res://scripts/fpv_rig.gd"))
+	add_child(fpv)
+	_director.add_rig("fpv", fpv)
 	var drone := Node3D.new()
 	drone.name = "DroneRig"
 	drone.set_script(load("res://scripts/drone_rig.gd"))
@@ -545,6 +657,7 @@ func _build_scene(user_args: PackedStringArray) -> void:
 	add_child(_world_view)
 	_terrain_material = ShaderMaterial.new()
 	_terrain_material.shader = load("res://shaders/terrain.gdshader")
+	SurfaceMaterials.shared().apply_terrain(_terrain_material)
 
 	# --- HUD (debug text + streaming banner) ---
 	_hud = CanvasLayer.new()
@@ -747,6 +860,9 @@ func _release_world_nodes() -> void:
 		_vehicle_audio.shutdown()
 		_vehicle_audio.queue_free()
 		_vehicle_audio = null
+	if _fpv_audio != null:
+		_fpv_audio.queue_free()
+		_fpv_audio = null
 	# The view shares the old Session's WorldTerrain: release it first.
 	_world_view.release()
 	_director.set_terrain_view(null)
@@ -771,17 +887,14 @@ func _load_world(kind: String, keep_spawn_override: bool = false) -> void:
 	if kind == "flat":
 		if not keep_spawn_override:
 			_simulation.clear_spawn_override()
+		# Non-blocking like the real world: the Session is built on the init
+		# worker (a turbo car's first engine builds a full-load envelope);
+		# _poll_loading() starts it once get_init_status() says "ready".
 		if not _simulation.initialize(vehicle_json, surface_table_json):
 			_load_failed(str(_simulation.get_last_error()))
 			return
-		_apply_start_controls()
-		_simulation.start()
-		world_state = "running"
-		ready_sim_time = 0.0
-		_overlay.hide_overlay()
-		_visuals.on_session_ready()
-		print("RG_WORLD ready world=flat")
-		_world_running()
+		_overlay.show_loading(WORLD_LABEL[kind], {}, 0.0, _loading_footer(), str(_world_request.get("label", "")))
+		print("RG_WORLD loading world=flat")
 	else:
 		# The spawn the player picked belongs to a load started from the shell
 		# (set_spawn_override in _begin_world_load); F8 starts at the world's own.
@@ -845,9 +958,129 @@ func _poll_loading() -> void:
 			_overlay.show_loading(WORLD_LABEL[world_kind], st, elapsed, _loading_footer(), str(_world_request.get("label", "")))
 			_apply_start_controls()
 			_simulation.start()
-			world_state = "starting"
+			if world_kind == "flat":
+				_finish_flat_load()
+			else:
+				world_state = "starting"
 		"error":
 			_load_failed(str(st.get("message", "")))
+
+# The flat world is drivable as soon as its Session is started.
+func _finish_flat_load() -> void:
+	world_state = "running"
+	ready_sim_time = 0.0
+	_overlay.hide_overlay()
+	_visuals.on_session_ready()
+	_bench_synthetic_terrain()
+	print("RG_WORLD ready world=flat")
+	_world_running()
+
+# The --render-thread command-line choice (safe = rendering on the main thread, the default; separate = own thread).
+func _render_thread_mode() -> String:
+	var args := OS.get_cmdline_args()
+	var i := args.find("--render-thread")
+	return args[i + 1] if i >= 0 and i + 1 < args.size() else "safe"
+
+# Bench only (perf, 2026-10-15): RG_BENCH_SYNTHETIC_TERRAIN=<metres> streams the synthetic rolling-hills terrain
+# (RgTerrainView.load_synthetic_preview, the game's LOD defaults, 20 km) around the flat-world car, lowered by that many
+# metres so it stays under the ground box. Gives a no-map-store scene with the real world's terrain draw calls and
+# primitives plus the car and HUD, for RG_FRAME_STATS / RG_PERF_AB runs on any machine. No physics behind it.
+func _bench_synthetic_terrain() -> void:
+	if OS.get_environment("RG_BENCH_SURFACES") != "":
+		get_tree().create_timer(3.0).timeout.connect(_print_surface_census)
+		get_tree().create_timer(4.0).timeout.connect(_print_viewport_census)
+	var drop := OS.get_environment("RG_BENCH_SYNTHETIC_TERRAIN")
+	if drop.is_empty():
+		return
+	var pose: Dictionary = _simulation.get_chassis_session_pose()
+	_world_view.set_material(_terrain_material.get_rid())
+	_world_view.load_synthetic_preview(float(pose.get("x", 0.0)), float(pose.get("y", 0.0)), 20000.0)
+	_world_view.set_render_origin(Vector3(0.0, 0.0, float(drop)))
+	_director.set_terrain_view(_world_view)
+	print("RG_BENCH synthetic terrain chunks=%d vertices=%d drop_m=%s" % [_world_view.get_chunk_count(), _world_view.get_total_vertex_count(), drop])
+
+# RG_BENCH_SURFACES=1 (bench only): 3 s after a flat world is ready, prints one RG_SURFACES line per scene node that
+# holds mesh surfaces (MeshInstance3D only; RenderingServer-direct terrain is counted by RgTerrainView): visible mesh
+# instances, surfaces (= draw calls in the colour pass), surfaces whose instance casts sun shadows (drawn again per
+# cascade they touch) and triangles. Names the draw-call budget per feature.
+# RG_BENCH_SURFACES: draw calls per viewport (3D visible / shadow / canvas), and the same with the root viewport's 3D
+# switched off (RG_PERF_AB "3d"), so the draw calls that are not the 3D world are attributed.
+func _print_viewport_census() -> void:
+	for pass_name in ["3d_on", "3d_off"]:
+		get_viewport().disable_3d = pass_name == "3d_off"
+		for i in 3:
+			await get_tree().process_frame
+		var ports: Array = [get_viewport()]
+		ports.append_array(get_tree().root.find_children("*", "SubViewport", true, false))
+		for vp in ports:
+			var v := vp as Viewport
+			var mode := -1 if v == get_viewport() else int((v as SubViewport).render_target_update_mode)
+			print("RG_VIEWPORTS %s %s size=%s update=%d disable_3d=%s visible_dc=%d shadow_dc=%d canvas_dc=%d canvas_prims=%d" % [
+				pass_name, str(v.get_path()), str(v.get_visible_rect().size), mode, str(v.disable_3d),
+				v.get_render_info(Viewport.RENDER_INFO_TYPE_VISIBLE, Viewport.RENDER_INFO_DRAW_CALLS_IN_FRAME),
+				v.get_render_info(Viewport.RENDER_INFO_TYPE_SHADOW, Viewport.RENDER_INFO_DRAW_CALLS_IN_FRAME),
+				v.get_render_info(Viewport.RENDER_INFO_TYPE_CANVAS, Viewport.RENDER_INFO_DRAW_CALLS_IN_FRAME),
+				v.get_render_info(Viewport.RENDER_INFO_TYPE_CANVAS, Viewport.RENDER_INFO_PRIMITIVES_IN_FRAME)])
+		print("RG_VIEWPORTS %s total_dc=%d" % [pass_name, int(Performance.get_monitor(Performance.RENDER_TOTAL_DRAW_CALLS_IN_FRAME))])
+	get_viewport().disable_3d = false
+	# Canvas draw calls per CanvasLayer (hide it for a few frames, read the difference) and every visible canvas item that
+	# covers at least a quarter of the window (full-screen fill cost at 4K).
+	var root_vp := get_viewport()
+	var base := root_vp.get_render_info(Viewport.RENDER_INFO_TYPE_CANVAS, Viewport.RENDER_INFO_DRAW_CALLS_IN_FRAME)
+	for layer in get_tree().root.find_children("*", "CanvasLayer", true, false):
+		var cl := layer as CanvasLayer
+		if not cl.visible or cl.get_viewport() != root_vp:
+			continue
+		cl.visible = false
+		for i in 3:
+			await get_tree().process_frame
+		var without := root_vp.get_render_info(Viewport.RENDER_INFO_TYPE_CANVAS, Viewport.RENDER_INFO_DRAW_CALLS_IN_FRAME)
+		cl.visible = true
+		for i in 3:
+			await get_tree().process_frame
+		print("RG_CANVAS_LAYER %s layer=%d canvas_dc=%d" % [str(cl.get_path()), cl.layer, base - without])
+	var area := root_vp.get_visible_rect().get_area()
+	for item in get_tree().root.find_children("*", "Control", true, false):
+		var c := item as Control
+		if c.is_visible_in_tree() and c.get_viewport() == root_vp and c.get_global_rect().get_area() >= area * 0.25:
+			print("RG_CANVAS_BIG %s class=%s rect=%s material=%s" % [str(c.get_path()), c.get_class(), str(c.get_global_rect()), str(c.material)])
+
+func _print_surface_census() -> void:
+	var rows := {}
+	var stack: Array = [[self, ""]]
+	while not stack.is_empty():
+		var item: Array = stack.pop_back()
+		var node: Node = item[0]
+		var group: String = item[1]
+		if node is VisualInstance3D and not (node as VisualInstance3D).is_visible_in_tree():
+			continue
+		if node is CanvasItem and not (node as CanvasItem).is_visible_in_tree():
+			continue
+		if node is MeshInstance3D and (node as MeshInstance3D).mesh != null:
+			var mi := node as MeshInstance3D
+			var r: Array = rows.get(group, [0, 0, 0, 0])
+			var n := mi.mesh.get_surface_count()
+			r[0] += 1
+			r[1] += n
+			if mi.cast_shadow != GeometryInstance3D.SHADOW_CASTING_SETTING_OFF:
+				r[2] += n
+			for i in n:
+				var arrays := mi.mesh.surface_get_arrays(i) if mi.mesh is ArrayMesh else []
+				if arrays.size() > Mesh.ARRAY_INDEX and arrays[Mesh.ARRAY_INDEX] != null and (arrays[Mesh.ARRAY_INDEX] as PackedInt32Array).size() > 0:
+					r[3] += (arrays[Mesh.ARRAY_INDEX] as PackedInt32Array).size() / 3
+				elif arrays.size() > Mesh.ARRAY_VERTEX and arrays[Mesh.ARRAY_VERTEX] != null:
+					r[3] += (arrays[Mesh.ARRAY_VERTEX] as PackedVector3Array).size() / 3
+			rows[group] = r
+		for c in node.get_children():
+			var g: String = group
+			if node == self:
+				g = str(c.name)
+			elif group.count("/") < 1 and node.get_parent() == self:
+				g = group + "/" + str(c.name)
+			stack.append([c, g])
+	for g in rows:
+		var r: Array = rows[g]
+		print("RG_SURFACES %s instances=%d surfaces=%d shadow_surfaces=%d triangles=%d" % [g, r[0], r[1], r[2], r[3]])
 
 # First tick after start(): the snapshot now holds the spawned chassis, so the
 # terrain view can be built around it.
@@ -859,6 +1092,7 @@ func _attach_world_view() -> void:
 		return
 	_world_view.set_material(_terrain_material.get_rid())
 	_world_view.set_render_origin(_simulation.get_render_origin_session())
+	SurfaceMaterials.set_render_origin(_simulation.get_render_origin_session())
 	var chassis := chassis_session_position()
 	if not _world_view.load_preview(chassis.x, chassis.y):
 		_load_failed("RgTerrainView.load_preview: %s" % _world_view.get_last_error())
@@ -926,7 +1160,8 @@ func _report() -> void:
 	print(status_line("RG_DRIVE t=%.1f" % (sim_t - ready_sim_time)))
 	_save_drive_location()
 	_report_tick_spikes()
-	_report_streams()
+	if _perf:
+		_report_streams()
 
 # Render-stream health at speed (owner complaint 2026-10-13: at 400-580 km/h the
 # terrain does not resolve in time, the road is not visible far ahead). One line
@@ -1011,10 +1246,17 @@ func _notification(what: int) -> void:
 			_controls.save()
 		await _shutdown_audio_and_quit()
 
+var _saved_origin_path := ""
+var _saved_origin: Dictionary = {}
+
 func _save_drive_location() -> void:
 	var p := chassis_session_position()
-	var config = JSON.parse_string(FileAccess.get_file_as_string(_world_config_path()))
-	var origin: Dictionary = config.get("session_origin_utm", {}) if config is Dictionary else {}
+	var config_path := _world_config_path()
+	if config_path != _saved_origin_path: # read + parse the world config once, not on the main thread every second
+		_saved_origin_path = config_path
+		var config = JSON.parse_string(FileAccess.get_file_as_string(config_path))
+		_saved_origin = config.get("session_origin_utm", {}) if config is Dictionary else {}
+	var origin: Dictionary = _saved_origin
 	var pose: Dictionary = _simulation.get_chassis_session_pose()
 	var file := FileAccess.open(_user_dir().path_join("last_drive.json"), FileAccess.WRITE)
 	if file:
@@ -1051,9 +1293,12 @@ func _apply_mode_state() -> Dictionary:
 	if rig_name == "chase":
 		rig_name = _drive_view # chase / bumper / cockpit / orbit / cinematic
 	if _vr_active:
-		# VR keeps its own free rig for the drone view too (no XR drone rig yet).
-		# (No XR walker rig yet either: on foot the player keeps the tracked free flight.)
-		rig_name = "xr_free" if rig_name == "free" or rig_name == "drone" or rig_name == "walker" else "xr_cockpit"
+		# VR has its own drone rig (xr_drone: trails the target, the player's view is never rotated for them).
+		# (No XR walker rig yet: on foot the player keeps the tracked free flight.)
+		if rig_name == "drone":
+			rig_name = "xr_drone"
+		else:
+			rig_name = "xr_free" if rig_name == "free" or rig_name == "walker" or rig_name == "fpv" else "xr_cockpit"
 	var drone_id := int(ms.get("drone_target_id", -1))
 	if drone_id != _drone_target_seen:
 		_drone_target_seen = drone_id
@@ -1065,7 +1310,9 @@ func _apply_mode_state() -> Dictionary:
 
 # One of the F6 / F7 / F10 panels is open (they own the keyboard and the mouse).
 func _panel_open() -> bool:
-	return get_tree().get_nodes_in_group("seat_adjustment_open").size() > 0 or get_tree().get_nodes_in_group("traffic_settings_open").size() > 0 or get_tree().get_nodes_in_group("address_teleport_open").size() > 0
+	# Called several times a frame: first-node lookups, no group arrays built (perf, 2026-10-15).
+	var tree := get_tree()
+	return tree.get_first_node_in_group("seat_adjustment_open") != null or tree.get_first_node_in_group("traffic_settings_open") != null or tree.get_first_node_in_group("address_teleport_open") != null
 
 # Messages for what the mode framework refused, and a log line per mode change
 # (a get-in changes the mode without any key press of the cycle).
@@ -1099,9 +1346,24 @@ func _forward_walking(live: bool) -> void:
 	var m: Vector2 = _input_map.get_walk_move()
 	_simulation.set_walker_input(m.x, m.y, _walker_rig.get_look_forward(), _input_map.get_walk_run())
 
+# FPV drone input (fpv_drone mode): the camera group's move axes (right, up, forward) and look axes (yaw, pitch). The
+# flight model lives in rg_core (rg::FpvDrone); the rate axes are +left / +up there, the look input is +right / +up.
+func _forward_flying(live: bool) -> void:
+	if not bool(_simulation.is_running()):
+		return
+	if not live or _panel_open():
+		_simulation.set_fpv_input(0.0, 0.0, 0.0, 0.0, 0.0)
+		return
+	var m: Vector3 = _input_map.get_camera_move()
+	var look: Vector2 = _input_map.get_camera_look_rate()
+	_simulation.set_fpv_input(m.x, m.y, m.z, -look.x, look.y)
+
 func _forward_driving(live: bool, delta: float) -> void:
 	# Edge counts are consumed every frame, so presses made while the car is
 	# unattended never arrive later as a burst of shifts.
+	var cabin_cockpit: Node3D = _visuals.get_cockpit() if _visuals != null and _visuals.has_method("get_cockpit") else null
+	if cabin_cockpit != null:
+		cabin_cockpit.set("driver_actions", _input_map.driver_actions) # cockpit switches submit through the shared instance
 	var up: int = _input_map.consume_shift_up_count()
 	var down: int = _input_map.consume_shift_down_count()
 	if not live or not bool(_simulation.is_running()):
@@ -1123,8 +1385,8 @@ func _forward_driving(live: bool, delta: float) -> void:
 	# Clickable cockpit (cockpit_controls.gd): a dragged pedal/lever/wheel wins over the input device while held,
 	# the gear lever adds shifts, the ignition key sets the ignition and holds the starter in its start detent.
 	# These channels (pedals, steer, shifts, ignition, starter) are not owned by RgDriverActions, so they stay direct
-	# writes; the cockpit's hazard/indicator/horn/light switches are visual state only (cockpit_controls.gd
-	# get_cosmetic) and do not submit DriverActions events yet.
+	# writes; the cockpit's hazard/indicator/horn switches submit DriverActions events (cockpit_controls.gd) and
+	# the light/wiper/climate/radio switches are still visual state only (get_cosmetic).
 	var cockpit: Node3D = _visuals.get_cockpit() if _visuals != null and _visuals.has_method("get_cockpit") else null
 	var cockpit_overrides: Dictionary = {}
 	var cockpit_starter := false
@@ -1145,15 +1407,18 @@ func _forward_driving(live: bool, delta: float) -> void:
 	_simulation.set_control("ignition", 1.0 if _input_map.get_ignition() else 0.0)
 	# The cockpit's ignition key holds the starter in its start detent (cockpit_controls.gd), ORed with the device starter.
 	_simulation.set_control("starter", 1.0 if (_input_map.get_starter() or cockpit_starter) else 0.0)
+	if cockpit != null:
+		cockpit.submit_held()
 	var pt: Dictionary = _simulation.get_vehicle_powertrain(VEHICLE_NAME)
 	pt["speed_mps"] = _simulation.get_body_speed_mps("chassis")
-	var channels: Dictionary = load("res://scripts/driver_state.gd").channels(_simulation)
+	var channels: Dictionary = DriverState.channels(_simulation)
 	var drive_mode_change := -1
 	for write in _input_map.driver_actions.apply(pt,channels,true):
 		_simulation.set_control(write["channel"],float(write["value"]))
 		if write["channel"] == "ignition": _input_map.sync_ignition(float(write["value"]))
 		if write["channel"] == "assist.drive_mode": drive_mode_change = roundi(write["value"])
 	_input_map.advance_cabin(_simulation,pt,delta,true,VEHICLE_NAME)
+	_save_light_mode_if_changed()
 	if drive_mode_change >= 0 and _hud != null:
 		var requested := pt.duplicate()
 		requested["drive_mode_effective"] = drive_mode_change
@@ -1161,17 +1426,174 @@ func _forward_driving(live: bool, delta: float) -> void:
 		_hud.show_message("Drive mode: " + str(state["label"]),2.0,DriveModeTheme.color_for_mode(drive_mode_change))
 	# shift_up_count/shift_down_count are running edge counters on the sim
 	# side (session.cpp's kControlChannelNames): add this frame's edges.
-	if up > 0 or down > 0:
+	# Automatic and dual-clutch gearboxes (physics automatic_tcu): the shift keys step the selector P-R-N-D
+	# (rg::selector_shift decides); in D with manual mode on (Y) they change gears.
+	if (up > 0 or down > 0) and int(pt.get("transmission_kind",0)) != 0:
+		var sel: Dictionary = RgDriverActions.selector_shift(pt,up,down)
+		if sel["change"]:
+			_simulation.set_control("gear_request",float(sel["gear_request"]))
+		if int(sel["park_request"]) >= 0:
+			_simulation.set_control("park_lock",float(sel["park_request"]))
+		if sel["refused"] and _hud != null:
+			_hud.show_message("Stop the car first: P and R are refused while rolling",2.5)
+		if not sel["forward_counts"]:
+			up = 0
+			down = 0
+	elif up > 0 or down > 0:
 		_simulation.set_control("park_lock",0.0)
 	if up > 0:
 		_simulation.set_control("shift_up_count", _simulation.get_control("shift_up_count") + up)
 	if down > 0:
 		_simulation.set_control("shift_down_count", _simulation.get_control("shift_down_count") + down)
 
+# Frame-time diagnostics (render stutter investigation 2026-10-14). The delta of THIS frame is the cost of the previous
+# one (all of its _process calls, the render and the vsync wait), so the probes taken now (FrameProbe, frame_probe.gd)
+# belong to the frame that took `delta`.
+#  RG_FRAME_SPIKE  one line per frame over RG_FRAME_SPIKE_MS (default 50): delta_ms, ticks, process_ms (Godot's own
+#     TIME_PROCESS monitor: the LONGEST process+draw of the last whole second, refreshed once a second - not this
+#     frame, and not an average; the ph_* probes below are the per-frame split), render_cpu_ms / render_gpu_ms (main viewport; gpu 0 when the driver gives no
+#     timer), terrain_* (RgTerrainView per-frame costs), probes = the nodes' own _process costs, largest first. A spike
+#     whose probes sum to a few ms while delta is large was spent OUTSIDE the scripts (render, GPU, driver, OS).
+#  RG_FRAME_STATS  once per second: fps, frame ms avg/p99/max, frames over 25 / 50 ms, draw calls / objects /
+#     primitives of the last frame, vsync mode / max_fps / window size, per probe avg/max ms. Probes besides the
+#     nodes' own: scene_span, outside and the engine phases ph_loop / ph_physics / ph_pre / ph_post / ph_draw /
+#     render_cpu / render_gpu (frame_probe_end.gd explains each).
+func _frame_diag(delta: float) -> void:
+	var probes: Dictionary = FrameProbe.take_frame()
+	if world_state != "running" or _simulation == null:
+		return
+	var ms := delta * 1000.0
+	if not _perf:
+		if delta > _fd_spike_s:
+			print("RG_FRAME_SPIKE delta_ms=%.1f ticks=%d (RG_PERF=1 adds the probes)" % [ms, int(_simulation.get_step_count())])
+		return
+	if probes.has("scene_span"):
+		probes["outside"] = maxi(0, int(delta * 1000000.0) - int(probes["scene_span"])) # engine render / driver / vsync / OS
+	var process_ms: float = Performance.get_monitor(Performance.TIME_PROCESS) * 1000.0
+	_fd_frames.append(ms)
+	_fd_process_sum += process_ms
+	_fd_process_max = maxf(_fd_process_max, process_ms)
+	for k in probes:
+		var v := float(probes[k]) / 1000.0
+		_fd_probe_sum[k] = float(_fd_probe_sum.get(k, 0.0)) + v
+		_fd_probe_max[k] = maxf(float(_fd_probe_max.get(k, 0.0)), v)
+	if delta > _fd_spike_s:
+		var keys: Array = probes.keys()
+		keys.sort_custom(func(a, b) -> bool: return probes[a] > probes[b])
+		var parts := PackedStringArray()
+		for i in range(mini(keys.size(), 8)):
+			parts.append("%s=%.1f" % [keys[i], float(probes[keys[i]]) / 1000.0])
+		var vp := get_viewport().get_viewport_rid()
+		var tv := ""
+		if _world_view != null and _world_view.has_method("get_frame_costs"):
+			var c: Dictionary = _world_view.get_frame_costs()
+			tv = " terrain_upload_ms=%.2f terrain_heal_ms=%.2f terrain_decks_ms=%.2f terrain_pending=%d" % [
+				float(c.get("upload_ms", 0.0)), float(c.get("heal_ms", 0.0)), float(c.get("decks_ms", 0.0)), int(c.get("pending_work", 0))]
+		print("RG_FRAME_SPIKE delta_ms=%.1f ticks=%d process_ms=%.1f render_cpu_ms=%.1f render_gpu_ms=%.1f%s probes=[%s]" % [
+			ms, int(_simulation.get_step_count()), process_ms,
+			RenderingServer.viewport_get_measured_render_time_cpu(vp) if _render_timing else -1.0,
+			RenderingServer.viewport_get_measured_render_time_gpu(vp) if _render_timing else -1.0,
+			tv, ", ".join(parts)])
+	var now := Time.get_ticks_msec()
+	if now - _fd_last_report_ms < 1000:
+		return
+	_fd_last_report_ms = now
+	var n := _fd_frames.size()
+	if n > 0:
+		var sorted := _fd_frames.duplicate()
+		sorted.sort()
+		var sum := 0.0
+		var over25 := 0
+		var over50 := 0
+		for f in _fd_frames:
+			sum += f
+			over25 += 1 if f > 25.0 else 0
+			over50 += 1 if f > 50.0 else 0
+		var pk := PackedStringArray()
+		for k in _fd_probe_sum:
+			pk.append("%s=%.2f/%.1f" % [k, float(_fd_probe_sum[k]) / n, float(_fd_probe_max[k])])
+		pk.sort()
+		# draw_calls/objects/primitives: the last drawn frame's totals over every viewport (Godot's own monitors);
+		# vsync/max_fps/size: what the window actually runs with, so a log names its own settings.
+		var win := get_window()
+		var ab := "" if _ab_feature == "" else " ab=%s:%s" % [_ab_feature, "off" if _ab_off else "on"]
+		print("RG_FRAME_STATS frames=%d fps=%d frame_ms_avg=%.1f p99=%.1f max=%.1f over25=%d over50=%d process_ms_avg=%.1f process_ms_max=%.1f draw_calls=%d objects=%d primitives=%d vsync=%d max_fps=%d size=%dx%d renderer=%s/%s render_thread=%s%s probes_avg/max_ms=[%s]" % [
+			n, int(Engine.get_frames_per_second()), sum / n, sorted[mini(n - 1, int(ceil(0.99 * n)) - 1)], sorted[n - 1], over25, over50,
+			_fd_process_sum / n, _fd_process_max,
+			int(Performance.get_monitor(Performance.RENDER_TOTAL_DRAW_CALLS_IN_FRAME)),
+			int(Performance.get_monitor(Performance.RENDER_TOTAL_OBJECTS_IN_FRAME)),
+			int(Performance.get_monitor(Performance.RENDER_TOTAL_PRIMITIVES_IN_FRAME)),
+			int(DisplayServer.window_get_vsync_mode()), Engine.max_fps, win.size.x, win.size.y,
+			RenderingServer.get_current_rendering_method(), RenderingServer.get_current_rendering_driver_name(), _render_thread_mode(), ab, ", ".join(pk)])
+	_fd_frames.clear()
+	_fd_probe_sum.clear()
+	_fd_probe_max.clear()
+	_fd_process_sum = 0.0
+	_fd_process_max = 0.0
+	if _ab_feature != "" and now - _ab_switched_ms >= _ab_period_ms:
+		_ab_switched_ms = now
+		if _ab_off and _ab_list.size() > 1:
+			_perf_ab_apply(_ab_feature, false) # back on, then the next feature's "on" period
+			_ab_off = false
+			_ab_index = (_ab_index + 1) % _ab_list.size()
+			_ab_feature = _ab_list[_ab_index]
+		else:
+			_ab_off = not _ab_off
+			_perf_ab_apply(_ab_feature, _ab_off)
+		print("RG_PERF_AB %s -> %s" % [_ab_feature, "off" if _ab_off else "on"])
+
+# Switches one render feature for the RG_PERF_AB comparison (diagnosis only; nothing else calls it).
+func _perf_ab_apply(feature: String, off: bool) -> void:
+	match feature:
+		"shadows":
+			if _sky != null and _sky.sun != null:
+				_sky.sun.shadow_enabled = not off
+		"3d":
+			get_viewport().disable_3d = off
+		"terrain":
+			if _world_view != null:
+				_world_view.set_terrain_visible(not off)
+		"terrain_shadows":
+			if _world_view != null:
+				_world_view.set_cast_shadows(not off)
+		"roads":
+			if _roads != null:
+				_roads.visible = not off
+		"buildings":
+			if _buildings != null:
+				_buildings.visible = not off
+		"car":
+			if _visuals != null:
+				_visuals.visible = not off
+		"hud":
+			if _hud != null:
+				_hud.visible = not off
+		"navigation":
+			if _navigation != null:
+				_navigation.visible = not off
+		"traffic":
+			if _traffic_visual != null:
+				_traffic_visual.visible = not off
+		"audio":
+			if _vehicle_audio != null:
+				_vehicle_audio.set_process(not off)
+		"sky":
+			if _sky != null and _sky.environment != null:
+				if _ab_saved_bg < 0:
+					_ab_saved_bg = _sky.environment.background_mode
+				_sky.environment.background_mode = Environment.BG_COLOR if off else _ab_saved_bg
+		_:
+			push_warning("RG_PERF_AB: unknown feature '%s'" % feature)
+
 func _process(delta: float) -> void:
+	var process_t0 := Time.get_ticks_usec()
+	FrameProbe.frame_start_us = process_t0
+	_process_body(delta)
+	FrameProbe.add("main", Time.get_ticks_usec() - process_t0)
+
+func _process_body(delta: float) -> void:
 	# Main-thread frame hitches, to line up with RG_TICK_SPIKE (sim thread).
-	if world_state == "running" and delta > FRAME_SPIKE_S:
-		print("RG_FRAME_SPIKE delta_ms=%.1f ticks=%d" % [delta * 1000.0, int(_simulation.get_step_count())])
+	_frame_diag(delta)
 	if _terrain_view != null and not _terrain_preview_reported and bool(_terrain_view.is_fully_uploaded()):
 		_terrain_preview_reported = true
 		print("terrain preview loaded: chunks=%d vertices=%d upload_ms=%.2f" % [
@@ -1189,6 +1611,8 @@ func _process(delta: float) -> void:
 	# In-world actions only count on the Drive screen; the edge counts are consumed
 	# every frame either way so a press in a menu never arrives later.
 	var in_drive := _screen == "drive"
+	if in_drive and world_state == "running":
+		_record_drive_diag_sample()
 	var truck_presses: int = _input_map.consume_npc_truck()
 	if in_drive and world_state == "running" and get_tree().get_nodes_in_group("address_teleport_open").is_empty() and truck_presses > 0:
 		_simulation.request_npc_truck(not Input.is_key_pressed(KEY_SHIFT), 70.0)
@@ -1242,7 +1666,9 @@ func _process(delta: float) -> void:
 		"starting":
 			_attach_world_view()
 		"running":
+			var report_t0 := Time.get_ticks_usec()
 			_report()
+			FrameProbe.add("report", Time.get_ticks_usec() - report_t0)
 
 	if world_state == "running" and _vehicle_audio == null:
 		_vehicle_audio = Node3D.new()
@@ -1252,12 +1678,22 @@ func _process(delta: float) -> void:
 		_vehicle_audio.director = _director
 		_vehicle_audio.vehicle_name = VEHICLE_NAME
 		add_child(_vehicle_audio)
+		_fpv_audio = Node.new()
+		_fpv_audio.name = "FpvAudio"
+		_fpv_audio.set_script(load("res://scripts/fpv_audio.gd"))
+		_fpv_audio.simulation = _simulation
+		add_child(_fpv_audio)
 		_apply_audio_settings()
 	if _vehicle_audio != null:
 		_vehicle_audio.muted = _paused
 	var ms := _apply_mode_state()
+	var forward_t0 := Time.get_ticks_usec()
 	_forward_driving(bool(ms.get("driving_inputs_live", false)) and in_drive, delta)
+	FrameProbe.add("forward_driving", Time.get_ticks_usec() - forward_t0)
 	_forward_walking(bool(ms.get("walking_inputs_live", false)) and in_drive)
+	_forward_flying(bool(ms.get("flying_inputs_live", false)) and in_drive)
+	if _fpv_audio != null:
+		_fpv_audio.muted = _paused
 	_panels_open_prev = _panel_open()
 	_mouse_captured_prev = _input_map.is_mouse_captured()
 
@@ -1271,19 +1707,20 @@ func _try_start_vr() -> void:
 		return
 	DisplayServer.window_set_vsync_mode(DisplayServer.VSYNC_DISABLED)
 	get_viewport().use_xr = true
-	for rig_name in ["xr_cockpit", "xr_free"]:
+	for rig_name in ["xr_cockpit", "xr_free", "xr_drone"]:
 		var rig := XROrigin3D.new()
 		rig.name = rig_name
 		rig.set_script(load("res://scripts/xr_rig.gd"))
 		rig.body_visuals = _visuals
 		rig.free_flight = rig_name == "xr_free"
+		rig.drone_follow = rig_name == "xr_drone"
 		add_child(rig)
 		_director.add_rig(rig_name, rig)
 	_vr_active = true
 	_xr_menu = load("res://scripts/xr_menu.gd").new()
 	_xr_menu.main = self
 	add_child(_xr_menu)
-	print("RG_VR active: tracked cockpit, F9 recenter; FreeCam uses tracked free flight")
+	print("RG_VR active: tracked cockpit, F9 recenter; FreeCam uses tracked free flight, drone follow trails the target (xr_drone)")
 
 # Owner bookmarks survive normal log rotation in user://drive_marks.jsonl.
 func _input(event: InputEvent) -> void:
@@ -1332,6 +1769,7 @@ func _apply_vehicle(sel: Dictionary) -> void:
 		"half_extents": chassis["half_extents"],
 		"z_m": float(chassis["z_m"]),
 		"engine_map_cache_dir": str(sel["engine_map_cache_dir"]),
+		"turbo_map_extension_path": str(sel.get("turbo_map_extension_path", "")),
 	})
 	# optional model parts: the setup's (a folding top) plus the raised hood a tall swapped-in engine needs
 	var parts: Array = Array(sel.get("model_options", []))
@@ -1490,6 +1928,8 @@ func _user_dir() -> String:
 	return _user_dir_override if _user_dir_override != "" else ProjectSettings.globalize_path("user://")
 
 var _user_dir_override: String = ""
+const RendererChoice := preload("res://scripts/renderer_choice.gd")
+var _renderer_reported := false
 
 func _apply_user_dir_flag(user_args: PackedStringArray) -> void:
 	var dir_index := user_args.find("--shell-user-dir")
@@ -1632,6 +2072,8 @@ func _show_screen(screen_name: String) -> void:
 func _set_world_ui_visible(visible_now: bool) -> void:
 	_hud.visible = visible_now
 	_gauge.visible = visible_now
+	if _weather_widget != null:
+		_weather_widget.visible = visible_now
 
 # A direct start into the real world may name a spawn preset with --spawn=ID
 # (data/world/spawn_presets.json; tools/run.ps1 -VR passes --spawn=a5_north).
@@ -1754,12 +2196,47 @@ func set_drive_view(view: String) -> void:
 	if _simulation != null:
 		_simulation.set_road_ahead_wanted(view == "cinematic")
 
+# The headlamp switch (auto/on/off, the lights key cycles it) persists like a setting: saved when it changes.
+var _saved_light_mode := ""
+func _save_light_mode_if_changed() -> void:
+	if _shell == null or _input_map == null:
+		return
+	var mode: String = _input_map.get_light_mode()
+	if mode != _saved_light_mode:
+		_saved_light_mode = mode
+		_shell.set_setting("cabin.light_mode", mode)
+		_shell.save_settings()
+
+# Sun shadows and 3D resolution scale (perf, 2026-10-15). The defaults (high, 1.0) are the look before these settings
+# existed: four PSSM cascades to 300 m with terrain casting, native resolution. Also re-applied when a world's terrain
+# view starts (the terrain's cast flag lives on its instances).
+func _apply_graphics_quality() -> void:
+	if _shell == null:
+		return
+	var q := str(_shell.get_setting("graphics.shadow_quality"))
+	var sun: DirectionalLight3D = _sky.sun if _sky != null else null
+	if sun != null:
+		sun.shadow_enabled = q != "off"
+		sun.directional_shadow_mode = DirectionalLight3D.SHADOW_PARALLEL_4_SPLITS if q == "high" else DirectionalLight3D.SHADOW_PARALLEL_2_SPLITS
+		sun.directional_shadow_max_distance = 150.0 if q == "low" else 300.0
+	if _world_view != null and _world_view.has_method("set_cast_shadows"):
+		_world_view.set_cast_shadows(q == "high" or q == "medium")
+	if not _vr_active:
+		var vp := get_viewport()
+		var scale := float(_shell.get_setting("graphics.render_scale"))
+		vp.scaling_3d_mode = Viewport.SCALING_3D_MODE_BILINEAR
+		vp.scaling_3d_scale = clampf(scale, 0.5, 1.0)
+
 # One setting's effect, read back from RgShell (the value there is already
 # validated and clamped by rg::Settings). Called at start-up for every setting
 # and whenever the settings screen changes one.
 func _apply_setting(key: String) -> void:
 	var value: Variant = _shell.get_setting(key)
 	match key:
+		"cabin.light_mode":
+			if _input_map != null:
+				_input_map.set_light_mode(str(value))
+			_saved_light_mode = str(value)
 		"graphics.window_mode":
 			var mode := DisplayServer.WINDOW_MODE_WINDOWED
 			if str(value) == "fullscreen":
@@ -1767,17 +2244,44 @@ func _apply_setting(key: String) -> void:
 			elif str(value) == "exclusive_fullscreen":
 				mode = DisplayServer.WINDOW_MODE_EXCLUSIVE_FULLSCREEN
 			DisplayServer.window_set_mode(mode)
+		"graphics.renderer":
+			# Restart-only (renderer_choice.gd): the override file is what Godot reads at the next start. A test run with
+			# --shell-user-dir keeps its settings elsewhere and must not touch the player's override.
+			if _user_dir_override == "":
+				var err := RendererChoice.store(str(value))
+				if err != "":
+					push_warning("renderer setting: " + err)
+			if not _renderer_reported:
+				_renderer_reported = true
+				print(RendererChoice.report(str(value)))
 		"graphics.vsync":
 			if not _vr_active: # the headset's own refresh drives frame pacing
 				DisplayServer.window_set_vsync_mode(DisplayServer.VSYNC_ENABLED if bool(value) else DisplayServer.VSYNC_DISABLED)
 		"graphics.max_fps":
 			Engine.max_fps = int(value)
+		"graphics.surface_detail":
+			# The debug chunk tint (RG_TERRAIN_TINT) is only visible as plain colours.
+			SurfaceMaterials.set_detail("off" if OS.get_environment("RG_TERRAIN_TINT") != "" else str(value))
+		"graphics.shadow_quality", "graphics.render_scale":
+			_apply_graphics_quality()
+		"graphics.car_lod":
+			preload("res://scripts/car_lods.gd").tier = str(value) # used at the next car load (car_lods.gd)
+		"graphics.rain_density":
+			if _weather_fx != null:
+				_weather_fx.density = float(value)
 		"camera.fov_deg":
 			_director.set_base_fov(float(value))
+		"camera.body_motion":
+			_director.set_body_motion_strength(float(value))
 		"audio.master_volume", "audio.engine_volume", "audio.tyre_volume":
 			_apply_audio_settings()
 		"map_data.store_dir":
 			_simulation.set_store_dir_override(str(value))
+		"lod.view_distance_m", "lod.terrain_detail", "lod.road_detail", "lod.map_detail":
+			var choice: Dictionary = _shell.get_lod_choice()
+			_world_view.set_view_lod(choice)
+			if _navigation != null:
+				_navigation.set_view_lod(choice)
 
 func _apply_audio_settings() -> void:
 	if _vehicle_audio == null:
@@ -1785,6 +2289,8 @@ func _apply_audio_settings() -> void:
 	_vehicle_audio.master_volume = float(_shell.get_setting("audio.master_volume"))
 	_vehicle_audio.engine_volume = float(_shell.get_setting("audio.engine_volume"))
 	_vehicle_audio.tyre_volume = float(_shell.get_setting("audio.tyre_volume"))
+	if _fpv_audio != null:
+		_fpv_audio.master_volume = float(_shell.get_setting("audio.master_volume"))
 
 func _log_owner_mark() -> void:
 	var point := chassis_session_position()
@@ -1792,7 +2298,10 @@ func _log_owner_mark() -> void:
 	var origin: Dictionary = config.get("session_origin_utm", {}) if config is Dictionary else {}
 	var wheels: Array = []
 	for wheel in range(_simulation.get_vehicle_wheel_count(VEHICLE_NAME)):
-		wheels.append({"load_n": _simulation.get_wheel_load_n(VEHICLE_NAME,wheel), "slip_deg": rad_to_deg(_simulation.get_wheel_slip_angle(VEHICLE_NAME,wheel)), "surface": _simulation.get_wheel_surface_name(VEHICLE_NAME,wheel)})
+		wheels.append({"load_n": _simulation.get_wheel_load_n(VEHICLE_NAME,wheel), "slip_deg": rad_to_deg(_simulation.get_wheel_slip_angle(VEHICLE_NAME,wheel)),
+			"slip_ratio": _simulation.get_wheel_slip_ratio(VEHICLE_NAME,wheel), "omega_rad_s": _simulation.get_wheel_omega(VEHICLE_NAME,wheel),
+			"steer_deg": rad_to_deg(_simulation.get_wheel_steer_angle(VEHICLE_NAME,wheel)), "fx_n": _simulation.get_wheel_fx(VEHICLE_NAME,wheel),
+			"fy_n": _simulation.get_wheel_fy(VEHICLE_NAME,wheel), "surface": _simulation.get_wheel_surface_name(VEHICLE_NAME,wheel)})
 	var mark: Dictionary = {"saved_at": Time.get_datetime_string_from_system(), "source":"log_marker", "world":world_kind, "sim_time_s":_simulation.get_sim_time(), "tick":_simulation.get_step_count(), "session_m":[point.x,point.y,point.z], "speed_kmh":_simulation.get_body_speed_mps("chassis")*3.6, "camera":_director.active_name, "wheels":wheels, "build":_simulation.get_build_info()}
 	if world_kind == "real_world":
 		mark["utm_zone"] = origin.get("zone")
@@ -1815,7 +2324,14 @@ func _log_owner_mark() -> void:
 	if _vehicle_audio != null:
 		mark["audio"] = _vehicle_audio.get_audio_diagnostics()
 	mark["powertrain"] = _simulation.get_vehicle_powertrain(VEHICLE_NAME)
+	mark["nitrous"] = _simulation.get_vehicle_nitrous(VEHICLE_NAME)
+	mark["chassis_session_pose"] = _simulation.get_chassis_session_pose()
+	mark["controls"] = {"steer": _simulation.get_control("steer"), "throttle": _simulation.get_control("throttle"),
+		"brake": _simulation.get_control("brake"), "handbrake": _simulation.get_control("handbrake"),
+		"traction_control": _simulation.get_control("assist.traction_control"), "drive_mode": _simulation.get_control("assist.drive_mode"),
+		"nitrous_arm": _simulation.get_control("nitrous_arm")}
 	mark["aero"] = _simulation.get_aero_state()
+	mark["pretrigger_drive_samples"] = _drive_diag_history.duplicate(true)
 	mark["npc_truck"] = _simulation.get_npc_truck_state()
 	var traffic: Dictionary = _simulation.get_traffic_state()
 	var actors: Array = traffic.get("actors", [])
@@ -1823,6 +2339,19 @@ func _log_owner_mark() -> void:
 	traffic.erase("actors")
 	traffic["active"] = actors.size()
 	mark["traffic"] = traffic
+	# The coordinates for the owner: lat/lon (pasteable into a map) in the real world, session metres in the flat one.
+	# Computed before the JSON is encoded, so the mark carries them; the same text goes to the clipboard below.
+	var copy_text := "flat x %.1f y %.1f z %.1f" % [point.x, point.y, point.z]
+	if world_kind == "real_world":
+		var zone := int(origin.get("zone", 32))
+		var easting := float(origin.get("e0", 0)) + point.x
+		var northing := float(origin.get("n0", 0)) + point.y
+		copy_text = "UTM %dN E %.1f N %.1f  z %.1f m" % [zone, easting, northing, point.z]
+		if ClassDB.class_exists("RgAddressSearch"):
+			var ll: Dictionary = RgAddressSearch.utm_to_latlon(zone, easting, northing)
+			if not ll.is_empty():
+				mark["latlon"] = [ll["lat"], ll["lon"]]
+				copy_text = "%.6f, %.6f" % [ll["lat"], ll["lon"]] + "  " + copy_text
 	var encoded := JSON.stringify(mark)
 	print("RG_OWNER_MARK " + encoded)
 	var mark_path := "user://drive_marks.jsonl"
@@ -1831,3 +2360,40 @@ func _log_owner_mark() -> void:
 		file.seek_end()
 		file.store_line(encoded)
 		file.flush()
+	DisplayServer.clipboard_set(copy_text)
+	print("RG_OWNER_MARK_COPY " + copy_text)
+	if _hud != null:
+		_hud.show_message("Marked (copied): " + copy_text, 6.0)
+
+# Keep a small rolling window so an owner bookmark captures the loss-of-control
+# onset, not just the state after the car has already left the road. Sampling is
+# simulation-time based and the retained window is bounded to about five seconds.
+func _record_drive_diag_sample() -> void:
+	var sim_t: float = _simulation.get_sim_time()
+	if sim_t < _drive_diag_last_sample_s:
+		_drive_diag_history.clear()
+		_drive_diag_last_sample_s = -1.0e9
+	if sim_t - _drive_diag_last_sample_s < DRIVE_DIAG_SAMPLE_PERIOD_S:
+		return
+	_drive_diag_last_sample_s = sim_t
+	var wheels: Array = []
+	for wheel in range(_simulation.get_vehicle_wheel_count(VEHICLE_NAME)):
+		wheels.append({"load_n": _simulation.get_wheel_load_n(VEHICLE_NAME, wheel),
+			"slip_deg": rad_to_deg(_simulation.get_wheel_slip_angle(VEHICLE_NAME, wheel)),
+			"slip_ratio": _simulation.get_wheel_slip_ratio(VEHICLE_NAME, wheel),
+			"omega_rad_s": _simulation.get_wheel_omega(VEHICLE_NAME, wheel),
+			"steer_deg": rad_to_deg(_simulation.get_wheel_steer_angle(VEHICLE_NAME, wheel)),
+			"fx_n": _simulation.get_wheel_fx(VEHICLE_NAME, wheel),
+			"fy_n": _simulation.get_wheel_fy(VEHICLE_NAME, wheel),
+			"surface": _simulation.get_wheel_surface_name(VEHICLE_NAME, wheel)})
+	_drive_diag_history.append({"sim_time_s": sim_t, "tick": _simulation.get_step_count(),
+		"chassis": _simulation.get_chassis_session_pose(),
+		"speed_kmh": _simulation.get_body_speed_mps("chassis") * 3.6,
+		"controls": {"steer": _simulation.get_control("steer"), "throttle": _simulation.get_control("throttle"),
+			"brake": _simulation.get_control("brake"), "handbrake": _simulation.get_control("handbrake"),
+			"traction_control": _simulation.get_control("assist.traction_control"),
+			"drive_mode": _simulation.get_control("assist.drive_mode"), "nitrous_arm": _simulation.get_control("nitrous_arm")},
+		"wheels": wheels, "powertrain": _simulation.get_vehicle_powertrain(VEHICLE_NAME),
+		"nitrous": _simulation.get_vehicle_nitrous(VEHICLE_NAME)})
+	while not _drive_diag_history.is_empty() and sim_t - float(_drive_diag_history[0].get("sim_time_s", sim_t)) > DRIVE_DIAG_HISTORY_S:
+		_drive_diag_history.pop_front()
