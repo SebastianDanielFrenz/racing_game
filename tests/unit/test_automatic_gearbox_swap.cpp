@@ -809,3 +809,30 @@ TEST_CASE("Racing hypercar DCT launch control reaches 50 kmh promptly", "[automa
     CHECK(lc.t50<3.0);
     CHECK(lc.t50<=plain.t50);
 }
+
+TEST_CASE("Selectable electric sedan materialises and drives without a combustion engine", "[ev][automatic]") {
+    Fixture f;const auto& car=f.entry("car_electric");
+    rg::VehicleSetup setup;setup.vehicle_id=car.id;
+    rg::ScopedWorkDir dir(f.ctx.work_root,"drive_ev");
+    const auto material=rg::materialise_setup(car,f.table,f.ctx,setup,dir.path());
+    INFO(material.error);REQUIRE(material.ok);
+    rg::SessionConfig cfg;cfg.vehicle_json_path=material.vehicle_path;
+    cfg.surface_table_path=kRoot+"/data/surfaces/surfaces.json";
+    cfg.chassis_mass_kg=car.chassis.mass_kg;cfg.chassis_half_extents={2,.4,.15};cfg.chassis_z_m=.6;
+    rg::Session session(cfg);auto& w=session.world();const auto id=session.vehicle_id();
+    w.set_control("gear_request",99);w.set_control("throttle",1);
+    for(int i=0;i<720;++i)session.step();
+    const auto pt=w.powertrain_state(id);
+    CHECK(pt.transmission_kind==4);CHECK(pt.electric_ready);CHECK(pt.electric_motor_count==2);
+    CHECK(pt.engine_state==ps::drivetrain::EngineState::Off);CHECK(pt.battery_soc<.9);CHECK(pt.drive_power_w>0);
+    CHECK(w.get_motion(session.chassis_body()).linear.x>10);    w.set_control("throttle",0);w.set_control("electric.ready",0);
+    for(int i=0;i<24;++i)session.step();
+    CHECK_FALSE(w.powertrain_state(id).electric_ready);
+    session.request_reset_to_spawn();
+    for(int i=0;i<24;++i)session.step();
+    w.set_control("electric.ready",1);w.set_control("gear_request",99);w.set_control("throttle",1);
+    for(int i=0;i<720;++i)session.step();
+    CHECK(w.powertrain_state(id).electric_ready);
+    CHECK(w.powertrain_state(id).engine_state==ps::drivetrain::EngineState::Off);
+    CHECK(w.get_motion(session.chassis_body()).linear.x>10);
+}

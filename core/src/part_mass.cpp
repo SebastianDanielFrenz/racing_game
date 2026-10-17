@@ -317,6 +317,7 @@ PartTree build_part_tree(const PartMassTable& table, const PartTreeInput& in) {
         }
     }
 
+    const bool has_ice=std::any_of(comps->begin(),comps->end(),[](const json& c){std::string type;return c.is_object()&&detail::get_string(c,"type",type)&&type=="engine";});
     PartNode engine = group("engine", in.engine.label.empty() ? std::string("Engine") : in.engine.label);
     engine.key = "engine";
     if (in.engine.mass_kg > 0.0) {
@@ -359,7 +360,13 @@ PartTree build_part_tree(const PartMassTable& table, const PartTreeInput& in) {
         if (type == "engine") {
             continue; // the engine node above (the installed engine's catalogue figure)
         }
-        if (type == "clutch") {
+        if(type=="battery"||type=="electric_motor") {
+            PartNode part=group(unique_id("drivetrain."+cid),type=="battery"?"Traction battery":"Electric motor");
+            part.key=type;
+            if(!detail::get_number(c,"mass_kg",part.own_kg)||part.own_kg<0){tree.error="electric components require a nonnegative mass_kg";return tree;}
+            part.source="[AS] electric component mass_kg";
+            drivetrain.children.push_back(std::move(part));
+        } else if (type == "clutch") {
             drivetrain.children.push_back(b.leaf(unique_id("drivetrain.clutch"), "clutch"));
         } else if (type == "gearbox") {
             PartNode g = group(unique_id("drivetrain.gearbox"), in.gearbox.label.empty() ? std::string("Gearbox") : in.gearbox.label);
@@ -409,7 +416,13 @@ PartTree build_part_tree(const PartMassTable& table, const PartTreeInput& in) {
             }
             // A single axle differential at the far end from the engine is driven through a propshaft.
             const bool far = front ? in.engine_bay != "front" : engine_front;
-            if (far) (front ? need_front_prop : need_rear_prop) = true;
+            bool local_motor=false;
+            const auto attached=linked.equal_range(cid+".carrier");
+            for(auto it=attached.first;it!=attached.second;++it)
+                for(const auto& component:*comps)
+                    { std::string motor_type,motor_id;
+                        if(component.is_object()&&detail::get_string(component,"type",motor_type)&&motor_type=="electric_motor"&&detail::get_string(component,"id",motor_id)&&it->second==motor_id+".shaft")local_motor=true; }
+            if(far&&!local_motor)(front?need_front_prop:need_rear_prop)=true;
             drivetrain.children.push_back(std::move(axle));
         } else if (type == "fuel_tank") {
             double cap = 0.0, initial = 0.0;
@@ -574,7 +587,7 @@ PartTree build_part_tree(const PartMassTable& table, const PartTreeInput& in) {
         trim.children.push_back(std::move(n));
     }
 
-    root.children.push_back(std::move(engine));
+    if(has_ice)root.children.push_back(std::move(engine));
     root.children.push_back(std::move(drivetrain));
     root.children.push_back(std::move(running));
     if (!fuel.children.empty()) root.children.push_back(std::move(fuel));

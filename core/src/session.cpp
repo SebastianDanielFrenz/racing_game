@@ -53,6 +53,7 @@ const char* const kControlChannelNames[] = {
     "shift_down_count",
     "ignition",
     "starter",
+    "electric.ready", // electric propulsion enable, independent of combustion ignition
     "assist.auto_shift",
     "assist.auto_clutch",
     "assist.auto_blip",
@@ -242,7 +243,7 @@ Session::Session(const SessionConfig& config)
     if(have_vehicle_) {
         // A drive_modes part writes the mode's TC / LC defaults into the channels itself on a mode change (assists I7c);
         // adopt_physics_channel_writes mirrors that back into this store after every step.
-        for(const char* name:{"assist.traction_control","assist.aero_control","assist.drive_mode","assist.launch_control","assist.abs","assist.esc"})
+        for(const char* name:{"electric.ready","assist.traction_control","assist.aero_control","assist.drive_mode","assist.launch_control","assist.abs","assist.esc"})
             control_channels_[name].store(world_->get_control(name),std::memory_order_relaxed);
     }
     install_weather();

@@ -410,3 +410,19 @@ TEST_CASE("driver cabin: invalid automatic headlamp settings are rejected", "[dr
     cfg = auto_lights_config(); cfg.auto_lights = false; cfg.auto_lights_on_lux = -1; // ignored while off
     CHECK_NOTHROW(a.configure_cabin(cfg));
 }
+
+TEST_CASE("EV start stop toggles READY without cranking or changing combustion ignition", "[driver_actions][ev]") {
+    rg::DriverActions actions;actions.configure_cabin(cabin_config());
+    Sink sink;sink.set("electric.ready",1);sink.set("ignition",0);
+    auto snapshot=fitted();snapshot.transmission_kind=4;snapshot.electric_ready=true;
+    CHECK(actions.submit({"start_stop"}));actions.apply({snapshot,true},sink);
+    CHECK(sink.get("electric.ready")==0);CHECK(sink.get("starter")==0);CHECK(sink.get("ignition")==0);
+    snapshot.electric_ready=false;
+    CHECK(actions.submit({"start_stop"}));actions.apply({snapshot,true},sink);
+    CHECK(sink.get("electric.ready")==1);CHECK(sink.get("starter")==0);
+    snapshot.electric_ready=true;
+    CHECK(rg::DriverActions::state("start_stop",snapshot,sink).label=="READY");
+    snapshot.speed_mps=10;
+    CHECK(actions.submit({"start_stop"}));actions.apply({snapshot,true},sink);
+    CHECK(sink.get("electric.ready")==1);
+}

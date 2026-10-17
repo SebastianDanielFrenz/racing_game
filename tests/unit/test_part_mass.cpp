@@ -387,7 +387,16 @@ TEST_CASE("part mass tree: every stock catalog car is a plausible sum of its par
         const auto r = range.find(e.body_type);
         REQUIRE(r != range.end());
         CHECK(tree.total_kg >= r->second.first);
-        CHECK(tree.total_kg <= r->second.second);
+        CHECK(tree.total_kg <= (e.id=="car_electric"?2000.0:r->second.second));
+        if(e.id=="car_electric") {
+            CHECK(tree.root.find("engine")==nullptr);
+            CHECK(tree.root.find("fuel_system.tank.contents")==nullptr);
+            REQUIRE(tree.root.find("drivetrain.battery")!=nullptr);
+            CHECK(tree.root.find("drivetrain.battery")->own_kg==Approx(500));
+            CHECK(tree.chassis_kg==Approx(tree.total_kg));
+            CHECK(e.chassis.mass_kg==Approx(tree.chassis_kg).margin(0.5));
+            continue;
+        }
         // every catalog car's vehicle file lets physics carry its contents: the fuel (and N2O) are counted in the total
         // and left out of the drive's chassis, which the physics body then carries on top
         const rg::PartNode* fuel = tree.root.find("fuel_system.tank.contents");
