@@ -130,8 +130,8 @@ func capture_mouse() -> void:
 func set_cockpit_mode(enabled: bool) -> void:
 	if _cockpit_mode == enabled: return
 	_cockpit_mode = enabled
+	# Camera changes preserve capture; menus and the explicit toggle own releasing it.
 	if enabled and _world_input_active: capture_mouse()
-	else: release_mouse()
 
 func set_world_input_active(enabled: bool) -> void:
 	var changed := _world_input_active != enabled
