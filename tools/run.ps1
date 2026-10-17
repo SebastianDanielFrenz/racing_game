@@ -331,11 +331,21 @@ if ($DryRun) {
     Write-Host "`n(dry run - not launching Godot)" -ForegroundColor Yellow
     if ($vrSetWorldConfig) { Remove-Item Env:RG_WORLD_CONFIG }
     if ($perfSet) { Remove-Item Env:RG_PERF }
+    if ($perfSet) { Remove-Item Env:RG_PERF }
     exit 0
 }
 
-& $godotExe @launchArgsArr
-$godotExit = $LASTEXITCODE
-if ($vrSetWorldConfig) { Remove-Item Env:RG_WORLD_CONFIG }
-if ($perfSet) { Remove-Item Env:RG_PERF }
+# Windows PowerShell 5.1 turns redirected native stderr into ErrorRecords.
+# Godot/native diagnostics use stderr too; do not abort the game on those.
+# Keep build/configuration checks strict and propagate Godot's actual exit code.
+$savedLaunchErrorPreference = $ErrorActionPreference
+$ErrorActionPreference = 'Continue'
+try {
+    & $godotExe @launchArgsArr 2>&1 | ForEach-Object { $_.ToString() }
+    $godotExit = $LASTEXITCODE
+} finally {
+    $ErrorActionPreference = $savedLaunchErrorPreference
+    if ($vrSetWorldConfig) { Remove-Item Env:RG_WORLD_CONFIG }
+    if ($perfSet) { Remove-Item Env:RG_PERF }
+}
 exit $godotExit

@@ -458,6 +458,22 @@ std::optional<WorldConfig> load_world_config(const std::string& path, std::strin
         }
     }
 
+    // --- render_classes (optional; "osm" default, "served" or "none") ---
+    if (root.contains("render_classes")) {
+        std::string mode;
+        if (!get_string(root, "render_classes", path, "top level", &mode, err)) {
+            return std::nullopt;
+        }
+        if (mode == "served") {
+            cfg.render_classes_served = true;
+        } else if (mode == "none") {
+            cfg.render_classes_none = true;
+        } else if (mode != "osm") {
+            fail(err, path, "\"render_classes\" must be \"osm\", \"served\" or \"none\" (got \"" + mode + "\")");
+            return std::nullopt;
+        }
+    }
+
     if(root.contains("road_visuals")) {
         const auto& visual=root.at("road_visuals");
         if(!require_object(visual,path,"road_visuals",err))return std::nullopt;

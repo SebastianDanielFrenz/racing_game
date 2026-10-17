@@ -298,7 +298,10 @@ func _run() -> void:
 	await _back_to_root()
 	_press("tile:Swaps")
 	_press("tile:Drivetrain")
-	for type_name in ["AWD","RWD","FWD"]: _check(ui.get_button("tile:"+type_name).disabled, "unsupported drivetrain swap disabled: " + type_name)
+	var layout_option: Dictionary = ui._garage_option("drive_layout")
+	_check(not layout_option.is_empty(), "drivetrain swap options exist")
+	for part in layout_option.get("parts", []):
+		_check(ui.get_button("part:drive_layout:" + str(part["id"])) != null, "drivetrain swap card exists: " + str(part["id"]))
 	# ---- gearbox swap: the hypercar takes only boxes rated for its V8 ----
 	await _back_to_root()
 	_press("tile:Drivetrain")
@@ -307,7 +310,7 @@ func _run() -> void:
 	_check(not gb_option.is_empty(), "the gearbox option is offered")
 	var gb_soon: Array = []
 	for section in gb_option.get("coming_soon", []): gb_soon.append(str(section))
-	_check(gb_soon.has("Automatic") and gb_soon.has("CVT"), "Automatic and CVT are reported as coming soon (%s)" % ", ".join(gb_soon))
+	_check(gb_soon.is_empty(), "every gearbox section has entries, none is coming soon (%s)" % ", ".join(gb_soon))
 	_check(ui.get_button("part:gearbox_install:stock") != null and ui.get_button("part:gearbox_install:straight_cut_6sq") != null, "the stock box and the straight-cut box are listed for the hypercar")
 	_check(ui.get_button("part:gearbox_install:heavy_duty_6mt") == null and ui.get_button("part:gearbox_install:econ_5mt") == null, "boxes rated below the V8's torque are not listed")
 	_press("part:gearbox_install:straight_cut_6sq")

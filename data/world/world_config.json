@@ -25,6 +25,7 @@
   },
   "surface_map": "data/world/landclass_surfaces.json",
   "palette": "data/world/landclass_palette.json",
+  "render_classes": "none",
   "physics": {
     "engine_map_cache_enabled": true,
     "rolling_resistance_model": "quadratic",

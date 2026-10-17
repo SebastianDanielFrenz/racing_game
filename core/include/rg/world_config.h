@@ -104,6 +104,12 @@ struct WorldConfig {
     DerivedStore derived_store;
     Spawn spawn;
     Lod lod;
+    // Optional top-level "render_classes": "osm" (default), "served", or "none". "osm" paints each terrain
+    // chunk from the raw OSM road raster. "served" paints from g2m.terrain.class. "none" leaves terrain as natural
+    // underlay; constructed road/path surfaces are rendered by the road stream. The class layer is still enabled
+    // separately when road physics needs it.
+    bool render_classes_served = false;
+    bool render_classes_none = false;
     TerrainSmoothing terrain_smoothing;
     double road_verge_drop_m=0.06;
     // "road_separation" block (rg::RoadSeparation): grade-separated crossings in the road patch and approach decks.

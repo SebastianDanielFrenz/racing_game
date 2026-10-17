@@ -2,6 +2,7 @@
 #include "rg/aero_map_selection.h"
 #include "rg/engine_thermal_info.h"
 #include "rg/flat_ground.h"
+#include "rg/surface_kinds.h"
 #include "rg/vehicle_load.h"
 
 #include "g2m/phys/height_tile_loader.h"
@@ -10,6 +11,7 @@
 #include "g2m/phys/resident_heights.h"
 #include "g2m/layer/osm_roads.h"
 #include "g2m/ps_bridge/g2m_terrain_source.h"
+#include "g2m/world/surface_id_table.h"
 
 #include "ps/backend/shape_desc.h"
 #include "ps/io/vehicle_io.h"
@@ -67,7 +69,8 @@ const char* const kControlChannelNames[] = {
     "cabin.horn",
     "park_lock",
     "gear_request", // -100 means no absolute request; zero is neutral
-    "transmission.selector", // reserved until automatic transmission support
+    "transmission.selector", // reserved (the automatic's selector rides on gear_request + park_lock)
+    "transmission.mode", // physics automatic_tcu: >= 0.5 = sport shift schedule; only automatic/dual-clutch cars register it
     "epb", // physics owns edge detection and the parking latch
     "assist.abs", // physics_sim assists I5 part 2: ABS on/off (>= 0.5); only a car whose assist unit has the abs block registers it
     "assist.esc", // physics_sim assists I6: ESC mode 0 off, 1 on, 2 sport; only a car whose unit has the esc block registers it
@@ -111,10 +114,25 @@ struct Session::Terrain {
         interest_points.reserve(4);
     }
 
-    static g2m::phys::LoaderConfig loader_config(const TerrainModeConfig& cfg, bool require_roads) {
+    // Served class mode: road grip and render colour resolve the same terrain.class cell, which is built from the
+    // completed roads.geom cross-section/carve footprint. Road metadata remains resident for speed limits and
+    // navigation; class tiles are required alongside it so a missing material map cannot quietly become grass.
+    Terrain(const TerrainModeConfig& cfg, g2m::ps_bridge::ClassSurfaceConfig classes)
+        : config(cfg),
+          grid(cfg.frame),
+          resident(std::make_shared<g2m::phys::ResidentHeightSet>()),
+          loader(cfg.fetch, loader_config(cfg, /*require_roads=*/true, /*require_classes=*/true)),
+          streamer(grid, *resident, loader, g2m::phys::StreamerConfig{}),
+          source(std::make_shared<g2m::ps_bridge::G2mTerrainSource>(grid, resident, std::move(classes))) {
+        interest_points.reserve(4);
+    }
+
+    static g2m::phys::LoaderConfig loader_config(const TerrainModeConfig& cfg, bool require_roads,
+                                                 bool require_classes = false) {
         g2m::phys::LoaderConfig lc;
         lc.workers = cfg.physics.loader_workers;
         lc.require_roads = require_roads;
+        lc.require_classes = require_classes;
         return lc;
     }
 
@@ -385,23 +403,49 @@ ps::Pose Session::setup_terrain(const TerrainModeConfig& tm) {
     // priority.
     if (tm.world_terrain) tm.world_terrain->set_physics_priority(g2m::world::Priority::Gate);
     if (phys.road_surfaces.enabled) {
-        // G2.5a-grip R-c: grip comes from per-cell OSM road classes instead
-        // of one uniform terrain_surface. Both hard errors below fail fast
-        // rather than silently falling back to "everything off-road".
+        // Both hard errors below fail fast rather than silently falling back to "everything off-road".
         if (!tm.road_layer_available) {
             throw std::invalid_argument(
                 "Session: physics.road_surfaces.enabled but this release has no g2m.src.osm road layer");
         }
-        if (!tm.fetch->provides_roads()) {
-            throw std::invalid_argument(
-                "Session: physics.road_surfaces.enabled but the terrain fetch does not provide roads");
+        if (tm.world_terrain != nullptr && tm.world_terrain->served_terrain_class()) {
+            if (!tm.fetch->provides_classes()) {
+                throw std::invalid_argument(
+                    "Session: class-based road physics is enabled but the terrain fetch does not provide g2m.terrain.class");
+            }
+            const ps::SurfaceId paved = resolve_grip_surface(*surface_table_, "paved", phys.road_surfaces.paved);
+            const ps::SurfaceId unpaved = resolve_grip_surface(*surface_table_, "unpaved", phys.road_surfaces.unpaved);
+            const ps::SurfaceId off_road = resolve_grip_surface(*surface_table_, "off_road", phys.road_surfaces.off_road);
+            const auto classes = g2m::classes::SurfaceIdTable::build(
+                [this, paved](g2m::SurfaceKind kind) -> std::uint16_t {
+                    if (kind == g2m::SurfaceKind::Unknown) return static_cast<std::uint16_t>(paved);
+                    const std::string name(rg::surface_name_for_kind(kind));
+                    const ps::SurfaceId id = surface_table_->id_for(name);
+                    if (id == ps::kInvalidSurfaceId) {
+                        throw std::invalid_argument("Session: terrain.class surface kind '" + name +
+                                                    "' is not in the surface table");
+                    }
+                    return static_cast<std::uint16_t>(id);
+                },
+                [paved, unpaved, off_road](g2m::LandClass land) -> std::uint16_t {
+                    if (land == g2m::LandClass::PavedRoad) return static_cast<std::uint16_t>(paved);
+                    if (land == g2m::LandClass::UnpavedRoad) return static_cast<std::uint16_t>(unpaved);
+                    return static_cast<std::uint16_t>(off_road);
+                });
+            terrain_ = std::make_unique<Terrain>(
+                tm, g2m::ps_bridge::ClassSurfaceConfig{classes, static_cast<ps::SurfaceId>(off_road)});
+        } else {
+            if (!tm.fetch->provides_roads()) {
+                throw std::invalid_argument(
+                    "Session: physics.road_surfaces.enabled but the terrain fetch does not provide roads");
+            }
+            const ps::SurfaceId paved = resolve_grip_surface(*surface_table_, "paved", phys.road_surfaces.paved);
+            const ps::SurfaceId unpaved = resolve_grip_surface(*surface_table_, "unpaved", phys.road_surfaces.unpaved);
+            const ps::SurfaceId off_road = resolve_grip_surface(*surface_table_, "off_road", phys.road_surfaces.off_road);
+            const g2m::RoadValueLut lut = g2m::RoadValueLut::by_land_class(
+                off_road, {{g2m::LandClass::PavedRoad, paved}, {g2m::LandClass::UnpavedRoad, unpaved}});
+            terrain_ = std::make_unique<Terrain>(tm, g2m::ps_bridge::RoadSurfaceConfig{lut, off_road});
         }
-        const ps::SurfaceId paved = resolve_grip_surface(*surface_table_, "paved", phys.road_surfaces.paved);
-        const ps::SurfaceId unpaved = resolve_grip_surface(*surface_table_, "unpaved", phys.road_surfaces.unpaved);
-        const ps::SurfaceId off_road = resolve_grip_surface(*surface_table_, "off_road", phys.road_surfaces.off_road);
-        const g2m::RoadValueLut lut = g2m::RoadValueLut::by_land_class(
-            off_road, {{g2m::LandClass::PavedRoad, paved}, {g2m::LandClass::UnpavedRoad, unpaved}});
-        terrain_ = std::make_unique<Terrain>(tm, g2m::ps_bridge::RoadSurfaceConfig{lut, off_road});
     } else {
         const ps::SurfaceId surface = surface_table_->id_for(phys.terrain_surface);
         if (surface == ps::kInvalidSurfaceId) {

@@ -143,6 +143,10 @@ var _ab_off := false
 var _ab_switched_ms := 0
 var _ab_saved_bg := -1
 var _spawn_reported: bool = false
+var _drive_diag_history: Array[Dictionary] = []
+var _drive_diag_last_sample_s: float = -1.0e9
+const DRIVE_DIAG_HISTORY_S := 5.2
+const DRIVE_DIAG_SAMPLE_PERIOD_S := 0.1
 
 # --- shell (R5) ---
 var _shell: Node # RgShell: flow, settings, credits, spawn presets
@@ -1422,7 +1426,20 @@ func _forward_driving(live: bool, delta: float) -> void:
 		_hud.show_message("Drive mode: " + str(state["label"]),2.0,DriveModeTheme.color_for_mode(drive_mode_change))
 	# shift_up_count/shift_down_count are running edge counters on the sim
 	# side (session.cpp's kControlChannelNames): add this frame's edges.
-	if up > 0 or down > 0:
+	# Automatic and dual-clutch gearboxes (physics automatic_tcu): the shift keys step the selector P-R-N-D
+	# (rg::selector_shift decides); in D with manual mode on (Y) they change gears.
+	if (up > 0 or down > 0) and int(pt.get("transmission_kind",0)) != 0:
+		var sel: Dictionary = RgDriverActions.selector_shift(pt,up,down)
+		if sel["change"]:
+			_simulation.set_control("gear_request",float(sel["gear_request"]))
+		if int(sel["park_request"]) >= 0:
+			_simulation.set_control("park_lock",float(sel["park_request"]))
+		if sel["refused"] and _hud != null:
+			_hud.show_message("Stop the car first: P and R are refused while rolling",2.5)
+		if not sel["forward_counts"]:
+			up = 0
+			down = 0
+	elif up > 0 or down > 0:
 		_simulation.set_control("park_lock",0.0)
 	if up > 0:
 		_simulation.set_control("shift_up_count", _simulation.get_control("shift_up_count") + up)
@@ -1594,6 +1611,8 @@ func _process_body(delta: float) -> void:
 	# In-world actions only count on the Drive screen; the edge counts are consumed
 	# every frame either way so a press in a menu never arrives later.
 	var in_drive := _screen == "drive"
+	if in_drive and world_state == "running":
+		_record_drive_diag_sample()
 	var truck_presses: int = _input_map.consume_npc_truck()
 	if in_drive and world_state == "running" and get_tree().get_nodes_in_group("address_teleport_open").is_empty() and truck_presses > 0:
 		_simulation.request_npc_truck(not Input.is_key_pressed(KEY_SHIFT), 70.0)
@@ -2312,7 +2331,10 @@ func _log_owner_mark() -> void:
 	var origin: Dictionary = config.get("session_origin_utm", {}) if config is Dictionary else {}
 	var wheels: Array = []
 	for wheel in range(_simulation.get_vehicle_wheel_count(VEHICLE_NAME)):
-		wheels.append({"load_n": _simulation.get_wheel_load_n(VEHICLE_NAME,wheel), "slip_deg": rad_to_deg(_simulation.get_wheel_slip_angle(VEHICLE_NAME,wheel)), "surface": _simulation.get_wheel_surface_name(VEHICLE_NAME,wheel)})
+		wheels.append({"load_n": _simulation.get_wheel_load_n(VEHICLE_NAME,wheel), "slip_deg": rad_to_deg(_simulation.get_wheel_slip_angle(VEHICLE_NAME,wheel)),
+			"slip_ratio": _simulation.get_wheel_slip_ratio(VEHICLE_NAME,wheel), "omega_rad_s": _simulation.get_wheel_omega(VEHICLE_NAME,wheel),
+			"steer_deg": rad_to_deg(_simulation.get_wheel_steer_angle(VEHICLE_NAME,wheel)), "fx_n": _simulation.get_wheel_fx(VEHICLE_NAME,wheel),
+			"fy_n": _simulation.get_wheel_fy(VEHICLE_NAME,wheel), "surface": _simulation.get_wheel_surface_name(VEHICLE_NAME,wheel)})
 	var mark: Dictionary = {"saved_at": Time.get_datetime_string_from_system(), "source":"log_marker", "world":world_kind, "sim_time_s":_simulation.get_sim_time(), "tick":_simulation.get_step_count(), "session_m":[point.x,point.y,point.z], "speed_kmh":_simulation.get_body_speed_mps("chassis")*3.6, "camera":_director.active_name, "wheels":wheels, "build":_simulation.get_build_info()}
 	if world_kind == "real_world":
 		mark["utm_zone"] = origin.get("zone")
@@ -2335,7 +2357,14 @@ func _log_owner_mark() -> void:
 	if _vehicle_audio != null:
 		mark["audio"] = _vehicle_audio.get_audio_diagnostics()
 	mark["powertrain"] = _simulation.get_vehicle_powertrain(VEHICLE_NAME)
+	mark["nitrous"] = _simulation.get_vehicle_nitrous(VEHICLE_NAME)
+	mark["chassis_session_pose"] = _simulation.get_chassis_session_pose()
+	mark["controls"] = {"steer": _simulation.get_control("steer"), "throttle": _simulation.get_control("throttle"),
+		"brake": _simulation.get_control("brake"), "handbrake": _simulation.get_control("handbrake"),
+		"traction_control": _simulation.get_control("assist.traction_control"), "drive_mode": _simulation.get_control("assist.drive_mode"),
+		"nitrous_arm": _simulation.get_control("nitrous_arm")}
 	mark["aero"] = _simulation.get_aero_state()
+	mark["pretrigger_drive_samples"] = _drive_diag_history.duplicate(true)
 	mark["npc_truck"] = _simulation.get_npc_truck_state()
 	var traffic: Dictionary = _simulation.get_traffic_state()
 	var actors: Array = traffic.get("actors", [])
@@ -2368,3 +2397,36 @@ func _log_owner_mark() -> void:
 	print("RG_OWNER_MARK_COPY " + copy_text)
 	if _hud != null:
 		_hud.show_message("Marked (copied): " + copy_text, 6.0)
+
+# Keep a small rolling window so an owner bookmark captures the loss-of-control
+# onset, not just the state after the car has already left the road. Sampling is
+# simulation-time based and the retained window is bounded to about five seconds.
+func _record_drive_diag_sample() -> void:
+	var sim_t: float = _simulation.get_sim_time()
+	if sim_t < _drive_diag_last_sample_s:
+		_drive_diag_history.clear()
+		_drive_diag_last_sample_s = -1.0e9
+	if sim_t - _drive_diag_last_sample_s < DRIVE_DIAG_SAMPLE_PERIOD_S:
+		return
+	_drive_diag_last_sample_s = sim_t
+	var wheels: Array = []
+	for wheel in range(_simulation.get_vehicle_wheel_count(VEHICLE_NAME)):
+		wheels.append({"load_n": _simulation.get_wheel_load_n(VEHICLE_NAME, wheel),
+			"slip_deg": rad_to_deg(_simulation.get_wheel_slip_angle(VEHICLE_NAME, wheel)),
+			"slip_ratio": _simulation.get_wheel_slip_ratio(VEHICLE_NAME, wheel),
+			"omega_rad_s": _simulation.get_wheel_omega(VEHICLE_NAME, wheel),
+			"steer_deg": rad_to_deg(_simulation.get_wheel_steer_angle(VEHICLE_NAME, wheel)),
+			"fx_n": _simulation.get_wheel_fx(VEHICLE_NAME, wheel),
+			"fy_n": _simulation.get_wheel_fy(VEHICLE_NAME, wheel),
+			"surface": _simulation.get_wheel_surface_name(VEHICLE_NAME, wheel)})
+	_drive_diag_history.append({"sim_time_s": sim_t, "tick": _simulation.get_step_count(),
+		"chassis": _simulation.get_chassis_session_pose(),
+		"speed_kmh": _simulation.get_body_speed_mps("chassis") * 3.6,
+		"controls": {"steer": _simulation.get_control("steer"), "throttle": _simulation.get_control("throttle"),
+			"brake": _simulation.get_control("brake"), "handbrake": _simulation.get_control("handbrake"),
+			"traction_control": _simulation.get_control("assist.traction_control"),
+			"drive_mode": _simulation.get_control("assist.drive_mode"), "nitrous_arm": _simulation.get_control("nitrous_arm")},
+		"wheels": wheels, "powertrain": _simulation.get_vehicle_powertrain(VEHICLE_NAME),
+		"nitrous": _simulation.get_vehicle_nitrous(VEHICLE_NAME)})
+	while not _drive_diag_history.is_empty() and sim_t - float(_drive_diag_history[0].get("sim_time_s", sim_t)) > DRIVE_DIAG_HISTORY_S:
+		_drive_diag_history.pop_front()

@@ -8,6 +8,7 @@
 // invalid zone - is guarded by an explicit check in WorldTerrain::open()
 // before it is ever called, so this file never needs a try/catch.
 #include "rg/world_terrain.h"
+#include "rg/route_surface_mesh.h"
 #include "rg/route_check.h"
 
 #include "g2m/layer/layer_id.h"
@@ -58,18 +59,23 @@ std::shared_ptr<const std::vector<g2m::RoadSegment>> world_terrain_road_class_lo
     return static_cast<WorldTerrain*>(ctx)->road_segments(key);
 }
 
+std::shared_ptr<const g2m::TerrainClassTile> world_terrain_class_lookup(void* ctx, const g2m::TileKey& key) {
+    return static_cast<WorldTerrain*>(ctx)->terrain_class_tile(key);
+}
+
 } // namespace
 
 namespace {
 g2m::world::ViewSource wrapper_source(g2m::mesh::TileLookup lookup, void* ctx, double e0, double n0,
                                       const g2m::world::ClassLookup& class_lookup, const RoadSurfaceMap& surfaces,
-                                      TileCarveFn carve_state) {
+                                      TileCarveFn carve_state, const g2m::world::TerrainClassLookup& terrain_classes) {
     g2m::world::ViewSource source;
     source.e0 = e0;
     source.n0 = n0;
     source.lookup = lookup;
     source.ctx = ctx;
     source.class_lookup = class_lookup;
+    source.terrain_classes = terrain_classes;
     source.carve_state = carve_state;
     source.colour = chunk_colour_hook(surfaces);
     return source;
@@ -79,16 +85,21 @@ g2m::world::ViewSource wrapper_source(g2m::mesh::TileLookup lookup, void* ctx, d
 bool build_render_chunks(const std::vector<g2m::mesh::ChunkKey>& keys, g2m::mesh::TileLookup lookup, void* ctx,
                          double e0, double n0, unsigned thread_count, std::vector<RenderChunk>& out,
                          const std::atomic<bool>* cancel, const g2m::world::ClassLookup& class_lookup,
-                         const RoadSurfaceMap& surfaces, TileCarveFn carve_state) {
-    return g2m::world::build_view_chunks(keys, wrapper_source(lookup, ctx, e0, n0, class_lookup, surfaces, carve_state),
+                         const RoadSurfaceMap& surfaces, TileCarveFn carve_state,
+                         const g2m::world::TerrainClassLookup& terrain_classes) {
+    return g2m::world::build_view_chunks(keys,
+                                         wrapper_source(lookup, ctx, e0, n0, class_lookup, surfaces, carve_state,
+                                                        terrain_classes),
                                          thread_count, out, cancel);
 }
 
 void build_static_view_from_lookup(double cam_x, double cam_y, const g2m::mesh::LodParams& params, double e0,
                                    double n0, g2m::mesh::TileLookup lookup, void* ctx, unsigned thread_count,
                                    std::vector<RenderChunk>& out, const g2m::world::ClassLookup& class_lookup,
-                                   const RoadSurfaceMap& surfaces, TileCarveFn carve_state) {
-    g2m::world::ViewSource source = wrapper_source(lookup, ctx, e0, n0, class_lookup, surfaces, carve_state);
+                                   const RoadSurfaceMap& surfaces, TileCarveFn carve_state,
+                                   const g2m::world::TerrainClassLookup& terrain_classes) {
+    g2m::world::ViewSource source =
+        wrapper_source(lookup, ctx, e0, n0, class_lookup, surfaces, carve_state, terrain_classes);
     source.params = params;
     g2m::world::build_static_view(cam_x, cam_y, source, thread_count, out);
 }
@@ -139,6 +150,12 @@ std::unique_ptr<WorldTerrain> WorldTerrain::open(const WorldConfig& config, std:
     }
     service_cfg.layers.roads = wt->road_profiles_enabled_;
     service_cfg.layers.geometry = wt->road_profiles_enabled_;
+    // Opt-in: g2m.terrain.class joins the release (and the carved layer with it; height() still serves the plain
+    // terrain height, so physics and the carve fallbacks are unchanged). The release id changes: a store derived
+    // for the default release is not reused. Off (the default) leaves the release id as it was.
+    wt->served_terrain_class_ = config.render_classes_served || config.render_classes_none;
+    wt->render_classes_disabled_ = config.render_classes_none;
+    service_cfg.layers.classes = config.render_classes_served && !config.render_classes_none;
     service_cfg.zone = g2m::geo::UtmZone{config.session_origin_utm.zone};
     service_cfg.e0_m = static_cast<std::int64_t>(e0_rounded);
     service_cfg.n0_m = static_cast<std::int64_t>(n0_rounded);
@@ -434,9 +451,102 @@ std::shared_ptr<const g2m::RoadGeomTile> WorldTerrain::road_geometry_at(double e
 }
 
 g2m::world::RoadRibbonTile WorldTerrain::road_visual_tile(const g2m::TileKey& key,double lift) {
-    const auto geometry=road_geometry_at(key.min_easting()+512,key.min_northing()+512);
-    if(!geometry)return {};
-    return g2m::world::build_road_ribbons(*geometry,key,[this,key](double e,double n){return g2m::world::sample_height_bilinear([this](const auto& k){return height_tile_shared(k).tile.get();},key.zone,0,0,e,n);},lift,separation_);
+    const auto shared = road_visual_tile_shared(key, lift);
+    return shared ? *shared : g2m::world::RoadRibbonTile{};
+}
+
+std::shared_ptr<const g2m::world::RoadRibbonTile> WorldTerrain::road_visual_tile_shared(
+    const g2m::TileKey& key, double lift) {
+    // The initial physics residency square spans nine L2 route tiles. Keep that working set resident;
+    // 64 MiB evicted neighbouring meshes while the loader was still stamping their L0 children.
+    constexpr std::size_t kRouteMeshCacheBudget = 256u * 1024u * 1024u;
+    const RouteMeshKey cache_key{key, lift};
+    std::shared_future<std::shared_ptr<const g2m::world::RoadRibbonTile>> future;
+    std::shared_ptr<std::promise<std::shared_ptr<const g2m::world::RoadRibbonTile>>> producer;
+    {
+        std::lock_guard<std::mutex> lock(route_mesh_cache_mutex_);
+        const auto hit = route_mesh_cache_.find(cache_key);
+        if (hit != route_mesh_cache_.end()) {
+            ++route_mesh_cache_hits_;
+            if (hit->second.future.wait_for(std::chrono::seconds(0)) != std::future_status::ready)
+                ++route_mesh_cache_waits_;
+            route_mesh_cache_lru_.splice(route_mesh_cache_lru_.end(), route_mesh_cache_lru_, hit->second.lru);
+            future = hit->second.future;
+        } else {
+            producer = std::make_shared<std::promise<std::shared_ptr<const g2m::world::RoadRibbonTile>>>();
+            future = producer->get_future().share();
+            route_mesh_cache_lru_.push_back(cache_key);
+            route_mesh_cache_.emplace(cache_key,
+                RouteMeshCacheEntry{future, std::prev(route_mesh_cache_lru_.end()), 0, false});
+            ++route_mesh_cache_builds_;
+        }
+    }
+    if (!producer) return future.get();
+
+    try {
+        const auto geometry = road_geometry_at(key.min_easting() + 512, key.min_northing() + 512);
+        const auto ground = [this, key](double e, double n) {
+            return g2m::world::sample_height_bilinear(
+                [this](const auto& height_key) { return height_tile_shared(height_key).tile.get(); },
+                key.zone, 0, 0, e, n);
+        };
+        const auto build_started = std::chrono::steady_clock::now();
+        g2m::world::RoadRibbonTile mesh;
+        if (geometry) {
+            mesh = g2m::world::build_road_ribbons(*geometry, key, ground, lift, separation_);
+            append_route_surface_mesh(mesh, *geometry, key, ground, lift, separation_);
+        } else {
+            mesh.key = key;
+        }
+        if (const auto osm = source_osm_tile(key))
+            append_standalone_path_mesh(mesh, *osm, key, ground, lift);
+        const auto build_elapsed = std::chrono::duration_cast<std::chrono::microseconds>(
+            std::chrono::steady_clock::now() - build_started).count();
+        auto immutable = std::make_shared<const g2m::world::RoadRibbonTile>(std::move(mesh));
+        producer->set_value(immutable);
+
+        const std::size_t bytes = immutable->vertices.capacity() * sizeof(g2m::world::RoadRibbonVertex) +
+                                  immutable->indices.capacity() * sizeof(std::int32_t);
+        std::lock_guard<std::mutex> lock(route_mesh_cache_mutex_);
+        route_mesh_cache_build_microseconds_ += static_cast<std::uint64_t>(std::max<std::int64_t>(build_elapsed, 0));
+        const auto built = route_mesh_cache_.find(cache_key);
+        if (built != route_mesh_cache_.end()) {
+            built->second.ready = true;
+            built->second.bytes = bytes;
+            route_mesh_cache_resident_bytes_ += bytes;
+        }
+        // Evict completed least-recently-used meshes until the retained geometry fits the budget. In-flight entries
+        // are skipped; a temporary overage is allowed while callers build distinct tiles concurrently.
+        while (route_mesh_cache_resident_bytes_ > kRouteMeshCacheBudget) {
+            bool evicted = false;
+            for (auto lru = route_mesh_cache_lru_.begin(); lru != route_mesh_cache_lru_.end(); ++lru) {
+                const auto candidate = route_mesh_cache_.find(*lru);
+                if (candidate == route_mesh_cache_.end()) {
+                    route_mesh_cache_lru_.erase(lru);
+                    evicted = true;
+                    break;
+                }
+                if (!candidate->second.ready) continue;
+                route_mesh_cache_resident_bytes_ -= candidate->second.bytes;
+                route_mesh_cache_lru_.erase(candidate->second.lru);
+                route_mesh_cache_.erase(candidate);
+                evicted = true;
+                break;
+            }
+            if (!evicted) break;
+        }
+        return immutable;
+    } catch (...) {
+        const auto failure = std::current_exception();
+        try { producer->set_exception(failure); } catch (...) {}
+        std::lock_guard<std::mutex> lock(route_mesh_cache_mutex_);
+        const auto failed = route_mesh_cache_.find(cache_key);
+        if (failed != route_mesh_cache_.end()) {
+            route_mesh_cache_lru_.erase(failed->second.lru);
+            route_mesh_cache_.erase(failed);
+        }
+        std::rethrow_exception(failure);
+    }
 }
 
 std::shared_ptr<const g2m::OsmTile> WorldTerrain::source_osm_tile(const g2m::TileKey& key) {
@@ -574,6 +684,19 @@ void WorldTerrain::build_static_view(double cam_x, double cam_y, std::vector<Ren
     const unsigned hw = std::thread::hardware_concurrency();
     const unsigned threads = hw == 0 ? 4u : std::min(hw, 8u);
     const std::shared_ptr<const g2m::RenderRoadLod> road_lod = render_road_lod();
+    if (render_classes_disabled_) {
+        build_static_view_from_lookup(cam_x, cam_y, lod_params_, static_cast<double>(frame_->e0_m()),
+                                      static_cast<double>(frame_->n0_m()), &world_terrain_lookup, this, threads, out,
+                                      g2m::world::ClassLookup{}, road_surfaces_);
+        return;
+    }
+    if (served_terrain_class_) {
+        build_static_view_from_lookup(cam_x, cam_y, lod_params_, static_cast<double>(frame_->e0_m()),
+                                      static_cast<double>(frame_->n0_m()), &world_terrain_lookup, this, threads, out,
+                                      g2m::world::ClassLookup{}, road_surfaces_, nullptr,
+                                      g2m::world::TerrainClassLookup{&world_terrain_class_lookup, this, road_lod.get()});
+        return;
+    }
     build_static_view_from_lookup(cam_x, cam_y, lod_params_, static_cast<double>(frame_->e0_m()),
                                   static_cast<double>(frame_->n0_m()), &world_terrain_lookup, this, threads, out,
                                   g2m::world::ClassLookup{&world_terrain_road_class_lookup, this, road_lod.get()},
@@ -598,7 +721,16 @@ TerrainViewSource WorldTerrain::view_source() {
     source.lookup = &world_terrain_lookup;
     source.ctx = this;
     source.road_lod = render_road_lod();
-    source.class_lookup = g2m::world::ClassLookup{&world_terrain_road_class_lookup, this, source.road_lod.get()};
+    if (render_classes_disabled_) {
+        // No route colour window: the underlying terrain keeps its natural material; route surfaces are separate
+        // streamed geometry. Physics still fetches the served class tiles through HeightTileSharedFetch.
+    } else if (served_terrain_class_) {
+        // Takes precedence over class_lookup in g2m::world::build_one_chunk; class_lookup stays unset so the OSM
+        // road raster (and its src.osm fetches) is not run for render.
+        source.terrain_classes = g2m::world::TerrainClassLookup{&world_terrain_class_lookup, this, source.road_lod.get()};
+    } else {
+        source.class_lookup = g2m::world::ClassLookup{&world_terrain_road_class_lookup, this, source.road_lod.get()};
+    }
     source.colour = chunk_colour_hook(road_surfaces_);
     source.carve_state = &world_terrain_carve_state;
     return source;
@@ -646,9 +778,75 @@ std::shared_ptr<const std::vector<g2m::RoadSegment>> WorldTerrain::road_segments
     return kNoRoads; // Failed: "no roads" is a valid, non-fatal answer for the render path
 }
 
+std::shared_ptr<const g2m::TerrainClassTile> WorldTerrain::terrain_class_tile(
+    const g2m::TileKey& key, g2m::world::Priority priority) {
+    if (key.level == 0) {
+        std::lock_guard<std::mutex> lock(physics_class_overlay_mutex_);
+        const auto hit = physics_class_overlay_cache_.find(key);
+        if (hit != physics_class_overlay_cache_.end()) return hit->second;
+    }
+    std::shared_ptr<const g2m::TerrainClassTile> base;
+    if (render_classes_disabled_ && key.level == 0) {
+        // Explicit route geometry is the material source. Re-deriving a separate carved class raster duplicates
+        // road work and can retain route material outside the visible meshes. Unknown resolves to off-road.
+        auto natural = std::make_shared<g2m::TerrainClassTile>();
+        natural->reset(key);
+        base = std::move(natural);
+    } else {
+        base = service_->peek_terrain_class(key);
+    }
+    if (!base) {
+        auto ticket = service_->terrain_class(key, priority);
+        if (!wait_ticket(ticket)) return nullptr;
+        switch (ticket.state()) {
+            case g2m::world::TileState::Ready:
+                base = ticket.value();
+                break;
+            case g2m::world::TileState::Absent:
+                return nullptr; // outside coverage: no class data
+            default:
+                std::fprintf(stderr,
+                             "WorldTerrain::terrain_class_tile: g2m.terrain.class fetch/derive failed (tile %s) - "
+                             "this chunk has no class data\n",
+                             g2m::to_string(key).c_str());
+                return nullptr;
+        }
+    }
+    if (!base || key.level != 0) return base;
+
+    // The served terrain-class product classifies roadbeds and landcover, while explicit unpaved, sidewalk and
+    // cycleway strips are constructed from the same RoadGeomTile cross-sections as the visible route mesh. Project
+    // those exact triangles onto the integer-metre physics lattice so their wheel material follows the visible strip.
+    auto stamped = std::make_shared<g2m::TerrainClassTile>(*base);
+    const auto l2 = key.parent().parent();
+    const auto route_mesh = road_visual_tile_shared(l2, 0.0);
+    // A road-geometry fetch can transiently fail while its class product is already available. Do not memoize that
+    // incomplete overlay: a later physics fetch can retry geometry and will then align the class to the visible mesh.
+    if (!route_mesh || route_mesh->indices.empty()) return base;
+    const auto ground = [this, l2, priority](double e, double n) {
+        return g2m::world::sample_height_bilinear(
+            [this, priority](const auto& height_key) {
+                return height_tile_shared(height_key, priority).tile.get();
+            }, l2.zone, 0, 0, e, n);
+    };
+    stamp_route_surface_classes(*stamped, *route_mesh, ground);
+    {
+        std::lock_guard<std::mutex> lock(physics_class_overlay_mutex_);
+        const auto [it, inserted] = physics_class_overlay_cache_.emplace(key, stamped);
+        if (!inserted) return it->second;
+    }
+    return stamped;
+}
+
 WorldTerrain::FetchStats WorldTerrain::fetch_stats() const {
     std::lock_guard<std::mutex> lk(stats_mutex_);
     return stats_;
+}
+
+WorldTerrain::RouteMeshCacheStats WorldTerrain::route_mesh_cache_stats() const {
+    std::lock_guard<std::mutex> lock(route_mesh_cache_mutex_);
+    return RouteMeshCacheStats{route_mesh_cache_hits_, route_mesh_cache_builds_, route_mesh_cache_waits_,
+                               route_mesh_cache_build_microseconds_, route_mesh_cache_resident_bytes_};
 }
 
 WorldTerrain::OsmFetchStats WorldTerrain::osm_fetch_stats() const {
