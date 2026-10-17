@@ -183,7 +183,8 @@ private:
     void revalidate();
     void remove_drive_dir();
     void engines_changed();
-    std::string drop_unavailable_values();
+    // gearbox_change: the probe also installs the chosen gearbox (an automatic drops the clutch and manual-TCU options).
+    std::string drop_unavailable_values(bool gearbox_change = false);
     // After a drive layout change: an axle differential choice for an axle the new layout does not drive returns to stock.
     std::string drop_driveline_values();
     // The overlay with legacy engine ids resolved to keys; an engine that no longer exists is dropped (named in *notices).

@@ -68,7 +68,8 @@ const char* const kControlChannelNames[] = {
     "cabin.horn",
     "park_lock",
     "gear_request", // -100 means no absolute request; zero is neutral
-    "transmission.selector", // reserved until automatic transmission support
+    "transmission.selector", // reserved (the automatic's selector rides on gear_request + park_lock)
+    "transmission.mode", // physics automatic_tcu: >= 0.5 = sport shift schedule; only automatic/dual-clutch cars register it
     "epb", // physics owns edge detection and the parking latch
     "assist.abs", // physics_sim assists I5 part 2: ABS on/off (>= 0.5); only a car whose assist unit has the abs block registers it
     "assist.esc", // physics_sim assists I6: ESC mode 0 off, 1 on, 2 sport; only a car whose unit has the esc block registers it

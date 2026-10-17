@@ -1426,7 +1426,20 @@ func _forward_driving(live: bool, delta: float) -> void:
 		_hud.show_message("Drive mode: " + str(state["label"]),2.0,DriveModeTheme.color_for_mode(drive_mode_change))
 	# shift_up_count/shift_down_count are running edge counters on the sim
 	# side (session.cpp's kControlChannelNames): add this frame's edges.
-	if up > 0 or down > 0:
+	# Automatic and dual-clutch gearboxes (physics automatic_tcu): the shift keys step the selector P-R-N-D
+	# (rg::selector_shift decides); in D with manual mode on (Y) they change gears.
+	if (up > 0 or down > 0) and int(pt.get("transmission_kind",0)) != 0:
+		var sel: Dictionary = RgDriverActions.selector_shift(pt,up,down)
+		if sel["change"]:
+			_simulation.set_control("gear_request",float(sel["gear_request"]))
+		if int(sel["park_request"]) >= 0:
+			_simulation.set_control("park_lock",float(sel["park_request"]))
+		if sel["refused"] and _hud != null:
+			_hud.show_message("Stop the car first: P and R are refused while rolling",2.5)
+		if not sel["forward_counts"]:
+			up = 0
+			down = 0
+	elif up > 0 or down > 0:
 		_simulation.set_control("park_lock",0.0)
 	if up > 0:
 		_simulation.set_control("shift_up_count", _simulation.get_control("shift_up_count") + up)
