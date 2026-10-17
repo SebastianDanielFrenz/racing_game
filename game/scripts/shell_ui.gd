@@ -1312,7 +1312,7 @@ func _draw_mass_breakdown() -> void:
 		box.add_child(_label("%s%s  %.0f kg" % [indent, str(part["label"]), float(part["total_kg"])], 14, HORIZONTAL_ALIGNMENT_LEFT, true))
 
 # The part choices (setup_options.json kind part_choice, group "Weight reduction") this car offers: one row of cards per
-# slot, the fitted part marked. Mass only: the model keeps the part (visual removal is not built).
+# slot, the fitted part marked. The model shows the removal where it has a node for the part (data/vehicles/strip_visual.json).
 func _weight_reduction_options() -> Array:
 	var out: Array = []
 	for opt in garage.get_options():
@@ -1326,7 +1326,7 @@ func _draw_weight_reduction() -> void:
 		var total := float(info["total_kg"])
 		var delta := total - float(info.get("stock_kg", total))
 		_option_box.add_child(_label("Total %.0f kg%s" % [total, ("  (%+.0f kg vs stock)" % delta) if absf(delta) >= 0.5 else ""], 16, HORIZONTAL_ALIGNMENT_LEFT))
-	var note := _label("Mass only: removed parts still show on the car.", 13, HORIZONTAL_ALIGNMENT_LEFT, true)
+	var note := _label("Removed parts leave the car where its model has a separate part for them.", 13, HORIZONTAL_ALIGNMENT_LEFT, true)
 	note.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	_option_box.add_child(note)
 	for opt in _weight_reduction_options():

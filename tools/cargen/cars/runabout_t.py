@@ -27,7 +27,7 @@ from cargen import quality as Q
 from cargen import detail as D
 from cargen.flow import FlowRecorder
 from cargen.wheels import Wheel, corner
-from cargen.common import materials, finish, seat_closed, loft_path, tube_path
+from cargen.common import materials, finish, seat_closed, spare_wheel, loft_path, tube_path
 from assetgen.scene import Model
 from assetgen import mesh as M
 from assetgen.vec import norm, compose, translate, rot_axis, xform_point, add, mul
@@ -395,6 +395,9 @@ def build_cabin(m, ck):
     mb = m.mb
     M.rounded_box(mb, ((TUB_X0 + X_DASH) / 2, 0.0, FLOOR_Z - 0.01), (X_DASH - TUB_X0 - 0.04, 2 * TUB_W - 0.04, 0.025),
                   0.004, "floorboard")
+    m.node("carpets", None, ((TUB_X0 + X_DASH) / 2, 0.0, FLOOR_Z), None, strip="carpets")
+    M.rounded_box(mb, ((TUB_X0 + X_DASH) / 2, 0.0, FLOOR_Z + 0.004), (X_DASH - TUB_X0 - 0.10, 2 * TUB_W - 0.14, 0.008),
+                  0.002, "carpet", "carpets")                                          # floor mat over the boards
     M.box(mb, (X_DASH - 0.04, 0.0, FLOOR_Z + 0.12), (0.20, 1.0, 0.02), "floorboard")   # sloped toe board
     M.box(mb, (X_DASH + 0.035, 0.0, (FLOOR_Z - 0.03 + 0.98) / 2), (0.02, 2 * TUB_W - 0.06, 0.98 - FLOOR_Z + 0.03),
           "wood")                                                                    # firewall
@@ -414,6 +417,12 @@ def build_cabin(m, ck):
                   source="control:ignition")
     C.slider(m, ck, "choke", (X_DASH - 0.018, 0.22, 1.04), (-1, 0, 0), (-1.0, 0.0, 0.0), 0.05, "choke", [0, 1],
              mat="frame", knob_mat="brass", label="choke pull", up_hint=(0, 0, 1))
+    # tool tray under the dash on the passenger side (strip = dashboard)
+    m.node("dash_glovebox", None, (X_DASH - 0.08, -0.30, 0.90), None, strip="dashboard")
+    M.rounded_box(mb, (X_DASH - 0.08, -0.30, 0.90), (0.12, 0.36, 0.14), 0.01, "wood", "dash_glovebox")
+    M.rounded_box(mb, (X_DASH - 0.145, -0.30, 0.92), (0.012, 0.10, 0.012), 0.003, "brass", "dash_glovebox")
+    # spare wheel upright on the tail (strip = spare_wheel)
+    spare_wheel(m, "spare_wheel", (TUB_X0 - 0.10, 0.0, 0.86), 0.36, 0.11, axis=(1.0, 0.0, 0.0))
     # horn bulb on the driver's side of the scuttle
     C.push_button(m, ck, "horn", (X_DASH - 0.05, TUB_W - 0.06, 1.24), (-0.5, -0.4, 0.7), (0.05, 0.05, 0.05), "horn",
                   mat="horn_bulb", momentary=True, round_r=0.032, label="horn bulb", travel=0.015)
@@ -442,10 +451,13 @@ def build_cabin(m, ck):
     C.lever(m, ck, "handbrake", (-0.10, TUB_W - 0.08, FLOOR_Z + 0.02), (0.0, 1.0, 0.0), (0.06, 0.0, 0.48),
             "handbrake", 20.0, mat="frame", grip_mat="wood", label="handbrake", grip_r=0.016)
     # ---- buttoned leather benches
+    # The front bench seats driver and passenger in one piece, so it stays on the body; the rear bench is its own
+    # static node (rig extra "strip" = the garage weight-reduction slot rear_seats).
     seat_closed(m, (-0.42, 0.0, FLOOR_Z + 0.34), width=1.12, recline=0.22, mat="leather", headrest=False,
                 depth=0.46, height=0.16, pleats=6)
+    m.node("seat_rear", None, (-1.02, 0.0, FLOOR_Z + 0.36), None, strip="rear_seats")
     seat_closed(m, (-1.02, 0.0, FLOOR_Z + 0.36), width=1.12, recline=0.24, mat="leather", headrest=False,
-                depth=0.44, height=0.16, pleats=6)
+                depth=0.44, height=0.16, pleats=6, part="seat_rear")
     for xs in (-0.42, -1.02):
         for k in range(5):
             for j in range(2):

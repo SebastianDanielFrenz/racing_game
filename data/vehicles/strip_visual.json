@@ -1,0 +1,273 @@
+{
+  "format": "rg.strip_visual/1",
+  "source": "Which model nodes a car's weight-reduction choices (setup_options.json group \"Weight reduction\", rg/part_mass.h trim slots) take off the visible car (owner on PR #22, 2026-10-16). Per model (the .glb file's stem) a list of rules {slot, part, hide}: when the setup fits `part` in the part_choice option's `slot`, the model nodes in `hide` are hidden, in the drive (including the cockpit) and in the garage. The generated Pico, Ventura GT and Runabout models include the removable nodes in every LOD; a node an imported model lacks is ignored. A slot a car does not have at all (no passenger seat on a bench, no rear seats in a two-seater) is not in the catalog's `interior`, so the garage does not offer its option; it needs no entry here. `not_separate` says per slot why a model shows no change: the element is part of the body mesh, or the choice is a lighter part of the same shape. Core: rg/strip_visual.h; test tests/unit/test_strip_visual.cpp.",
+  "models": {
+    "pico": {
+      "rules": [
+        {
+          "slot": "audio",
+          "part": "removed",
+          "hide": [
+            "screen_center",
+            "btn_wheel_audio_vol_up",
+            "btn_wheel_audio_vol_down",
+            "btn_wheel_audio_source"
+          ],
+          "note": "the touchscreen and the steering wheel's volume/source buttons; the hands-free button stays; the screen's foot on the dash stays (body mesh)"
+        },
+        {
+          "slot": "seat_passenger",
+          "part": "removed",
+          "hide": [
+            "seat_passenger"
+          ],
+          "note": "node added by tools/cargen cars/pico.py"
+        },
+        {
+          "slot": "rear_seats",
+          "part": "removed",
+          "hide": [
+            "seat_rear"
+          ],
+          "note": "node added by tools/cargen cars/pico.py"
+        },
+        {
+          "slot": "door_trim",
+          "part": "removed",
+          "hide": [
+            "door_card_FL",
+            "door_card_FR",
+            "door_card_RL",
+            "door_card_RR"
+          ],
+          "note": "nodes added by tools/cargen cars/pico.py (children of the doors)"
+        },
+        {
+          "slot": "carpets",
+          "part": "removed",
+          "hide": [
+            "carpets"
+          ],
+          "note": "node added by tools/cargen cars/pico.py (common.cabin_shell)"
+        },
+        {
+          "slot": "sound_deadening",
+          "part": "removed",
+          "hide": [
+            "sound_deadening"
+          ],
+          "note": "node added by tools/cargen cars/pico.py (common.cabin_shell): the floor pad under the carpet and the rear bulkhead pad"
+        },
+        {
+          "slot": "dashboard",
+          "part": "stripped",
+          "hide": [
+            "dash_console",
+            "dash_glovebox"
+          ],
+          "note": "nodes added by tools/cargen cars/pico.py: the console cup tray and the glovebox lid; the dash body, climate knobs and gear lever stay"
+        }
+      ],
+      "not_separate": {
+        "spare_wheel": "the space-saver lies under the boot floor, where it is not visible; nothing to hide",
+        "fasteners": "a swap for a lighter part of the same shape: no visual change by design (bolt heads are not modelled)",
+        "hood": "a swap for a lighter part of the same shape: no visual change by design (the carbon weave is not modelled; a tint of the hood's paint surface is an open question)",
+        "seat_driver": "a swap for a lighter part of the same shape: no visual change by design (a bucket seat is not modelled separately)"
+      }
+    },
+    "ventura_gt": {
+      "rules": [
+        {
+          "slot": "audio",
+          "part": "removed",
+          "hide": [
+            "btn_radio_1",
+            "btn_radio_2",
+            "btn_radio_3",
+            "btn_radio_4",
+            "btn_radio_5",
+            "knob_volume",
+            "knob_tune"
+          ],
+          "note": "the radio's preset buttons and knobs; the faceplate stays (body mesh)"
+        },
+        {
+          "slot": "seat_passenger",
+          "part": "removed",
+          "hide": [
+            "seat_passenger"
+          ],
+          "note": "node added by tools/cargen cars/ventura_gt.py"
+        },
+        {
+          "slot": "door_trim",
+          "part": "removed",
+          "hide": [
+            "door_card_L",
+            "door_card_R"
+          ],
+          "note": "nodes added by tools/cargen cars/ventura_gt.py (children of the doors)"
+        },
+        {
+          "slot": "carpets",
+          "part": "removed",
+          "hide": [
+            "carpets"
+          ],
+          "note": "node added by tools/cargen cars/ventura_gt.py (cabin floor and luggage deck carpet)"
+        },
+        {
+          "slot": "sound_deadening",
+          "part": "removed",
+          "hide": [
+            "sound_deadening"
+          ],
+          "note": "node added by tools/cargen cars/ventura_gt.py (common.cabin_shell)"
+        },
+        {
+          "slot": "dashboard",
+          "part": "stripped",
+          "hide": [
+            "dash_console",
+            "dash_glovebox"
+          ],
+          "note": "nodes added by tools/cargen cars/ventura_gt.py: the console storage lid and the glovebox lid; the dash body and the gauges stay"
+        },
+        {
+          "slot": "spare_wheel",
+          "part": "removed",
+          "hide": [
+            "spare_wheel"
+          ],
+          "note": "node added by tools/cargen cars/ventura_gt.py: the spare lying on the luggage deck"
+        }
+      ],
+      "not_separate": {
+        "fasteners": "a swap for a lighter part of the same shape: no visual change by design (bolt heads are not modelled)",
+        "hood": "a swap for a lighter part of the same shape: no visual change by design (the carbon weave is not modelled; a tint of the hood's paint surface is an open question)",
+        "seat_driver": "a swap for a lighter part of the same shape: no visual change by design (a bucket seat is not modelled separately)"
+      }
+    },
+    "runabout_t": {
+      "rules": [
+        {
+          "slot": "rear_seats",
+          "part": "removed",
+          "hide": [
+            "seat_rear"
+          ],
+          "note": "node added by tools/cargen cars/runabout_t.py"
+        },
+        {
+          "slot": "carpets",
+          "part": "removed",
+          "hide": [
+            "carpets"
+          ],
+          "note": "node added by tools/cargen cars/runabout_t.py: the floor mat over the floorboards"
+        },
+        {
+          "slot": "dashboard",
+          "part": "stripped",
+          "hide": [
+            "dash_glovebox"
+          ],
+          "note": "node added by tools/cargen cars/runabout_t.py: the tool tray under the dash"
+        },
+        {
+          "slot": "spare_wheel",
+          "part": "removed",
+          "hide": [
+            "spare_wheel"
+          ],
+          "note": "node added by tools/cargen cars/runabout_t.py: the spare upright on the tail"
+        }
+      ],
+      "not_separate": {
+        "fasteners": "a swap for a lighter part of the same shape: no visual change by design (bolt heads are not modelled)",
+        "hood": "a swap for a lighter part of the same shape: no visual change by design (the carbon weave is not modelled; a tint of the hood's paint surface is an open question)",
+        "seat_driver": "a swap for a lighter part of the same shape: no visual change by design (a bucket seat is not modelled separately)"
+      }
+    },
+    "car_sedan": {
+      "rules": [],
+      "not_separate": {
+        "seat_passenger": "the element is part of the single body mesh (shared materials with the rest of the cabin), no node of its own",
+        "rear_seats": "the element is part of the single body mesh (shared materials with the rest of the cabin), no node of its own",
+        "audio": "the element is part of the single body mesh (shared materials with the rest of the cabin), no node of its own",
+        "door_trim": "the element is part of the single body mesh (shared materials with the rest of the cabin), no node of its own",
+        "dashboard": "the element is part of the single body mesh (shared materials with the rest of the cabin), no node of its own",
+        "sound_deadening": "the element is part of the single body mesh (shared materials with the rest of the cabin), no node of its own",
+        "carpets": "the element is part of the single body mesh (shared materials with the rest of the cabin), no node of its own",
+        "spare_wheel": "the element is part of the single body mesh (shared materials with the rest of the cabin), no node of its own",
+        "fasteners": "a swap for a lighter part of the same shape: no visual change by design (bolt heads are not modelled)",
+        "hood": "a swap for a lighter part of the same shape: no visual change by design (the carbon weave is not modelled; a tint of the hood's paint surface is an open question)",
+        "seat_driver": "a swap for a lighter part of the same shape: no visual change by design (a bucket seat is not modelled separately)"
+      }
+    },
+    "car_hyper": {
+      "rules": [],
+      "not_separate": {
+        "seat_passenger": "the element is part of the single body mesh (shared materials with the rest of the cabin), no node of its own",
+        "rear_seats": "the element is part of the single body mesh (shared materials with the rest of the cabin), no node of its own",
+        "audio": "the element is part of the single body mesh (shared materials with the rest of the cabin), no node of its own",
+        "door_trim": "the element is part of the single body mesh (shared materials with the rest of the cabin), no node of its own",
+        "dashboard": "the element is part of the single body mesh (shared materials with the rest of the cabin), no node of its own",
+        "sound_deadening": "the element is part of the single body mesh (shared materials with the rest of the cabin), no node of its own",
+        "carpets": "the element is part of the single body mesh (shared materials with the rest of the cabin), no node of its own",
+        "spare_wheel": "the element is part of the single body mesh (shared materials with the rest of the cabin), no node of its own",
+        "fasteners": "a swap for a lighter part of the same shape: no visual change by design (bolt heads are not modelled)",
+        "hood": "a swap for a lighter part of the same shape: no visual change by design (the carbon weave is not modelled; a tint of the hood's paint surface is an open question)",
+        "seat_driver": "a swap for a lighter part of the same shape: no visual change by design (a bucket seat is not modelled separately)"
+      }
+    },
+    "toyama_xr": {
+      "rules": [],
+      "not_separate": {
+        "seat_passenger": "the element is part of the single body mesh (shared materials with the rest of the cabin), no node of its own",
+        "rear_seats": "the element is part of the single body mesh (shared materials with the rest of the cabin), no node of its own",
+        "audio": "the element is part of the single body mesh (shared materials with the rest of the cabin), no node of its own",
+        "door_trim": "the element is part of the single body mesh (shared materials with the rest of the cabin), no node of its own",
+        "dashboard": "the element is part of the single body mesh (shared materials with the rest of the cabin), no node of its own",
+        "sound_deadening": "the element is part of the single body mesh (shared materials with the rest of the cabin), no node of its own",
+        "carpets": "the element is part of the single body mesh (shared materials with the rest of the cabin), no node of its own",
+        "spare_wheel": "the element is part of the single body mesh (shared materials with the rest of the cabin), no node of its own",
+        "fasteners": "a swap for a lighter part of the same shape: no visual change by design (bolt heads are not modelled)",
+        "hood": "a swap for a lighter part of the same shape: no visual change by design (the carbon weave is not modelled; a tint of the hood's paint surface is an open question)",
+        "seat_driver": "a swap for a lighter part of the same shape: no visual change by design (a bucket seat is not modelled separately)"
+      }
+    },
+    "generic_suv": {
+      "rules": [],
+      "not_separate": {
+        "seat_passenger": "the element is part of the single body mesh (shared materials with the rest of the cabin), no node of its own",
+        "rear_seats": "the element is part of the single body mesh (shared materials with the rest of the cabin), no node of its own",
+        "audio": "the element is part of the single body mesh (shared materials with the rest of the cabin), no node of its own",
+        "door_trim": "the element is part of the single body mesh (shared materials with the rest of the cabin), no node of its own",
+        "dashboard": "the element is part of the single body mesh (shared materials with the rest of the cabin), no node of its own",
+        "sound_deadening": "the element is part of the single body mesh (shared materials with the rest of the cabin), no node of its own",
+        "carpets": "the element is part of the single body mesh (shared materials with the rest of the cabin), no node of its own",
+        "spare_wheel": "the element is part of the single body mesh (shared materials with the rest of the cabin), no node of its own",
+        "fasteners": "a swap for a lighter part of the same shape: no visual change by design (bolt heads are not modelled)",
+        "hood": "a swap for a lighter part of the same shape: no visual change by design (the carbon weave is not modelled; a tint of the hood's paint surface is an open question)",
+        "seat_driver": "a swap for a lighter part of the same shape: no visual change by design (a bucket seat is not modelled separately)"
+      }
+    },
+    "phoenix_455": {
+      "rules": [],
+      "not_separate": {
+        "seat_passenger": "the element is part of the single body mesh (shared materials with the rest of the cabin), no node of its own",
+        "rear_seats": "the element is part of the single body mesh (shared materials with the rest of the cabin), no node of its own",
+        "audio": "the element is part of the single body mesh (shared materials with the rest of the cabin), no node of its own",
+        "door_trim": "the element is part of the single body mesh (shared materials with the rest of the cabin), no node of its own",
+        "dashboard": "the element is part of the single body mesh (shared materials with the rest of the cabin), no node of its own",
+        "sound_deadening": "the element is part of the single body mesh (shared materials with the rest of the cabin), no node of its own",
+        "carpets": "the element is part of the single body mesh (shared materials with the rest of the cabin), no node of its own",
+        "spare_wheel": "the element is part of the single body mesh (shared materials with the rest of the cabin), no node of its own",
+        "fasteners": "a swap for a lighter part of the same shape: no visual change by design (bolt heads are not modelled)",
+        "hood": "a swap for a lighter part of the same shape: no visual change by design (the carbon weave is not modelled; a tint of the hood's paint surface is an open question)",
+        "seat_driver": "a swap for a lighter part of the same shape: no visual change by design (a bucket seat is not modelled separately)"
+      }
+    }
+  }
+}
