@@ -589,7 +589,8 @@ TEST_CASE("corridor incident samples: served geometry classes reduce raw OSM gri
     CHECK(path_surface_samples > 0);
     CHECK(path_surface_mismatches == 0);
     CHECK(mesh_cache.hits > 0);
-    CHECK(mesh_cache.resident_bytes <= 64u * 1024u * 1024u);
+    // The cache must hold the nine-tile startup working set without repeated cold mesh builds.
+    CHECK(mesh_cache.resident_bytes <= 256u * 1024u * 1024u);
     terrain.reset();
     std::error_code ec;
     std::filesystem::remove_all(temp,ec);

@@ -177,8 +177,8 @@ public:
     [[nodiscard]] int carve_max_level() const { return carve_max_level_; }
     void set_carve_max_level(int level) { carve_max_level_ = level < 0 ? 0 : (level > 2 ? 2 : level); }
 
-    // True when the served g2m.terrain.class layer is available. It is used for physics grip in both "served" and
-    // "none" render modes; "none" leaves its render callback unset so the terrain remains an unpainted underlay.
+    // True when geometry-derived surface classes are enabled for physics grip in both "served" and
+    // "none" render modes. In "none", classes are built directly from route meshes and terrain stays unpainted.
     // The legacy OSM raster is retained only for world configs that explicitly select render_classes="osm".
     [[nodiscard]] bool served_terrain_class() const { return served_terrain_class_; }
     // The decoded g2m.terrain.class tile `key` (blocking, from a non-pool thread; the service caches it). Null when

@@ -155,7 +155,7 @@ std::unique_ptr<WorldTerrain> WorldTerrain::open(const WorldConfig& config, std:
     // for the default release is not reused. Off (the default) leaves the release id as it was.
     wt->served_terrain_class_ = config.render_classes_served || config.render_classes_none;
     wt->render_classes_disabled_ = config.render_classes_none;
-    service_cfg.layers.classes = wt->served_terrain_class_;
+    service_cfg.layers.classes = config.render_classes_served && !config.render_classes_none;
     service_cfg.zone = g2m::geo::UtmZone{config.session_origin_utm.zone};
     service_cfg.e0_m = static_cast<std::int64_t>(e0_rounded);
     service_cfg.n0_m = static_cast<std::int64_t>(n0_rounded);
@@ -457,7 +457,9 @@ g2m::world::RoadRibbonTile WorldTerrain::road_visual_tile(const g2m::TileKey& ke
 
 std::shared_ptr<const g2m::world::RoadRibbonTile> WorldTerrain::road_visual_tile_shared(
     const g2m::TileKey& key, double lift) {
-    constexpr std::size_t kRouteMeshCacheBudget = 64u * 1024u * 1024u;
+    // The initial physics residency square spans nine L2 route tiles. Keep that working set resident;
+    // 64 MiB evicted neighbouring meshes while the loader was still stamping their L0 children.
+    constexpr std::size_t kRouteMeshCacheBudget = 256u * 1024u * 1024u;
     const RouteMeshKey cache_key{key, lift};
     std::shared_future<std::shared_ptr<const g2m::world::RoadRibbonTile>> future;
     std::shared_ptr<std::promise<std::shared_ptr<const g2m::world::RoadRibbonTile>>> producer;
@@ -783,7 +785,16 @@ std::shared_ptr<const g2m::TerrainClassTile> WorldTerrain::terrain_class_tile(
         const auto hit = physics_class_overlay_cache_.find(key);
         if (hit != physics_class_overlay_cache_.end()) return hit->second;
     }
-    std::shared_ptr<const g2m::TerrainClassTile> base = service_->peek_terrain_class(key);
+    std::shared_ptr<const g2m::TerrainClassTile> base;
+    if (render_classes_disabled_ && key.level == 0) {
+        // Explicit route geometry is the material source. Re-deriving a separate carved class raster duplicates
+        // road work and can retain route material outside the visible meshes. Unknown resolves to off-road.
+        auto natural = std::make_shared<g2m::TerrainClassTile>();
+        natural->reset(key);
+        base = std::move(natural);
+    } else {
+        base = service_->peek_terrain_class(key);
+    }
     if (!base) {
         auto ticket = service_->terrain_class(key, priority);
         if (!wait_ticket(ticket)) return nullptr;
