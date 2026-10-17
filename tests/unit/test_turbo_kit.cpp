@@ -352,7 +352,8 @@ TEST_CASE("turbo kits: charge piping is a part, its rating is advisor data", "[t
     CHECK(v->available);
     CHECK_THAT(v->parts.front().label, ContainsSubstring("Plastic"));
     CHECK(v->choices.size() == 3);
-    const rg::OptionView* hv = view_of(rg::build_setup_model(f.entry("car_hyper"), f.table, f.ctx), "charge_piping");
+    const rg::SetupModel hyper_model = rg::build_setup_model(f.entry("car_hyper"), f.table, f.ctx);
+    const rg::OptionView* hv = view_of(hyper_model, "charge_piping");
     REQUIRE(hv != nullptr);
     CHECK_FALSE(hv->available); // its own twin turbo: no kit, no kit piping
     // Compiled: the choice reaches the build; metal piping is heavier.
@@ -401,7 +402,8 @@ TEST_CASE("turbo kits: charge piping is a part, its rating is advisor data", "[t
     REQUIRE_FALSE(warn->lines.empty());
     CHECK_THAT(warn->lines.front(), ContainsSubstring("2.0 bar"));
     CHECK_THAT(warn->lines.front(), ContainsSubstring("Plastic charge piping"));
-    const rg::AdviceItem* burst = find(items_for(plastic, 3.5), "ChargePipingPressure");
+    const auto burst_items = items_for(plastic, 3.5);
+    const rg::AdviceItem* burst = find(burst_items, "ChargePipingPressure");
     REQUIRE(burst != nullptr);
     CHECK(burst->variant == "burst");
     CHECK(burst->severity == rg::AdviceSeverity::Critical);
@@ -609,7 +611,7 @@ TEST_CASE("turbo kits: a kit's turbos, exhaust and intercooler join the car's pa
         REQUIRE(c.turbo_kit.has_value());
         CHECK(node->total_kg() == Approx(c.turbo_kit->total_mass_kg()));
         CHECK(c.parts.total_kg == Approx(stock.total_kg + node->total_kg()));
-        CHECK(c.parts.chassis_kg == Approx(c.parts.total_kg).margin(0.001));
+        CHECK(c.parts.chassis_kg == Approx(c.parts.total_kg - c.parts.physics_carried_kg).margin(0.001)); // the physics carries some parts itself (#22)
         if (std::string(kit) == "street_single") street_kg = node->total_kg();
         else CHECK(node->total_kg() >= street_kg); // more boost: a larger wheel, never lighter
     }

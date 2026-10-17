@@ -1,5 +1,6 @@
 {
   "format": "physics_sim.vehicle/2",
+  "contents_mass": {"enabled": true, "update_threshold_kg": 0.1, "source": "racing_game PR #22 (owner 2026-10-16: fuel and N2O bottle contents count in the car's mass, live as they are used): the chassis body carries the fuel tank and N2O bottle contents on top of its dry mass, updated whenever they moved by 0.1 kg [AS] (about 5 s of cruise or under 1 s at full throttle)."},
   "tyre_families": "../tyres/families.json",
   "name": "car_ace_11",
   "cooling_system": "../../external/physics_sim/data/cooling_systems/sedan.json",

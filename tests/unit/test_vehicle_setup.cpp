@@ -438,7 +438,8 @@ TEST_CASE("setup: every catalog entry accepts a setup touching each available op
                     break;
                 case rg::OptionKind::BrakeBias: s.values[o.def.id] = std::get<double>(o.stock) + 0.02; ++touched; break;
                 case rg::OptionKind::FileChoice:
-                case rg::OptionKind::TyreChoice: s.values[o.def.id] = o.choices.back(); ++touched; break;
+                case rg::OptionKind::TyreChoice:
+                case rg::OptionKind::PartChoice: s.values[o.def.id] = o.choices.back(); ++touched; break;
                 case rg::OptionKind::Bool: s.values[o.def.id] = !std::get<bool>(o.stock); ++touched; break;
                 case rg::OptionKind::Colour: s.values[o.def.id] = std::string("#336699"); break;
             }

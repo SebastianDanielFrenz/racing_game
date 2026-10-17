@@ -11,8 +11,12 @@
 //                 front / rear axle (the axle differential -> one half shaft per driven wheel), propshaft,
 //                 layout conversion (a layout other than the stock one: mounting hardware, driveline along the car)
 //   running_gear  steering, one corner per wheel (-> wheel and tyre, brake, suspension)
-//   fuel_system   the fuel tank (empty)
+//   fuel_system   the fuel tank (empty) -> its contents (the vehicle file's spawn fill, initial_kg)
 //   electronics   the electronics parts the vehicle file names (assist unit, drive modes, EPB ...)
+//   trim          the removable / swappable interior and body parts (PartTreeInput::trim: seats, audio, door trim,
+//                 dashboard, sound deadening, carpets, spare wheel, fasteners, hood) - the garage's weight reduction
+// The engine group also carries the factory forced induction (PartTreeInput::turbo: one node per turbo unit, the hot
+// side, the intercooler and the charge piping), so the engine node itself is the naturally aspirated base engine.
 // The tree is built from DATA only: the vehicle file as the setup leaves it (its components, shafts, wheels, brake
 // corners, controllers), the engine and gearbox catalogues, the per-car body mass (catalog `chassis.body_mass_kg`)
 // and the base part masses of data/vehicles/part_masses.json (rg.part_masses/1). So a setup or swap changes the tree
@@ -20,9 +24,9 @@
 // transfer case, a front axle and a propshaft, an assist unit adds an electronics part.
 //
 // The physics chassis body mass is the tree's total minus the parts physics_sim already simulates as masses of their
-// own (PartMassTable::physics_carries). Today that list is empty: ps::vehicle::WheelDesc::wheel_mass is spin inertia
-// only (unsprung mass is not a separate body), and the fuel/N2O contents are not added to the body either - see
-// part_masses.json's "source".
+// own (PartMassTable::physics_carries, plus the fuel and N2O contents of a vehicle file whose contents_mass block is
+// enabled: physics_sim adds those to the chassis body itself and lightens it as they are used - vehicle.md "Contents
+// mass"). ps::vehicle::WheelDesc::wheel_mass is spin inertia only (unsprung mass is not a separate body).
 #pragma once
 
 #include <optional>
@@ -78,6 +82,26 @@ struct PartRef {
     std::string source;
 };
 
+// One removable / swappable interior or body part as fitted (a garage weight-reduction choice, or the car's stock).
+struct FittedPart {
+    std::string slot;   // "driver_seat", "hood" ... (the node id is "trim.<slot>")
+    std::string key;    // the part_masses.json key the figure comes from
+    double factor = 1.0; // the figure x this (a lighter version of the stock part: lightweight door trim, titanium bolts)
+    std::string label;  // "" = the table's label
+};
+
+// The factory forced induction of the installed engine (its turbo configuration file), sized like the garage's turbo
+// kits (data/engines/turbo_kits.json "mass" on the turbo-kit branch): unit = turbo_unit fixed + scaled x s^3 with the
+// rotor size s = (rotor inertia / anchor inertia)^(1/5), the hot side per unit, the intercooler per kg/s of the units'
+// summed max flow, the charge piping plus a share per extra unit.
+struct TurboSystem {
+    std::string label;          // "Twin turbo system"
+    int count = 0;              // turbo units (>= 1)
+    double rotor_scale = 1.0;   // s
+    double flow_kg_s = 0.0;     // the summed max mass flow of every unit
+    std::string source;         // the configuration file
+};
+
 struct PartTreeInput {
     double body_kg = 0.0;           // the car's own body (catalog chassis.body_mass_kg)
     std::string vehicle_json;       // the vehicle file as the setup leaves it
@@ -86,6 +110,8 @@ struct PartTreeInput {
     PartRef engine;                 // the installed engine
     PartRef gearbox;                // the installed gearbox
     std::vector<PartAttachment> extras;
+    std::vector<FittedPart> trim;        // the car's removable / swappable parts as fitted (a removed part is absent)
+    std::optional<TurboSystem> turbo;    // the installed engine's factory forced induction (none = NA)
     // The car's STOCK vehicle file ("" = no comparison). When the driven axles differ from it (a FWD/RWD/AWD swap),
     // the drivetrain gets a "layout_conversion" node (mounting hardware; plus a "conversion_driveline" along the car
     // where the new layout has no more propshafts than the stock one) - the owner's weight penalty for a layout swap.

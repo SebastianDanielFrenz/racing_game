@@ -555,7 +555,8 @@ godot::Dictionary RgGarage::get_mass_breakdown(const String& id) const {
     d["layout"] = from_std(tree.layout);
     d["stock_layout"] = from_std(tree.stock_layout);
     const rg::CatalogEntry* entry = garage_->catalog().find(car);
-    d["stock_kg"] = entry != nullptr ? entry->chassis.mass_kg : 0.0;
+    const rg::PartTree stock = garage_->stock_part_tree_of(car);
+    d["stock_kg"] = stock.ok ? stock.total_kg : (entry != nullptr ? entry->chassis.mass_kg : 0.0);
     godot::Array groups;
     for (const rg::MassGroup& g : rg::mass_groups(tree)) {
         godot::Dictionary gd;

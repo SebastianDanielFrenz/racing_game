@@ -61,6 +61,8 @@ enum class OptionKind {
     TyreChoice, // string: a tyre id (compound_width_aspectrRim) whose size the axle's fitment allows
     Bool,       // bool: a target leaf set to it
     Colour,     // string "#rrggbb": visual only, edits no file
+    PartChoice, // string: a part id for one removable / swappable part slot of the part-mass tree (weight reduction);
+                // edits no file, only the tree's "trim.<slot>" node ("stock" = the car's own part)
 };
 
 const char* to_string(OptionKind k);
@@ -71,6 +73,11 @@ struct SetupPart {
     // A catalog option may group its parts (the gearbox list: "Manual" / "Automatic" / "CVT") and give each a second line.
     std::string section;   // "" = not grouped
     std::string subtitle;  // kind and focus, e.g. "Sequential · Race · straight-cut"; detail holds the numbers
+    // PartChoice: the part's mass is part_masses.json `mass_key` (empty = the car's stock part) x `mass_factor`;
+    // `removed` takes the part out of the car.
+    std::string mass_key;
+    double mass_factor = 1.0;
+    bool removed = false;
     // False when the car cannot take this choice (a turbo kit or engine that does not fit the engine bay): `fit_reason` says why
     // in the player's words. The garage hides such a choice by default ("show all" lists it greyed out with the reason).
     bool fits = true;
@@ -126,6 +133,7 @@ struct SetupOptionDef {
     // whose engine has no thermal data. Ids = the grade ids, "stock" = the car's own part.
     std::string cooling_part;
     std::string axle;                  // TyreChoice and the "differentials" catalog: "front" | "rear"
+    std::string slot;                  // PartChoice: the part slot (catalog "interior" key, tree node "trim.<slot>")
     // Scale only (garage numeric inputs): the option is shown and typed in ABSOLUTE units (rpm, bar, ms) on a linear or
     // logarithmic slider, derived from the stock value of its first target leaf; min/max/step are then not authored and the
     // allowed factor range is abs_min/stock .. abs_max/stock (widened to contain 1). See rg/slider_map.h.
