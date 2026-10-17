@@ -1284,7 +1284,7 @@ func status_line(prefix: String) -> String:
 		int(ls.get("dropped_ticks", 0)), float(ls.get("step_max_ms", 0.0)),
 		int(ss.get("prefetch_installed", 0)), int(ss.get("prefetch_late_sync", 0)),
 		int(ss.get("prefetch_late_wait", 0)), float(ss.get("prefetch_late_wait_ns_max", 0)) / 1000000.0,
-		int(ss.get("prefetch_stale_inputs", 0))] + " npc=%d traffic_loading=%s" % [_simulation.get_traffic_state().get("actors", []).size(), str(_simulation.get_traffic_state().get("loading", false))]
+		int(ss.get("prefetch_stale_inputs", 0))] + " npc=%d traffic_loading=%s" % [_simulation.get_traffic_state().get("actors", []).size(), str(_simulation.get_traffic_state().get("loading", false))] + " lc=%d clutch=%.3f tc=%.3f slip=%.3f throttle=%.3f brake=%.3f" % [int(pt.get("launch_phase",0)), float(pt.get("clutch_engagement",0.0)), float(pt.get("traction_torque_fraction",1.0)), float(pt.get("traction_positive_slip",0.0)), _simulation.get_control("throttle"), _simulation.get_control("brake")]
 
 # rg_core decides the active rig and which input groups are live.
 func _apply_mode_state() -> Dictionary:
