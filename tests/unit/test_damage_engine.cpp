@@ -1,3 +1,7 @@
+#ifdef _MSC_VER
+// Calibration-only environment reads do not modify the environment.
+#define _CRT_SECURE_NO_WARNINGS
+#endif
 // test_damage_engine.cpp - the engine internals of the damage model (rg/damage.h; owner on PR #33: "getting oil up to 170 C
 // within 3 minutes should not be possible because the engine breaks first", "an engine without a real working cooling
 // solution should keep running, but then other parts will start failing and that might cause the engine to shut off").

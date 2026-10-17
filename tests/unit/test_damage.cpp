@@ -162,7 +162,7 @@ TEST_CASE("damage: the loader rejects malformed configs with a reason", "[damage
 TEST_CASE("damage: the state file round-trips, keeps unknown parts, and a healthy state removes it", "[damage]") {
     TempDir dir("state");
     const std::string path = rg::damage_state_path(dir.path.generic_string(), "car_x");
-    CHECK_THAT(path, ContainsSubstring("garage/damage/car_x.json"));
+    CHECK_THAT(std::filesystem::path(path).generic_string(), ContainsSubstring("garage/damage/car_x.json"));
     std::string err;
     // Missing file = a healthy car.
     auto none = rg::load_damage_state(path, &err);
