@@ -435,7 +435,7 @@ struct AutoDrive {
 // The car_sedan with an automatic on a flat tessellated ground: start the engine, select D, release the brake and creep
 // with no throttle for creep_s, then full throttle for drive_s.
 AutoDrive drive_auto(const Fixture& f, const std::string& box, double creep_s, double drive_s,
-                     const std::string& car_id = "car_sedan", int stop_cycles = 0, int corner_mode = -1) {
+                     const std::string& car_id = "car_sedan", int stop_cycles = 0, int corner_mode = -1, bool respawn_check = false) {
     const rg::CatalogEntry& car = f.entry(car_id);
     rg::ScopedWorkDir dir(f.ctx.work_root, "drive_" + box);
     auto setup = setup_of(car.id, box);
@@ -528,6 +528,23 @@ AutoDrive drive_auto(const Fixture& f, const std::string& box, double creep_s, d
             }
             out.stalled = true;
         }
+    }
+    if (respawn_check) {
+        world.set_control("throttle", 0.0);
+        world.set_control("brake", 1.0);
+        session.request_reset_to_spawn();
+        for (int tick = 0; tick < 240; ++tick) session.step();
+        auto reset = world.powertrain_state(vid);
+        INFO("reset rpm=" << reset.engine_rpm << " gear=" << int(reset.gear));
+        CHECK(reset.engine_state == ps::drivetrain::EngineState::Running);
+        CHECK(reset.engine_rpm > 500.0);
+        world.set_control("ignition", 0.0);
+        for (int tick = 0; tick < 480; ++tick) session.step();
+        world.set_control("ignition", 1.0);
+        world.set_control("starter", 1.0);
+        for (int tick = 0; tick < 960 && world.powertrain_state(vid).engine_state != ps::drivetrain::EngineState::Running; ++tick) session.step();
+        CHECK(world.powertrain_state(vid).engine_state == ps::drivetrain::EngineState::Running);
+        world.set_control("starter", 0.0);
     }
     for (int cycle = 0; cycle < stop_cycles; ++cycle) {
         for (int phase = 0; phase < 2; ++phase) {
@@ -752,4 +769,10 @@ TEST_CASE("hypercar DCT stays running through 10 kmh corners", "[automatic][dct_
         if (mode == 1) CHECK(d.tc_interventions > 0); // protection must not just disable TC
         std::printf("RG_DCT_CORNER mode=%d max_kmh=%.2f end_kmh=%.2f tc_ticks=%d\n", mode, d.max_kmh, d.end_kmh, d.tc_interventions);
     }
+}
+
+TEST_CASE("DCT respawn preserves idle and allows the starter after ignition cycling", "[automatic][dct_respawn]") {
+    Fixture f;
+    const auto result = drive_auto(f, "hyper_7dct", 0.0, 15.0, "car_hyper_n2o", 0, -1, true);
+    CHECK(result.started);
 }
