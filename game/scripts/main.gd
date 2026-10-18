@@ -150,8 +150,8 @@ var _mark_tail := RgMarkTail.new()
 var _pending_marks: Dictionary = {}
 const DRIVE_DIAG_HISTORY_S := 5.2
 const DRIVE_DIAG_SAMPLE_PERIOD_S := 0.1
-# Seconds recorded after an owner mark (same sample rate); the number lives in rg_core (rg/mark_tail.h).
-var OWNER_MARK_POST_WINDOW_S: float = RgMarkTail.default_window_s()
+# Seconds recorded after an owner mark (same sample rate): data/world/drive_marks.json, validated in rg_core.
+var OWNER_MARK_POST_WINDOW_S: float = RgMarkTail.load_window_s(ProjectSettings.globalize_path("res://../data/world/drive_marks.json"))
 
 # --- shell (R5) ---
 var _shell: Node # RgShell: flow, settings, credits, spawn presets

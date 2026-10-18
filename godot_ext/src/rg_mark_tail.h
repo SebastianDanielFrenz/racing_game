@@ -13,7 +13,8 @@ class RgMarkTail : public godot::RefCounted {
     GDCLASS(RgMarkTail, godot::RefCounted)
 
 public:
-    static double default_window_s() { return rg::kDefaultPostMarkWindowS; }
+    // data/world/drive_marks.json's post_window_s (default 10 s on a missing/invalid file; 0 = no post window).
+    static double load_window_s(const godot::String& path);
     // Open a window; returns the mark id.
     int64_t begin(double t_s, double window_s) { return tail_.begin(t_s, window_s); }
     // Ids of the marks that should receive the sample about to be recorded.

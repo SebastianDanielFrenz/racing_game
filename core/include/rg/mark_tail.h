@@ -7,12 +7,17 @@
 // flush() returns every still-open mark (session end, car reset) with the shorter window it got. The caller owns
 // the sample payloads, keyed by the returned ids.
 #include <cstdint>
+#include <string>
 #include <vector>
 
 namespace rg {
 
-// Default length of the recorded window after a mark; the adapter reads it from here (one config number).
+// Default length of the recorded window after a mark, used when the config file is missing or invalid.
 inline constexpr double kDefaultPostMarkWindowS = 10.0;
+
+// Reads "post_window_s" from data/world/drive_marks.json. Missing/unreadable file or an invalid value (not a
+// finite number, negative) -> kDefaultPostMarkWindowS and *error set (if given). 0 is valid: no post window.
+double load_post_mark_window_s(const std::string& path, std::string* error = nullptr);
 
 class MarkTail {
 public:

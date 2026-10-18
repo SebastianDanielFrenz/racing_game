@@ -60,6 +60,7 @@ add_library(rg_core STATIC
     src/fpv_drone_sound.cpp
     src/npc_traffic.cpp
     src/traffic_stuck.cpp
+    src/mark_tail.cpp
     src/building_footprints.cpp
     src/deck_installer.cpp
     src/flat_ground.cpp

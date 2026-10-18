@@ -35,3 +35,27 @@ TEST_CASE("mark tail: flush closes open windows with the shorter coverage", "[ma
     CHECK(tail.empty());
     CHECK(tail.flush().empty());
 }
+
+#include <filesystem>
+#include <fstream>
+
+TEST_CASE("mark tail: the window comes from the config file and is validated", "[mark_tail]") {
+    const auto dir = std::filesystem::temp_directory_path();
+    auto write = [&](const char* name, const char* text) {
+        const auto p = (dir / name).string();
+        std::ofstream(p) << text;
+        return p;
+    };
+    std::string err;
+    CHECK(rg::load_post_mark_window_s(write("rg_mt_a.json", "{\"post_window_s\": 3.5}"), &err) == Catch::Approx(3.5));
+    CHECK(err.empty());
+    CHECK(rg::load_post_mark_window_s(write("rg_mt_b.json", "{\"post_window_s\": 0}"), &err) == 0.0);
+    CHECK(err.empty());
+    CHECK(rg::load_post_mark_window_s(write("rg_mt_c.json", "{\"post_window_s\": -1}"), &err) == rg::kDefaultPostMarkWindowS);
+    CHECK_FALSE(err.empty());
+    CHECK(rg::load_post_mark_window_s(write("rg_mt_d.json", "{\"post_window_s\": \"x\"}"), &err) == rg::kDefaultPostMarkWindowS);
+    CHECK(rg::load_post_mark_window_s((dir / "rg_mt_missing.json").string(), &err) == rg::kDefaultPostMarkWindowS);
+    CHECK_FALSE(err.empty());
+    // The shipped file.
+    CHECK(rg::load_post_mark_window_s(std::string(RG_SOURCE_DIR) + "/data/world/drive_marks.json", &err) == Catch::Approx(10.0));
+}
