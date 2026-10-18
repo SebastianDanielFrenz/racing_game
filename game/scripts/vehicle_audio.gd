@@ -32,6 +32,12 @@ var _view_levels: Dictionary = {}
 var _engine_native := false
 var _diagnostic_elapsed := 0.0
 
+var _motor_sound: RgElectricMotorSound
+var _motor_spatial: RefCounted
+var _motor_players: Array[AudioStreamPlayer3D] = []
+var _motor_points := PackedVector3Array([Vector3(0.0, 0.0, 0.3)])
+var _motor_capacity := 0
+
 var _horn: AudioStreamPlayer3D
 
 func _ready() -> void:
@@ -89,6 +95,13 @@ func _initialize_audio() -> void:
 					fallback_players.append(_player(RATE, point))
 	var tyres_ms := (Time.get_ticks_usec() - init_t0) / 1000.0
 	var voice_t0 := Time.get_ticks_usec()
+	var powertrain: Dictionary = simulation.get_vehicle_powertrain(vehicle_name)
+	if bool(powertrain.get("electric_fitted", false)):
+		_motor_sound = RgElectricMotorSound.new()
+		_motor_spatial = _open_spatial(RATE, 1)
+		if _motor_spatial == null:
+			_motor_players.append(_player(RATE, _motor_points[0]))
+		print("RG_AUDIO electric motor voice active")
 	var voice: Dictionary = simulation.start_engine_audio()
 	print("RG_AUDIO engine voice: ", voice.get("reason", "unknown"), " start_ms=%.1f tyres_ms=%.1f" % [(Time.get_ticks_usec() - voice_t0) / 1000.0, tyres_ms])
 	if voice.get("active", false):
@@ -190,6 +203,13 @@ func _process_body(delta: float) -> void:
 		needed = _fallback_needed(fallback_players, RATE, false)
 	if _wheel_count > 0:
 		_output(tyre_bank.render(needed, _applied_tyre_gain()), _wheel_count, tyre_spatial, fallback_players)
+	var view: String = str(director.active_name)
+	var level: float = float(_view_levels.get("engine_chase_db", -12.0))
+	if view in ["cockpit", "xr_cockpit"]:
+		level = float(_view_levels.get("engine_cockpit_db", -8.0))
+	elif view in ["free", "xr_free"]:
+		level = float(_view_levels.get("engine_free_db", -6.0))
+	_engine_gain = lerpf(_engine_gain,db_to_linear(clampf(level,-60.0,0.0)),1.0-exp(-8.0*delta))
 	if engine_rate > 0:
 		simulation.update_engine_audio()
 		if engine_spatial != null:
@@ -197,29 +217,50 @@ func _process_body(delta: float) -> void:
 			needed = engine_spatial.get_frames_needed()
 		else:
 			needed = _fallback_needed(engine_players, engine_rate, true)
-		var view: String = str(director.active_name)
-		var level: float = float(_view_levels.get("engine_chase_db", -12.0))
-		if view in ["cockpit", "xr_cockpit"]:
-			level = float(_view_levels.get("engine_cockpit_db", -8.0))
-		elif view in ["free", "xr_free"]:
-			level = float(_view_levels.get("engine_free_db", -6.0))
-		_engine_gain = lerpf(_engine_gain,db_to_linear(clampf(level,-60.0,0.0)),1.0-exp(-8.0*delta))
+
 		if _engine_native:
 			engine_spatial.set_native_gain(_applied_engine_gain() / 15.0)
 		else:
 			var engine_pcm: PackedFloat32Array = RgTyreSound.scaled(simulation.read_engine_audio(needed), _applied_engine_gain())
 			_output(engine_pcm, engine_points.size(), engine_spatial, engine_players)
+	_update_motor_audio(frozen)
 	_diagnostic_elapsed += delta
 	if _diagnostic_elapsed >= 5.0:
 		print("RG_AUDIO_STATS ", JSON.stringify(get_audio_diagnostics()))
 		_diagnostic_elapsed = 0.0
 
+func _update_motor_audio(frozen: bool) -> void:
+	if _motor_sound == null:
+		return
+	if _motor_spatial != null and not _motor_spatial.is_active():
+		print("RG_AUDIO electric motor fallback: ", _motor_spatial.get_status())
+		_motor_spatial.close()
+		_motor_spatial = null
+		_motor_players.append(_player(RATE, _motor_points[0]))
+	var pt: Dictionary = simulation.get_vehicle_powertrain(vehicle_name)
+	_motor_sound.set_state(float(pt.get("motor_rpm", 0.0)), float(pt.get("motor_torque_nm", 0.0)),
+		1000.0 * float(pt.get("electric_power_kw", 0.0)), bool(pt.get("electric_ready", false)) and not frozen)
+	var needed := 0
+	if _motor_spatial != null:
+		_motor_spatial.set_positions(_relative(_motor_points))
+		needed = _motor_spatial.get_frames_needed()
+	elif not _motor_players.is_empty():
+		var playback := _motor_players[0].get_stream_playback() as AudioStreamGeneratorPlayback
+		if playback != null:
+			var available := playback.get_frames_available()
+			_motor_capacity = maxi(_motor_capacity, available)
+			var target := int(RATE * clampf(float(_view_levels.get("audio_fallback_buffer_ms", 100.0)), 20.0, 200.0) / 1000.0)
+			needed = mini(available, maxi(0, target - (_motor_capacity - available)))
+	_output(_motor_sound.render(needed, _applied_engine_gain()), 1, _motor_spatial, _motor_players)
+
 func get_audio_diagnostics() -> Dictionary:
-	var result := {"engine_native": _engine_native}
+	var result := {"engine_native": _engine_native, "electric_motor": _motor_sound != null}
 	if engine_spatial != null:
 		result["engine"] = engine_spatial.get_output_diagnostics()
 	if tyre_spatial != null:
 		result["tyres"] = tyre_spatial.get_output_diagnostics()
+	if _motor_spatial != null:
+		result["motor"] = _motor_spatial.get_output_diagnostics()
 	return result
 
 func shutdown() -> void:
@@ -227,10 +268,10 @@ func shutdown() -> void:
 		return
 	_shutdown = true
 	set_process(false)
-	for backend in [tyre_spatial, engine_spatial]:
+	for backend in [tyre_spatial, engine_spatial, _motor_spatial]:
 		if backend != null:
 			backend.close()
-	for player in fallback_players + engine_players:
+	for player in fallback_players + engine_players + _motor_players:
 		player.stop()
 	if is_instance_valid(simulation):
 		simulation.stop_engine_audio()
@@ -239,12 +280,15 @@ func shutdown() -> void:
 	engine_players.clear()
 	tyre_spatial = null
 	engine_spatial = null
+	_motor_spatial = null
+	_motor_sound = null
+	_motor_players.clear()
 
 func _exit_tree() -> void:
 	# Reached with players still alive only when the tree is torn down without going
 	# through main.gd (`--quit-after`): stop them and give the audio thread ~0.1 s to
 	# release the generator playbacks, or Godot reports them leaked at exit.
-	var had_players := not _shutdown and not (fallback_players.is_empty() and engine_players.is_empty())
+	var had_players := not _shutdown and not (fallback_players.is_empty() and engine_players.is_empty() and _motor_players.is_empty())
 	shutdown()
 	if had_players:
 		OS.delay_msec(100)
