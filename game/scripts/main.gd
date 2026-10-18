@@ -85,6 +85,9 @@ var fetch_delay_ms: int = 0
 # Non-empty: overrides the driving input group (channel -> value), used by the
 # scripted smoke and screenshot tour instead of an autopilot.
 var scripted_controls: Dictionary = {}
+# FPV drone counterpart (hs_drive_test.gd --hs-fly): [move_right, move_up, move_forward, yaw, pitch]; while non-empty it
+# replaces the input map in fpv_drone mode (without it _forward_flying overwrites a test script's input every frame).
+var scripted_fpv_input: Array = []
 # On-foot counterpart of scripted_controls (drive_smoke.gd): while non-empty
 # {move_right, move_forward, look (Godot-frame Vector3), run} replaces the
 # player's walking input.
@@ -547,7 +550,10 @@ func _build_scene(user_args: PackedStringArray) -> void:
 	if rolling_config is Dictionary:
 		_simulation.set_rolling_resistance_model(str(rolling_config.get("physics", {}).get("rolling_resistance_model", "quadratic")))
 	_simulation.set_aero_map_selection_path(ProjectSettings.globalize_path("res://../data/aero/hypercar_map.json"))
-	var fpv_err: String = _simulation.set_fpv_drone_config(ProjectSettings.globalize_path("res://../data/controls/fpv_drone.json"))
+	var fpv_config_path := OS.get_environment("RG_FPV_CONFIG") # test knob (hs_drive_test.gd --hs-fly: a faster drone)
+	if fpv_config_path == "":
+		fpv_config_path = ProjectSettings.globalize_path("res://../data/controls/fpv_drone.json")
+	var fpv_err: String = _simulation.set_fpv_drone_config(fpv_config_path)
 	if fpv_err != "":
 		push_warning("fpv drone config: " + fpv_err + " (built-in defaults)")
 	add_child(_simulation)
@@ -1395,6 +1401,9 @@ func _forward_walking(live: bool) -> void:
 # flight model lives in rg_core (rg::FpvDrone); the rate axes are +left / +up there, the look input is +right / +up.
 func _forward_flying(live: bool) -> void:
 	if not bool(_simulation.is_running()):
+		return
+	if scripted_fpv_input.size() == 5:
+		_simulation.set_fpv_input(float(scripted_fpv_input[0]), float(scripted_fpv_input[1]), float(scripted_fpv_input[2]), float(scripted_fpv_input[3]), float(scripted_fpv_input[4]))
 		return
 	if not live or _panel_open():
 		_simulation.set_fpv_input(0.0, 0.0, 0.0, 0.0, 0.0)

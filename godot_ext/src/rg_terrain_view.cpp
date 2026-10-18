@@ -35,6 +35,16 @@ namespace {
 
 std::string to_std_string(const String& s) { return std::string(s.utf8().get_data()); }
 
+// Streamer options. initial_build_threads: the cold initial build is IO/derive bound (every chunk blocks on
+// gather_window), so it is not capped at 8 like the geo2map default; RG_VIEW_INITIAL_THREADS overrides for A/B runs.
+rg::TerrainViewStreamer::Options view_streamer_options() {
+    rg::TerrainViewStreamer::Options o{};
+    const char* env = std::getenv("RG_VIEW_INITIAL_THREADS");
+    const long v = env != nullptr ? std::strtol(env, nullptr, 10) : 0;
+    if (v > 0) o.initial_build_threads = static_cast<unsigned>(v);
+    return o;
+}
+
 } // namespace
 
 RgTerrainView::~RgTerrainView() {
@@ -149,7 +159,7 @@ bool RgTerrainView::load_preview(float spawn_x, float spawn_y) {
     // (TerrainViewStreamer::build_initial == build_static_view for the same
     // point, same chunk order), so update_focus() can stream from here on.
     streamer_ = std::make_unique<rg::TerrainViewStreamer>(terrain_->view_source(),
-                                                          rg::TerrainViewStreamer::Options{});
+                                                          view_streamer_options());
     const auto start = std::chrono::steady_clock::now();
     streamer_->build_initial(static_cast<double>(spawn_x), static_cast<double>(spawn_y), chunks_);
     const auto end = std::chrono::steady_clock::now();
@@ -182,7 +192,7 @@ bool RgTerrainView::begin_preview(float spawn_x, float spawn_y) {
     rg::TerrainViewSource source = terrain_->view_source();
     rg::announce_view_build_total(source, static_cast<double>(spawn_x), static_cast<double>(spawn_y), *preview_progress_);
     rg::attach_view_build_progress(source, preview_progress_);
-    streamer_ = std::make_unique<rg::TerrainViewStreamer>(std::move(source), rg::TerrainViewStreamer::Options{});
+    streamer_ = std::make_unique<rg::TerrainViewStreamer>(std::move(source), view_streamer_options());
     preview_started_ = std::chrono::steady_clock::now();
     preview_state_ = PreviewState::Building;
     rg::TerrainViewStreamer* streamer = streamer_.get();
@@ -236,7 +246,7 @@ bool RgTerrainView::load_synthetic_preview(double spawn_x, double spawn_y, doubl
     synthetic_ = std::make_unique<rg::SyntheticTerrain>(464000.0, 5559000.0);
     g2m::mesh::LodParams params;
     if (max_distance_m > 0.0) params.max_distance_m = max_distance_m;
-    streamer_ = std::make_unique<rg::TerrainViewStreamer>(synthetic_->view_source(params), rg::TerrainViewStreamer::Options{});
+    streamer_ = std::make_unique<rg::TerrainViewStreamer>(synthetic_->view_source(params), view_streamer_options());
     const auto start = std::chrono::steady_clock::now();
     streamer_->build_initial(spawn_x, spawn_y, chunks_);
     last_build_time_ms_ = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start).count();

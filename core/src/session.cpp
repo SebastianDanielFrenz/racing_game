@@ -5,6 +5,7 @@
 #include "rg/flat_ground.h"
 #include "rg/surface_kinds.h"
 #include "rg/vehicle_load.h"
+#include "stream_trace_gate.h"
 
 #include "g2m/phys/height_tile_loader.h"
 #include "g2m/phys/physics_grid.h"
@@ -94,7 +95,7 @@ struct Session::Terrain {
           grid(cfg.frame),
           resident(std::make_shared<g2m::phys::ResidentHeightSet>()),
           loader(cfg.fetch, loader_config(cfg, /*require_roads=*/false)),
-          streamer(grid, *resident, loader, g2m::phys::StreamerConfig{}),
+          streamer(grid, *resident, loader, streamer_config(cfg)),
           source(std::make_shared<g2m::ps_bridge::G2mTerrainSource>(grid, resident, surface)) {
         interest_points.reserve(4);
     }
@@ -111,7 +112,7 @@ struct Session::Terrain {
           grid(cfg.frame),
           resident(std::make_shared<g2m::phys::ResidentHeightSet>()),
           loader(cfg.fetch, loader_config(cfg, /*require_roads=*/true)),
-          streamer(grid, *resident, loader, g2m::phys::StreamerConfig{}),
+          streamer(grid, *resident, loader, streamer_config(cfg)),
           source(std::make_shared<g2m::ps_bridge::G2mTerrainSource>(grid, resident, std::move(road))) {
         interest_points.reserve(4);
     }
@@ -124,15 +125,25 @@ struct Session::Terrain {
           grid(cfg.frame),
           resident(std::make_shared<g2m::phys::ResidentHeightSet>()),
           loader(cfg.fetch, loader_config(cfg, /*require_roads=*/true, /*require_classes=*/true)),
-          streamer(grid, *resident, loader, g2m::phys::StreamerConfig{}),
+          streamer(grid, *resident, loader, streamer_config(cfg)),
           source(std::make_shared<g2m::ps_bridge::G2mTerrainSource>(grid, resident, std::move(classes))) {
         interest_points.reserve(4);
+    }
+
+    // physics.lookahead_s / lookahead_cap_m; env RG_STREAM_LOOKAHEAD_S / RG_STREAM_LOOKAHEAD_CAP_M override them
+    // (experiments only).
+    static g2m::phys::StreamerConfig streamer_config(const TerrainModeConfig& cfg) {
+        g2m::phys::StreamerConfig sc;
+        sc.lookahead_s = stream_trace::env_double("RG_STREAM_LOOKAHEAD_S", cfg.physics.lookahead_s);
+        sc.lookahead_cap_m = stream_trace::env_double("RG_STREAM_LOOKAHEAD_CAP_M", cfg.physics.lookahead_cap_m);
+        return sc;
     }
 
     static g2m::phys::LoaderConfig loader_config(const TerrainModeConfig& cfg, bool require_roads,
                                                  bool require_classes = false) {
         g2m::phys::LoaderConfig lc;
-        lc.workers = cfg.physics.loader_workers;
+        // env RG_STREAM_LOADER_WORKERS overrides physics.loader_workers (experiments only).
+        lc.workers = static_cast<int>(stream_trace::env_double("RG_STREAM_LOADER_WORKERS", cfg.physics.loader_workers));
         lc.require_roads = require_roads;
         lc.require_classes = require_classes;
         return lc;
@@ -144,6 +155,7 @@ struct Session::Terrain {
     g2m::phys::HeightTileLoader loader;
     g2m::phys::PhysicsTerrainStreamer streamer;
     std::shared_ptr<g2m::ps_bridge::G2mTerrainSource> source;
+    std::unique_ptr<GateTrace> trace; // RG_STREAM_TRACE only
     ps_godot::FallDetector fall_detector;
     std::vector<g2m::phys::InterestPoint> interest_points; // Session::physics_interest_points' buffer
 };
@@ -386,7 +398,15 @@ void Session::build_world_contents(const SessionConfig& config) {
     if(config.startup) config.startup->stage.store(StartupProgress::Done,std::memory_order_relaxed);
 }
 
-ps::Pose Session::setup_terrain(const TerrainModeConfig& tm) {
+ps::Pose Session::setup_terrain(const TerrainModeConfig& tm_in) {
+    // RG_STREAM_TRACE: time every physics tile fetch (stream_trace_gate.h); otherwise tm_in is used as is.
+    TerrainModeConfig tm_traced = tm_in;
+    std::shared_ptr<TracingFetch> trace_fetch;
+    if (stream_trace::enabled() && tm_in.fetch != nullptr) {
+        trace_fetch = std::make_shared<TracingFetch>(tm_in.fetch);
+        tm_traced.fetch = trace_fetch;
+    }
+    const TerrainModeConfig& tm = tm_traced;
     const WorldConfig::PhysicsTerrainConfig& phys = tm.physics;
     if (tm.fetch == nullptr) throw std::invalid_argument("Session: terrain mode needs a height-tile fetch");
     if (!(phys.radius_m > 0.0)) throw std::invalid_argument("Session: physics.radius_m must be > 0");
@@ -470,6 +490,7 @@ ps::Pose Session::setup_terrain(const TerrainModeConfig& tm) {
         phys.radius_m, phys.max_tile_fills_per_tick, phys.prefetch_margin_tiles, phys.prefetch_max_tiles);
     terrain_config.max_resident_tiles *= 2;
     world_->set_terrain_source(terrain_->source, terrain_config);
+    if (trace_fetch) terrain_->trace = std::make_unique<GateTrace>(trace_fetch);
 
     throw_if_cancelled();
     StartupProgress* progress = config_.startup.get();
@@ -792,6 +813,7 @@ bool Session::gate_check() {
     const Clock::time_point t_update = Clock::now();
     const g2m::phys::GateStatus gs = t.streamer.update(points);
     last_gate_update_ms_ = ms_since(t_update);
+    if (t.trace) t.trace->on_update(t.streamer, *t.resident, t.grid, points, gs);
     const Clock::time_point t_interest = Clock::now();
     // TileManager keeps one interest point per id; the ids are the streamer's
     // own (removing a point that disappears from the list is not needed while
@@ -877,7 +899,12 @@ bool Session::step_once(bool from_loop) {
     check_followed_alive(); // a relocation just cleared the traffic and the truck
     spike.take_relocate_ms = lap();
     if (terrain_) {
-        const bool ready = gate_check() && sync_road_decks(1);
+        const bool tiles_ok = gate_check();
+        const bool decks_ok = tiles_ok ? sync_road_decks(1) : true;
+        const bool ready = tiles_ok && decks_ok;
+        if (terrain_->trace) {
+            terrain_->trace->on_attempt(tiles_ok, decks_ok, have_vehicle_, have_vehicle_ ? world_->get_motion(chassis_body_).linear.length() : 0.0);
+        }
         spike.gate_update_ms = last_gate_update_ms_;
         spike.gate_interest_ms = last_gate_interest_ms_;
         lap();

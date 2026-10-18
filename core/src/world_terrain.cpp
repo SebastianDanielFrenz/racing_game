@@ -8,6 +8,7 @@
 // invalid zone - is guarded by an explicit check in WorldTerrain::open()
 // before it is ever called, so this file never needs a try/catch.
 #include "rg/world_terrain.h"
+#include "stream_trace.h"
 #include "rg/route_surface_mesh.h"
 #include "rg/route_check.h"
 
@@ -26,6 +27,7 @@
 #include <cstdlib>
 #include <limits>
 #include <memory>
+#include <optional>
 #include <span>
 #include <string>
 #include <thread>
@@ -226,7 +228,7 @@ bool WorldTerrain::wait_ticket(g2m::world::Ticket<T>& ticket) {
 
 Outcome<g2m::HeightTile> WorldTerrain::produce_height(ProductContext& ctx, const g2m::TileKey& key) {
     // Raw DEM tile of this key (g2m.terrain.height): joined if running, derived here otherwise.
-    const Outcome<g2m::HeightTile> raw = ctx.height(key);
+    const Outcome<g2m::HeightTile> raw = [&] { stream_trace::Scope trace(stream_trace::RawHeight, key.level); return ctx.height(key); }();
     {
         std::lock_guard<std::mutex> lk(stats_mutex_);
         if (raw.state == TileState::Ready) {
@@ -242,12 +244,13 @@ Outcome<g2m::HeightTile> WorldTerrain::produce_height(ProductContext& ctx, const
     }
     std::shared_ptr<const g2m::HeightTile> tile = raw.value;
     if (smoothing_.enabled) {
+        stream_trace::Scope trace(stream_trace::Smooth, key.level);
         tile = smooth_terrain(*tile, smoothing_, [&ctx](const g2m::TileKey& k) { return ctx.height(k).value; });
     }
     if (tile && road_profiles_enabled_ && has_road_layer_ && key.level <= carve_max_level_) {
         g2m::TileKey l2 = key;
         while (l2.level < 2) l2 = l2.parent();
-        Outcome<RoadSurface> surface = join_road_surface(ctx, l2);
+        Outcome<RoadSurface> surface = [&] { stream_trace::Scope trace(stream_trace::RoadSurface, key.level); return join_road_surface(ctx, l2); }();
         // Debug/test hook: RG_TERRAIN_FORCE_FALLBACK=N makes the first N coarse (L1/L2) tiles behave as if their road
         // surface were not available, to exercise the Fallback -> heal path on real data.
         if (key.level > 0 && force_fallback_budget() > 0 && force_fallback_take()) { surface.state = TileState::Failed; surface.value = nullptr; surface.message = "forced (RG_TERRAIN_FORCE_FALLBACK)"; }
@@ -267,6 +270,7 @@ Outcome<g2m::HeightTile> WorldTerrain::produce_height(ProductContext& ctx, const
             }
             return Outcome<g2m::HeightTile>::failed("road surface " + g2m::to_string(l2) + ": " + surface.message);
         }
+        stream_trace::Scope trace(stream_trace::Apply, key.level);
         auto carved = std::make_shared<g2m::HeightTile>(*tile);
         surface.value->patch->apply(*carved);
         tile = std::move(carved);
@@ -320,7 +324,7 @@ Outcome<WorldTerrain::RoadSurface> WorldTerrain::produce_road_surface(ProductCon
         return Outcome<RoadSurface>::ready(it->second, 4096);
     };
 
-    const Outcome<g2m::RoadGeomTile> fetched = ctx.road_geom(key);
+    const Outcome<g2m::RoadGeomTile> fetched = [&] { stream_trace::Scope trace(stream_trace::RoadGeom, key.level); return ctx.road_geom(key); }();
     if (fetched.state == TileState::Absent) {
         // Outside coverage, or "required dependency absent": complete-way profile fitting can reach outside
         // the local DEM. Missing optional road geometry must not discard valid terrain.
@@ -341,6 +345,7 @@ Outcome<WorldTerrain::RoadSurface> WorldTerrain::produce_road_surface(ProductCon
         return Outcome<RoadSurface>::failed(fetched.message);
     }
     auto geometry = std::make_shared<g2m::RoadGeomTile>(*fetched.value); // completion below edits the profiles
+    std::optional<stream_trace::Scope> complete_trace(std::in_place, stream_trace::RoadComplete, key.level);
 
     // The library's five-metre fit can exhaust its bounded projection solver
     // on kilometre-long noisy DEM stretches. Retry explicit numerical declines
@@ -376,9 +381,13 @@ Outcome<WorldTerrain::RoadSurface> WorldTerrain::produce_road_surface(ProductCon
             }
         }
     }
+    complete_trace.reset();
     auto surface = std::make_shared<RoadSurface>();
     surface->geometry = std::make_shared<const g2m::RoadGeomTile>(*geometry);
-    surface->patch = std::make_shared<RoadSurfacePatch>(*geometry, verge_drop_m_, separation_);
+    {
+        stream_trace::Scope patch_trace(stream_trace::RoadPatch, key.level);
+        surface->patch = std::make_shared<RoadSurfacePatch>(*geometry, verge_drop_m_, separation_);
+    }
     std::fprintf(stderr, "RG_ROAD_SURFACE key=%s accepted=%zu declined=%zu separated=%zu\n", g2m::to_string(key).c_str(), surface->patch->accepted, surface->patch->declined, surface->patch->separated);
     {
         std::lock_guard<std::mutex> lock(decks_mutex_);
