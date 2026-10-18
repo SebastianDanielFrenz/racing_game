@@ -25,6 +25,10 @@ std::string swap_powertrain(json& v,const std::string& choice,const std::string&
   auto path=fs::path(controller.value("ref",std::string{}));if(path.is_relative())path=fs::path(vehicle_path).parent_path()/path;
   const auto part=read(path.lexically_normal());return part.is_object()&&part.value("kind",std::string{})=="epb";
  };
+ const auto electronics_kind=[&](const json& controller)->std::string {
+  auto path=fs::path(controller.value("ref",std::string{}));if(path.is_relative())path=fs::path(vehicle_path).parent_path()/path;
+  const auto part=read(path.lexically_normal());return part.is_object()?part.value("kind",std::string{}):std::string{};
+ };
  json retained_parking=json::array();
  for(auto controller:v.value("controllers",json::array()))if(parking_brake(controller)){refs(controller,fs::path(vehicle_path).parent_path());retained_parking.push_back(controller);}
  const bool electric=choice=="battery_ev"||choice=="fuel_cell_ev";
@@ -57,9 +61,14 @@ std::string swap_powertrain(json& v,const std::string& choice,const std::string&
   if(!generator_attached||!traction_attached)return "hybrid conversion needs crank and gearbox output connections";
   pt["shafts"].push_back({{"ports",{"conversion_motor.shaft","conversion_reduction.in"}}});
   // One hybrid-aware electronics unit; the mechanical TCU remains fitted.
-  auto controllers=v.value("controllers",json::array());json kept=json::array();
-  for(const auto& controller:controllers)if(controller.value("type",std::string{})!="electronics"||parking_brake(controller))kept.push_back(controller);
-  kept.push_back({{"id","hybrid_assists"},{"type","electronics"},{"ref",(dir/"../electronics/assist_unit_hybrid.json").lexically_normal().generic_string()}});kept.push_back({{"id","hybrid_modes"},{"type","electronics"},{"ref",(dir/"../electronics/drive_modes_hybrid.json").lexically_normal().generic_string()}});v["controllers"]=kept;
+  // The car's own assist unit is kept (vehicle_setup merges the hybrid traction control into it, see merge_hybrid_unit); only a car
+  // without one gets the hybrid unit as it is.
+  auto controllers=v.value("controllers",json::array());json kept=json::array();bool own_unit=false;
+  for(const auto& controller:controllers){
+   if(controller.value("type",std::string{})!="electronics"||parking_brake(controller)){kept.push_back(controller);continue;}
+   if(!own_unit&&electronics_kind(controller)=="assist_unit"){own_unit=true;kept.push_back(controller);}
+  }
+  if(!own_unit)kept.push_back({{"id","hybrid_assists"},{"type","electronics"},{"ref",(dir/"../electronics/assist_unit_hybrid.json").lexically_normal().generic_string()}});kept.push_back({{"id","hybrid_modes"},{"type","electronics"},{"ref",(dir/"../electronics/drive_modes_hybrid.json").lexically_normal().generic_string()}});v["controllers"]=kept;
 
  }
  if(choice=="fuel_cell_ev"||choice=="hybrid_dual_hydrogen"){
@@ -76,5 +85,14 @@ std::string swap_powertrain(json& v,const std::string& choice,const std::string&
  }
  v["contents_mass"]={{"enabled",true},{"update_threshold_kg",.1}};
  return {};
+}
+json merge_hybrid_unit(const json& own,const json& hybrid){
+ json unit=own;unit.erase("extends");
+ // The hybrid supervisor needs its own traction-control modes; the conversion has no launch control. ABS, ESC and aero stay.
+ if(hybrid.contains("traction_control"))unit["traction_control"]=hybrid["traction_control"];
+ unit.erase("launch_control");
+ unit["grade"]=hybrid.value("grade",std::string{"racing"});
+ unit["source"]=own.value("source",std::string{})+" [AS] Hybrid conversion: traction control replaced by the hybrid unit's, launch control removed.";
+ return unit;
 }
 }

@@ -1148,6 +1148,43 @@ std::string install_clutch_to_clutch(Files& files, const GearboxEntry& g) {
     return {};
 }
 
+// A hybrid-converted car keeps its own assist unit (swap_powertrain left the controller in place): the unit's file is
+// re-written with the hybrid unit's traction control and no launch control, ABS/ESC/aero untouched. A car without a unit
+// got the hybrid unit itself and needs nothing here.
+std::string apply_hybrid_unit(Files& files, const SetupContext& ctx) {
+    json& veh = files.vehicle.work;
+    if (!veh.contains("controllers") || !veh["controllers"].is_array()) return {};
+    bool hybrid = false;
+    for (const json& c : veh["controllers"]) {
+        std::string id;
+        if (c.is_object() && detail::get_string(c, "id", id) && id == "hybrid_modes") hybrid = true;
+    }
+    if (!hybrid) return {};
+    for (const json& c : veh["controllers"]) {
+        std::string id, ty, ref, kind;
+        if (!c.is_object() || !detail::get_string(c, "id", id) || id == "hybrid_assists" || !detail::get_string(c, "type", ty) || ty != "electronics" ||
+            !detail::get_string(c, "ref", ref))
+            continue;
+        FileDoc doc;
+        doc.path = resolve_ref(dir_of(files.vehicle.path), ref);
+        std::string err;
+        if (!read_doc(doc.path, doc.base, &err)) return err;
+        detail::get_string(doc.base, "kind", kind);
+        if (kind != "assist_unit") continue;
+        const auto own = load_effective_json(doc.path, &err);
+        if (!own) return err;
+        const std::string hybrid_path = norm_path((fs::path(powertrain_config(ctx)).parent_path() / ".." / "electronics" / "assist_unit_hybrid.json").generic_string());
+        const auto hyb = load_effective_json(hybrid_path, &err);
+        if (!hyb) return err;
+        doc.work = detail::merge_hybrid_unit(*own, *hyb);
+        files.electronics.erase(std::remove_if(files.electronics.begin(), files.electronics.end(), [&](const FileDoc& d) { return d.path == doc.path; }),
+                                files.electronics.end());
+        files.electronics.push_back(std::move(doc));
+        break;
+    }
+    return {};
+}
+
 const char* const kEngineSlotKeys[] = {"ecu", "cam", "forced_induction", "installation", "thermal"};
 
 // Derives the swap package for the installed engine / chosen fuel and applies it to the working vehicle file.
@@ -1214,7 +1251,6 @@ std::string apply_swap(Files& files, const CatalogEntry& entry, const SetupConte
     }
     // A launch rpm is a second rev limit of the old engine: one outside the new engine's idle..limiter band is moved
     // to 60 % of the new limiter (at least idle + 300 rpm), else the loader rejects the car.
-    files.electronics.clear();
     if (files.swapped && eng.limiter_rpm > eng.idle_rpm && veh.contains("controllers") && veh["controllers"].is_array()) {
         const double launch = std::min(std::round(std::max(eng.idle_rpm + 300.0, 0.6 * eng.limiter_rpm) / 50.0) * 50.0,
                                        eng.limiter_rpm - 100.0);
@@ -2339,6 +2375,8 @@ SetupModel build_setup_model(const CatalogEntry& entry, const SetupOptionTable& 
         SwapPackage pkg;
         model.error = apply_swap(files, entry, ctx, pkg);
         if (!model.error.empty()) return model;
+        model.error = apply_hybrid_unit(files, ctx);
+        if (!model.error.empty()) return model;
         model.swap_lines = pkg.lines;
         model.swap_lines.insert(model.swap_lines.end(),files.powertrain_lines.begin(),files.powertrain_lines.end());
         model.swap_lines.insert(model.swap_lines.end(), files.gearbox_lines.begin(), files.gearbox_lines.end());
@@ -2874,6 +2912,11 @@ CompiledSetup compile_setup_internal(const CatalogEntry& entry, const SetupOptio
     {
         SwapPackage pkg;
         err = apply_swap(files, entry, ctx, pkg);
+        if (!err.empty()) {
+            out.error = err;
+            return out;
+        }
+        err = apply_hybrid_unit(files, ctx);
         if (!err.empty()) {
             out.error = err;
             return out;

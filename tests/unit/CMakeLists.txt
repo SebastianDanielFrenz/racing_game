@@ -114,6 +114,7 @@ add_executable(rg_unit_tests
   test_turbo_map_extension.cpp
   test_abs_repro.cpp
   test_abs_fitment.cpp
+  test_hybrid_electronics.cpp
 )
 
 target_link_libraries(rg_unit_tests
