@@ -109,7 +109,7 @@ void DriverActions::apply(const VehicleContext& context, ChannelSink& sink) {
                 if (!snapshot.park_fitted) continue;
                 next = event.kind == DriverActionKind::Set ? (event.value != 0 ? 1 : 0) : 1;
                 // An automatic's P = N + park lock (physics automatic_tcu).
-                if (snapshot.transmission_kind != 0 && next != 0) sink.set("gear_request", 0);
+                if (has_selector(snapshot) && next != 0) sink.set("gear_request", 0);
             } else if (index == 7) {
                 if (!snapshot.epb_fitted) continue;
                 // Switch LEVEL only; never reconstruct or retry the physics latch.
@@ -206,9 +206,11 @@ int selector_pos(const DriverSnapshot& s) {
 }
 } // namespace
 
+bool has_selector(const DriverSnapshot& snapshot) { return snapshot.transmission_kind != 0 || snapshot.hybrid_fitted; }
+
 SelectorShift selector_shift(const DriverSnapshot& snapshot, int up, int down) {
     SelectorShift out;
-    if (snapshot.transmission_kind == 0 || (up <= 0 && down <= 0)) return out;
+    if (!has_selector(snapshot) || (up <= 0 && down <= 0)) return out;
     int pos = selector_pos(snapshot);
     if (pos == PosD && snapshot.transmission_manual) return out; // tiptronic: the counters change gears in physics
     out.forward_counts = false;
@@ -234,11 +236,20 @@ SelectorShift selector_shift(const DriverSnapshot& snapshot, int up, int down) {
 }
 
 std::string selector_label(const DriverSnapshot& snapshot) {
-    if (snapshot.transmission_kind == 0) return {};
+    if (!has_selector(snapshot)) return {};
     if (snapshot.transmission_selector < 0) return "R";
     if (snapshot.transmission_selector == 0) return snapshot.park_engaged ? "P" : "N";
     if (snapshot.transmission_manual) return "M" + std::to_string(std::max(1, snapshot.gear));
     return snapshot.transmission_sport ? "S" : "D";
+}
+
+std::string selector_display(const DriverSnapshot& snapshot) {
+    std::string text = selector_label(snapshot);
+    if (text != "D" && text != "S") return text;
+    bool gear_shown = false;
+    if (snapshot.hybrid_fitted) gear_shown = snapshot.engine_running && snapshot.gear > 0 && snapshot.clutch_engagement >= 0.5;
+    else if (snapshot.transmission_kind != 4) gear_shown = snapshot.gear > 0;
+    return gear_shown ? text + std::to_string(snapshot.gear) : text;
 }
 
 void DriverActions::configure_cabin(const CabinConfig& c) {
@@ -386,12 +397,12 @@ ControlState DriverActions::state(std::string_view id, const DriverSnapshot& sna
         out.colour_role = out.active ? "warning" : "off";
     } else if (id == "transmission") {
         // Automatic gearbox plan A1: the selector letter (P R N D S M<n>) of an automatic or dual-clutch box.
-        out.fitted = snapshot.transmission_kind != 0;
+        out.fitted = has_selector(snapshot);
         out.enabled = out.fitted;
         out.value = snapshot.transmission_selector;
         out.active = out.fitted && snapshot.transmission_selector != 0;
         out.lamp_segments = out.fitted ? 1 : 0;
-        out.label = selector_label(snapshot);
+        out.label = selector_display(snapshot);
         out.lamp_state = snapshot.transmission_kind;
         out.colour_role = !out.fitted ? "off" : snapshot.transmission_sport ? "sport" : "normal";
     } else if (id == "epb") {

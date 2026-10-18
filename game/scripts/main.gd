@@ -1428,7 +1428,8 @@ func _forward_driving(live: bool, delta: float) -> void:
 	# side (session.cpp's kControlChannelNames): add this frame's edges.
 	# Automatic and dual-clutch gearboxes (physics automatic_tcu): the shift keys step the selector P-R-N-D
 	# (rg::selector_shift decides); in D with manual mode on (Y) they change gears.
-	if (up > 0 or down > 0) and int(pt.get("transmission_kind",0)) != 0:
+	# Every hybrid has the same selector whatever its gearbox (the hybrid supervisor owns the gearbox, a manual box included).
+	if (up > 0 or down > 0) and (int(pt.get("transmission_kind",0)) != 0 or bool(pt.get("hybrid_fitted",false))):
 		var sel: Dictionary = RgDriverActions.selector_shift(pt,up,down)
 		if sel["change"]:
 			_simulation.set_control("gear_request",float(sel["gear_request"]))

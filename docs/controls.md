@@ -86,6 +86,11 @@ Park keeps its key P (`park`) on every car; on an automatic it is the same as se
 park lock). `transmission_mode` (D / S shift schedule) has no default key. The cluster shows P R N D S or
 M<gear>. On a manual car all of this does nothing and the shift keys behave as before.
 
+Hybrids (2026-10-18): every hybrid has the same P R N D selector whatever its gearbox, a manual one included (the hybrid
+supervisor owns the gearbox and takes D / N / R from the selector). The shift keys step it as above; P exists when a park lock
+is fitted. The cluster and the tach show the letter, and on a hybrid the gearbox gear after D only while the combustion
+engine is coupled (engine running, a gear in, clutch engaged: D3); electric-only driving and pure EVs show just D.
+
 Still keyboard-only (no free pad button without a chord): start/stop engine (F11), headlights (O), park
 (P), get out (G), truck ahead (T), zoom in/out (PageUp/PageDown, orbit / drone / third person), switch
 world (F8), log marker (Delete); owner rules keep reset car (R) and the starter (K) off the pad. EPB has

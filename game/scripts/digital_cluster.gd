@@ -7,7 +7,7 @@ var drive_kw := 0.0
 var boost_bar := -1.0
 var gear := 0
 var park_engaged := false
-var selector_label := "" # automatic / dual-clutch: P R N D S M<n> (rg::selector_label), "" on a manual
+var selector_label := "" # selector cars: P R N D S M<n> plus the running gear (rg::selector_display), "" on a manual
 var cabin_lamps: Dictionary = {}
 var capacity := 0.0
 var density := 0.0
@@ -150,8 +150,8 @@ func _draw_body() -> void:
 		# Drive mode, small, under the tach dial (between its lower end and the information strip).
 		text(drive_mode_label,Vector2(735,299),22,drive_mode_accent)
 	if selector_label != "":
-		# Automatic gearboxes: the selector letter, with the running gear after D/S (M already carries it).
-		var shown := selector_label + (str(gear) if (selector_label == "D" or selector_label == "S") and gear > 0 else "")
+		# Selector cars (automatic, dual-clutch, hybrid): the label is rg::selector_display, the running gear after D/S included.
+		var shown := selector_label
 		text(shown,Vector2(490,174),90 if shown.length() < 2 else 70)
 	else:
 		text("P" if park_engaged else ("R" if gear<0 else ("N" if gear==0 else str(gear))),Vector2(490,174),90)

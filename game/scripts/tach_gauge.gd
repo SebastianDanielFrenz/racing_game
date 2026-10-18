@@ -345,11 +345,10 @@ func _draw_body() -> void:
 	draw_circle(center, gear_radius, COLOR_GEAR_BG)
 	draw_arc(center, gear_radius, 0.0, TAU, 48, accent, scale * (2.5 if themed else 1.5), true)
 	var gear_text: String = GaugeLogic.gear_label(int(_last_pt.get("gear", 0)))
-	if int(_last_pt.get("transmission_kind", 0)) != 0:
-		# Automatic / dual-clutch: P R N D S M<n> from rg::selector_label, the running gear after D/S.
-		var sel: String = str(RgDriverActions.state("transmission", _last_pt, {})["label"])
-		var g: int = int(_last_pt.get("gear", 0))
-		gear_text = sel + (str(g) if (sel == "D" or sel == "S") and g > 0 else "")
+	if int(_last_pt.get("transmission_kind", 0)) != 0 or bool(_last_pt.get("hybrid_fitted", false)):
+		# Automatic / dual-clutch / hybrid: P R N D S M<n> and the running gear after D/S (rg::selector_display decides:
+		# a hybrid shows its gear only while the combustion engine is coupled).
+		gear_text = str(RgDriverActions.state("transmission", _last_pt, {})["label"])
 	_draw_centered_text(font, center, gear_text, font_size_gear, gear_text_color)
 
 	var fitted_assists: PackedStringArray = _gauge_info.get("fitted_assists", PackedStringArray())

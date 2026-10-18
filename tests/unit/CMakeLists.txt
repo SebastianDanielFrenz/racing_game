@@ -115,6 +115,7 @@ add_executable(rg_unit_tests
   test_abs_repro.cpp
   test_abs_fitment.cpp
   test_hybrid_electronics.cpp
+  test_hybrid_selector.cpp
 )
 
 target_link_libraries(rg_unit_tests
