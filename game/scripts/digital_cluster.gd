@@ -1,4 +1,6 @@
 extends Control
+const PowertrainFeed := preload("res://scripts/powertrain_feed.gd")
+var feed := PowertrainFeed.new("cluster")
 var simulation: Node
 var vehicle_name: String
 var speed := 0.0
@@ -67,7 +69,8 @@ func _process_body(delta: float) -> void:
 		return
 	var dt := elapsed
 	elapsed = 0.0
-	var pt: Dictionary = simulation.get_vehicle_powertrain(vehicle_name)
+	var misses_before: int = feed.misses
+	var pt: Dictionary = feed.read(simulation,vehicle_name)
 	var controls: Dictionary = DriverState.read(simulation,pt)
 	cabin_lamps = controls
 	thermal = simulation.get_vehicle_thermal(vehicle_name)
@@ -82,7 +85,7 @@ func _process_body(delta: float) -> void:
 	drive_mode_accent = DriveModeTheme.accent_state(controls["dm"],Color(0.5,0.7,0.82))
 	launch_lamp = controls["lc"]["lamp_state"]
 	launch_lamp_text = controls["lc"]["label"]
-	speed = ground_speed*3.6
+	if feed.misses == misses_before: speed = ground_speed*3.6 # an empty reading keeps the last speed too
 	rpm = pt.get("rpm",0.0)
 	drive_kw = pt.get("drive_power_kw",0.0)
 	regen_fitted = bool(pt.get("regen_fitted",false))

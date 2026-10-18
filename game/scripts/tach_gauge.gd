@@ -40,6 +40,8 @@ var _input_map: Node
 
 var _gauge_info: Dictionary = {}
 var _last_pt: Dictionary = {}
+const PowertrainFeed := preload("res://scripts/powertrain_feed.gd")
+var _feed := PowertrainFeed.new("tach")
 var _speed_limit: Dictionary = {}
 var _thermal: Dictionary = {}
 # Pedal inputs as sent to the sim this frame (RgSimulation.get_control, like hud.gd's debug lines); empty while the
@@ -96,14 +98,16 @@ func _process_body(delta: float) -> void:
 	if _simulation != null and vehicle_name != "" and _simulation.get_vehicle_names().has(vehicle_name):
 		if _gauge_info.is_empty():
 			_gauge_info = _simulation.get_vehicle_gauge_info(vehicle_name)
-		_last_pt = _simulation.get_vehicle_powertrain(vehicle_name)
+		var misses_before: int = _feed.misses
+		_last_pt = _feed.read(_simulation, vehicle_name).duplicate() # copy: the hybrid remap below must not touch the held reading
 		if (int(_last_pt.get("transmission_kind",0)) == 4 or bool(_last_pt.get("hybrid_fitted",false))):
 			_last_pt["combustion_state"] = _last_pt.get("engine_state", "Off")
 			_last_pt["engine_state"] = "running" if bool(_last_pt.get("electric_ready",false)) else "off"
 
 		_speed_limit = _simulation.get_vehicle_speed_limit(vehicle_name)
 		_thermal = _simulation.get_vehicle_thermal(vehicle_name)
-		_gps_kmh = _simulation.get_vehicle_ground_speed_mps(vehicle_name) * 3.6
+		if _feed.misses == misses_before:
+			_gps_kmh = _simulation.get_vehicle_ground_speed_mps(vehicle_name) * 3.6
 		_pedals = {}
 		if bool(_simulation.get_mode_state().get("driving_inputs_live", false)):
 			_pedals = {"clutch": _simulation.get_control("clutch"), "brake": _simulation.get_control("brake"),
