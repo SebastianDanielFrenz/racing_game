@@ -560,10 +560,6 @@ AutoDrive drive_auto(const Fixture& f, const std::string& box, double creep_s, d
         CHECK(world.powertrain_state(vid).engine_state == ps::drivetrain::EngineState::Running);
         world.set_control("starter", 0.0);
     }
-    // This test is about stalling. The stock cars carry ABS since the model-year rule; its reference speed runs a constant
-    // ~1.5 m/s ahead of the true speed after the part-throttle launches and then regulates to ~0 slip, so the full-brake
-    // phase decelerates at 1-2 m/s^2 below 12 m/s (physics_sim ABS finding, reported). Switch it off here.
-    world.set_control("assist.abs", 0.0);
     for (int cycle = 0; cycle < stop_cycles; ++cycle) {
         for (int phase = 0; phase < 2; ++phase) {
             world.set_control("throttle", phase == 0 ? 0.0 : 0.3);
