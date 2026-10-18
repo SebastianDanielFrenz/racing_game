@@ -453,7 +453,7 @@
     {
       "id": "assists",
       "type": "electronics",
-      "ref": "../../external/physics_sim/data/electronics/assist_unit_racing.json"
+      "ref": "../electronics/assist_unit_racing_abs_esc.json"
     },
     {
       "id": "drive_modes",

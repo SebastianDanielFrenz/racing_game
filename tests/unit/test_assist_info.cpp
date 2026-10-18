@@ -156,8 +156,12 @@ TEST_CASE("game cars: both hypercars carry the Racing assist unit, no other car 
     for (const char* file : {"car_sedan.json", "car_sedan_rwd.json", "car_sedan_awd.json", "car_sedan_gen_n2o.json"}) {
         INFO(file);
         const ps::vehicle::VehicleDesc desc = load_game_car(file);
-        CHECK_FALSE(desc.assist_unit.has_value());
-        // No unit: Off and On only, and the game no longer forces TC on (the car file's own `enabled`, 0).
+        // The factory ABS/ESC unit carries no traction-control block: Off and On only, and the game no longer forces TC on
+        // (the car file's own `enabled`, 0).
+        REQUIRE(desc.assist_unit.has_value());
+        CHECK_FALSE(desc.assist_unit->has_traction_control);
+        CHECK(desc.assist_unit->abs.has_value());
+        CHECK(desc.assist_unit->esc.has_value());
         CHECK(ps::vehicle::traction_modes_available_bits(desc.assist_unit, desc.traction_control.fitted) == kStreet);
         CHECK(ps::vehicle::traction_default_channel_value(desc.traction_control, desc.assist_unit) == 0.0);
     }

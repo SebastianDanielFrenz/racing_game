@@ -1229,15 +1229,29 @@ std::string apply_swap(Files& files, const CatalogEntry& entry, const SetupConte
             detail::get_string(doc.base, "kind", kind);
             json* holder = nullptr;
             const char* key = nullptr;
+            double rpm = 0.0;
             if (kind == "launch_control") {
                 holder = &doc.work;
                 key = "rpm";
-            } else if (kind == "assist_unit" && doc.work.contains("launch_control") && doc.work["launch_control"].is_object()) {
+                if (!detail::get_number(*holder, key, rpm)) continue;
+            } else if (kind == "assist_unit") {
+                // A unit that "extends" a parent (the ABS/ESC variants of the Racing unit) inherits its launch block: the
+                // launch rpm is read from the effective file and the new value is written into this file's own launch block,
+                // which is merged over the parent's on load.
+                json effective = doc.base;
+                if (doc.base.contains("extends")) {
+                    auto eff = load_effective_json(doc.path, nullptr);
+                    if (!eff) continue;
+                    effective = std::move(*eff);
+                }
+                if (!effective.contains("launch_control") || !effective["launch_control"].is_object() ||
+                    !detail::get_number(effective["launch_control"], "launch_rpm", rpm))
+                    continue;
+                if (!doc.work.contains("launch_control") || !doc.work["launch_control"].is_object()) doc.work["launch_control"] = json::object();
                 holder = &doc.work["launch_control"];
                 key = "launch_rpm";
             }
-            double rpm = 0.0;
-            if (holder == nullptr || !detail::get_number(*holder, key, rpm)) continue;
+            if (holder == nullptr) continue;
             if (rpm > eng.idle_rpm && rpm < eng.limiter_rpm) continue;
             (*holder)[key] = launch;
             pkg.lines.push_back("Launch control: launch rpm moved from " + std::to_string(static_cast<int>(rpm)) + " to " +

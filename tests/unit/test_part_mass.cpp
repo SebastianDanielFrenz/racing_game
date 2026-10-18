@@ -603,9 +603,14 @@ TEST_CASE("part mass tree: setups and swaps change the tree and the drive's chas
     REQUIRE(own != nullptr);
     CHECK(box.parts.root.find("drivetrain.gearbox")->own_kg == Approx(hd->mass_kg));
     CHECK(box.parts.total_kg == Approx(stock.total_kg + hd->mass_kg - own->mass_kg));
-    // an assist unit the sedan has none of: a new electronics part
+    // the sedan leaves the factory with an ABS/ESC unit: another unit replaces it (same mass); a 1970s car has none, so a unit
+    // is a new electronics part
     const auto assists = compile(rwd, {{"assist_unit", std::string("assists_street")}});
-    CHECK(assists.parts.total_kg == Approx(stock.total_kg + f.ctx.part_masses->find("electronics_assist_unit")->mass_kg));
+    CHECK(assists.parts.total_kg == Approx(stock.total_kg));
+    const rg::CatalogEntry& gt70 = f.entry("car_gt70");
+    const auto gt70_stock = compile(gt70, {});
+    const auto gt70_assists = compile(gt70, {{"assist_unit", std::string("assists_street")}});
+    CHECK(gt70_assists.parts.total_kg == Approx(gt70_stock.parts.total_kg + f.ctx.part_masses->find("electronics_assist_unit")->mass_kg));
     // a tuning value changes no part
     const auto spring = compile(rwd, {{"spring_front", 1.2}});
     CHECK(spring.parts.total_kg == Approx(stock.total_kg));

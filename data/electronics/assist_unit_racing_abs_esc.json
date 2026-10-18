@@ -2,83 +2,7 @@
   "format": "physics_sim.electronics/1",
   "kind": "assist_unit",
   "name": "Racing Assists with ABS and ESC",
-  "grade": "racing",
-  "traction_control": {
-    "modes": [
-      "off",
-      "on",
-      "relaxed",
-      "sport",
-      "drift"
-    ],
-    "default_mode": "on",
-    "mode_params": {
-      "relaxed": {
-        "target_slip": 0.12,
-        "kp": 2.0,
-        "ki_per_s": 5.0,
-        "attack_rate_per_s": 15.0,
-        "recovery_rate_per_s": 8.0,
-        "min_fraction": 0.0,
-        "ignition_cut": true
-      },
-      "sport": {
-        "target_slip": 0.18,
-        "kp": 1.5,
-        "ki_per_s": 4.0,
-        "attack_rate_per_s": 10.0,
-        "recovery_rate_per_s": 10.0,
-        "min_fraction": 0.15,
-        "ignition_cut": false
-      },
-      "drift": {
-        "target_slip": 0.35,
-        "kp": 1.0,
-        "ki_per_s": 2.0,
-        "attack_rate_per_s": 6.0,
-        "recovery_rate_per_s": 12.0,
-        "min_fraction": 0.35,
-        "ignition_cut": false
-      }
-    }
-  },
-  "aero_control": {
-    "surface": "rear_wing",
-    "default_enabled": true,
-    "cruise_offset_deg": 4.0,
-    "cruise_ramp_start_m_s": 10.0,
-    "cruise_ramp_end_m_s": 30.0,
-    "airbrake_offset_deg": 45.0,
-    "airbrake_min_speed_m_s": 20.0,
-    "airbrake_brake_start": 0.45,
-    "airbrake_brake_full": 1.0,
-    "launch_offset_deg": 10.0
-  },
-  "launch_control": {
-    "launch_rpm": 5000,
-    "default_enabled": false,
-    "arm_throttle": 0.9,
-    "arm_brake": 0.5,
-    "release_brake": 0.2,
-    "arm_max_speed_mps": 0.5,
-    "handover_speed_mps": 6.0,
-    "max_launch_s": 3.0,
-    "clutch_ramp_s": 0.25,
-    "clutch_up_per_s": 6.0,
-    "clutch_down_per_s": 12.0,
-    "slip_floor_mps": 1.0,
-    "kp": 2.0,
-    "ki_per_s": 6.0,
-    "attack_rate_per_s": 20.0,
-    "recovery_rate_per_s": 8.0,
-    "min_fraction": 0.05,
-    "slip_target": {
-      "on": 0.1,
-      "relaxed": 0.12,
-      "sport": 0.14,
-      "drift": 0.2
-    }
-  },
+  "extends": "../../external/physics_sim/data/electronics/assist_unit_racing.json",
   "abs": {
     "default_enabled": true,
     "target_slip": 0.12,
@@ -118,5 +42,5 @@
       }
     }
   },
-  "source": "racing_game-owned variant of physics_sim's assist_unit_racing.json with the abs and esc blocks of assist_unit_abs_esc.json added (physics ships the ABS/ESC unit as a stand-alone street unit without traction control, so a garage choice that keeps the car's traction-control modes needs the blocks in one file). Every number is copied unchanged from those two files; see their sources."
+  "source": "racing_game-owned: physics_sim's assist_unit_racing.json (traction control, launch control and rear-wing automation unchanged, so the unit tracks physics) plus the abs and esc blocks of assist_unit_street_abs_esc.json, unchanged (rewritten 2026-10-18: the earlier copy of the racing traction-control tune had gone stale against physics, so choosing it also changed the traction-control feel). Shipped by car_hyper and car_hyper_n2o."
 }

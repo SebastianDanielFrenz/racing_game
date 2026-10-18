@@ -1,0 +1,46 @@
+{
+  "format": "physics_sim.electronics/1",
+  "kind": "assist_unit",
+  "name": "Electric Traction Assists with ABS and ESC",
+  "extends": "assist_unit_electric.json",
+  "abs": {
+    "default_enabled": true,
+    "target_slip": 0.12,
+    "min_speed_mps": 2.0,
+    "slip_floor_mps": 3.0,
+    "kp": 3.0,
+    "ki_per_s": 30.0,
+    "release_rate_per_s": 60.0,
+    "apply_rate_per_s": 15.0,
+    "reanchor_rate_per_s": 10.0,
+    "reanchor_scale": 0.05,
+    "rear_select_low": true,
+    "front_split_max": 0.2,
+    "front_split_rate_per_s": 0.4
+  },
+  "esc": {
+    "modes": [
+      "off",
+      "on",
+      "sport"
+    ],
+    "default_mode": "on",
+    "characteristic_speed_mps": 25.0,
+    "max_lateral_accel_mps2": 8.5,
+    "min_speed_mps": 5.0,
+    "brake_rate_per_s": 10.0,
+    "deadband_rad_s": 0.05,
+    "deadband_fraction": 0.1,
+    "brake_gain_per_rad_s": 2.0,
+    "max_brake": 0.8,
+    "torque_gain_per_rad_s": 1.0,
+    "mode_params": {
+      "sport": {
+        "deadband_rad_s": 0.1,
+        "deadband_fraction": 0.2,
+        "max_brake": 0.6
+      }
+    }
+  },
+  "source": "racing_game-owned: assist_unit_electric.json (traction control unchanged, no launch control or aero automation) plus the abs and esc blocks of assist_unit_street_abs_esc.json, unchanged. Shipped by car_electric."
+}

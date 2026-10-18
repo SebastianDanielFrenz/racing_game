@@ -276,7 +276,7 @@
       "label": "Driver assists",
       "group": "Assists",
       "area": "overview",
-      "help": "The car's assist electronics (physics_sim assist unit). Street offers traction control Off/On; Sport adds the Relaxed and Sport modes; Racing adds Drift and the rear-wing automation; the + ABS/ESC variants add anti-lock braking and stability control (lamps on the dash). The F4 key cycles only through the modes the fitted unit offers.",
+      "help": "The car's assist electronics (physics_sim assist unit). Street offers traction control Off/On; Sport adds the Relaxed and Sport modes; Racing adds Drift and the rear-wing automation; the + ABS/ESC variants add anti-lock braking and stability control (lamps on the dash). Modern cars leave the factory with ABS and ESC, the 1990s ones with ABS only, older ones with neither; choosing a unit without them removes them. The F4 key cycles only through the modes the fitted unit offers.",
       "kind": "file_choice",
       "file": "vehicle",
       "part_format": "physics_sim.electronics/1",
@@ -289,7 +289,10 @@
         {"id": "assists_racing", "label": "Racing Assists", "path": "../../external/physics_sim/data/electronics/assist_unit_racing.json", "detail": "Traction control: Off, On, Relaxed, Sport, Drift. Rear-wing automation."},
         {"id": "assists_street_abs_esc", "label": "Street Assists + ABS/ESC", "path": "../electronics/assist_unit_street_abs_esc.json", "detail": "Traction control: Off, On. ABS, and stability control Off/On/Sport."},
         {"id": "assists_sport_abs_esc", "label": "Sport Assists + ABS/ESC", "path": "../electronics/assist_unit_sport_abs_esc.json", "detail": "Traction control: Off, On, Relaxed, Sport. ABS, and stability control Off/On/Sport."},
-        {"id": "assists_racing_abs_esc", "label": "Racing Assists + ABS/ESC", "path": "../electronics/assist_unit_racing_abs_esc.json", "detail": "Traction control: Off, On, Relaxed, Sport, Drift. Rear-wing automation. ABS, and stability control Off/On/Sport."}
+        {"id": "assists_racing_abs_esc", "label": "Racing Assists + ABS/ESC", "path": "../electronics/assist_unit_racing_abs_esc.json", "detail": "Traction control: Off, On, Relaxed, Sport, Drift. Rear-wing automation. ABS, and stability control Off/On/Sport."},
+        {"id": "assists_abs", "label": "ABS only", "path": "../electronics/assist_unit_abs.json", "detail": "Anti-lock braking. No stability control, no traction-control unit."},
+        {"id": "assists_abs_esc", "label": "ABS + ESC", "path": "../../external/physics_sim/data/electronics/assist_unit_abs_esc.json", "detail": "Anti-lock braking, and stability control Off/On/Sport. No traction-control unit."},
+        {"id": "assists_electric_abs_esc", "label": "Electric Assists + ABS/ESC", "path": "../electronics/assist_unit_electric_abs_esc.json", "detail": "Traction control: Off, On, Relaxed, Sport, Drift. ABS, and stability control Off/On/Sport."}
       ]
     },
     {

@@ -112,6 +112,8 @@ add_executable(rg_unit_tests
   test_flat_ground.cpp
   test_surface_kinds.cpp
   test_turbo_map_extension.cpp
+  test_abs_repro.cpp
+  test_abs_fitment.cpp
 )
 
 target_link_libraries(rg_unit_tests
@@ -132,7 +134,7 @@ target_link_libraries(rg_unit_tests
 if(WIN32)
   set_property(SOURCE
     test_road_overpass.cpp test_exposure.cpp test_turbo_kit.cpp
-    test_nitrous_gain.cpp test_tc_owner_repro.cpp test_turbo_map_extension.cpp
+    test_nitrous_gain.cpp test_tc_owner_repro.cpp test_turbo_map_extension.cpp test_abs_repro.cpp
     APPEND PROPERTY COMPILE_DEFINITIONS _CRT_SECURE_NO_WARNINGS)
 endif()
 target_compile_definitions(rg_unit_tests PRIVATE RG_SOURCE_DIR="${CMAKE_SOURCE_DIR}")

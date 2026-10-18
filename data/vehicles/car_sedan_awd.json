@@ -67,6 +67,7 @@
                        "upshift_cut_release_slip_rpm": 300, "upshift_cut_max_hold_s": 0.6, "upshift_torque_ramp_s": 0.10 },
       "auto_shift":  { "enabled": false, "up_rpm_at_zero_throttle": 2500, "up_rpm_at_full_throttle": 6300,
                        "down_rpm_at_zero_throttle": 1300, "down_rpm_at_full_throttle": 2800, "min_time_in_gear_s": 1.0 },
-      "max_pending_steps": 2 }
+      "max_pending_steps": 2 },
+    { "id": "assists", "type": "electronics", "ref": "../../external/physics_sim/data/electronics/assist_unit_abs_esc.json" }
   ]
 }
