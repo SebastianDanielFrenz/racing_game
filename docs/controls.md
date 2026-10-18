@@ -47,6 +47,8 @@ Assists (physics_sim assist unit): the action `traction_control` (key F4) steps 
 
 Launch control (physics_sim assists I4/I7b): the action `toggle_launch_control` (key L) flips the `assist.launch_control` channel from its CURRENT value (`rg::toggled_launch_control`; a car without launch control ignores it). A drive-mode change also writes the mode's defaults into `assist.traction_control` and `assist.launch_control` itself (assists I7c; car_hyper_n2o: launch control on in SPORT, off in ECO and NORMAL), and the Session adopts those writes after the tick (`rg/channel_mirror.h`), so the HUD lamps follow without a key press and a key press made meanwhile wins.
 
+ABS and ESC (assists I5 part 2 / I6, 2026-10-18): the action `toggle_abs` (key F2) flips `assist.abs` from its current value (`rg::toggled_abs`) and `cycle_esc` (key F3) steps `assist.esc` through the ESC modes the unit offers (Off, On, Sport; `rg::next_esc_mode`). A car without the block (1970s and older cars have neither, the 1990s ones ABS only) ignores the key; no pad default exists (every free paddle button is taken). The dash/HUD lamps read the channel state, so a switched-off ABS shows `ABS OFF` and ESC shows `ESC OFF` / `ESC ON` / `ESC SPORT`.
+
 Drive modes (physics_sim assists I7): the action `drive_mode` (key M, pad button 17) cycles the requested drive mode ECO, NORMAL, SPORT through the modes the car's `drive_modes` part offers (`rg::next_drive_mode`; a mode the car does not offer is never selected, and on a car without the part the key does nothing). Only car_hyper_n2o carries the part (ECO / NORMAL / SPORT, default NORMAL). The game writes only the `assist.drive_mode` channel: physics_sim sets the traction-control request of the new mode itself (ECO and NORMAL On, SPORT Relaxed) and gates launch control and the N2O arm to SPORT, so the game never writes `assist.traction_control` on a mode change; F4 still takes over TC afterwards. The running mode is shown by a theme colour (ECO blue, NORMAL gray, SPORT orange; `game/scripts/drive_mode_theme.gd`) on the tach gauge, the hypercar cluster and the HUD readout, with the mode name bottom right under the tach dial. A launch-control lamp (`LC`) follows the snapshot's `launch_phase` (off, on, armed, launching). The `assist.launch_control` switch is the action `toggle_launch_control` (key L, pad button 18; B7 added the pad button).
 
 ## Gamepad coverage (B7, 2026-10-14)
@@ -63,6 +65,8 @@ L3 (7: `cam_fast`, free cam / on foot). A press in another mode is consumed and 
 | drive mode (cycle) | M | paddle 2 | 17 | |
 | launch control on / off | L | paddle 3 | 18 | |
 | aero automation on / off | H | paddle 4 | 19 | |
+| ABS on / off | F2 | - | - | keyboard only |
+| ESC mode (cycle) | F3 | - | - | keyboard only |
 | hazard lights | F12 | touchpad click | 20 | |
 | left indicator | Z | MISC1 (Xbox share) | 15 | |
 | right indicator | X | D-pad right | 14 | shared with drone target (other mode) |

@@ -29,6 +29,7 @@ rg::DriverSnapshot convert(const godot::Dictionary& d) {
     s.abs_on = static_cast<bool>(d.get("abs_on", false));
     s.abs_intervening = static_cast<bool>(d.get("abs_active", false));
     s.esc_fitted = static_cast<bool>(d.get("esc_fitted", false));
+    s.esc_modes = static_cast<std::uint32_t>(static_cast<std::int64_t>(d.get("esc_modes_available_bits", 0)));
     s.esc_effective = static_cast<int>(d.get("esc_mode_effective", 0));
     s.esc_intervening = static_cast<bool>(d.get("esc_active", false));
     s.gear = static_cast<int>(d.get("gear",0));

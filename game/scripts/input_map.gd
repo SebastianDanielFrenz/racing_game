@@ -390,7 +390,7 @@ func poll() -> void:
 		driver_actions.submit("start_stop",RgDriverActions.PRESS,1.0,RgDriverActions.KEYBOARD)
 	_starter_held = held.call("starter") and not _electric_drive
 	# Sampled device levels only: rg_core owns rising edges and toggle/cycle state.
-	for action in ["auto_shift","traction_control","toggle_aero","drive_mode","toggle_launch_control","toggle_nitrous","park","epb","start_stop","hazard","indicator_left","indicator_right","horn","lights","transmission_mode","manual_mode"]:
+	for action in ["auto_shift","traction_control","toggle_aero","drive_mode","toggle_launch_control","toggle_nitrous","park","epb","start_stop","hazard","indicator_left","indicator_right","horn","lights","transmission_mode","manual_mode","toggle_abs","cycle_esc"]:
 		var source: int = RgDriverActions.PAD if controls.get_source(action) >= 2 else RgDriverActions.KEYBOARD
 		driver_actions.submit(action,RgDriverActions.HOLD,1.0 if held.call(action) else 0.0,source)
 

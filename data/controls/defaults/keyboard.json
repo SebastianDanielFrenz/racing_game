@@ -25,6 +25,8 @@
     "toggle_aero": [{"type": "key", "key": "H"}],
     "drive_mode": [{"type": "key", "key": "M"}],
     "toggle_launch_control": [{"type": "key", "key": "L"}],
+    "toggle_abs": [{"type": "key", "key": "F2"}],
+    "cycle_esc": [{"type": "key", "key": "F3"}],
     "auto_shift": [{"type": "key", "key": "F5"}],
     "toggle_nitrous": [{"type": "key", "key": "N"}],
     "flip_upright": [{"type": "key", "key": "F"}],

@@ -9,9 +9,9 @@ namespace rg {
 namespace {
 // Preserve the original forwarding order; per-action events chain through the
 // last value written, irrespective of which device submitted them.
-constexpr std::array<std::string_view, 16> ids = {
+constexpr std::array<std::string_view, 18> ids = {
     "auto_shift", "traction_control", "toggle_aero", "toggle_launch_control", "drive_mode", "toggle_nitrous", "park", "epb", "start_stop", "hazard", "indicator_left", "indicator_right", "horn", "lights",
-    "transmission_mode", "manual_mode"
+    "transmission_mode", "manual_mode", "toggle_abs", "cycle_esc"
 };
 constexpr std::array<std::string_view, 8> channels = {
     "assist.auto_shift", "assist.traction_control", "assist.aero_control", "assist.launch_control", "assist.drive_mode", "nitrous_arm", "park_lock", "epb"
@@ -119,9 +119,25 @@ void DriverActions::apply(const VehicleContext& context, ChannelSink& sink) {
         }
     }
     for (const auto& event : pending_) {
+        // ABS switch and ESC mode (assist unit abs / esc blocks): the CURRENT channel value is the base, a car without the
+        // block ignores the press silently (no channel exists in its World).
+        const int index = slot(event.id);
+        if (index == 16) {
+            if (!(snapshot.fitted_bits & kAssistBitAbs)) continue;
+            const double current = sink.get("assist.abs");
+            sink.set("assist.abs", event.kind == DriverActionKind::Set ? (event.value >= 0.5 ? 1 : 0) : toggled_abs(snapshot.fitted_bits, current));
+        } else if (index == 17) {
+            if (!(snapshot.fitted_bits & kAssistBitEsc)) continue;
+            const double current = sink.get("assist.esc");
+            const int target = event.kind == DriverActionKind::Set ? mode(event.value) : next_esc_mode(snapshot.esc_modes, mode(current));
+            if (target < 0 || target >= kEscModeCodeCount || !(snapshot.esc_modes & segment(target))) continue;
+            sink.set("assist.esc", target);
+        }
+    }
+    for (const auto& event : pending_) {
         // Automatic gearbox plan A1: the S/D schedule and manual (tiptronic) mode, only on an automatic or dual-clutch box.
         const int index = slot(event.id);
-        if (index < 14 || snapshot.transmission_kind == 0) continue;
+        if (index < 14 || index > 15 || snapshot.transmission_kind == 0) continue;
         if (index == 14) {
             const double current = sink.get("transmission.mode");
             sink.set("transmission.mode", event.kind == DriverActionKind::Set ? (event.value >= 0.5 ? 1 : 0) : (current >= 0.5 ? 0 : 1));

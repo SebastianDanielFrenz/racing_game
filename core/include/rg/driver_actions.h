@@ -73,6 +73,7 @@ struct DriverSnapshot {
     bool abs_on = false;
     bool abs_intervening = false;
     bool esc_fitted = false;
+    std::uint32_t esc_modes = 0; // bit n = ESC mode code n offered (0 off, 1 on, 2 sport)
     int esc_effective = 0; // 0 off, 1 on, 2 sport
     bool esc_intervening = false;
     int gear = 0;

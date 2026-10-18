@@ -7,6 +7,7 @@
 //   rg_unit_tests "[abs_repro]" -s       hidden measurement table  ([.][abs_repro][table])
 //   rg_unit_tests "[abs_regression]"     the asserted cases
 #include "rg/climate.h"
+#include "rg/driver_actions.h"
 #include "rg/session.h"
 #include "rg/vehicle_catalog.h"
 #include "rg/vehicle_setup.h"
@@ -304,4 +305,62 @@ TEST_CASE("ABS regression (game cars): the Godot adapter's channel path keeps as
     const Result off = run(f, "car_hyper", "assists_street_abs_esc", "dry", 0.0, 0, false, true);
     CHECK(off.lock_s > 1.5);
     CHECK(on.distance_m < 0.92 * off.distance_m);
+}
+
+// The F2 / F3 keys: DriverActions (toggle_abs, cycle_esc) -> Session channels -> the World's assist bits, on the stock car_sedan
+// (ABS + ESC fitted by the model-year rule).
+TEST_CASE("ABS regression (game cars): the toggle_abs / cycle_esc actions reach the physics channels", "[abs_regression][assist][driver_actions]") {
+    Fixture f;
+    const rg::CatalogEntry* e = f.catalog.find("car_sedan");
+    REQUIRE(e != nullptr);
+    rg::SessionConfig c;
+    c.vehicle_json_path = e->vehicle_path;
+    c.surface_table_path = kRepo + "/data/surfaces/surfaces.json";
+    c.engine_map_cache_dir = f.ctx.engine_map_cache_dir;
+    c.chassis_mass_kg = e->chassis.mass_kg;
+    c.chassis_half_extents = ps::Vec3{e->chassis.half_extents[0], e->chassis.half_extents[1], e->chassis.half_extents[2]};
+    c.chassis_z_m = e->chassis.spawn_z_m;
+    c.ground_tessellated = true;
+    c.ground_half_extent_m = 200;
+    c.ground_half_extent_y_m = 200;
+    rg::Session ses(c);
+    const ps::VehicleId vid = ses.vehicle_id();
+    struct SessionSink final : rg::ChannelSink {
+        rg::Session& s;
+        explicit SessionSink(rg::Session& session) : s(session) {}
+        double get(std::string_view id) const override { return s.get_control(std::string(id)); }
+        void set(std::string_view id, double v) override { s.set_control(std::string(id), v); }
+    } sink(ses);
+    const auto tick = [&] { while (!ses.try_step()) {} };
+    for (int i = 0; i < 10; ++i) tick();
+    const auto snapshot = [&] {
+        const auto& pt = ses.world().powertrain_state(vid);
+        rg::DriverSnapshot s;
+        s.fitted_bits = pt.assist_fitted_bits;
+        s.esc_modes = pt.esc_modes_available_bits;
+        s.abs_fitted = (pt.assist_fitted_bits & rg::kAssistBitAbs) != 0;
+        s.abs_on = (pt.assist_active_bits & rg::kAssistBitAbs) != 0;
+        return s;
+    };
+    const auto active_bits = [&] { return ses.world().powertrain_state(vid).assist_active_bits; };
+    REQUIRE((snapshot().fitted_bits & rg::kAssistBitAbs) != 0);
+    REQUIRE((snapshot().fitted_bits & rg::kAssistBitEsc) != 0);
+    CHECK((active_bits() & rg::kAssistBitAbs) != 0);
+    CHECK(sink.get("assist.esc") == 1.0);
+    rg::DriverActions actions;
+    actions.submit({"toggle_abs"});
+    actions.apply({snapshot(), true}, sink);
+    tick();
+    CHECK(sink.get("assist.abs") == 0.0);
+    CHECK((active_bits() & rg::kAssistBitAbs) == 0);
+    CHECK(rg::DriverActions::state("abs", snapshot(), sink).label == "ABS OFF");
+    actions.submit({"toggle_abs"});
+    actions.apply({snapshot(), true}, sink);
+    tick();
+    CHECK((active_bits() & rg::kAssistBitAbs) != 0);
+    actions.submit({"cycle_esc"});
+    actions.apply({snapshot(), true}, sink);
+    tick();
+    CHECK(sink.get("assist.esc") == 2.0);
+    CHECK(ses.world().powertrain_state(vid).esc_mode_effective == 2);
 }
