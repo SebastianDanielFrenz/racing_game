@@ -283,8 +283,8 @@ TEST_CASE("diag: hypercar engine dyno limits", "[.][diag][power_jumps]") {
     const auto r = ps::drivetrain::run_dyno_sweep(*engine, nullptr, spec, &pool);
     std::printf("DIAG rpm  torque  power  boost  charge  turbo_rpm  p_im_kPa  conv settle_s\n");
     for (const auto& p : r.points) {
-        std::printf("DIAG %5.0f %7.1f %6.1f %6.2f %6.2f %9.0f %8.1f %d %5.2f\n", p.rpm, p.torque_nm, p.power_kw, p.boost_bar,
-                    p.charge_boost_bar, p.turbo_rpm, p.p_intake_kpa, p.converged ? 1 : 0, p.settle_s);
+        std::printf("DIAG %5.0f %7.1f %6.1f %6.2f %6.2f %9.0f %8.1f %d %5.2f %6.2f %6.2f\n", p.rpm, p.torque_nm, p.power_kw, p.boost_bar,
+                    p.charge_boost_bar, p.turbo_rpm, p.p_intake_kpa, p.converged ? 1 : 0, p.settle_s, p.knock_retard_deg, p.spark_deg);
     }
     for (const auto& f : r.limits) {
         std::printf("DIAG LIMIT rpm=%5.0f %s %s value=%.4g limit=%.4g %s part=%s%s\n", f.rpm, ps::drivetrain::to_string(f.kind),

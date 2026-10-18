@@ -15,10 +15,10 @@
       "mass_kg": 175.0,
       "mass_source": "ASSUMED [AS]: the bare naturally aspirated 5.1 L aluminium V8 (block, heads, crank, flywheel, intake and NA exhaust manifolds, ancillaries) without its turbochargers, intercooler and charge piping, which the part-mass tree counts as their own turbo_system parts sized from the turbo configuration (part_masses.json turbo_unit/turbo_hot_side/intercooler/charge_piping, about 54 kg for the stock twin). The earlier 230 kg (comparable twin-turbo V8s weigh 200-250 kg with their turbos) less those 54 kg, rounded to 175 kg; no citation fetched.",
       "peaks": {
-        "torque_nm": 1387.3,
-        "torque_rpm": 5450.0,
-        "power_kw": 1011.1,
-        "power_rpm": 7450.0
+        "torque_nm": 1120.7,
+        "torque_rpm": 4950.0,
+        "power_kw": 829.8,
+        "power_rpm": 8250.0
       }
     },
     {

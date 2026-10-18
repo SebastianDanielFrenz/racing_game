@@ -324,8 +324,8 @@
     },
     "Knock": {
       "option": "turbo_boost_target",
-      "title": "The engine is knocking",
-      "lines": ["Knock control pulls back {value}", "of ignition timing @ {rpm}."],
+      "title": "Knock limit",
+      "lines": ["Timing held {value} below best", "@ {rpm}."],
       "suggestion": "Higher octane fuel or a lower boost target."
     },
     "KitFuelLean": {
