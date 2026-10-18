@@ -460,7 +460,11 @@ N2O measurement (2026-10-14): numbers in docs/plan_history.md. Findings handed t
   7. packaging and fit;
   8. future fidelity.
 - Electronics and modes: EPB and the four drive modes are wired (#10). Clutch-bite is deferred. No car is fitted with ABS/ESC by default yet; per-car fitting by model year is in progress (pre-1990 none, 1990s ABS, 2004+ ABS+ESC).
-- **Open bug:** ABS has never been observed working in a test drive (owner 2026-10-18); diagnosis in progress.
+- **ABS (owner 2026-10-18):** never observed in a test drive because no car was fitted with it; it works when fitted. Fix in progress on #42: fitting by model year, ABS/ESC toggle keys, hybrid conversions keep the car's ABS/ESC/aero. Physics: ABS stays locked on ice (reference speed collapses), fix in progress.
+- **Hybrid gear selection (owner 2026-10-18, vault RACE-022):** every EV and hybrid uses a P R N D selector whatever its gearbox; the gear display follows the topology (EV: letter; parallel hybrid: letter plus the gear while the engine is coupled, e.g. "D3"; series: letter plus generator power). Bug being fixed on #42: a manual-gearbox hybrid (car_hyper) could not select a gear and never drove.
+- Series hybrid package: range extender, and a generator-style config with big-battery / small-battery modes chosen by tuning or the battery upgrade (needs the physics series configurations).
+- Garage upgrades for electric parts: motors, battery, generator, fuel-cell size, with authored ratings feeding mass and the dyno (none exist yet).
+- Electric turbo as a turbo-kit part (needs the physics electric turbo and a battery: hybrid pack or a 48 V add-on).
 - Damage: cooling damage (#33) needs a calibration acceptance (old hypercar reference about 2 MW at 11 bar with about 190 C oil; target is failure before 170 C oil). Further sources (knock, piston speed, charge pipe, turbo overspeed) each need a physics source (physics_sim PLAN "Open follow-ups").
 - Performance capture protocol, rendering/platform matrix and manual acceptance matrix: one row each, see the briefs.
 - Cockpit/VR increments: 1 M1 sockets; 2 fitted layout; 3 flat interaction; 4 VR; 5 later items; 6 art/strip audit.
