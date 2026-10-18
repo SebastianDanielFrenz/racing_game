@@ -343,7 +343,7 @@
       {
         "id": "tank",
         "type": "fuel_tank",
-        "fuel": "../../external/physics_sim/data/fuels/e5.json",
+        "fuel": "../../external/physics_sim/data/fuels/e85.json",
         "capacity_kg": 56.236875,
         "initial_kg": 44.9895
       },
