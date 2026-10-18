@@ -111,23 +111,23 @@ Paths below are relative to `S:\claude_code\physics_sim`.
   - Static CRT, set before `project()`.
   - `/arch:AVX2` on every TU near Jolt headers (vault PHYS-003, the `DVec3Arg` ABI).
   - `CMAKE_SOURCE_DIR` is used only under `tests/`, so `add_subdirectory(... EXCLUDE_FROM_ALL)` with `PS_BUILD_TESTS=OFF` should work [unverified until R0 builds it].
-  - The repo has **no git remote**.
+  - Remote: GitHub (SebastianDanielFrenz/racing_game). Work on branches with PRs.
   - godot-cpp is pinned to branch 4.5 and loads in the installed Godot 4.7.2 (vault PHYS-011).
 
 ---
 
 ## 9. Requests to physics_sim (additive; for the physics session via owner-approved briefs)
 
-| # | Change | Why | Needed by |
-|---|---|---|---|
-| R1 | Per-tile vertical datum: heights relative to `TileSample::tile_origin_xy.z`, documented. Height consumers (`fall_detector`, any snapshot user) add it. Test with a tile at +800 m | Jolt clamps to the ±200 m placeholder range (TOOL-023) | R2 milestone (real terrain), **blocking** |
-| R2 | Prebuilt static shapes: thread-safe `IRigidBackend::create_shape(ShapeDesc) -> ShapeHandle`, and `create_body` from a handle | no mesh BVH build inside the tick | bridges (R3), buildings (R7) |
-| R3 | Root-cause the terrain tile-seam contact spike (~159 m/s², PLAN.md P8) | a car crosses a seam every 2.5–10 s | R2 acceptance |
-| R4 | Package the Godot-free adapter cores as an engine-neutral static library target (e.g. `ps_frontend`), buildable without godot-cpp | game and UE5 reuse without compiling adapter internals | R0 can compile the files by path meanwhile |
-| R5 | Chassis mass/inertia/CoM and collision box in the vehicle file | configurator and hypercar need them as data | R6/R8 (interim: the game catalog carries them) |
-| R6 | Optional: `load_vehicle_json_from_string(json, base_dir)` | configurator without temp files | R6 (interim: materialise into the cache, 11.6) |
-| R7 | Hypercar data set + validation (11.7) | new vehicle | R8 |
-| R8 | Later: `IWorldShape` curved WGS84 | real horizon on long drives | optional |
+| # | Change | Why | Needed by | Status |
+|---|---|---|---|---|
+| R1 | Per-tile vertical datum: heights relative to `TileSample::tile_origin_xy.z`, documented. Height consumers (`fall_detector`, any snapshot user) add it. Test with a tile at +800 m | Jolt clamps to the ±200 m placeholder range (TOOL-023) | R2 milestone (real terrain), **blocking** | done (physics 1f1e0f8) |
+| R2 | Prebuilt static shapes: thread-safe `IRigidBackend::create_shape(ShapeDesc) -> ShapeHandle`, and `create_body` from a handle | no mesh BVH build inside the tick | bridges (R3), buildings (R7) | done (d1f40ad; used by DeckInstaller, S1) |
+| R3 | Root-cause the terrain tile-seam contact spike (~159 m/s², PLAN.md P8) | a car crosses a seam every 2.5–10 s | R2 acceptance | done (cross-tile edge weld; geo2map lists 5c648a5) |
+| R4 | Package the Godot-free adapter cores as an engine-neutral static library target (e.g. `ps_frontend`), buildable without godot-cpp | game and UE5 reuse without compiling adapter internals | R0 can compile the files by path meanwhile | re-audit |
+| R5 | Chassis mass/inertia/CoM and collision box in the vehicle file | configurator and hypercar need them as data | R6/R8 (interim: the game catalog carries them) | superseded by game part-mass tree (#22) + physics contents_mass (#10) |
+| R6 | Optional: `load_vehicle_json_from_string(json, base_dir)` | configurator without temp files | R6 (interim: materialise into the cache, 11.6) | partial: VehicleLoadOptions part overrides and tyre injection exist; `load_vehicle_json_from_string` still missing |
+| R7 | Hypercar data set + validation (11.7) | new vehicle | R8 | dropped (D5) |
+| R8 | Later: `IWorldShape` curved WGS84 | real horizon on long drives | optional | open (IWorldShape) |
 
 The game never edits physics_sim.
 
@@ -139,7 +139,7 @@ The game never edits physics_sim.
 
 ```
 racing_game/
-  CMakeLists.txt, CMakePresets.json   debug, release, relwithdebinfo, asan (clang-cl), msvc-release; linux-release (rg_core + tests only)
+  CMakeLists.txt, CMakePresets.json   debug, release, relwithdebinfo, asan (clang-cl), msvc-release; linux-release (rg_core + tests only); linux-arm64-release
   CLAUDE.md, README.md, PLAN.md       PLAN.md = this plan, adopted and maintained
   external/physics_sim/               git submodule, pinned commit
   external/geo2map_engine/            git submodule, pinned commit
@@ -161,10 +161,9 @@ racing_game/
 
 ### 10.2 Pinning and build
 
-- **Submodules** with local file URLs (`S:/claude_code/physics_sim`, `S:/claude_code/geo2map_engine`).
-  - git ≥ 2.38 needs `-c protocol.file.allow=always` for local-path submodules [unverified for git 2.54 on Windows; check in R0].
-  - Switch the URL when a remote exists.
+- **Submodules** track the GitHub URLs; pins move only by a reviewed bump commit.
 - **Bumping a pin** is an explicit commit ("bump physics_sim to <sha>: <why>") followed by game CI.
+- **Targets:** Steam Frame ARM64, Windows, Linux. A desktop Linux x86-64 extension preset: re-audit.
 - **Rejected alternatives:**
   - FetchContent: it works, but every preset clones again and the pin hides in CMake.
   - Sibling-path `add_subdirectory`: unpinned, and it sees the other session's uncommitted work.
@@ -283,7 +282,7 @@ Boot: splash + data attribution, load settings, open caches, contact map server 
   - brake bias (same total) and brake force;
   - springs, dampers and ARBs ±30 %;
   - tyre choice from tyre files matching the wheel size;
-  - assists via the existing `assist.*` channels (auto clutch, auto blip, auto shift); ABS/TC/ESC once physics has them;
+  - assists via the existing `assist.*` channels (auto clutch, auto blip, auto shift, TC modes, launch control, aero) from the physics assist unit. No car is fitted with ABS/ESC by default yet; per-car fitting by model year is in progress (pre-1990 none, 1990s ABS, 2004+ ABS+ESC);
   - paint and rim colour (visual only).
 - **Validation:**
   - The merged files are materialised into the cache, with refs rewritten to absolute paths (`vehicle_io.cpp` resolves `ref` relative to the vehicle file).
@@ -298,14 +297,8 @@ Boot: splash + data attribution, load settings, open caches, contact map server 
 - PLAN.md section 8 makes physics_sim the home of vehicle data.
 - The game adds only a catalog entry.
 
-**Data plan** (PLAN.md section 8: public data only, a source per field; the model is not a real car, so figures are labelled class-typical):
-- **Geometry:** from `car_hyper.rig.json`.
-- **Mass:** ~1,400 kg, 42/58 front/rear.
-- **Engine:** twin-turbo V8, ~600 kW / ~800 N·m; curve shape from published dyno curves of comparable engines (±10 % check, PHYS-032).
-- **Gearbox:** 7-speed sequential manual with auto clutch until physics I10 brings DCTs.
-- **Differential:** RWD open diff until an LSD exists.
-- **Tyres:** MF5.2-subset JSON fitted to published generic high-performance data; never a proprietary `.tir`.
-- **Aero:** CdA ~0.75 m². **No downforce until physics P5.** The wing and flaps are visual only until then, and the game says so.
+**Current state:** main car is physics_sim `data/vehicles/car_hyper.json` (aero with active wing automation, DCT/AT options, LSD available). Game-side files hold only overrides and art.
+- Data plan sources and labels: PLAN.md section 8 (public data only, a source per field; class-typical figures); details in physics_sim `data/engines/HYPER_ONE1.md`.
 - **Acceptance (in physics_sim):**
   - loads; static corner weights;
   - top speed and 0–100 km/h within the P4 test tolerances against a point-mass reference;
@@ -318,11 +311,10 @@ Boot: splash + data attribution, load settings, open caches, contact map server 
 Rules:
 - Each milestone ends with its acceptance tests green in its repo's CI, the CLAUDE.md map updated, and vault tickets written.
 - Physics prerequisites are in brackets.
-- **Model:** **Opus** = open design, numerics, determinism, concurrency. **Sonnet** = implementation from a precise brief. The main session always diagnoses, briefs and verifies.
 - **Order:** G0 ∥ R0 → G1 → G2 → R2 → G3 → R3 → G4 → R4 → R5 → R6 → G5/R7 → R8 → G6 → R9 → G7 → G8/R10 → traffic → radio.
 - Everything up to R8 runs on the integrated in-process server. The protocol exists from G1 as in-process request/response types; G6 gives it its wire form. The hosted server (G7) comes once the game is playable offline.
 
-**G0: library skeleton, determinism, geodesy.** Model: Opus for math and geodesy; Sonnet for skeleton and CI.
+**G0: library skeleton, determinism, geodesy.**
 - Scope: repo, presets, CI (Windows ×3 + WSL), deterministic math port, TM/UTM, tile keys, raster types, hash and golden infrastructure, grep gate.
 - Acceptance:
   - TM forward/inverse vs GeographicLib reference values at 10,000 points (incl. extended zone ±9°): < 1 µm;
@@ -330,14 +322,14 @@ Rules:
   - identical hashes Windows/Linux;
   - libm grep clean.
 
-**R0: game skeleton.** Model: Sonnet. Prerequisite: none (R4 optional).
+**R0: game skeleton.** Prerequisite: none (R4 optional).
 - Scope: repo, submodules, single `rg_godot` DLL with `ps_core`, drive car_sedan on a flat box in Godot, chase cam, tach HUD, `run.ps1`, smoke test.
 - Acceptance:
   - a clean checkout builds via `setup_dev_env.ps1 -CheckOnly` + preset;
   - headless smoke test passes;
   - identical physics hash to physics_sim's `ps_run` for the same scenario.
 
-**G1: server core, raw layers, tiler, cache.** Model: Opus for resolver/release/protocol-types design; Sonnet for the TIFF subset reader, PBF import, SQLite stores.
+**G1: server core, raw layers, tiler, cache.**
 - Scope:
   - `g2m::Server` with router and resolver, source store, release manifest (in-process);
   - `g2m.src.elev.dgm1`, `g2m.src.osm`, `g2m.src.landcover`;
@@ -351,7 +343,7 @@ Rules:
   - LRU/pinning/corruption tests pass;
   - offline returns cached or `degraded`, never a network call.
 
-**G2: base terrain + bridge.** Model: Opus. Prerequisite: [R1].
+**G2: base terrain + bridge.** Prerequisite: [R1].
 - Scope: `g2m.elev.base`, `g2m.terrain.height` without roads, `terrain.class` from land cover, client streamer, terrain render chunks, `g2m_ps_bridge` terrain source.
 - Acceptance:
   - heights equal DGM1 within 1/256 m at every fixture sample;
@@ -359,7 +351,7 @@ Rules:
   - `fill_tile` is allocation-free (debug_alloc) and worker-count invariant;
   - cost per 256² fill is measured.
 
-**R2: drive real terrain.** Model: Sonnet (Opus for seam diagnosis). Prerequisites: [R1, R3].
+**R2: drive real terrain.** Prerequisites: [R1, R3].
 - Scope: home region via the integrated server (DGM1 imported); terrain rendering with LOD and floating origin; streaming overlay; the clock freezes on a missing tile.
 - Acceptance:
   - a 30 km scripted drive across MTK/HTK: no fall report;
@@ -367,7 +359,7 @@ Rules:
   - main-thread upload ≤ 1 ms/frame p99;
   - sim holds 240 Hz.
 
-**G3: roads.** Model: Opus.
+**G3: roads.**
 - Scope: `roads.graph`, `roads.geom`, carving, bridges, surface kinds.
 - Acceptance:
   - on the fixture, road-surface cross-slope within spec ±0.2 %;
@@ -379,34 +371,14 @@ Rules:
   - golden hashes Windows = Linux;
   - bytes/km² and CPU-s/km² measured (replacing 3.8's estimates).
 
-G3 status (2026-10-02): roads.graph and deterministic horizontal/vertical
-construction are implemented. Junctions use shared sloping DEM planes;
-degree-two bridge/tag boundaries use bounded approach-based deck estimates.
-The marked A66 bridge is accepted by the profile builder; this is estimated
-geometry, and real bridge collision acceptance remains pending. The previous
-grade-policy question came from treating an underpass DEM drop as a deck slope
-and is withdrawn. G3-C remains in progress: complete profile acceptance.
-roads.geom codec, staged dependencies and opt-in server/bake serving are
-implemented. Numeric incline supplies a bounded soft slope target while shared
-boundaries stay fixed. G3-D/E carving, junction surfaces,
-ribbons, markings and bridge bodies, and G3-F/R3 route acceptance remain open.
-Physics fixture fix bd41ac4 is integrated.
-
-G3 status (2026-10-05, supersedes the open list above): the owner restarted G3/R3
-("Start work on G3/R3") and it continues from geo2map street fidelity
-(geo2map docs/street_fidelity/plan.md). Done in geo2map: P1 lane-aware
-cross-sections, roads.geom encoding 6, carve footprint/lane API, carved traffic
-calming (vault G2M-016); P2 = G3-D design (p2_junction_design.md) and slices 1-7 -
-rules, the canonical road height, junction rings/trims/clusters, junction heights
-and raised tables, profile completion tier (relaxed fits served flagged
-"completed", owner 2026-10-05), crossings/stop lines/signal posts (vault G2M-017).
-Owner decisions: endpoint heights win over class grade (over-steep = grade
-exception, never clamped); carving moves to the server with G3-D and the game then
-deletes its own carve step with no fallback; no zero-gap gate for that switch.
-Open: P2 slice 8 (roads.geom encoding 7) in progress, slices 9-12 (g2m.terrain.carved,
-terrain.class, wiring, census), G3-C profile acceptance, the racing_game carve
-switch, G3-E ribbons from roads.geom + P3 markings + bridge bodies, G3-F/R3 route
-acceptance.
+G3 status (2026-10-18; earlier entries: docs/plan_history.md):
+- Street fidelity P2: slice 9 (terrain.carved) done; slice 10 (terrain.class deriver) done; slice 11 (class window) done (geo2map #15, game #27 opt-in); slice 12 (census) waits on the owner.
+- Terrain migration phases 3a-6 done (geo2map #3-#7; game #8/#9/#11/#12). Underpass decks D53-D61 done (#13/#16). Long tunnels D52 done (#11). Grade-separated carving done (game #6).
+- Phase 7 (server carve switch) is gated on GAP1=0 on the real-store roadcmp probe. Phase 8 follows.
+- Owner decisions kept: endpoint heights win over class grade (over-steep = grade exception, never clamped); carving moves to the server and the game then deletes its own carve step with no fallback.
+- Known defect: A66 boundary defect, a blocker for the phase 7 acceptance (geo2map PLAN status block).
+- Open: G3-C profile acceptance, G3-E ribbons/markings/bridge bodies, G3-F/R3 route acceptance.
+- Heightfield-vs-mesh 162 m/s2 spike on test_ground (x = -500): re-audit; not resolved.
 
 OSM dashboard extension: directional explicit speed limits are carried on
 resident road metadata and exposed in car snapshots and Godot. Numeric,
@@ -414,7 +386,7 @@ unrestricted and unknown values remain distinct; conditional values are marked.
 Ground matching excludes bridge decks until 3D road matching exists. Main car
 is the supplied physics_sim car_hyper, including its authored hypercar powertrain, tyres and suspension.
 
-**R3: roads in game.** Model: Sonnet. Prerequisite: [R2 for bridges].
+**R3: roads in game.** Prerequisite: [R2 for bridges].
 - Scope: road ribbons + markings, surfaces into physics by name, bridge bodies.
 - Acceptance:
   - drive a 20-junction scripted route: wheel `Fz` spikes within the R3 bound;
@@ -434,106 +406,119 @@ R3/G3 consumer plan (2026-10-05): docs/g3_consumer_design.md - carve switch,
 ribbons, bridge decks, route acceptance harness and a proposed definition of
 the R3 route bound (Fz residual no worse than a calibrated 2 cm step, 3x static
 corner load cap, no chassis contact; owner question O-3). Slices S1-S14 there.
-S1 done (2026-10-06): pins bumped (physics_sim 606c428, geo2map_engine 072a321), own surfaces for the seven new surface kinds, N2O test cars (sedan and hypercar) with a HUD, and the road deck BVH build moved off the sim thread through physics_sim R2 (`rg::DeckInstaller`, option B of docs/g3_consumer_design.md 5.2).
-S1 open item DONE (2026-10-14, measured on Linux, release build; `tests/unit/test_nitrous_gain.cpp`, hidden `[.][nitrous][gain]`): armed vs unarmed, WOT, rolling start in the held gear at 2500 rpm on the flat world, auto-shift off, gear held via gear_request, window 2.0 s.
+S1 done (2026-10-06): pins bumped (physics_sim 606c428, geo2map_engine 072a321), own surfaces for the seven new surface kinds, N2O test cars (sedan and hypercar) with a HUD, and the road deck BVH build moved off the sim thread through physics_sim R2 (`rg::DeckInstaller`, option B of docs/g3_consumer_design.md 5.2). C8 (markings P3, 20-junction acceptance) has not started.
+N2O measurement (2026-10-14): numbers in docs/plan_history.md. Findings handed to physics_sim (physics_sim PLAN "Open follow-ups", re-audit): silent block in Normal mode and 2.55 bar overshoot against the 1.8 bar target. Re-audit there.
 
-| car / gear | dv 2 s unarmed | dv 2 s armed | rpm 2500 -> 6000 unarmed | armed | max boost unarmed | armed | first spray |
-|---|---|---|---|---|---|---|---|
-| car_hyper_n2o, 3rd (Sport mode) | 6.89 m/s | 12.03 m/s (+74.7 %) | 3.68 s | 2.95 s | 1.92 bar | 2.55 bar (1.78 at 2 s) | 0.94 s (rpm reaches the 3000 floor) |
-| car_sedan_gen_n2o, 2nd | 8.01 m/s | 8.50 m/s (+6.2 %) | 3.56 s | 2.98 s | no turbo | no turbo | 0.38 s |
-
-Findings: (1) the hypercar only sprays in the Sport drive mode (`drive_modes_car_hyper_n2o.json`: `nitrous_arm_allowed` false in Eco and in the default Normal): armed in Normal the HUD shows ARMED but the solenoid never opens (measured: identical to unarmed, 0 s spray) - confirm the owner wants a silent block in the default mode. (2) The boost overshoot caveat still holds: 2.55 bar max with spray against the 1.8 bar target. (3) The sedan's 37 kW shot is small: +6 % dv over 2 s, but 0.6 s faster to 6000 rpm. The hyper's 2 s dv includes 0.94 s of unsprayed turbo lag from 2500 rpm (spray needs 3000 rpm).
-Known physics caveat (kept): with spray the hyper boost can overshoot 1.8 bar and the turbo can sit on the rotor speed cap at 6000-7000 rpm. Earlier rough numbers on the pre-606c428 hyper: +25.9 % dv in 0.6 s.
-
-**G4: routing and map geometry.** Model: Opus for graph/routing design; Sonnet for map geometry.
+**G4: routing and map geometry.**
 - Scope: A* + hierarchy, restrictions, guidance data, client map geometry.
 - Acceptance:
   - routes on the fixture equal a brute-force Dijkstra;
   - restrictions honoured in unit cases;
   - route requests under 10 ms within 30 km [target].
+- Status: done - geo2map #2 (A*), #14 (turn restrictions, via-way), #16 (lane hints); game route_planner, map_view, minimap, F10 destination. Open: auto-reroute, full map, destinations beyond the 10 km square, real-store timing.
 
-**R4: minimap, full map, navigation.** Model: Sonnet.
+**R4: minimap, full map, navigation.**
 - Acceptance: minimap cost < 0.3 ms per frame; route guidance through 10 manoeuvres on a scripted drive; attribution always visible.
 
-**R5: shell.** Model: Sonnet.
+**R5: shell.**
 - Scope: menus, spawn picker, cameras (all six), loading screens, settings (incl. map server endpoint, cache, pin region), credits with the full attribution list.
 - Acceptance: headless UI flow test; camera switch with no rebase jump (PHYS-008 test).
-- **R5 status (2026-10-05, Sonnet 5.5): shell done in the scope below; deferred items listed.** Done: boot splash with attribution, main menu (Free roam | Settings | Credits | Quit), spawn picker (versioned presets in `data/world/spawn_presets.json`, last position, address search, flat world), loading screen with the real init/streaming numbers and the attribution line, pause menu (Resume | Reset car | Settings | Main menu), settings that really apply (window mode, vsync, max fps, field of view, three volumes, map store dir), credits from `data/credits.json`, six cameras (chase, bumper, cockpit, orbit, cinematic, free; B cycles the drive views, Tab/V unchanged), clean world teardown so Free roam repeats in one process, `tools/run.ps1` opens the shell by default (`-Drive` / `-Flat` skip it). Tests: core unit tests per new header, `tools/smoke_test.ps1 -Shell` (headless UI flow) and `-Cameras` (PHYS-008, every ordered pair of views, with and without a floating-origin rebase), both in `tools/ci.ps1`. **Deferred:** pick-on-map in the spawn picker (needs R4's map), Garage / Events / Map & route entries (R6, R4), boot-time map-server contact and the map server / cache / pin-region settings (no map server yet), input rebinding (read-only controls view only), resolution scale / FSR, gamepad pause button, walker rig in the camera-switch matrix (done 2026-10-16, see the drone camera follow-up below). Details: CLAUDE.md "Shell (R5)". **2026-10-05 follow-up (Sonnet 5.5):** cinematic shots no longer start inside or behind buildings/terrain (`rg::BuildingObstacles`, director candidate search with ChaseFallback, docs/buildings.md); the chase camera no longer trails the car at speed (`rg::chase_follow_offset`, offset smoothing; was speed/6 m); NPC deadlocks fixed at the root (docs/npc_traffic.md "Stuck NPCs": deadlock cycle roots 166 -> 2, stuck events 1700 -> 783 per 60 s in the same harness). Godot adapter wiring compile-checked only; owner test drive pending. **Drone camera follow-up (2026-10-15):** the drone rig's maths moved into `rg::drone_*` (`rg/camera_math.h`, leak #10 for the drone) and the labels into `rg::drone_target_label` (leak #20); `camera_switch_test.gd` section 5 puts drone follow into the switch checks (-Cameras); VR gets an `xr_drone` rig. Done 2026-10-16: the chase/walker/free/orbit rig maths moved into `rg_core` (`rg/camera_math.h`, leak #10 now done for every rig, golden tests against the former GDScript) and the walker rig is in the camera-switch matrix (`camera_switch_test.gd` section 7, written but its Godot run is still pending on a Windows build). Open: ~~a pilotable FPV drone~~ (done 2026-10-15 on the owner's answer: kinematic `rg::FpvDrone`, mode `fpv_drone`, rotor sound; CLAUDE.md "FPV drone").
+- **R5 status (2026-10-05, Sonnet 5.5): shell done in the scope below; deferred items listed.** Done: boot splash with attribution, main menu (Free roam | Settings | Credits | Quit), spawn picker (versioned presets in `data/world/spawn_presets.json`, last position, address search, flat world), loading screen with the real init/streaming numbers and the attribution line, pause menu (Resume | Reset car | Settings | Main menu), settings that really apply (window mode, vsync, max fps, field of view, three volumes, map store dir), credits from `data/credits.json`, six cameras (chase, bumper, cockpit, orbit, cinematic, free; B cycles the drive views, Tab/V unchanged), clean world teardown so Free roam repeats in one process, `tools/run.ps1` opens the shell by default (`-Drive` / `-Flat` skip it). Tests: core unit tests per new header, `tools/smoke_test.ps1 -Shell` (headless UI flow) and `-Cameras` (PHYS-008, every ordered pair of views, with and without a floating-origin rebase), both in `tools/ci.ps1`. **Deferred:** pick-on-map in the spawn picker (needs R4's map), Events / Map & route entries (Garage: done, R6), boot-time map-server contact and the map server / cache / pin-region settings (no map server yet), input rebinding (read-only controls view only), resolution scale / FSR, gamepad pause button, walker rig in the camera-switch matrix (done 2026-10-16, see the drone camera follow-up below). Details: CLAUDE.md "Shell (R5)". **2026-10-05 follow-up (Sonnet 5.5):** cinematic shots no longer start inside or behind buildings/terrain (`rg::BuildingObstacles`, director candidate search with ChaseFallback, docs/buildings.md); the chase camera no longer trails the car at speed (`rg::chase_follow_offset`, offset smoothing; was speed/6 m); NPC deadlocks fixed at the root (docs/npc_traffic.md "Stuck NPCs": deadlock cycle roots 166 -> 2, stuck events 1700 -> 783 per 60 s in the same harness). Godot adapter wiring compile-checked only; owner test drive pending. **Drone camera follow-up (2026-10-15):** the drone rig's maths moved into `rg::drone_*` (`rg/camera_math.h`, leak #10 for the drone) and the labels into `rg::drone_target_label` (leak #20); `camera_switch_test.gd` section 5 puts drone follow into the switch checks (-Cameras); VR gets an `xr_drone` rig. Done 2026-10-16: the chase/walker/free/orbit rig maths moved into `rg_core` (`rg/camera_math.h`, leak #10 now done for every rig, golden tests against the former GDScript) and the walker rig is in the camera-switch matrix (`camera_switch_test.gd` section 7, written but its Godot run is still pending on a Windows build). Open: ~~a pilotable FPV drone~~ (done 2026-10-15 on the owner's answer: kinematic `rg::FpvDrone`, mode `fpv_drone`, rotor sound; CLAUDE.md "FPV drone").
 
-**R6: vehicle select and configurator.** Model: Sonnet. Prerequisite: [R5 or the catalog interim].
+**R6: vehicle select and configurator.** Prerequisite: [R5 or the catalog interim].
 - Scope: section 11.6 plus the shell entries R5 deferred (main menu Garage, pause "Garage (respawn)").
 - **Garage set (owner 2026-10-04: "We need a garage set for the configurator. You may inspire yourself on Forza Horizon 6 there.")**: vehicle select and configurator happen in a dedicated 3D garage/showroom scene, not over the driving world - the car on a turntable, studio/garage lighting with reflections, camera moves between overview and the area being edited. Forza Horizon is inspiration for mood and flow only: no copied assets, logos, trademarks or UI. Built inside racing_game (procedural/primitive geometry and own materials; physics_sim `tools/assetgen` and `data/models` belong to another session).
-- **R6 status (2026-10-05, Sonnet 5.5): done in the scope below; deferred items listed.** Done: `data/vehicles/catalog.json` (car_hyper default, car_sedan, car_sedan_rwd/awd; chassis data interim in the catalog), setup overlays `racing_game.vehicle_setup/1` as RFC 7396 merge patches with a whitelist and ranges (17 options: final drive, gear ratios, brake force/bias, springs/dampers/ARBs, tyre choice, assists, paint, rim), validation by materialising into a work dir and `ps::io::load_vehicle_json` (loader message shown, invalid setups cannot be saved), persistence per vehicle, main menu Garage and pause "Garage (respawn)", vehicle select with stats from the data, the configurator, and the garage set (own World3D showroom, turntable, studio lights, softbox reflections, camera areas). Tests: core unit tests per new header, `tools/smoke_test.ps1 -Garage` (physics readback: front springs x1.3 give 0.769x front compression) in `tools/ci.ps1`. **Deferred:** other car variants (787b, pipes, gen, tractor), ABS/TC/ESC options. **Physics requests still open:** chassis mass/box/inertia in the vehicle file, `load_vehicle_json_from_string`, real tyre compound data. Details: CLAUDE.md "Garage (R6)".
+- **R6 status (2026-10-05, Sonnet 5.5): done in the scope below; deferred items listed.** Done: `data/vehicles/catalog.json` (car_hyper default, car_sedan, car_sedan_rwd/awd; chassis data interim in the catalog), setup overlays `racing_game.vehicle_setup/1` as RFC 7396 merge patches with a whitelist and ranges (17 options: final drive, gear ratios, brake force/bias, springs/dampers/ARBs, tyre choice, assists, paint, rim), validation by materialising into a work dir and `ps::io::load_vehicle_json` (loader message shown, invalid setups cannot be saved), persistence per vehicle, main menu Garage and pause "Garage (respawn)", vehicle select with stats from the data, the configurator, and the garage set (own World3D showroom, turntable, studio lights, softbox reflections, camera areas). Tests: core unit tests per new header, `tools/smoke_test.ps1 -Garage` (physics readback: front springs x1.3 give 0.769x front compression) in `tools/ci.ps1`. **Deferred:** other car variants (787b, pipes, gen, tractor). **Physics requests still open:** `load_vehicle_json_from_string`, real tyre compound data (chassis mass: done, part-mass tree #22 + physics contents_mass #10). Details: CLAUDE.md "Garage (R6)".
 - Acceptance:
   - every whitelisted change round-trips through `load_vehicle_json`;
   - an out-of-range or invalid overlay is rejected with the loader message;
   - the setup persists;
   - the garage set loads from the main menu and from the pause menu, and returning to the world (or the main menu) leaves no garage nodes behind.
 
-**R6c: car browser and in-world car switch (owner 2026-10-05).** Model: Sonnet. Prerequisite: [R6]. Spec: out/brief_car_browser.md.
+**R6c: car browser and in-world car switch (owner 2026-10-05).** Prerequisite: [R6]. Spec: out/brief_car_browser.md.
 - Scope: presets as their own catalog entries (base + setup overlay + id/title/subtitle/body type), new catalog fields (body_type, manufacturer, displacement), the browser screen (metric stats on the left, horizontally scrolling 2-4 row grid with lazily rendered PNG-cached previews, computed category headers, group-by body type / drive layout / power band / manufacturer / none, sort by name / power / torque / mass / power-to-weight / displacement, multi-select filters, panel on Y / F / button, keyboard + pad + mouse), main-menu Garage = browser -> Configure -> Drive, pause "Change car" = browser -> swap at the old position, "Garage (respawn)" stays.
 - **R6c status (2026-10-06, Sonnet 5.5): done in the scope above; deferred items listed.** Done: `rg::CarBrowser` (core, Godot-free), hidden `browser.*` settings, presets and the new catalog fields, `Screen::ChangeCar` in the shell flow, `RgGarage.browser_*`, `car_browser_ui.gd`, `car_thumbnails.gd`, flat-world respawn at the old pose, `--catalog`. Tests: core (test_car_browser, test_car_browser_data, test_shell_flow), `tools/smoke_test.ps1 -CarBrowser` and `-CarBrowserBig` (200-car synthetic catalog), screenshots in out/car_browser_screens/. Design: the swap is a Session rebuild with the spawn override (ps::World has no vehicle removal and physics_sim is read-only); thumbnails have their own studio so the garage and driving worlds are untouched; the grid is virtualised in rg_core so the UI only instantiates the visible window. Deferred: preset stats do not include the overlay, search box, a finer lift at the swap (owner check).
 
-**R5b: control configuration menu (owner 2026-10-06).** Model: Sonnet. Prerequisite: [R5]. Spec: out/brief_controls_menu.md, docs/controls.md.
+**R5b: control configuration menu (owner 2026-10-06).** Prerequisite: [R5]. Spec: out/brief_controls_menu.md, docs/controls.md.
 - Scope: a Controls screen (Settings and pause menu) to rebind every action for keyboard, mouse and gamepad/wheel; choices remembered per device (SDL GUID + ordinal among same-GUID devices, fallback GUID#1 -> class default; keyboard and mouse own a profile; hot-plug; unplugged devices stay listed "not connected"); several devices act at once, larger magnitude wins; axis deadzone/saturation/curve/sensitivity/invert/calibration, combined pedal axes, live monitor, conflict notes, reset per action and per device; persisted in `<user dir>/controls.json`.
 - **R5b status (2026-10-06, Sonnet 5.5): done in the scope above; deferred items listed.** Done: `rg::Controls` + capture/calibration (core, Godot-free), `RgControls`, `input_map.gd` rebuilt over it (defaults equal the old bindings), `controls_ui.gd`, Screen::Controls in the shell flow, `project.godot` `[input]` removed, fixed-keys list. Tests: test_controls (41 cases), test_control_capture, test_shell_flow, `tools/smoke_test.ps1 -Controls` (62 + 14 checks over a real restart), `-Shell`, screenshots in out/controls_screens/. Design: overrides-only profiles over class defaults (a changed default reaches untouched actions), GUID + ordinal keys because SDL offers no per-unit serial, hold-B-to-bind so B still cancels, pedals resting at an end bound calibrated, combined pedals as opposite half-spans of one axis. Deferred: hand-check with real devices (gamepad focus navigation, wheel/pedals, two identical pads, hot-plug), fixed keys not rebindable, per-vehicle profiles. R5's deferred "input rebinding" is thereby done.
 
-**R6b: engine selection and tuning (owner 2026-10-05: a separate step after R6).** Model: Opus design with the physics_sim coordinator, then Sonnet. Prerequisite: [R6; physics_sim modular parts system].
+**R6b: engine selection and tuning (owner 2026-10-05: a separate step after R6).** Prerequisite: [R6; physics_sim modular parts system].
 - Scope: engine swap per car (whitelisted engine `ref`, loader-validated), turbo configuration choice (physics_sim `World::replace_turbo_configuration`), engine tuning (rev limiter, throttle response, later ECU calibration as a slot-in part - the owner's 2026-09-29 parts/override model). Engine design (geometry, intake, exhaust; map regeneration in seconds) stays with the engine design GUI.
-- R6b garage slice (2026-10-08): implemented compatible sedan I4/I6 engine reference selection, standard/nitrous hyper turbo configuration cards, illustrative component images, installed-engine limiter/throttle tuning with RPM/ms readouts, and Save/restart/Drive materialization. Unknown/cross-family choices are rejected; nitrous turbo hardware retains its larger wastegate. Native checks: 81 focused engine assertions, 463 existing setup assertions; garage flow: 151 checks. Changes apply on Drive. Live World turbo replacement, ECU map parts, engine design/internals and mesh/mass changes remain pending. The separate Step 1 performance benchmark/cache remains pending. See docs/garage_ui.md.
+- Done: engine bays / any engine (#24); turbo kits (#21); drivetrain swap (#19); cooling upgrades (#28); part mass (#22); strip visual (#29); AT/DCT/CVT (#26/#30); damage model (#33); DCT fixes (#34/#35/#36); physics-state TC (#37); launch diagnostics (#39); electric sedan (#40); motor audio (#41). Open: powertrain swaps / hybrid (#42, draft; see 12.x). Earlier slice detail: docs/plan_history.md, docs/garage_ui.md.
 
-**R6b follow-up: offline compressor and turbocharger simulation (owner 2026-10-09). Preliminary simulation is now used by garage hardware and default hypercars.** Physics-owned geometry-driven compressor and preliminary compressible impulse-turbine solvers generate performance maps, with adaptive sampling, resumable operating-point reuse, a completed-map cache, explicit coverage and provenance. Shipped compact/standard/large maps drive native shaft/thermal/backpressure calculations without an RPM ceiling. Unsupported compressor corners contribute no simulated value; missing interpolation weight uses an explicitly diagnosed, continuous authored fallback, avoiding the former hard-boundary boost oscillation. Game-owned vehicle/engine variants enable the standard maps by default without changing native reference vehicles. Dyno points expose actual compressor/turbine sample-use fractions and fallback fractions; the garage footer distinguishes simulated and mixed turbo operation. Each generated size has 25 speed lines, 133 flow points and 9 turbine expansion points; sampled cell-center errors are below 3%, not a certified global bound. An optional inlet normal-shock entropy approximation is implemented. Resolved transonic passage/exit choking, radial reaction/volute fidelity, measured-data calibration and eliminating high-boost fallback remain pending. Authored fallback uses compressible exhaust flow to avoid excessive high-flow pumping losses. Vehicle startup reports engine-map preparation and uses the existing worker pool, with cancellation. Native tool/format: external/physics_sim/tools/turbo_sim and external/physics_sim/docs/data_formats/turbo_stage_maps.md. Design and validation: [PHYS-068](S:/claude_knowledge_base/knowledge-manager/Vault/Tickets/PHYS-068.md).
+**R6b follow-up (owner 2026-10-09): turbo stage maps.** Superseded by physics_sim #2 (runtime C++ turbo stage-map generation with extension). Offline tool and format: external/physics_sim/tools/turbo_sim, external/physics_sim/docs/data_formats/turbo_stage_maps.md; design and validation: [PHYS-068](S:/claude_knowledge_base/knowledge-manager/Vault/Tickets/PHYS-068.md).
 
-**G5 + R7: land cover, buildings, water, vegetation, building collision.** Model: Sonnet (Opus for building-collision streaming). Prerequisite: [R2].
+**12.x Powertrains, garage and cockpit** (after R6b).
+- Powertrain swaps / EV / hybrid / fuel cell / hydrogen (#40 merged, #42 draft). Settled: dual hydrogen means H2 ICE + FCEV. #42 tasks:
+  1. integrate the default-branch history;
+  2. **gate before #42 can be marked ready:** retain the aero automation and ABS/ESC electronics (today `core/src/powertrain_swap_json.cpp` replaces the electronics);
+  3. 300 kW pedal-demand calibration;
+  4. validate the automatic schedule across ICE start;
+  5. electric and hybrid dyno;
+  6. optional Racing boost preparation;
+  7. packaging and fit;
+  8. future fidelity.
+- Electronics and modes: EPB and the four drive modes are wired (#10). Clutch-bite is deferred. No car is fitted with ABS/ESC by default yet; per-car fitting by model year is in progress (pre-1990 none, 1990s ABS, 2004+ ABS+ESC).
+- **Open bug:** ABS has never been observed working in a test drive (owner 2026-10-18); diagnosis in progress.
+- Damage: cooling damage (#33) needs a calibration acceptance (old hypercar reference about 2 MW at 11 bar with about 190 C oil; target is failure before 170 C oil). Further sources (knock, piston speed, charge pipe, turbo overspeed) each need a physics source (physics_sim PLAN "Open follow-ups").
+- Performance capture protocol, rendering/platform matrix and manual acceptance matrix: one row each, see the briefs.
+- Cockpit/VR increments: 1 M1 sockets; 2 fitted layout; 3 flat interaction; 4 VR; 5 later items; 6 art/strip audit.
+- Terrain site list: missing roads at 50.115106,8.594614; Koenigstein tile utm32n/2/452/5428 `deriver_rejected` (re-audit); the B8/owner spots and the B8-A66 gore; the parking_aisle hiding policy.
+- Visual world: time of day, headlamps, Mobile renderer as default, weather in the session.
+- Cars: imported cars and three new cars (#2, #7). Open decisions: Dashboard v2, art licensing, real gearbox data.
+- Re-audit: R4 ps_frontend status; G6 sidecar vs in-process.
+- Done outside the milestone list: building presentation (docs/buildings.md), NPC traffic prototype (docs/npc_traffic.md, docs/npc_truck.md), aerodynamics integration (docs/aerodynamics.md), hypercar engine calibration (docs/hypercar_engine.md), CFD preparation (docs/aero_cfd_plan.md), VR/audio (docs/vr_audio.md). Dated notes: docs/plan_history.md.
+
+**G5 + R7: land cover, buildings, water, vegetation, building collision.** Prerequisite: [R2].
 - Acceptance:
   - building bases sit on terrain (max gap < 5 cm);
   - vegetation is deterministic per seed;
   - building collision add/remove is deterministic across worker counts;
   - frame time within the R9 budget in Frankfurt-Höchst.
+- Status: started - building presentation exists (docs/buildings.md). Remaining per the brief.
 
-**R8: hypercar.** Model: Sonnet for the catalog; the physics session does the data. Prerequisite: [R7].
+**R8: hypercar.** Prerequisite: [R7].
 - Acceptance: selectable and drivable; the physics validation tests pass in physics_sim.
+- Status: done via physics_sim `car_hyper` (selectable, drivable).
 
-**G6: wire protocol + sidecar.** Model: Opus for the protocol spec; Sonnet for HTTP and conformance.
+**G6: wire protocol + sidecar.**
 - Scope: `g2m_http` (server + libcurl fetcher), `g2m_server` binary, Godot `IFetcher`, protocol v1 docs, conformance suite, packs, `/hashes`; the game setting for a custom endpoint.
 - Acceptance:
   - in-process vs HTTP give byte-identical tiles;
   - conformance suite passes against the sidecar;
   - fuzzed responses never crash the client;
   - the game runs against a sidecar with the same physics hash as in-process.
+- Status: done (geo2map #8). Open: opt-in HTTP sidecar in the game, or in-process, owner product choice.
 
-**R9: performance.** Model: Opus for analysis; Sonnet for fixes.
+**R9: performance.**
 - Scope: 4K/240 target via FSR on the 5900X, PLAN.md adapter budget (< 1 ms main-thread own work), streaming at hypercar speed.
+- Status: partly done - off-thread packing (#13) and gauges (#14). The 240 fps medium target is not reached; capture protocol: see 12.x.
 - Acceptance:
   - measured frame-time and tick-rate report;
   - no hitch > 1 frame from streaming at 100 m/s.
 
-**G7: hosted default server.** Model: Opus for ops design; Sonnet for scripts. Prerequisites: owner decisions D3/D4/D7/D15.
-- Scope:
-  - deployment in the owner's estate, CDN in front;
-  - pre-baked Hessen (then Germany) packs; the on-demand derivation queue;
-  - API keys and rate limits; release pipeline and retention;
-  - ODbL publication of the packs; privacy notice.
-- Acceptance:
-  - load test (N simulated drivers) meets the latency target;
-  - CDN hit rate ≥ 95 % in baked regions;
-  - measured egress per player-hour;
-  - the game ships pointing at it; offline fallback verified.
+**G7: hosted default server.** Prerequisites: owner decisions D3/D4/D7/D15.
+- Open set: TLS, auth, rate limits, upstream chaining, 503-queued derivation, CDN, observability, licensing.
+- No account creation or deployment without owner authorisation.
+- Acceptance: measured egress per player-hour; the game ships pointing at it; offline fallback verified.
 
-**G8/R10: worldwide.** Model: Opus.
+**G8/R10: worldwide.**
 - Scope: GLO-30 (+ Mapterhorn mirror, decision D13) with DSM correction, zone crossing, other German states' DGM1, optionally Overture.
 - Acceptance:
   - driving across the UTM 32/33 boundary without a seam;
   - a sample of international regions derives and is drivable.
 
-**Later: traffic.** Model: Opus.
-- Lane-level graph (lane connectivity from `turn:lanes`), signals, AI drivers on physics vehicles.
+**Later: traffic.**
+- Prototype exists (docs/npc_traffic.md, docs/npc_truck.md). The lane-level graph (lane connectivity from `turn:lanes`) is not built; signals and AI drivers on physics vehicles remain.
 - Needs PLAN.md P9's 30/300-vehicle budgets.
 
-**Later: in-car radio (owner request 2026-09-26; do not start before traffic).** Model: Opus for the mood classifier and source abstraction; Sonnet for the players and UI.
+**Later: in-car radio (owner request 2026-09-26; do not start before traffic).**
 - Several radio stations. Each is either a live internet radio stream or a music-service API source. The owner's own is music.ksfhost.de; players bring their own compatible service (endpoint + credentials in settings). Nothing is bundled or hosted for players.
 - The music follows driving style and game state. Examples of distinct moods: a slow night drive; 300 km/h on the Autobahn; drifting corner after corner; city streets at normal speed; city streets at insane speed. The inputs are telemetry the game already has (speed, slip angles, yaw rate, road class from G3, urban/rural from G5, time of day), classified engine-neutrally in `rg_core`. The Godot adapter only plays audio.
 - Open for design: how a mood maps to a station, track or playlist query per source type; whether live streams can follow a mood at all (e.g. per-station mood tags) or only API sources; crossfade and hysteresis so short events don't flip the music; licensing and attribution of third-party streams.
+
+Dated status notes (history): docs/plan_history.md.
 
 ---
 
@@ -586,7 +571,6 @@ Nothing below has been downloaded or installed. The setup scripts will install o
 
 | Risk | Impact | Mitigation |
 |---|---|---|
-| Physics blockers R1 (height clamp) and R3 (seam spike) not scheduled by the physics session | R2 milestone blocked | brief them now; G0–G2 proceed in parallel; the bridge tests with an offset-free fixture until R1 lands |
 | Cross-compiler determinism of derivation (client vs server) | multiplayer desyncs; wasted CDN cache | 2.4 rules, quantised outputs, golden hashes on every compiler, multiplayer uses baked/verified tiles only (D12) |
 | OSM data quality (missing lanes/width, bow-tie junctions, bad layer tags) | ugly or undrivable junctions | consolidation, tagged defaults flagged "inferred", visual QA tool in `g2m_cli`, per-edge overrides as a data layer later |
 | GLO-30 is a DSM (forest plateaus ~13 m median error) | worldwide terrain wrong under forests | canopy inpainting with WorldCover; road profiles robust-fitted; a national DTM wherever one exists; FABDEM only if its licence allows |
@@ -612,19 +596,25 @@ Nothing below has been downloaded or installed. The setup scripts will install o
 | D2 | Baked vs raw served data | baked generic layers by default; raw layers also served; every built-in layer derivable locally; game layers derived client-side, optionally as server plugins (3.3). Cheaper alternative: baked-only for remote servers |
 | D3 | Hosting in "the owner's estate": what exists? | object storage + CDN (Cloudflare R2 for zero egress) for packs, plus one small VM for on-demand derivation behind a reverse proxy; start with Hessen pre-baked |
 | D4 | Auth for the public default server | anonymous CDN reads; per-build revocable API key + quotas only for on-demand derivation |
-| D5 | Where the hypercar data lives | physics_sim `data/` via a brief to the physics session (11.7) |
+| D5 | Where the hypercar data lives | current practice: physics_sim ships car_hyper; racing_game holds overrides and art (11.7) |
 | D6 | Vegetation collision | none in v1 (trees are decoration); revisit with a "forest = rough surface" class |
 | D7 | ODbL compliance form; open-source geo2map_engine? | publish OSM-derived packs per release under ODbL; open-sourcing the library (e.g. MIT) is the simplest "method" disclosure and helps modders run custom endpoints; legal check before G7 |
 | D8 | Frame: UTM vs a local ENU or ECEF frame | UTM (section 4): native to German data, stable keys, flat physics; curved shape later via R8 |
-| D9 | Pinning via submodules | yes, local file URLs; add a remote when one exists |
+| D9 | Pinning via submodules | done: remote exists; submodules track GitHub URLs |
 | D10 | Game repo name and Godot version policy | `racing_game` as working name; godot-cpp 4.5 API on Godot 4.7.x runtime as physics_sim does |
 | D11 | Release cadence of the hosted dataset | quarterly OSM snapshot releases; keep 3 live |
 | D12 | Multiplayer tile policy | baked or hash-verified tiles only |
 | D13 | Worldwide DEM source for the server | mirror a Mapterhorn extract (already a merged global mosaic incl. all German DGM1) plus GLO-30 as the base; never hotlink |
 | D14 | Dev textures in git (LFS) or fetched | fetched by the setup script from a pinned, approved list; the game repo stays small |
 | D15 | Server privacy/telemetry | IP logs 7 days, no analytics without consent; privacy notice before G7 |
-| D16 | Which physics requests to brief now | R1 and R3 immediately (they block R2); R2 and R4 soon; R5–R7 before R6/R8 |
+| D16 | Which physics requests to brief now | done: R1-R3 landed; R4 re-audit; R5-R7 superseded or dropped |
 | D17 | Custom endpoint trust | allowed via settings/CLI with a one-time warning; all served bytes treated as untrusted (fuzzed decoders, size limits) |
+| D18 | Mouse cursor | captured by default; middle-click toggles |
+| D19 | Vehicle mass | mass = sum of parts |
+| D20 | Jackets | on by default |
+| D21 | Mobile targets | no Android/iOS |
+| D22 | Radio | after traffic |
+| D23 | Unreal port, stacked interchanges | deferred |
 
 
 ### 15.1 Owner rulings (2026-09-25)
@@ -633,7 +623,7 @@ Nothing below has been downloaded or installed. The setup scripts will install o
 |---|---|---|
 | D2 | Priority/fallback order: finished (baked) layers, then raw layers, then self-fetched from sources | As recommended. All three paths share the derivation code and must give identical tile hashes (2.4). |
 | D3 | Self-hosted on the owner's estate. During development the server runs on this PC. Private use (owner and friends); not published or sold | G7 shrinks to one machine on the estate: no CDN, no Cloudflare R2, no quota system. D4 becomes a single shared key or LAN/VPN-only access. The protocol stays CDN-cacheable so this can change later. G7's load-test and CDN-hit-rate acceptance items are dropped; egress per player-hour is still measured. |
-| D5 | The hypercar lives only in racing_game (`racing_game/data/vehicles`), not in physics_sim. It can be copied over later | R7 is no longer a physics request. R8 becomes game-side: data plus validation tests in racing_game's own test suite, run against the pinned `ps_core` (same public `load_vehicle_json` API). |
+| D5 | The hypercar lives only in racing_game (`racing_game/data/vehicles`), not in physics_sim. It can be copied over later | R7 is no longer a physics request. R8 becomes game-side: data plus validation tests in racing_game's own test suite, run against the pinned `ps_core` (same public `load_vehicle_json` API). Current practice: physics_sim ships car_hyper; racing_game holds overrides and art. |
 | D7 | geo2map_engine may be open source: MIT | The repo is created with an MIT LICENSE. ODbL attribution stays wherever OSM-derived data is shown. Share-alike for a publicly served database matters only if the server is ever opened beyond private use; get a legal check before then. |
 | downloads | §13's source dependencies and dev datasets approved | Downloads go to `S:\claude_code\geo2map_data` (outside every repo; `G2M_DATA_DIR`). The later hosted-server items in §13 still need their own approval. |
 | D16 | R1 (per-tile vertical datum) and R3 (tile-seam spike) briefed to the physics session on 2026-09-25, with owner approval; R2 and R4-R6 to be briefed when needed; R7 dropped (D5) | R2 (drive real terrain) waits for both to land in physics_sim, then for a submodule pin bump. |
@@ -728,145 +718,3 @@ Nothing below has been downloaded or installed. The setup scripts will install o
 - https://dev.epicgames.com/documentation/en-us/unreal-engine/API/Runtime/HTTP/FHttpModule
 - https://docs.ambientcg.com/license/
 - https://polyhaven.com/license
-
-VR/audio integration (2026-10-03): physics_sim master pin ba47951 (fetched
-from S:/claude_code/physics_sim) retains the terrain boundary fix and adds
-the reusable Windows spatial backend. The supplied car_hyper remains the
-default. tools/run.ps1 -VR launches OpenXR Vulkan Mobile; tracked cockpit
-and FreeCam rigs share camera-director rebasing. Tyre and eligible live-engine
-sources use listener-relative Windows objects with Godot 3D fallback.
-Setup, hardware limits and verification: docs/vr_audio.md. The committed
-hypercar torque-map engine has no live cycle voice; owner turbo/audio-bank
-work remains pending. This presentation work does not change G3-C progress.
-
-Latest physics upgrade (2026-10-03): master pin 2f4599c from
-S:/claude_code/physics_sim includes 40923cf's supplied simulated twin-turbo
-car_hyper and live engine voice, plus the embedded CMake-path correction.
-The default car is unchanged by name and now loads these new library data.
-Gauge metadata accepts SimulatedEngineDesc as well as torque-map engines.
-Earlier notes about the committed hypercar lacking a live voice are superseded.
-G3-C road work is unchanged.
-
-
-2026-10-03 B8 integration: level-0 terrain now shares road-profile surfacing
-between physics and rendering. Separate bridge slabs and lower tunnel floors
-have native mesh collision; lower-layer OSM tunnel crossings also supply
-highway roofs when the upper ways lack bridge tags. All seven owner-reported
-crossings have explicit structure-ID and collision checks. Game-side bounded
-reconstruction handles selected source declines and split bridge ways; it
-does not complete G3-C's original source-class acceptance. General terrain
-smoothing is configurable (enabled/radius_m/strength/passes), halo-correct,
-and preserves NoData. The complete B8 height comparison and three-depression
-hypercar contact drive pass. See docs/road_surfaces.md for settings, policies
-and remaining G3-D/E and G3-F/R3 work.
-
-
-2026-10-03 building presentation: native OSM footprints, multipolygon courtyards,
-recorded heights/level estimates and replaceable batched extrusion presentation
-are integrated. Ordinary buildings stream nearby; >=50 m skyline buildings remain
-visible up to a configurable 40 km, subject to imported coverage and occlusion.
-Worker decoding/tessellation and bounded uploads avoid blocking world startup.
-Building collision, architectural roof reconstruction, premade asset matching and
-imagery-derived appearance remain later work. Both appearance strategies may be
-combined (docs/buildings.md). This feature does not complete the outstanding
-G3-C source acceptance or G3-D/E and G3-F/R3 road work.
-Physics is pinned to requested e3e1e886b23b7db1c06a9cee4eb469c68452483b from S:.
-Reset/start coordinates are configurable and currently target the B 8 north-west of Unterliederbach.
-
-2026-10-03 road definition: profile-aligned asphalt overlay, lane/edge paint,
-explicit tagged turn arrows and a configurable gentle shared-heightfield verge
-are integrated. Background geometry generation and bounded tile uploads preserve
-startup streaming. This is a presentation increment; surveyed junction marking
-layouts and the remaining G3 source/road acceptance steps are still outstanding.
-
-2026-10-03 owner B8 rollover: identified bare-earth terrain protruding through an inferred tunnel roof near 50.1361,8.4860. Upper-deck terrain clearance, C1 approach grades and shared roof/marking heights are fixed; focused synthetic and exact-location geometry regressions pass. Driving acceptance remains with the owner.
-
-
-Aerodynamics integration (2026-10-03): physics_sim upgraded from S: to
-8b04f0e5a8aa288c0297ed144906cf2918cece27. Reusable signed lift/drag, body moments,
-wind, finite drafting wakes, local ground effect (including inverted operation),
-rate-limited active wings and energy-budgeted suction fans are implemented.
-Game integration supplies configurable atmosphere/wind and hypercar cruise/airbrake
-policy; actual wing pitch/lift and aero telemetry use frame snapshots and bookmarks.
-See docs/aerodynamics.md and data/world/environment.json. Stock hypercar has no fans.
-Aircraft controls and traffic actors remain future gameplay work; this is a
-coefficient model, not CFD. Native owner reports 58 focused tests / 1372 assertions.
-
-
-2026-10-03 aero performance regression: reproduced 105.6 ms ticks from tiny
-altitude changes rebuilding native engine steady tables; ground probes cost
-0.001 ms. Physics upgraded from S: to 5ec8b7d0a39953b0bfe8f57e1abc3808b5b37ede to remove the
-hot-path rebuild while preserving continuous atmosphere. Local real-terrain
-hypercar regression is `[aero_perf]`; see docs/aerodynamics.md.
-
-2026-10-03 hypercar engine calibration: physics pin bc6fdc41db4675e3bb56c9f1cb8b418cbc9724fd from S:.
-Authored breathing/turbo/cooling/ECU calibration now produces net 1000.2 kW
-at 7500 RPM and 1371.0 Nm at 6000 RPM; fixed bore/stroke/compression/boost/E5/limiter
-and 1500 kg game mass preserved. See docs/hypercar_engine.md for same-rig before/after
-figures and limitations. Native focused dyno validation; road acceptance with owner.
-
-2026-10-03 NPC drafting truck prototype: T places/replaces one moving truck
-45 m ahead, Shift+T removes. Background OSM profile routing, conservative
-rightmost-through-lane policy, one-way direction and speed/curvature/end braking;
-kinematic collision body and native truck WakeSource drive actual hypercar aero.
-Frame-latched visual/status/bookmark data. See docs/npc_truck.md. General traffic
-AI, full truck drivetrain/articulation and imagery-derived lane refinement remain future work.
-
-2026-10-03 future NPC traffic requirements: player-centered population radius,
-minimum spawn distance, unobstructed rightmost-lane placement, live density,
-strict applicable speed limits, 80 km/h truck and randomized 80-250 km/h car
-fallbacks on roads without limits, physics/weather/surface-aware corner speed,
-and public-road highway whitelist plus access restrictions. Planned, not yet
-implemented. Specification and sequence: docs/npc_traffic.md.
-
-2026-10-04 adjustable cockpit seat: default eye 20 cm forward, F6 live fore/aft,
-height and lateral UI, saved per vehicle. Shared eye anchor updates desktop/XR
-cockpit rigs; brake held and look disabled during adjustment. See docs/seat_adjustment.md.
-
-2026-10-04 low-RPM WOT clutch flare: physics pin 60d60fa09f48e38c5fc382b0a082a1407d94ff6c
-from S: carries live boosted engine torque into auto-clutch rolling reengagement.
-Native matching reproduction re-locks within 2 seconds; 14,544 focused assertions
-passed upstream. Game DLL rebuilt; exact owner road replay remains owner acceptance.
-Evidence: external/physics_sim/HYPER_CLUTCH_FLARE.md.
-
-2026-10-04 NPC traffic first implementation: automatic real-world population of
-lightweight cars/trucks, background connected-profile routing to random reachable
-residential-building/public-parking destinations, native collision and drafting
-wakes, rightmost usable lanes, public-access/one-way/speed rules, obstruction
-checks and spacing. F7 exposes live saved density/radius/exclusion/grip settings.
-Arrival currently stops at the nearest ordinary road point then despawns. Out-of-view
-retirement discards identity permanently. Defaults: 4/lane-km, 600m radius, 100m
-exclusion, 24 vehicles. See docs/npc_traffic.md for current limits and next stages:
-shared weather/physical surface grip, junction conflict handling, precise lane
-turn rules, parking maneuvers and car-type target distributions.
-
-2026-10-04 NPC lifecycle correction: F no longer clears traffic; actor motion is
-frozen during relocation priming and resumes on the same trip. R still clears.
-Runtime planning now uses nonblocking published geometry only, indexed destination
-lookup and cancellation throughout CPU work, preventing the old distant-derivation
-wait from NPC shutdown/reset. Scan timing/population telemetry added. Focused
-flip/cancel/traffic/drafting checks: 40 assertions, 5 cases; owner road retest pending.
-
-2026-10-04 traffic settings apparent freeze: owner log continued at ~240 Hz with
-frozen=no and player stationary. F7 inadvertently reused the seat panel's modal
-full-brake/input-suppression group. Traffic settings now have a separate mouse/UI
-guard: driving remains active, camera look is suppressed while using the panel.
-Godot script checks pass. Owner log preserved in out/traffic_settings_owner.log.
-
-2026-10-04 NPC population scale: removed adapter cap 24. Defaults are now 2048
-maximum, 120/lane-km and 1200m radius, with F7 cap adjustable to 4096 and density
-up to 1000/lane-km. Saved settings migrate once. Staged 512-trip batches, four
-spawns/tick, spatial neighbor checks/staggered 20 Hz probes, nearby-only wakes and
-instanced 22-part rendering replace the main quadratic/spawn/render bottlenecks.
-47 focused assertions pass; headless renderer instantiated 2048 cars + 256 trucks.
-Full-game performance at high populations remains owner acceptance.
-
-2026-10-07 offline CFD aero-map plan: runtime interpolates offline body-axis force/moment coefficients, with explicit model replacement and provenance. Authored hypercar coefficients remain unchanged until validated results are available. Implementation stages and acceptance: docs/aero_cfd_plan.md; bake configuration: data/aero/hypercar_bake.json.
-
-2026-10-08 hypercar model preparation: integrated source visual closure repairs (physics_sim 87b0f41); independent audit has zero topology defects. Prepared separate 6 mm CFD exterior with source hashes, quality gates and review render; 17 Python tests and Godot asset import pass. 195 cases now bind the prepared STL and provenance. Solver/domain/rotating-wheel/wing sweeps and CFD convergence remain next; no coefficients changed. See docs/aero_cfd_plan.md.
-
-2026-10-08 configurable rolling resistance: physics_sim accf416 integrated; physics.rolling_resistance_model defaults to quadratic, with fourth_power restoring the original MF law. Rated-speed calibration, cached car switching, parser validation and Godot startup checks pass; installed S: DLL. See docs/rolling_resistance.md.
-
-2026-10-08 CFD stage3 pilot: OpenFOAM14 installed in WSL; closed-surface audit, independently validated fluid mesh and first real pressure/viscous loads. Added reproducible pilot-only case/report tools and joint-limited wing-pose export. Refinement sensitivity, rotating wheels, boundary layers and convergence remain; authored runtime coefficients unchanged. See docs/aero_cfd_plan.md.
-
-2026-10-08 active-wing CFD readiness: integrated physics_sim45d5ef5 optional wing_lift_m axis, exported and solid-prepared 45deg/0.28m airbrake pose. Full-passive game maps require lift-height samples for lifting wings; cached rolling selection and activation gate tests pass. Two mesh pilots completed (175103/875527 cells); loads are not converged, so CFD coefficients remain disabled.
