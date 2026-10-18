@@ -17,6 +17,7 @@ add_executable(rg_unit_tests
   test_crt_guard.cpp
   test_npc_truck.cpp
   test_traffic_stuck.cpp
+  test_mark_tail.cpp
   test_npc_traffic.cpp
   test_session.cpp
   test_world_config.cpp

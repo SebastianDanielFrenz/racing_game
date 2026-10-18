@@ -145,8 +145,13 @@ var _ab_saved_bg := -1
 var _spawn_reported: bool = false
 var _drive_diag_history: Array[Dictionary] = []
 var _drive_diag_last_sample_s: float = -1.0e9
+# Post-trigger recording of owner marks: RgMarkTail (rg_core) does the window timing, these hold the payloads by id.
+var _mark_tail := RgMarkTail.new()
+var _pending_marks: Dictionary = {}
 const DRIVE_DIAG_HISTORY_S := 5.2
 const DRIVE_DIAG_SAMPLE_PERIOD_S := 0.1
+# Seconds recorded after an owner mark (same sample rate); the number lives in rg_core (rg/mark_tail.h).
+var OWNER_MARK_POST_WINDOW_S: float = RgMarkTail.default_window_s()
 
 # --- shell (R5) ---
 var _shell: Node # RgShell: flow, settings, credits, spawn presets
@@ -1238,6 +1243,7 @@ func _notification(what: int) -> void:
 		if _quitting:
 			return
 		_quitting = true
+		_flush_owner_marks()
 		if world_kind == "real_world" and world_state == "running":
 			_save_drive_location()
 		if _shell != null:
@@ -1657,6 +1663,7 @@ func _process_body(delta: float) -> void:
 	for _i in range(_input_map.consume_log_marker()):
 		if in_drive and world_state == "running": _log_owner_mark()
 	if _input_map.consume_reset_car() > 0 and in_drive and world_state == "running":
+		_flush_owner_marks()
 		_simulation.reset_vehicle_to_spawn()
 	if _input_map.consume_flip_upright() > 0 and in_drive and world_state == "running" and _simulation.get_player_mode() == "drive":
 		_simulation.flip_vehicle_upright()
@@ -2071,6 +2078,7 @@ func _apply_transition(transition: Dictionary) -> void:
 				_set_paused(bool(action["flag"]))
 			"reset_car":
 				if world_state == "running":
+					_flush_owner_marks()
 					_simulation.reset_vehicle_to_spawn()
 			"repair_car":
 				_repair_car(str(action.get("vehicle", "")))
@@ -2147,6 +2155,7 @@ func _begin_world_load(world: Dictionary, respawn: bool = false) -> void:
 # Back to "no world": stops the sim thread, the terrain streaming and the audio
 # (RgSimulation.unload) after freeing the nodes that read them.
 func _unload_world() -> void:
+	_flush_owner_marks()
 	_release_world_nodes()
 	_simulation.unload()
 	_visuals.clear_vehicle()
@@ -2367,6 +2376,7 @@ func _log_owner_mark() -> void:
 		"nitrous_arm": _simulation.get_control("nitrous_arm")}
 	mark["aero"] = _simulation.get_aero_state()
 	mark["pretrigger_drive_samples"] = _drive_diag_history.duplicate(true)
+	mark["posttrigger_drive_samples"] = []
 	mark["npc_truck"] = _simulation.get_npc_truck_state()
 	var traffic: Dictionary = _simulation.get_traffic_state()
 	var actors: Array = traffic.get("actors", [])
@@ -2387,6 +2397,22 @@ func _log_owner_mark() -> void:
 			if not ll.is_empty():
 				mark["latlon"] = [ll["lat"], ll["lon"]]
 				copy_text = "%.6f, %.6f" % [ll["lat"], ll["lon"]] + "  " + copy_text
+	# The mark is written when its post-trigger window is full (or flushed early: car reset, session end).
+	var mark_id: int = _mark_tail.begin(_simulation.get_sim_time(), OWNER_MARK_POST_WINDOW_S)
+	_pending_marks[mark_id] = mark
+	DisplayServer.clipboard_set(copy_text)
+	print("RG_OWNER_MARK_COPY " + copy_text)
+	if _hud != null:
+		_hud.show_message("Marked (copied): " + copy_text, 6.0)
+
+func _write_owner_mark(finished: Dictionary) -> void:
+	var mark_id := int(finished["id"])
+	if not _pending_marks.has(mark_id):
+		return
+	var mark: Dictionary = _pending_marks[mark_id]
+	_pending_marks.erase(mark_id)
+	mark["posttrigger_window_s"] = float(finished["covered_s"])
+	mark["posttrigger_complete"] = bool(finished["complete"])
 	var encoded := JSON.stringify(mark)
 	print("RG_OWNER_MARK " + encoded)
 	var mark_path := "user://drive_marks.jsonl"
@@ -2395,10 +2421,11 @@ func _log_owner_mark() -> void:
 		file.seek_end()
 		file.store_line(encoded)
 		file.flush()
-	DisplayServer.clipboard_set(copy_text)
-	print("RG_OWNER_MARK_COPY " + copy_text)
-	if _hud != null:
-		_hud.show_message("Marked (copied): " + copy_text, 6.0)
+
+# Writes every mark still waiting for its post-trigger window, with the shorter window it got.
+func _flush_owner_marks() -> void:
+	for finished in _mark_tail.flush():
+		_write_owner_mark(finished)
 
 # Keep a small rolling window so an owner bookmark captures the loss-of-control
 # onset, not just the state after the car has already left the road. Sampling is
@@ -2406,6 +2433,7 @@ func _log_owner_mark() -> void:
 func _record_drive_diag_sample() -> void:
 	var sim_t: float = _simulation.get_sim_time()
 	if sim_t < _drive_diag_last_sample_s:
+		_flush_owner_marks()
 		_drive_diag_history.clear()
 		_drive_diag_last_sample_s = -1.0e9
 	if sim_t - _drive_diag_last_sample_s < DRIVE_DIAG_SAMPLE_PERIOD_S:
@@ -2421,7 +2449,7 @@ func _record_drive_diag_sample() -> void:
 			"fx_n": _simulation.get_wheel_fx(VEHICLE_NAME, wheel),
 			"fy_n": _simulation.get_wheel_fy(VEHICLE_NAME, wheel),
 			"surface": _simulation.get_wheel_surface_name(VEHICLE_NAME, wheel)})
-	_drive_diag_history.append({"sim_time_s": sim_t, "tick": _simulation.get_step_count(),
+	var sample := {"sim_time_s": sim_t, "tick": _simulation.get_step_count(),
 		"chassis": _simulation.get_chassis_session_pose(),
 		"speed_kmh": _simulation.get_body_speed_mps("chassis") * 3.6,
 		"controls": {"steer": _simulation.get_control("steer"), "throttle": _simulation.get_control("throttle"),
@@ -2429,6 +2457,11 @@ func _record_drive_diag_sample() -> void:
 			"traction_control": _simulation.get_control("assist.traction_control"),
 			"drive_mode": _simulation.get_control("assist.drive_mode"), "nitrous_arm": _simulation.get_control("nitrous_arm")},
 		"wheels": wheels, "powertrain": _simulation.get_vehicle_powertrain(VEHICLE_NAME),
-		"nitrous": _simulation.get_vehicle_nitrous(VEHICLE_NAME)})
+		"nitrous": _simulation.get_vehicle_nitrous(VEHICLE_NAME)}
+	_drive_diag_history.append(sample)
+	for open_id in _mark_tail.open_ids():
+		_pending_marks[int(open_id)]["posttrigger_drive_samples"].append(sample)
+	for finished in _mark_tail.advance(sim_t):
+		_write_owner_mark(finished)
 	while not _drive_diag_history.is_empty() and sim_t - float(_drive_diag_history[0].get("sim_time_s", sim_t)) > DRIVE_DIAG_HISTORY_S:
 		_drive_diag_history.pop_front()
