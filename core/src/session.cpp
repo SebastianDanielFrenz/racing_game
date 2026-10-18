@@ -1,4 +1,5 @@
 #include "rg/session.h"
+#include "rg/startup_watch.h"
 #include "rg/aero_map_selection.h"
 #include "rg/engine_thermal_info.h"
 #include "rg/flat_ground.h"
@@ -479,12 +480,20 @@ ps::Pose Session::setup_terrain(const TerrainModeConfig& tm) {
     // fatal); the timeout is the one hard error (a cancellation, R9, throws
     // SessionCancelled instead).
     const Clock::time_point t0 = Clock::now();
+    StartupWatch watch(StartupWatchConfig{phys.startup_timeout_s, phys.startup_max_s});
     while (!gate_check()) {
         throw_if_cancelled();
         if (status_.failed.load(std::memory_order_relaxed) > 0) terrain_->streamer.retry_failed();
-        if (ms_since(t0) > phys.startup_timeout_s * 1000.0) {
+        const StartupVerdict verdict = watch.observe(
+            ms_since(t0) / 1000.0,
+            StartupSignature{status_.missing_required.load(), status_.inflight.load(), status_.resident_l0.load(),
+                             status_.failed.load()});
+        if (verdict != StartupVerdict::Waiting) {
             throw std::runtime_error(
-                "Session: terrain start-up timed out after " + std::to_string(phys.startup_timeout_s) +
+                std::string("Session: terrain start-up ") +
+                (verdict == StartupVerdict::NoProgress
+                     ? "made no progress for " + std::to_string(phys.startup_timeout_s)
+                     : "exceeded the absolute cap of " + std::to_string(phys.startup_max_s)) +
                 " s (gate missing " + std::to_string(status_.missing_required.load()) + ", inflight " +
                 std::to_string(status_.inflight.load()) + ", failed " + std::to_string(status_.failed.load()) + ")");
         }

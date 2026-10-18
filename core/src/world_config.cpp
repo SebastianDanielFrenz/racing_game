@@ -598,6 +598,16 @@ std::optional<WorldConfig> load_world_config(const std::string& path, std::strin
                 return std::nullopt;
             }
         }
+        if (physics.contains("startup_max_s")) {
+            if (!get_number(physics, "startup_max_s", path, "\"physics\"", &cfg.physics.startup_max_s, err)) {
+                return std::nullopt;
+            }
+            if (cfg.physics.startup_max_s < 0.0) {
+                fail(err, path, "\"physics.startup_max_s\" must be >= 0 (got " +
+                                    std::to_string(cfg.physics.startup_max_s) + ")");
+                return std::nullopt;
+            }
+        }
         if (physics.contains("road_surfaces")) {
             const json& road_surfaces = physics.at("road_surfaces");
             if (!require_object(road_surfaces, path, "\"physics.road_surfaces\"", err)) {

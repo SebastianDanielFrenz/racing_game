@@ -93,7 +93,11 @@ struct WorldConfig {
         std::uint32_t prefetch_margin_tiles = 0;
         std::uint32_t prefetch_max_tiles = 0;
         double spawn_clearance_m = 0.10;
-        double startup_timeout_s = 30.0;
+        // Start-up gate: fail when NOTHING moved (resident/missing/in-flight/failed counts) for startup_timeout_s
+        // (no-progress timeout; a cold derive after a pin bump legitimately takes minutes), or when the whole wait
+        // exceeds startup_max_s (absolute cap, <= 0 = none). See rg/startup_watch.h.
+        double startup_timeout_s = 60.0;
+        double startup_max_s = 900.0;
         RoadSurfaces road_surfaces;
     };
 

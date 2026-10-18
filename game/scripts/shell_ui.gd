@@ -1736,6 +1736,12 @@ func _component_texture(path: String) -> Texture2D:
 		if path.ends_with(".svg"):
 			_component_textures[path] = load(path) as Texture2D
 			return _component_textures[path]
+		# Prefer the imported resource (works in an export); the raw read is only the fallback before the first import.
+		if ResourceLoader.exists(path):
+			var imported := load(path) as Texture2D
+			if imported != null:
+				_component_textures[path] = imported
+				return imported
 		# Read the PNG directly so the first launch does not depend on editor imports.
 		var source := Image.load_from_file(path)
 		_component_textures[path] = ImageTexture.create_from_image(source) if source != null else null
