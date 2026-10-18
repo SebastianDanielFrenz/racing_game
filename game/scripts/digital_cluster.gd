@@ -36,6 +36,9 @@ var drive_mode_label := ""
 var drive_mode_accent := Color(0.5,0.7,0.82)
 var launch_lamp := 0
 var launch_lamp_text := ""
+var regen_fitted := false
+var regen_active := false
+var regen_label := ""
 
 func _ready() -> void:
 	var info: Dictionary = simulation.get_vehicle_gauge_info(vehicle_name)
@@ -82,6 +85,9 @@ func _process_body(delta: float) -> void:
 	speed = ground_speed*3.6
 	rpm = pt.get("rpm",0.0)
 	drive_kw = pt.get("drive_power_kw",0.0)
+	regen_fitted = bool(pt.get("regen_fitted",false))
+	regen_active = bool(pt.get("regen_active",false))
+	regen_label = str(pt.get("regen_label",""))
 	boost_bar = pt.get("boost_bar",-1.0)
 	gear = int(pt.get("gear",0))
 	park_engaged = controls["park"]["active"]
@@ -194,6 +200,9 @@ func _draw_body() -> void:
 	var small_fill := drive_mode_accent if themed else DEFAULT_SMALL_DIAL_COLOR
 	small_dial(Vector2(935,109),"%.0f" % drive_kw,"DRIVE kW",maxf(drive_kw,0)/650.0,small_fill)
 	small_dial(Vector2(935,241),"%.1f" % boost_bar if boost_bar>=0 else "--","BOOST bar",boost_bar/3.0 if boost_bar>=0 else -1,small_fill)
+	if regen_fitted:
+		# Brake regeneration (electric cars): power into the pack and the motors' share of the braking.
+		text(regen_label,Vector2(245,299),20,Color(0.2,0.95,0.75) if regen_active else Color(0.5,0.7,0.82))
 	# Dynamic information strip, reserved for selectable trip pages later.
 	draw_rect(Rect2(102,311,903,78),Color(0.025,0.045,0.061))
 	text("TRIP",Vector2(181,338),16,blue)

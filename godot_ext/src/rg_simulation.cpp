@@ -4,6 +4,7 @@
 #include "frame_convert.h"
 #include "rg/route_check.h"
 #include "rg/assist_info.h"
+#include "rg/regen_info.h"
 #include "rg/nitrous_info.h"
 #include "rg/engine_thermal_info.h"
 
@@ -1000,6 +1001,12 @@ godot::Dictionary RgSimulation::get_vehicle_powertrain(const String& vehicle_nam
     d["motor_torque_nm"]=p.motor_torque_nm;d["electric_power_kw"]=p.electric_power_w/1000;
     d["battery_soc"]=p.battery_soc;d["battery_capacity_kwh"]=p.battery_capacity_kwh;
     d["battery_power_kw"]=p.battery_power_w/1000;
+    // Brake regeneration (rg/regen_info.h): shown only for cars with electric motors.
+    const rg::RegenHud rh = rg::regen_hud(p);
+    d["regen_fitted"]=rh.fitted;d["regen_active"]=rh.active;d["regen_power_kw"]=rh.power_kw;
+    d["regen_brake_share"]=rh.regen_share;d["pad_brake_share"]=rh.pad_share;
+    d["regen_brake_torque_nm"]=rh.regen_torque_nm;d["pad_brake_torque_nm"]=rh.pad_torque_nm;
+    d["regen_label"]=String(rg::regen_label(rh).c_str());
     if(p.transmission_kind==4||p.hybrid_fitted)d["rpm"]=p.motor_rpm;
 
     // Assist unit (physics_sim assists I1/I5, rg/assist_info.h): modes the car offers (bit n = code n: 0 Off, 1 On,

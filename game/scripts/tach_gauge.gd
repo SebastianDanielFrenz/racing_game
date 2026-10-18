@@ -193,7 +193,7 @@ func _dynamic_signature() -> Array:
 		DriveModeTheme.is_themed(_last_pt), DriveModeTheme.label(_last_pt) if DriveModeTheme.is_themed(_last_pt) else "",
 		DriveModeTheme.accent(_last_pt, COLOR_TICK_MINOR), int(round(float(_last_pt.get("speedo_kmh", 0.0)))), int(round(_gps_kmh)),
 		_speed_limit.get("kind", "unknown"), int(round(float(_speed_limit.get("kph", 0.0)))), bool(_speed_limit.get("conditional", false)),
-		int(round(float(_last_pt.get("battery_soc",0))*100)), int(round(float(_last_pt.get("electric_power_kw",0)))),
+		int(round(float(_last_pt.get("battery_soc",0))*100)), int(round(float(_last_pt.get("electric_power_kw",0)))), str(_last_pt.get("regen_label", "")),
 		str(_last_pt.get("combustion_state", "Off")), bool(_last_pt.get("hybrid_charging",false)), int(round(10*float(_last_pt.get("fuel_cell_hydrogen_kg",0)))), int(round(float(_last_pt.get("fuel_cell_power_kw",0)))),
 		thermal, pedals, int(round(clampf(1.0 - float(_last_pt.get("clutch_engagement", 1.0)), 0.0, 1.0) * 400.0))]
 
@@ -405,6 +405,9 @@ func _draw_body() -> void:
 		var ready_text := "READY" if bool(_last_pt.get("electric_ready",false)) else "OFF"
 		var ev_text := "%s / %.0f%% / %+.0f kW" % [ready_text,100.0*float(_last_pt.get("battery_soc",0)),float(_last_pt.get("electric_power_kw",0))]
 		_draw_centered_text(font,Vector2(center.x-radius*0.6,center.y+radius*1.28),ev_text,int(round(20.0*scale)),accent)
+	if bool(_last_pt.get("regen_fitted", false)):
+		var regen_on: bool = bool(_last_pt.get("regen_active", false))
+		_draw_centered_text(font, Vector2(center.x-radius*.6, center.y+radius*1.58), str(_last_pt.get("regen_label", "")), int(round(13.0*scale)), Color(0.2,0.95,0.75) if regen_on else accent)
 	if bool(_last_pt.get("fuel_cell_fitted", false)) or bool(_last_pt.get("hybrid_fitted", false)):
 		var energy_text := ""
 		if bool(_last_pt.get("fuel_cell_fitted", false)):
