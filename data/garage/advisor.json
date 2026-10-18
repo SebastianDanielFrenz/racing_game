@@ -304,7 +304,16 @@
       "title": "The clutch will slip",
       "lines": ["The clutch holds about {limit}.", "The engine peaks at", "{value} @ {rpm}."],
       "suggestion": "A stronger clutch.",
-      "remedy": "A clutch rated for about {required} holds it with margin (now {current})."
+      "remedy": "A clutch rated for about {required} holds it with margin (now {current}).",
+      "variants": {
+        "shift_clutch": {
+          "option": "shift_clutch_capacity",
+          "title": "The gearbox clutches will slip",
+          "lines": ["The gearbox clutches hold about {limit}.", "The engine peaks at", "{value} @ {rpm}."],
+          "suggestion": "Stronger gearbox clutches.",
+          "remedy": "Gearbox clutches rated for about {required} hold it with margin (now {current})."
+        }
+      }
     },
     "GearboxInputTorque": {
       "option": "gearbox_install",
