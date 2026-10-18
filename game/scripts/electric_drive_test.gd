@@ -1,4 +1,10 @@
 extends SceneTree
+class AudioTestDirector extends Node:
+	var active_name := "chase"
+	var camera: Camera3D
+	func active_camera() -> Camera3D:
+		return camera
+
 var failures := 0
 var checks := 0
 func check(ok: bool,label: String) -> bool:
@@ -73,6 +79,27 @@ func run() -> void:
 	input.configure_vehicle(selected.vehicle_path)
 	check(bool(input.get("_electric_drive")),"starter key maps to electric READY")
 	input.free()
+	var audio_script = load("res://scripts/vehicle_audio.gd")
+	check(audio_script != null and audio_script.can_instantiate(), "vehicle audio parses")
+	if "--ev-audio-test" in OS.get_cmdline_user_args():
+		var test_director := AudioTestDirector.new()
+		test_director.camera = Camera3D.new()
+		root.add_child(test_director)
+		test_director.add_child(test_director.camera)
+		var audio: Node3D = audio_script.new()
+		audio.director = test_director
+		audio.simulation = sim
+		audio.vehicle_name = vehicle
+		root.add_child(audio)
+		audio.set_process(false)
+		audio._initialize_audio()
+		check(audio.get_audio_diagnostics().get("electric_motor",false), "EV motor voice is connected")
+		audio._update_motor_audio(false)
+		audio.muted = true
+		audio._update_motor_audio(false)
+		audio.shutdown()
+		audio.queue_free()
+		test_director.queue_free()
 	print("RG_EV_TEST checks=%d failures=%d" % [checks,failures])
 	sim.stop();sim.queue_free();garage.queue_free();actions = null
 	await process_frame

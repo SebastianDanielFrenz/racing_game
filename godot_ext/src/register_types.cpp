@@ -11,6 +11,7 @@
 #include "rg_camera_math.h"
 #include "rg_camera_motion.h"
 #include "rg_fpv_sound.h"
+#include "rg_electric_motor_sound.h"
 #include "rg_tyre_sound.h"
 #include "rg_controls.h"
 #include "rg_garage.h"
@@ -54,6 +55,7 @@ void initialize_rg_godot_module(ModuleInitializationLevel p_level) {
     ClassDB::register_class<rg_godot::RgCameraMotion>();
     ClassDB::register_class<rg_godot::RgTyreSound>();
     ClassDB::register_class<rg_godot::RgFpvSound>();
+    ClassDB::register_class<rg_godot::RgElectricMotorSound>();
     ClassDB::register_class<rg_godot::RgAssists>();
     ClassDB::register_class<rg_godot::RgDriverActions>();
     ClassDB::register_class<rg_godot::RgTerrainView>();
