@@ -41,6 +41,15 @@ var launch_lamp_text := ""
 var regen_fitted := false
 var regen_active := false
 var regen_label := ""
+const HybridDial := preload("res://scripts/hybrid_dial.gd")
+const GaugeLogic := preload("res://scripts/gauge_logic.gd")
+var tach_loaded := false
+var tach_kind := "ice"       # core (rg::tach_scales): "ice" one dial, "ev" one motor dial, "hybrid" ICE dial + inner motor scale
+var limiter_rpm := 0.0
+var motor_dial_max := 0.0
+var motor_dial_tick := 0.0
+var motor_rpm := 0.0         # traction motor (hybrid inner needle)
+var pt_now: Dictionary = {}
 
 func _ready() -> void:
 	var info: Dictionary = simulation.get_vehicle_gauge_info(vehicle_name)
@@ -56,9 +65,15 @@ func _process(delta: float) -> void:
 func _process_body(delta: float) -> void:
 	if not simulation.is_running() or simulation.get_step_count() <= 0:
 		return
-	if capacity <= 0.0:
+	if capacity <= 0.0 or not tach_loaded:
 		var info: Dictionary = simulation.get_vehicle_gauge_info(vehicle_name)
 		capacity = float(info.get("fuel_capacity_kg",0.0))
+		if not info.is_empty():
+			tach_loaded = true
+			tach_kind = str(info.get("tach_kind","ice"))
+			limiter_rpm = float(info.get("limiter_rpm",0.0))
+			motor_dial_max = float(info.get("motor_dial_max_rpm",0.0))
+			motor_dial_tick = float(info.get("motor_dial_tick_rpm",0.0))
 		density = float(info.get("fuel_density_kg_m3",0.0))
 	if simulation.get_streaming_status().get("frozen",false):
 		delta = 0.0
@@ -87,6 +102,8 @@ func _process_body(delta: float) -> void:
 	launch_lamp_text = controls["lc"]["label"]
 	if feed.misses == misses_before: speed = ground_speed*3.6 # an empty reading keeps the last speed too
 	rpm = pt.get("rpm",0.0)
+	motor_rpm = float(pt.get("traction_motor_rpm",0.0))
+	pt_now = pt
 	drive_kw = pt.get("drive_power_kw",0.0)
 	regen_fitted = bool(pt.get("regen_fitted",false))
 	regen_active = bool(pt.get("regen_active",false))
@@ -108,18 +125,44 @@ func text(value: String, at: Vector2, size: int, color := Color.WHITE) -> void:
 	at.x -= font.get_string_size(value,HORIZONTAL_ALIGNMENT_LEFT,-1,size).x/2.0
 	draw_string(font,at,value,HORIZONTAL_ALIGNMENT_LEFT,-1,size,color)
 
-func dial(center: Vector2,value: float,maximum: float,color: Color,is_rpm: bool) -> void:
+func dial(center: Vector2,value: float,maximum: float,color: Color,is_rpm: bool,label_step := 0.0,redline_from := -1.0) -> void:
 	var a := deg_to_rad(135.0)
 	var b := deg_to_rad(405.0)
 	draw_arc(center,125,a,b,100,Color(0.12,0.20,0.27),12,true)
 	draw_arc(center,125,a,a+(b-a)*clampf(value/maximum,0,1),100,color,12,true)
 	if is_rpm:
-		draw_arc(center,125,a+(b-a)*8.0/9.0,b,20,Color(1,0.25,0.16),12,true)
-	for k in range(10):
-		var angle := a+(b-a)*k/9.0
+		# Default (an ICE car): the red zone is the last ninth. Hybrid: from the ICE limiter; EV: none (redline_from 0).
+		var red := 8.0/9.0 if redline_from < 0.0 else (redline_from/maximum if redline_from > 0.0 else 2.0)
+		if red < 1.0:
+			draw_arc(center,125,a+(b-a)*red,b,20,Color(1,0.25,0.16),12,true)
+	var count := 10
+	if is_rpm and label_step > 0.0:
+		count = int(round(maximum/label_step))+1
+	for k in range(count):
+		var angle := a+(b-a)*k/float(count-1)
 		var direction := Vector2(cos(angle),sin(angle))
 		draw_line(center+direction*105,center+direction*114,Color(0.65,0.75,0.85),2,true)
-		text(str(k) if is_rpm else str(k*40),center+direction*86+Vector2(0,6),18,Color(0.65,0.75,0.85))
+		var tick_label := str(k*40)
+		if is_rpm:
+			tick_label = str(k) if label_step <= 0.0 else str(int(round(k*label_step/1000.0)))
+		text(tick_label,center+direction*86+Vector2(0,6),18,Color(0.65,0.75,0.85))
+
+# The hybrid's inner scale (owner sketch out/owner_hybrid_tach_sketch.png): the traction motor in x1000 rpm, ticks and numbers
+# inside the ICE numbers, a short needle. Max and tick spacing come from core (rg::tach_scales).
+func hybrid_inner(center: Vector2) -> void:
+	if motor_dial_max <= 0.0:
+		return
+	var a := deg_to_rad(135.0)
+	var b := deg_to_rad(405.0)
+	for tick_rpm: float in HybridDial.inner_ticks(motor_dial_max,motor_dial_tick):
+		var angle := a+(b-a)*tick_rpm/motor_dial_max
+		var direction := Vector2(cos(angle),sin(angle))
+		draw_line(center+direction*70,center+direction*76,HybridDial.COLOR_MOTOR_NEEDLE,1.5,true)
+		text(str(int(round(tick_rpm/1000.0))),center+direction*58+Vector2(0,4),11,HybridDial.COLOR_MOTOR_NEEDLE)
+	var needle_angle := a+(b-a)*clampf(motor_rpm/motor_dial_max,0.0,1.0)
+	var needle := Vector2(cos(needle_angle),sin(needle_angle))
+	draw_line(center+needle*14,center+needle*68,HybridDial.COLOR_MOTOR_NEEDLE,3,true)
+	draw_circle(center,5,HybridDial.COLOR_MOTOR_NEEDLE)
 
 func small_dial(center: Vector2, value: String, title: String, fraction: float, fill := Color(0.6,0.85,1)) -> void:
 	draw_arc(center,45,deg_to_rad(135),deg_to_rad(405),48,Color(0.15,0.27,0.34),5,true)
@@ -150,11 +193,20 @@ func _draw_body() -> void:
 	# A drive-modes car (assists I7) draws its dials in the colour of the mode that runs; any other car keeps the defaults.
 	var themed := drive_mode_label != ""
 	dial(Vector2(245,170),speed,360,drive_mode_accent if themed else DEFAULT_SPEED_COLOR,false)
-	dial(Vector2(735,170),rpm,9000,drive_mode_accent if themed else DEFAULT_RPM_COLOR,true)
+	var rpm_color := drive_mode_accent if themed else DEFAULT_RPM_COLOR
+	if tach_kind == "hybrid":
+		# ICE dial scaled to the ICE limiter (outer, main needle) plus the traction motor on an inner scale (core: rg::tach_scales).
+		var ice_max := GaugeLogic.max_rpm_for_limiter(limiter_rpm)
+		dial(Vector2(735,170),rpm,ice_max,rpm_color,true,1000.0,limiter_rpm)
+		hybrid_inner(Vector2(735,170))
+	elif tach_kind == "ev":
+		dial(Vector2(735,170),rpm,motor_dial_max,rpm_color,true,motor_dial_tick,0.0)
+	else:
+		dial(Vector2(735,170),rpm,9000,rpm_color,true)
 	text("%.0f" % speed,Vector2(245,180),68)
 	text("km/h",Vector2(245,214),22,blue)
-	text("%.0f" % rpm,Vector2(735,180),58)
-	text("RPM",Vector2(735,214),22,blue)
+	text("%.0f" % rpm,Vector2(735,180) if tach_kind != "hybrid" else Vector2(735,206),58 if tach_kind != "hybrid" else 34)
+	text("RPM" if tach_kind != "ev" else "MOTOR RPM",Vector2(735,214) if tach_kind != "hybrid" else Vector2(735,230),22 if tach_kind != "hybrid" else 16,blue)
 	if themed:
 		# Drive mode, small, under the tach dial (between its lower end and the information strip).
 		text(drive_mode_label,Vector2(735,299),22,drive_mode_accent)
@@ -203,6 +255,8 @@ func _draw_body() -> void:
 	var small_fill := drive_mode_accent if themed else DEFAULT_SMALL_DIAL_COLOR
 	small_dial(Vector2(935,109),"%.0f" % drive_kw,"DRIVE kW",maxf(drive_kw,0)/650.0,small_fill)
 	small_dial(Vector2(935,241),"%.1f" % boost_bar if boost_bar>=0 else "--","BOOST bar",boost_bar/3.0 if boost_bar>=0 else -1,small_fill)
+	# Traction battery (rg::battery_hud): SoC in percent and a small bar under the speed dial; amber/red below the configured thresholds.
+	HybridDial.draw_battery(self,font,245,268,pt_now,18,Vector2(120,7))
 	if regen_fitted:
 		# Brake regeneration (electric cars): power into the pack and the motors' share of the braking.
 		text(regen_label,Vector2(245,299),20,Color(0.2,0.95,0.75) if regen_active else Color(0.5,0.7,0.82))

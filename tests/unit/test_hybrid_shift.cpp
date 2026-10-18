@@ -7,6 +7,7 @@
 //    passes through in EVERY shift, so each upshift the auto-shift starts is reverted to 1st. Not fixable from the game; the
 //    case is [!mayfail] until physics_sim changes.
 // rg_unit_tests "[hybrid_shift]"
+#include "rg/dashboard_info.h"
 #include "rg/driver_actions.h"
 #include "rg/engine_store.h"
 #include "rg/gearbox_catalog.h"
@@ -326,4 +327,36 @@ TEST_CASE("hybrid shift diag", "[.][diag][hybrid_shift]") {
                         p.hybrid_requested_power_w / 1000, p.hybrid_available_power_w / 1000, p.hybrid_ice_requested);
         }
     }
+}
+
+TEST_CASE("hybrid car: tachometer scales and traction-motor rpm on the real vehicle", "[hybrid_shift][dashboard_info]") {
+    Fx f;
+    Rig r(f, "car_hyper_n2o", "hyper_7dct", "t_hs_tach");
+    const rg::TachScales s = rg::tach_scales(r.ses->vehicle_desc());
+    CHECK(s.kind == rg::TachKind::Hybrid);
+    CHECK(s.ice_limiter_rpm == 8250);
+    CHECK(s.motor_limit_rpm == 20000);      // data/powertrains/swaps.json hybrid_motor.max_rpm
+    CHECK(s.motor_dial_max_rpm == 20000);
+    CHECK(s.motor_dial_tick_rpm == 2000);
+    CHECK(s.traction_ratio == 2.2);         // conversion_reduction
+    // EV pull in Normal mode: the combustion engine stays stopped, so the max over all machines IS the traction motor.
+    r.ses->set_control("assist.drive_mode", 1);
+    r.run(2);
+    r.ses->set_control("gear_request", rg::kGearRequestDrive);
+    r.ses->set_control("throttle", 0.5);
+    r.run(2.5);
+    const auto& p = r.pt();
+    INFO("speed " << r.speed() * 3.6 << " km/h motor_rpm " << p.motor_rpm << " ice " << p.engine_rpm << " out " << p.driveline.gearbox_out_omega);
+    REQUIRE(r.speed() > 3.0);
+    const double traction = rg::traction_motor_rpm(p, s);
+    CHECK(traction > 500.0);
+    CHECK(traction <= s.motor_limit_rpm);
+    CHECK(traction <= p.motor_rpm * 1.02 + 1.0);
+    // With the ICE stopped nothing else spins faster than the traction motor, so the two agree.
+    if (p.engine_state != ps::drivetrain::EngineState::Running)
+        CHECK(std::abs(traction - p.motor_rpm) < 0.03 * p.motor_rpm + 5.0);
+    const rg::BatteryHud b = rg::battery_hud(p);
+    CHECK(b.fitted);
+    CHECK(b.percent > 50);
+    CHECK(b.percent <= 100);
 }

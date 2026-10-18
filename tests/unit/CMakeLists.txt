@@ -107,6 +107,7 @@ add_executable(rg_unit_tests
   test_game_car_thermal.cpp
   test_assist_info.cpp
   test_regen_info.cpp
+  test_dashboard_info.cpp
   test_channel_mirror.cpp
   test_hyper_rear_travel.cpp
   test_hyper_power_jumps.cpp

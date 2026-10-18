@@ -111,6 +111,7 @@ add_library(rg_core STATIC
     src/engine_swap.cpp
     src/gearbox_catalog.cpp
     src/part_mass.cpp
+    src/dashboard_info.cpp
     src/strip_visual.cpp
     src/driveline_swap.cpp
     src/powertrain_swap_json.cpp

@@ -539,6 +539,9 @@ func _build_scene(user_args: PackedStringArray) -> void:
 
 	# --- simulation node ---
 	_simulation = ClassDB.instantiate("RgSimulation")
+	var dashboard_config = JSON.parse_string(FileAccess.get_file_as_string(ProjectSettings.globalize_path("res://../data/controls/dashboard.json")))
+	if dashboard_config is Dictionary:
+		_simulation.configure_dashboard(dashboard_config)
 	_simulation.name = "Simulation"
 	var rolling_config = JSON.parse_string(FileAccess.get_file_as_string(_world_config_path()))
 	if rolling_config is Dictionary:

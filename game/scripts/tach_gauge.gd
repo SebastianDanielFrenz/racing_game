@@ -42,6 +42,8 @@ var _gauge_info: Dictionary = {}
 var _last_pt: Dictionary = {}
 const PowertrainFeed := preload("res://scripts/powertrain_feed.gd")
 var _feed := PowertrainFeed.new("tach")
+const HybridDial := preload("res://scripts/hybrid_dial.gd")
+var _display_motor_rpm: float = 0.0
 var _speed_limit: Dictionary = {}
 var _thermal: Dictionary = {}
 # Pedal inputs as sent to the sim this frame (RgSimulation.get_control, like hud.gd's debug lines); empty while the
@@ -114,6 +116,7 @@ func _process_body(delta: float) -> void:
 				"throttle": _simulation.get_control("throttle")}
 		var target_rpm: float = _last_pt.get("rpm", 0.0)
 		_display_rpm = GaugeLogic.smooth_towards(_display_rpm, target_rpm, NEEDLE_SMOOTH_RATE_PER_S, delta)
+		_display_motor_rpm = GaugeLogic.smooth_towards(_display_motor_rpm, float(_last_pt.get("traction_motor_rpm", 0.0)), NEEDLE_SMOOTH_RATE_PER_S, delta)
 	else:
 		_last_pt = {}
 		_speed_limit = {}
@@ -162,7 +165,8 @@ func _static_signature() -> Array:
 	if not _visible_content():
 		return [false]
 	return [true, get_viewport_rect().size, _gauge_info.get("idle_rpm", 0.0), _gauge_info.get("limiter_rpm", 0.0),
-		DriveModeTheme.is_themed(_last_pt), DriveModeTheme.accent(_last_pt, COLOR_TICK_MINOR)]
+		DriveModeTheme.is_themed(_last_pt), DriveModeTheme.accent(_last_pt, COLOR_TICK_MINOR),
+		str(_gauge_info.get("tach_kind", "ice")), _gauge_info.get("motor_dial_max_rpm", 0.0), _gauge_info.get("motor_dial_tick_rpm", 0.0)]
 
 # Every input of _draw_body, quantised to what the drawing shows (texts as drawn, blink phases as booleans).
 func _dynamic_signature() -> Array:
@@ -197,7 +201,8 @@ func _dynamic_signature() -> Array:
 		DriveModeTheme.is_themed(_last_pt), DriveModeTheme.label(_last_pt) if DriveModeTheme.is_themed(_last_pt) else "",
 		DriveModeTheme.accent(_last_pt, COLOR_TICK_MINOR), int(round(float(_last_pt.get("speedo_kmh", 0.0)))), int(round(_gps_kmh)),
 		_speed_limit.get("kind", "unknown"), int(round(float(_speed_limit.get("kph", 0.0)))), bool(_speed_limit.get("conditional", false)),
-		int(round(float(_last_pt.get("battery_soc",0))*100)), int(round(float(_last_pt.get("electric_power_kw",0)))), str(_last_pt.get("regen_label", "")),
+		int(_last_pt.get("battery_percent", 0)), int(_last_pt.get("battery_level", 0)), int(round(float(_last_pt.get("electric_power_kw",0)))), str(_last_pt.get("regen_label", "")),
+		int(round(GaugeLogic.clock_deg_for_rpm(_display_motor_rpm, float(_gauge_info.get("motor_dial_max_rpm", 0.0))) * 20.0)),
 		str(_last_pt.get("combustion_state", "Off")), bool(_last_pt.get("hybrid_charging",false)), int(round(10*float(_last_pt.get("fuel_cell_hydrogen_kg",0)))), int(round(float(_last_pt.get("fuel_cell_power_kw",0)))),
 		thermal, pedals, int(round(clampf(1.0 - float(_last_pt.get("clutch_engagement", 1.0)), 0.0, 1.0) * 400.0))]
 
@@ -305,6 +310,8 @@ func _draw_dial(canvas: CanvasItem) -> void:
 
 	if idle_rpm > 0.0:
 		canvas.draw_circle(_polar(center, radius * 0.79, GaugeLogic.clock_deg_for_rpm(idle_rpm, max_rpm)), scale * 3.0, COLOR_TICK_MINOR)
+	if HybridDial.is_hybrid(_gauge_info):
+		_draw_inner_scale(canvas, center, radius, scale, font)
 
 func _draw_body() -> void:
 	if not _visible_content():
@@ -335,6 +342,11 @@ func _draw_body() -> void:
 	var needle_color: Color = COLOR_NEEDLE_REDLINE if in_redline else COLOR_NEEDLE
 	draw_line(_polar(center, radius * 0.14, needle_deg + 180.0), _polar(center, radius * 0.88, needle_deg), needle_color, scale * 3.0, true)
 	draw_circle(center, radius * 0.06, needle_color)
+	if HybridDial.is_hybrid(_gauge_info):
+		# Secondary needle: the traction motor on the inner scale (shorter, own colour).
+		var motor_max: float = float(_gauge_info.get("motor_dial_max_rpm", 0.0))
+		var motor_deg: float = GaugeLogic.clock_deg_for_rpm(_display_motor_rpm, motor_max)
+		draw_line(_polar(center, radius * 0.34, motor_deg), _polar(center, radius * 0.60, motor_deg), HybridDial.COLOR_MOTOR_NEEDLE, scale * 2.5, true)
 
 	var gear_radius: float = radius * 0.34
 	var engine_state: String = String(_last_pt.get("engine_state", "off"))
@@ -407,8 +419,10 @@ func _draw_body() -> void:
 
 	if (int(_last_pt.get("transmission_kind",0)) == 4 or bool(_last_pt.get("hybrid_fitted",false))):
 		var ready_text := "READY" if bool(_last_pt.get("electric_ready",false)) else "OFF"
-		var ev_text := "%s / %.0f%% / %+.0f kW" % [ready_text,100.0*float(_last_pt.get("battery_soc",0)),float(_last_pt.get("electric_power_kw",0))]
+		var ev_text := "%s / %+.0f kW" % [ready_text,float(_last_pt.get("electric_power_kw",0))]
 		_draw_centered_text(font,Vector2(center.x-radius*0.6,center.y+radius*1.28),ev_text,int(round(20.0*scale)),accent)
+	# Traction battery (rg::battery_hud): SoC in percent plus a small bar under the speed limit sign, amber/red below the configured thresholds.
+	HybridDial.draw_battery(self, font, center.x - radius * 1.55, center.y + radius * 1.05, _last_pt, int(round(14.0 * scale)), Vector2(110.0 * scale, 6.0 * scale))
 	if bool(_last_pt.get("regen_fitted", false)):
 		var regen_on: bool = bool(_last_pt.get("regen_active", false))
 		_draw_centered_text(font, Vector2(center.x-radius*.6, center.y+radius*1.58), str(_last_pt.get("regen_label", "")), int(round(13.0*scale)), Color(0.2,0.95,0.75) if regen_on else accent)
@@ -467,3 +481,16 @@ func _draw_pedals(font: Font, vp_size: Vector2, center: Vector2, radius: float, 
 			draw_rect(Rect2(x, top + height * (1.0 - v), bar_w, height * v), bars[i][2], true)
 		draw_rect(frame, COLOR_PEDAL_FRAME, false, max(1.0, scale))
 		_draw_centered_text(font, Vector2(x + bar_w * 0.5, top + height + font_size * 0.9), bars[i][0], font_size, COLOR_TICK_MINOR)
+
+# The hybrid's inner scale (owner sketch out/owner_hybrid_tach_sketch.png): the traction motor in x1000 rpm on the same sweep as
+# the outer ICE dial, small numbers and ticks inside the ICE numbers. Maximum and spacing come from core (rg::tach_scales).
+func _draw_inner_scale(canvas: CanvasItem, center: Vector2, radius: float, scale: float, font: Font) -> void:
+	var max_rpm: float = float(_gauge_info.get("motor_dial_max_rpm", 0.0))
+	var tick_rpm: float = float(_gauge_info.get("motor_dial_tick_rpm", 0.0))
+	var font_size: int = int(round(11.0 * scale))
+	for rpm: float in HybridDial.inner_ticks(max_rpm, tick_rpm):
+		var deg: float = GaugeLogic.clock_deg_for_rpm(rpm, max_rpm)
+		canvas.draw_line(_polar(center, radius * 0.60, deg), _polar(center, radius * 0.64, deg), HybridDial.COLOR_MOTOR_NEEDLE, scale * 1.5, true)
+		var label := str(int(round(rpm / 1000.0)))
+		var text_size: Vector2 = font.get_string_size(label, HORIZONTAL_ALIGNMENT_LEFT, -1, font_size)
+		canvas.draw_string(font, _polar(center, radius * 0.52, deg) - Vector2(text_size.x * 0.5, -text_size.y * 0.35), label, HORIZONTAL_ALIGNMENT_LEFT, -1, font_size, HybridDial.COLOR_MOTOR_NEEDLE)

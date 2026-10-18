@@ -290,6 +290,9 @@ func _live_values() -> Dictionary:
 	v["speed_kmh"] = _held_speed_kmh
 	v["engine_rpm"] = rpm
 	v["gear"] = int(pt.get("gear", 0))
+	# Traction battery / motor for an EV or hybrid cockpit file (needles bind to "battery_soc" 0..1 and "motor_rpm"); 0 on an ICE car.
+	v["battery_soc"] = float(pt.get("battery_percent", 0)) / 100.0
+	v["motor_rpm"] = float(pt.get("traction_motor_rpm", 0.0))
 	var info: Dictionary = simulation.get_vehicle_gauge_info(vehicle_name)
 	var capacity := float(info.get("fuel_capacity_kg", 0.0))
 	v["fuel_fraction"] = clampf(float(pt.get("fuel_mass_kg", 0.0)) / capacity, 0.0, 1.0) if capacity > 0.0 else 0.0
