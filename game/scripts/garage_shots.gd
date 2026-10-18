@@ -87,6 +87,10 @@ func _run() -> void:
 	while main.get_shell_ui().garage.get_dyno().get("busy",false) and Time.get_ticks_msec() < dyno_deadline:
 		await _frames(1)
 	await _seconds(0.25)
+	if OS.get_cmdline_user_args().has("--upgrades-shots-only"):
+		await _upgrade_shots()
+		get_tree().quit()
+		return
 	if OS.get_cmdline_user_args().has("--strip-shots-only"):
 		await _strip_shots()
 		get_tree().quit()
@@ -174,3 +178,44 @@ func _strip_shots() -> void:
 	await RenderingServer.frame_post_draw
 	scene.capture_image().save_png(out_dir.path_join("cabin_stripped.png"))
 	print("RG_STRIP_SHOT done")
+
+# Upgrades screens (owner 2026-10-18): every Upgrades page two levels deep, at each window size, into out_dir as
+# upgrades_<width>_<page path>.png. Pages are walked from the root; a tile that is missing on a page is skipped.
+const UPGRADE_SHOT_SIZES := [Vector2i(1280, 720), Vector2i(1920, 1080)]
+
+func _back_to_root_shots(ui: CanvasLayer) -> void:
+	while not ui._garage_path.is_empty():
+		main._on_escape()
+		await _frames(2)
+
+func _slug(text: String) -> String:
+	var re := RegEx.new()
+	re.compile("[^A-Za-z0-9]+")
+	return re.sub(text, "_", true).trim_prefix("_").trim_suffix("_")
+
+func _walk_upgrades(ui: CanvasLayer, path: Array, depth: int, visited: Dictionary) -> void:
+	var key := " / ".join(path)
+	if visited.has(key):
+		return
+	visited[key] = true
+	await _back_to_root_shots(ui)
+	for step in path:
+		_press(step)
+		await _frames(3)
+	var tiles: Array = []
+	for id in ui.button_ids():
+		var text := str(id)
+		if text.begins_with("tile:") and not text.begins_with("tile:tune") and not text.begins_with("tile:Tune"):
+			tiles.append(text)
+	for size in UPGRADE_SHOT_SIZES:
+		get_window().size = size
+		await _seconds(0.6)
+		await _shot("upgrades_%d_%s" % [size.x, _slug(key) if not key.is_empty() else "root"])
+	if depth < 2:
+		for id in tiles:
+			await _walk_upgrades(ui, path + [id], depth + 1, visited)
+
+func _upgrade_shots() -> void:
+	var ui: CanvasLayer = main.get_shell_ui()
+	await _walk_upgrades(ui, [], 0, {})
+	await _back_to_root_shots(ui)

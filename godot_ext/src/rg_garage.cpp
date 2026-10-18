@@ -2,6 +2,7 @@
 #include "rg_damage_convert.h"
 
 #include "rg/engine_swap.h"
+#include "rg/upgrade_badges.h"
 
 #include <godot_cpp/core/class_db.hpp>
 #include <godot_cpp/variant/packed_float64_array.hpp>
@@ -327,6 +328,29 @@ godot::Array RgGarage::get_powertrain_engine_choices() const {
         godot::Dictionary d;d["id"]=from_std(p.id);d["label"]=from_std(p.label);d["image"]=from_std(p.image);d["size"]=from_std(p.detail);
         d["section"]=from_std(p.section);d["subtitle"]=from_std(p.subtitle);d["fits"]=p.fits;d["fit_reason"]=from_std(p.fit_reason);out.push_back(d);
     }return out;
+}
+
+godot::Array RgGarage::get_part_badges(const String& option_id, const String& part_id) const {
+    godot::Array out;
+    if (garage_ == nullptr || !garage_->editing()) return out;
+    const std::string opt = to_std(option_id);
+    const rg::OptionView* view = nullptr;
+    for (const rg::OptionView& v : garage_->model().options) {
+        if (v.def.id == opt) view = &v;
+    }
+    if (view == nullptr) return out;
+    const rg::SetupValue cur = garage_->current_value(opt);
+    const std::string* installed = std::get_if<std::string>(&cur);
+    if (installed == nullptr) return out;
+    for (const rg::UpgradeBadge& b : rg::option_part_badges(*view, *installed, to_std(part_id))) {
+        godot::Dictionary d;
+        d["quantity"] = static_cast<int64_t>(b.quantity);
+        d["delta"] = b.delta;
+        d["worse"] = b.worse;
+        d["text"] = from_std(b.text);
+        out.push_back(d);
+    }
+    return out;
 }
 
 godot::Array RgGarage::get_options() const {
@@ -849,6 +873,7 @@ void RgGarage::_bind_methods() {
     ClassDB::bind_method(D_METHOD("begin_edit", "id"), &RgGarage::begin_edit);
     ClassDB::bind_method(D_METHOD("get_edit_id"), &RgGarage::get_edit_id);
     ClassDB::bind_method(D_METHOD("get_options"), &RgGarage::get_options);
+    ClassDB::bind_method(D_METHOD("get_part_badges", "option_id", "part_id"), &RgGarage::get_part_badges);
     ClassDB::bind_method(D_METHOD("get_powertrain_engine_choices"), &RgGarage::get_powertrain_engine_choices);
     ClassDB::bind_method(D_METHOD("option_entry_position", "option_id", "index", "value"), &RgGarage::option_entry_position);
     ClassDB::bind_method(D_METHOD("option_entry_value", "option_id", "index", "position"), &RgGarage::option_entry_value);

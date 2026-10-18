@@ -78,6 +78,8 @@ struct SetupPart {
     std::string mass_key;
     double mass_factor = 1.0;
     bool removed = false;
+    // The part's mass in kg as the model computed it (the stock part's, or the choice's after mass_factor/removal); < 0 = no figure.
+    double mass_kg = -1.0;
     // False when the car cannot take this choice (a turbo kit or engine that does not fit the engine bay): `fit_reason` says why
     // in the player's words. The garage hides such a choice by default ("show all" lists it greyed out with the reason).
     bool fits = true;

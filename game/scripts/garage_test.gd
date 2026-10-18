@@ -270,6 +270,7 @@ func _run() -> void:
 	_check(families.get("tyre_front") == "track" and families.get("tyre_rear") == "road", "All dimensions preserves split compounds")
 	_press("reset_all")
 	await _back_to_root()
+	await _check_upgrade_layout()
 	_press("tile:Engine")
 	_press("tile:Turbo")
 	_check(ui.get_button("part:turbo_install:hyper_single") == null, "Engine turbo lists configured dual type only")
@@ -696,3 +697,99 @@ func _back_to_root() -> void:
 	var ui: CanvasLayer = main.get_shell_ui()
 	while not ui._garage_path.is_empty():
 		await _press_escape()
+
+# Upgrades layout (owner 2026-10-18): the category tiles and the Chassis / Weight reduction tiles at two window sizes. Every
+# tile's name label lies inside its tile, no two tiles overlap, no other label sits on a tile, and a highlighted (focused)
+# tile shows at most two badges, the same ones RgGarage.get_part_badges returns, red when worse, green when better.
+const UPGRADE_LAYOUT_SIZES := [Vector2i(1280, 720), Vector2i(1920, 1080)]
+
+func _tiles_under(node: Node, out: Array) -> void:
+	for child in node.get_children():
+		if child is Button and child.name.begins_with("tile:") or child is Button and child.has_node("Name"):
+			out.append(child)
+		else:
+			_tiles_under(child, out)
+
+func _labels_under(node: Node, out: Array) -> void:
+	for child in node.get_children():
+		if child is Label and child.is_visible_in_tree():
+			out.append(child)
+		_labels_under(child, out)
+
+# Returns the geometry findings for the tiles currently drawn in the option box.
+func _upgrade_layout_report(ui: CanvasLayer) -> Dictionary:
+	var report := {"tiles": 0, "overflow": 0, "overlap": 0, "label_on_tile": 0}
+	var tiles: Array = []
+	_tiles_under(ui._option_box, tiles)
+	var rects: Array = []
+	for tile in tiles:
+		report["tiles"] += 1
+		var rect := Rect2(tile.global_position, tile.size)
+		rects.append(rect)
+		var name_label: Label = tile.get_node_or_null("Name")
+		if name_label != null and not rect.encloses(Rect2(name_label.global_position, name_label.size)):
+			report["overflow"] += 1
+	for i in range(rects.size()):
+		for j in range(i + 1, rects.size()):
+			if rects[i].intersects(rects[j]):
+				report["overlap"] += 1
+	var labels: Array = []
+	_labels_under(ui._option_box, labels)
+	for label in labels:
+		var inside_tile := false
+		for tile in tiles:
+			if tile.is_ancestor_of(label):
+				inside_tile = true
+		if inside_tile or label.size.x <= 0.0 or label.size.y <= 0.0:
+			continue
+		var label_rect := Rect2(label.global_position, label.size)
+		for rect in rects:
+			if label_rect.intersects(rect):
+				report["label_on_tile"] += 1
+				break
+	return report
+
+func _check_upgrade_layout() -> void:
+	var ui: CanvasLayer = main.get_shell_ui()
+	var pages := [[], ["tile:Chassis", "tile:Weight reduction"]]
+	for size in UPGRADE_LAYOUT_SIZES:
+		get_window().size = size
+		for page in pages:
+			await _back_to_root()
+			for step in page:
+				_press(step)
+			await get_tree().process_frame
+			await get_tree().process_frame
+			var report := _upgrade_layout_report(ui)
+			var where := "%s %s" % [str(size), " / ".join(page) if not page.is_empty() else "root"]
+			if not page.is_empty():
+				_check(int(report["tiles"]) > 0, "upgrades %s: tiles are drawn (%d)" % [where, report["tiles"]])
+			_check(int(report["overflow"]) == 0, "upgrades %s: no tile label leaves its tile (%d)" % [where, report["overflow"]])
+			_check(int(report["overlap"]) == 0, "upgrades %s: no two tiles overlap (%d)" % [where, report["overlap"]])
+			_check(int(report["label_on_tile"]) == 0, "upgrades %s: no other label sits on a tile (%d)" % [where, report["label_on_tile"]])
+			print("RG_GARAGE_TEST info: upgrades %s viewport %s tiles %d overflow %d overlap %d label_on_tile %d" % [where, str(get_viewport().get_visible_rect().size), report["tiles"], report["overflow"], report["overlap"], report["label_on_tile"]])
+	# Highlight badges: focus each weight tile; the row holds at most two badges, and each badge text is the core's answer.
+	await _back_to_root()
+	_press("tile:Chassis")
+	_press("tile:Weight reduction")
+	await get_tree().process_frame
+	var tiles: Array = []
+	_tiles_under(ui._option_box, tiles)
+	var with_badges := 0
+	for tile in tiles:
+		var row: HBoxContainer = tile.get_node_or_null("Badges")
+		if row == null:
+			continue
+		tile.grab_focus()
+		await get_tree().process_frame
+		var texts: Array = []
+		for badge in row.get_children():
+			texts.append(str(badge.text))
+		_check(texts.size() <= 2, "a highlighted tile shows at most two badges (%d)" % texts.size())
+		var expected: Array = []
+		for b in ui.garage.get_part_badges(str(tile.get_meta("badge_option", "")), str(tile.get_meta("badge_part", ""))):
+			expected.append(str(b["text"]))
+		_check(texts == expected, "highlighted badges equal the core answer (%s vs %s)" % [", ".join(texts), ", ".join(expected)])
+		with_badges += texts.size()
+	_check(with_badges > 0, "the weight page shows at least one badge on a highlighted tile (%d)" % with_badges)
+	await _back_to_root()
