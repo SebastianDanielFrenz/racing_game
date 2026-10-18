@@ -15,6 +15,29 @@ double smoothstep(double a, double b, double x) {
 }
 } // namespace
 
+std::shared_ptr<const std::vector<float>> make_roll_loop(const std::int16_t* pcm, std::size_t samples, int channels,
+                                                         double crossfade_ms) {
+    if (!pcm || channels < 1) return nullptr;
+    const std::size_t n = samples / static_cast<std::size_t>(channels);
+    std::vector<float> mono(n);
+    for (std::size_t i = 0; i < n; ++i) {
+        double sum = 0.0;
+        for (int c = 0; c < channels; ++c) sum += pcm[i * static_cast<std::size_t>(channels) + static_cast<std::size_t>(c)] / 32768.0;
+        mono[i] = static_cast<float>(sum / channels);
+    }
+    const std::size_t x = static_cast<std::size_t>(std::max(crossfade_ms, 1.0) * 48.0);
+    if (n < 4 * x) return nullptr;
+    // Loop of length m = n - x: the head x samples are blended with the x samples after the loop end, so the sample
+    // after the last loop sample (src[m]) is the first loop sample exactly - no discontinuity at the seam.
+    const std::size_t m = n - x;
+    auto loop = std::make_shared<std::vector<float>>(mono.begin(), mono.begin() + static_cast<std::ptrdiff_t>(m));
+    for (std::size_t i = 0; i < x; ++i) {
+        const double w = 0.5 - 0.5 * std::cos(3.141592653589793 * static_cast<double>(i) / static_cast<double>(x)); // 0 -> ~1
+        (*loop)[i] = static_cast<float>(mono[i] * w + mono[m + i] * (1.0 - w));
+    }
+    return loop;
+}
+
 TyreVoice::TyreVoice(std::uint64_t seed, std::shared_ptr<const std::vector<std::int16_t>> squeal)
     : squeal_(std::move(squeal)), rng_(seed * 0x9E3779B97F4A7C15ull + 0x1234567ull) {
     const std::size_t count = squeal_ ? squeal_->size() : 0;
@@ -58,7 +81,7 @@ float TyreVoice::sample(double dt) {
     const double rough = low_ + grain_ * (n - low_);
     squeal_level_ += (slide_ * (1.0 - wetness_ * 0.7) - squeal_level_) * (1.0 - std::exp(-dt / 0.04));
     const double skid = squeal_sample();
-    const double value = rough * roll_ + skid * squeal_level_;
+    const double value = (roll_muted_ ? 0.0 : rough * roll_) + skid * squeal_level_;
     return contact_ ? static_cast<float>(clampd(value, -0.4, 0.4)) : 0.0f;
 }
 
@@ -76,22 +99,57 @@ float TyreVoice::squeal_sample() {
     return static_cast<float>(value);
 }
 
-TyreSoundBank::TyreSoundBank(int wheels, std::uint64_t base_seed, std::shared_ptr<const std::vector<std::int16_t>> squeal) {
+TyreSoundBank::TyreSoundBank(int wheels, std::uint64_t base_seed, std::shared_ptr<const std::vector<std::int16_t>> squeal,
+                             std::shared_ptr<const std::vector<float>> roll_loop, TyreRollConfig roll_cfg) {
+    roll_loop_ = (roll_cfg.use_recording && roll_loop && !roll_loop->empty()) ? std::move(roll_loop) : nullptr;
+    roll_cfg_ = roll_cfg;
     for (int i = 0; i < wheels; ++i) voices_.emplace_back(base_seed + static_cast<std::uint64_t>(i) * 997u, squeal);
+    sealed_.assign(static_cast<std::size_t>(std::max(wheels, 0)), 1);
+    contact_.assign(sealed_.size(), 0);
     values_.assign(static_cast<std::size_t>(std::max(wheels, 0)), 0.0f);
 }
 
 void TyreSoundBank::update(int wheel, const TyreSoundInput& in) {
-    if (wheel >= 0 && wheel < wheels()) voices_[static_cast<std::size_t>(wheel)].update(in);
+    if (wheel < 0 || wheel >= wheels()) return;
+    const std::size_t k = static_cast<std::size_t>(wheel);
+    voices_[k].update(in);
+    sealed_[k] = in.sealed;
+    contact_[k] = in.load_n > 20.0;
+    voices_[k].set_roll_muted(roll_loop_ && in.sealed);
+    // One car-level layer: speed = the fastest wheel's chassis/tread speed.
+    speed_ = std::max(std::abs(in.speed), std::abs(in.tread_speed));
+}
+
+float TyreSoundBank::roll_sample(double dt) {
+    if (!roll_loop_) return 0.0f;
+    // Share of wheels on a sealed surface with ground contact scales the layer (airborne: silent).
+    double share = 0.0;
+    for (std::size_t i = 0; i < sealed_.size(); ++i) share += (sealed_[i] && contact_[i]) ? 1.0 : 0.0;
+    share /= std::max<std::size_t>(1, sealed_.size());
+    const double ref = std::max(roll_cfg_.reference_speed_mps, 0.1);
+    const double rate = clampd(speed_ / ref, roll_cfg_.min_rate, roll_cfg_.max_rate);
+    const double fade = smoothstep(roll_cfg_.silent_below_mps, roll_cfg_.full_above_mps, speed_);
+    const double target = std::min(roll_cfg_.gain_at_reference * std::pow(speed_ / ref, roll_cfg_.gain_exponent), roll_cfg_.max_gain) * fade * share;
+    roll_gain_ += (target - roll_gain_) * (1.0 - std::exp(-dt / 0.02));
+    if (target == 0.0 && roll_gain_ < 1e-6) roll_gain_ = 0.0;
+    const auto& loop = *roll_loop_;
+    const std::size_t n = loop.size();
+    roll_pos_ += rate * 48000.0 * dt;
+    while (roll_pos_ >= static_cast<double>(n)) roll_pos_ -= static_cast<double>(n);
+    const std::size_t i0 = static_cast<std::size_t>(roll_pos_);
+    const std::size_t i1 = i0 + 1 >= n ? 0 : i0 + 1;
+    const double f = roll_pos_ - static_cast<double>(i0);
+    return static_cast<float>((loop[i0] * (1.0 - f) + loop[i1] * f) * roll_gain_);
 }
 
 std::vector<float> TyreSoundBank::render(int frames, float gain) {
     const std::size_t w = voices_.size();
     std::vector<float> out(static_cast<std::size_t>(std::max(frames, 0)) * w);
     for (int f = 0; f < frames; ++f) {
+        if (even_) roll_value_ += (roll_sample(1.0 / 24000.0) - roll_value_) * 0.65f;
         for (std::size_t k = 0; k < w; ++k) {
             if (even_) values_[k] += (voices_[k].sample(1.0 / 24000.0) - values_[k]) * 0.65f;
-            out[static_cast<std::size_t>(f) * w + k] = values_[k] * gain;
+            out[static_cast<std::size_t>(f) * w + k] = (values_[k] + roll_value_) * gain;
         }
         even_ = !even_;
     }

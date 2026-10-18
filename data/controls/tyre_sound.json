@@ -1,0 +1,18 @@
+{
+  "roll": {
+    "file": "game/audio/tyres/asphalt_roll_provisional.wav",
+    "roll_source": "recording",
+    "roll_source_note": "recording | procedural. recording = ONE car-level loop on sealed surfaces; procedural = the per-wheel filtered-noise roll (always the fallback, and used on unsealed surfaces)",
+    "status": "PROVISIONAL: AI-generated recording (owner, 2026-10-18), sounds like distant highway-rest-stop traffic roll, not a close tyre; recording speed unknown, reference_speed_kmh is [AS]",
+    "sealed_surfaces": ["asphalt", "concrete", "paving_stones", "sett", "cobblestone"],
+    "reference_speed_kmh": 50.0,
+    "min_rate": 0.5,
+    "max_rate": 2.0,
+    "silent_below_kmh": 1.0,
+    "full_above_kmh": 7.0,
+    "gain_at_reference": 0.25,
+    "gain_exponent": 1.0,
+    "max_gain": 1.0,
+    "loop_crossfade_ms": 75.0
+  }
+}
