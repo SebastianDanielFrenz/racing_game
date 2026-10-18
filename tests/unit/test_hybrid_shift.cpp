@@ -102,6 +102,9 @@ struct Rig {
         c.ground_half_extent_m = 3000;
         c.ground_half_extent_y_m = 200;
         ses = std::make_unique<rg::Session>(c);
+        // The GDScript readers look the car up by the catalog's sim_name (RgSimulation::has_vehicle compares it with the
+        // loaded desc's name): a materialised setup must keep it or every dashboard reads an empty powertrain (N, 0, 0).
+        CHECK(ses->vehicle_desc().name == e->sim_name);
         sink = std::make_unique<Sink>(*ses);
         // The game's startup state (main.gd): ignition on, electric drive ready, the shift assists as the car defaults them.
         ses->set_control("ignition", 1);
@@ -241,6 +244,24 @@ TEST_CASE("hybrid + dual-clutch box: Y enters manual mode, up/up/down change gea
     CHECK(rg::selector_label(r.snapshot()).substr(0, 1) == "D");
 }
 
+TEST_CASE("hybrid dashboard values while driving in D", "[.][diag][hybrid_shift]") {
+    Fx f;
+    Rig r(f, env_or("HS_CAR", "car_hyper_n2o"), env_or("HS_GB", "hyper_7dct"), "t_hs_dash");
+    r.ses->set_control("assist.drive_mode", std::atoi(env_or("HS_MODE", "1").c_str()));
+    r.run(2);
+    r.ses->set_control("gear_request", rg::kGearRequestDrive);
+    r.ses->set_control("throttle", 0.3);
+    for (int i = 0; i < 240 * 20; ++i) {
+        r.tick();
+        if (i % 12 == 0) {
+            const auto& p = r.pt();
+            std::printf("t=%5.2f v=%6.1f speedo=%6.1f gear=%d rpm=%6.0f motor=%6.0f st=%d sel=%d ice=%d soc=%.3f\n", i / 240.0, r.speed() * 3.6,
+                        p.speedo_mps * 3.6, p.gear, p.engine_rpm, p.motor_rpm, static_cast<int>(p.engine_state), p.transmission_selector,
+                        p.hybrid_ice_requested, p.battery_soc);
+        }
+    }
+}
+
 TEST_CASE("hybrid shift diag", "[.][diag][hybrid_shift]") {
     Fx f;
     const std::string vid = env_or("HS_CAR", "car_hyper");
@@ -273,6 +294,7 @@ TEST_CASE("hybrid shift diag", "[.][diag][hybrid_shift]") {
     INFO(m.error);
     REQUIRE(m.ok);
     std::printf("vehicle %s\n", m.vehicle_path.c_str());
+    { const std::string dump = env_or("HS_DUMP", ""); if (!dump.empty()) fs::copy_file(m.vehicle_path, dump, fs::copy_options::overwrite_existing); }
     rg::SessionConfig c;
     c.vehicle_json_path = m.vehicle_path;
     c.surface_table_path = kRoot + "/data/surfaces/surfaces.json";
