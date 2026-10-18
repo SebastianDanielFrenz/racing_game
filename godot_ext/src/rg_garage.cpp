@@ -5,6 +5,7 @@
 #include "rg/upgrade_badges.h"
 
 #include <godot_cpp/core/class_db.hpp>
+#include <godot_cpp/variant/utility_functions.hpp>
 #include <godot_cpp/variant/packed_float64_array.hpp>
 #include <godot_cpp/variant/packed_string_array.hpp>
 
@@ -130,6 +131,13 @@ godot::Dictionary RgGarage::initialize(const String& repo_root, const String& us
         advisor_ = std::make_unique<rg::LimitAdvisor>(std::move(*advisor_config));
     else
         advisor_error_ = advisor_err;
+    // Upgrade badges (data/garage/upgrade_badges.json) are optional too: a bad file shows no badges and is reported once.
+    badge_config_ = {};
+    std::string badge_err;
+    if (auto badges = rg::load_upgrade_badge_config(c.repo_root + "/data/garage/upgrade_badges.json", &badge_err))
+        badge_config_ = std::move(*badges);
+    else
+        godot::UtilityFunctions::push_warning(from_std("upgrade badges off: " + badge_err));
     return ok_reply();
 }
 
@@ -342,7 +350,7 @@ godot::Array RgGarage::get_part_badges(const String& option_id, const String& pa
     const rg::SetupValue cur = garage_->current_value(opt);
     const std::string* installed = std::get_if<std::string>(&cur);
     if (installed == nullptr) return out;
-    for (const rg::UpgradeBadge& b : rg::option_part_badges(*view, *installed, to_std(part_id))) {
+    for (const rg::UpgradeBadge& b : rg::option_part_badges(badge_config_, *view, *installed, to_std(part_id))) {
         godot::Dictionary d;
         d["quantity"] = static_cast<int64_t>(b.quantity);
         d["delta"] = b.delta;

@@ -24,6 +24,7 @@ func _seconds(s: float) -> void:
 		await get_tree().process_frame
 
 func _shot(name: String) -> void:
+	_stage = "shot " + name
 	await RenderingServer.frame_post_draw
 	var image := get_viewport().get_texture().get_image()
 	var path := out_dir.path_join(prefix + name + ".png")
@@ -38,7 +39,15 @@ func _press(id: String) -> void:
 		return
 	button.pressed.emit()
 
+# A shots run can never hang (the upgrades walker once sat ~40 min with idle CPU): every run ends after this many seconds.
+const SHOTS_TIMEOUT_S := 420.0
+var _stage := "start"
+
 func _run() -> void:
+	var guard := get_tree().create_timer(SHOTS_TIMEOUT_S)
+	guard.timeout.connect(func():
+		print("RG_GARAGE_SHOT FAIL timeout in stage '%s'" % _stage)
+		get_tree().quit(1))
 	DirAccess.make_dir_recursive_absolute(out_dir)
 	await _seconds(0.5)
 	main._apply_transition(main.get_shell().boot_finished())
@@ -210,7 +219,9 @@ func _walk_upgrades(ui: CanvasLayer, path: Array, depth: int, visited: Dictionar
 	for size in UPGRADE_SHOT_SIZES:
 		get_window().size = size
 		await _seconds(0.6)
-		await _shot("upgrades_%d_%s" % [size.x, _slug(key) if not key.is_empty() else "root"])
+		await _page_shots(ui, "upgrades_%d_%s" % [size.x, _slug(key) if not key.is_empty() else "root"])
+		if key.ends_with("tile:Weight reduction"):
+			await _badge_shots(ui, "upgrades_%d_weight_badge" % size.x)
 	if depth < 2:
 		for id in tiles:
 			await _walk_upgrades(ui, path + [id], depth + 1, visited)
@@ -219,3 +230,54 @@ func _upgrade_shots() -> void:
 	var ui: CanvasLayer = main.get_shell_ui()
 	await _walk_upgrades(ui, [], 0, {})
 	await _back_to_root_shots(ui)
+
+# The option page, whole: the setup-check panel is hidden for the shot (it would leave the page ~150 px of scroll area at
+# 720 p), then the page is shot at scroll offsets of one view height each (at most 4), names <name>_1, _2, ...
+func _page_shots(ui: CanvasLayer, name: String) -> void:
+	var scroll: ScrollContainer = ui._option_box.get_parent() if ui._option_box != null else null
+	if scroll == null:
+		await _shot(name)
+		return
+	if ui._advice_box != null and is_instance_valid(ui._advice_box):
+		ui._advice_box.visible = false
+	await _seconds(0.3)
+	var view := maxf(scroll.size.y, 1.0)
+	var total: float = ui._option_box.size.y
+	var pages := clampi(int(ceil(total / view)), 1, 4)
+	for i in range(pages):
+		scroll.scroll_vertical = int(i * (view - 40.0))
+		await _frames(3)
+		await _shot("%s_%d" % [name, i + 1] if pages > 1 else name)
+	scroll.scroll_vertical = 0
+	if ui._advice_box != null and is_instance_valid(ui._advice_box):
+		ui._advice_box.visible = true
+
+# One heavier (red) and one lighter (green) weight tile highlighted by focus, the badge at its bottom middle.
+func _badge_shots(ui: CanvasLayer, name: String) -> void:
+	var scroll: ScrollContainer = ui._option_box.get_parent()
+	if ui._advice_box != null and is_instance_valid(ui._advice_box):
+		ui._advice_box.visible = false
+	await _seconds(0.3)
+	var want := {"red": true, "green": true}
+	var tiles: Array = []
+	_collect_tiles(ui._option_box, tiles)
+	for tile in tiles:
+		for badge in ui.garage.get_part_badges(str(tile.get_meta("badge_option")), str(tile.get_meta("badge_part"))):
+			var colour := "red" if bool(badge["worse"]) else "green"
+			if not want.get(colour, false):
+				continue
+			want[colour] = false
+			scroll.ensure_control_visible(tile)
+			await _frames(2)
+			tile.grab_focus()
+			await _frames(3)
+			await _shot("%s_%s" % [name, colour])
+	if ui._advice_box != null and is_instance_valid(ui._advice_box):
+		ui._advice_box.visible = true
+
+func _collect_tiles(node: Node, out: Array) -> void:
+	for child in node.get_children():
+		if child is Button and child.has_meta("badge_option"):
+			out.append(child)
+		else:
+			_collect_tiles(child, out)
