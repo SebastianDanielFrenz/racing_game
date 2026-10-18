@@ -63,6 +63,7 @@ public:
     godot::Array writes;
 };
 }
+rg::DriverSnapshot driver_snapshot_from(const godot::Dictionary& d) { return convert(d); }
 bool RgDriverActions::submit(const godot::String& id, int kind, double value, int source) {
     if (kind < PRESS || kind > HOLD || source < KEYBOARD || source > SCRIPT) return false;
     return actions_.submit({id.utf8().get_data(), static_cast<rg::DriverActionKind>(kind), value, static_cast<rg::ActionSource>(source)});
