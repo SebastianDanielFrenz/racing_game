@@ -1,10 +1,10 @@
 # Powertrain swaps and terrain handoff
 
-Owner cutoff: stop implementation at 85% used of the five-hour Codex usage window. Latest checkpoint: 72%; no reset credit used.
+Owner cutoff: stop implementation at 85% used of the five-hour Codex usage window. Latest checkpoint: 79%; no reset credit used.
 
 ## Implemented locally
 Game checkout: S:/claude_code/racing_game_branches_for_testing/pr33_ready, branch codex/powertrain-swaps.
-Physics checkout: S:/claude_code/physics_sim_jacket_ready, branch codex/hybrid-fuel-cell, committed through a165761d0a93dd740228bb3eed9436adda705930. Game submodule pins this commit locally. Physics branch has been pushed to origin; its commit is fetchable for the game submodule.
+Physics checkout: S:/claude_code/physics_sim_jacket_ready, branch codex/hybrid-fuel-cell, committed through 5c249338a05b8bf675b8ff46ceaa96d34ad6e3e5. Game submodule pins this commit locally. Physics branch has been pushed to origin; its commit is fetchable for the game submodule.
 
 - Swaps -> Powertrain -> Internal combustion / EV / Hybrid. ICE subcategories: Gasoline / Diesel / Hydrogen. Five conversion packages: ICE, battery EV, hydrogen fuel-cell EV, battery hybrid, dual-hydrogen hybrid.
 - Dual hydrogen is hydrogen combustion plus hydrogen fuel-cell electric drive, with separate hydrogen stores. Diesel and hydrogen I4 torque curves are authored development engines, not measured production data.
@@ -21,13 +21,13 @@ Physics checkout: S:/claude_code/physics_sim_jacket_ready, branch codex/hybrid-f
 - Game conversion/gearbox tests: 5 cases, 21796 assertions passed. Covers conversion loading and AT/DCT/CVT electric launch, Sport ICE startup and stationary neutral charging to 80%, followed by ICE shutdown; three repeated READY/respawn/ICE restart cycles per gearbox; electronic parking brake retention on conversions.
 - Godot editor parse completed. Existing electric-drive/audio acceptance: 24 checks, zero failures.
 - New game/scripts/powertrain_swap_test.gd: 155 checks, actual category buttons plus materialisation, save/reload and return-to-ICE conversion for all five packages on sedan, electric sedan and N2O hypercar; zero failures. Uses isolated out/ user/work files.
-- Broader garage/automatic/EV/audio/driver regression: 126 cases, 37230 assertions passed (out/hybrid_game_regressions.log). Legacy ICE-only gearbox/layout loops now exclude the EV; trim and option-count expectations respect its explicit catalogue allowlist.
+- Broader garage/automatic/EV/audio/driver regression: 126 cases, 37230 assertions passed again after the EPB fix (out/hybrid_followup_regressions.log). Legacy ICE-only gearbox/layout loops now exclude the EV; trim and option-count expectations respect its explicit catalogue allowlist.
 
 ## Remaining work and limits
-- No public PR or merge for this batch yet. Game edits are checkpointed locally; physics branch is published and the game pin is fetchable.
+- Both branches are pushed. Draft PRs: https://github.com/SebastianDanielFrenz/racing_game/pull/42 and https://github.com/SebastianDanielFrenz/physics_sim/pull/21. Neither is merged. Physics goes first; game pins a published commit.
 - Racing boost preparation is intentionally not implemented; it currently shares Sport ICE keep-running behavior.
 - EV/combined hybrid dyno, detailed source thermal/storage models, and physical conversion packaging/fit constraints beyond the four-road-wheel topology remain future work.
-- Electronic parking brake parts are now retained across EV and hybrid conversions. Conversion electronics use hybrid TC/mode control; existing ICE-specific launch/aero automation electronics are replaced. Physical aero remains. Preserve or reintroduce compatible independent aero control in a follow-up.
+- Electronic parking brake parts are now retained across EV and hybrid conversions. Conversion electronics use hybrid TC/mode control; existing ICE-specific launch/aero automation electronics are replaced. Physical aero remains. Before marking the game PR ready, preserve/reintroduce compatible aero/ABS/ESC electronics instead of dropping them as part of the hybrid controller replacement; explicitly disable incompatible ICE launch behavior. Physical brakes and retained EPB work, but this electronics integration is outstanding.
 - Hybrid requested full-pedal system power is an authored package calibration (300 kW), not automatically derived for each swapped engine/upgrade. Extend calibration for proportional pedal-demand behavior across arbitrary high-output engine combinations (full throttle still requests full ICE output).
 - A direct shift-schedule comparison across ICE startup remains to be added; mode, gearbox, restart, determinism and save/reload transitions now have coverage.
 - Garage vehicle-browser specification figures are still stock-engine figures; converted propulsion and mass are used by the actual simulation. Combined installed-system ratings need a dedicated presentation.
@@ -42,7 +42,7 @@ Exact served geometry probe built against geo2map4fb8e8627273516ab2245c9ca5de7e6
 Reproducer: out/highway_probe_source/served.cpp + out/highway_probe_build/highway_served.exe. Outputs highway_served_entries.csv, highway_served_samples.csv, highway_served.log, highway_mark_samples.csv. Strict-only road_probe omits completion/context and is insufficient evidence.
 
 ## Terrain diagnosis refined (2026-10-18)
-The portable committed repro is tools/diagnostics/highway_profile_probe. With a fresh private cache it confirms way313879319 crosses one lower road, but RoadUnderpassFinder rejects the mask: crossings=1, served=0, reaches_end=1; no shallow/no_rim/too_long/DEM-missing rejection. The next way323855192 has crossings=0. Thus the OSM boundary splits the supported depression: the first way drops into the bare-earth tunnel cutting and the next begins on an invalid steep DEM plane.
+The portable committed repro is tools/diagnostics/highway_profile_probe. Its standalone CMake project configures successfully; the diagnostic source was built/run with the exact pinned geo2map library and a fresh private derived cache. Vault G2M-011 now records this diagnosis and is retrievable by semantic search. With a fresh private cache it confirms way313879319 crosses one lower road, but RoadUnderpassFinder rejects the mask: crossings=1, served=0, reaches_end=1; no shallow/no_rim/too_long/DEM-missing rejection. The next way323855192 has crossings=0. Thus the OSM boundary splits the supported depression: the first way drops into the bare-earth tunnel cutting and the next begins on an invalid steep DEM plane.
 Nearby lower service way5436745 is tagged tunnel=yes,layer=-1,maxheight=4; adjacent service approaches5436746 and54276755 carry cutting=yes. Bare DEM cross sections show the narrow dip: approximately115.54m at E463400 ->110.82m at E463380 ->115.18m at E463370 (approximate reference, not exact lane trajectory).
 Zero served decks is not itself a bug: D61 explicitly says a tunnel-only crossing is covered, so it should get a profile mask/fill, not an exposed bridge deck. The actual bug is rejecting mask support at the upper-way boundary and failing to share corrected endpoint support with its neighbour.
 Next fix must compute shared support from crossing/connected-way context in a tile-invariant way, extend covered masks across the way split, and use corrected common endpoint planes before strict/completion grade checks. Preserve measured support/rims and ownership invariance; do not loosen all grade bounds or remove clearance unconditionally. Check the tilted-bumpy fixture (G2M-019 explains why uncapped endpoint easing produces large junction gradients). No terrain production code changed yet.
