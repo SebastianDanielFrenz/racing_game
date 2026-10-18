@@ -98,6 +98,9 @@ func _initialize_audio() -> void:
 	var powertrain: Dictionary = simulation.get_vehicle_powertrain(vehicle_name)
 	if bool(powertrain.get("electric_fitted", false)):
 		_motor_sound = RgElectricMotorSound.new()
+		var motor_levels = JSON.parse_string(FileAccess.get_file_as_string(ProjectSettings.globalize_path("res://../data/controls/electric_motor_sound.json")))
+		if motor_levels is Dictionary:
+			_motor_sound.configure(motor_levels)
 		_motor_spatial = _open_spatial(RATE, 1)
 		if _motor_spatial == null:
 			_motor_players.append(_player(RATE, _motor_points[0]))
