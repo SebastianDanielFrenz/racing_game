@@ -154,6 +154,7 @@ public:
     bool begin_edit(const std::string& id, std::string* err); // loads the saved setup as the working copy
     [[nodiscard]] bool editing() const { return !edit_id_.empty(); }
     [[nodiscard]] const std::string& edit_id() const { return edit_id_; }
+    [[nodiscard]] std::vector<SetupPart> powertrain_engine_choices() const;
     [[nodiscard]] const SetupModel& model() const { return model_; }
     [[nodiscard]] const VehicleSetup& working() const { return working_; }
     // The working value of an option, or its stock value when unchanged.

@@ -82,6 +82,7 @@ struct DriverSnapshot {
     bool transmission_manual = false; // paddles took over in D
     bool transmission_sport = false;
     bool engine_running = false;
+    bool hybrid_fitted=false;
     bool electric_ready = false;
     double speed_mps = 0;
     double steering_wheel_deg = 0;

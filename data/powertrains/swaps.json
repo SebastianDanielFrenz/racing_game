@@ -1,0 +1,83 @@
+{
+  "format": "rg.powertrain_swaps/1",
+  "source": "[AS] Development conversion packages. Body, wheels, suspension, brakes and aero are retained. Ratings and packaging masses are authored, not measured conversions.",
+  "ice_donor": "../vehicles/car_sedan.json",
+  "electric_donor": "../vehicles/car_electric.json",
+  "hybrid_battery": {
+    "capacity_kwh": 20,
+    "initial_soc": 0.9,
+    "max_discharge_w": 150000,
+    "max_charge_w": 200000,
+    "mass_kg": 140
+  },
+  "hybrid_motor": {
+    "peak_torque_nm": 450,
+    "max_power_w": 200000,
+    "max_rpm": 20000,
+    "inertia_kgm2": 0.12,
+    "efficiency": 0.95,
+    "regen_torque_nm": 80,
+    "mass_kg": 60,
+    "crank_assist": false
+  },
+  "fuel_cell": {
+    "max_power_w": 150000,
+    "efficiency": 0.55,
+    "target_soc": 0.8,
+    "hydrogen_capacity_kg": 6,
+    "initial_hydrogen_kg": 5,
+    "specific_energy_j_kg": 120000000,
+    "mass_kg": 180
+  },
+  "choices": [
+    {
+      "id": "ice",
+      "label": "Internal combustion",
+      "section": "Internal combustion",
+      "detail": "Choose gasoline, diesel or hydrogen engines and their compatible fuel."
+    },
+    {
+      "id": "battery_ev",
+      "label": "Battery electric",
+      "section": "EV",
+      "detail": "Two 300 kW axle motors, 90 kWh battery and fixed reductions."
+    },
+    {
+      "id": "fuel_cell_ev",
+      "label": "Hydrogen fuel cell",
+      "section": "EV",
+      "detail": "Electric axle drive, 20 kWh buffer and 150 kW hydrogen stack."
+    },
+    {
+      "id": "hybrid_battery",
+      "label": "ICE + battery electric",
+      "section": "Hybrid",
+      "detail": "Electric-primary drive with a 200 kW axle motor, 20 kWh battery, combustion backup and neutral charging generator."
+    },
+    {
+      "id": "hybrid_dual_hydrogen",
+      "label": "Dual hydrogen",
+      "section": "Hybrid",
+      "detail": "Hydrogen combustion engine plus hydrogen fuel-cell electric assist; separate fuel stores."
+    }
+  ],
+  "hybrid_generator": {
+    "peak_torque_nm": 200,
+    "max_power_w": 50000,
+    "max_rpm": 12000,
+    "inertia_kgm2": 0.1,
+    "efficiency": 0.95,
+    "regen_torque_nm": 200,
+    "mass_kg": 30,
+    "crank_assist": true
+  },
+  "hybrid_control": {
+    "requested_power_w": 300000,
+    "low_soc": 0.2,
+    "charge_target_soc": 0.8,
+    "charge_rpm": 2200,
+    "generator_fraction": 0.6,
+    "stop_delay_s": 2,
+    "crank_timeout_s": 5
+  }
+}

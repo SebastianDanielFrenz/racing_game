@@ -85,7 +85,7 @@ struct Fixture {
     }
     std::vector<const rg::CatalogEntry*> base_cars() const {
         std::vector<const rg::CatalogEntry*> out;
-        for (const auto& e : catalog.entries) if (e.preset_of.empty()) out.push_back(&e);
+        for (const auto& e : catalog.entries) if (e.preset_of.empty() && e.id != "car_electric") out.push_back(&e); // ICE transmission packages; EV axle reductions are covered separately.
         return out;
     }
 };

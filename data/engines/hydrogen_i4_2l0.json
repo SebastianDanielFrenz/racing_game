@@ -1,0 +1,85 @@
+{
+  "format": "physics_sim.engine/1",
+  "name": "hydrogen_i4_2l0",
+  "kind": "torque_map",
+  "source": "[AS] Generic development hydrogen combustion engine with an authored torque curve. This is not a measured production engine or a cycle-derived combustion model. Geometry and ancillaries are reused from i4_2l_na; fuel properties drive actual fuel mass/energy accounting.",
+  "wot_torque_nm_vs_rpm": {
+    "x": [
+      500,
+      1000,
+      2000,
+      3000,
+      4000,
+      5000,
+      6000,
+      6500
+    ],
+    "y": [
+      70,
+      120,
+      160,
+      180,
+      185,
+      180,
+      160,
+      140
+    ]
+  },
+  "motoring_torque_nm_vs_rpm": {
+    "x": [
+      0,
+      500,
+      1000,
+      2000,
+      3000,
+      4000,
+      5000,
+      6000,
+      7000
+    ],
+    "y": [
+      -15,
+      -28,
+      -32,
+      -38,
+      -45,
+      -52,
+      -61,
+      -72,
+      -85
+    ]
+  },
+  "inertia_kgm2": 0.16,
+  "breakaway_torque_nm": 45.0,
+  "idle_rpm": 800,
+  "stall_rpm": 400,
+  "fire_rpm": 100,
+  "start_complete_rpm": 550,
+  "dfco_enable_rpm": 1300,
+  "dfco_reenable_rpm": 1000,
+  "idle_control": {
+    "kp_per_rpm": 0.0018,
+    "ki_per_rpm_s": 0.009,
+    "max_throttle": 0.3
+  },
+  "limiter": {
+    "type": "fuel_cut",
+    "rpm": 6800,
+    "hysteresis_rpm": 150
+  },
+  "starter": {
+    "stall_torque_nm": 140.0,
+    "free_speed_rpm": 700.0,
+    "interlock": "clutch_or_neutral"
+  },
+  "crank_axis_local": [
+    0,
+    1,
+    0
+  ],
+  "initial_state": "running",
+  "fuels": [
+    "../../external/physics_sim/data/fuels/hydrogen.json"
+  ],
+  "ignition": "spark"
+}

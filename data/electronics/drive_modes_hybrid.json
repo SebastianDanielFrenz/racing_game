@@ -1,0 +1,13 @@
+{
+  "format": "physics_sim.electronics/1",
+  "kind": "drive_modes",
+  "name": "Hybrid driving modes",
+  "default_mode": "normal",
+  "modes": {
+    "eco": {},
+    "normal": {},
+    "sport": {},
+    "racing": {}
+  },
+  "source": "[AS] Mode availability only; the hybrid supervisor owns electric priority, combustion scheduling and neutral charging. Automatic schedule load uses combined available power."
+}

@@ -153,7 +153,7 @@ void GarageDyno::run() {
                 if(auto e=std::get_if<ps::drivetrain::SimulatedEngineDesc>(&component.params)) simulated=e;
                 if(auto e=std::get_if<ps::drivetrain::TorqueMapEngineDesc>(&component.params)) mapped=e;
             }
-            if(!simulated && !mapped) throw std::runtime_error("Engine type has no supported dyno harness");
+            if(!simulated && !mapped) throw std::runtime_error("No combustion engine: electric motor dyno pending");
             points=measure_dyno(simulated,mapped,33,cancel.get(),[&](const auto& partial,int done) {
                 std::lock_guard lock(mutex_);
                 if(revision!=revision_ || cancel->load())return;
@@ -164,6 +164,7 @@ void GarageDyno::run() {
         { std::lock_guard lock(mutex_);
           if(revision!=revision_ || cancel->load()) continue;
           result_.busy=false; result_.error=error;result_.provisional_points.clear();
+          if(error.starts_with("No combustion engine")){result_.points.clear();result_.revision=revision;result_.key=request.key;}
           if(error.empty()) {
               result_.points=std::move(points); result_.revision=revision;
               result_.key=request.key; result_.progress=100;

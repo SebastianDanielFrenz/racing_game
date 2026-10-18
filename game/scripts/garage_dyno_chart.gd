@@ -27,6 +27,8 @@ func update_result(result: Dictionary) -> void:
 	busy = bool(result.get("busy",false))
 	progress = int(result.get("progress",0))
 	error = str(result.get("error",""))
+	if error.begins_with("No combustion engine"):
+		points = []
 	queue_redraw()
 
 func _draw() -> void:

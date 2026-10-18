@@ -101,6 +101,7 @@ public:
     //   modified, choices, list_size, stock_numbers, entry, entries}]; entry (Scale / BrakeBias) and entries (one per
     //   gear of a ScaleList) are the number's absolute display: {multiplier, unit, decimals, lo, hi, positional, mapping}
     [[nodiscard]] godot::Array get_options() const;
+    [[nodiscard]] godot::Array get_powertrain_engine_choices() const;
     // Garage numeric inputs (rg::NumberEntry): `index` is the gear of a ScaleList (else 0). Pure maths in rg core.
     // The slider position in [0, 1] of a stored value (positional entries) / the stored value at a position.
     [[nodiscard]] double option_entry_position(const godot::String& option_id, int index, double value) const;

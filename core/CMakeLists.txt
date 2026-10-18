@@ -113,6 +113,7 @@ add_library(rg_core STATIC
     src/part_mass.cpp
     src/strip_visual.cpp
     src/driveline_swap.cpp
+    src/powertrain_swap_json.cpp
     src/crt_guard.cpp
     src/garage_set.cpp
     src/garage.cpp

@@ -153,18 +153,20 @@ func configure_vehicle(path: String, auto_shift_default = null) -> void:
 	var vehicle = JSON.parse_string(FileAccess.get_file_as_string(path))
 	if not vehicle is Dictionary:
 		return
+	var has_hybrid := false
 	var has_motor := false
 	var has_engine := false
 	for component in vehicle.get("powertrain",{}).get("components",[]):
 		has_motor = has_motor or str(component.get("type","")) == "electric_motor"
+		has_hybrid = has_hybrid or str(component.get("type","")) == "hybrid_control"
 		has_engine = has_engine or str(component.get("type","")) == "engine"
-	_electric_drive = has_motor and not has_engine
+	_electric_drive = has_motor and (not has_engine or has_hybrid)
 	var manual := false
 	for controller in vehicle.get("controllers", []):
 		if controller is Dictionary and str(controller.get("type", "")) == "manual_tcu":
 			manual = true
 			break
-	driver_actions.configure_auto_shift((not manual) if auto_shift_default == null else bool(auto_shift_default))
+	driver_actions.configure_auto_shift((has_hybrid or not manual) if auto_shift_default == null else bool(auto_shift_default))
 	_configured_vehicle_path = key
 
 var cabin_config: Dictionary = {}

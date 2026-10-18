@@ -97,7 +97,8 @@ func _process_body(delta: float) -> void:
 		if _gauge_info.is_empty():
 			_gauge_info = _simulation.get_vehicle_gauge_info(vehicle_name)
 		_last_pt = _simulation.get_vehicle_powertrain(vehicle_name)
-		if int(_last_pt.get("transmission_kind",0)) == 4:
+		if (int(_last_pt.get("transmission_kind",0)) == 4 or bool(_last_pt.get("hybrid_fitted",false))):
+			_last_pt["combustion_state"] = _last_pt.get("engine_state", "Off")
 			_last_pt["engine_state"] = "running" if bool(_last_pt.get("electric_ready",false)) else "off"
 
 		_speed_limit = _simulation.get_vehicle_speed_limit(vehicle_name)
@@ -193,6 +194,7 @@ func _dynamic_signature() -> Array:
 		DriveModeTheme.accent(_last_pt, COLOR_TICK_MINOR), int(round(float(_last_pt.get("speedo_kmh", 0.0)))), int(round(_gps_kmh)),
 		_speed_limit.get("kind", "unknown"), int(round(float(_speed_limit.get("kph", 0.0)))), bool(_speed_limit.get("conditional", false)),
 		int(round(float(_last_pt.get("battery_soc",0))*100)), int(round(float(_last_pt.get("electric_power_kw",0)))),
+		str(_last_pt.get("combustion_state", "Off")), bool(_last_pt.get("hybrid_charging",false)), int(round(10*float(_last_pt.get("fuel_cell_hydrogen_kg",0)))), int(round(float(_last_pt.get("fuel_cell_power_kw",0)))),
 		thermal, pedals, int(round(clampf(1.0 - float(_last_pt.get("clutch_engagement", 1.0)), 0.0, 1.0) * 400.0))]
 
 func _clock_rad(clock_deg: float) -> float:
@@ -400,17 +402,26 @@ func _draw_body() -> void:
 	# Left of the lamp row, under the speed readout; nothing for a car without a thermal model.
 	ThermalReadout.draw_bar(self, font, Vector2(center.x - radius * 1.55, center.y + radius * 1.28), scale, _thermal, blink_on)
 
-	if int(_last_pt.get("transmission_kind",0)) == 4:
+	if (int(_last_pt.get("transmission_kind",0)) == 4 or bool(_last_pt.get("hybrid_fitted",false))):
 		var ready_text := "READY" if bool(_last_pt.get("electric_ready",false)) else "OFF"
 		var ev_text := "%s / %.0f%% / %+.0f kW" % [ready_text,100.0*float(_last_pt.get("battery_soc",0)),float(_last_pt.get("electric_power_kw",0))]
 		_draw_centered_text(font,Vector2(center.x-radius*0.6,center.y+radius*1.28),ev_text,int(round(20.0*scale)),accent)
+	if bool(_last_pt.get("fuel_cell_fitted", false)) or bool(_last_pt.get("hybrid_fitted", false)):
+		var energy_text := ""
+		if bool(_last_pt.get("fuel_cell_fitted", false)):
+			energy_text = "H2 %.1f kg / FC %.0f kW" % [float(_last_pt.get("fuel_cell_hydrogen_kg",0)),float(_last_pt.get("fuel_cell_power_kw",0))]
+		if bool(_last_pt.get("hybrid_fitted", false)):
+			energy_text += " / ICE " + str(_last_pt.get("combustion_state", "Off"))
+			if bool(_last_pt.get("hybrid_charging", false)):
+				energy_text += " / target %.0f%%" % (100.0*float(_last_pt.get("hybrid_charge_target_soc",.8)))
+		_draw_centered_text(font, Vector2(center.x-radius*.6, center.y+radius*1.43), energy_text, int(round(13.0*scale)), accent)
 	_draw_pedals(font, vp_size, center, radius, margin, scale)
 
 	var warning: String = ""
 	if engine_state == "stalled":
 		warning = "ENGINE STALLED - hold Start / K to restart"
 	elif engine_state == "off":
-		warning = "DRIVE OFF - press K" if int(_last_pt.get("transmission_kind",0)) == 4 else "IGNITION OFF - hold I"
+		warning = "DRIVE OFF - press K" if (int(_last_pt.get("transmission_kind",0)) == 4 or bool(_last_pt.get("hybrid_fitted",false))) else "IGNITION OFF - hold I"
 	elif grind_active:
 		warning = "GRIND!"
 	var slow_blink_on: bool = fmod(Time.get_ticks_msec() / 1000.0, 1.0) < 0.7

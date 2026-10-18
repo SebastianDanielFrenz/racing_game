@@ -340,6 +340,10 @@ bool Garage::select(const std::string& id, std::string* err) {
 }
 
 const EngineEntry* Garage::bay_engine(const std::string& id) const {
+    const VehicleSetup selected_setup = editing() && edit_id_ == id ? working_ : effective_setup(id);
+    if (const auto it = selected_setup.values.find("powertrain_install"); it != selected_setup.values.end()) {
+        if (const auto* kind = std::get_if<std::string>(&it->second); kind && (*kind == "battery_ev" || *kind == "fuel_cell_ev")) return nullptr;
+    }
     if (editing() && edit_id_ == id && !model_.engine_key.empty()) return store_->find(model_.engine_key);
     // Not editing: the engine the saved setup (or the preset) installs, else the car's own.
     if (const CatalogEntry* e = catalog_.find(id)) {
@@ -373,7 +377,7 @@ std::optional<VehicleStats> Garage::stats(const std::string& id, std::string* er
     }
     // A drivetrain swap: the layout the setup builds (only a setup that chooses a layout or a differential).
     const VehicleSetup setup = editing() && edit_id_ == id ? working_ : effective_setup(id);
-    if (setup.values.count("drive_layout") != 0 || setup.values.count("diff_front") != 0 || setup.values.count("diff_rear") != 0) {
+    if (setup.values.count("powertrain_install") != 0 || setup.values.count("drive_layout") != 0 || setup.values.count("diff_front") != 0 || setup.values.count("diff_rear") != 0) {
         const SetupModel m = build_setup_model(*e, options_, context_for(*e), &setup);
         if (m.error.empty() && m.driveline.driven_wheels > 0) {
             computed->layout = m.driveline.layout;
@@ -552,6 +556,15 @@ bool Garage::begin_edit(const std::string& id, std::string* err) {
     return true;
 }
 
+std::vector<SetupPart> Garage::powertrain_engine_choices() const {
+    const auto* entry=catalog_.find(edit_id_);if(!entry)return {};
+    VehicleSetup probe;probe.vehicle_id=edit_id_;probe.values["powertrain_install"]=std::string("ice");
+    const auto model=build_setup_model(*entry,options_,context_for(*entry),&probe);
+    if(!model.error.empty())return {};
+    for(const auto& option:model.options)if(option.def.id=="engine_install")return option.parts;
+    return {};
+}
+
 SetupValue Garage::current_value(const std::string& option_id) const {
     const auto it = working_.values.find(option_id);
     if (it != working_.values.end()) return it->second;
@@ -623,13 +636,20 @@ EditResult Garage::set_option(const std::string& option_id, const SetupValue& va
     } else {
         working_.values[option_id] = stored;
     }
+    if(option_id=="powertrain_install") {
+        for(const auto& def:options_.options) {
+            if(def.id==option_id)continue;
+            if(def.file=="engine"||def.file=="turbo"||def.file=="gearbox"||def.catalog=="engines"||def.catalog=="fuels"||def.catalog=="gearboxes"||def.catalog=="drive_layouts"||def.catalog=="differentials"||def.id=="clutch_capacity")working_.values.erase(def.id);
+        }
+        r.notice="Powertrain component upgrades were reset for the conversion.";
+    }
     r.accepted = true;
     if (option_id == "gearbox_install" && working_.values.erase("gear_ratios") != 0) {
         // The gear factors belong to the old box (another gear count, other ratios): back to the new box's own ratios.
         r.notice = "The gear ratios were reset to the new gearbox's own.";
     }
     revalidate();
-    if (option_id == "engine_install") r.notice = drop_unavailable_values();
+    if (option_id == "engine_install" || option_id=="powertrain_install") {const auto dropped=drop_unavailable_values();if(!dropped.empty())r.notice+=dropped;}
     if (option_id == "gearbox_install") {
         const std::string dropped = drop_unavailable_values(true);
         if (!dropped.empty()) r.notice = r.notice.empty() ? dropped : r.notice + " " + dropped;
@@ -648,6 +668,7 @@ std::string Garage::drop_unavailable_values(bool gearbox_change) {
     if (entry == nullptr) return {};
     VehicleSetup probe;
     probe.vehicle_id = edit_id_;
+    if(const auto it=working_.values.find("powertrain_install");it!=working_.values.end())probe.values["powertrain_install"]=it->second;
     if (const auto it = working_.values.find("engine_install"); it != working_.values.end()) probe.values["engine_install"] = it->second;
     if (gearbox_change) {
         if (const auto it = working_.values.find("gearbox_install"); it != working_.values.end()) probe.values["gearbox_install"] = it->second;
@@ -657,7 +678,7 @@ std::string Garage::drop_unavailable_values(bool gearbox_change) {
     std::string notice;
     std::vector<std::string> drop;
     for (const auto& [id, value] : working_.values) {
-        if (id == "engine_install" || (gearbox_change && id == "gearbox_install")) continue;
+        if (id == "engine_install" || id=="powertrain_install" || (gearbox_change && id == "gearbox_install")) continue;
         const OptionView* view = nullptr;
         for (const OptionView& v : pm.options) if (v.def.id == id) view = &v;
         if (view == nullptr) continue;
@@ -982,6 +1003,9 @@ DriveSelection Garage::prepare_drive(const std::string& id) {
                 }
             }
         }
+    }
+    if(const auto text=detail::read_text_file(d.vehicle_path))if(const auto doc=detail::parse_json(*text);doc&&doc->contains("powertrain")) {
+        for(const auto& c:(*doc)["powertrain"]["components"])if(c.value("type",std::string{})=="hybrid_control") {d.manual_gearbox=false;d.assist_auto_shift=true;}
     }
     if (!d.manual_gearbox) d.assist_auto_shift = true; // an automatic car shifts itself
     d.ok = true;

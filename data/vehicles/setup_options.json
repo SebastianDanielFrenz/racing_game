@@ -3,6 +3,20 @@
   "source": "PLAN.md 11.6 v1 option list. This table IS the whitelist: an option may change only the JSON-pointer leaves it lists (`*` = every array element, `[key=value]` = the array elements whose field equals the value). Ranges are authored game limits, not physics data: +-20 % final drive and gear ratios, +-30 % springs/dampers/ARBs/brake force, the brake bias moves the front share by at most max_shift around the stock one (same total torque). ABS/TC/ESC are not options yet (physics has none).",
   "options": [
     {
+      "id": "powertrain_install",
+      "label": "Powertrain",
+      "group": "Swaps",
+      "area": "engine",
+      "kind": "file_choice",
+      "catalog": "powertrains",
+      "file": "vehicle",
+      "part_format": "rg.powertrain_swaps/1",
+      "pointers": [
+        "/powertrain"
+      ],
+      "help": "Choose internal combustion, electric or hybrid propulsion. Conversions retain the car body and running gear; incompatible component upgrades return to stock."
+    },
+    {
       "id": "final_drive",
       "label": "Final drive",
       "group": "Drivetrain",

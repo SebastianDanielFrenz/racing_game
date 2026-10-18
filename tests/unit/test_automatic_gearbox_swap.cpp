@@ -3,7 +3,8 @@
 // TCU replaced by the physics automatic_tcu, park lock fitted, drive modes dropped), the garage dropping the options a
 // clutch-to-clutch box no longer has, the selector helpers, and drives: a car with an automatic creeps at idle and drives
 // from rest through several gears on the selector alone.
-#include <cstdio>
+#include <fstream>
+#include <nlohmann/json.hpp>
 #include "rg/driver_actions.h"
 #include "rg/driveline_swap.h"
 #include "rg/engine_store.h"
@@ -835,4 +836,56 @@ TEST_CASE("Selectable electric sedan materialises and drives without a combustio
     CHECK(w.powertrain_state(id).electric_ready);
     CHECK(w.powertrain_state(id).engine_state==ps::drivetrain::EngineState::Off);
     CHECK(w.get_motion(session.chassis_body()).linear.x>10);
+}
+TEST_CASE("Powertrain swaps preserve the body and materialise all propulsion categories", "[powertrain_swap]") {
+ Fixture f;
+ for(const auto& car_id:{"car_sedan","car_electric"})for(const auto& choice:{"ice","battery_ev","fuel_cell_ev","hybrid_battery","hybrid_dual_hydrogen"}) {
+  INFO(car_id<<" / "<<choice);
+  rg::VehicleSetup setup;setup.vehicle_id=car_id;setup.values["powertrain_install"]=std::string(choice);
+  const auto result=load_setup(f,f.entry(car_id),setup);INFO(result.error);REQUIRE(result.ok);
+  CHECK(result.desc.wheels.size()==4);
+  const bool ev=std::string(choice)=="battery_ev"||std::string(choice)=="fuel_cell_ev";
+  CHECK(count_components<ps::drivetrain::TorqueMapEngineDesc>(result.desc)==(ev?0:1));
+  CHECK(count_components<ps::drivetrain::HybridControlDesc>(result.desc)==(std::string(choice).starts_with("hybrid")?1:0));
+  CHECK(count_components<ps::drivetrain::FuelCellDesc>(result.desc)==((std::string(choice)=="fuel_cell_ev"||std::string(choice)=="hybrid_dual_hydrogen")?1:0));
+  if(std::string(choice).starts_with("hybrid")){REQUIRE(result.desc.drive_modes.has_value());CHECK(result.desc.drive_modes->modes_bits==15);}
+ }
+}
+TEST_CASE("Hybrid conversions retain modes through AT DCT and CVT installation and launch electrically", "[powertrain_swap][automatic]") {
+ Fixture f;
+ for(const auto& box:{"auto_8at","dct_7","cvt_clutch"}) {
+  INFO(box);rg::VehicleSetup setup;setup.vehicle_id="car_sedan";
+  setup.values["powertrain_install"]=std::string("hybrid_dual_hydrogen");setup.values["gearbox_install"]=std::string(box);
+  rg::ScopedWorkDir dir(f.ctx.work_root,"hybrid_"+std::string(box));
+  const auto m=rg::materialise_setup(f.entry("car_sedan"),f.table,f.ctx,setup,dir.path());INFO(m.error);REQUIRE(m.ok);
+  rg::SessionConfig cfg;cfg.vehicle_json_path=m.vehicle_path;cfg.surface_table_path=kRoot+"/data/surfaces/surfaces.json";cfg.chassis_mass_kg=1800;cfg.chassis_half_extents={2,.4,.15};cfg.chassis_z_m=.6;
+  rg::Session session(cfg);auto& w=session.world();w.set_control("assist.drive_mode",0);w.set_control("gear_request",99);w.set_control("throttle",.25);
+  for(int i=0;i<1200;++i)session.step();auto p=w.powertrain_state(session.vehicle_id());
+  CHECK(p.hybrid_fitted);CHECK(p.drive_modes_available_bits==15);CHECK(p.engine_state==ps::drivetrain::EngineState::Off);CHECK(w.get_motion(session.chassis_body()).linear.x>2);
+  w.set_control("assist.drive_mode",2);for(int i=0;i<1200;++i)session.step();p=w.powertrain_state(session.vehicle_id());
+  CHECK(p.engine_state==ps::drivetrain::EngineState::Running);CHECK(p.hybrid_ice_requested);
+ }
+}
+TEST_CASE("Hybrid supported gearboxes charge the battery in mechanical neutral", "[powertrain_swap][automatic]") {
+ Fixture f;
+ for(const auto& box:{"auto_8at","dct_7","cvt_clutch"}) {
+  INFO(box);rg::VehicleSetup setup;setup.vehicle_id="car_sedan";
+  setup.values["powertrain_install"]=std::string("hybrid_dual_hydrogen");setup.values["gearbox_install"]=std::string(box);
+  rg::ScopedWorkDir dir(f.ctx.work_root,"hybrid_charge_"+std::string(box));
+  const auto m=rg::materialise_setup(f.entry("car_sedan"),f.table,f.ctx,setup,dir.path());INFO(m.error);REQUIRE(m.ok);
+  nlohmann::json vehicle;{std::ifstream input(m.vehicle_path);input>>vehicle;}
+  for(auto& c:vehicle["powertrain"]["components"])if(c.value("type",std::string{})=="battery") {c["capacity_kwh"]=.01;c["initial_soc"]=.19;}
+  for(auto& c:vehicle["powertrain"]["components"])if(c.value("type",std::string{})=="fuel_cell")c["initial_hydrogen_kg"]=0;
+  {std::ofstream output(m.vehicle_path);output<<vehicle.dump(2);}
+  rg::SessionConfig cfg;cfg.vehicle_json_path=m.vehicle_path;cfg.surface_table_path=kRoot+"/data/surfaces/surfaces.json";cfg.chassis_mass_kg=1800;cfg.chassis_half_extents={2,.4,.15};cfg.chassis_z_m=.6;
+  rg::Session session(cfg);auto& w=session.world();w.set_control("assist.drive_mode",0);w.set_control("gear_request",0);w.set_control("throttle",0);
+  bool charged=false;
+  for(int i=0;i<7200;++i) {
+   session.step();const auto p=w.powertrain_state(session.vehicle_id());
+   REQUIRE(p.gear==0);
+   if(p.battery_soc>.3)charged=true;
+  }
+  const auto p=w.powertrain_state(session.vehicle_id());CHECK(charged);CHECK(p.battery_soc>=.799);CHECK_FALSE(p.hybrid_charging);CHECK(p.engine_state==ps::drivetrain::EngineState::Off);
+  const auto motion=w.get_motion(session.chassis_body());CHECK(std::hypot(motion.linear.x,motion.linear.y)<.1);
+ }
 }

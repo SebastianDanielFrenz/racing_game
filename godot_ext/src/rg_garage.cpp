@@ -321,6 +321,14 @@ godot::Dictionary RgGarage::option_entry_parse(const String& option_id, int inde
     return d;
 }
 
+godot::Array RgGarage::get_powertrain_engine_choices() const {
+    godot::Array out;if(!garage_)return out;
+    for(const auto& p:garage_->powertrain_engine_choices()) {
+        godot::Dictionary d;d["id"]=from_std(p.id);d["label"]=from_std(p.label);d["image"]=from_std(p.image);d["size"]=from_std(p.detail);
+        d["section"]=from_std(p.section);d["subtitle"]=from_std(p.subtitle);d["fits"]=p.fits;d["fit_reason"]=from_std(p.fit_reason);out.push_back(d);
+    }return out;
+}
+
 godot::Array RgGarage::get_options() const {
     godot::Array out;
     if (garage_ == nullptr || !garage_->editing()) return out;
@@ -841,6 +849,7 @@ void RgGarage::_bind_methods() {
     ClassDB::bind_method(D_METHOD("begin_edit", "id"), &RgGarage::begin_edit);
     ClassDB::bind_method(D_METHOD("get_edit_id"), &RgGarage::get_edit_id);
     ClassDB::bind_method(D_METHOD("get_options"), &RgGarage::get_options);
+    ClassDB::bind_method(D_METHOD("get_powertrain_engine_choices"), &RgGarage::get_powertrain_engine_choices);
     ClassDB::bind_method(D_METHOD("option_entry_position", "option_id", "index", "value"), &RgGarage::option_entry_position);
     ClassDB::bind_method(D_METHOD("option_entry_value", "option_id", "index", "position"), &RgGarage::option_entry_value);
     ClassDB::bind_method(D_METHOD("option_entry_text", "option_id", "index", "value"), &RgGarage::option_entry_text);

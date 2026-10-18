@@ -1215,6 +1215,53 @@ func _draw_show_all_toggle() -> void:
 	_option_box.add_child(check)
 	_buttons["show_all_upgrades"] = check
 
+func _draw_powertrain_swaps() -> void:
+	var opt := _garage_option("powertrain_install")
+	if opt.is_empty():
+		return
+	if _garage_path.size() == 2:
+		_draw_tiles(["Internal combustion", "EV", "Hybrid"])
+		return
+	var category: String = _garage_path[2]
+	if category == "Internal combustion" and _garage_path.size() == 3:
+		_draw_tiles(["Gasoline", "Diesel", "Hydrogen"])
+		return
+	var parts: Array = opt["parts"]
+	var option_id := "powertrain_install"
+	var value: String = str(opt["value"])
+	if category == "Internal combustion":
+		# Probe the ICE conversion's engine list even when the installed car is electric.
+		var engine_parts: Array = garage.get_powertrain_engine_choices()
+		parts = engine_parts
+		option_id = "engine_install"
+		value = str(_garage_option("engine_install").get("value", "")) if str(opt["value"]) == "ice" else ""
+	var grid := GridContainer.new()
+	grid.columns = 2
+	_option_box.add_child(grid)
+	for part in parts:
+		var section: String = str(part.get("section", ""))
+		if category == "Internal combustion":
+			if section != _garage_path[3]:
+				continue
+		elif section != category:
+			continue
+		var installed := str(part["id"]) == value
+		if not _part_visible(part) and not installed:
+			continue
+		var card := _make_component_card(part, "INSTALLED" if installed else "Install")
+		_grey_if_unfit(card, part)
+		grid.add_child(card)
+		_buttons["part:" + option_id + ":" + str(part["id"])] = card
+		card.pressed.connect(func():
+			if category == "Internal combustion":
+				_edit_option("powertrain_install", "ice")
+			_edit_option(option_id, str(part["id"]))
+			_draw_garage_options())
+		if installed or _garage_preferred == null:
+			_garage_preferred = card
+	_draw_swap_summary()
+	_focus_garage.call_deferred()
+
 func _draw_upgrades() -> void:
 	_option_box.add_child(_label(" / ".join(_garage_path) if not _garage_path.is_empty() else "Upgrade categories",20,HORIZONTAL_ALIGNMENT_LEFT))
 	_draw_show_all_toggle()
@@ -1230,6 +1277,9 @@ func _draw_upgrades() -> void:
 		else:
 			_draw_wheel_parts()
 		return
+	if top == "Swaps" and _garage_path.size() >= 2 and _garage_path[1] == "Powertrain":
+		_draw_powertrain_swaps()
+		return
 	if top in ["Engine", "Swaps"]:
 		if _garage_path.size() == 1:
 			var disabled: Array = ["Camshaft"]
@@ -1238,7 +1288,7 @@ func _draw_upgrades() -> void:
 			if top == "Swaps":
 				var no_fuel: bool = _garage_option("fuel").is_empty()
 				var no_drivetrain: bool = _garage_option("drive_layout").is_empty() and _garage_option("diff_front").is_empty() and _garage_option("diff_rear").is_empty()
-				_draw_tiles(["Engine", "Fuel", "Forced induction", "Drivetrain"], [] + (["Engine"] if disabled.has("Engine") else []) + (["Fuel"] if no_fuel else []) + (["Forced induction"] if disabled.has("Turbo") else []) + (["Drivetrain"] if no_drivetrain else []))
+				_draw_tiles(["Powertrain", "Engine", "Fuel", "Forced induction", "Drivetrain"], [] + (["Engine"] if disabled.has("Engine") else []) + (["Fuel"] if no_fuel else []) + (["Forced induction"] if disabled.has("Turbo") else []) + (["Drivetrain"] if no_drivetrain else []))
 			else:
 				_draw_tiles(["Turbo", "N2O", "Internals", "Cooling", "Camshaft"],disabled + (["N2O"] if _garage_option("nitrous_install_hyper").is_empty() and _garage_option("nitrous_install_sedan").is_empty() else []) + ([] if _internals_offered() else ["Internals"]) + ([] if _cooling_offered() else ["Cooling"]))
 			return
