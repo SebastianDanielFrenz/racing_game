@@ -143,6 +143,14 @@ TEST_CASE("cooling: the options are on every car, with a reason where they do no
         REQUIRE(m.error.empty());
         const rg::OptionView* rad = view_of(m, "cooling_radiator");
         if (rad == nullptr) continue; // a catalog entry that lists no cooling options
+        // An electric car (no engine component) has no radiator option available; every combustion car offers upgrades.
+        bool has_engine = false;
+        {
+            std::ifstream vin(e.vehicle_path);
+            const nlohmann::json vj = nlohmann::json::parse(vin);
+            for (const auto& comp : vj.at("powertrain").at("components")) if (comp.value("type", "") == "engine") has_engine = true;
+        }
+        if (!has_engine) { CHECK_FALSE(rad->available); continue; } // no engine, nothing to cool
         REQUIRE(rad->parts.size() >= 3);
         CHECK(rad->parts.front().id == "stock");
         for (const rg::SetupPart& p : rad->parts) {
