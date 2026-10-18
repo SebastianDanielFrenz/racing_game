@@ -34,11 +34,23 @@ func run() -> void:
  if hybrid: hybrid.pressed.emit()
  check(garage.prepare_drive("car_electric").get("ok",false),"hybrid from EV materialises")
  for car in ["car_sedan","car_electric","car_hyper_n2o"]:
-  for kind in ["ice","battery_ev","fuel_cell_ev","hybrid_battery","hybrid_dual_hydrogen"]:
+  for kind in ["ice","battery_ev","fuel_cell_ev","hybrid_battery","hybrid_dual_hydrogen","ice"]:
    check(garage.begin_edit(car).get("ok",false),"edit "+car)
    var changed: Dictionary=garage.set_option("powertrain_install",kind)
    check(changed.get("accepted",false),car+" accepts "+kind+" "+str(changed))
    check(garage.prepare_drive(car).get("ok",false),car+" materialises "+kind)
+   check(garage.save().get("ok",false),car+" saves "+kind)
+   var reloaded = ClassDB.instantiate("RgGarage")
+   root.add_child(reloaded)
+   check(reloaded.initialize(repo,work,work.path_join("reload_work"),"").get("ok",false),"reload initialise")
+   check(reloaded.begin_edit(car).get("ok",false),"reload "+car)
+   var restored := ""
+   for option in reloaded.get_options():
+    if str(option.get("id",""))=="powertrain_install":restored=str(option.get("value",""))
+   check(restored==kind,car+" restores "+kind+" got "+restored)
+   check(reloaded.prepare_drive(car).get("ok",false),car+" saved conversion materialises")
+   reloaded.queue_free()
+   await process_frame
  ui.queue_free()
  garage.queue_free()
  await process_frame

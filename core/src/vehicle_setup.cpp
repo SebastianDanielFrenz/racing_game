@@ -758,7 +758,7 @@ std::string install_catalog_part(Files& files, const SetupOptionDef& def, const 
                                  const std::string& id) {
     if(def.catalog=="powertrains") {
         const std::string old_engine=files.engine?files.engine->path:std::string{};
-        const std::string error=detail::swap_powertrain(files.vehicle.work,id,powertrain_config(ctx));
+        const std::string error=detail::swap_powertrain(files.vehicle.work,id,powertrain_config(ctx),files.vehicle.path);
         if(!error.empty())return error;
         files.engine.reset();files.gearbox.reset();files.turbo.reset();files.swapped.reset();
         std::string err;

@@ -889,3 +889,34 @@ TEST_CASE("Hybrid supported gearboxes charge the battery in mechanical neutral",
   const auto motion=w.get_motion(session.chassis_body());CHECK(std::hypot(motion.linear.x,motion.linear.y)<.1);
  }
 }
+TEST_CASE("Hybrid READY and respawn recover electric drive and ICE startup", "[powertrain_swap][hybrid_reset]") {
+ Fixture f;
+ for(const auto& box:{"auto_8at","dct_7","cvt_clutch"}) {
+  INFO(box);rg::VehicleSetup setup;setup.vehicle_id="car_sedan";
+  setup.values["powertrain_install"]=std::string("hybrid_dual_hydrogen");setup.values["gearbox_install"]=std::string(box);
+  rg::ScopedWorkDir dir(f.ctx.work_root,"hybrid_reset_"+std::string(box));
+  const auto m=rg::materialise_setup(f.entry("car_sedan"),f.table,f.ctx,setup,dir.path());INFO(m.error);REQUIRE(m.ok);
+  rg::SessionConfig cfg;cfg.vehicle_json_path=m.vehicle_path;cfg.surface_table_path=kRoot+"/data/surfaces/surfaces.json";cfg.chassis_mass_kg=1800;cfg.chassis_half_extents={2,.4,.15};cfg.chassis_z_m=.6;
+  rg::Session session(cfg);auto& w=session.world();const auto id=session.vehicle_id();
+  w.set_control("assist.drive_mode",2);w.set_control("gear_request",99);w.set_control("throttle",.5);
+  for(int cycle=0;cycle<3;++cycle) {
+   INFO(cycle);
+   for(int i=0;i<1200;++i)session.step();
+   const auto running=w.powertrain_state(id);
+   CHECK(running.electric_ready);CHECK(running.engine_state==ps::drivetrain::EngineState::Running);
+   CHECK(w.get_motion(session.chassis_body()).linear.x>2);
+   w.set_control("electric.ready",0);w.set_control("throttle",0);
+   for(int i=0;i<240;++i)session.step();
+   CHECK_FALSE(w.powertrain_state(id).electric_ready);CHECK(w.powertrain_state(id).engine_state==ps::drivetrain::EngineState::Off);
+   session.request_reset_to_spawn();for(int i=0;i<24;++i)session.step();
+   w.set_control("electric.ready",1);w.set_control("gear_request",99);w.set_control("throttle",.5);
+  }
+ }
+}
+TEST_CASE("Powertrain conversions preserve the hypercar electronic parking brake", "[powertrain_swap]") {
+ Fixture f;
+ for(const auto& choice:{"battery_ev","fuel_cell_ev","hybrid_battery","hybrid_dual_hydrogen"}) {
+  INFO(choice);rg::VehicleSetup setup;setup.vehicle_id="car_hyper";setup.values["powertrain_install"]=std::string(choice);
+  const auto result=load_setup(f,f.entry("car_hyper"),setup);INFO(result.error);REQUIRE(result.ok);CHECK(result.desc.epb.has_value());
+ }
+}

@@ -13,21 +13,30 @@ void refs(json& node,const fs::path& dir){
 bool has(const json& v,const std::string& type){if(!v.contains("powertrain"))return false;const auto& p=v["powertrain"];if(!p.contains("components")||!p["components"].is_array())return false;for(const auto& c:p["components"])if(c.is_object()&&c.value("type",std::string{})==type)return true;return false;}
 }
 std::string powertrain_kind(const json& vehicle){return has(vehicle,"engine")?(has(vehicle,"electric_motor")?"hybrid_battery":"ice"):(has(vehicle,"fuel_cell")?"fuel_cell_ev":"battery_ev");}
-std::string swap_powertrain(json& v,const std::string& choice,const std::string& config_path){
+std::string swap_powertrain(json& v,const std::string& choice,const std::string& config_path,const std::string& vehicle_path){
  const auto cfg=read(config_path);if(!cfg.is_object()||cfg.value("format",std::string{})!="rg.powertrain_swaps/1")return "powertrain conversion catalogue is unavailable";
  bool known=false;for(const auto& c:cfg.at("choices"))if(c.at("id")==choice)known=true;if(!known)return "unknown powertrain conversion: "+choice;
  std::set<std::string> wheels;for(const auto& w:v.value("wheels",json::array()))if(w.is_object())wheels.insert(w.value("name",std::string{}));
  if(wheels!=std::set<std::string>{"FL","FR","RL","RR"})return "powertrain conversions currently require four named road wheels";
  const fs::path dir=fs::path(config_path).parent_path();
  auto donor=[&](const char* key){const auto path=(dir/cfg.at(key).get<std::string>()).lexically_normal();auto d=read(path);refs(d,path.parent_path());return d;};
+ const auto parking_brake=[&](const json& controller) {
+  if(controller.value("type",std::string{})!="electronics")return false;
+  auto path=fs::path(controller.value("ref",std::string{}));if(path.is_relative())path=fs::path(vehicle_path).parent_path()/path;
+  const auto part=read(path.lexically_normal());return part.is_object()&&part.value("kind",std::string{})=="epb";
+ };
+ json retained_parking=json::array();
+ for(auto controller:v.value("controllers",json::array()))if(parking_brake(controller)){refs(controller,fs::path(vehicle_path).parent_path());retained_parking.push_back(controller);}
  const bool electric=choice=="battery_ev"||choice=="fuel_cell_ev";
  if(electric){
   auto d=donor("electric_donor");if(!d.is_object()||!d.contains("powertrain"))return "electric conversion donor is unavailable";
   v["powertrain"]=d["powertrain"];v["controllers"]=d.value("controllers",json::array());
+  bool has_parking=false;for(const auto& c:v["controllers"])has_parking|=parking_brake(c);if(!has_parking)for(const auto& c:retained_parking)v["controllers"].push_back(c);
   v.erase("cooling_system");v.erase("engine_thermal_start");
  } else if(!has(v,"engine")){
   auto d=donor("ice_donor");if(!d.is_object()||!d.contains("powertrain"))return "combustion conversion donor is unavailable";
   v["powertrain"]=d["powertrain"];v["controllers"]=d.value("controllers",json::array());
+  bool has_parking=false;for(const auto& c:v["controllers"])has_parking|=parking_brake(c);if(!has_parking)for(const auto& c:retained_parking)v["controllers"].push_back(c);
   for(const char* key:{"cooling_system","engine_thermal_start"})if(d.contains(key))v[key]=d[key];
  }
  auto& pt=v["powertrain"];auto& comps=pt["components"];
@@ -49,7 +58,7 @@ std::string swap_powertrain(json& v,const std::string& choice,const std::string&
   pt["shafts"].push_back({{"ports",{"conversion_motor.shaft","conversion_reduction.in"}}});
   // One hybrid-aware electronics unit; the mechanical TCU remains fitted.
   auto controllers=v.value("controllers",json::array());json kept=json::array();
-  for(const auto& controller:controllers)if(controller.value("type",std::string{})!="electronics")kept.push_back(controller);
+  for(const auto& controller:controllers)if(controller.value("type",std::string{})!="electronics"||parking_brake(controller))kept.push_back(controller);
   kept.push_back({{"id","hybrid_assists"},{"type","electronics"},{"ref",(dir/"../electronics/assist_unit_hybrid.json").lexically_normal().generic_string()}});kept.push_back({{"id","hybrid_modes"},{"type","electronics"},{"ref",(dir/"../electronics/drive_modes_hybrid.json").lexically_normal().generic_string()}});v["controllers"]=kept;
 
  }
