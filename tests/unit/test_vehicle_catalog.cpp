@@ -52,7 +52,7 @@ TEST_CASE("catalog: stats come from the data files", "[catalog][vehicle_select]"
     CHECK(sedan->driven_wheels == 2);
     CHECK(sedan->wheel_count == 4);
     CHECK(sedan->gear_count == 6);
-    CHECK(sedan->mass_kg == Catch::Approx(1329.4)); // the dry part-tree chassis (PR #22)
+    CHECK(sedan->mass_kg == Catch::Approx(1332.4)); // the dry part-tree chassis (PR #22; +3 kg ABS/ESC unit, as test_garage)
     CHECK(!sedan->engine_figures_declared); // a torque-map engine: read from its WOT curve
     CHECK(sedan->peak_torque_nm > 250.0);
     CHECK(sedan->peak_torque_nm < 400.0);
