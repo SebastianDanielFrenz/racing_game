@@ -212,6 +212,7 @@ private:
     std::string drop_unavailable_values(bool gearbox_change = false);
     // After a drive layout change: an axle differential choice for an axle the new layout does not drive returns to stock.
     std::string drop_driveline_values();
+    std::string drop_driveline_values_after_conversion();
     // The overlay with legacy engine ids resolved to keys; an engine that no longer exists is dropped (named in *notices).
     void normalise_engine_values(VehicleSetup& setup, std::vector<std::string>* notices) const;
     [[nodiscard]] VehicleSetup effective_setup_with_notices(const std::string& id, std::vector<std::string>* notices) const;

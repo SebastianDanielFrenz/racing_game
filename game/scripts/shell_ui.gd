@@ -996,7 +996,7 @@ func _focus_tuning() -> void:
 			return
 
 # Navigation owns focus; installed markers remain separate from the moving cursor.
-func _draw_tiles(names: Array, unavailable: Array = []) -> void:
+func _draw_tiles(names: Array, unavailable: Array = [], reasons: Dictionary = {}) -> void:
 	var grid := GridContainer.new()
 	grid.columns = 2
 	grid.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -1035,6 +1035,14 @@ func _enter_garage_tile(name: String) -> void:
 	_active_area = str(area.get(_garage_path[0],"overview"))
 	garage_area_chosen.emit(_active_area)
 	_draw_garage_options()
+
+# Why a Swaps tile is greyed out: the first reason core gives for any of the options behind it.
+func _swap_reason(ids: Array) -> String:
+	for id in ids:
+		for opt in garage.get_options():
+			if str(opt["id"]) == id and not bool(opt["available"]) and not str(opt.get("unavailable_reason", "")).is_empty():
+				return str(opt["unavailable_reason"])
+	return "Not available for this car"
 
 func _garage_option(id: String) -> Dictionary:
 	for opt in garage.get_options():
@@ -1288,7 +1296,7 @@ func _draw_upgrades() -> void:
 			if top == "Swaps":
 				var no_fuel: bool = _garage_option("fuel").is_empty()
 				var no_drivetrain: bool = _garage_option("drive_layout").is_empty() and _garage_option("diff_front").is_empty() and _garage_option("diff_rear").is_empty()
-				_draw_tiles(["Powertrain", "Engine", "Fuel", "Forced induction", "Drivetrain"], [] + (["Engine"] if disabled.has("Engine") else []) + (["Fuel"] if no_fuel else []) + (["Forced induction"] if disabled.has("Turbo") else []) + (["Drivetrain"] if no_drivetrain else []))
+				_draw_tiles(["Powertrain", "Engine", "Fuel", "Forced induction", "Drivetrain"], [] + (["Engine"] if disabled.has("Engine") else []) + (["Fuel"] if no_fuel else []) + (["Forced induction"] if disabled.has("Turbo") else []) + (["Drivetrain"] if no_drivetrain else []),{"Engine":_swap_reason(["engine_install"]),"Fuel":_swap_reason(["fuel"]),"Forced induction":_swap_reason(["turbo_install","turbo_install_n2o","turbo_kit"]),"Drivetrain":_swap_reason(["drive_layout","diff_front","diff_rear"])})
 			else:
 				_draw_tiles(["Turbo", "N2O", "Internals", "Cooling", "Camshaft"],disabled + (["N2O"] if _garage_option("nitrous_install_hyper").is_empty() and _garage_option("nitrous_install_sedan").is_empty() else []) + ([] if _internals_offered() else ["Internals"]) + ([] if _cooling_offered() else ["Cooling"]))
 			return

@@ -639,7 +639,7 @@ EditResult Garage::set_option(const std::string& option_id, const SetupValue& va
     if(option_id=="powertrain_install") {
         for(const auto& def:options_.options) {
             if(def.id==option_id)continue;
-            if(def.file=="engine"||def.file=="turbo"||def.file=="gearbox"||def.catalog=="engines"||def.catalog=="fuels"||def.catalog=="gearboxes"||def.catalog=="drive_layouts"||def.catalog=="differentials"||def.id=="clutch_capacity")working_.values.erase(def.id);
+            if(def.file=="engine"||def.file=="turbo"||def.file=="gearbox"||def.catalog=="engines"||def.catalog=="fuels"||def.catalog=="gearboxes"||def.id=="clutch_capacity")working_.values.erase(def.id);
         }
         r.notice="Powertrain component upgrades were reset for the conversion.";
     }
@@ -650,6 +650,10 @@ EditResult Garage::set_option(const std::string& option_id, const SetupValue& va
     }
     revalidate();
     if (option_id == "engine_install" || option_id=="powertrain_install") {const auto dropped=drop_unavailable_values();if(!dropped.empty())r.notice+=dropped;}
+    if (option_id == "powertrain_install") { // a drive layout / differential chosen before the conversion stays when the converted car still takes it
+        const std::string kept = drop_driveline_values_after_conversion();
+        if (!kept.empty()) r.notice += (r.notice.empty() ? "" : " ") + kept;
+    }
     if (option_id == "gearbox_install") {
         const std::string dropped = drop_unavailable_values(true);
         if (!dropped.empty()) r.notice = r.notice.empty() ? dropped : r.notice + " " + dropped;
@@ -679,6 +683,7 @@ std::string Garage::drop_unavailable_values(bool gearbox_change) {
     std::vector<std::string> drop;
     for (const auto& [id, value] : working_.values) {
         if (id == "engine_install" || id=="powertrain_install" || (gearbox_change && id == "gearbox_install")) continue;
+        if (id == "drive_layout" || id == "diff_front" || id == "diff_rear") continue; // judged on their own (drop_driveline_values*)
         const OptionView* view = nullptr;
         for (const OptionView& v : pm.options) if (v.def.id == id) view = &v;
         if (view == nullptr) continue;
@@ -712,6 +717,7 @@ std::string Garage::drop_driveline_values() {
     if (entry == nullptr) return {};
     VehicleSetup probe;
     probe.vehicle_id = edit_id_;
+    if (const auto it = working_.values.find("powertrain_install"); it != working_.values.end()) probe.values["powertrain_install"] = it->second;
     if (const auto it = working_.values.find("drive_layout"); it != working_.values.end()) probe.values["drive_layout"] = it->second;
     const SetupModel pm = build_setup_model(*entry, options_, context_for(*entry), &probe);
     if (!pm.error.empty()) return {}; // the layout itself does not install: revalidate() reports it
@@ -735,6 +741,37 @@ std::string Garage::drop_driveline_values() {
     }
     if (changed) revalidate();
     return notice.empty() ? notice : "The new layout does not drive that axle: " + notice + " (back to stock).";
+}
+
+// After a powertrain conversion: the drive layout and differentials chosen earlier stay if the converted car can still take
+// them (a hybrid keeps its driveline editable), else they go back to stock and the player is told why.
+std::string Garage::drop_driveline_values_after_conversion() {
+    const CatalogEntry* entry = catalog_.find(edit_id_);
+    if (entry == nullptr) return {};
+    VehicleSetup probe;
+    probe.vehicle_id = edit_id_;
+    if (const auto it = working_.values.find("powertrain_install"); it != working_.values.end()) probe.values["powertrain_install"] = it->second;
+    const SetupModel pm = build_setup_model(*entry, options_, context_for(*entry), &probe);
+    if (!pm.error.empty()) return {};
+    std::string notice;
+    const auto it = working_.values.find("drive_layout");
+    if (it != working_.values.end() && std::holds_alternative<std::string>(it->second)) {
+        const OptionView* view = nullptr;
+        for (const OptionView& v : pm.options) if (v.def.id == "drive_layout") view = &v;
+        const std::string s = std::get<std::string>(it->second);
+        const bool takes = view != nullptr && view->available && std::find(view->choices.begin(), view->choices.end(), s) != view->choices.end();
+        if (!takes) { // unavailable: the converted car's driveline cannot be swapped; not listed: it already has that layout
+            if (view != nullptr && !view->available && s != "stock") {
+                notice = "The converted car cannot take the chosen drive layout" +
+                         (view->unavailable_reason.empty() ? std::string() : " (" + view->unavailable_reason + ")") + " (back to stock).";
+            }
+            working_.values.erase(it);
+        }
+    }
+    const std::string diffs = drop_driveline_values(); // differentials of an axle the kept layout does not drive
+    if (!diffs.empty()) notice += (notice.empty() ? "" : " ") + diffs;
+    revalidate();
+    return notice;
 }
 
 void Garage::reset_option(const std::string& option_id) {

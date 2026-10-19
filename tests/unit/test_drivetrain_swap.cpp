@@ -587,3 +587,143 @@ TEST_CASE("drivetrain swap: every catalog car builds a physics world in every la
         }
     }
 }
+
+// ---- hybrid conversions (battery hybrid: the traction motor's reduction rides on the gearbox output shaft) ----------
+
+namespace {
+std::unique_ptr<rg::Garage> open_hybrid_garage(const char* tag) {
+    const fs::path user = fs::temp_directory_path() / (std::string("rg_hybrid_swap_user_") + tag);
+    const fs::path work = fs::temp_directory_path() / (std::string("rg_hybrid_swap_work_") + tag);
+    std::error_code ec;
+    fs::remove_all(user, ec);
+    fs::remove_all(work, ec);
+    fs::create_directories(user, ec);
+    fs::create_directories(work, ec);
+    rg::GarageConfig cfg;
+    cfg.repo_root = kRoot;
+    cfg.catalog_path = kRoot + "/data/vehicles/catalog.json";
+    cfg.options_path = kRoot + "/data/vehicles/setup_options.json";
+    cfg.set_path = kRoot + "/data/garage/garage_set.json";
+    cfg.tyre_families_path = kRoot + "/data/tyres/families.json";
+    cfg.user_dir = user.generic_string();
+    cfg.work_root = work.generic_string();
+    cfg.engine_map_cache_dir = kRoot + "/out/godot_engine_cache";
+    std::string err;
+    auto g = rg::Garage::open(cfg, &err);
+    INFO(err);
+    REQUIRE(g != nullptr);
+    return g;
+}
+
+// The hybrid conversion's motor reduction and the gearbox output share one shaft with the (single) differential carrier(s)
+// the loaded desc has; true when the reduction's output port is on a shaft that also holds the root differential's carrier.
+bool motor_rides_on_driveline(const ps::vehicle::VehicleDesc& d) {
+    bool reduction = false, carrier = false;
+    for (const auto& s : d.powertrain.shafts) {
+        bool has_red = false, has_out = false;
+        for (const ps::drivetrain::PortRef& p : s.ports) {
+            if (p.component == "conversion_reduction" && p.port == "out") has_red = true;
+            if (p.component != "conversion_reduction" && p.port == "carrier") carrier = true;
+            if (p.port == "out" && p.component != "conversion_reduction") has_out = true;
+        }
+        if (has_red && has_out) reduction = true;
+    }
+    return reduction && carrier;
+}
+} // namespace
+
+TEST_CASE("drivetrain swap: a hybrid conversion keeps its motor and takes every layout and differential", "[drivetrain_swap][hybrid]") {
+    Fixture f;
+    const auto& car = f.entry("car_hyper");
+    const rg::VehicleSetup hybrid = setup_of("car_hyper", {{"powertrain_install", std::string("hybrid_battery")}});
+    const rg::SetupModel m = rg::build_setup_model(car, f.table, f.ctx, &hybrid);
+    REQUIRE(m.error.empty());
+    CHECK(m.driveline.swappable);
+    CHECK(m.driveline.layout == "RWD");
+    const rg::OptionView* layout = view_of(m, "drive_layout");
+    REQUIRE(layout != nullptr);
+    CHECK(layout->available);
+    CHECK(layout->unavailable_reason.empty());
+
+    const std::pair<const char*, std::pair<int, int>> layouts[] = {{"fwd", {2, 0}}, {"rwd", {0, 2}}, {"awd_open", {2, 2}}, {"awd_viscous", {2, 2}}};
+    for (const auto& [id, axles] : layouts) {
+        INFO(id);
+        const auto r = load_setup(f, car, setup_of("car_hyper", {{"powertrain_install", std::string("hybrid_battery")}, {"drive_layout", std::string(id)}}));
+        INFO(r.error);
+        REQUIRE(r.ok);
+        CHECK(driven_axles(r.desc) == axles);
+        CHECK(motor_rides_on_driveline(r.desc));
+    }
+    // a differential swap on the hybrid, alone and with a layout
+    const auto torsen_front = load_setup(f, car, setup_of("car_hyper", {{"powertrain_install", std::string("hybrid_battery")},
+                                                                         {"drive_layout", std::string("awd_open")},
+                                                                         {"diff_front", std::string("torsen")}}));
+    INFO(torsen_front.error);
+    REQUIRE(torsen_front.ok);
+    CHECK(torsen_front.line.front_kind == "torsen");
+    const auto lsd_rear = load_setup(f, car, setup_of("car_hyper", {{"powertrain_install", std::string("hybrid_battery")},
+                                                                     {"diff_rear", std::string("clutch_lsd")}}));
+    INFO(lsd_rear.error);
+    REQUIRE(lsd_rear.ok);
+    CHECK(lsd_rear.line.rear_kind == "clutch_lsd");
+    CHECK(motor_rides_on_driveline(lsd_rear.desc));
+
+    // Fuel is greyed out on the hybrid for its own reason, not the driveline's: the hypercar's engine lists one fuel, with or without the hybrid.
+    const rg::SetupModel plain_model = rg::build_setup_model(car, f.table, f.ctx);
+    for (const rg::SetupModel* sm : {&plain_model, &m}) {
+        const rg::OptionView* fuel = view_of(*sm, "fuel");
+        REQUIRE(fuel != nullptr);
+        CHECK_FALSE(fuel->available);
+        CHECK_THAT(fuel->unavailable_reason, ContainsSubstring("one fuel"));
+    }
+    // a car without a hybrid is unchanged: same description, no reduction
+    const rg::DrivelineInfo plain = rg::describe_driveline(read_text(car.vehicle_path));
+    CHECK(plain.swappable);
+    CHECK(rg::driveline_summary(plain) == "RWD · Torsen rear");
+    // a pure electric conversion (its own reduction, no gearbox) still refuses, with the reason
+    const rg::VehicleSetup ev_setup = setup_of("car_hyper", {{"powertrain_install", std::string("battery_ev")}});
+    const rg::SetupModel ev = rg::build_setup_model(car, f.table, f.ctx, &ev_setup);
+    if (ev.error.empty()) {
+        const rg::OptionView* ev_layout = view_of(ev, "drive_layout");
+        REQUIRE(ev_layout != nullptr);
+        CHECK_FALSE(ev_layout->available);
+        CHECK_FALSE(ev_layout->unavailable_reason.empty());
+    }
+}
+
+TEST_CASE("drivetrain swap: swapping the layout before or after a hybrid conversion keeps it", "[drivetrain_swap][hybrid][garage]") {
+    for (const bool layout_first : {true, false}) {
+        INFO((layout_first ? "layout, then convert" : "convert, then layout"));
+        auto g = open_hybrid_garage(layout_first ? "a" : "b");
+        std::string err;
+        REQUIRE(g->begin_edit("car_hyper", &err));
+        if (layout_first) {
+            REQUIRE(g->set_option("drive_layout", std::string("awd_open")).accepted);
+            const auto r = g->set_option("powertrain_install", std::string("hybrid_battery"));
+            INFO(r.message << " / " << r.notice);
+            REQUIRE(r.accepted);
+        } else {
+            REQUIRE(g->set_option("powertrain_install", std::string("hybrid_battery")).accepted);
+            const auto r = g->set_option("drive_layout", std::string("awd_open"));
+            INFO(r.message << " / " << r.notice);
+            REQUIRE(r.accepted);
+        }
+        REQUIRE(g->working().values.count("drive_layout") == 1);
+        CHECK(std::get<std::string>(g->current_value("drive_layout")) == "awd_open");
+        INFO(g->validation().message);
+        CHECK(g->validation().ok);
+        const auto st = g->stats("car_hyper", &err);
+        REQUIRE(st.has_value());
+        CHECK(st->layout == "AWD");
+        CHECK(st->driven_wheels == 4);
+        g->discard();
+    }
+    // a differential chosen before the conversion stays on its (still driven) axle
+    auto g = open_hybrid_garage("c");
+    std::string err;
+    REQUIRE(g->begin_edit("car_hyper", &err));
+    REQUIRE(g->set_option("diff_rear", std::string("clutch_lsd")).accepted);
+    REQUIRE(g->set_option("powertrain_install", std::string("hybrid_battery")).accepted);
+    CHECK(g->working().values.count("diff_rear") == 1);
+    g->discard();
+}
