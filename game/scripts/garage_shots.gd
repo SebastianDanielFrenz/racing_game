@@ -44,7 +44,7 @@ const SHOTS_TIMEOUT_S := 420.0
 var _stage := "start"
 
 func _run() -> void:
-	var guard := get_tree().create_timer(SHOTS_TIMEOUT_S)
+	var guard := get_tree().create_timer(SHOTS_TIMEOUT_S * (5.0 if OS.get_cmdline_user_args().has("--hint-shots-only") else 1.0))
 	guard.timeout.connect(func():
 		print("RG_GARAGE_SHOT FAIL timeout in stage '%s'" % _stage)
 		get_tree().quit(1))
@@ -98,6 +98,10 @@ func _run() -> void:
 	await _seconds(0.25)
 	if OS.get_cmdline_user_args().has("--upgrades-shots-only"):
 		await _upgrade_shots()
+		get_tree().quit()
+		return
+	if OS.get_cmdline_user_args().has("--hint-shots-only"):
+		await _hint_shots()
 		get_tree().quit()
 		return
 	if OS.get_cmdline_user_args().has("--strip-shots-only"):
@@ -252,6 +256,68 @@ func _page_shots(ui: CanvasLayer, name: String) -> void:
 	if ui._advice_box != null and is_instance_valid(ui._advice_box):
 		ui._advice_box.visible = true
 
+# Upgrade HINTS (owner 2026-10-19) on every category page: all hint rows of a page are shown at once (not only the focused
+# tile's) after the core finished the figures, one shot set per page, plus a log line per tile with the badge texts.
+# `--hint-shots-only`; at most HINT_TILES_PER_PAGE tiles per page are asked (a swap page lists dozens of engines).
+const HINT_TILES_PER_PAGE := 8
+const HINT_PAGES := [
+	["tyres_compounds", ["tile:Wheels", "tile:All", "tile:Compounds"]],
+	["tyres_dimensions", ["tile:Wheels", "tile:All", "tile:Dimensions"]],
+	["swaps_engine", ["tile:Swaps", "tile:Engine"]],
+	["swaps_fuel", ["tile:Swaps", "tile:Fuel"]],
+	["swaps_forced_induction", ["tile:Swaps", "tile:Forced induction"]],
+	["swaps_drivetrain", ["tile:Swaps", "tile:Drivetrain"]],
+	["engine_turbo", ["tile:Engine", "tile:Turbo"]],
+	["engine_n2o", ["tile:Engine", "tile:N2O"]],
+	["engine_internals", ["tile:Engine", "tile:Internals"]],
+	["engine_cooling", ["tile:Engine", "tile:Cooling"]],
+	["drivetrain_gearbox", ["tile:Drivetrain", "tile:Gearbox"]],
+	["chassis_weight_reduction", ["tile:Chassis", "tile:Weight reduction"]],
+]
+
+func _hint_shots() -> void:
+	var ui: CanvasLayer = main.get_shell_ui()
+	for page in HINT_PAGES:
+		var name := str(page[0])
+		_stage = "hints " + name
+		await _back_to_root_shots(ui)
+		for step in page[1]:
+			_press(step)
+			await _frames(3)
+		await _seconds(0.5)
+		var tiles: Array = []
+		_collect_tiles(ui._option_box, tiles)
+		tiles = tiles.filter(func(t): return not t.has_node("Installed")) # the installed part has no hints
+		if tiles.size() > HINT_TILES_PER_PAGE:
+			tiles = tiles.slice(0, HINT_TILES_PER_PAGE)
+		var rows: Array = []
+		for tile in tiles:
+			var row: Container = tile.get_node_or_null("Badges")
+			if row == null:
+				continue
+			rows.append([tile, row])
+			# The request, then wait until the core finished it (the newest request cancels the previous one's work).
+			ui._fill_badges(row, str(tile.get_meta("badge_option")), tile.get_meta("badge_edits"))
+			var t0 := Time.get_ticks_msec()
+			ui.garage.wait_for_hints(600000)
+			print("RG_HINT_SHOT %s wait %.2f s" % [name, (Time.get_ticks_msec() - t0) / 1000.0])
+		for pair in rows:
+			var tile: Button = pair[0]
+			var row: Container = pair[1]
+			ui._fill_badges(row, str(tile.get_meta("badge_option")), tile.get_meta("badge_edits"))
+			row.visible = true
+			var texts: Array = []
+			for chip in row.get_children():
+				texts.append(str(chip.text))
+			var label: Label = tile.get_node_or_null("Name")
+			print("RG_HINT_SHOT %s tile '%s' edits %s -> [%s]" % [name, label.text if label != null else "?", str(tile.get_meta("badge_edits")), " | ".join(texts)])
+		await _seconds(0.3)
+		if rows.is_empty():
+			print("RG_HINT_SHOT %s no tiles with hints" % name)
+		await _page_shots(ui, "hints_" + name)
+		print("RG_HINT_SHOT stats %s" % str(ui.garage.get_hint_stats()))
+	await _back_to_root_shots(ui)
+
 # One heavier (red) and one lighter (green) weight tile highlighted by focus, the badge at its bottom middle.
 func _badge_shots(ui: CanvasLayer, name: String) -> void:
 	var scroll: ScrollContainer = ui._option_box.get_parent()
@@ -262,7 +328,7 @@ func _badge_shots(ui: CanvasLayer, name: String) -> void:
 	var tiles: Array = []
 	_collect_tiles(ui._option_box, tiles)
 	for tile in tiles:
-		for badge in ui.garage.get_part_badges(str(tile.get_meta("badge_option")), str(tile.get_meta("badge_part"))):
+		for badge in ui.garage.get_hints(str(tile.get_meta("badge_option")), tile.get_meta("badge_edits"))["badges"]:
 			var colour := "red" if bool(badge["worse"]) else "green"
 			if not want.get(colour, false):
 				continue

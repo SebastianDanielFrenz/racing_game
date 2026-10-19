@@ -700,7 +700,7 @@ func _back_to_root() -> void:
 
 # Upgrades layout (owner 2026-10-18): the category tiles and the Chassis / Weight reduction tiles at two window sizes. Every
 # tile's name label lies inside its tile, no two tiles overlap, no other label sits on a tile, and a highlighted (focused)
-# tile shows at most two badges, the same ones RgGarage.get_part_badges returns, red when worse, green when better.
+# tile shows at most three hint badges, the same ones RgGarage.get_hints returns, red when worse, green when better.
 const UPGRADE_LAYOUT_SIZES := [Vector2i(1280, 720), Vector2i(1920, 1080)]
 
 func _tiles_under(node: Node, out: Array) -> void:
@@ -768,7 +768,7 @@ func _check_upgrade_layout() -> void:
 			_check(int(report["overlap"]) == 0, "upgrades %s: no two tiles overlap (%d)" % [where, report["overlap"]])
 			_check(int(report["label_on_tile"]) == 0, "upgrades %s: no other label sits on a tile (%d)" % [where, report["label_on_tile"]])
 			print("RG_GARAGE_TEST info: upgrades %s viewport %s tiles %d overflow %d overlap %d label_on_tile %d" % [where, str(get_viewport().get_visible_rect().size), report["tiles"], report["overflow"], report["overlap"], report["label_on_tile"]])
-	# Highlight badges: focus each weight tile; the row holds at most two badges, and each badge text is the core's answer.
+	# Highlight badges: focus each weight tile; the row holds at most three badges, and each badge text is the core's answer.
 	await _back_to_root()
 	_press("tile:Chassis")
 	_press("tile:Weight reduction")
@@ -777,17 +777,22 @@ func _check_upgrade_layout() -> void:
 	_tiles_under(ui._option_box, tiles)
 	var with_badges := 0
 	for tile in tiles:
-		var row: HBoxContainer = tile.get_node_or_null("Badges")
+		var row: Container = tile.get_node_or_null("Badges")
 		if row == null:
 			continue
 		tile.grab_focus()
 		await get_tree().process_frame
+		# The figures come from a background thread: the first answer may be the "..." placeholder; wait for the core, then
+		# let the tile ask again (the UI's own poll does the same every 0.25 s).
+		ui.garage.wait_for_hints(60000)
+		ui._fill_badges(row, str(tile.get_meta("badge_option", "")), tile.get_meta("badge_edits", {}))
 		var texts: Array = []
 		for badge in row.get_children():
 			texts.append(str(badge.text))
-		_check(texts.size() <= 2, "a highlighted tile shows at most two badges (%d)" % texts.size())
+		_check(not texts.has("..."), "a hint placeholder is replaced once the core finished (%s)" % ", ".join(texts))
+		_check(texts.size() <= 3, "a highlighted tile shows at most three badges (%d)" % texts.size())
 		var expected: Array = []
-		for b in ui.garage.get_part_badges(str(tile.get_meta("badge_option", "")), str(tile.get_meta("badge_part", ""))):
+		for b in ui.garage.get_hints(str(tile.get_meta("badge_option", "")), tile.get_meta("badge_edits", {}))["badges"]:
 			expected.append(str(b["text"]))
 		_check(texts == expected, "highlighted badges equal the core answer (%s vs %s)" % [", ".join(texts), ", ".join(expected)])
 		with_badges += texts.size()

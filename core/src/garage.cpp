@@ -584,6 +584,10 @@ void Garage::revalidate() {
     SetupModel installed_model = build_setup_model(*e, options_, context_for(*e), &working_);
     if (installed_model.error.empty()) model_ = std::move(installed_model);
     parts_ = model_.parts;
+    if (probe_only_) { // candidate_setup: the model follows the edits, nothing is loaded
+        validation_.ok = true;
+        return;
+    }
     if (working_.values.empty()) {
         validation_.ok = true;
         return;
@@ -772,6 +776,38 @@ std::string Garage::drop_driveline_values_after_conversion() {
     if (!diffs.empty()) notice += (notice.empty() ? "" : " ") + diffs;
     revalidate();
     return notice;
+}
+
+std::optional<VehicleSetup> Garage::candidate_setup(const std::vector<std::pair<std::string, SetupValue>>& edits, std::string* err) {
+    if (!editing()) {
+        if (err != nullptr) *err = "no vehicle is being edited";
+        return std::nullopt;
+    }
+    // Everything an edit touches: the working copy, the model it is judged against, the validation and the part tree.
+    VehicleSetup saved_working = working_;
+    SetupModel saved_model = model_;
+    ValidationResult saved_validation = validation_;
+    PartTree saved_parts = parts_;
+    probe_only_ = true;
+    std::optional<VehicleSetup> result;
+    std::string failure;
+    bool all_accepted = true;
+    for (const auto& [option_id, value] : edits) {
+        const EditResult r = set_option(option_id, value);
+        if (!r.accepted) {
+            all_accepted = false;
+            failure = r.message;
+            break;
+        }
+    }
+    if (all_accepted) result = working_;
+    probe_only_ = false;
+    working_ = std::move(saved_working);
+    model_ = std::move(saved_model);
+    validation_ = std::move(saved_validation);
+    parts_ = std::move(saved_parts);
+    if (!result && err != nullptr) *err = failure;
+    return result;
 }
 
 void Garage::reset_option(const std::string& option_id) {

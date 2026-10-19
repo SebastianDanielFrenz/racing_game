@@ -1076,7 +1076,7 @@ func _draw_turbo_kit(kit: Dictionary) -> void:
 		if not _part_visible(part) and not installed: continue
 		var presentation: Dictionary = part.duplicate()
 		presentation["size"] = str(part.get("detail", ""))
-		var card := _make_component_card(presentation,"INSTALLED" if installed else "Install")
+		var card := _make_component_card(_with_badge(presentation,"turbo_kit",{"turbo_kit":str(part["id"])}),"INSTALLED" if installed else "Install")
 		_grey_if_unfit(card, part)
 		grid.add_child(card)
 		_buttons["part:turbo_kit:" + str(part["id"])] = card
@@ -1093,7 +1093,7 @@ func _draw_turbo_kit(kit: Dictionary) -> void:
 			var fitted := str(part["id"]) == str(piping["value"])
 			var shown: Dictionary = part.duplicate()
 			shown["size"] = str(part.get("detail", ""))
-			var pcard := _make_component_card(shown,"INSTALLED" if fitted else "Install")
+			var pcard := _make_component_card(_with_badge(shown,"charge_piping",{"charge_piping":str(part["id"])}),"INSTALLED" if fitted else "Install")
 			pgrid.add_child(pcard)
 			_buttons["part:charge_piping:" + str(part["id"])] = pcard
 			pcard.pressed.connect(func(): _edit_option("charge_piping",str(part["id"])); _draw_garage_options())
@@ -1175,7 +1175,7 @@ func _draw_grade_rows(ids: Array, note_text: String) -> void:
 			if not _part_visible(part) and not fitted: continue
 			var shown: Dictionary = part.duplicate()
 			shown["size"] = str(part.get("detail", ""))
-			var card := _make_component_card(shown,"INSTALLED" if fitted else "Install")
+			var card := _make_component_card(_with_badge(shown,str(id),{str(id):str(part["id"])}),"INSTALLED" if fitted else "Install")
 			_grey_if_unfit(card, part)
 			grid.add_child(card)
 			_buttons["part:" + id + ":" + str(part["id"])] = card
@@ -1256,7 +1256,10 @@ func _draw_powertrain_swaps() -> void:
 		var installed := str(part["id"]) == value
 		if not _part_visible(part) and not installed:
 			continue
-		var card := _make_component_card(part, "INSTALLED" if installed else "Install")
+		var swap_edits: Dictionary = {option_id: str(part["id"])}
+		if category == "Internal combustion":
+			swap_edits = {"powertrain_install": "ice", option_id: str(part["id"])}
+		var card := _make_component_card(_with_badge(part, option_id, swap_edits), "INSTALLED" if installed else "Install")
 		_grey_if_unfit(card, part)
 		grid.add_child(card)
 		_buttons["part:" + option_id + ":" + str(part["id"])] = card
@@ -1338,7 +1341,7 @@ func _draw_upgrades() -> void:
 				if str(part["id"]).contains("single") != single: continue
 			var installed := str(part["id"]) == str(opt["value"])
 			if not _part_visible(part) and not installed: continue
-			var card := _make_component_card(part,"INSTALLED" if installed else "Install")
+			var card := _make_component_card(_with_badge(part,str(opt["id"]),{str(opt["id"]):str(part["id"])}),"INSTALLED" if installed else "Install")
 			_grey_if_unfit(card, part)
 			grid.add_child(card)
 			_buttons["part:" + str(opt["id"]) + ":" + str(part["id"])] = card
@@ -1422,9 +1425,7 @@ func _draw_weight_reduction() -> void:
 		_option_box.add_child(grid)
 		for part in opt["parts"]:
 			var installed := str(part["id"]) == str(opt["value"])
-			var presentation: Dictionary = part.duplicate()
-			presentation["badge_option"] = str(opt["id"])
-			presentation["badge_part"] = str(part["id"])
+			var presentation: Dictionary = _with_badge(part, str(opt["id"]), {str(opt["id"]): str(part["id"])})
 			var card := _make_component_card(presentation, "INSTALLED" if installed else "Install")
 			grid.add_child(card)
 			var opt_id := str(opt["id"])
@@ -1501,7 +1502,7 @@ func _draw_gearbox_choices(opt: Dictionary) -> void:
 			var installed := str(part["id"]) == str(opt["value"])
 			var presentation: Dictionary = part.duplicate()
 			presentation["size"] = (str(part.get("subtitle", "")) + "\n" + str(part.get("size", ""))).strip_edges()
-			var card := _make_component_card(presentation,"INSTALLED" if installed else "Install")
+			var card := _make_component_card(_with_badge(presentation,str(opt["id"]),{str(opt["id"]):str(part["id"])}),"INSTALLED" if installed else "Install")
 			grid.add_child(card)
 			_buttons["part:" + str(opt["id"]) + ":" + str(part["id"])] = card
 			card.pressed.connect(func(): _edit_option(str(opt["id"]),str(part["id"])); _draw_garage_options())
@@ -1549,7 +1550,7 @@ func _draw_part_grid(opt: Dictionary, parts: Array) -> void:
 		var installed := str(part["id"]) == str(opt["value"])
 		var presentation: Dictionary = part.duplicate()
 		presentation["size"] = (str(part.get("subtitle", "")) + "\n" + str(part.get("detail", ""))).strip_edges()
-		var card := _make_component_card(presentation,"INSTALLED" if installed else "Install")
+		var card := _make_component_card(_with_badge(presentation,str(opt["id"]),{str(opt["id"]):str(part["id"])}),"INSTALLED" if installed else "Install")
 		grid.add_child(card)
 		_buttons["part:" + str(opt["id"]) + ":" + str(part["id"])] = card
 		card.pressed.connect(func(): _edit_option(str(opt["id"]),str(part["id"])); _draw_garage_options())
@@ -1573,7 +1574,7 @@ func _draw_induction_swaps(opt: Dictionary) -> void:
 		var presentation := target.duplicate()
 		presentation["label"] = type_name
 		presentation["size"] = "Naturally aspirated" if type_name == "NA" else "Select hardware in Engine upgrades"
-		var card := _make_component_card(presentation,"INSTALLED" if installed else "Install")
+		var card := _make_component_card(presentation if target.is_empty() else _with_badge(presentation,str(opt["id"]),{str(opt["id"]):str(target["id"])}),"INSTALLED" if installed else "Install")
 		card.disabled = target.is_empty()
 		grid.add_child(card)
 		_buttons["induction:" + type_name] = card
@@ -1643,7 +1644,7 @@ func _draw_wheel_parts() -> void:
 		else:
 			presentation["label"] = "%d mm" % int(key)
 			if options.size() == 2: presentation["size"] = "Both axles · preserves compounds"
-		var card := _make_component_card(presentation,"INSTALLED" if installed else "Install")
+		var card := _make_component_card(_with_badge(presentation,str(options[0]["id"]),installs),"INSTALLED" if installed else "Install")
 		grid.add_child(card)
 		_buttons["tyre:" + str(key)] = card
 		card.pressed.connect(func():
@@ -1655,12 +1656,14 @@ func _draw_wheel_parts() -> void:
 
 # One part tile (owner 2026-10-18): the picture, the part's name and an INSTALLED mark, all INSIDE the tile. The tile has a
 # fixed height and the name lives in a band at its bottom, clipped, so no text can leave the tile or reach the next row.
-# A highlighted tile (focus or hover) shows its numeric upgrade badges (rg/upgrade_badges.h, through RgGarage.get_part_badges)
-# at its bottom middle: red when the part is worse for that number, green when better. The action text ("Install") is gone.
+# A highlighted tile (focus or hover) shows its numeric upgrade HINTS (rg/upgrade_hints.h, through RgGarage.get_hints) at its
+# bottom middle: the change of the whole car against the car as configured now; red when worse, green when better. The action
+# text ("Install") is gone.
 const TILE_HEIGHT := 150.0
 const TILE_NAME_BAND := 40.0
 const BADGE_WORSE := Color(0.78, 0.16, 0.16, 0.85)
 const BADGE_BETTER := Color(0.16, 0.6, 0.25, 0.85)
+const BADGE_PENDING := Color(0.35, 0.35, 0.38, 0.85)
 
 func _make_component_card(presentation: Dictionary, action: String) -> Button:
 	var card := Button.new()
@@ -1704,20 +1707,28 @@ func _make_component_card(presentation: Dictionary, action: String) -> Button:
 		mark.offset_top = 4
 		card.add_child(mark)
 	var opt_id := str(presentation.get("badge_option", ""))
-	if not opt_id.is_empty():
+	var badge_edits: Dictionary = presentation.get("badge_edits", {})
+	if not opt_id.is_empty() and not badge_edits.is_empty():
 		card.set_meta("badge_option", opt_id)
-		card.set_meta("badge_part", str(presentation.get("badge_part", "")))
-		var row := HBoxContainer.new()
+		card.set_meta("badge_edits", badge_edits)
+		# A flow row: up to three chips wrap to a second line on a narrow tile instead of leaving it; the first line is the bottom one.
+		var row := HFlowContainer.new()
 		row.name = "Badges"
-		row.alignment = BoxContainer.ALIGNMENT_CENTER
+		row.alignment = FlowContainer.ALIGNMENT_CENTER
+		row.last_wrap_alignment = FlowContainer.LAST_WRAP_ALIGNMENT_CENTER
+		row.reverse_fill = true
+		row.add_theme_constant_override("h_separation", 3)
+		row.add_theme_constant_override("v_separation", 2)
 		row.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		row.visible = false
 		row.set_anchors_and_offsets_preset(Control.PRESET_BOTTOM_WIDE)
-		row.offset_top = -TILE_NAME_BAND - 26
+		row.offset_left = 2
+		row.offset_right = -2
+		row.offset_top = -TILE_NAME_BAND - 68
 		row.offset_bottom = -TILE_NAME_BAND - 2
 		card.add_child(row)
 		var show_badges := func():
-			_fill_badges(row, opt_id, str(presentation.get("badge_part", "")))
+			_fill_badges(row, opt_id, badge_edits)
 			row.visible = true
 		var hide_badges := func(): row.visible = false
 		card.focus_entered.connect(show_badges)
@@ -1726,26 +1737,52 @@ func _make_component_card(presentation: Dictionary, action: String) -> Button:
 		card.mouse_exited.connect(hide_badges)
 	return card
 
-func _chip_style(color: Color) -> StyleBoxFlat:
+func _chip_style(color: Color, margin_x := 4, margin_y := 4) -> StyleBoxFlat:
 	var style := StyleBoxFlat.new()
 	style.bg_color = color
 	style.set_corner_radius_all(4)
-	style.set_content_margin_all(4)
+	style.content_margin_left = margin_x
+	style.content_margin_right = margin_x
+	style.content_margin_top = margin_y
+	style.content_margin_bottom = margin_y
 	return style
 
-# The numeric badges of one part against the installed one, at most two (the core decides what and how many).
-func _fill_badges(row: HBoxContainer, option_id: String, part_id: String) -> void:
+# A tile's presentation with its upgrade hints (owner 2026-10-19): `option_id` names the hint category (an option id, else its
+# group, data/garage/upgrade_badges.json), `edits` is what a click on the tile sets, in order ({option_id: value}).
+func _with_badge(presentation: Dictionary, option_id: String, edits: Dictionary) -> Dictionary:
+	var shown: Dictionary = presentation.duplicate()
+	shown["badge_option"] = option_id
+	shown["badge_edits"] = edits
+	return shown
+
+# The seconds between two asks for a hint figure that is still being computed (the core computes it off this thread).
+const HINT_POLL_S := 0.25
+
+# The hints of one tile: the change of the whole car when the tile's edits are made now (core RgGarage.get_hints), the core
+# decides what, how many and the text. A figure still being computed shows as a grey "..." chip and the tile asks again.
+func _fill_badges(row: Container, option_id: String, edits: Dictionary) -> void:
 	for child in row.get_children():
 		row.remove_child(child)
 		child.free()
-	if garage == null or not garage.has_method("get_part_badges"):
+	if garage == null or not garage.has_method("get_hints"):
 		return
-	for badge in garage.get_part_badges(option_id, part_id):
-		var label := _label(str(badge["text"]), 13)
+	var hints: Dictionary = garage.get_hints(option_id, edits)
+	for badge in hints.get("badges", []):
+		var label := _label(str(badge["text"]), 11)
 		label.autowrap_mode = TextServer.AUTOWRAP_OFF
 		label.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		label.add_theme_stylebox_override("normal", _chip_style(BADGE_WORSE if bool(badge["worse"]) else BADGE_BETTER))
+		var chip := BADGE_PENDING if bool(badge.get("pending", false)) else (BADGE_WORSE if bool(badge["worse"]) else BADGE_BETTER)
+		label.add_theme_stylebox_override("normal", _chip_style(chip, 3, 1))
 		row.add_child(label)
+	if bool(hints.get("pending", false)) and is_inside_tree():
+		var token := int(row.get_meta("hint_poll", 0)) + 1
+		row.set_meta("hint_poll", token)
+		# A weak reference: a redrawn page frees the row, and a freed lambda capture is an engine error.
+		var weak_row: WeakRef = weakref(row)
+		get_tree().create_timer(HINT_POLL_S).timeout.connect(func():
+			var live = weak_row.get_ref()
+			if live != null and live.visible and int(live.get_meta("hint_poll", 0)) == token:
+				_fill_badges(live, option_id, edits))
 
 func _part_name(opt: Dictionary) -> String:
 	for part in opt.get("parts", []):
