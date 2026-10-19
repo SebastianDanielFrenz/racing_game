@@ -180,6 +180,10 @@ public:
     // nullopt + *err when no car is edited or an edit is not accepted (unknown/unavailable option, wrong value type).
     [[nodiscard]] std::optional<VehicleSetup> candidate_setup(const std::vector<std::pair<std::string, SetupValue>>& edits,
                                                               std::string* err = nullptr);
+    // true when every edit selects what is installed NOW (the option's current value): such a click changes nothing, so
+    // the tile of the installed part has no upgrade hint (rule of the core, not of the UI). candidate_setup of such edits
+    // is the working copy itself, bit for bit.
+    [[nodiscard]] bool edits_installed(const std::vector<std::pair<std::string, SetupValue>>& edits) const;
     [[nodiscard]] bool dirty() const; // the working copy differs from the saved one
     [[nodiscard]] const ValidationResult& validation() const { return validation_; }
     // Writes the working copy as the vehicle's saved setup (a working copy equal to the car's own

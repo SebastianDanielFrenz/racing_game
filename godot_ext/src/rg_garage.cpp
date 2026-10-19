@@ -395,6 +395,8 @@ godot::Dictionary RgGarage::get_hints(const String& option_id, const godot::Dict
         list.emplace_back(to_std(String(names[i])), std::move(v));
         edit_key += "|" + list.back().first + "=" + to_std(String(edits[names[i]]));
     }
+    // The installed part has no hint at all (rule of the core): its click selects what the car has already.
+    if (garage_->edits_installed(list)) return out;
     const rg::CatalogEntry* entry = garage_->catalog().find(garage_->edit_id());
     if (entry == nullptr) return out;
     const std::string current_json = rg::setup_to_json(garage_->working());

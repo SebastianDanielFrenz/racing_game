@@ -48,7 +48,7 @@
 
     "Tyres": {"metrics": ["grip_longitudinal", "grip_lateral", "rolling_resistance"], "source": "Owner 2026-10-19: tyre compound and width. The tyre part data carries no mass, so weight is not a hint here."},
 
-    "powertrain_install": {"metrics": ["power", "weight", "battery_kwh"], "source": "Owner 2026-10-19: powertrain swap = peak power and weight. battery_kwh [inferred]: an EV or hybrid conversion carries a battery; for an ICE swap it is 0 on both sides and no badge appears."},
+    "powertrain_install": {"metrics": ["power", "weight"], "source": "Owner 2026-10-19: powertrain swap = peak power and weight, nothing else. A battery figure was tried and dropped: an electric conversion carrying a battery is what its name already says."},
     "engine_install": {"metrics": ["power", "weight"], "source": "The ICE swap of the Swaps page: same hints as the powertrain swap."},
     "fuel": {"metrics": ["power"], "source": "[inferred] A fuel changes the heating value and the knock limit: peak power."},
 

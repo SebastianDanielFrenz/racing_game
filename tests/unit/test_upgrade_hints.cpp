@@ -8,6 +8,10 @@
 //   S4 the nitrous flag ignored (kit never armed)                                      -> "N2O ..." fails
 //   S5 request() queues a job per call (no replacement of the pending one)             -> "newest request wins" fails
 //   S6 cache key without the nitrous flag                                              -> "N2O ..." fails
+//   S7 Garage::set_option re-applies an option when its value is already installed       -> "the installed option ..." (both cases) fail
+//      (found by the hybrid case: re-selecting the installed powertrain reset the engine/turbo/gearbox/fuel choices)
+//   S8 Garage::edits_installed always false                                              -> "the installed option ..." fails
+//   S9 "battery_kwh" back in the powertrain_install metrics                              -> "a powertrain swap shows ..." fails
 #include "rg/garage.h"
 #include "rg/upgrade_hints.h"
 #include "rg/turbo_map_extension.h"
@@ -762,4 +766,97 @@ TEST_CASE("hints: fuel option effect on peak power (diag)", "[.][diag][hints_dia
         std::printf("HINTS DIAG fuel %-12s power %.2f kW %s\n", p.id.c_str(), f.figures.count(UpgradeQuantity::Power) ? f.figures.at(UpgradeQuantity::Power) : -1.0, f.error.c_str());
     }
     std::fflush(stdout);
+}
+
+// ---- the installed option (owner 2026-10-19: no hint, and re-selecting it must not reset anything) ----------------------------
+
+namespace {
+
+// Every available option of the edited car re-selected with its CURRENT value (plus, with an ICE conversion installed, the
+// conversion tile's two-edit form): the setup must stay byte-identical, edits_installed must say so (that is the rule that
+// hides the hint chips of the installed tile) and the candidate must be the working copy itself.
+void check_installed_is_nothing(Rig& rig, const std::string& label) {
+    const std::string before = setup_to_json(rig.garage->working());
+    std::vector<std::string> ids;
+    for (const OptionView& v : rig.garage->model().options) {
+        if (v.available) ids.push_back(v.def.id);
+    }
+    REQUIRE_FALSE(ids.empty());
+    for (const std::string& id : ids) {
+        INFO(label << " option " << id);
+        const SetupValue now = rig.garage->current_value(id);
+        CHECK(rig.garage->edits_installed({{id, now}}));
+        std::string err;
+        const auto cand = rig.garage->candidate_setup({{id, now}}, &err);
+        INFO(err);
+        REQUIRE(cand.has_value());
+        CHECK(setup_to_json(*cand) == before);
+        const EditResult r = rig.garage->set_option(id, now); // the real click
+        CHECK(r.accepted);
+        CHECK(setup_to_json(rig.garage->working()) == before);
+    }
+    const SetupValue pt = rig.garage->current_value("powertrain_install");
+    if (std::holds_alternative<std::string>(pt) && std::get<std::string>(pt) == "ice") {
+        const std::vector<std::pair<std::string, SetupValue>> tile = {{"powertrain_install", pt}, {"engine_install", rig.garage->current_value("engine_install")}};
+        CHECK(rig.garage->edits_installed(tile));
+        CHECK(setup_to_json(*rig.garage->candidate_setup(tile)) == before);
+    }
+    // A real change is still a change.
+    CHECK_FALSE(rig.garage->edits_installed({}));
+}
+
+} // namespace
+
+TEST_CASE("hints: the installed option of every category changes nothing on every car", "[upgrade_hints][garage]") {
+    for (const char* car : {"car_hyper", "car_hyper_n2o", "car_sedan", "car_electric"}) {
+        Rig rig(car);
+        check_installed_is_nothing(rig, car);
+        // Not the stock setup: a few upgrades on top, as a player's car has.
+        if (rig.view("engine_rev_limit") != nullptr && rig.view("engine_rev_limit")->available) {
+            REQUIRE(rig.garage->set_option("engine_rev_limit", 1.05).accepted);
+            check_installed_is_nothing(rig, std::string(car) + " +rev limit");
+        }
+    }
+}
+
+TEST_CASE("hints: the installed hybrid keeps its sub-settings when it is selected again", "[upgrade_hints][garage]") {
+    Rig rig("car_sedan");
+    REQUIRE(rig.garage->set_option("powertrain_install", std::string("hybrid_battery")).accepted);
+    // Component choices made after the conversion (they sit under the powertrain choice and a conversion resets them).
+    std::string chosen;
+    for (const char* id : {"engine_rev_limit", "final_drive"}) {
+        const OptionView* v = rig.view(id);
+        if (v != nullptr && v->available) {
+            REQUIRE(rig.garage->set_option(id, 1.05).accepted);
+            chosen += std::string(id) + " ";
+        }
+    }
+    if (const OptionView* e = rig.view("engine_install"); e != nullptr && e->available) {
+        for (const SetupPart& p : e->parts) {
+            if (p.id != std::get<std::string>(rig.garage->current_value("engine_install")) && rig.garage->set_option("engine_install", p.id).accepted) {
+                chosen += "engine_install ";
+                break;
+            }
+        }
+    }
+    INFO("sub-settings set: " << chosen);
+    REQUIRE_FALSE(chosen.empty());
+    const std::string before = setup_to_json(rig.garage->working());
+    const EditResult r = rig.garage->set_option("powertrain_install", std::string("hybrid_battery"));
+    CHECK(r.accepted);
+    CHECK(r.notice.empty()); // no "component upgrades were reset" notice
+    CHECK(setup_to_json(rig.garage->working()) == before);
+    // The tile's hint: no chips, and the candidate is the car as it is.
+    CHECK(rig.garage->edits_installed({{"powertrain_install", std::string("hybrid_battery")}}));
+    check_installed_is_nothing(rig, "car_sedan hybrid");
+    // Choosing ANOTHER powertrain still converts (and resets), then the way back is a real change again.
+    REQUIRE(rig.garage->set_option("powertrain_install", std::string("ice")).accepted);
+    CHECK(setup_to_json(rig.garage->working()) != before);
+}
+
+TEST_CASE("hints: a powertrain swap shows peak power and weight only", "[upgrade_hints][upgrade_badges]") {
+    const UpgradeCategoryMetrics* c = upgrade_category_for(badge_config(), "powertrain_install", "Swaps");
+    REQUIRE(c != nullptr);
+    // No battery figure (owner 2026-10-19: an EV conversion carrying a battery is what its name says).
+    CHECK(c->metrics == std::vector<UpgradeQuantity>{UpgradeQuantity::Power, UpgradeQuantity::Weight});
 }

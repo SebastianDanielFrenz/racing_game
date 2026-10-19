@@ -635,6 +635,18 @@ EditResult Garage::set_option(const std::string& option_id, const SetupValue& va
         normalise_engine_values(one, nullptr);
         if (const auto it = one.values.find(option_id); it != one.values.end()) stored = it->second;
     }
+    // Selecting what is installed already (owner 2026-10-19) is a no-op: nothing is re-applied, so no sub-setting of the part
+    // (a battery, a motor, a fuel, a conversion's reset of the engine/turbo/gearbox choices, the gear ratios of a gearbox) is
+    // touched and the setup stays byte-identical.
+    {
+        const auto held = working_.values.find(option_id);
+        const SetupValue& now = held != working_.values.end() ? held->second : view->stock;
+        if (setup_values_equal(stored, now)) {
+            r.accepted = true;
+            r.validation = validation_;
+            return r;
+        }
+    }
     if (setup_values_equal(stored, view->stock) && !preset_has) {
         working_.values.erase(option_id); // back to stock: not part of the overlay
     } else {
@@ -776,6 +788,26 @@ std::string Garage::drop_driveline_values_after_conversion() {
     if (!diffs.empty()) notice += (notice.empty() ? "" : " ") + diffs;
     revalidate();
     return notice;
+}
+
+bool Garage::edits_installed(const std::vector<std::pair<std::string, SetupValue>>& edits) const {
+    if (!editing() || edits.empty()) return false;
+    for (const auto& [option_id, value] : edits) {
+        const OptionView* view = nullptr;
+        for (const OptionView& v : model_.options) {
+            if (v.def.id == option_id) view = &v;
+        }
+        if (view == nullptr) return false;
+        SetupValue stored = value;
+        if (option_id == "engine_install") { // a legacy id is stored as the engine's key (set_option's rule)
+            VehicleSetup one;
+            one.values[option_id] = value;
+            normalise_engine_values(one, nullptr);
+            if (const auto it = one.values.find(option_id); it != one.values.end()) stored = it->second;
+        }
+        if (!setup_values_equal(stored, current_value(option_id))) return false;
+    }
+    return true;
 }
 
 std::optional<VehicleSetup> Garage::candidate_setup(const std::vector<std::pair<std::string, SetupValue>>& edits, std::string* err) {
