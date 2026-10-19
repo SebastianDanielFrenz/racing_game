@@ -96,6 +96,12 @@ func _draw() -> void:
 	var legend_rows := 0 if legend.is_empty() else int(legend[-1][3])+1
 	custom_minimum_size.y = 180+14*legend_rows
 	var plot := Rect2(34,28,maxf(40,size.x-68),maxf(40,size.y-75-14*legend_rows))
+	if not unsupported_reason.is_empty():
+		# Nothing was measured: no axes, ticks, axis label or legend, only the reason.
+		var box := Rect2(0,4,size.x,maxf(40,plot.end.y-4))
+		draw_rect(box,Color(0.2,0.21,0.24,0.55))
+		draw_multiline_string(font,Vector2(box.position.x+10,box.position.y+22),unsupported_reason,HORIZONTAL_ALIGNMENT_LEFT,box.size.x-20,12,-1,Color(0.62,0.64,0.68))
+		return
 	var max_rpm := 1000.0
 	var max_torque := 1.0
 	var max_power := 1.0
@@ -137,10 +143,7 @@ func _draw() -> void:
 	if lower < 0.0:
 		var zero_y := plot.end.y+lower/span*plot.size.y
 		draw_line(Vector2(plot.position.x,zero_y),Vector2(plot.end.x,zero_y),Color(0.65,0.68,0.72,0.7))
-	if not unsupported_reason.is_empty():
-		draw_rect(plot,Color(0.2,0.21,0.24,0.55))
-		draw_multiline_string(font,Vector2(plot.position.x+8,plot.position.y+20),unsupported_reason,HORIZONTAL_ALIGNMENT_LEFT,plot.size.x-16,11,-1,Color(0.62,0.64,0.68))
-	elif displayed.is_empty():
+	if displayed.is_empty():
 		draw_string(font,Vector2(plot.position.x+8,plot.get_center().y),"Computing dyno…" if busy else "No dyno data",HORIZONTAL_ALIGNMENT_LEFT,-1,12,Color(0.7,0.73,0.78))
 	else:
 		var torque_line := PackedVector2Array()

@@ -666,7 +666,12 @@ bool file_choice_fits(Files& files, const SetupOptionDef& def, const CatalogEntr
     if (def.no_turbo_override && idx >= 0 && files.vehicle.base["powertrain"]["components"][idx].contains("forced_induction")) return false;
     const json* base = def.file == "vehicle" ? &files.vehicle.work : (files.engine ? &files.engine->work : nullptr);
     if (!base) return false;
-    return !expand_patterns(*base, pointers_for(entry, def)).empty() || def.insert_if_absent.has_value();
+    if (!expand_patterns(*base, pointers_for(entry, def)).empty() || def.insert_if_absent.has_value()) return true;
+    // A naturally aspirated conversion of this very option erased the reference from the working file
+    // (install_file_part); the option stays offered so the NA choice persists and a turbo can go back in.
+    const bool has_na_part = std::any_of(def.parts.begin(), def.parts.end(), [](const SetupPart& p) { return p.naturally_aspirated; });
+    const json* stock = def.file == "vehicle" ? &files.vehicle.base : (files.engine ? &files.engine->base : nullptr);
+    return has_na_part && stock != nullptr && !expand_patterns(*stock, pointers_for(entry, def)).empty();
 }
 
 std::string install_clutch_to_clutch(Files& files, const GearboxEntry& g);
