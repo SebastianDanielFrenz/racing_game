@@ -2593,11 +2593,10 @@ SetupModel build_setup_model(const CatalogEntry& entry, const SetupOptionTable& 
                     v.available = false;
                     break;
                 }
-                const auto kg = [](double m) { return fmt_fixed(m, 1) + " kg"; };
                 SetupPart stock;
                 stock.id = "stock";
                 stock.label = own->label;
-                stock.detail = kg(own->mass_kg);
+                stock.mass_kg = own->mass_kg;
                 stock.mass_key = own->key;
                 v.parts.push_back(stock);
                 v.choices.push_back("stock");
@@ -2614,8 +2613,9 @@ SetupModel build_setup_model(const CatalogEntry& entry, const SetupOptionTable& 
                     } else {
                         m = own->mass_kg * p.mass_factor;
                     }
-                    const double saved = own->mass_kg - m;
-                    q.detail = (p.removed ? std::string("removed") : kg(m)) + (saved >= 0.0 ? ", saves " + kg(saved) : ", adds " + kg(-saved));
+                    // The numbers go to the tile's badge (upgrade_badges.h), not to prose: the detail stays empty.
+                    q.detail.clear();
+                    q.mass_kg = m;
                     v.parts.push_back(q);
                     v.choices.push_back(q.id);
                 }

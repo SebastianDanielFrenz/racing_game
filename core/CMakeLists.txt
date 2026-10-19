@@ -120,6 +120,7 @@ add_library(rg_core STATIC
     src/garage.cpp
     src/garage_dyno.cpp
     src/limit_advisor.cpp
+    src/upgrade_badges.cpp
     src/turbo_map_extension.cpp
     src/turbo_kit.cpp
     src/engine_internals.cpp

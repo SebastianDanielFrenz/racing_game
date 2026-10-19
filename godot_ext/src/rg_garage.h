@@ -14,6 +14,7 @@
 #include "rg/garage.h"
 #include "rg/garage_dyno.h"
 #include "rg/garage_set.h"
+#include "rg/upgrade_badges.h"
 #include "rg/limit_advisor.h"
 
 #include <godot_cpp/classes/ref_counted.hpp>
@@ -102,6 +103,9 @@ public:
     //   gear of a ScaleList) are the number's absolute display: {multiplier, unit, decimals, lo, hi, positional, mapping}
     [[nodiscard]] godot::Array get_options() const;
     [[nodiscard]] godot::Array get_powertrain_engine_choices() const;
+    // The badges of a part tile against the INSTALLED part of the option (rg/upgrade_badges.h): at most two, each
+    // {quantity, delta, worse, text}. worse = red, else green. Empty for the installed part or an option without figures.
+    [[nodiscard]] godot::Array get_part_badges(const godot::String& option_id, const godot::String& part_id) const;
     // Garage numeric inputs (rg::NumberEntry): `index` is the gear of a ScaleList (else 0). Pure maths in rg core.
     // The slider position in [0, 1] of a stored value (positional entries) / the stored value at a position.
     [[nodiscard]] double option_entry_position(const godot::String& option_id, int index, double value) const;
@@ -196,6 +200,7 @@ private:
     void refresh_dyno();
     std::unique_ptr<rg::LimitAdvisor> advisor_;
     std::string advisor_error_;
+    rg::UpgradeBadgeConfig badge_config_; // data/garage/upgrade_badges.json; empty (no badges) when the file is bad
 };
 
 } // namespace rg_godot
