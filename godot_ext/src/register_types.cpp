@@ -20,6 +20,7 @@
 #include "rg_render_focus.h"
 #include "rg_ring_streamer.h"
 #include "rg_shell.h"
+#include "rg_mark_tail.h"
 #include "rg_sky.h"
 #include "rg_simulation.h"
 #include "rg_steering_assist.h"
@@ -64,6 +65,7 @@ void initialize_rg_godot_module(ModuleInitializationLevel p_level) {
     ClassDB::register_class<rg_godot::RgRingStreamer>();
     ClassDB::register_class<rg_godot::RgSteeringAssist>();
     ClassDB::register_class<rg_godot::RgAddressSearch>();
+    ClassDB::register_class<rg_godot::RgMarkTail>();
     ClassDB::register_class<rg_godot::RgSky>();
     ClassDB::register_class<ps_godot::PsSpatialAudio>();
 }
