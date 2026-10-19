@@ -114,6 +114,9 @@ var _roads: Node3D
 var _buildings: Node3D
 var _world_view: Node # RgTerrainView shared with the real-world Session
 var _load_started_ms: int = 0
+var _stage_name := ""            # the loading stage being timed (_note_stage)
+var _stage_started_ms: int = 0
+var _view_build_started := false   # RgTerrainView.begin_preview was called for this load
 var _last_report_ms: int = 0
 const FRAME_SPIKE_S := 0.05
 const FrameProbe := preload("res://scripts/frame_probe.gd")
@@ -882,6 +885,7 @@ func _load_world(kind: String, keep_spawn_override: bool = false) -> void:
 	ready_sim_time = -1.0
 	_spawn_reported = false
 	_load_started_ms = Time.get_ticks_msec()
+	_reset_stage_log()
 	_hud.reset_tick_window()
 	_visuals.show_ground = kind == "flat"
 	var sel: Dictionary = _prepare_vehicle()
@@ -954,11 +958,30 @@ func _apply_start_controls() -> void:
 	_simulation.set_control("assist.auto_blip", 1.0 if bool(_drive_selection.get("assist_auto_blip", true)) else 0.0)
 	_simulation.set_control("assist.auto_shift", 1.0 if _input_map.get_auto_shift() else 0.0)
 
+# One "RG_WORLD stage" line per loading-stage change: the stage that ended (with its duration) and the one that
+# starts (with the time since the load began), so a player's log shows where a slow load spent its time.
+func _note_stage(stage: String) -> void:
+	if stage == "" or stage == _stage_name:
+		return
+	var now := Time.get_ticks_msec()
+	if _stage_name != "":
+		print("RG_WORLD stage %s end ms=%d" % [_stage_name, now - _stage_started_ms])
+	_stage_name = stage
+	_stage_started_ms = now
+	if stage != "done_all":
+		print("RG_WORLD stage %s start t_ms=%d" % [stage, now - _load_started_ms])
+
+func _reset_stage_log() -> void:
+	_stage_name = ""
+	_stage_started_ms = Time.get_ticks_msec()
+	_view_build_started = false
+
 func _poll_loading() -> void:
 	var st: Dictionary = _simulation.get_init_status()
 	st["engine_title"] = str(_drive_selection.get("engine_title", ""))
 	st["swap_lines"] = _drive_selection.get("swap_lines", PackedStringArray())
 	var elapsed := (Time.get_ticks_msec() - _load_started_ms) / 1000.0
+	_note_stage(str(st.get("stage", "")) if str(st.get("state", "")) != "error" else "")
 	match str(st.get("state", "")):
 		"loading":
 			_overlay.show_loading(WORLD_LABEL[world_kind], st, elapsed, _loading_footer(), str(_world_request.get("label", "")))
@@ -1095,16 +1118,38 @@ func _print_surface_census() -> void:
 func _attach_world_view() -> void:
 	if int(_simulation.get_step_count()) <= 0:
 		return
-	if not _world_view.initialize_shared(_simulation):
-		_load_failed("RgTerrainView.initialize_shared: %s" % _world_view.get_last_error())
-		return
-	_world_view.set_material(_terrain_material.get_rid())
-	_world_view.set_render_origin(_simulation.get_render_origin_session())
-	SurfaceMaterials.set_render_origin(_simulation.get_render_origin_session())
+	if not _view_build_started:
+		if not _world_view.initialize_shared(_simulation):
+			_load_failed("RgTerrainView.initialize_shared: %s" % _world_view.get_last_error())
+			return
+		_world_view.set_material(_terrain_material.get_rid())
+		_world_view.set_render_origin(_simulation.get_render_origin_session())
+		SurfaceMaterials.set_render_origin(_simulation.get_render_origin_session())
+		var start_pos := chassis_session_position()
+		# The first chunk build derives every coarse LOD tile (minutes on a cold store): on a worker, as its own
+		# loading stage with a chunk counter, so this thread keeps drawing the loading screen.
+		if not _world_view.begin_preview(start_pos.x, start_pos.y):
+			_load_failed("RgTerrainView.begin_preview: %s" % _world_view.get_last_error())
+			return
+		_view_build_started = true
+	var pv: Dictionary = _world_view.poll_preview()
+	_note_stage("terrain_view")
+	var elapsed := (Time.get_ticks_msec() - _load_started_ms) / 1000.0
+	var st: Dictionary = _simulation.get_init_status()
+	st["stage"] = "terrain_view"
+	st["view_done"] = int(pv.get("done", 0))
+	st["view_total"] = int(pv.get("total", 0))
+	st["engine_title"] = str(_drive_selection.get("engine_title", ""))
+	match str(pv.get("state", "")):
+		"building":
+			_overlay.show_loading(WORLD_LABEL[world_kind], st, elapsed, _loading_footer(), str(_world_request.get("label", "")))
+			return
+		"error":
+			_load_failed("RgTerrainView.begin_preview: %s" % str(pv.get("message", "")))
+			return
+	_note_stage("done_all")
+	print("RG_WORLD stage done total_ms=%d view_chunks=%d" % [Time.get_ticks_msec() - _load_started_ms, int(pv.get("total", 0))])
 	var chassis := chassis_session_position()
-	if not _world_view.load_preview(chassis.x, chassis.y):
-		_load_failed("RgTerrainView.load_preview: %s" % _world_view.get_last_error())
-		return
 	_director.set_terrain_view(_world_view)
 	var world_data: Dictionary = JSON.parse_string(FileAccess.get_file_as_string(_world_config_path()))
 	var road_settings: Dictionary = world_data.get("road_visuals", {})

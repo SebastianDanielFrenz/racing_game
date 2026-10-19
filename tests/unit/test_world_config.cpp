@@ -654,7 +654,8 @@ TEST_CASE("load_world_config: physics absent defaults to radius_m 400", "[world_
     CHECK(cfg->physics.max_tile_fills_per_tick == 1);
     CHECK(cfg->physics.loader_workers == 2);
     CHECK(cfg->physics.spawn_clearance_m == 0.10);
-    CHECK(cfg->physics.startup_timeout_s == 30.0);
+    CHECK(cfg->physics.startup_timeout_s == 60.0);
+    CHECK(cfg->physics.startup_max_s == 900.0);
 }
 
 TEST_CASE("load_world_config: physics fields override every default", "[world_config]") {
@@ -1014,7 +1015,8 @@ TEST_CASE("load_world_config: the real committed data/world/world_config.json st
     CHECK(cfg->physics.max_tile_fills_per_tick == 1);
     CHECK(cfg->physics.loader_workers == 2);
     CHECK(cfg->physics.spawn_clearance_m == 0.10);
-    CHECK(cfg->physics.startup_timeout_s == 30.0);
+    CHECK(cfg->physics.startup_timeout_s == 60.0);
+    CHECK(cfg->physics.startup_max_s == 900.0);
     CHECK(cfg->physics.road_surfaces.enabled);
     CHECK(cfg->physics.road_surfaces.paved == "asphalt");
     CHECK(cfg->physics.road_surfaces.unpaved == "dirt");
