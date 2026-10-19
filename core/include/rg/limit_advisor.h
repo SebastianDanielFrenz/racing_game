@@ -93,7 +93,7 @@ struct AdvisorConfig {
     double merge_gap_rpm = 300.0;
     std::map<std::string, int> decimals; // quantity name -> decimals (missing = the built-in default)
     std::vector<std::string> solve_points = {"worst", "last"};
-    std::vector<AdviceKindConfig> kinds; // file order = the order of equal-severity items
+    std::vector<AdviceKindConfig> kinds; // the "kinds" key order of the FILE (re-read with ordered_json; plain json sorts keys) = the order of equal-severity items
     // Static build-rule issues (ps::drivetrain::BuildIssue TurboStageMapCoverage, and the game's part limits above) shown after the sweep findings of
     // equal severity; same text/variant/min_severity vocabulary as `kinds`. The variant "beyond_map" is used for Limiting.
     std::vector<AdviceKindConfig> build_rules;

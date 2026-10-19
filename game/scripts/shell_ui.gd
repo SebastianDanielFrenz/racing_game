@@ -92,6 +92,7 @@ var _advice_scroll: ScrollContainer
 var _advice_poll := 0.0
 var _advice_signature := ""
 var _advice_data: Dictionary = {}
+var _advice_open: Dictionary = {} # note id -> true/false: the player opened/closed it (else the default below)
 var _garage_path: Array[String] = []
 var _garage_preferred: Button
 var _engine_notice := ""                        # G1: options an engine change reset (shown under the engine cards)
@@ -868,7 +869,13 @@ func _draw_garage_options() -> void:
 # ---- garage: setup check (limit advisor) -------------------------------------------------------------------------
 
 const ADVICE_COLOURS := [Color(0.62, 0.78, 0.95), Color(0.98, 0.72, 0.22), Color(0.95, 0.32, 0.28)]
-const ADVICE_MAX_HEIGHT := 140.0
+# The setup-check band grows to fit its notes, up to this share of the column height the option list above and the band
+# share (canvas units after the UI scale, so the cap follows the window size and the scale). The option list keeps its own
+# minimum height either way.
+const ADVICE_BAND_SHARE := 0.6
+# With more notes than this, every note starts as its title line only (the player opens one to read it), so the whole
+# list fits the band and no warning hides below the fold; with this many or fewer they start open.
+const ADVICE_OPEN_UP_TO := 2
 
 func _build_advice_panel(column: VBoxContainer) -> void:
 	_advice_box = VBoxContainer.new()
@@ -887,7 +894,11 @@ func _build_advice_panel(column: VBoxContainer) -> void:
 	_advice_list.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_advice_list.add_theme_constant_override("separation", 6)
 	_advice_scroll.add_child(_advice_list)
+	_advice_list.minimum_size_changed.connect(_fit_advice_band)
+	if not _root.resized.is_connected(_fit_advice_band):
+		_root.resized.connect(_fit_advice_band)
 	_advice_signature = ""
+	_advice_open = {}
 	_advice_poll = 0.0
 
 # The advisor's findings never block an edit (owner 2026-10-13: allow extreme setups, show warnings).
@@ -913,6 +924,9 @@ func _refresh_advice() -> void:
 		text += " · check failed"
 	elif bool(data.get("have_result", false)):
 		text += " · %s" % ("no issues found" if items.is_empty() else ("%d note%s" % [items.size(), "" if items.size() == 1 else "s"]))
+		# The worst note by name (the advisor orders them: worst grade first, driveline before engine and thermal notes).
+		if not items.is_empty() and worst >= 1:
+			text += " · %s" % str(items[0].get("title", ""))
 	_advice_status.text = text
 	_advice_status.tooltip_text = str(data.get("error", "")) if not busy else str(data.get("stage", ""))
 	_advice_status.modulate = ADVICE_COLOURS[worst] if (worst >= 0 and not busy) else Color(1, 1, 1, 0.7)
@@ -926,18 +940,45 @@ func _refresh_advice() -> void:
 
 func _draw_advice(items: Array, stale: bool) -> void:
 	for key in _buttons.keys():
-		if str(key).begins_with("advice_fix:"):
+		if str(key).begins_with("advice_fix:") or str(key).begins_with("advice_note:"):
 			_buttons.erase(key)
 	for child in _advice_list.get_children():
 		_advice_list.remove_child(child)
 		child.queue_free()
 	for item in items:
-		_advice_list.add_child(_advice_item_control(item, stale))
-	# A fixed band (items scroll inside it): the option list above never loses its room.
-	_advice_scroll.custom_minimum_size.y = ADVICE_MAX_HEIGHT if not items.is_empty() else 0.0
+		_advice_list.add_child(_advice_item_control(item, stale, items.size() <= ADVICE_OPEN_UP_TO))
 	_advice_scroll.visible = not items.is_empty()
+	_fit_advice_band()
 
-func _advice_item_control(item: Dictionary, stale: bool) -> Control:
+# The band is as tall as its notes, capped at ADVICE_BAND_SHARE of the column height left for the option list and the band
+# together (the screen height in canvas units minus the panel margins and every other row's minimum); the notes scroll
+# beyond that. The option list's own minimum always stays, and the column never grows past the screen.
+func _fit_advice_band() -> void:
+	if _advice_scroll == null or not is_instance_valid(_advice_scroll) or not is_instance_valid(_advice_box) or _root == null:
+		return
+	var want := 0.0
+	if _advice_list.get_child_count() > 0:
+		var column := _advice_box.get_parent() as Control
+		var panel := column.get_parent() as PanelContainer
+		var margin := panel.get_parent().get_parent() as MarginContainer
+		var overhead := 0.0
+		if margin != null:
+			overhead += margin.get_theme_constant("margin_top") + margin.get_theme_constant("margin_bottom")
+		var style := panel.get_theme_stylebox("panel") if panel != null else null
+		if style != null:
+			overhead += style.get_margin(SIDE_TOP) + style.get_margin(SIDE_BOTTOM)
+		var options := _option_box.get_parent() as Control if _option_box != null and is_instance_valid(_option_box) else null
+		var option_floor := options.custom_minimum_size.y if options != null else 0.0
+		# Every other row of the column at its minimum (the column minimum holds the option list at its floor and the band
+		# at its current height).
+		var others := column.get_combined_minimum_size().y - option_floor - _advice_scroll.custom_minimum_size.y
+		var free := _root.size.y - overhead - others
+		var cap := minf(free * ADVICE_BAND_SHARE, free - option_floor)
+		want = clampf(_advice_list.get_combined_minimum_size().y, 0.0, maxf(cap, 0.0))
+	if absf(_advice_scroll.custom_minimum_size.y - want) > 0.5:
+		_advice_scroll.custom_minimum_size.y = want
+
+func _advice_item_control(item: Dictionary, stale: bool, open_by_default: bool) -> Control:
 	var colour: Color = ADVICE_COLOURS[clampi(int(item.get("severity", 0)), 0, 2)]
 	var panel := PanelContainer.new()
 	panel.set_meta("advice_id", str(item.get("id", "")))
@@ -945,17 +986,44 @@ func _advice_item_control(item: Dictionary, stale: bool) -> Control:
 	style.bg_color = Color(0.03, 0.04, 0.055, 0.82)
 	style.border_color = colour
 	style.border_width_left = 4
-	style.set_content_margin_all(8)
-	style.content_margin_left = 12
+	style.set_content_margin_all(5)
+	style.content_margin_left = 10
 	panel.add_theme_stylebox_override("panel", style)
 	if stale:
 		panel.modulate = Color(1, 1, 1, 0.55)
+	var outer := VBoxContainer.new()
+	outer.add_theme_constant_override("separation", 2)
+	panel.add_child(outer)
+	var note_id := str(item.get("id", ""))
+	var open: bool = bool(_advice_open.get(note_id, open_by_default))
+	# The title is a flat button: it opens or closes the note's details (mouse, touch or pad focus).
+	var title := Button.new()
+	title.flat = true
+	title.alignment = HORIZONTAL_ALIGNMENT_LEFT
+	title.text = ("▾ " if open else "▸ ") + str(item.get("title", ""))
+	title.add_theme_font_size_override("font_size", 15)
+	title.custom_minimum_size = Vector2.ZERO
+	for state_name in ["font_color", "font_hover_color", "font_pressed_color", "font_focus_color"]:
+		title.add_theme_color_override(state_name, colour)
+	# One text line per closed note (the shell theme's tall button boxes would show only three notes).
+	for box_name in ["normal", "hover", "pressed", "focus", "hover_pressed"]:
+		var flat := StyleBoxFlat.new()
+		flat.bg_color = Color(1, 1, 1, 0.08) if box_name in ["hover", "focus", "hover_pressed"] else Color(0, 0, 0, 0)
+		flat.set_content_margin_all(0)
+		flat.content_margin_top = 1
+		flat.content_margin_bottom = 1
+		title.add_theme_stylebox_override(box_name, flat)
+	title.pressed.connect(func():
+		_advice_open[note_id] = not open
+		_advice_signature = ""
+		_draw_advice(_advice_data.get("items", []), bool(_advice_data.get("busy", false)))
+		_show_advice_note(note_id))
+	outer.add_child(title)
+	_buttons["advice_note:" + note_id] = title
 	var box := VBoxContainer.new()
 	box.add_theme_constant_override("separation", 2)
-	panel.add_child(box)
-	var title := _label(str(item.get("title", "")), 15, HORIZONTAL_ALIGNMENT_LEFT)
-	title.add_theme_color_override("font_color", colour)
-	box.add_child(title)
+	box.visible = open
+	outer.add_child(box)
 	for line in item.get("lines", []):
 		box.add_child(_label(str(line), 13, HORIZONTAL_ALIGNMENT_LEFT))
 	var suggestion := str(item.get("suggestion", ""))
@@ -982,12 +1050,25 @@ func _advice_item_control(item: Dictionary, stale: bool) -> Control:
 		_buttons["advice_fix:" + id] = button
 	return panel
 
+# Scrolls the band so an opened note is in view (it may sit below the fold).
+func _show_advice_note(note_id: String) -> void:
+	await get_tree().process_frame # the band re-laid out with the note open
+	if _advice_list == null or not is_instance_valid(_advice_list):
+		return
+	for child in _advice_list.get_children():
+		if str(child.get_meta("advice_id", "")) == note_id:
+			_advice_scroll.ensure_control_visible(child)
+			return
+
 # Test hooks: the advisor's last polled view-model.
 func advice_data() -> Dictionary:
 	return _advice_data
 
 func advice_status_text() -> String:
 	return _advice_status.text if _advice_status != null and is_instance_valid(_advice_status) else ""
+
+func advice_band_height() -> float:
+	return _advice_scroll.size.y if _advice_scroll != null and is_instance_valid(_advice_scroll) and _advice_scroll.visible else 0.0
 
 func advice_item_count() -> int:
 	return _advice_list.get_child_count() if _advice_list != null and is_instance_valid(_advice_list) else 0

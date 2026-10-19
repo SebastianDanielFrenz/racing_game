@@ -481,6 +481,25 @@ std::optional<AdvisorConfig> parse_advisor_config(const std::string& json_text, 
         if (!read_kind_body(*it, where, origin, k, err)) return std::nullopt;
         c.kinds.push_back(std::move(k));
     }
+    {
+        // `json` keeps object keys sorted by name; equal-severity notes follow the FILE order of "kinds" (AdvisorConfig::kinds),
+        // so the key order is read once more with nlohmann::ordered_json.
+        const nlohmann::ordered_json ordered = nlohmann::ordered_json::parse(json_text, nullptr, /*allow_exceptions=*/false);
+        std::map<std::string, std::size_t> position;
+        if (!ordered.is_discarded()) {
+            if (const auto k = ordered.find("kinds"); k != ordered.end() && k->is_object()) {
+                for (auto it = k->begin(); it != k->end(); ++it) position.emplace(it.key(), position.size());
+            }
+        }
+        std::vector<std::pair<std::size_t, AdviceKindConfig>> keyed;
+        std::size_t i = 0;
+        for (auto it = kinds->begin(); it != kinds->end(); ++it, ++i) {
+            const auto p = position.find(it.key());
+            keyed.emplace_back(p != position.end() ? p->second : position.size() + i, std::move(c.kinds[i]));
+        }
+        std::stable_sort(keyed.begin(), keyed.end(), [](const auto& a, const auto& b) { return a.first < b.first; });
+        for (std::size_t j = 0; j < keyed.size(); ++j) c.kinds[j] = std::move(keyed[j].second);
+    }
     if (const auto rules = root.find("build_rules"); rules != root.end()) {
         if (!rules->is_object()) {
             fail(err, origin, "\"build_rules\" must be an object");

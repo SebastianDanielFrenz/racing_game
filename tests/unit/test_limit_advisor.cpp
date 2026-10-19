@@ -259,6 +259,39 @@ TEST_CASE("advice grouping: contiguous rpm ranges merge, far ones stay apart, wo
     CHECK(rg::format_rpm_ranges(items[1].ranges, c) == "3000-3500, 6000 RPM");
 }
 
+TEST_CASE("advice order: within a grade, driveline notes (clutch, gearbox) come before turbo and thermal ones", "[limit_advisor][gearbox]") {
+    // Owner 2026-10-19 missed the shift-clutch warning as the 4th of 8 notes. advisor.json lists ClutchCapacity and
+    // GearboxInputTorque first in "kinds"; that FILE order (not the alphabetical order nlohmann::json keeps) breaks ties.
+    const rg::AdvisorConfig c = shipped_config();
+    REQUIRE(c.kinds.size() >= 3);
+    CHECK(c.kinds[0].kind == pd::LimitKind::ClutchCapacity);
+    CHECK(c.kinds[1].kind == pd::LimitKind::GearboxInputTorque);
+    rg::AdviceInput in;
+    in.points = sweep_points(2.0);
+    in.target_boost_bar = 1.8;
+    // The owner's setup at its grades: choke Limiting (sorts before GearboxInputTorque alphabetically), gearbox and clutch Limiting,
+    // coolant Limiting (reached after 150 s, a warning).
+    in.findings.push_back(F(pd::LimitKind::CompressorChoke, pd::LimitSeverity::Limiting, 6000.0, 1.03, 1.0, pd::LimitUnit::Fraction, "/max_mass_flow_kg_s"));
+    in.findings.push_back(F(pd::LimitKind::GearboxInputTorque, pd::LimitSeverity::Limiting, 5000.0, 1700.0, 1600.0, pd::LimitUnit::NewtonMetre, "/rated_input_torque_nm"));
+    in.findings.push_back(F(pd::LimitKind::ClutchCapacity, pd::LimitSeverity::Limiting, 5000.0, 4361.0, 2185.0, pd::LimitUnit::NewtonMetre, "/capacity_nm"));
+    in.thermal_ambient_c = 25.0;
+    in.thermal_air_speed_m_s = in.coolant_air_speed_m_s = in.oil_air_speed_m_s = 45.0;
+    in.coolant_peak_c = 122.0;
+    in.coolant_limit_c = 118.0;
+    in.coolant_limit_time_s = 150.0;
+    in.coolant_peak_rpm = 6000.0;
+    const auto items = rg::build_advice(in, c);
+    REQUIRE(items.size() == 4);
+    for (const auto& i : items) CHECK(i.severity == rg::AdviceSeverity::Warning);
+    CHECK(items[0].kind == pd::LimitKind::ClutchCapacity);
+    CHECK(items[1].kind == pd::LimitKind::GearboxInputTorque);
+    CHECK(items[2].kind == pd::LimitKind::CompressorChoke);
+    CHECK(items[3].rule_name == "CoolantTemperature");
+    // Severity still wins over the kind order: a critical choke goes first.
+    in.findings[0].severity = pd::LimitSeverity::Exceeded;
+    CHECK(rg::build_advice(in, c)[0].kind == pd::LimitKind::CompressorChoke);
+}
+
 TEST_CASE("advice grouping: the config's minimum severity filters before merging", "[limit_advisor]") {
     rg::AdvisorConfig c = shipped_config();
     rg::AdviceInput in;
