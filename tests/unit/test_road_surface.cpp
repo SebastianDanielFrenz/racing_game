@@ -274,3 +274,46 @@ TEST_CASE("A66 Unterliederbach approach has a full-width collider and no road ri
     const auto lower=g2m::world::sample_height_exact([&](const auto& k){return terrain->height_tile(k);},{32},0,0,466651.65,5551546.78);
     REQUIRE(lower);CHECK(*lower>108);CHECK(*lower<111); // B8 remains beneath the A66, with its measured floor.
 }
+
+namespace {
+g2m::RoadProfile flat_road(double x0,double y0,double heading,double length,int width_mm,int shoulder_mm,int blend_mm,double height) {
+    g2m::RoadProfile p;
+    p.attributes.width_mm=width_mm; p.attributes.shoulder_mm=shoulder_mm;
+    p.attributes.blend_mm=blend_mm; p.attributes.crown_per_mille=25;
+    p.attributes.land_class=g2m::LandClass::PavedRoad;
+    p.reference.length_m=length;
+    g2m::RoadReferenceSegment s; s.curve={x0,y0,heading,length,0,0};
+    p.reference.segments.push_back(s);
+    p.vertical.segments.push_back({0,length,height,height,0,0});
+    return p;
+}
+}
+TEST_CASE("A side road meeting a crowned carriageway ties into its crossfall instead of humping the lanes", "[road_surface][junction]") {
+    // Unterliederbach exit onto the B8 (owner report 2026-10-19): a 13 m four-lane street with 25 per mille crown, parking
+    // aisles (4 m) leaving it at right angles from nodes on its centre line, both profiles anchored at the same node
+    // height. The aisle's normalised score is small inside the main lanes, so it owned those cells with its own uncrowned
+    // centre-line height: a 9-10 cm hump across the near-side lanes at every aisle.
+    g2m::RoadGeomTile tile;
+    tile.entries.push_back({1,{0,1},flat_road(0,128.5,0,256,13000,1500,10000,100),{},{},{}});
+    tile.entries.push_back({2,{0,1},flat_road(100.5,128.5,-1.5707963267948966,60,4000,500,3000,100),{},{},{}});
+    const rg::RoadSurfacePatch patch(tile);
+    auto t=terrain(0);REQUIRE(patch.apply(*t)>0);
+    const auto h=[&](int x,int y){return t->h[static_cast<std::size_t>(y)*256+x]/256.0;};
+    // Cell row centres 4.0 m and 2.0 m to the aisle side of the main centre line: a driven wheel track. The main road's
+    // own crossfall is constant along the row, so the row must stay flat across the aisle mouth (x 96..104).
+    for(int y:{124,126}) {
+        const double reference=h(60,y);double worst=0,worst_step=0;
+        for(int x=61;x<=140;++x) {worst=std::max(worst,std::abs(h(x,y)-reference));worst_step=std::max(worst_step,std::abs(h(x,y)-h(x-1,y)));}
+        INFO("row "<<y<<" reference "<<reference<<" worst deviation "<<worst<<" worst 1 m step "<<worst_step);
+        CHECK(worst<.01);CHECK(worst_step<.005);
+    }
+    CHECK(h(60,124)==Catch::Approx(100-.025*(std::sqrt(16.25)-.5)).margin(.005));
+    // Past the main road's shoulder plus the aisle's blend the aisle keeps its own profile. From the main carriageway
+    // edge it climbs to it as a monotone ramp (no hump, no wall): the 15 cm between the main crossfall at the edge and the
+    // aisle profile is spread over the shoulder plus blend (4.5 m), at most 6 cm per metre.
+    CHECK(h(100,110)==Catch::Approx(100).margin(.005));
+    for(int y=110;y<121;++y) {INFO("aisle axis y="<<y);CHECK(h(100,y)>=h(100,y+1)-.001);CHECK(h(100,y)-h(100,y+1)<.06);}
+    // Row 121 lies in the main road's shoulder, where its verge drop takes part in the transition blend: a gutter-like
+    // dip of a few millimetres against the lane edge (row 122), not a hump.
+    CHECK(std::abs(h(100,121)-h(100,122))<.01);
+}
