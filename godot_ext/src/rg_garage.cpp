@@ -131,6 +131,14 @@ godot::Dictionary RgGarage::initialize(const String& repo_root, const String& us
         advisor_ = std::make_unique<rg::LimitAdvisor>(std::move(*advisor_config));
     else
         advisor_error_ = advisor_err;
+    // The electrified dyno's reference conditions (data/garage/dyno_reference.json): a bad file leaves combustion cars'
+    // dyno as it is and gives electric/hybrid cars an error result naming the file.
+    dyno_reference_.reset();
+    std::string dyno_reference_err;
+    if (auto reference = rg::load_dyno_reference(c.repo_root + "/data/garage/dyno_reference.json", &dyno_reference_err))
+        dyno_reference_ = std::make_shared<const rg::DynoReference>(std::move(*reference));
+    else
+        godot::UtilityFunctions::push_warning(from_std("electric dyno off: " + dyno_reference_err));
     // Upgrade badges (data/garage/upgrade_badges.json) are optional too: a bad file shows no badges and is reported once.
     badge_config_ = {};
     std::string badge_err;
@@ -794,14 +802,9 @@ void RgGarage::refresh_dyno() {
         const std::string advisor_key=garage_->edit_id()+"|"+rg::setup_to_json(garage_->working());
         advisor_->request({*entry,garage_->options(),garage_->context_for(*entry),garage_->working(),advisor_key});
     }
-    rg::VehicleSetup engine_setup; engine_setup.vehicle_id=entry->id;
-    for(const auto& option:garage_->options().options) {
-        if(option.file!="engine" && option.file!="turbo" && option.part_format!="physics_sim.engine/1" && option.part_format!="physics_sim.turbo_configuration/1") continue;
-        auto value=garage_->working().values.find(option.id);
-        if(value!=garage_->working().values.end()) engine_setup.values.emplace(*value);
-    }
+    const rg::VehicleSetup engine_setup=rg::dyno_setup(garage_->options(),*entry,garage_->working(),dyno_reference_.get());
     const std::string key=rg::setup_to_json(engine_setup);
-    dyno_.request({*entry,garage_->options(),garage_->context_for(*entry),engine_setup,key});
+    dyno_.request({*entry,garage_->options(),garage_->context_for(*entry),engine_setup,key,dyno_reference_});
 }
 godot::Dictionary RgGarage::get_advice() const {
     godot::Dictionary out;
@@ -842,26 +845,40 @@ godot::Dictionary RgGarage::get_dyno() const {
     out["busy"]=result.busy; out["progress"]=result.progress;
     out["revision"]=int64_t(result.revision);
     out["vehicle_id"]=from_std(result.vehicle_id); out["error"]=from_std(result.error);
-    godot::Array points;
-    for(const auto& point:result.points) {
-        godot::Dictionary p; p["rpm"]=point.rpm; p["torque_nm"]=point.torque_nm; p["power_kw"]=point.power_kw;
-        p["turbo_simulation"]=point.turbo_simulation;
-        p["compressor_sim_fraction"]=point.compressor_sim_fraction;
-        p["turbine_sim_fraction"]=point.turbine_sim_fraction;
-        p["turbo_fallback_fraction"]=point.turbo_fallback_fraction;
-        points.push_back(p);
-    }
-    out["points"]=points;
-    godot::Array provisional;
-    for(const auto& point:result.provisional_points) {
-        godot::Dictionary p;p["rpm"]=point.rpm;p["torque_nm"]=point.torque_nm;p["power_kw"]=point.power_kw;
-        p["turbo_simulation"]=point.turbo_simulation;
-        p["compressor_sim_fraction"]=point.compressor_sim_fraction;
-        p["turbine_sim_fraction"]=point.turbine_sim_fraction;
-        p["turbo_fallback_fraction"]=point.turbo_fallback_fraction;
-        provisional.push_back(p);
-    }
-    out["provisional_points"]=provisional;
+    const bool electrified=result.topology!=rg::DynoTopology::Combustion;
+    const auto to_array=[&](const std::vector<rg::DynoPoint>& in) {
+        godot::Array array;
+        for(const auto& point:in) {
+            godot::Dictionary p; p["rpm"]=point.rpm; p["torque_nm"]=point.torque_nm; p["power_kw"]=point.power_kw;
+            p["turbo_simulation"]=point.turbo_simulation;
+            p["compressor_sim_fraction"]=point.compressor_sim_fraction;
+            p["turbine_sim_fraction"]=point.turbine_sim_fraction;
+            p["turbo_fallback_fraction"]=point.turbo_fallback_fraction;
+            if(electrified) {
+                p["engine_rpm"]=point.engine_rpm; p["engine_torque_nm"]=point.engine_torque_nm; p["engine_power_kw"]=point.engine_power_kw;
+                p["electric_torque_nm"]=point.electric_torque_nm; p["electric_power_kw"]=point.electric_power_kw;
+                p["fuel_cell_power_kw"]=point.fuel_cell_power_kw; p["battery_power_kw"]=point.battery_power_kw;
+                p["battery_limited"]=point.battery_limited; p["engine_running"]=point.engine_running; p["gear"]=point.gear;
+                godot::Array motors;
+                for(const auto& m:point.motors) {
+                    godot::Dictionary md; md["rpm"]=m.rpm; md["torque_nm"]=m.torque_nm; md["power_kw"]=m.power_kw;
+                    md["battery_limited"]=m.battery_limited; motors.push_back(md);
+                }
+                p["motors"]=motors;
+            }
+            array.push_back(p);
+        }
+        return array;
+    };
+    out["points"]=to_array(result.points);
+    out["provisional_points"]=to_array(result.provisional_points);
+    out["topology"]=from_std(rg::to_string(result.topology));
+    out["axis"]=from_std(result.axis==rg::DynoAxis::EngineRpm ? "engine_rpm" : "motor_rpm");
+    out["reference_gear"]=result.reference_gear;
+    godot::Array labels; for(const auto& label:result.motor_labels) labels.push_back(from_std(label));
+    out["motor_labels"]=labels;
+    out["caption"]=from_std(result.caption);
+    out["unsupported_reason"]=from_std(result.unsupported_reason);
     return out;
 }
 

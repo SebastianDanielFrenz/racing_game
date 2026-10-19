@@ -77,6 +77,7 @@ add_executable(rg_unit_tests
   test_rev_limit_extremes.cpp
   test_tyre_spec.cpp
   test_garage_dyno.cpp
+  test_garage_dyno_electric.cpp
   test_limit_advisor.cpp
   test_upgrade_badges.cpp
   test_envelope_cost.cpp

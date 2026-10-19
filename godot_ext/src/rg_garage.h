@@ -197,6 +197,7 @@ private:
     std::optional<rg::GarageCamera> camera_;
     std::string work_root_;
     rg::GarageDyno dyno_;
+    std::shared_ptr<const rg::DynoReference> dyno_reference_; // data/garage/dyno_reference.json (nullptr = electric dyno off)
     void refresh_dyno();
     std::unique_ptr<rg::LimitAdvisor> advisor_;
     std::string advisor_error_;

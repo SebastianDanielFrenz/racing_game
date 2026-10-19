@@ -82,6 +82,7 @@ var _garage_right: PanelContainer
 var _garage_performance: VBoxContainer
 var _garage_dyno: Control
 var _garage_dyno_status: Label
+var _garage_dyno_heading: Label
 var _dyno_poll := 0.0
 # Limit advisor (setup check): simulation-derived notes for the pending setup; the core decides everything.
 var _advice_box: VBoxContainer
@@ -211,8 +212,9 @@ func _process(delta: float) -> void:
 			return
 		var data: Dictionary = garage.get_dyno()
 		_garage_dyno.update_result(data)
+		_garage_dyno_heading.text = "ENGINE DYNO" if str(data.get("topology","combustion")) == "combustion" else "POWERTRAIN DYNO"
 		var label := "Provisional · refining" if not data.get("provisional_points",[]).is_empty() else "Updating"
-		_garage_dyno_status.text = ("%s · %d%%" % [label,int(data.get("progress",0))]) if bool(data.get("busy",false)) else ("Dyno failed · previous curve retained" if not str(data.get("error","")).is_empty() else "Crank · WOT · ISA · N₂O off")
+		_garage_dyno_status.text = ("%s · %d%%" % [label,int(data.get("progress",0))]) if bool(data.get("busy",false)) else ("Dyno failed · previous curve retained" if not str(data.get("error","")).is_empty() else (str(data.get("caption","")) if not str(data.get("caption","")).is_empty() else "Crank · WOT · ISA · N₂O off"))
 		if not bool(data.get("busy",false)) and str(data.get("error","")).is_empty():
 			var simulated_turbo := false
 			var mixed_turbo := false
@@ -645,7 +647,8 @@ func _build_configurator() -> void:
 	perf_scroll.add_child(_garage_performance)
 	_refresh_performance()
 	left.add_child(HSeparator.new())
-	left.add_child(_label("ENGINE DYNO",19,HORIZONTAL_ALIGNMENT_LEFT))
+	_garage_dyno_heading = _label("ENGINE DYNO",19,HORIZONTAL_ALIGNMENT_LEFT)
+	left.add_child(_garage_dyno_heading)
 	_garage_dyno = preload("res://scripts/garage_dyno_chart.gd").new()
 	_garage_dyno.name = "DynoChart"
 	left.add_child(_garage_dyno)
