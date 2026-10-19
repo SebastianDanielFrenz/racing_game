@@ -352,17 +352,18 @@ func _run() -> void:
 	sim.set_player_mode("fpv_drone")
 	await _wait_until(func(): return not sim.get_fpv_state().is_empty(), 10.0)
 	var st0: Dictionary = sim.get_fpv_state()
-	sim.set_fpv_input(0.0, 0.0, 1.0, 0.0, 0.0)
+	main.scripted_fpv_input = [0.0, 0.0, 1.0, 0.0, 0.0] # main._forward_flying re-sends every frame; a direct set_fpv_input is overwritten with zeros
 	await _settle(1.0)
 	var st1: Dictionary = sim.get_fpv_state()
 	var moved_v: Vector3 = st1["position"] - st0["position"]
 	_check(moved_v.length() > 3.0, "forward input moves the drone (%.1f m)" % moved_v.length())
 	_check(moved_v.normalized().dot(st0["facing"]) > 0.95, "... along its heading")
 	_check(float(st1["speed"]) <= 25.0 + 0.01, "... never above the maximum speed (%.2f m/s)" % float(st1["speed"]))
-	sim.set_fpv_input(0.0, -1.0, 0.0, 0.0, 0.0)
+	main.scripted_fpv_input = [0.0, -1.0, 0.0, 0.0, 0.0]
 	await _settle(4.0)
 	var st2: Dictionary = sim.get_fpv_state()
 	_check(bool(st2["on_ground"]), "descending ends on the ground (height %.2f m)" % float(st2["height_agl_m"]))
+	main.scripted_fpv_input = []
 	sim.set_fpv_input(0.0, 0.0, 0.0, 0.0, 0.0)
 	sim.set_player_mode("drive")
 	await _frames(3)
