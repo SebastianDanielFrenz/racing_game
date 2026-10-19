@@ -1,0 +1,21 @@
+{
+  "format": "racing_game.wind_noise/1",
+  "wind": {
+    "status": "NEW 2026-10-19 (owner: there was no wind noise; the sound heard as wind was the tyre layer). Every number is [AS] unless stated.",
+    "reference_speed_kmh": 100.0,
+    "rms_at_reference": 0.0172,
+    "level_db_per_decade": 50.0,
+    "level_note": "Aerodynamic sound from turbulent flow over a body is a dipole/boundary-layer source: sound power ~ U^5 ... U^6 (Lighthill 1952, 'On sound generated aerodynamically I': monopole U^4, dipole U^6, quadrupole U^8; Hucho, Aerodynamics of Road Vehicles, aeroacoustics chapter: 50-60 log10 U). 50 dB per decade is the low end of that range: 15 dB per doubling of the airspeed. rms_at_reference is chosen so wind and tyre noise are equally loud at about 130 km/h: tyre dominates in town, wind on the motorway and above.",
+    "max_speed_kmh": 500.0,
+    "full_above_kmh": 3.6,
+    "centre_hz_at_reference": 700.0,
+    "centre_exponent": 1.0,
+    "centre_note": "Strouhal-type scaling f = St * U / L: the spectrum's weight moves up proportionally with the airspeed",
+    "min_centre_hz": 120.0,
+    "max_centre_hz": 6000.0,
+    "q": 0.7,
+    "gust_depth": 0.15,
+    "gust_rate_hz": 0.8,
+    "smoothing_s": 0.05
+  }
+}
