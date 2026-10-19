@@ -810,6 +810,16 @@ float RgSimulation::get_body_speed_mps(const String& body_name) const {
     return static_cast<float>(frame_snapshot().chassis_motion.linear.length());
 }
 
+float RgSimulation::get_airspeed_mps() const {
+    if (!session_) return 0.0f;
+    const auto& snap = frame_snapshot();
+    if (snap.aero.enabled) return static_cast<float>(snap.aero.airspeed_m_s);
+    const auto& v = snap.chassis_motion.linear;
+    const auto& w = snap.aero.environment.wind_world_m_s;
+    const double dx = v.x - w.x, dy = v.y - w.y, dz = v.z - w.z;
+    return static_cast<float>(std::sqrt(dx * dx + dy * dy + dz * dz));
+}
+
 void RgSimulation::set_control(const String& channel, double value) {
     if (session_) session_->set_control(to_std_string(channel), value);
 }
@@ -1521,6 +1531,7 @@ void RgSimulation::_bind_methods() {
     godot::ClassDB::bind_method(D_METHOD("get_npc_truck_state"), &RgSimulation::get_npc_truck_state);
     godot::ClassDB::bind_method(D_METHOD("get_steering_kinematics"), &RgSimulation::get_steering_kinematics);
     godot::ClassDB::bind_method(D_METHOD("get_body_speed_mps", "body_name"), &RgSimulation::get_body_speed_mps);
+    godot::ClassDB::bind_method(D_METHOD("get_airspeed_mps"), &RgSimulation::get_airspeed_mps);
 
     godot::ClassDB::bind_method(D_METHOD("set_control", "channel", "value"), &RgSimulation::set_control);
     godot::ClassDB::bind_method(D_METHOD("get_control", "channel"), &RgSimulation::get_control);

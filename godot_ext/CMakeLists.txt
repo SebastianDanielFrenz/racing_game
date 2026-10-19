@@ -21,6 +21,7 @@ add_library(rg_godot SHARED
   src/rg_camera_math.cpp
   src/rg_camera_motion.cpp
   src/rg_tyre_sound.cpp
+  src/rg_wind_noise.cpp
   src/rg_fpv_sound.cpp
   src/rg_electric_motor_sound.cpp
   src/rg_render_focus.cpp
