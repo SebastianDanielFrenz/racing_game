@@ -27,8 +27,9 @@ namespace rg {
 // Engine-neutral: pure mesh arithmetic, the renderer draws what comes out. Call once per freshly built tile.
 void resolve_surface_layers(g2m::world::RoadRibbonTile& mesh);
 
-// Metres a decal vertex is raised above the surface it is painted on (about twice the worst measured mismatch).
-inline constexpr double kDecalLiftM = 0.015;
+// Metres a decal vertex is raised above the surface it is painted on (twice the worst decal-vs-surface drape mismatch
+// measured on the real spawn tile: 11 mm on the current base, 9 mm on the older one).
+inline constexpr double kDecalLiftM = 0.025;
 // Triangles of different layers count as one surface when their mean heights differ by less than this (m).
 inline constexpr double kSameSurfaceHeightM = 0.25;
 

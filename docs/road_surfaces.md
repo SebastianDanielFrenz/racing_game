@@ -199,7 +199,7 @@ flipped triangle by triangle. The designed layering mechanism is no longer a lif
 - Two carriageway ribbons that lie over each other at the same height (an on-ramp ending on the axis of the through
   road) are ordered by lane count: more lanes wins, equal counts are left alone. Triangles at different heights
   (a footway under a bridge deck, a ramp over a road) never cover each other.
-- Decals (paint, turn arrows, junction overlay; flags 16/32) cannot be cut, they are lifted 15 mm instead.
+- Decals (paint, turn arrows, junction overlay; flags 16/32) cannot be cut, they are lifted 25 mm instead.
 - Physics is unchanged: the road surface class under a track or path is still chosen by `stamp_route_surface_classes`
   (paved bed outranks walkway outranks unpaved), so grip follows the visible road.
 
