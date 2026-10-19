@@ -75,6 +75,14 @@ func get_cockpit() -> Node3D:
 		return _cockpit
 	return null
 
+# The mouse adapter of the mounted common cockpit controls (cockpit_mouse.gd; car_hyper), or null.
+func get_cockpit_mouse() -> Node:
+	if _model_root == null:
+		return null
+	var common := _model_root.get_node_or_null("CommonCockpit")
+	var mouse = common.get("mouse") if common != null else null
+	return mouse if mouse != null and is_instance_valid(mouse) else null
+
 func model_loaded() -> bool:
 	return _load_ok
 

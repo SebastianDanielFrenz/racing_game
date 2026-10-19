@@ -31,6 +31,7 @@ add_library(rg_godot SHARED
   src/rg_sky.cpp
   src/rg_assists.cpp
   src/rg_driver_actions.cpp
+  src/rg_cockpit.cpp
   src/rg_terrain_view.cpp
   src/terrain_surface_pack.cpp
   src/rg_navigation.cpp

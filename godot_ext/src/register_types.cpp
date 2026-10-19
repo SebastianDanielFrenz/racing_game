@@ -8,6 +8,7 @@
 #include "rg/crt_guard.h"
 #include "rg_assists.h"
 #include "rg_driver_actions.h"
+#include "rg_cockpit.h"
 #include "rg_camera_math.h"
 #include "rg_camera_motion.h"
 #include "rg_fpv_sound.h"
@@ -59,6 +60,7 @@ void initialize_rg_godot_module(ModuleInitializationLevel p_level) {
     ClassDB::register_class<rg_godot::RgElectricMotorSound>();
     ClassDB::register_class<rg_godot::RgAssists>();
     ClassDB::register_class<rg_godot::RgDriverActions>();
+    ClassDB::register_class<rg_godot::RgCockpit>();
     ClassDB::register_class<rg_godot::RgTerrainView>();
     ClassDB::register_class<rg_godot::RgNavigation>();
     ClassDB::register_class<rg_godot::RgRenderFocus>();

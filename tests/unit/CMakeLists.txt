@@ -12,6 +12,7 @@ target_link_libraries(rg_test_catch_main
 
 add_executable(rg_unit_tests
   test_driver_actions.cpp
+  test_cockpit_hit.cpp
   test_electric_motor_sound.cpp
   test_environment.cpp
   test_crt_guard.cpp

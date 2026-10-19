@@ -1420,18 +1420,26 @@ func _forward_driving(live: bool, delta: float) -> void:
 		cabin_cockpit.set("driver_actions", _input_map.driver_actions) # cockpit switches submit through the shared instance
 	var up: int = _input_map.consume_shift_up_count()
 	var down: int = _input_map.consume_shift_down_count()
+	# Mounted common cockpit (car_hyper, cockpit_mouse.gd): clicks count only while the car is driven live.
+	var cockpit_mouse: Node = _visuals.get_cockpit_mouse() if _visuals != null and _visuals.has_method("get_cockpit_mouse") else null
+	if cockpit_mouse != null:
+		cockpit_mouse.set("world_input_active", _input_map.is_world_input_active())
+		cockpit_mouse.set("driving_live", live and bool(_simulation.is_running()) and scripted_controls.is_empty())
 	if not live or not bool(_simulation.is_running()):
+		if cockpit_mouse != null: cockpit_mouse.discard_pending()
 		_input_map.advance_cabin(_simulation,{},delta,false,VEHICLE_NAME)
 		_steering.reset()
 		return
 	if get_tree().get_nodes_in_group("seat_adjustment_open").size() > 0 or get_tree().get_nodes_in_group("address_teleport_open").size() > 0:
 		_input_map.driver_actions.discard_pending()
+		if cockpit_mouse != null: cockpit_mouse.discard_pending()
 		_simulation.set_control("steer", 0.0)
 		_simulation.set_control("throttle", 0.0)
 		_simulation.set_control("brake", 1.0)
 		_input_map.advance_cabin(_simulation,{},delta,false,VEHICLE_NAME)
 		return
 	if not scripted_controls.is_empty():
+		if cockpit_mouse != null: cockpit_mouse.discard_pending()
 		_input_map.advance_cabin(_simulation,{},delta,false,VEHICLE_NAME)
 		for channel in scripted_controls:
 			_simulation.set_control(channel, float(scripted_controls[channel]))
@@ -1463,6 +1471,11 @@ func _forward_driving(live: bool, delta: float) -> void:
 	_simulation.set_control("starter", 1.0 if (_input_map.get_starter() or cockpit_starter) else 0.0)
 	if cockpit != null:
 		cockpit.submit_held()
+	if cockpit_mouse != null:
+		# Paddles are shift edges like the keys; every other control submits its DriverActions event (source CockpitMouse).
+		cockpit_mouse.flush_to(_input_map.driver_actions)
+		up += cockpit_mouse.consume_shift_up()
+		down += cockpit_mouse.consume_shift_down()
 	var pt: Dictionary = _simulation.get_vehicle_powertrain(VEHICLE_NAME)
 	pt["speed_mps"] = _simulation.get_body_speed_mps("chassis")
 	var channels: Dictionary = DriverState.channels(_simulation)
