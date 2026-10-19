@@ -668,14 +668,18 @@ TEST_CASE("drivetrain swap: a hybrid conversion keeps its motor and takes every 
     CHECK(lsd_rear.line.rear_kind == "clutch_lsd");
     CHECK(motor_rides_on_driveline(lsd_rear.desc));
 
-    // Fuel is greyed out on the hybrid for its own reason, not the driveline's: the hypercar's engine lists one fuel, with or without the hybrid.
+    // The fuel option follows the engine's own fuel list, not the driveline: the hybrid conversion neither adds nor removes it.
+    // (Integration 2026-10-19: the Hyper One's engine lists E85 and E5 since knock v4, so the option is offered; before that it was
+    // greyed out with "one fuel" while the engine listed E5 alone.)
     const rg::SetupModel plain_model = rg::build_setup_model(car, f.table, f.ctx);
-    for (const rg::SetupModel* sm : {&plain_model, &m}) {
-        const rg::OptionView* fuel = view_of(*sm, "fuel");
-        REQUIRE(fuel != nullptr);
-        CHECK_FALSE(fuel->available);
-        CHECK_THAT(fuel->unavailable_reason, ContainsSubstring("one fuel"));
-    }
+    const rg::OptionView* plain_fuel = view_of(plain_model, "fuel");
+    const rg::OptionView* hybrid_fuel = view_of(m, "fuel");
+    REQUIRE(plain_fuel != nullptr);
+    REQUIRE(hybrid_fuel != nullptr);
+    CHECK(plain_fuel->available);
+    CHECK(plain_fuel->unavailable_reason.empty());
+    CHECK(hybrid_fuel->available == plain_fuel->available);
+    CHECK(hybrid_fuel->unavailable_reason == plain_fuel->unavailable_reason);
     // a car without a hybrid is unchanged: same description, no reduction
     const rg::DrivelineInfo plain = rg::describe_driveline(read_text(car.vehicle_path));
     CHECK(plain.swappable);
