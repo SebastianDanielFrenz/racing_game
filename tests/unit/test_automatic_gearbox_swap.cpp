@@ -920,3 +920,31 @@ TEST_CASE("Powertrain conversions preserve the hypercar electronic parking brake
   const auto result=load_setup(f,f.entry("car_hyper"),setup);INFO(result.error);REQUIRE(result.ok);CHECK(result.desc.epb.has_value());
  }
 }
+
+TEST_CASE("automatic gearbox: the gearbox clutches have a garage option that scales shift_clutch.capacity_nm", "[gearbox_swap][automatic][garage]") {
+    Fixture f;
+    const auto capacity_of = [](const ps::vehicle::VehicleDesc& d) {
+        for (const auto& c : d.powertrain.components) {
+            if (const auto* g = std::get_if<ps::drivetrain::GearboxDesc>(&c.params)) return g->shift_clutch.capacity_nm;
+        }
+        return -1.0;
+    };
+    rg::VehicleSetup s = setup_of("car_hyper_n2o", "hyper_7dct");
+    const Loaded stock = load_setup(f, f.entry("car_hyper_n2o"), s);
+    INFO(stock.error);
+    REQUIRE(stock.ok);
+    CHECK(capacity_of(stock.desc) == Approx(1900.0));
+    s.values["shift_clutch_capacity"] = 2.0;
+    const Loaded up = load_setup(f, f.entry("car_hyper_n2o"), s);
+    INFO(up.error);
+    REQUIRE(up.ok);
+    CHECK(capacity_of(up.desc) == Approx(3800.0));
+    // The option is the automatic box's own: a manual car has no shift clutch, so the value matches nothing there (the garage
+    // lists it only for a clutch-to-clutch box, like the manual Clutch option disappears with the box).
+    rg::VehicleSetup manual;
+    manual.vehicle_id = "car_hyper_n2o";
+    manual.values["shift_clutch_capacity"] = 2.0;
+    const Loaded m = load_setup(f, f.entry("car_hyper_n2o"), manual);
+    CHECK_FALSE(m.ok);
+    CHECK_THAT(m.error, ContainsSubstring("shift_clutch_capacity"));
+}

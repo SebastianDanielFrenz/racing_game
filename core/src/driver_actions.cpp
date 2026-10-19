@@ -151,6 +151,12 @@ void DriverActions::apply(const VehicleContext& context, ChannelSink& sink) {
             // Physics enters manual mode on a shift count in D; one up plus one down changes no gear.
             sink.set("shift_up_count", sink.get("shift_up_count") + 1);
             sink.set("shift_down_count", sink.get("shift_down_count") + 1);
+        } else if (snapshot.hybrid_fitted) {
+            // The hybrid supervisor owns the gearbox request (always 99 while it drives): only a selector change ends manual
+            // mode, so go through N for manual_exit_hold_s and back to D (advance() sends the D).
+            sink.set("gear_request", 0);
+            manual_exit_pending_ = true;
+            manual_exit_elapsed_s_ = 0;
         } else {
             // Back to D: a changed gear_request ends manual mode (any value >= the gear count is plain D).
             sink.set("gear_request", sink.get("gear_request") == kGearRequestDrive ? kGearRequestDrive - 1 : kGearRequestDrive);
@@ -258,7 +264,8 @@ void DriverActions::configure_cabin(const CabinConfig& c) {
         !std::isfinite(c.blink_hz) || c.blink_hz <= 0 ||
         !std::isfinite(c.indicator_arm_deg) || !std::isfinite(c.indicator_cancel_deg) ||
         c.indicator_cancel_deg < 0 || c.indicator_arm_deg <= c.indicator_cancel_deg ||
-        !std::isfinite(c.brake_lamp_threshold) || c.brake_lamp_threshold < 0 || c.brake_lamp_threshold > 1)
+        !std::isfinite(c.brake_lamp_threshold) || c.brake_lamp_threshold < 0 || c.brake_lamp_threshold > 1 ||
+        !std::isfinite(c.manual_exit_hold_s) || c.manual_exit_hold_s <= 0)
         throw std::invalid_argument("invalid cabin control configuration");
     if (c.auto_lights &&
         (!std::isfinite(c.auto_lights_on_lux) || !std::isfinite(c.auto_lights_off_lux) || c.auto_lights_on_lux <= 0 ||
@@ -270,8 +277,16 @@ void DriverActions::configure_cabin(const CabinConfig& c) {
 }
 
 void DriverActions::advance(const VehicleContext& context, ChannelSink& sink, double dt) {
-    if (!cabin_configured_) return;
     if (!std::isfinite(dt) || dt < 0) dt = 0;
+    if (manual_exit_pending_) {
+        // Second half of the hybrid manual-mode exit; anything else touching gear_request in the meantime cancels it.
+        manual_exit_elapsed_s_ += dt;
+        if (manual_exit_elapsed_s_ >= config_.manual_exit_hold_s) {
+            manual_exit_pending_ = false;
+            if (sink.get("gear_request") == 0) sink.set("gear_request", kGearRequestDrive);
+        }
+    }
+    if (!cabin_configured_) return;
     if (!context.driving_enabled) {
         cabin_.horn = false; cabin_.auto_cranking = false;
         sink.set("starter",0); sink.set("cabin.horn",0);

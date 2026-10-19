@@ -2,10 +2,13 @@
 #include "rg/electric_motor_sound.h"
 #include <godot_cpp/classes/ref_counted.hpp>
 #include <godot_cpp/variant/packed_float32_array.hpp>
+#include <godot_cpp/variant/dictionary.hpp>
 namespace rg_godot {
 class RgElectricMotorSound : public godot::RefCounted {
     GDCLASS(RgElectricMotorSound,godot::RefCounted)
 public:
+    // data/controls/electric_motor_sound.json: per-layer trim in dB (base_db, gear_whine_db, inverter_db); missing keys keep the defaults.
+    void configure(const godot::Dictionary& d);
     void set_state(double rpm,double torque_nm,double power_w,bool ready) { voice_.set_state(rpm,torque_nm,power_w,ready); }
     godot::PackedFloat32Array render(int frames,double gain);
 protected:

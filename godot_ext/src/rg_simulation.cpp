@@ -5,6 +5,7 @@
 #include "rg/route_check.h"
 #include "rg/assist_info.h"
 #include "rg/regen_info.h"
+#include "rg/dashboard_info.h"
 #include "rg/nitrous_info.h"
 #include "rg/engine_thermal_info.h"
 
@@ -915,6 +916,15 @@ float RgSimulation::get_wheel_steer_angle(const String& vehicle_name, std::int64
     return static_cast<float>(wheels[static_cast<std::size_t>(wheel_index)].state.steer_angle);
 }
 
+void RgSimulation::configure_dashboard(const godot::Dictionary& d) {
+    rg::DashboardConfig c;
+    c.battery_low_soc = d.get("battery_low_soc", c.battery_low_soc);
+    c.battery_critical_soc = d.get("battery_critical_soc", c.battery_critical_soc);
+    c.motor_dial_tick_krpm = d.get("motor_dial_tick_krpm", c.motor_dial_tick_krpm);
+    c.motor_dial_max_krpm = d.get("motor_dial_max_krpm", c.motor_dial_max_krpm);
+    dashboard_config_ = c;
+}
+
 godot::Dictionary RgSimulation::get_vehicle_gauge_info(const String& vehicle_name) const {
     godot::Dictionary d;
     if (!has_vehicle(vehicle_name)) return d;
@@ -930,7 +940,7 @@ godot::Dictionary RgSimulation::get_vehicle_gauge_info(const String& vehicle_nam
             idle_rpm = simulated->idle_rpm;
             limiter_rpm = simulated->limiter.rpm;
         } else if(const auto* motor=std::get_if<ps::drivetrain::ElectricMotorDesc>(&c.params)) {
-            if(session_->world().powertrain_state(session_->vehicle_id()).engines.empty()||session_->snapshot().powertrain.hybrid_fitted)limiter_rpm=std::max(limiter_rpm,motor->max_rpm);
+            (void)motor; // a hybrid keeps the ICE limiter (the traction motor has its own inner scale); a pure EV takes the motor below
             gear_count=1;
         } else if (const auto* tank = std::get_if<ps::drivetrain::FuelTankDesc>(&c.params)) {
             fuel_capacity_kg += tank->capacity_kg;
@@ -942,7 +952,14 @@ godot::Dictionary RgSimulation::get_vehicle_gauge_info(const String& vehicle_nam
         }
     }
     d["idle_rpm"] = static_cast<float>(idle_rpm);
+    const rg::TachScales scales = rg::tach_scales(session_->vehicle_desc(), dashboard_config_);
+    if (scales.kind == rg::TachKind::Ev) limiter_rpm = scales.motor_limit_rpm;
     d["limiter_rpm"] = static_cast<float>(limiter_rpm);
+    // Tachometer layout (rg/dashboard_info.h): "ice" one dial, "ev" one motor dial, "hybrid" ICE dial + inner motor scale.
+    d["tach_kind"] = scales.kind == rg::TachKind::Hybrid ? "hybrid" : (scales.kind == rg::TachKind::Ev ? "ev" : "ice");
+    d["motor_limit_rpm"] = scales.motor_limit_rpm;
+    d["motor_dial_max_rpm"] = scales.motor_dial_max_rpm;
+    d["motor_dial_tick_rpm"] = scales.motor_dial_tick_rpm;
     d["gear_count"] = gear_count;
     d["clutch_capacity_nm"] = clutch_capacity_nm; // kinetic capacity of the (first) clutch
     d["fuel_capacity_kg"] = fuel_capacity_kg;
@@ -1007,7 +1024,14 @@ godot::Dictionary RgSimulation::get_vehicle_powertrain(const String& vehicle_nam
     d["regen_brake_share"]=rh.regen_share;d["pad_brake_share"]=rh.pad_share;
     d["regen_brake_torque_nm"]=rh.regen_torque_nm;d["pad_brake_torque_nm"]=rh.pad_torque_nm;
     d["regen_label"]=String(rg::regen_label(rh).c_str());
-    if(p.transmission_kind==4||p.hybrid_fitted)d["rpm"]=p.motor_rpm;
+    // The main rpm stays the combustion engine on a hybrid (outer dial); a pure EV shows its motor. The traction motor has its
+    // own value for the hybrid's inner scale (motor_rpm is the max over every machine, incl. the crank generator).
+    const rg::TachScales tach = rg::tach_scales(session_->vehicle_desc(), dashboard_config_);
+    if(!p.hybrid_fitted&&(p.transmission_kind==4||p.electric_fitted))d["rpm"]=p.motor_rpm;
+    d["traction_motor_rpm"]=tach.kind==rg::TachKind::Ice?0.0:rg::traction_motor_rpm(p,tach);
+    const rg::BatteryHud battery = rg::battery_hud(p, dashboard_config_);
+    d["battery_fitted"]=battery.fitted;d["battery_percent"]=battery.percent;d["battery_level"]=battery.level;
+    d["battery_label"]=String(battery.label.c_str());
 
     // Assist unit (physics_sim assists I1/I5, rg/assist_info.h): modes the car offers (bit n = code n: 0 Off, 1 On,
     // 2 Relaxed, 3 Sport, 4 Drift), the requested and the effective mode, and the rear-wing automation.
@@ -1518,6 +1542,7 @@ void RgSimulation::_bind_methods() {
     godot::ClassDB::bind_method(D_METHOD("get_wheel_steer_angle", "vehicle_name", "wheel_index"), &RgSimulation::get_wheel_steer_angle);
 
     godot::ClassDB::bind_method(D_METHOD("get_vehicle_gauge_info", "vehicle_name"), &RgSimulation::get_vehicle_gauge_info);
+    godot::ClassDB::bind_method(D_METHOD("configure_dashboard", "config"), &RgSimulation::configure_dashboard);
     godot::ClassDB::bind_method(D_METHOD("get_vehicle_speed_limit", "vehicle_name"), &RgSimulation::get_vehicle_speed_limit);
     godot::ClassDB::bind_method(D_METHOD("get_vehicle_powertrain", "vehicle_name"), &RgSimulation::get_vehicle_powertrain);
     godot::ClassDB::bind_method(D_METHOD("get_vehicle_nitrous", "vehicle_name"), &RgSimulation::get_vehicle_nitrous);

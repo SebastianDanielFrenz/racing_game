@@ -107,6 +107,7 @@ add_executable(rg_unit_tests
   test_game_car_thermal.cpp
   test_assist_info.cpp
   test_regen_info.cpp
+  test_dashboard_info.cpp
   test_channel_mirror.cpp
   test_hyper_rear_travel.cpp
   test_hyper_power_jumps.cpp
@@ -117,6 +118,7 @@ add_executable(rg_unit_tests
   test_abs_fitment.cpp
   test_hybrid_electronics.cpp
   test_hybrid_selector.cpp
+  test_hybrid_shift.cpp
 )
 
 target_link_libraries(rg_unit_tests

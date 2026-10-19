@@ -5,6 +5,7 @@
   "indicator_arm_deg": 90,
   "indicator_cancel_deg": 15,
   "brake_lamp_threshold": 0.05,
+  "manual_exit_hold_s": 0.05,
   "steering_ratio": 15,
   "horn_frequency_hz": [
     440,

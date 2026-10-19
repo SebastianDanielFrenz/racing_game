@@ -26,6 +26,9 @@ extends Node3D
 # (revolute) or a shift along (prismatic) the node's own glTF-local axis.
 
 var simulation: Node
+const PowertrainFeed := preload("res://scripts/powertrain_feed.gd")
+var _feed := PowertrainFeed.new("cockpit")
+var _held_speed_kmh := 0.0
 var vehicle_name: String = ""
 var driver_actions: Object = null # RgDriverActions (submit/state), set by main.gd; null = local cosmetic state
 var model_root: Node3D
@@ -278,12 +281,18 @@ func _live_values() -> Dictionary:
 	v["clock_h"] = fmod(float(t["hour"]), 12.0) + float(v["clock_m"]) / 60.0
 	if simulation == null or not simulation.has_method("get_vehicle_powertrain"):
 		return v
-	var pt: Dictionary = simulation.get_vehicle_powertrain(vehicle_name)
+	var misses_before: int = _feed.misses
+	var pt: Dictionary = _feed.read(simulation, vehicle_name)
 	var rpm := float(pt.get("rpm", 0.0))
 	var running := rpm > 300.0
-	v["speed_kmh"] = absf(float(simulation.get_vehicle_ground_speed_mps(vehicle_name))) * 3.6
+	if _feed.misses == misses_before:
+		_held_speed_kmh = absf(float(simulation.get_vehicle_ground_speed_mps(vehicle_name))) * 3.6
+	v["speed_kmh"] = _held_speed_kmh
 	v["engine_rpm"] = rpm
 	v["gear"] = int(pt.get("gear", 0))
+	# Traction battery / motor for an EV or hybrid cockpit file (needles bind to "battery_soc" 0..1 and "motor_rpm"); 0 on an ICE car.
+	v["battery_soc"] = float(pt.get("battery_percent", 0)) / 100.0
+	v["motor_rpm"] = float(pt.get("traction_motor_rpm", 0.0))
 	var info: Dictionary = simulation.get_vehicle_gauge_info(vehicle_name)
 	var capacity := float(info.get("fuel_capacity_kg", 0.0))
 	v["fuel_fraction"] = clampf(float(pt.get("fuel_mass_kg", 0.0)) / capacity, 0.0, 1.0) if capacity > 0.0 else 0.0
