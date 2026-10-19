@@ -161,8 +161,10 @@
           18
         ]
       ],
-      "source": "[AS] Explicit RPM-dependent high-load retard limits the strengthened midrange near 1371 Nm at 6000; high-RPM timing restores net 1 MW at 7500. Interpolated by manifold pressure. No generated knock-limit map; E5 safety is not established."
-    }
+      "source": "[AS] Explicit RPM-dependent high-load retard limits the strengthened midrange near 1371 Nm at 6000; high-RPM timing restores net 1 MW at 7500. Interpolated by manifold pressure. No generated knock-limit map; E5 safety is not established. Since 2026-10-18 the generated knock limit is also on (ignition_strategy knock_limited): the runtime spark is min(this schedule, generated knock-limited spark on E5) minus a 2 deg margin."
+    },
+    "ignition_strategy": "knock_limited",
+    "knock_margin_deg": 2.0
   },
   "cycle": {
     "source": "[AS] Fixed published bore/stroke and compression, assumed firing topology and internals. 2026-10-03 high-RPM breathing calibration: two 38 mm intake and two 34 mm exhaust valves/cylinder; intake 270 deg / 12 mm, IVO 4 BTDC, IVC 86 ABDC; exhaust 264 deg / 12 mm, EVO 80 BBDC, EVC 4 ATDC; 8 deg overlap. High-lift Cd authored 0.50. Explicit 7500/8000 rpm generation nodes. No manufacturer cam, port or runner measurements.",
@@ -403,7 +405,7 @@
   },
   "inertia_kgm2": 0.3,
   "breakaway_torque_nm": 75.0,
-  "fuel": "../../external/physics_sim/data/fuels/e5.json",
+  "fuels": ["../../external/physics_sim/data/fuels/e85.json", "../../external/physics_sim/data/fuels/e5.json"],
   "ignition": "spark",
   "idle_rpm": 950.0,
   "initial_state": "running",

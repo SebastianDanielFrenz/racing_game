@@ -458,10 +458,10 @@ TEST_CASE("engine swap: the fuel is kept when the new engine lists it, else it c
         CHECK_FALSE(l.ok);
         CHECK_THAT(l.error, ContainsSubstring("not one of this engine's fuels"));
     }
-    {   // the hyper's E5 map is reused when its own engine keeps its fuel (no regeneration): the tank fuel is e5
+    {   // the hyper runs on E85 (knock RON 104): the tank fuel is e85
         const Loaded l = load_setup(f, f.entry("car_hyper"), setup_of("car_hyper", {}));
         REQUIRE(l.ok);
-        CHECK(tank_fuel_of(l.desc) == "e5");
+        CHECK(tank_fuel_of(l.desc) == "e85");
     }
 }
 
@@ -506,7 +506,7 @@ TEST_CASE("engine swap: the TCU derivation satisfies the loader's ordering for e
     CHECK(p.auto_clutch.full_rpm_min == Approx(1750.0));
     CHECK(p.auto_clutch.full_rpm_max == Approx(3700.0));
     CHECK(p.auto_shift.up_full == Approx(7950.0));
-    CHECK(p.clutch_kinetic_nm == Approx(2090.0)); // 1.5 x 1387.3 N*m rounded up to 10
+    CHECK(p.clutch_kinetic_nm == Approx(2070.0)); // 1.5 x 1376.9 N*m (knock v4 E85 catalog peak) rounded up to 10
     CHECK(p.set_clutch);
     // a stronger clutch of the car stays
     car.clutch_kinetic_nm = 3650.0;
@@ -524,7 +524,7 @@ TEST_CASE("engine swap: the derived controller values reach the loaded car", "[e
     CHECK(tcu->auto_clutch.rolling_reengage_rpm == Approx(1450.0));
     CHECK(tcu->auto_clutch.full_rpm_max == Approx(3700.0));
     CHECK(tcu->auto_shift.up_rpm_at_full_throttle == Approx(7950.0));
-    CHECK(clutch_of(l.desc) == Approx(2090.0));
+    CHECK(clutch_of(l.desc) == Approx(2070.0));
     CHECK(engine_of(l.desc).limiter == Approx(8250.0));
 }
 
