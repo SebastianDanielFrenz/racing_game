@@ -21,6 +21,11 @@ constexpr double kTieInWidthBandM = 1.0; // half-width band over which the width
 // The side road returns to its own profile over the wider road's shoulder plus at most this much of its own blend, so
 // a long-blend ramp (motorway_link, 15 m) leaving at an angle is not pulled toward the carriageway far from it.
 constexpr double kTieInMaxRampM = 3.0;
+// Only an at-grade meeting ties in: a side road up to kTieInFullGapM off the wider carriageway's surface (crown and
+// profile-fit mismatch at a junction are centimetres to decimetres) ties fully, one more than kTieInFullGapM +
+// kTieInGapBandM off (an embankment or cutting crossing it) not at all - independent of the grade-separation clearance.
+constexpr double kTieInFullGapM = 0.5;
+constexpr double kTieInGapBandM = 0.5;
 }
 RoadSurfacePatch::RoadSurfacePatch(const g2m::RoadGeomTile& geometry,double verge_drop,const RoadSeparation& separation) : verge_drop_m_(verge_drop),separation_(separation) {
     decks=build_road_decks(geometry,separation);
@@ -201,11 +206,13 @@ std::size_t RoadSurfacePatch::apply(g2m::HeightTile& tile) const {
                 for(const auto& a:near) {
                     if(&a==&b||!a.kept||a.segment->tunnel) continue;
                     const auto& A=*a.segment;
-                    if(A.layer!=B.layer||A.blend<=B.blend||std::abs(b.z-a.bed_z)>separation_.clearance_m) continue;
+                    const double gap=std::abs(b.z-a.bed_z);
+                    if(A.layer!=B.layer||A.blend<=B.blend||gap>separation_.clearance_m) continue;
                     const double ax=A.x1-A.x0,ay=A.y1-A.y0,al=std::hypot(ax,ay);if(al<1e-9) continue;
                     const double cosine=std::abs(ax*bx+ay*by)/(al*bl);
                     const double g=smooth((kTieInMaxCos-cosine)/kTieInAngleBand)*smooth((A.half_width-B.half_width-kTieInMinWidthGapM)/kTieInWidthBandM)
-                        *(1-smooth((a.d-A.half_width)/std::max(.001,A.shoulder+std::min(B.blend,kTieInMaxRampM))));
+                        *(1-smooth((a.d-A.half_width)/std::max(.001,A.shoulder+std::min(B.blend,kTieInMaxRampM))))
+                        *(1-smooth((gap-kTieInFullGapM)/kTieInGapBandM));
                     if(g<=0) continue;
                     tie=std::max(tie,g);sum+=g*a.bed_z;weights+=g;
                 }
