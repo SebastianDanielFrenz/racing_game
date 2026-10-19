@@ -46,6 +46,15 @@
 .PARAMETER Keep         Number of snapshots to keep (default 3).
 .PARAMETER Preset       CMake preset to build (default relwithdebinfo).
 .PARAMETER OutRoot      Snapshot root (default S:\claude_code\racing_game_releases).
+.PARAMETER G2mCache     geo2map source/derived store root written to RG_G2M_CACHE in the
+                        play scripts (default: $env:RG_G2M_CACHE, else S:\claude_code\geo2map_cache).
+.PARAMETER G2mHome      geo2map home-region cache written to RG_G2M_HOME (default: $env:RG_G2M_HOME,
+                        else the main checkout's S:\claude_code\racing_game\cache\g2m\home-r1).
+.PARAMETER WorldConfig  World config written to RG_WORLD_CONFIG in the play scripts, relative to the
+                        snapshot root (default data/world/world_config_rhein_main_hessen.json, the home region).
+.PARAMETER DryRun       Write only the play*.cmd files into -DryRunDir (default: a new folder under
+                        %TEMP%) and exit: no build, no copy, nothing written to -OutRoot.
+.PARAMETER DryRunDir    Target folder for -DryRun.
 #>
 [CmdletBinding()]
 param(
@@ -53,7 +62,12 @@ param(
     [switch]$AllowDirty,
     [int]$Keep = 3,
     [string]$Preset = 'relwithdebinfo',
-    [string]$OutRoot = 'S:\claude_code\racing_game_releases'
+    [string]$OutRoot = 'S:\claude_code\racing_game_releases',
+    [string]$G2mCache,
+    [string]$G2mHome,
+    [string]$WorldConfig = 'data/world/world_config_rhein_main_hessen.json',
+    [switch]$DryRun,
+    [string]$DryRunDir
 )
 
 $ErrorActionPreference = 'Stop'
@@ -67,6 +81,69 @@ $buildDir = Join-Path $repoRoot "out\build\$Preset"
 . (Join-Path $PSScriptRoot 'release_common.ps1')
 
 if ($Keep -lt 1) { throw "-Keep must be at least 1" }
+
+# --- 0. shared stores and world config (resolved from the main checkout, not the build folder) ----
+# Precedence: explicit parameter, then the caller's environment, then the fixed shared locations
+# that out/run_home_region.ps1 uses. Resolving relative to $repoRoot is wrong for a worktree at
+# another depth (it produced <parent>\geo2map_cache and <worktree>\cache\g2m\home-r1 before).
+$sharedG2mCache  = 'S:\claude_code\geo2map_cache'
+$mainG2mHome     = 'S:\claude_code\racing_game\cache\g2m\home-r1'
+$g2mCache = if ($G2mCache) { $G2mCache } elseif ($env:RG_G2M_CACHE) { $env:RG_G2M_CACHE } else { $sharedG2mCache }
+$g2mHome  = if ($G2mHome)  { $G2mHome }  elseif ($env:RG_G2M_HOME)  { $env:RG_G2M_HOME }  else { $mainG2mHome }
+if (-not (Test-Path -LiteralPath $g2mCache -PathType Container)) { throw "geo2map cache folder does not exist: $g2mCache (pass -G2mCache)" }
+if (-not (Test-Path -LiteralPath $g2mHome -PathType Container))  { throw "geo2map home cache folder does not exist: $g2mHome (pass -G2mHome)" }
+$worldConfigPath = if ([System.IO.Path]::IsPathRooted($WorldConfig)) { $WorldConfig } else { Join-Path $repoRoot $WorldConfig }
+if (-not (Test-Path -LiteralPath $worldConfigPath -PathType Leaf)) { throw "world config does not exist: $worldConfigPath (pass -WorldConfig)" }
+$worldConfig = $WorldConfig.Replace('\', '/')
+
+function Write-RgLaunchers {
+    param([Parameter(Mandatory)][string]$Dir, [Parameter(Mandatory)][string]$GodotGui)
+
+    function New-LauncherText([string]$extraArgs, [string]$engineArgs = '') {
+        $lines = @(
+            '@echo off',
+            'rem racing_game release snapshot launcher (written by tools/make_release.ps1).',
+            'rem Runs Godot on THIS snapshot''s game\ folder. The geo2map stores are shared, not copied;',
+            'rem set RG_G2M_CACHE / RG_G2M_HOME / RG_WORLD_CONFIG beforehand to point somewhere else.',
+            'setlocal',
+            "if not defined RG_G2M_CACHE set ""RG_G2M_CACHE=$g2mCache""",
+            "if not defined RG_G2M_HOME set ""RG_G2M_HOME=$g2mHome""",
+            "if not defined RG_WORLD_CONFIG set ""RG_WORLD_CONFIG=$worldConfig""",
+            "set ""RG_GODOT=$GodotGui""",
+            'if not exist "%RG_GODOT%" (',
+            '  echo Godot not found at %RG_GODOT% - edit RG_GODOT in this file.',
+            '  pause',
+            '  exit /b 1',
+            ')',
+            ('"%RG_GODOT%" --path "%~dp0game" ' + $engineArgs + '-- ' + $extraArgs + '%*')
+        )
+        return ($lines -join "`r`n") + "`r`n"
+    }
+    Set-Content -Path (Join-Path $Dir 'play.cmd')       -Encoding ASCII -Value (New-LauncherText '')
+    Set-Content -Path (Join-Path $Dir 'play_drive.cmd') -Encoding ASCII -Value (New-LauncherText '--drive ')
+    # VR: Godot's own --xr-mode on starts OpenXR (needs a PC OpenXR runtime, e.g. SteamVR or the
+    # headset's own); main.gd falls back to the desktop cameras when OpenXR does not initialise.
+    # VR always runs the Vulkan Mobile renderer, whatever the graphics.renderer setting says.
+    Set-Content -Path (Join-Path $Dir 'play_vr.cmd')    -Encoding ASCII -Value (New-LauncherText '' '--xr-mode on --rendering-method mobile --rendering-driver vulkan ')
+    # Fallback when the default Mobile (Vulkan) renderer does not start or draws wrongly on a machine: the OpenGL
+    # Compatibility renderer for this run only (the Settings screen's Renderer choice makes it permanent).
+    Set-Content -Path (Join-Path $Dir 'play_compat.cmd') -Encoding ASCII -Value (New-LauncherText '' '--rendering-method gl_compatibility ')
+}
+
+if ($DryRun) {
+    $dryDir = if ($DryRunDir) { $DryRunDir } else { Join-Path ([System.IO.Path]::GetTempPath()) "rg_make_release_dryrun_$(Get-Date -Format 'yyyyMMdd-HHmmss')" }
+    New-Item -ItemType Directory -Force -Path $dryDir | Out-Null
+    Write-RgLaunchers -Dir $dryDir -GodotGui (Find-GodotExe)
+    Write-Host "=== make_release -DryRun: launchers only, in $dryDir ===" -ForegroundColor Cyan
+    Write-Host "RG_G2M_CACHE  = $g2mCache"
+    Write-Host "RG_G2M_HOME   = $g2mHome"
+    Write-Host "RG_WORLD_CONFIG = $worldConfig"
+    Get-ChildItem -Path $dryDir -Filter 'play*.cmd' | ForEach-Object {
+        Write-Host "--- $($_.Name)" -ForegroundColor DarkGray
+        Get-Content -Path $_.FullName | Select-String -Pattern '^if not defined RG_' | ForEach-Object { "  " + $_.Line }
+    }
+    return
+}
 
 function Invoke-Git {
     param([Parameter(ValueFromRemainingArguments)][string[]]$GitArgs)
@@ -148,37 +225,7 @@ New-Item -ItemType Directory -Force -Path $partial | Out-Null
 $copied = Copy-RgReleaseTrees -RepoRoot $repoRoot -Destination $partial
 
 # --- 5. launchers + RELEASE.txt ----------------------------------------------
-$g2mCache = if ($env:RG_G2M_CACHE) { $env:RG_G2M_CACHE } else { [System.IO.Path]::GetFullPath((Join-Path $repoRoot '..\geo2map_cache')) }
-$g2mHome  = if ($env:RG_G2M_HOME)  { $env:RG_G2M_HOME }  else { Join-Path $repoRoot 'cache\g2m\home-r1' }
-
-function New-LauncherText([string]$extraArgs, [string]$engineArgs = '') {
-    $lines = @(
-        '@echo off',
-        'rem racing_game release snapshot launcher (written by tools/make_release.ps1).',
-        'rem Runs Godot on THIS snapshot''s game\ folder. The geo2map stores are shared, not copied;',
-        'rem set RG_G2M_CACHE / RG_G2M_HOME beforehand to point somewhere else.',
-        'setlocal',
-        "if not defined RG_G2M_CACHE set ""RG_G2M_CACHE=$g2mCache""",
-        "if not defined RG_G2M_HOME set ""RG_G2M_HOME=$g2mHome""",
-        "set ""RG_GODOT=$godotGui""",
-        'if not exist "%RG_GODOT%" (',
-        '  echo Godot not found at %RG_GODOT% - edit RG_GODOT in this file.',
-        '  pause',
-        '  exit /b 1',
-        ')',
-        ('"%RG_GODOT%" --path "%~dp0game" ' + $engineArgs + '-- ' + $extraArgs + '%*')
-    )
-    return ($lines -join "`r`n") + "`r`n"
-}
-Set-Content -Path (Join-Path $partial 'play.cmd')       -Encoding ASCII -Value (New-LauncherText '')
-Set-Content -Path (Join-Path $partial 'play_drive.cmd') -Encoding ASCII -Value (New-LauncherText '--drive ')
-# VR: Godot's own --xr-mode on starts OpenXR (needs a PC OpenXR runtime, e.g. SteamVR or the
-# headset's own); main.gd falls back to the desktop cameras when OpenXR does not initialise.
-# VR always runs the Vulkan Mobile renderer, whatever the graphics.renderer setting says.
-Set-Content -Path (Join-Path $partial 'play_vr.cmd')    -Encoding ASCII -Value (New-LauncherText '' '--xr-mode on --rendering-method mobile --rendering-driver vulkan ')
-# Fallback when the default Mobile (Vulkan) renderer does not start or draws wrongly on a machine: the OpenGL
-# Compatibility renderer for this run only (the Settings screen's Renderer choice makes it permanent).
-Set-Content -Path (Join-Path $partial 'play_compat.cmd') -Encoding ASCII -Value (New-LauncherText '' '--rendering-method gl_compatibility ')
+Write-RgLaunchers -Dir $partial -GodotGui $godotGui
 
 # Store info (best effort): which source scope the default world expects and
 # which derived release ids (scopes) the derived store already holds.
@@ -234,7 +281,8 @@ $release = @(
     "SHARED WITH THE DEV CHECKOUT (not copied)",
     "  RG_G2M_CACHE = $g2mCache",
     "  RG_G2M_HOME  = $g2mHome",
-    "  (both are only defaults in play.cmd: set them before starting to use other stores)",
+    "  RG_WORLD_CONFIG = $worldConfig (relative to this snapshot's root; default world in play.cmd)",
+    "  (all three are only defaults in play.cmd: set them before starting to use other stores/worlds)",
     "  The derived store is written to by whoever runs; Godot's user dir (settings, garage work,",
     "  thumbnails) is the same as the dev checkout's (same project name).",
     $storeInfo,
