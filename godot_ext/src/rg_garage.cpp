@@ -365,6 +365,53 @@ godot::Array RgGarage::get_part_badges(const String& option_id, const String& pa
     return out;
 }
 
+// The base of the figures: the car, its current whole setup and the catalogs. Handed over only when it changed (an
+// unchanged base must not cancel running work).
+void RgGarage::ensure_hint_base(const rg::CatalogEntry& entry, const std::string& current_json) {
+    const rg::SetupContext context = garage_->context_for(entry);
+    const std::string base_key = entry.id + "#" + current_json + "#" +
+                                 std::to_string(reinterpret_cast<std::uintptr_t>(context.engines.get())) + "#" +
+                                 std::to_string(reinterpret_cast<std::uintptr_t>(context.gearboxes.get())) + "#" +
+                                 std::to_string(reinterpret_cast<std::uintptr_t>(context.drivelines.get()));
+    if (base_key != hints_base_key_) {
+        hints_->set_base(rg::HintBase{entry, garage_->options(), context}, garage_->working());
+        hints_base_key_ = base_key;
+        hint_candidates_.clear();
+    }
+}
+
+// The left specification pane (owner 2026-10-19): the car AS CONFIGURED NOW, unsaved edits included - mass, layout and gears
+// from the working setup, peak power and torque from the same background figures the tile hints use (so a tile's hint and
+// the pane move together), a pending flag until they are ready.
+godot::String RgGarage::format_number(double value, int max_decimals) const { return from_std(rg::format_number(value, max_decimals)); }
+
+godot::Dictionary RgGarage::get_working_spec() {
+    godot::Dictionary out;
+    out["ok"] = false;
+    out["pending"] = false;
+    if (garage_ == nullptr || !garage_->editing() || hints_ == nullptr) return out;
+    const rg::CatalogEntry* entry = garage_->catalog().find(garage_->edit_id());
+    if (entry == nullptr) return out;
+    std::string err;
+    if (const auto s = garage_->stats(entry->id, &err)) {
+        out["ok"] = true;
+        out["mass_kg"] = s->mass_kg;
+        out["layout"] = from_std(s->layout);
+        out["driveline"] = from_std(s->driveline);
+        out["gear_count"] = static_cast<int64_t>(s->gear_count);
+    } else {
+        out["error"] = from_std(err);
+        return out;
+    }
+    ensure_hint_base(*entry, rg::setup_to_json(garage_->working()));
+    const rg::HintAnswer a = hints_->request_current({rg::UpgradeQuantity::Power, rg::UpgradeQuantity::Torque});
+    out["pending"] = !a.pending.empty();
+    if (!a.error.empty()) out["figure_error"] = from_std(a.error);
+    if (const auto p = a.installed.find(rg::UpgradeQuantity::Power); p != a.installed.end()) out["power_kw"] = p->second;
+    if (const auto t = a.installed.find(rg::UpgradeQuantity::Torque); t != a.installed.end()) out["torque_nm"] = t->second;
+    return out;
+}
+
 godot::Dictionary RgGarage::get_hints(const String& option_id, const godot::Dictionary& edits) {
     godot::Dictionary out;
     godot::Array badges;
@@ -400,18 +447,7 @@ godot::Dictionary RgGarage::get_hints(const String& option_id, const godot::Dict
     const rg::CatalogEntry* entry = garage_->catalog().find(garage_->edit_id());
     if (entry == nullptr) return out;
     const std::string current_json = rg::setup_to_json(garage_->working());
-    const rg::SetupContext context = garage_->context_for(*entry);
-    // The base of the figures: the car, its current whole setup and the catalogs. Handed over only when it changed (an
-    // unchanged base must not cancel running work).
-    const std::string base_key = entry->id + "#" + current_json + "#" +
-                                 std::to_string(reinterpret_cast<std::uintptr_t>(context.engines.get())) + "#" +
-                                 std::to_string(reinterpret_cast<std::uintptr_t>(context.gearboxes.get())) + "#" +
-                                 std::to_string(reinterpret_cast<std::uintptr_t>(context.drivelines.get()));
-    if (base_key != hints_base_key_) {
-        hints_->set_base(rg::HintBase{*entry, garage_->options(), context}, garage_->working());
-        hints_base_key_ = base_key;
-        hint_candidates_.clear();
-    }
+    ensure_hint_base(*entry, current_json);
     // The candidate: the click's edits replayed on a copy of the current setup (the working copy is kept).
     auto found = hint_candidates_.find(edit_key);
     if (found == hint_candidates_.end()) {
@@ -898,7 +934,8 @@ void RgGarage::refresh_dyno() {
     }
     rg::VehicleSetup engine_setup; engine_setup.vehicle_id=entry->id;
     for(const auto& option:garage_->options().options) {
-        if(option.file!="engine" && option.file!="turbo" && option.part_format!="physics_sim.engine/1" && option.part_format!="physics_sim.turbo_configuration/1") continue;
+        // The powertrain choice decides which engine the dyno sweeps (an ICE conversion, a hybrid's engine), so it counts too.
+        if(option.id!="powertrain_install" && option.file!="engine" && option.file!="turbo" && option.part_format!="physics_sim.engine/1" && option.part_format!="physics_sim.turbo_configuration/1") continue;
         auto value=garage_->working().values.find(option.id);
         if(value!=garage_->working().values.end()) engine_setup.values.emplace(*value);
     }
@@ -972,6 +1009,8 @@ void RgGarage::_bind_methods() {
     ClassDB::bind_method(D_METHOD("initialize", "repo_root", "user_dir", "work_root", "catalog_path"), &RgGarage::initialize, DEFVAL(String()));
     bind_browser_methods();
     ClassDB::bind_method(D_METHOD("get_dyno"), &RgGarage::get_dyno);
+    ClassDB::bind_method(D_METHOD("get_working_spec"), &RgGarage::get_working_spec);
+    ClassDB::bind_method(D_METHOD("format_number", "value", "max_decimals"), &RgGarage::format_number);
     ClassDB::bind_method(D_METHOD("get_advice"), &RgGarage::get_advice);
     ClassDB::bind_method(D_METHOD("solve_advice", "item_id"), &RgGarage::solve_advice);
     ClassDB::bind_method(D_METHOD("is_ready"), &RgGarage::is_ready);

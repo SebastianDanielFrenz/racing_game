@@ -104,6 +104,10 @@ func _run() -> void:
 		await _hint_shots()
 		get_tree().quit()
 		return
+	if OS.get_cmdline_user_args().has("--spec-shots-only"):
+		await _spec_shots()
+		get_tree().quit()
+		return
 	if OS.get_cmdline_user_args().has("--strip-shots-only"):
 		await _strip_shots()
 		get_tree().quit()
@@ -316,6 +320,70 @@ func _hint_shots() -> void:
 			print("RG_HINT_SHOT %s no tiles with hints" % name)
 		await _page_shots(ui, "hints_" + name)
 		print("RG_HINT_SHOT stats %s" % str(ui.garage.get_hint_stats()))
+	await _back_to_root_shots(ui)
+
+# The left specification pane after swaps (owner 2026-10-19: it must show the configuration being edited, not the stock car).
+# `--spec-shots-only`: the stock pane, then after each swap of SPEC_SWAPS[vehicle] the figures once the core and the dyno finished,
+# with a swap page whose tiles show their hints (the installed tile none).
+const SPEC_SWAPS := {
+	"car_hyper": [["single_turbo", {"turbo_install": "hyper_single_compact"}, ["tile:Swaps", "tile:Forced induction"]]],
+	"car_sedan": [
+		["v8", {"engine_install": "default:ventura_v8_5l0_na"}, ["tile:Swaps", "tile:Engine"]],
+		["hybrid", {"powertrain_install": "hybrid_battery"}, ["tile:Swaps", "tile:Powertrain", "tile:Hybrid"]],
+	],
+}
+
+func _spec_wait(ui: CanvasLayer) -> void:
+	ui.garage.wait_for_hints(600000)
+	var deadline := Time.get_ticks_msec() + 300000
+	await _seconds(0.6)
+	while bool(ui.garage.get_dyno().get("busy", false)) and Time.get_ticks_msec() < deadline:
+		await _frames(2)
+	ui.garage.wait_for_hints(600000)
+	await _seconds(1.0)
+
+func _spec_shots() -> void:
+	var ui: CanvasLayer = main.get_shell_ui()
+	await _back_to_root_shots(ui)
+	await _spec_wait(ui)
+	print("RG_SPEC stock: %s" % str(ui.garage.get_working_spec()))
+	await _shot("spec_stock")
+	var vehicle := str(OS.get_cmdline_user_args()[OS.get_cmdline_user_args().find("--garage-shots-vehicle") + 1]) if OS.get_cmdline_user_args().has("--garage-shots-vehicle") else ""
+	for swap in SPEC_SWAPS.get(vehicle, []):
+		_stage = "spec " + str(swap[0])
+		await _back_to_root_shots(ui)
+		var edits: Dictionary = swap[1]
+		for id in edits:
+			ui._edit_option(str(id), edits[id])
+		await _spec_wait(ui)
+		print("RG_SPEC after %s: %s" % [str(swap[0]), str(ui.garage.get_working_spec())])
+		for step in swap[2]:
+			_press(step)
+			await _frames(3)
+		await _seconds(0.5)
+		var tiles: Array = []
+		_collect_tiles(ui._option_box, tiles)
+		if tiles.size() > HINT_TILES_PER_PAGE:
+			tiles = tiles.slice(0, HINT_TILES_PER_PAGE)
+		for tile in tiles:
+			var row: Container = tile.get_node_or_null("Badges")
+			if row != null:
+				ui._fill_badges(row, str(tile.get_meta("badge_option")), tile.get_meta("badge_edits"))
+				ui.garage.wait_for_hints(600000) # the newest request cancels the previous one's work: one tile at a time
+		var texts := []
+		for tile in tiles:
+			var row: Container = tile.get_node_or_null("Badges")
+			if row == null:
+				continue
+			ui._fill_badges(row, str(tile.get_meta("badge_option")), tile.get_meta("badge_edits"))
+			row.visible = true
+			var chips := []
+			for chip in row.get_children():
+				chips.append(str(chip.text))
+			var label: Label = tile.get_node_or_null("Name")
+			print("RG_SPEC tile '%s'%s -> [%s]" % [label.text if label != null else "?", " (installed)" if tile.has_node("Installed") else "", " | ".join(chips)])
+		await _seconds(0.5)
+		await _shot("spec_after_" + str(swap[0]))
 	await _back_to_root_shots(ui)
 
 # One heavier (red) and one lighter (green) weight tile highlighted by focus, the badge at its bottom middle.

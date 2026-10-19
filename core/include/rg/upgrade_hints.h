@@ -149,6 +149,12 @@ public:
     // debounced) and listed as pending. `nitrous_armed` measures power and temperatures with the car's N2O kit armed.
     HintAnswer request(const VehicleSetup& candidate, const std::vector<UpgradeQuantity>& metrics, bool nitrous_armed);
 
+    // The figures of the CURRENT whole setup itself (the garage's specification pane): what is known now, the rest queued. These
+    // quantities stay wanted: every job the worker takes (a tile's hover included) computes them for the current setup too, so
+    // the pane never competes with the tiles for the one worker (it enqueues a job only while the worker has none).
+    // answer.candidate == answer.installed == the current setup's figures.
+    HintAnswer request_current(const std::vector<UpgradeQuantity>& metrics);
+
     // Drops queued work and cancels the running job (the cache is kept).
     void cancel();
     // Blocks until nothing is queued or running; false on timeout. For tests and screenshot runs.
@@ -183,6 +189,7 @@ private:
     std::uint64_t base_generation_ = 0; // bumps when the current setup or the car changes
     std::uint64_t request_generation_ = 0; // bumps on every queued request / cancel
     std::map<std::string, Entry> cache_;
+    std::set<UpgradeQuantity> spec_wanted_; // request_current's quantities: part of every job's baseline
     std::optional<Job> pending_;
     bool running_ = false;
     bool running_candidate_phase_ = false;

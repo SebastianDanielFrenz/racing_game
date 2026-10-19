@@ -749,6 +749,46 @@ func _upgrade_layout_report(ui: CanvasLayer) -> Dictionary:
 				break
 	return report
 
+# The text of the pane line that starts with `prefix` ("Mass", "Power", ...).
+func _pane_line(ui: CanvasLayer, prefix: String) -> String:
+	var labels: Array = []
+	_labels_under(ui._garage_performance, labels)
+	for label in labels:
+		if str(label.text).begins_with(prefix):
+			return str(label.text)
+	return ""
+
+# Owner 2026-10-19: the left specification pane shows the car as configured now, and follows every edit (it is redrawn from
+# RgGarage.get_working_spec by the shell's own poll).
+func _check_spec_pane_follows_edits(ui: CanvasLayer) -> void:
+	ui.garage.wait_for_hints(120000)
+	await get_tree().create_timer(0.6).timeout
+	var before := _pane_line(ui, "Mass")
+	_check(before != "" and _pane_line(ui, "Power") != "", "the specification pane lists mass and power (%s / %s)" % [before, _pane_line(ui, "Power")])
+	var spec_before: Dictionary = ui.garage.get_working_spec()
+	ui._edit_option("trim_audio", "removed")
+	ui._edit_option("trim_sound_deadening", "removed")
+	var spec_after: Dictionary = ui.garage.get_working_spec()
+	_check(float(spec_after["mass_kg"]) < float(spec_before["mass_kg"]) - 1.0, "the working spec mass drops after removing parts (%s -> %s)" % [str(spec_before["mass_kg"]), str(spec_after["mass_kg"])])
+	await get_tree().create_timer(0.8).timeout
+	var after := _pane_line(ui, "Mass")
+	_check(after != before, "the pane's mass line follows the edit (%s -> %s)" % [before, after])
+	_check(not after.contains(" …"), "the pane shows no placeholder in its mass line")
+	# Power follows a turbo swap (figures come from the background worker: placeholder first, then the number).
+	var power_before := _pane_line(ui, "Power")
+	var opts: Array = ui.garage.get_options().filter(func(o): return str(o["id"]) == "turbo_install")
+	if not opts.is_empty():
+		ui._edit_option("turbo_install", "hyper_single_compact")
+		var waited := 0.0
+		while (_pane_line(ui, "Power").contains("…") or _pane_line(ui, "Power") == power_before) and waited < 120.0:
+			await get_tree().create_timer(0.5).timeout
+			waited += 0.5
+		_check(_pane_line(ui, "Power") != power_before and not _pane_line(ui, "Power").contains("…"), "the pane's power follows a turbo swap (%s -> %s)" % [power_before, _pane_line(ui, "Power")])
+	ui.garage.reset_all()
+	ui._spec_dirty = true
+	await get_tree().create_timer(0.6).timeout
+	_check(_pane_line(ui, "Mass") == before, "reset all brings the pane back (%s)" % _pane_line(ui, "Mass"))
+
 func _check_upgrade_layout() -> void:
 	var ui: CanvasLayer = main.get_shell_ui()
 	var pages := [[], ["tile:Chassis", "tile:Weight reduction"]]
@@ -797,4 +837,5 @@ func _check_upgrade_layout() -> void:
 		_check(texts == expected, "highlighted badges equal the core answer (%s vs %s)" % [", ".join(texts), ", ".join(expected)])
 		with_badges += texts.size()
 	_check(with_badges > 0, "the weight page shows at least one badge on a highlighted tile (%d)" % with_badges)
+	await _check_spec_pane_follows_edits(ui)
 	await _back_to_root()

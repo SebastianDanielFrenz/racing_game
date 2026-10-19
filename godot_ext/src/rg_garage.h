@@ -15,6 +15,7 @@
 #include "rg/garage_dyno.h"
 #include "rg/garage_set.h"
 #include "rg/upgrade_badges.h"
+#include "rg/number_format.h"
 #include "rg/upgrade_hints.h"
 #include "rg/limit_advisor.h"
 
@@ -116,6 +117,8 @@ public:
     // text "...") and the caller asks again; a newer request or an edit cancels the running work. No badges for the
     // installed part.
     godot::Dictionary get_hints(const godot::String& option_id, const godot::Dictionary& edits);
+    godot::String format_number(double value, int max_decimals) const; // rg/number_format.h, the one formatter of every figure
+    godot::Dictionary get_working_spec(); // the left specification pane: the car as configured now (mass, layout, gears, power, torque)
     // Blocks until no hint figure is being computed (tests and screenshot runs); false on timeout.
     bool wait_for_hints(int timeout_ms);
     // Drops queued hint work and cancels the running job.
@@ -217,6 +220,7 @@ private:
     std::unique_ptr<rg::LimitAdvisor> advisor_;
     std::string advisor_error_;
     std::unique_ptr<rg::UpgradeHints> hints_; // null when the badge file is bad
+    void ensure_hint_base(const rg::CatalogEntry& entry, const std::string& current_json);
     std::string hints_base_key_;              // what hints_ was last given as its base (car, current setup, catalogs)
     std::map<std::string, rg::VehicleSetup> hint_candidates_; // candidate_setup results by edit list (valid for one base)
     rg::UpgradeBadgeConfig badge_config_; // data/garage/upgrade_badges.json; empty (no badges) when the file is bad

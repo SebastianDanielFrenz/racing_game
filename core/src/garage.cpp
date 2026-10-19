@@ -385,6 +385,13 @@ std::optional<VehicleStats> Garage::stats(const std::string& id, std::string* er
             computed->driveline = driveline_summary(m.driveline);
         }
     }
+    // A gearbox swap: the forward gears of the box the setup installs.
+    if (const auto it = setup.values.find("gearbox_install"); it != setup.values.end() && std::holds_alternative<std::string>(it->second)) {
+        const auto ctx = context_for(*e);
+        if (ctx.gearboxes) {
+            if (const GearboxEntry* box = ctx.gearboxes->find(std::get<std::string>(it->second))) computed->gear_count = box->gears;
+        }
+    }
     // Owner on PR #22: a car's mass (a preset's too) is the sum of its parts with its setup applied.
     const std::string mass_key = id + "#" + setup_to_json(setup);
     if (const auto it = mass_cache_.find(mass_key); it != mass_cache_.end()) {

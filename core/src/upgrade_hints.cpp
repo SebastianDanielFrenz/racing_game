@@ -464,6 +464,40 @@ HintAnswer UpgradeHints::request(const VehicleSetup& candidate, const std::vecto
     return answer;
 }
 
+HintAnswer UpgradeHints::request_current(const std::vector<UpgradeQuantity>& metrics) {
+    HintAnswer answer;
+    std::lock_guard lock(mutex_);
+    if (!have_base_) {
+        answer.error = "no car is set";
+        return answer;
+    }
+    const std::string key = key_of(current_, false);
+    const Entry& e = cache_[key];
+    std::set<UpgradeQuantity> missing;
+    for (UpgradeQuantity q : metrics) {
+        spec_wanted_.insert(q);
+        if (e.done.count(q) == 0) missing.insert(q);
+    }
+    answer.installed = answer.candidate = e.figures;
+    answer.error = e.error;
+    answer.pending = missing;
+    if (missing.empty()) {
+        ++stats_.cache_hits;
+        return answer;
+    }
+    if (pending_) return answer; // a queued job (a tile's) takes the specification figures along in its baseline
+    if (running_) return answer; // the next poll queues what the running job did not cover
+    Job job;
+    job.cand_key = key;
+    job.candidate = current_;
+    job.wanted = std::move(missing);
+    job.nitrous = false;
+    pending_ = std::move(job);
+    ++request_generation_;
+    wake_.notify_all();
+    return answer;
+}
+
 void UpgradeHints::cancel() {
     std::lock_guard lock(mutex_);
     ++request_generation_;
@@ -502,8 +536,8 @@ void UpgradeHints::run() {
     ps::jobs::JobSystem pool(pool_workers_ > 0 ? pool_workers_ : background_worker_count(), pool_options);
 
     // Computes the missing figures of `wanted` for the current setup, then the candidate; each into the cache.
-    const auto fill = [&](const Job& job, const std::set<UpgradeQuantity>& wanted, const HintBase& base, const VehicleSetup& current,
-                          std::uint64_t base_generation, const FigureEnv& env) {
+    const auto fill = [&](const Job& job, const std::set<UpgradeQuantity>& wanted, const std::set<UpgradeQuantity>& spec_extra, const HintBase& base,
+                          const VehicleSetup& current, std::uint64_t base_generation, const FigureEnv& env) {
         const auto store = [&](const std::string& key, const SetupFigures& f) {
             std::lock_guard lock(mutex_);
             if (base_generation != base_generation_) return; // the current setup changed meanwhile: these figures are not wanted
@@ -513,25 +547,30 @@ void UpgradeHints::run() {
             if (!f.error.empty()) e.error = f.error;
             ++stats_.figure_sets_computed;
         };
-        const auto missing_of = [&](const std::string& key) {
+        const auto missing_of = [&](const std::string& key, const std::set<UpgradeQuantity>* extra) {
             std::set<UpgradeQuantity> missing;
             std::lock_guard lock(mutex_);
             const Entry& e = cache_[key];
             for (UpgradeQuantity q : wanted) {
                 if (e.done.count(q) == 0) missing.insert(q);
             }
+            if (extra != nullptr) {
+                for (UpgradeQuantity q : *extra) {
+                    if (e.done.count(q) == 0) missing.insert(q);
+                }
+            }
             return missing;
         };
         const std::string current_key = key_of(current, job.nitrous);
         if (current_key != job.cand_key) {
-            const auto missing = missing_of(current_key);
+            const auto missing = missing_of(current_key, &spec_extra);
             if (!missing.empty()) store(current_key, compute_setup_figures(base, current, missing, job.nitrous, env));
         }
         {
             std::lock_guard lock(mutex_);
             running_candidate_phase_ = true;
         }
-        const auto missing = missing_of(job.cand_key);
+        const auto missing = missing_of(job.cand_key, current_key == job.cand_key ? &spec_extra : nullptr);
         if (!missing.empty()) store(job.cand_key, compute_setup_figures(base, job.candidate, missing, job.nitrous, env));
     };
 
@@ -541,18 +580,22 @@ void UpgradeHints::run() {
         VehicleSetup current;
         std::uint64_t base_generation = 0, generation = 0;
         std::shared_ptr<std::atomic<bool>> cancel;
-        std::set<UpgradeQuantity> cheap;
+        std::set<UpgradeQuantity> cheap, spec, spec_cheap;
         {
             std::unique_lock lock(mutex_);
             wake_.wait(lock, [this] { return stopping_ || pending_.has_value(); });
             if (stopping_) return;
             job = *pending_; // stays queued: the debounce below may be interrupted by a newer request
+            spec = job.nitrous ? std::set<UpgradeQuantity>{} : spec_wanted_; // the specification pane's figures (baseline only)
             base = base_;
             current = current_;
             base_generation = base_generation_;
             generation = request_generation_;
             for (UpgradeQuantity q : job.wanted) {
                 if (is_cheap_quantity(q)) cheap.insert(q);
+            }
+            for (UpgradeQuantity q : spec) {
+                if (is_cheap_quantity(q)) spec_cheap.insert(q);
             }
         }
 
@@ -561,7 +604,7 @@ void UpgradeHints::run() {
         env.pool = &pool;
         if (!cheap.empty()) {
             try {
-                fill(job, cheap, base, current, base_generation, env);
+                fill(job, cheap, spec_cheap, base, current, base_generation, env);
             } catch (const std::exception&) {
             }
         }
@@ -588,6 +631,7 @@ void UpgradeHints::run() {
             }
             job = std::move(*pending_);
             pending_.reset();
+            if (!job.nitrous) spec = spec_wanted_;
             cancel = std::make_shared<std::atomic<bool>>(false);
             cancel_ = cancel;
             running_ = true;
@@ -600,7 +644,7 @@ void UpgradeHints::run() {
         const auto t0 = std::chrono::steady_clock::now();
         bool cancelled = false;
         try {
-            fill(job, job.wanted, base, current, base_generation, env);
+            fill(job, job.wanted, spec, base, current, base_generation, env);
         } catch (const ps::io::GenerationCancelled&) {
             cancelled = true;
         } catch (const std::exception&) {

@@ -12,6 +12,8 @@
 //      (found by the hybrid case: re-selecting the installed powertrain reset the engine/turbo/gearbox/fuel choices)
 //   S8 Garage::edits_installed always false                                              -> "the installed option ..." fails
 //   S9 "battery_kwh" back in the powertrain_install metrics                              -> "a powertrain swap shows ..." fails
+//   S10 request_current answers from the stock setup (key of an empty setup)             -> "the specification pane reports ..." fails
+//   S11 Garage::stats keeps the stock gear count after a gearbox swap                     -> "... the gears of the installed gearbox" fails
 #include "rg/garage.h"
 #include "rg/upgrade_hints.h"
 #include "rg/turbo_map_extension.h"
@@ -859,4 +861,74 @@ TEST_CASE("hints: a powertrain swap shows peak power and weight only", "[upgrade
     REQUIRE(c != nullptr);
     // No battery figure (owner 2026-10-19: an EV conversion carrying a battery is what its name says).
     CHECK(c->metrics == std::vector<UpgradeQuantity>{UpgradeQuantity::Power, UpgradeQuantity::Weight});
+}
+
+// ---- the specification pane follows the working setup (owner 2026-10-19) ----------------------------------------------------
+
+TEST_CASE("hints: the specification pane reports the configuration being edited, not the stock car", "[upgrade_hints][garage]") {
+    Rig rig("car_hyper");
+    auto hints = make_hints(0);
+    hints->set_base(rig.base(), rig.garage->working());
+    const std::vector<UpgradeQuantity> spec = {UpgradeQuantity::Power, UpgradeQuantity::Torque};
+    hints->request_current(spec);
+    REQUIRE(hints->wait_idle(600000));
+    const HintAnswer stock = hints->request_current(spec);
+    REQUIRE(stock.pending.empty());
+    const double stock_kw = stock.installed.at(UpgradeQuantity::Power);
+    const double stock_nm = stock.installed.at(UpgradeQuantity::Torque);
+    const double stock_mass = rig.garage->stats("car_hyper", nullptr)->mass_kg;
+
+    // The tile's hint for the single turbo (against the stock car) ...
+    const VehicleSetup candidate = rig.with({{"turbo_install", std::string("hyper_single_compact")}});
+    const HintAnswer tile = wait_answer(*hints, candidate, {UpgradeQuantity::Power});
+    REQUIRE(tile.pending.empty());
+    const double hint_delta_kw = tile.candidate.at(UpgradeQuantity::Power) - tile.installed.at(UpgradeQuantity::Power);
+    REQUIRE(hint_delta_kw < -50.0);
+
+    // ... then the real click: the pane (request_current on the new current setup) shows the new car.
+    REQUIRE(rig.garage->set_option("turbo_install", std::string("hyper_single_compact")).accepted);
+    hints->set_base(rig.base(), rig.garage->working());
+    hints->request_current(spec);
+    REQUIRE(hints->wait_idle(600000));
+    const HintAnswer now = hints->request_current(spec);
+    REQUIRE(now.pending.empty());
+    const double now_kw = now.installed.at(UpgradeQuantity::Power);
+    CHECK(now_kw != Approx(stock_kw).margin(1.0));
+    CHECK(now_kw - stock_kw == Approx(hint_delta_kw).margin(1.0e-6)); // the pane and the tile hint are the same figure
+    CHECK(now.installed.at(UpgradeQuantity::Torque) < stock_nm);
+
+    // Mass follows the working setup too (a weight-reduction click), gears follow a gearbox swap.
+    const double mass_before = rig.garage->stats("car_hyper", nullptr)->mass_kg;
+    CHECK(mass_before != Approx(stock_mass)); // the single turbo is lighter: the pane mass follows the swap
+    REQUIRE(rig.garage->set_option("trim_audio", std::string("removed")).accepted);
+    CHECK(rig.garage->stats("car_hyper", nullptr)->mass_kg < mass_before - 1.0);
+}
+
+TEST_CASE("hints: the specification pane shows the gears of the installed gearbox", "[upgrade_hints][garage]") {
+    Rig rig("car_sedan");
+    const int stock_gears = rig.garage->stats("car_sedan", nullptr)->gear_count;
+    REQUIRE(stock_gears > 0);
+    REQUIRE(rig.garage->set_option("gearbox_install", std::string("econ_5mt")).accepted);
+    CHECK(rig.garage->stats("car_sedan", nullptr)->gear_count == 5);
+    REQUIRE(rig.garage->set_option("gearbox_install", std::string("hyper_7mt")).accepted);
+    CHECK(rig.garage->stats("car_sedan", nullptr)->gear_count == 7);
+}
+
+TEST_CASE("hints: the pane never starves a hovered tile's job and vice versa", "[upgrade_hints]") {
+    Rig rig("car_sedan");
+    auto hints = make_hints(0);
+    hints->set_base(rig.base(), rig.garage->working());
+    const VehicleSetup candidate = rig.with({{"gearbox_install", std::string("heavy_duty_6mt")}});
+    const HintAnswer first = hints->request(candidate, {UpgradeQuantity::Weight}, false); // a tile hover
+    (void)first;
+    for (int i = 0; i < 20; ++i) {
+        hints->request_current({UpgradeQuantity::Power, UpgradeQuantity::Torque}); // the pane polling
+        hints->request(candidate, {UpgradeQuantity::Weight}, false);               // the tile polling
+    }
+    REQUIRE(hints->wait_idle(600000));
+    // One more pane poll queues whatever the running job did not cover.
+    hints->request_current({UpgradeQuantity::Power, UpgradeQuantity::Torque});
+    REQUIRE(hints->wait_idle(600000));
+    CHECK(hints->request_current({UpgradeQuantity::Power, UpgradeQuantity::Torque}).pending.empty());
+    CHECK(hints->request(candidate, {UpgradeQuantity::Weight}, false).pending.empty());
 }

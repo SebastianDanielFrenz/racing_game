@@ -83,6 +83,11 @@ var _garage_performance: VBoxContainer
 var _garage_dyno: Control
 var _garage_dyno_status: Label
 var _dyno_poll := 0.0
+# The left specification pane follows the working setup: marked stale by every edit, redrawn at most every 0.1 s, and polled
+# every 0.25 s while the core still computes its power/torque off this thread.
+var _spec_dirty := true
+var _spec_pending := false
+var _spec_poll := 0.0
 # Limit advisor (setup check): simulation-derived notes for the pending setup; the core decides everything.
 var _advice_box: VBoxContainer
 var _advice_status: Label
@@ -203,6 +208,10 @@ func status_text() -> String:
 
 func _process(delta: float) -> void:
 	_fit_garage_panels()
+	_spec_poll -= delta
+	if screen == "configurator" and _garage_performance != null and is_instance_valid(_garage_performance) and (_spec_dirty or _spec_pending) and _spec_poll <= 0.0:
+		_spec_poll = 0.25 if _spec_pending and not _spec_dirty else 0.1
+		_refresh_performance()
 	_dyno_poll -= delta
 	if screen == "configurator" and is_instance_valid(_garage_dyno) and _dyno_poll <= 0.0:
 		_dyno_poll = 0.15
@@ -685,6 +694,7 @@ func _build_configurator() -> void:
 	column.add_child(footer)
 	_button(footer,"reset_all","Reset all",func():
 		garage.reset_all()
+		_spec_dirty = true
 		_draw_garage_options()
 		garage_option_changed.emit("")
 		_refresh_status(),0)
@@ -799,10 +809,25 @@ func _set_garage_mode(mode: String) -> void:
 func _refresh_performance() -> void:
 	if _garage_performance == null:
 		return
+	_spec_dirty = false
 	for child in _garage_performance.get_children():
 		_garage_performance.remove_child(child)
 		child.queue_free()
-	var stats: Dictionary = garage.get_vehicle(garage_vehicle).get("stats", {})
+	# The car as configured NOW (unsaved edits included), from the core: RgGarage.get_working_spec.
+	var spec: Dictionary = garage.get_working_spec() if garage.has_method("get_working_spec") else {}
+	_spec_pending = bool(spec.get("pending", false))
+	_garage_performance.add_child(_label("Current configuration",19,HORIZONTAL_ALIGNMENT_LEFT))
+	if not bool(spec.get("ok", false)):
+		_garage_performance.add_child(_label("Specification unavailable",14,HORIZONTAL_ALIGNMENT_LEFT,true))
+		spec = {"ok": false}
+	if bool(spec.get("ok", false)):
+		var power := "%s kW" % _spec_number(float(spec["power_kw"])) if spec.has("power_kw") else ("…" if _spec_pending else "–")
+		var torque := "%s Nm" % _spec_number(float(spec["torque_nm"])) if spec.has("torque_nm") else ("…" if _spec_pending else "–")
+		var gears := int(spec.get("gear_count",0))
+		var drive := str(spec.get("layout",""))
+		for text in ["Mass  %s kg" % _spec_number(float(spec.get("mass_kg",0))),"Power  %s" % power,"Torque  %s" % torque,"%s · %d gears" % [drive,gears] if gears > 0 else drive]:
+			_garage_performance.add_child(_label(text,16,HORIZONTAL_ALIGNMENT_LEFT))
+	_garage_performance.add_child(HSeparator.new())
 	_garage_performance.add_child(_label("Acceleration",20,HORIZONTAL_ALIGNMENT_LEFT))
 	# No made-up times: measured results will be supplied by the performance model.
 	var note := _label("No measured acceleration runs for this setup yet.",14,HORIZONTAL_ALIGNMENT_LEFT,true)
@@ -812,11 +837,10 @@ func _refresh_performance() -> void:
 		_garage_performance.add_child(_label(heading,17,HORIZONTAL_ALIGNMENT_LEFT))
 		_garage_performance.add_child(_label("Not measured",14,HORIZONTAL_ALIGNMENT_LEFT,true))
 	_garage_performance.add_child(HSeparator.new())
-	_garage_performance.add_child(_label("Stock vehicle specification",19,HORIZONTAL_ALIGNMENT_LEFT))
-	for text in ["Mass  %.0f kg" % float(stats.get("mass_kg",0)),"Power  %.1f kW" % float(stats.get("peak_power_kw",0)),"Torque  %.0f Nm" % float(stats.get("peak_torque_nm",0)),"%s · %d gears" % [str(stats.get("layout","")),int(stats.get("gear_count",0))]]:
-		_garage_performance.add_child(_label(text,16,HORIZONTAL_ALIGNMENT_LEFT))
-	if bool(stats.get("figures_declared",false)):
-		_garage_performance.add_child(_label("Declared engine figures",13,HORIZONTAL_ALIGNMENT_LEFT,true))
+
+# The pane's numbers go through the core's one formatter (magnitude decides the decimals).
+func _spec_number(value: float) -> String:
+	return garage.format_number(value, 3) if garage.has_method("format_number") else "%.0f" % value
 
 func _draw_garage_options() -> void:
 	if _option_box == null:
@@ -2170,6 +2194,7 @@ func _edit_option(option_id: String, value: Variant) -> Dictionary:
 	if result.has("value"):
 		_sync_row(option_id, result["value"])
 	garage_option_changed.emit(option_id)
+	_spec_dirty = true
 	_refresh_status()
 	return result
 
