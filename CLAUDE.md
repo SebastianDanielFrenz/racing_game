@@ -614,11 +614,19 @@ counts `g2m.src.osm` fetches. Findings and rationale: vault G2M-009.
 Session builds exactly what it built before (flat-mode `step()` is still
 one plain `World::step()`, so `hash_check` is unchanged).
 
+Diagnostics: env `RG_STREAM_TRACE=1` prints `RG_GATE` (one line per gate-freeze episode: cause, missing keys, distance/heading,
+wanted age), `RG_STREAM`/`RG_STREAM_TILES` (every 5 s: phase table of the height derive, tile latency split fetch/queue)
+(core/src/stream_trace.h, stream_trace_gate.h); `hs_drive_test.gd --hs-fly` flies the FPV drone along a route (physics
+interest point 0) with `RG_FPV_CONFIG=<fast drone json>`, `--headless` works; experiment env knobs RG_STREAM_LOADER_WORKERS,
+RG_STREAM_LOOKAHEAD_S/_CAP_M, RG_VIEW_INITIAL_THREADS.
+
 Per session (`session.cpp`'s `Session::Terrain`): `g2m::phys::
 PhysicsTileGrid` (the config's `SessionFrame`, 256 samples), a shared
-`ResidentHeightSet`, a `HeightTileLoader` (`physics.loader_workers`) over
+`ResidentHeightSet`, a `HeightTileLoader` (`physics.loader_workers`, 16 in the shipped
+configs: workers block in the shared derive pool, so a cold gate wait scales with them, vault PHYS/RG stream ticket) over
 `TerrainModeConfig::fetch`, a `PhysicsTerrainStreamer` (default
-`StreamerConfig`: gate r_tm+1, prefetch r_tm+2, 3 s look-ahead) and a
+`StreamerConfig`: gate r_tm+1, prefetch r_tm+2, look-ahead `physics.lookahead_s`/
+`lookahead_cap_m` = 3 s / 510 m) and a
 `g2m::ps_bridge::G2mTerrainSource` installed via `World::
 set_terrain_source(source, make_terrain_config(physics.radius_m,
 physics.max_tile_fills_per_tick))` (pool 49 at r = 400 m, one interest

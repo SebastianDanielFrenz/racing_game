@@ -89,6 +89,11 @@ struct WorldConfig {
         std::string terrain_surface = "asphalt";
         std::uint32_t max_tile_fills_per_tick = 1;
         int loader_workers = 2;
+        // Look-ahead prefetch of the height-tile streamer (g2m::phys::StreamerConfig): the gate-radius square around
+        // position + velocity * lookahead_s, that displacement capped at lookahead_cap_m, is requested like the
+        // prefetch square (never part of the gate).
+        double lookahead_s = 3.0;
+        double lookahead_cap_m = 510.0;
         // Background shape prefetch; both zero preserves the synchronous path.
         std::uint32_t prefetch_margin_tiles = 0;
         std::uint32_t prefetch_max_tiles = 0;
