@@ -745,6 +745,14 @@ func _build_scene(user_args: PackedStringArray) -> void:
 		tour.main = self
 		tour.out_dir = user_args[shot_index + 1]
 		add_child(tour)
+	var spawn_shot_index := user_args.find("--spawn-shots")
+	if spawn_shot_index >= 0 and spawn_shot_index + 1 < user_args.size():
+		var spawn_shots := Node.new()
+		spawn_shots.name = "SpawnShots"
+		spawn_shots.set_script(load("res://scripts/spawn_shots.gd"))
+		spawn_shots.main = self
+		spawn_shots.out_dir = user_args[spawn_shot_index + 1]
+		add_child(spawn_shots)
 	if "--shell-test" in user_args:
 		var shell_test := Node.new()
 		shell_test.name = "ShellFlowTest"

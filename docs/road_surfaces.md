@@ -182,3 +182,29 @@ origin changes reposition meshes without regenerating markings. Distant terrain
 still uses its regular LOD; exact paint is intended for nearby driving views.
 Precise junction lane connectivity, surveyed marking layouts, traffic signals,
 stop/yield lines and complex gore hatching are not reconstructed by these defaults.
+
+## Layering of road surfaces (2026-10-19)
+
+Owner report, Unterliederbach spawn: a flickering "walkway" over the asphalt. Cause: every layer of a road-visual tile
+(carriageway ribbon, gravel verge, cross-section sidewalk/cycle bands, unpaved route strips, standalone footways,
+junction patches, paint) is draped on the ground by its own vertex sampling. Two layers covering the same spot differ
+by 2-24 mm on the real spawn tile (measured), more than the 3-7 mm the layers were lifted apart, so the depth test
+flipped triangle by triangle. The designed layering mechanism is no longer a lift but geometry:
+
+- Surface layers never overlap. Rank, low to high: verge (0), walkway/path (1), unpaved route strip (2), carriageway
+  (3), junction patch (4). `rg::resolve_surface_layers` (core/src/surface_layers.cpp, called once per fresh tile in
+  `WorldTerrain::road_visual_tile_shared`) cuts every lower-ranked triangle against the higher-ranked triangles at
+  (nearly) the same height (0.25 m) and keeps only the uncovered part. The road always wins: a footway crossing a
+  road, a verge beside a cycle band, an earth track bowed across a dual carriageway are trimmed, never drawn over it.
+- Two carriageway ribbons that lie over each other at the same height (an on-ramp ending on the axis of the through
+  road) are ordered by lane count: more lanes wins, equal counts are left alone. Triangles at different heights
+  (a footway under a bridge deck, a ramp over a road) never cover each other.
+- Decals (paint, turn arrows, junction overlay; flags 16/32) cannot be cut, they are lifted 15 mm instead.
+- Physics is unchanged: the road surface class under a track or path is still chosen by `stamp_route_surface_classes`
+  (paved bed outranks walkway outranks unpaved), so grip follows the visible road.
+
+Known remaining defects that this does not fix (geo2map): road centrelines of 2-node ways joined to other ways are
+fitted with up to 32 m bow (the B8 track strip of site 2), the terrain visual mesh (anti-diagonal triangles on a 1 m
+lattice) can stand 0.3 m above a ribbon draped by bilinear sampling on steep banks (B8 interchange, sites 3 and 5),
+`merge_to_left/right` and `slight_*` turn:lanes tokens are drawn as turn-style bent arrows, and an on-ramp merge
+is not tapered.
