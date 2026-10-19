@@ -63,6 +63,7 @@ public:
     godot::Array writes;
 };
 }
+rg::DriverSnapshot driver_snapshot_from(const godot::Dictionary& d) { return convert(d); }
 bool RgDriverActions::submit(const godot::String& id, int kind, double value, int source) {
     if (kind < PRESS || kind > HOLD || source < KEYBOARD || source > SCRIPT) return false;
     return actions_.submit({id.utf8().get_data(), static_cast<rg::DriverActionKind>(kind), value, static_cast<rg::ActionSource>(source)});
@@ -80,6 +81,7 @@ void RgDriverActions::configure_cabin(const godot::Dictionary& d) {
     c.indicator_arm_deg = d.get("indicator_arm_deg",c.indicator_arm_deg);
     c.indicator_cancel_deg = d.get("indicator_cancel_deg",c.indicator_cancel_deg);
     c.brake_lamp_threshold = d.get("brake_lamp_threshold",c.brake_lamp_threshold);
+    c.manual_exit_hold_s = d.get("manual_exit_hold_s",c.manual_exit_hold_s);
     c.auto_lights = d.get("auto_lights",c.auto_lights);
     c.auto_lights_on_lux = d.get("auto_lights_on_lux",c.auto_lights_on_lux);
     c.auto_lights_off_lux = d.get("auto_lights_off_lux",c.auto_lights_off_lux);

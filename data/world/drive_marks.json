@@ -1,0 +1,5 @@
+{
+  "format": "rg.drive_marks/1",
+  "post_window_s": 10.0,
+  "note": "Seconds of drive samples recorded AFTER an owner mark (same rate as the pretrigger samples). 0 = no post window."
+}

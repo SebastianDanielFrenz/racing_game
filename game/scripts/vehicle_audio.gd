@@ -8,6 +8,7 @@ var vehicle_name := "car_hyper"
 var tyre_bank: RgTyreSound # native tyre voices (rg/tyre_sound.h)
 var _wheel_count := 0
 var tyre_points := PackedVector3Array()
+var _sealed_surfaces: Array = []
 var tyre_spatial: RefCounted
 var engine_spatial: RefCounted
 var fallback_players: Array[AudioStreamPlayer3D] = []
@@ -83,7 +84,18 @@ func _initialize_audio() -> void:
 		var wav := AudioStreamWAV.load_from_file(ProjectSettings.globalize_path("res://../external/physics_sim/adapters/godot/demo/audio/tyres/asphalt_squeal.wav"))
 		if wav != null:
 			squeal_pcm = wav.data
-		tyre_bank.setup(_wheel_count, 1234, squeal_pcm)
+		# Owner's recorded rolling layer on sealed surfaces (data/controls/tyre_sound.json); missing file = procedural hiss.
+		var roll_pcm := PackedByteArray()
+		var roll_channels := 1
+		var tyre_cfg = JSON.parse_string(FileAccess.get_file_as_string(ProjectSettings.globalize_path("res://../data/controls/tyre_sound.json")))
+		var roll_cfg: Dictionary = tyre_cfg.get("roll", {}) if tyre_cfg is Dictionary else {}
+		_sealed_surfaces = roll_cfg.get("sealed_surfaces", [])
+		if roll_cfg.has("file"):
+			var roll_wav := AudioStreamWAV.load_from_file(ProjectSettings.globalize_path("res://../" + String(roll_cfg["file"])))
+			if roll_wav != null and roll_wav.format == AudioStreamWAV.FORMAT_16_BITS:
+				roll_pcm = roll_wav.data
+				roll_channels = 2 if roll_wav.stereo else 1
+		tyre_bank.setup(_wheel_count, 1234, squeal_pcm, roll_pcm, roll_channels, roll_cfg)
 		for wheel in range(_wheel_count):
 			var point: Vector3 = simulation.get_wheel_attachment_local(vehicle_name, wheel)
 			point.z -= simulation.get_wheel_radius(vehicle_name, wheel)
@@ -98,6 +110,9 @@ func _initialize_audio() -> void:
 	var powertrain: Dictionary = simulation.get_vehicle_powertrain(vehicle_name)
 	if bool(powertrain.get("electric_fitted", false)):
 		_motor_sound = RgElectricMotorSound.new()
+		var motor_levels = JSON.parse_string(FileAccess.get_file_as_string(ProjectSettings.globalize_path("res://../data/controls/electric_motor_sound.json")))
+		if motor_levels is Dictionary:
+			_motor_sound.configure(motor_levels)
 		_motor_spatial = _open_spatial(RATE, 1)
 		if _motor_spatial == null:
 			_motor_players.append(_player(RATE, _motor_points[0]))
@@ -194,7 +209,8 @@ func _process_body(delta: float) -> void:
 		tyre_bank.update_wheel(wheel, tyre_speed, simulation.get_wheel_omega(vehicle_name, wheel) * radius,
 			simulation.get_wheel_slip_ratio(vehicle_name, wheel), simulation.get_wheel_slip_angle(vehicle_name, wheel),
 			0.0 if frozen else simulation.get_wheel_load_n(vehicle_name, wheel), simulation.get_wheel_fx(vehicle_name, wheel),
-			simulation.get_wheel_fy(vehicle_name, wheel), 0.0)
+			simulation.get_wheel_fy(vehicle_name, wheel), 0.0,
+			simulation.get_wheel_surface_name(vehicle_name, wheel) in _sealed_surfaces)
 	var needed := 0
 	if tyre_spatial != null:
 		tyre_spatial.set_positions(_relative(tyre_points))

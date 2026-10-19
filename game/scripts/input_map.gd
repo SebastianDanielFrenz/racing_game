@@ -140,6 +140,9 @@ func set_world_input_active(enabled: bool) -> void:
 	if not enabled: release_mouse()
 	elif changed and _cockpit_mode: capture_mouse()
 
+func is_world_input_active() -> bool:
+	return _world_input_active
+
 func is_mouse_captured() -> bool:
 	return _mouse_captured
 

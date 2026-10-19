@@ -1,0 +1,18 @@
+{
+  "format": "rg.upgrade_badges/1",
+  "source": "Garage Upgrades page (owner 2026-10-18): a highlighted part tile shows the change of one number against the installed part instead of prose. This file decides, per quantity, which direction is better, the unit, the decimals and the smallest change worth showing, and, per upgrade category (the option group), the primary quantity and at most one secondary one. [AS] thresholds. A category missing here gets no badges; a quantity the garage model has no figure for yet is simply not shown.",
+
+  "quantities": {
+    "weight":         {"unit": "kg",  "higher_is_better": false, "decimals": 1, "min_change": 0.5},
+    "power":          {"unit": "kW",  "higher_is_better": true,  "decimals": 0, "min_change": 1.0},
+    "torque":         {"unit": "N*m", "higher_is_better": true,  "decimals": 0, "min_change": 1.0},
+    "grip":           {"unit": "%",   "higher_is_better": true,  "decimals": 1, "min_change": 0.5},
+    "downforce":      {"unit": "N",   "higher_is_better": true,  "decimals": 0, "min_change": 5.0},
+    "braking_torque": {"unit": "N*m", "higher_is_better": true,  "decimals": 0, "min_change": 5.0},
+    "battery_kwh":    {"unit": "kWh", "higher_is_better": true,  "decimals": 1, "min_change": 0.1}
+  },
+
+  "categories": {
+    "Weight reduction": {"primary": "weight"}
+  }
+}

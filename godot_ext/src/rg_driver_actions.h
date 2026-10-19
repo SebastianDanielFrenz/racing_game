@@ -29,5 +29,9 @@ private:
     rg::DriverActions actions_;
 };
 }
+namespace rg_godot {
+// The one Dictionary -> DriverSnapshot conversion (shared with RgCockpit).
+rg::DriverSnapshot driver_snapshot_from(const godot::Dictionary& snapshot);
+}
 VARIANT_ENUM_CAST(rg_godot::RgDriverActions::Kind)
 VARIANT_ENUM_CAST(rg_godot::RgDriverActions::Source)

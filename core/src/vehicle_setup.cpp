@@ -2467,6 +2467,10 @@ SetupModel build_setup_model(const CatalogEntry& entry, const SetupOptionTable& 
                 if (is_driveline_catalog(def)) {
                     driveline_choices(def, ctx, files, v);
                     if (v.choices.size() < 2) v.available = false;
+                    if (!v.available && entry_offers(entry, def.id)) {
+                        v.unavailable_reason = driveline_fit_error(files, def, ctx);
+                        if (v.unavailable_reason.empty()) v.unavailable_reason = "No other layout or differential fits this car.";
+                    }
                     break;
                 }
                 SetupPart stock;
@@ -2501,6 +2505,18 @@ SetupModel build_setup_model(const CatalogEntry& entry, const SetupOptionTable& 
                     if (!why.empty()) v.parts.back().detail += (v.parts.back().detail.empty() ? "" : " · ") + std::string("Does not fit: ") + why;
                 }
                 if (v.choices.size() < 2) v.available = false;
+                if (!v.available && entry_offers(entry, def.id) && v.unavailable_reason.empty()) {
+                    // Why the swap tile is greyed out (the garage prints it under the tile).
+                    if (def.catalog == "fuels") {
+                        v.unavailable_reason = !files.engine ? std::string("This car has no combustion engine.")
+                                               : candidates.empty() ? std::string("The installed engine lists no fuel.")
+                                                                    : std::string("The installed engine runs on one fuel only (") + candidates.front().label + ").";
+                    } else if (def.catalog == "engines") {
+                        v.unavailable_reason = "No other engine fits this car.";
+                    } else if (def.catalog == "gearboxes") {
+                        v.unavailable_reason = "No other gearbox is rated for this engine.";
+                    }
+                }
                 if (def.catalog == "turbo_kits") {
                     v.parts.front().label = "No turbo (as built)";
                     if (!v.available && entry_offers(entry, def.id)) v.unavailable_reason = turbo_kit_blocker(files, ctx);
@@ -2593,11 +2609,10 @@ SetupModel build_setup_model(const CatalogEntry& entry, const SetupOptionTable& 
                     v.available = false;
                     break;
                 }
-                const auto kg = [](double m) { return fmt_fixed(m, 1) + " kg"; };
                 SetupPart stock;
                 stock.id = "stock";
                 stock.label = own->label;
-                stock.detail = kg(own->mass_kg);
+                stock.mass_kg = own->mass_kg;
                 stock.mass_key = own->key;
                 v.parts.push_back(stock);
                 v.choices.push_back("stock");
@@ -2614,8 +2629,9 @@ SetupModel build_setup_model(const CatalogEntry& entry, const SetupOptionTable& 
                     } else {
                         m = own->mass_kg * p.mass_factor;
                     }
-                    const double saved = own->mass_kg - m;
-                    q.detail = (p.removed ? std::string("removed") : kg(m)) + (saved >= 0.0 ? ", saves " + kg(saved) : ", adds " + kg(-saved));
+                    // The numbers go to the tile's badge (upgrade_badges.h), not to prose: the detail stays empty.
+                    q.detail.clear();
+                    q.mass_kg = m;
                     v.parts.push_back(q);
                     v.choices.push_back(q.id);
                 }

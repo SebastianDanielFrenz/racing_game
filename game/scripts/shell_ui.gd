@@ -996,7 +996,7 @@ func _focus_tuning() -> void:
 			return
 
 # Navigation owns focus; installed markers remain separate from the moving cursor.
-func _draw_tiles(names: Array, unavailable: Array = []) -> void:
+func _draw_tiles(names: Array, unavailable: Array = [], reasons: Dictionary = {}) -> void:
 	var grid := GridContainer.new()
 	grid.columns = 2
 	grid.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -1035,6 +1035,14 @@ func _enter_garage_tile(name: String) -> void:
 	_active_area = str(area.get(_garage_path[0],"overview"))
 	garage_area_chosen.emit(_active_area)
 	_draw_garage_options()
+
+# Why a Swaps tile is greyed out: the first reason core gives for any of the options behind it.
+func _swap_reason(ids: Array) -> String:
+	for id in ids:
+		for opt in garage.get_options():
+			if str(opt["id"]) == id and not bool(opt["available"]) and not str(opt.get("unavailable_reason", "")).is_empty():
+				return str(opt["unavailable_reason"])
+	return "Not available for this car"
 
 func _garage_option(id: String) -> Dictionary:
 	for opt in garage.get_options():
@@ -1288,7 +1296,7 @@ func _draw_upgrades() -> void:
 			if top == "Swaps":
 				var no_fuel: bool = _garage_option("fuel").is_empty()
 				var no_drivetrain: bool = _garage_option("drive_layout").is_empty() and _garage_option("diff_front").is_empty() and _garage_option("diff_rear").is_empty()
-				_draw_tiles(["Powertrain", "Engine", "Fuel", "Forced induction", "Drivetrain"], [] + (["Engine"] if disabled.has("Engine") else []) + (["Fuel"] if no_fuel else []) + (["Forced induction"] if disabled.has("Turbo") else []) + (["Drivetrain"] if no_drivetrain else []))
+				_draw_tiles(["Powertrain", "Engine", "Fuel", "Forced induction", "Drivetrain"], [] + (["Engine"] if disabled.has("Engine") else []) + (["Fuel"] if no_fuel else []) + (["Forced induction"] if disabled.has("Turbo") else []) + (["Drivetrain"] if no_drivetrain else []),{"Engine":_swap_reason(["engine_install"]),"Fuel":_swap_reason(["fuel"]),"Forced induction":_swap_reason(["turbo_install","turbo_install_n2o","turbo_kit"]),"Drivetrain":_swap_reason(["drive_layout","diff_front","diff_rear"])})
 			else:
 				_draw_tiles(["Turbo", "N2O", "Internals", "Cooling", "Camshaft"],disabled + (["N2O"] if _garage_option("nitrous_install_hyper").is_empty() and _garage_option("nitrous_install_sedan").is_empty() else []) + ([] if _internals_offered() else ["Internals"]) + ([] if _cooling_offered() else ["Cooling"]))
 			return
@@ -1406,9 +1414,6 @@ func _draw_weight_reduction() -> void:
 		var total := float(info["total_kg"])
 		var delta := total - float(info.get("stock_kg", total))
 		_option_box.add_child(_label("Total %.0f kg%s" % [total, ("  (%+.0f kg vs stock)" % delta) if absf(delta) >= 0.5 else ""], 16, HORIZONTAL_ALIGNMENT_LEFT))
-	var note := _label("Removed parts leave the car where its model has a separate part for them.", 13, HORIZONTAL_ALIGNMENT_LEFT, true)
-	note.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	_option_box.add_child(note)
 	for opt in _weight_reduction_options():
 		_option_box.add_child(_label(str(opt["label"]), 17, HORIZONTAL_ALIGNMENT_LEFT))
 		var grid := GridContainer.new()
@@ -1417,9 +1422,10 @@ func _draw_weight_reduction() -> void:
 		_option_box.add_child(grid)
 		for part in opt["parts"]:
 			var installed := str(part["id"]) == str(opt["value"])
-			var card := _make_component_card(part, "INSTALLED" if installed else "Install")
-			card.custom_minimum_size = Vector2(0, 110)
-			card.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+			var presentation: Dictionary = part.duplicate()
+			presentation["badge_option"] = str(opt["id"])
+			presentation["badge_part"] = str(part["id"])
+			var card := _make_component_card(presentation, "INSTALLED" if installed else "Install")
 			grid.add_child(card)
 			var opt_id := str(opt["id"])
 			var part_id := str(part["id"])
@@ -1647,40 +1653,99 @@ func _draw_wheel_parts() -> void:
 		if installed or _garage_preferred == null: _garage_preferred = card
 	_focus_garage.call_deferred()
 
+# One part tile (owner 2026-10-18): the picture, the part's name and an INSTALLED mark, all INSIDE the tile. The tile has a
+# fixed height and the name lives in a band at its bottom, clipped, so no text can leave the tile or reach the next row.
+# A highlighted tile (focus or hover) shows its numeric upgrade badges (rg/upgrade_badges.h, through RgGarage.get_part_badges)
+# at its bottom middle: red when the part is worse for that number, green when better. The action text ("Install") is gone.
+const TILE_HEIGHT := 150.0
+const TILE_NAME_BAND := 40.0
+const BADGE_WORSE := Color(0.78, 0.16, 0.16, 0.85)
+const BADGE_BETTER := Color(0.16, 0.6, 0.25, 0.85)
+
 func _make_component_card(presentation: Dictionary, action: String) -> Button:
 	var card := Button.new()
-	card.custom_minimum_size = Vector2(0,240)
+	card.custom_minimum_size = Vector2(0, TILE_HEIGHT)
+	card.clip_contents = true
+	card.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	var focus_style := StyleBoxFlat.new()
 	focus_style.bg_color = Color(0,0,0,0)
 	focus_style.border_color = Color(1.0,0.55,0.2)
 	focus_style.set_border_width_all(3)
 	focus_style.set_corner_radius_all(4)
 	card.add_theme_stylebox_override("focus",focus_style)
-	var content := VBoxContainer.new()
-	content.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	content.offset_left = 6
-	content.offset_right = -6
-	content.offset_top = 8
-	content.offset_bottom = -8
-	content.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	card.add_child(content)
 	var picture := TextureRect.new()
 	picture.texture = _component_texture(str(presentation.get("image", "")))
 	picture.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 	picture.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
-	picture.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	picture.custom_minimum_size.y = 110
+	picture.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	picture.offset_left = 6
+	picture.offset_right = -6
+	picture.offset_top = 6
+	picture.offset_bottom = -TILE_NAME_BAND
 	picture.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	content.add_child(picture)
-	for text in [str(presentation.get("label", "Tyre")), str(presentation.get("size", "")), ("Rated %d km/h" % int(presentation["rated_speed_kmh"])) if presentation.has("rated_speed_kmh") else "", action]:
-		if text.is_empty():
-			continue
-		var caption := _label(text, 12, HORIZONTAL_ALIGNMENT_CENTER)
-		caption.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-		caption.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		content.add_child(caption)
-	card.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	card.add_child(picture)
+	var name_label := _label(str(presentation.get("label", "Tyre")), 12, HORIZONTAL_ALIGNMENT_CENTER)
+	name_label.name = "Name"
+	name_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	name_label.clip_text = true
+	name_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	name_label.set_anchors_and_offsets_preset(Control.PRESET_BOTTOM_WIDE)
+	name_label.offset_top = -TILE_NAME_BAND
+	name_label.offset_bottom = -2
+	card.add_child(name_label)
+	if action == "INSTALLED":
+		var mark := _label("INSTALLED", 10)
+		mark.name = "Installed"
+		mark.autowrap_mode = TextServer.AUTOWRAP_OFF
+		mark.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		mark.add_theme_stylebox_override("normal", _chip_style(Color(0,0,0,0.6)))
+		mark.set_anchors_and_offsets_preset(Control.PRESET_TOP_LEFT)
+		mark.offset_left = 4
+		mark.offset_top = 4
+		card.add_child(mark)
+	var opt_id := str(presentation.get("badge_option", ""))
+	if not opt_id.is_empty():
+		card.set_meta("badge_option", opt_id)
+		card.set_meta("badge_part", str(presentation.get("badge_part", "")))
+		var row := HBoxContainer.new()
+		row.name = "Badges"
+		row.alignment = BoxContainer.ALIGNMENT_CENTER
+		row.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		row.visible = false
+		row.set_anchors_and_offsets_preset(Control.PRESET_BOTTOM_WIDE)
+		row.offset_top = -TILE_NAME_BAND - 26
+		row.offset_bottom = -TILE_NAME_BAND - 2
+		card.add_child(row)
+		var show_badges := func():
+			_fill_badges(row, opt_id, str(presentation.get("badge_part", "")))
+			row.visible = true
+		var hide_badges := func(): row.visible = false
+		card.focus_entered.connect(show_badges)
+		card.mouse_entered.connect(show_badges)
+		card.focus_exited.connect(hide_badges)
+		card.mouse_exited.connect(hide_badges)
 	return card
+
+func _chip_style(color: Color) -> StyleBoxFlat:
+	var style := StyleBoxFlat.new()
+	style.bg_color = color
+	style.set_corner_radius_all(4)
+	style.set_content_margin_all(4)
+	return style
+
+# The numeric badges of one part against the installed one, at most two (the core decides what and how many).
+func _fill_badges(row: HBoxContainer, option_id: String, part_id: String) -> void:
+	for child in row.get_children():
+		row.remove_child(child)
+		child.free()
+	if garage == null or not garage.has_method("get_part_badges"):
+		return
+	for badge in garage.get_part_badges(option_id, part_id):
+		var label := _label(str(badge["text"]), 13)
+		label.autowrap_mode = TextServer.AUTOWRAP_OFF
+		label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		label.add_theme_stylebox_override("normal", _chip_style(BADGE_WORSE if bool(badge["worse"]) else BADGE_BETTER))
+		row.add_child(label)
 
 func _part_name(opt: Dictionary) -> String:
 	for part in opt.get("parts", []):
@@ -1736,6 +1801,12 @@ func _component_texture(path: String) -> Texture2D:
 		if path.ends_with(".svg"):
 			_component_textures[path] = load(path) as Texture2D
 			return _component_textures[path]
+		# Prefer the imported resource (works in an export); the raw read is only the fallback before the first import.
+		if ResourceLoader.exists(path):
+			var imported := load(path) as Texture2D
+			if imported != null:
+				_component_textures[path] = imported
+				return imported
 		# Read the PNG directly so the first launch does not depend on editor imports.
 		var source := Image.load_from_file(path)
 		_component_textures[path] = ImageTexture.create_from_image(source) if source != null else null

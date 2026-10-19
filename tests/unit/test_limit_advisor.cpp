@@ -737,3 +737,71 @@ TEST_CASE("advisor: the hyper n2o setup shows the stage-map finding, a stock sed
     REQUIRE(sedan.error.empty());
     CHECK(find_item(sedan.items, "TurboStageMapCoverage") == nullptr);
 }
+
+TEST_CASE("advisor: a dual-clutch gearbox's shift clutches are checked and an uprated clutch is offered", "[limit_advisor][gearbox]") {
+    // Owner 2026-10-18: the hyper_7dct's shift clutches hold 1900 N*m (static x1.15 = 2185) but the N2O shot makes about
+    // 3150 N*m; the car has no ClutchDesc, so physics_sim's check_driveline_limits never saw them.
+    pd::PowertrainDesc powertrain;
+    pd::ComponentDesc comp;
+    comp.id = "gearbox";
+    pd::GearboxDesc gb;
+    gb.type = pd::GearboxType::DualClutch;
+    gb.shift_clutch.capacity_nm = 1900.0;
+    gb.shift_clutch.static_factor = 1.15;
+    comp.params = gb;
+    powertrain.components.push_back(comp);
+    const auto points = [](double peak) {
+        std::vector<pd::DynoPoint> pts(3);
+        pts[0].rpm = 3000; pts[0].torque_nm = 0.6 * peak;
+        pts[1].rpm = 6000; pts[1].torque_nm = peak;
+        pts[2].rpm = 8000; pts[2].torque_nm = 0.8 * peak;
+        return pts;
+    };
+    const pd::LimitPolicy policy = pd::default_limit_policy();
+
+    CHECK(rg::check_shift_clutch_limits(points(1387.0), powertrain, "g.json", &policy).empty()); // stock V8: holds with margin
+    const auto found = rg::check_shift_clutch_limits(points(3150.0), powertrain, "g.json", &policy);
+    REQUIRE(found.size() == 1);
+    CHECK(found[0].kind == pd::LimitKind::ClutchCapacity);
+    CHECK(found[0].severity == pd::LimitSeverity::Limiting);
+    CHECK(found[0].rpm == Catch::Approx(6000.0));
+    CHECK(found[0].value == Catch::Approx(3150.0));
+    CHECK(found[0].limit == Catch::Approx(1900.0 * 1.15));
+    CHECK(found[0].part.slot == "gearbox");
+    CHECK(found[0].part.file == "g.json");
+    CHECK(found[0].part.field == "/shift_clutch/capacity_nm");
+    REQUIRE(found[0].remedy.has_value());
+    CHECK(found[0].remedy->current == Catch::Approx(1900.0));
+    CHECK(found[0].remedy->required_min == Catch::Approx(3150.0 / 1.15));
+    CHECK(found[0].remedy->required_margin == Catch::Approx(policy.driveline_torque_margin * 3150.0 / 1.15));
+    // A manual-box car (shift_clutch left at 0) yields nothing.
+    pd::PowertrainDesc manual;
+    pd::ComponentDesc mc;
+    mc.id = "gearbox";
+    mc.params = pd::GearboxDesc{};
+    manual.components.push_back(mc);
+    CHECK(rg::check_shift_clutch_limits(points(3150.0), manual, "", &policy).empty());
+
+    // The advice names the gearbox's clutches and points at their garage option, not the manual clutch's.
+    const rg::AdvisorConfig c = shipped_config();
+    rg::AdviceInput in;
+    in.points = sweep_points(2.0);
+    in.findings = found;
+    const auto items = rg::build_advice(in, c);
+    const rg::AdviceItem* item = find_item(items, "ClutchCapacity@/shift_clutch/capacity_nm");
+    REQUIRE(item != nullptr);
+    CHECK(item->variant == "shift_clutch");
+    CHECK(item->option_id == "shift_clutch_capacity");
+    CHECK(item->title == "The gearbox clutches will slip");
+    REQUIRE(item->lines.size() == 3);
+    CHECK(item->lines[0] == "The gearbox clutches hold about 2185 N*m.");
+    CHECK(item->remedy_state == rg::RemedyState::Closed);
+    CHECK(item->remedy_text.find("Gearbox clutches rated for about") == 0);
+    // The manual clutch keeps its own text and option.
+    in.findings[0].part.field = "/capacity_nm";
+    const auto manual_items = rg::build_advice(in, c);
+    const rg::AdviceItem* mi = find_item(manual_items, "ClutchCapacity@/capacity_nm");
+    REQUIRE(mi != nullptr);
+    CHECK(mi->option_id == "clutch_capacity");
+    CHECK(mi->title == "The clutch will slip");
+}

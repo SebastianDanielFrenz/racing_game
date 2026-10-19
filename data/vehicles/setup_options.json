@@ -68,6 +68,22 @@
       ]
     },
     {
+      "id": "shift_clutch_capacity",
+      "label": "Gearbox clutches",
+      "group": "Drivetrain",
+      "area": "rear",
+      "unit": "x",
+      "help": "Torque capacity of the clutches inside an automatic or dual-clutch gearbox (a car with a manual clutch uses the Clutch option instead). Higher capacity transmits more engine torque before the clutches slip; changes apply when driving.",
+      "kind": "scale",
+      "min": 1.0,
+      "max": 4.0,
+      "step": 0.25,
+      "file": "gearbox",
+      "pointers": [
+        "/shift_clutch/capacity_nm"
+      ]
+    },
+    {
       "id": "brake_force",
       "label": "Brake force",
       "group": "Brakes",

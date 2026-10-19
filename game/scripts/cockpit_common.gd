@@ -6,6 +6,9 @@ var simulation: Node
 var vehicle_name := ""
 var model_path := ""
 var _mounted: Array[Node3D] = []
+var _parts: Dictionary = {}  # mount id -> mounted part (cockpit_<id>)
+var _blanks: Dictionary = {} # mount id -> blank cap clone shown while the control is unavailable (EPB, unoffered drive modes)
+var mouse: Node = null       # cockpit_mouse.gd adapter (clicking the controls), null without a simulation
 var _layout: Dictionary = {}
 var _materials: Dictionary = {}
 var _lamp_specs: Dictionary = {}
@@ -89,8 +92,10 @@ func _ready() -> void:
 		part.transform = Transform3D(mount_basis(normal,up),Vector3.ZERO if socket != null else iso(mount["position"]))
 		parent.add_child(part)
 		_mounted.append(part)
+		_parts[str(mount["id"])] = part
 		_copy_lamp_materials(part)
 	library.free()
+	_make_blank_caps()
 	for rule in _layout.get("poses",[]):
 		for part in _mounted:
 			var node := part.find_child(str(rule["node"]),true,false) as Node3D
@@ -99,6 +104,37 @@ func _ready() -> void:
 	model.set_meta("common_cockpit_mounted",true)
 	print("RG_COCKPIT_COMMON mounted=%d" % _mounted.size())
 	set_process(simulation != null)
+	_attach_mouse(path, car_rig_path, model)
+
+# A control whose layout entry says blank_when_unavailable gets a hidden clone of the spare blank cap in its place;
+# cockpit_mouse.gd shows it while the core reports the control unavailable.
+func _make_blank_caps() -> void:
+	var spare: Node3D = _parts.get("spare")
+	if spare == null: return
+	for mount in _layout["mounts"]:
+		var control: Dictionary = mount.get("control", {})
+		var id := str(mount["id"])
+		if not bool(control.get("blank_when_unavailable", false)) or not _parts.has(id): continue
+		var part: Node3D = _parts[id]
+		var cap := spare.duplicate() as Node3D
+		cap.name = "blank_" + id
+		cap.transform = part.transform
+		cap.visible = false
+		part.get_parent().add_child(cap)
+		_blanks[id] = cap
+
+func _attach_mouse(layout_path: String, car_rig_path: String, model: Node3D) -> void:
+	if simulation == null or not simulation.has_method("get_vehicle_powertrain"): return
+	var node := Node.new()
+	node.name = "CockpitMouse"
+	node.set_script(load("res://scripts/cockpit_mouse.gd"))
+	node.set("simulation", simulation)
+	node.set("vehicle_name", vehicle_name)
+	add_child(node)
+	if node.setup(layout_path, car_rig_path if FileAccess.file_exists(car_rig_path) else "", model, _parts, _blanks):
+		mouse = node
+	else:
+		node.queue_free()
 
 func _copy_lamp_materials(root: Node) -> void:
 	var stack: Array[Node] = [root]

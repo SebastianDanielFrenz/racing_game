@@ -90,13 +90,14 @@ func _ready() -> void:
 var _engine_stage_started_s := -1.0 # when the engine-map stage began (time-left estimate)
 
 # rg::StartupProgress stages, in the order a load goes through them.
-const STAGES := ["opening", "waiting_for_gate", "priming", "spawning", "engine_maps"]
+const STAGES := ["opening", "waiting_for_gate", "priming", "spawning", "engine_maps", "terrain_view"]
 const STAGE_TEXT := {
 	"opening": "opening the terrain store",
 	"waiting_for_gate": "streaming the terrain around the spawn",
 	"priming": "priming the physics tiles",
 	"spawning": "placing the car",
 	"engine_maps": "preparing the engine maps",
+	"terrain_view": "building the terrain view",
 	"done": "starting the simulation",
 }
 
@@ -113,7 +114,7 @@ func show_loading(world_label: String, st: Dictionary, elapsed_s: float, footer:
 	var step_lines := PackedStringArray()
 	for i in range(STAGES.size()):
 		var mark := "[ ]"
-		if stage == "done" or (current >= 0 and i < current):
+		if (stage == "done" and STAGES[i] != "terrain_view") or (current >= 0 and i < current):
 			mark = "[x]"
 		elif i == current:
 			mark = "[>]"
@@ -122,11 +123,14 @@ func show_loading(world_label: String, st: Dictionary, elapsed_s: float, footer:
 	var total: int = int(st.get("prime_total", 0))
 	var gate_total: int = int(st.get("gate_total", 0))
 	var engine_total: int = int(st.get("engine_maps_total", 0))
-	_bar.visible = (stage == "priming" and total > 0) or (stage == "waiting_for_gate" and gate_total > 0) or (stage == "engine_maps" and engine_total > 0)
+	var view_total: int = int(st.get("view_total", 0))
+	_bar.visible = (stage == "priming" and total > 0) or (stage == "waiting_for_gate" and gate_total > 0) or (stage == "engine_maps" and engine_total > 0) or (stage == "terrain_view" and view_total > 0)
 	if stage == "priming" and total > 0:
 		_bar.value = clampf(float(st.get("prime_done", 0)) / float(total), 0.0, 1.0)
 	elif stage == "engine_maps" and engine_total > 0:
 		_bar.value = clampf(float(st.get("engine_maps_done", 0)) / float(engine_total), 0.0, 1.0)
+	elif stage == "terrain_view" and view_total > 0:
+		_bar.value = clampf(float(st.get("view_done", 0)) / float(view_total), 0.0, 1.0)
 	elif _bar.visible:
 		# Spawn-area tiles resident out of the gate's full key set (gate_total).
 		_bar.value = clampf(float(gate_total - int(st.get("missing_required", 0))) / float(gate_total), 0.0, 1.0)
@@ -136,6 +140,9 @@ func show_loading(world_label: String, st: Dictionary, elapsed_s: float, footer:
 		int(st.get("inflight", 0)), int(st.get("failed", 0))])
 	if stage == "waiting_for_gate" and gate_total > 0:
 		lines.append("spawn area tiles %d / %d" % [gate_total - int(st.get("missing_required", 0)), gate_total])
+	if stage == "terrain_view":
+		# The first terrain build derives the coarse LOD tiles: a chunk counter so the screen is never silent.
+		lines.append("terrain chunks %d / %d" % [int(st.get("view_done", 0)), view_total])
 	if total > 0:
 		lines.append("priming ticks %d / %d" % [int(st.get("prime_done", 0)), total])
 	if stage == "engine_maps":

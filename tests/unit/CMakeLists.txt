@@ -12,11 +12,13 @@ target_link_libraries(rg_test_catch_main
 
 add_executable(rg_unit_tests
   test_driver_actions.cpp
+  test_cockpit_hit.cpp
   test_electric_motor_sound.cpp
   test_environment.cpp
   test_crt_guard.cpp
   test_npc_truck.cpp
   test_traffic_stuck.cpp
+  test_mark_tail.cpp
   test_npc_traffic.cpp
   test_session.cpp
   test_world_config.cpp
@@ -35,6 +37,7 @@ add_executable(rg_unit_tests
   test_route_standalone_paths.cpp
   test_fixed_rate_loop.cpp
   test_terrain_view_streamer.cpp
+  test_startup_watch.cpp
   test_render_focus.cpp
   test_steering_assist.cpp
   test_address_search.cpp
@@ -75,6 +78,7 @@ add_executable(rg_unit_tests
   test_tyre_spec.cpp
   test_garage_dyno.cpp
   test_limit_advisor.cpp
+  test_upgrade_badges.cpp
   test_envelope_cost.cpp
   test_engine_garage.cpp
   test_turbo_kit.cpp
@@ -107,6 +111,7 @@ add_executable(rg_unit_tests
   test_game_car_thermal.cpp
   test_assist_info.cpp
   test_regen_info.cpp
+  test_dashboard_info.cpp
   test_channel_mirror.cpp
   test_hyper_rear_travel.cpp
   test_hyper_power_jumps.cpp
@@ -117,6 +122,7 @@ add_executable(rg_unit_tests
   test_abs_fitment.cpp
   test_hybrid_electronics.cpp
   test_hybrid_selector.cpp
+  test_hybrid_shift.cpp
 )
 
 target_link_libraries(rg_unit_tests

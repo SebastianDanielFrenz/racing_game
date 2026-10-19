@@ -151,6 +151,10 @@ struct CabinConfig {
     double indicator_arm_deg = 0;
     double indicator_cancel_deg = 0;
     double brake_lamp_threshold = 0;
+    // Hybrid manual mode (tiptronic): the physics hybrid supervisor re-sends gear_request 99 whatever the game writes, so the usual
+    // "change gear_request" exit never reaches the gearbox. Leaving manual mode therefore requests N for this long (the box drops
+    // manual mode on the selector change) and then D again.
+    double manual_exit_hold_s = 0.05;
     // Automatic headlamps (LightMode::Auto, the default switch position): dipped
     // beam on once the sensor reads below on_lux for on_delay_s, off once it reads
     // above off_lux for off_delay_s (hysteresis: on_lux <= off_lux). The first
@@ -194,6 +198,8 @@ private:
     CabinState cabin_;
     CabinConfig config_;
     bool cabin_configured_ = false;
+    bool manual_exit_pending_ = false;
+    double manual_exit_elapsed_s_ = 0;
     void update_auto_lights(double lux, double dt);
     void apply_light_mode();
     std::array<bool, 18> held_{};

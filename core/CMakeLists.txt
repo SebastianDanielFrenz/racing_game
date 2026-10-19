@@ -53,6 +53,7 @@ set(PS_ADAPTER_SRC_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../external/physics_sim/adap
 
 add_library(rg_core STATIC
     src/driver_actions.cpp
+    src/cockpit_hit.cpp
     src/environment.cpp
     src/npc_truck.cpp
     src/walker.cpp
@@ -60,6 +61,7 @@ add_library(rg_core STATIC
     src/fpv_drone_sound.cpp
     src/npc_traffic.cpp
     src/traffic_stuck.cpp
+    src/mark_tail.cpp
     src/building_footprints.cpp
     src/deck_installer.cpp
     src/flat_ground.cpp
@@ -69,6 +71,7 @@ add_library(rg_core STATIC
     src/terrain_mode.cpp
     src/world_config.cpp
     src/world_terrain.cpp
+    src/view_build_progress.cpp
     src/road_surface.cpp
     src/route_surface_mesh.cpp
     src/terrain_smoothing.cpp
@@ -111,6 +114,7 @@ add_library(rg_core STATIC
     src/engine_swap.cpp
     src/gearbox_catalog.cpp
     src/part_mass.cpp
+    src/dashboard_info.cpp
     src/strip_visual.cpp
     src/driveline_swap.cpp
     src/powertrain_swap_json.cpp
@@ -119,6 +123,7 @@ add_library(rg_core STATIC
     src/garage.cpp
     src/garage_dyno.cpp
     src/limit_advisor.cpp
+    src/upgrade_badges.cpp
     src/turbo_map_extension.cpp
     src/turbo_kit.cpp
     src/engine_internals.cpp

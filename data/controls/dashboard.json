@@ -1,0 +1,6 @@
+{
+  "battery_low_soc": 0.2,
+  "battery_critical_soc": 0.1,
+  "motor_dial_tick_krpm": 2,
+  "motor_dial_max_krpm": 0
+}
