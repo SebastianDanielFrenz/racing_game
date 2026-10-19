@@ -379,6 +379,7 @@ G3 status (2026-10-18; earlier entries: docs/plan_history.md):
 - Known defect: A66 boundary defect, a blocker for the phase 7 acceptance (geo2map PLAN status block).
 - Open: G3-C profile acceptance, G3-E ribbons/markings/bridge bodies, G3-F/R3 route acceptance.
 - Heightfield-vs-mesh 162 m/s2 spike on test_ground (x = -500): re-audit; not resolved.
+- Junction tie-in is interim (2026-10-19, vault RACE-023, game #46): the game's `RoadSurfacePatch` lets a narrower road that meets a wider one take the wider road's crowned surface. This removed the bumps on the Unterliederbach exit onto the B8. It misses a third road meeting at the same node (example at UTM 467919.5 / 5550447.5). Long-term fix: geo2map G3-D junction surfaces (geo2map PLAN 6.3 step 5, docs/street_fidelity/p2_junction_design.md), one shared surface per junction for every incoming road. The game then uses that surface as the physics height and deletes the tie-in with no fallback, as with carving. Needs a geo2map release and a pin bump.
 
 OSM dashboard extension: directional explicit speed limits are carried on
 resident road metadata and exposed in car snapshots and Godot. Numeric,
