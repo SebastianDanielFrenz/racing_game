@@ -385,6 +385,13 @@ std::optional<VehicleStats> Garage::stats(const std::string& id, std::string* er
             computed->driveline = driveline_summary(m.driveline);
         }
     }
+    // A gearbox swap: the forward gears of the box the setup installs.
+    if (const auto it = setup.values.find("gearbox_install"); it != setup.values.end() && std::holds_alternative<std::string>(it->second)) {
+        const auto ctx = context_for(*e);
+        if (ctx.gearboxes) {
+            if (const GearboxEntry* box = ctx.gearboxes->find(std::get<std::string>(it->second))) computed->gear_count = box->gears;
+        }
+    }
     // Owner on PR #22: a car's mass (a preset's too) is the sum of its parts with its setup applied.
     const std::string mass_key = id + "#" + setup_to_json(setup);
     if (const auto it = mass_cache_.find(mass_key); it != mass_cache_.end()) {
@@ -584,6 +591,10 @@ void Garage::revalidate() {
     SetupModel installed_model = build_setup_model(*e, options_, context_for(*e), &working_);
     if (installed_model.error.empty()) model_ = std::move(installed_model);
     parts_ = model_.parts;
+    if (probe_only_) { // candidate_setup: the model follows the edits, nothing is loaded
+        validation_.ok = true;
+        return;
+    }
     if (working_.values.empty()) {
         validation_.ok = true;
         return;
@@ -630,6 +641,18 @@ EditResult Garage::set_option(const std::string& option_id, const SetupValue& va
         one.values[option_id] = value;
         normalise_engine_values(one, nullptr);
         if (const auto it = one.values.find(option_id); it != one.values.end()) stored = it->second;
+    }
+    // Selecting what is installed already (owner 2026-10-19) is a no-op: nothing is re-applied, so no sub-setting of the part
+    // (a battery, a motor, a fuel, a conversion's reset of the engine/turbo/gearbox choices, the gear ratios of a gearbox) is
+    // touched and the setup stays byte-identical.
+    {
+        const auto held = working_.values.find(option_id);
+        const SetupValue& now = held != working_.values.end() ? held->second : view->stock;
+        if (setup_values_equal(stored, now)) {
+            r.accepted = true;
+            r.validation = validation_;
+            return r;
+        }
     }
     if (setup_values_equal(stored, view->stock) && !preset_has) {
         working_.values.erase(option_id); // back to stock: not part of the overlay
@@ -772,6 +795,58 @@ std::string Garage::drop_driveline_values_after_conversion() {
     if (!diffs.empty()) notice += (notice.empty() ? "" : " ") + diffs;
     revalidate();
     return notice;
+}
+
+bool Garage::edits_installed(const std::vector<std::pair<std::string, SetupValue>>& edits) const {
+    if (!editing() || edits.empty()) return false;
+    for (const auto& [option_id, value] : edits) {
+        const OptionView* view = nullptr;
+        for (const OptionView& v : model_.options) {
+            if (v.def.id == option_id) view = &v;
+        }
+        if (view == nullptr) return false;
+        SetupValue stored = value;
+        if (option_id == "engine_install") { // a legacy id is stored as the engine's key (set_option's rule)
+            VehicleSetup one;
+            one.values[option_id] = value;
+            normalise_engine_values(one, nullptr);
+            if (const auto it = one.values.find(option_id); it != one.values.end()) stored = it->second;
+        }
+        if (!setup_values_equal(stored, current_value(option_id))) return false;
+    }
+    return true;
+}
+
+std::optional<VehicleSetup> Garage::candidate_setup(const std::vector<std::pair<std::string, SetupValue>>& edits, std::string* err) {
+    if (!editing()) {
+        if (err != nullptr) *err = "no vehicle is being edited";
+        return std::nullopt;
+    }
+    // Everything an edit touches: the working copy, the model it is judged against, the validation and the part tree.
+    VehicleSetup saved_working = working_;
+    SetupModel saved_model = model_;
+    ValidationResult saved_validation = validation_;
+    PartTree saved_parts = parts_;
+    probe_only_ = true;
+    std::optional<VehicleSetup> result;
+    std::string failure;
+    bool all_accepted = true;
+    for (const auto& [option_id, value] : edits) {
+        const EditResult r = set_option(option_id, value);
+        if (!r.accepted) {
+            all_accepted = false;
+            failure = r.message;
+            break;
+        }
+    }
+    if (all_accepted) result = working_;
+    probe_only_ = false;
+    working_ = std::move(saved_working);
+    model_ = std::move(saved_model);
+    validation_ = std::move(saved_validation);
+    parts_ = std::move(saved_parts);
+    if (!result && err != nullptr) *err = failure;
+    return result;
 }
 
 void Garage::reset_option(const std::string& option_id) {

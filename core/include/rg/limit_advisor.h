@@ -276,6 +276,10 @@ struct AdviceSweep {
 AdviceSweep run_advice_sweep(const ps::vehicle::VehicleDesc& desc, const AdvisorConfig& config, ps::jobs::JobSystem* pool,
                              const std::atomic<bool>* cancel, const std::string& clutch_file = {}, const std::string& gearbox_file = {});
 
+// The worker count of the garage's background pools (limit advisor, upgrade hints): all but four logical processors (at least
+// one), RG_ENGINE_MAP_WORKERS (1..64) overrides.
+int background_worker_count();
+
 // ---- the background advisor -------------------------------------------------------------------------------------------
 
 struct AdvisorRequest {
