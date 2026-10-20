@@ -265,7 +265,8 @@ struct AdviceSweep {
 };
 // The shift clutches of a clutch-to-clutch gearbox (automatic, dual-clutch, clutch-launched CVT: GearboxDesc::shift_clutch)
 // against the sweep's peak net torque, graded exactly like physics_sim's manual-clutch check (check_driveline_limits:
-// static capacity = capacity x static_factor; Limiting at the peak, Near within policy.driveline_torque_margin). Such a car has
+// static capacity = capacity x static_factor; Near within policy.driveline_torque_margin, Limiting at the peak, Exceeded more than
+// policy.gearbox_rating_over_exceeded over it - the owner's 2026-10-20 reuse of the gearbox band). Such a car has
 // no ClutchDesc, so that check never sees them. Findings are ClutchCapacity at part {"gearbox", gearbox_file,
 // "/shift_clutch/capacity_nm"} with a Closed remedy (required_min = peak / static_factor, required_margin x margin).
 [[nodiscard]] std::vector<ps::drivetrain::LimitFinding> check_shift_clutch_limits(const std::vector<ps::drivetrain::DynoPoint>& points,

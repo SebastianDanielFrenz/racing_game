@@ -132,7 +132,8 @@ TEST_CASE("dyno reference: the shipped file and every rejection", "[garage_dyno]
     CHECK(r->ambient_temperature_k == 288.15);
     CHECK(std::find(r->electrified_setup_options.begin(), r->electrified_setup_options.end(), "gear_ratios") != r->electrified_setup_options.end());
     // Each case breaks exactly one thing of the valid text.
-    const std::string valid = R"({"format":"rg.garage_dyno_reference/1","source":"t","battery_soc":0.8,"hydrogen_fraction":1,
+    CHECK(r->fuel_cell_soc_below_target == 0.05);
+    const std::string valid = R"({"format":"rg.garage_dyno_reference/1","source":"t","battery_soc":0.8,"fuel_cell_soc_below_target":0.05,"hydrogen_fraction":1,
         "drive_mode":"normal","pedal":1,"reference_gear_ratio":1,"points":33,"coarse_points":9,"motor_rpm_min":250,
         "motor_rpm_top_fraction":0.99,"hybrid_clutch_margin_rpm":25,"ambient":{"pressure_pa":101325,"temperature_k":288.15},"electrified_setup_options":[]})";
     CHECK(rg::load_dyno_reference(write_temp("valid", valid), &err).has_value());
@@ -150,6 +151,7 @@ TEST_CASE("dyno reference: the shipped file and every rejection", "[garage_dyno]
     rejects("unknown", "\"pedal\":1,", "\"pedal\":1,\"stack_power_kw\":5,", "unknown key \"stack_power_kw\"");
     rejects("soc", "\"battery_soc\":0.8", "\"battery_soc\":1.5", "battery_soc");
     rejects("soc_missing", "\"battery_soc\":0.8,", "", "battery_soc");
+    rejects("fc_soc", "\"fuel_cell_soc_below_target\":0.05", "\"fuel_cell_soc_below_target\":0.7", "fuel_cell_soc_below_target");
     rejects("points", "\"points\":33", "\"points\":32", "\"points\"");
     rejects("coarse", "\"coarse_points\":9", "\"coarse_points\":65", "coarse_points");
     rejects("mode", "\"drive_mode\":\"normal\"", "\"drive_mode\":\"turbo\"", "drive_mode");
@@ -251,12 +253,29 @@ TEST_CASE("dyno fuel-cell EV: the stack's share follows the reference state of c
     const auto cell = components<pd::FuelCellDesc>(vehicle).at(0).second;
     const auto motors = components<pd::ElectricMotorDesc>(vehicle);
     REQUIRE(motors.size() == 2);
-    for (const double soc : {0.8, 0.6}) {
+    // Owner 2026-10-20: the fuel-cell reference holds the pack at the stack's target_soc minus fuel_cell_soc_below_target
+    // (shipped 0.05: target 0.8 -> 0.75, full stack power), not at battery_soc 0.8 (the target itself: 0 kW). Recorded
+    // sabotage: planning fuel-cell cars at reference.battery_soc again fails the shipped-file checks (soc 0.8, caption 80 %).
+    {
+        const auto plan = rg::plan_electrified_dyno(vehicle, f.reference);
+        REQUIRE(plan.has_value());
+        CHECK(plan->battery_soc == Approx(cell.target_soc - 0.05));
+        CHECK_THAT(plan->caption, Catch::Matchers::ContainsSubstring("battery 75 %"));
+        CHECK(pd::fuel_cell_supply_w(cell, battery, plan->battery_soc, cell.hydrogen_capacity_kg, kH) == Approx(cell.max_power_w));
+        // a battery EV keeps battery_soc
+        const auto ev = rg::plan_electrified_dyno(f.load("car_sedan", {{"powertrain_install", std::string("battery_ev")}}, &pool), f.reference);
+        REQUIRE(ev.has_value());
+        CHECK(ev->battery_soc == f.reference.battery_soc);
+    }
+    for (const double below : {0.0, 0.2}) {
+        const double soc = cell.target_soc - below;
         INFO("soc " << soc);
         auto reference = f.reference;
-        reference.battery_soc = soc;
+        reference.fuel_cell_soc_below_target = below;
+        reference.battery_soc = 0.3; // ignored for a fuel-cell car
         const auto plan = rg::plan_electrified_dyno(vehicle, reference);
         REQUIRE(plan.has_value());
+        CHECK(plan->battery_soc == Approx(soc));
         CHECK(plan->topology == rg::DynoTopology::FuelCellElectric);
         CHECK_THAT(plan->caption, Catch::Matchers::ContainsSubstring("H₂"));
         const auto points = rg::measure_electrified_dyno(vehicle, reference, *plan, &pool, nullptr, [](const auto&, int) {});

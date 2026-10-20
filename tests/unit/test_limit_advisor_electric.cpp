@@ -252,7 +252,7 @@ TEST_CASE("advisor: the owner's hyper n2o DCT hybrid setup names the slipping sh
     REQUIRE(clutch != nullptr);
     CHECK(clutch->variant == "shift_clutch");
     CHECK(clutch->option_id == "shift_clutch_capacity");
-    CHECK(clutch->severity == rg::AdviceSeverity::Warning); // physics' clutch grade: Limiting once the peak reaches the static capacity
+    CHECK(clutch->severity == rg::AdviceSeverity::Critical); // owner 2026-10-20: 4361 N*m is 100 % over 2185, past the 15 % band: Exceeded
     CHECK(clutch->remedy_state == rg::RemedyState::Closed); // "Gearbox clutches rated for about ... N*m hold it with margin"
     REQUIRE(clutch->findings.size() == 1);
     const pd::LimitFinding& x = clutch->findings.front();

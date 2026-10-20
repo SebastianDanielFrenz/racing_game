@@ -1061,10 +1061,17 @@ std::vector<pd::LimitFinding> check_shift_clutch_limits(const std::vector<pd::Dy
         if (gb == nullptr || !(gb->shift_clutch.capacity_nm > 0.0)) continue;
         const double capacity = gb->shift_clutch.capacity_nm;
         const double static_capacity = capacity * gb->shift_clutch.static_factor;
+        // physics_sim clutch_capacity_severity (claude/clutch-grade, owner 2026-10-20): Limiting from the static capacity,
+        // Exceeded more than gearbox_rating_over_exceeded over it, Near within the margin.
         pd::LimitSeverity s = pd::LimitSeverity::Near;
-        if (peak->torque_nm >= static_capacity) s = pd::LimitSeverity::Limiting;
-        else if (peak->torque_nm * pol.driveline_torque_margin >= static_capacity) s = pd::LimitSeverity::Near;
-        else continue;
+        if (peak->torque_nm >= static_capacity) {
+            const double over = (peak->torque_nm - static_capacity) / static_capacity;
+            s = over > pol.gearbox_rating_over_exceeded ? pd::LimitSeverity::Exceeded : pd::LimitSeverity::Limiting;
+        } else if (peak->torque_nm * pol.driveline_torque_margin >= static_capacity) {
+            s = pd::LimitSeverity::Near;
+        } else {
+            continue;
+        }
         pd::LimitFinding f;
         f.kind = pd::LimitKind::ClutchCapacity;
         f.severity = s;

@@ -117,7 +117,7 @@ std::optional<DynoReference> load_dyno_reference(const std::string& path, std::s
     if (!text) { ref_fail(err, path, "cannot read the file"); return std::nullopt; }
     const auto root = detail::parse_json(*text);
     if (!root || !root->is_object()) { ref_fail(err, path, "not a JSON object"); return std::nullopt; }
-    static const std::set<std::string> known{"format", "source", "battery_soc", "hydrogen_fraction", "drive_mode", "pedal",
+    static const std::set<std::string> known{"format", "source", "battery_soc", "fuel_cell_soc_below_target", "hydrogen_fraction", "drive_mode", "pedal",
         "reference_gear_ratio", "points", "coarse_points", "motor_rpm_min", "motor_rpm_top_fraction", "hybrid_clutch_margin_rpm", "ambient",
         "electrified_setup_options"};
     for (auto it = root->begin(); it != root->end(); ++it)
@@ -134,7 +134,8 @@ std::optional<DynoReference> load_dyno_reference(const std::string& path, std::s
         return true;
     };
     double points = 0, coarse = 0;
-    if (!number(*root, "battery_soc", r.battery_soc, 0.0, 1.0, "") || !number(*root, "hydrogen_fraction", r.hydrogen_fraction, 0.0, 1.0, "") ||
+    if (!number(*root, "battery_soc", r.battery_soc, 0.0, 1.0, "") || !number(*root, "fuel_cell_soc_below_target", r.fuel_cell_soc_below_target, 0.0, 0.5, "") ||
+        !number(*root, "hydrogen_fraction", r.hydrogen_fraction, 0.0, 1.0, "") ||
         !number(*root, "pedal", r.pedal, 0.0, 1.0, "") || !number(*root, "reference_gear_ratio", r.reference_gear_ratio, 0.05, 20.0, "") ||
         !number(*root, "points", points, 3, 129, "") || !number(*root, "coarse_points", coarse, 3, 129, "") ||
         !number(*root, "motor_rpm_min", r.motor_rpm_min, 1.0, 1.0e5, "") ||
@@ -204,6 +205,7 @@ std::optional<ElectrifiedDynoPlan> plan_electrified_dyno(const ps::vehicle::Vehi
     const pd::GearboxDesc* gearbox = nullptr;
     double idle = 0, limit = 0;
     bool engine = false, fuel_cell = false;
+    double stack_target_soc = 1.0; // the lowest target of the car's stacks
     int motor_index = 0;
     for (const auto& c : vehicle.powertrain.components) {
         if (const auto* m = std::get_if<pd::ElectricMotorDesc>(&c.params)) {
@@ -215,7 +217,7 @@ std::optional<ElectrifiedDynoPlan> plan_electrified_dyno(const ps::vehicle::Vehi
             ++motor_index;
         }
         if (const auto* g = std::get_if<pd::GearboxDesc>(&c.params)) gearbox = g;
-        if (std::get_if<pd::FuelCellDesc>(&c.params)) fuel_cell = true;
+        if (const auto* fc = std::get_if<pd::FuelCellDesc>(&c.params)) { fuel_cell = true; stack_target_soc = std::min(stack_target_soc, fc->target_soc); }
         // The sweep stops below the limiter's restore speed: the stepped engine latches a fuel cut on the first overshoot past
         // the cut speed and only restores below rpm - hysteresis, so a point held between the two would read the cut.
         const auto top_of = [](const pd::EngineLimiterDesc& l) {
@@ -231,7 +233,8 @@ std::optional<ElectrifiedDynoPlan> plan_electrified_dyno(const ps::vehicle::Vehi
     for (const auto& c : vehicle.controllers)
         if (const auto* t = std::get_if<pd::ManualTcuDesc>(&c.params)) clutch_locks_rpm = t->auto_clutch.rolling_reengage_rpm;
     plan.topology = engine ? DynoTopology::Hybrid : fuel_cell ? DynoTopology::FuelCellElectric : DynoTopology::Electric;
-    std::string caption = "Hubs · full pedal · battery " + percent(reference.battery_soc);
+    plan.battery_soc = fuel_cell ? std::clamp(stack_target_soc - reference.fuel_cell_soc_below_target, 0.0, 1.0) : reference.battery_soc;
+    std::string caption = "Hubs · full pedal · battery " + percent(plan.battery_soc);
     if (fuel_cell) caption += " · H₂ " + percent(reference.hydrogen_fraction);
     if (engine) {
         std::string mode = reference.drive_mode;
@@ -287,7 +290,7 @@ std::vector<DynoPoint> measure_electrified_dyno(const ps::vehicle::VehicleDesc& 
     spec.motor_index = plan.axis_motor;
     spec.gear = plan.axis == DynoAxis::EngineRpm ? plan.gear : 1;
     spec.pedal = reference.pedal;
-    spec.battery_soc = reference.battery_soc;
+    spec.battery_soc = plan.battery_soc;
     spec.hydrogen_fraction = reference.hydrogen_fraction;
     spec.drive_mode = reference.drive_mode_index;
     spec.ambient.pressure_pa = reference.ambient_pressure_pa;

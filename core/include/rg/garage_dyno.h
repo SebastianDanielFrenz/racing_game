@@ -18,7 +18,11 @@ namespace rg {
 // battery discharge limit itself is the pack's own (physics BatteryDesc::max_discharge_w, the limit the drive applies).
 // Combustion-only cars ignore this file: their dyno is the crank sweep it always was.
 struct DynoReference {
-    double battery_soc = 0.8;          // every pack, held for the whole point
+    double battery_soc = 0.8;          // every pack, held for the whole point (battery EVs and hybrids)
+    // Fuel-cell cars: the pack is held at the stack's own target_soc minus this, where physics' stack law
+    // (fuel_cell_request_j: full power at target - 0.05, none at target) supplies its full rating - battery_soc 0.8 is the
+    // shipped stacks' target, where they supply nothing (owner 2026-10-20: the stack's share must be visible).
+    double fuel_cell_soc_below_target = 0.05;
     double hydrogen_fraction = 1.0;    // of every fuel-cell tank
     std::string drive_mode = "normal"; // eco | normal | sport | racing (the hybrid supervisor's channel assist.drive_mode)
     int drive_mode_index = 1;          // 0..3, from drive_mode
@@ -125,6 +129,7 @@ struct ElectrifiedDynoPlan {
     std::vector<int> traction;       // indices (among all motors) of the traction motors
     std::vector<std::string> labels; // their component ids
     std::vector<double> axis_points; // in rpm order
+    double battery_soc = 0.8;        // the pack's held state of charge (DynoReference::battery_soc, or the fuel-cell rule)
     std::string caption;
     std::string unsupported_reason;  // non-empty: no sweep
 };
