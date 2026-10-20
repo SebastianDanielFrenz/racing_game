@@ -1101,7 +1101,10 @@ bool Session::sync_road_decks(int budget) {
     // Decks in range are REQUIRED (installed in (way, start, end) order before the clock runs); decks a margin
     // further out are only built, so their shape is ready by the time the car gets there (S1, design 5.2 option B).
     std::vector<DeckCandidate> required,prefetch;
-    for(const auto& deck:terrain.road_decks()) {
+    auto all_decks=terrain.road_decks();
+    // Rail bridges (RACE-028): their decks only where they clear the ground below, so none ever blocks a road.
+    for(auto& rail_deck:terrain.rail_decks_near(e,n,prefetch_radius+255)) all_decks.push_back(std::move(rail_deck));
+    for(const auto& deck:all_decks) {
         const DeckKey key=deck_key(*deck);
         if(deck_installer_->installed(key)) continue;
         const double dx=std::max({deck->min_easting-e,e-deck->max_easting,0.0});

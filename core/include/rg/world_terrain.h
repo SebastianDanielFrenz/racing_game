@@ -16,6 +16,7 @@
 #include "rg/road_surface.h"
 #include "rg/terrain_colours.h"
 #include "rg/terrain_render.h"
+#include "rg/rail_meshes.h"
 #include "rg/world_config.h"
 
 #include "g2m/core/geo/session_frame.h"
@@ -31,6 +32,7 @@
 #include "g2m/world/view_streamer.h"
 
 #include <array>
+#include <chrono>
 #include <atomic>
 #include <cstdint>
 #include <future>
@@ -134,6 +136,20 @@ public:
     // Presentation-only lookup: never fetches or waits for derivation.
     const g2m::HeightTile* cached_height_tile(const g2m::TileKey& key);
     std::vector<std::shared_ptr<const RoadDeck>> road_decks();
+    // ---- Railways (RACE-028; the release carries g2m.rail.geom only with world_config "rail": true) ----
+    [[nodiscard]] bool has_rail_layer() const { return rail_served_; }
+    // The decoded g2m.rail.geom tile (level 2, the pieces whose first vertex lies in it), blocking, from a non-pool
+    // thread. An absent tile (outside coverage) is an empty tile; null when the release has no rail layer or the fetch failed.
+    std::shared_ptr<const g2m::RailGeomTile> rail_tile(const g2m::TileKey& key,
+                                                       g2m::world::Priority priority = g2m::world::Priority::Render);
+    // The look and collision numbers (data/world/rail.json). Null config = no rail collision decks.
+    void set_rail_config(std::shared_ptr<const RailConfig> config);
+    [[nodiscard]] std::shared_ptr<const RailConfig> rail_config() const;
+    // Collision decks of the rail bridges within `radius_m` of the UTM point (a piece reaches up to 512 m past its tile).
+    // Sim thread, never waits: tiles are requested in the background and appear once derived; a deck is built once
+    // every ground height under it is known (spans over unknown ground have no collision, so nothing ever blocks a road).
+    // way_id of a deck is the NEGATED rail way id, start/end station the piece index and index + 1.
+    std::vector<std::shared_ptr<const RoadDeck>> rail_decks_near(double easting, double northing, double radius_m);
     std::shared_ptr<const g2m::RoadGeomTile> cached_road_geometry_at(double easting,double northing);
     std::shared_ptr<const g2m::RoadGeomTile> road_geometry_at(double easting, double northing);
 
@@ -342,6 +358,17 @@ private:
     std::map<g2m::TileKey, ChunkCarve> carve_; // per produced height tile
     std::map<g2m::TileKey, std::shared_ptr<const g2m::HeightTile>> fallback_tiles_; // the uncarved tiles of the Fallback keys
     bool has_road_layer_ = false; // set once, at open(), from the manifest
+    bool rail_served_ = false;    // set once, at open(), from world_config "rail"
+    mutable std::mutex rail_mutex_;
+    std::shared_ptr<const RailConfig> rail_config_;
+    struct RailDeckTile {
+        g2m::world::Ticket<g2m::RailGeomTile> ticket;
+        std::vector<std::shared_ptr<const RoadDeck>> decks;
+        bool final_ = false;
+        int attempts = 0;
+        std::chrono::steady_clock::time_point retry_at{};
+    };
+    std::map<g2m::TileKey, RailDeckTile> rail_deck_tiles_; // sim thread (rail_decks_near) only
     RoadSurfaceMap road_surfaces_; // from config.physics.road_surfaces (G2.5a-grip R-b)
     std::atomic<std::uint8_t> physics_priority_{static_cast<std::uint8_t>(g2m::world::Priority::Physics)};
     g2m::world::ProductKind height_kind_ = 0;  // rg.height.carved

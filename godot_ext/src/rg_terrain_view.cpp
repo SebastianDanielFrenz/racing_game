@@ -269,6 +269,42 @@ godot::Dictionary RgTerrainView::get_road_visual_tile(int x,int y,double lift) {
     out["origin_session"]=godot::Vector3(static_cast<double>(x)*1024-terrain_->frame().e0_m(),static_cast<double>(y)*1024-terrain_->frame().n0_m(),0);return out;
 }
 
+godot::Dictionary RgTerrainView::get_rail_info() const {
+    godot::Dictionary out;
+    const auto config=terrain_?terrain_->rail_config():nullptr;
+    out["enabled"]=terrain_&&terrain_->has_rail_layer()&&config;
+    out["view_distance_m"]=config?config->view_distance_m:0.0;
+    return out;
+}
+
+godot::Dictionary RgTerrainView::get_rail_tile(int x,int y) {
+    godot::Dictionary out;if(!terrain_||!terrain_->has_rail_layer())return out;
+    const auto config=terrain_->rail_config();if(!config)return out;
+    const g2m::TileKey key{terrain_->frame().zone(),2,x,y};
+    const auto tile=terrain_->rail_tile(key,g2m::world::Priority::Render);
+    if(!tile||tile->pieces.empty())return out;
+    const rg::RailTileMesh built=rg::build_rail_tile_mesh(*tile,*config);
+    const auto& mesh=built.mesh;if(mesh.empty())return out;
+    // (east, north, up) -> Godot (-north, up, -east) is a proper rotation, so the builder's counter-clockwise triangles
+    // stay counter-clockwise; Godot's front faces are clockwise, so the indices are reversed here.
+    godot::PackedVector3Array points,normals;godot::PackedColorArray colours;godot::PackedInt32Array indices;
+    const std::size_t count=mesh.vertex_count();points.resize(static_cast<int64_t>(count));normals.resize(static_cast<int64_t>(count));colours.resize(static_cast<int64_t>(count));
+    for(std::size_t i=0;i<count;++i){
+        points.set(static_cast<int64_t>(i),{-mesh.positions[3*i+1],mesh.positions[3*i+2],-mesh.positions[3*i]});
+        normals.set(static_cast<int64_t>(i),{-mesh.normals[3*i+1],mesh.normals[3*i+2],-mesh.normals[3*i]});
+        colours.set(static_cast<int64_t>(i),godot::Color(mesh.colours[3*i],mesh.colours[3*i+1],mesh.colours[3*i+2]));
+    }
+    indices.resize(static_cast<int64_t>(mesh.indices.size()));
+    for(std::size_t t=0;t+2<mesh.indices.size();t+=3){
+        indices.set(static_cast<int64_t>(t),static_cast<int32_t>(mesh.indices[t]));
+        indices.set(static_cast<int64_t>(t+1),static_cast<int32_t>(mesh.indices[t+2]));
+        indices.set(static_cast<int64_t>(t+2),static_cast<int32_t>(mesh.indices[t+1]));
+    }
+    out["vertices"]=points;out["normals"]=normals;out["colours"]=colours;out["indices"]=indices;
+    out["origin_session"]=godot::Vector3(static_cast<double>(x)*1024-terrain_->frame().e0_m(),static_cast<double>(y)*1024-terrain_->frame().n0_m(),0);
+    return out;
+}
+
 godot::Dictionary RgTerrainView::get_building_tile(int x,int y,double min_height,double fallback,double storey) {
     godot::Dictionary output;godot::Array buildings;if(!terrain_)return output;
     const g2m::TileKey key{terrain_->frame().zone(),2,x,y};
@@ -973,6 +1009,8 @@ void RgTerrainView::_process(double /*delta*/) {
 void RgTerrainView::_bind_methods() {
     godot::ClassDB::bind_method(D_METHOD("initialize", "world_config_absolute_path"), &RgTerrainView::initialize);
     godot::ClassDB::bind_method(D_METHOD("get_road_visual_tile", "x", "y", "lift_m"), &RgTerrainView::get_road_visual_tile);
+    godot::ClassDB::bind_method(D_METHOD("get_rail_tile", "x", "y"), &RgTerrainView::get_rail_tile);
+    godot::ClassDB::bind_method(D_METHOD("get_rail_info"), &RgTerrainView::get_rail_info);
     godot::ClassDB::bind_method(D_METHOD("get_building_tile", "x", "y", "min_height", "fallback_height", "storey_height"), &RgTerrainView::get_building_tile);
     godot::ClassDB::bind_method(D_METHOD("initialize_shared", "sim"), &RgTerrainView::initialize_shared);
     godot::ClassDB::bind_method(D_METHOD("release"), &RgTerrainView::release);
