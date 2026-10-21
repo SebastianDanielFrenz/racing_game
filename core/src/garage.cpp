@@ -78,7 +78,8 @@ bool option_value_type_ok(OptionKind kind, const SetupValue& v) {
         case OptionKind::FileChoice:
         case OptionKind::TyreChoice:
         case OptionKind::Colour:
-        case OptionKind::PartChoice: return std::holds_alternative<std::string>(v);
+        case OptionKind::PartChoice:
+        case OptionKind::ScalePreset: return std::holds_alternative<std::string>(v);
     }
     return false;
 }

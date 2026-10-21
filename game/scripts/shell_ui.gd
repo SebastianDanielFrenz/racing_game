@@ -873,7 +873,7 @@ func _draw_garage_options() -> void:
 		if str(opt["id"]) in ["clutch_capacity", "shift_clutch_capacity"]: continue
 		if str(opt["area"]) != _active_area or not bool(opt["available"]):
 			continue
-		if str(opt["kind"]) in ["tyre_choice", "file_choice", "part_choice"]:
+		if str(opt["kind"]) in ["tyre_choice", "file_choice", "part_choice", "scale_preset"]:
 			_option_box.add_child(_label("Installed " + str(opt["label"]).to_lower(),17,HORIZONTAL_ALIGNMENT_LEFT))
 			var installed := _label(_part_name(opt) if str(opt["kind"]) != "tyre_choice" else _display_value("tyre_choice",opt["value"]),14,HORIZONTAL_ALIGNMENT_LEFT,true)
 			installed.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
@@ -1228,7 +1228,7 @@ func _any_option(id: String) -> Dictionary:
 
 # The electric-drive scale options (setup_options.json group "Electric drive"): motors, battery capacity, battery power.
 const EV_MOTOR_OPTIONS := ["ev_motor_scale"]
-const EV_BATTERY_OPTIONS := ["ev_battery_capacity", "ev_battery_power"]
+const EV_BATTERY_OPTIONS := ["ev_battery_pack"]
 
 # True when at least one of `ids` is available on this car (something the player can actually change).
 func _any_available(ids: Array) -> bool:
@@ -1286,20 +1286,41 @@ func _upgrade_categories_unavailable() -> Array:
 	if _drivetrain_tiles_unavailable().size() >= 3: out.append("Drivetrain")
 	return out
 
-# Electric drive / Motors or Battery: one slider row per available option (the same rows Tuning lists under Engine), each
-# with its help text (what scales together, and the mass assumption).
+# Electric drive / Motors or Battery: a slider row per scale option (the same rows Tuning lists under Engine) and a card per
+# pack for a preset option (the battery: each pack sets energy, power and mass together), each with its help text.
 func _draw_electric_drive(ids: Array) -> void:
 	var count := 0
 	for id in ids:
 		var opt := _garage_option(str(id))
 		if opt.is_empty(): continue
-		_option_box.add_child(_option_row(opt))
+		if str(opt["kind"]) == "scale_preset":
+			_draw_preset_cards(opt)
+		else:
+			_option_box.add_child(_option_row(opt))
 		if not str(opt.get("help", "")).is_empty():
 			_option_box.add_child(_label(str(opt["help"]),13,HORIZONTAL_ALIGNMENT_LEFT,true))
 		count += 1
 	if count == 0:
 		_option_box.add_child(_label("Nothing to upgrade here on this car.",16,HORIZONTAL_ALIGNMENT_LEFT,true))
 	_focus_tuning.call_deferred()
+
+# One card per preset of a scale_preset option (core vehicle_setup.h ScalePreset): the card's size line is the computed
+# figures (e.g. "135 kWh · 805 kW · 700 kg"); "stock" is the car's own part.
+func _draw_preset_cards(opt: Dictionary) -> void:
+	var grid := GridContainer.new()
+	grid.columns = 2
+	_option_box.add_child(grid)
+	var opt_id := str(opt["id"])
+	for part in opt.get("parts", []):
+		var part_id := str(part["id"])
+		var installed := str(opt["value"]) == part_id
+		var presentation := {"label":str(part["label"]), "size":str(part.get("size", "")), "image":str(part.get("image", ""))}
+		var card := _make_component_card(_with_badge(presentation,opt_id,{opt_id:part_id}),"INSTALLED" if installed else "Install")
+		grid.add_child(card)
+		_buttons["part:" + opt_id + ":" + part_id] = card
+		card.pressed.connect(func(): _edit_option(opt_id,part_id); _draw_garage_options())
+		if installed or _garage_preferred == null: _garage_preferred = card
+	_focus_garage.call_deferred()
 
 # Engine internals (core engine_internals.h): one row of grade cards per part. The engine's piston-speed limit is its
 # weakest part's; the setup check names the part that would fail. Nothing breaks yet (no damage model).

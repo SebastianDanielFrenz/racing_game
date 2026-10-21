@@ -63,6 +63,8 @@ enum class OptionKind {
     Colour,     // string "#rrggbb": visual only, edits no file
     PartChoice, // string: a part id for one removable / swappable part slot of the part-mass tree (weight reduction);
                 // edits no file, only the tree's "trim.<slot>" node ("stock" = the car's own part)
+    ScalePreset, // string: a preset id; preset i scales the leaves of pointer pattern k by its factors[k] (a battery pack
+                 // sets capacity, power and mass together; "stock" = the car's own values). No free per-leaf factor.
 };
 
 const char* to_string(OptionKind k);
@@ -84,6 +86,16 @@ struct SetupPart {
     // in the player's words. The garage hides such a choice by default ("show all" lists it greyed out with the reason).
     bool fits = true;
     std::string fit_reason;
+    // ScalePreset: one factor per pointer pattern of the option (same order), each in (0, 10).
+    std::vector<double> factors;
+};
+
+// ScalePreset: how the card line shows the value a pointer pattern reaches (summed over its leaves) - "135 kWh".
+// An empty unit leaves that pattern out of the line.
+struct PresetDisplay {
+    std::string unit;
+    double multiplier = 1.0;
+    int decimals = 0;
 };
 
 struct SetupOptionDef {
@@ -105,6 +117,8 @@ struct SetupOptionDef {
     std::vector<std::string> pointers; // the whitelist paths (empty for Colour)
     std::string monotonic;             // "decreasing": the resulting list must stay strictly decreasing
     std::vector<SetupPart> parts; // FileChoice: approved files; paths resolved against option-table directory
+                                  // ScalePreset: the presets (id, label, factors), "stock" implicit
+    std::vector<PresetDisplay> preset_display; // ScalePreset: one per pointer pattern (empty = no numbers on the cards)
     // FileChoice whose parts are not listed in the option table but come from a store at run time (engine garage G1):
     // "engines" = every engine of rg::EngineStore (defaults and user engines; ids "default:<id>" / "user:<uid>", a
     // legacy table id such as "sedan_i6" still resolves), "fuels" = the fuels of the installed engine (ids = fuel stems).

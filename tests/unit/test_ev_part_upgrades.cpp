@@ -1,10 +1,12 @@
 // test_ev_part_upgrades.cpp - garage upgrades for electric drives (owner 2026-10-21: "Allow for upgrading of electric motors
-// and battery size and battery power output on EVs"): the three scale options ev_motor_scale, ev_battery_capacity and
-// ev_battery_power in data/vehicles/setup_options.json.
+// and battery size and battery power output on EVs"; then "the battery selection both sets capacity AND output", "no
+// dedicated capacity or output selection"): the scale option ev_motor_scale and the pack choice ev_battery_pack (kind
+// scale_preset) in data/vehicles/setup_options.json.
 //
-// Checks: the options are available on car_electric and not on a combustion car; a setup scales exactly the documented
-// leaves of every motor and the battery (mass with torque, mass with capacity - [AS], see the options' help) and nothing
-// else; the part-mass tree follows the new component masses; the stock files are untouched.
+// Checks: the options are available on car_electric and not on a combustion car; the pack cards carry the computed
+// figures; a setup scales exactly the documented leaves of every motor and the battery (motor mass with torque [AS], each
+// pack's own factors on energy, discharge, charge and mass [AS]) and nothing else; an unknown pack is rejected; the
+// part-mass tree follows the new component masses; the stock files are untouched.
 #include "rg/engine_store.h"
 #include "rg/part_mass.h"
 #include "rg/vehicle_setup.h"
@@ -85,7 +87,7 @@ const nlohmann::json& component(const nlohmann::json& vehicle, const std::string
     return none;
 }
 
-const char* const kEvOptions[] = {"ev_motor_scale", "ev_battery_capacity", "ev_battery_power"};
+const char* const kEvOptions[] = {"ev_motor_scale", "ev_battery_pack"};
 
 } // namespace
 
@@ -104,6 +106,28 @@ TEST_CASE("ev parts: the options are available on the electric car only", "[setu
         const rg::OptionView* s = view_of(sedan, id);
         if (s != nullptr) CHECK_FALSE(s->available); // no motor, no battery: the pointers match nothing
     }
+    // the pack cards: stock first, then the packs, each with its figures on this car's 90 kWh / 700 kW / 500 kg pack
+    const rg::OptionView* pack = view_of(ev, "ev_battery_pack");
+    REQUIRE(pack != nullptr);
+    CHECK(pack->def.kind == rg::OptionKind::ScalePreset);
+    REQUIRE(pack->parts.size() == 6);
+    CHECK(pack->parts.front().id == "stock");
+    CHECK(std::get<std::string>(pack->stock) == "stock");
+    const rg::SetupPart* long_range = nullptr;
+    for (const rg::SetupPart& p : pack->parts) if (p.id == "long_range") long_range = &p;
+    REQUIRE(long_range != nullptr);
+    CHECK(long_range->detail == "135 kWh · 805 kW · 700 kg");
+    // no separate capacity or output selection
+    CHECK(view_of(ev, "ev_battery_capacity") == nullptr);
+    CHECK(view_of(ev, "ev_battery_power") == nullptr);
+}
+
+TEST_CASE("ev parts: an unknown battery pack is rejected", "[setup][garage][ev]") {
+    Fixture f;
+    const auto v = rg::validate_setup(f.entry("car_electric"), f.table, f.ctx,
+                                      setup_of("car_electric", {{"ev_battery_pack", std::string("no_such_pack")}}));
+    CHECK_FALSE(v.ok);
+    CHECK(v.message.find("unknown choice") != std::string::npos);
 }
 
 TEST_CASE("ev parts: a setup scales the motors and the battery, and the mass follows", "[setup][garage][ev][part_mass]") {
@@ -113,7 +137,7 @@ TEST_CASE("ev parts: a setup scales the motors and the battery, and the mass fol
     const rg::MaterialisedSetup m0 = rg::materialise_setup(e, f.table, f.ctx, setup_of("car_electric", {}), d0.path());
     const rg::MaterialisedSetup m1 = rg::materialise_setup(
         e, f.table, f.ctx,
-        setup_of("car_electric", {{"ev_motor_scale", 1.5}, {"ev_battery_capacity", 1.2}, {"ev_battery_power", 2.0}}),
+        setup_of("car_electric", {{"ev_motor_scale", 1.5}, {"ev_battery_pack", std::string("long_range")}}),
         d1.path());
     INFO(m0.error);
     INFO(m1.error);
@@ -140,10 +164,11 @@ TEST_CASE("ev parts: a setup scales the motors and the battery, and the mass fol
     }
     const nlohmann::json& b0 = component(v0, "battery");
     const nlohmann::json& b1 = component(v1, "battery");
-    CHECK(b1.at("capacity_kwh").get<double>() == Approx(b0.at("capacity_kwh").get<double>() * 1.2).epsilon(1e-9));
-    CHECK(b1.at("mass_kg").get<double>() == Approx(b0.at("mass_kg").get<double>() * 1.2).epsilon(1e-9));
-    CHECK(b1.at("max_discharge_w").get<double>() == Approx(b0.at("max_discharge_w").get<double>() * 2.0).epsilon(1e-9));
-    CHECK(b1.at("max_charge_w") == b0.at("max_charge_w"));
+    // the long-range pack: factors 1.5 / 1.15 / 1.15 / 1.4 on energy, discharge, charge and mass
+    CHECK(b1.at("capacity_kwh").get<double>() == Approx(b0.at("capacity_kwh").get<double>() * 1.5).epsilon(1e-9));
+    CHECK(b1.at("max_discharge_w").get<double>() == Approx(b0.at("max_discharge_w").get<double>() * 1.15).epsilon(1e-9));
+    CHECK(b1.at("max_charge_w").get<double>() == Approx(b0.at("max_charge_w").get<double>() * 1.15).epsilon(1e-9));
+    CHECK(b1.at("mass_kg").get<double>() == Approx(b0.at("mass_kg").get<double>() * 1.4).epsilon(1e-9));
     CHECK(b1.at("initial_soc") == b0.at("initial_soc"));
 
     // part masses: the battery and motor nodes carry the new masses, the car total grows by exactly the difference

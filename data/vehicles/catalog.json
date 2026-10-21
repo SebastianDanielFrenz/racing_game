@@ -589,7 +589,7 @@
       },
       "setup": {
         "options_note": "every option but brake_bias: the car has rear brakes only (no front corner to bias towards)",
-        "options": ["final_drive", "gear_ratios", "clutch_capacity", "shift_clutch_capacity", "ev_motor_scale", "ev_battery_capacity", "ev_battery_power", "brake_force", "spring_front", "spring_rear", "damper_front", "damper_rear", "arb_front", "arb_rear", "tyre_front", "tyre_rear", "assist_auto_clutch", "assist_auto_blip", "assist_auto_shift", "assist_unit", "paint", "rim", "folding_top", "engine_rev_limit", "engine_throttle_response", "engine_install", "fuel", "gearbox_install", "drive_layout", "diff_front", "diff_rear", "turbo_install", "turbo_install_n2o", "turbo_kit", "charge_piping", "engine_bore", "engine_rods", "engine_pistons", "engine_crankshaft", "engine_valve_springs", "turbo_boost_target", "nitrous_install_hyper", "nitrous_install_sedan", "cooling_radiator", "cooling_fan", "cooling_oil_cooler", "cooling_block_cooling", "trim_driver_seat", "trim_rear_seats", "trim_audio", "trim_door_trim", "trim_dashboard", "trim_sound_deadening", "trim_carpets", "trim_spare_wheel", "trim_fasteners", "trim_hood"],
+        "options": ["final_drive", "gear_ratios", "clutch_capacity", "shift_clutch_capacity", "ev_motor_scale", "ev_battery_pack", "brake_force", "spring_front", "spring_rear", "damper_front", "damper_rear", "arb_front", "arb_rear", "tyre_front", "tyre_rear", "assist_auto_clutch", "assist_auto_blip", "assist_auto_shift", "assist_unit", "paint", "rim", "folding_top", "engine_rev_limit", "engine_throttle_response", "engine_install", "fuel", "gearbox_install", "drive_layout", "diff_front", "diff_rear", "turbo_install", "turbo_install_n2o", "turbo_kit", "charge_piping", "engine_bore", "engine_rods", "engine_pistons", "engine_crankshaft", "engine_valve_springs", "turbo_boost_target", "nitrous_install_hyper", "nitrous_install_sedan", "cooling_radiator", "cooling_fan", "cooling_oil_cooler", "cooling_block_cooling", "trim_driver_seat", "trim_rear_seats", "trim_audio", "trim_door_trim", "trim_dashboard", "trim_sound_deadening", "trim_carpets", "trim_spare_wheel", "trim_fasteners", "trim_hood"],
         "tyre_fitment": {
           "front": {
             "rims_in": [
@@ -1009,8 +1009,7 @@
           "tyre_front",
           "tyre_rear",
           "ev_motor_scale",
-          "ev_battery_capacity",
-          "ev_battery_power"
+          "ev_battery_pack"
         ]
       },
       "declared_engine": {
