@@ -1,0 +1,59 @@
+{
+  "format": "rg.weather_schedule/1",
+  "description": "Changing weather (rg::WeatherAuthority, core/include/rg/weather_authority.h): a semi-Markov chain over the sky.json weather presets. Each segment lasts a log-normal time with the state's mean_hours (game hours, spread duration_sigma, at least min_duration_game_s); the next preset is drawn from the season's next.<state> weights (the season is the UT month at the change); a candidate that is too warm or too cold at the change (climate.json temperature with that preset's cloud cover) is swapped for too_warm / too_cold. Changes blend over transition_game_s (sky cloud cover; precipitation and thunder switch halfway; the physics weather ramps over the same time). The chain is a pure function of seed, the start time and the start preset, so a server can run it and send rg.weather_broadcast/1 messages. All numbers [AS]: a plausible central-European pattern (more thunderstorms and hail in summer, snow only below freezing), not fitted to station data.",
+  "default_mode": "dynamic",
+  "seed": 20261021,
+  "transition_game_s": 1800,
+  "min_duration_game_s": 2700,
+  "duration_sigma": 0.5,
+  "states": {
+    "clear": {"mean_hours": 8},
+    "partly_cloudy": {"mean_hours": 6},
+    "overcast": {"mean_hours": 6},
+    "rain": {"mean_hours": 3, "min_air_temp_c": 0.5, "too_cold": "snow"},
+    "snow": {"mean_hours": 4, "max_air_temp_c": 1.5, "too_warm": "rain"},
+    "hail": {"mean_hours": 0.75, "min_air_temp_c": 8.0, "too_cold": "rain"},
+    "thunder": {"mean_hours": 1.5, "min_air_temp_c": 12.0, "too_cold": "rain"}
+  },
+  "seasons": [
+    {
+      "id": "winter",
+      "months": [12, 1, 2],
+      "next": {
+        "clear": {"partly_cloudy": 0.6, "overcast": 0.4},
+        "partly_cloudy": {"clear": 0.3, "overcast": 0.6, "rain": 0.1},
+        "overcast": {"partly_cloudy": 0.35, "rain": 0.4, "snow": 0.25},
+        "rain": {"overcast": 0.7, "partly_cloudy": 0.3},
+        "snow": {"overcast": 0.7, "partly_cloudy": 0.3},
+        "hail": {"rain": 0.6, "overcast": 0.4},
+        "thunder": {"rain": 0.6, "overcast": 0.4}
+      }
+    },
+    {
+      "id": "spring_autumn",
+      "months": [3, 4, 5, 9, 10, 11],
+      "next": {
+        "clear": {"partly_cloudy": 0.7, "overcast": 0.3},
+        "partly_cloudy": {"clear": 0.35, "overcast": 0.45, "rain": 0.15, "thunder": 0.04, "hail": 0.01},
+        "overcast": {"partly_cloudy": 0.4, "rain": 0.55, "snow": 0.05},
+        "rain": {"overcast": 0.6, "partly_cloudy": 0.4},
+        "snow": {"overcast": 0.6, "partly_cloudy": 0.4},
+        "hail": {"rain": 0.5, "partly_cloudy": 0.5},
+        "thunder": {"rain": 0.6, "partly_cloudy": 0.4}
+      }
+    },
+    {
+      "id": "summer",
+      "months": [6, 7, 8],
+      "next": {
+        "clear": {"partly_cloudy": 0.85, "overcast": 0.15},
+        "partly_cloudy": {"clear": 0.45, "overcast": 0.3, "rain": 0.1, "thunder": 0.12, "hail": 0.03},
+        "overcast": {"partly_cloudy": 0.45, "rain": 0.5, "thunder": 0.05},
+        "rain": {"overcast": 0.5, "partly_cloudy": 0.5},
+        "snow": {"overcast": 0.5, "partly_cloudy": 0.5},
+        "hail": {"rain": 0.6, "partly_cloudy": 0.4},
+        "thunder": {"rain": 0.6, "partly_cloudy": 0.4}
+      }
+    }
+  ]
+}

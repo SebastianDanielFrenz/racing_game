@@ -1,11 +1,13 @@
 #include "rg_sky.h"
 
 #include "rg/climate.h"
+#include "rg/weather_authority.h"
 
 #include "rg/world_config.h"
 
 #include <godot_cpp/core/class_db.hpp>
 #include <godot_cpp/variant/color.hpp>
+#include <godot_cpp/variant/utility_functions.hpp>
 #include <godot_cpp/variant/vector3.hpp>
 
 namespace rg_godot {
@@ -39,6 +41,15 @@ bool RgSky::initialize(const godot::String& sky_json_path, const godot::String& 
     } else {
         climate_error_ = godot::String::utf8(climate_err.c_str());
     }
+    // Changing weather: the local authority (single-player's in-process weather server), after the climate.
+    std::vector<std::string> ids;
+    for (const auto& p : tw_->config().weather_presets) ids.push_back(p.id);
+    std::string schedule_err;
+    if (auto schedule = rg::load_weather_schedule(sky_path.substr(0, slash == std::string::npos ? 0 : slash + 1) + "weather_schedule.json",
+                                                  ids, &schedule_err))
+        tw_->set_weather_schedule(*schedule);
+    else
+        godot::UtilityFunctions::push_warning(godot::String::utf8(("sky: weather stays as picked: " + schedule_err).c_str()));
     return true;
 }
 
@@ -71,6 +82,8 @@ godot::Dictionary RgSky::get_state() {
     d["weather_id"] = godot::String(s.weather_id.c_str());
     d["weather_label"] = godot::String(s.weather_label.c_str());
     d["cloud_cover"] = s.weather.cloud_cover;
+    d["weather_dynamic"] = s.weather_dynamic;
+    d["weather_blend"] = s.weather_blend;
     d["air_temp_c"] = s.air_temp_c; // NaN without a climate
     d["physics_weather"] = tw_->climate() != nullptr;
     d["illuminance_lux"] = s.lighting.illuminance_lux;

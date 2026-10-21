@@ -70,6 +70,7 @@ add_executable(rg_unit_tests
   test_wet_look.cpp
   test_rail_meshes.cpp
   test_session_weather.cpp
+  test_weather_authority.cpp
   test_crops.cpp
   test_controls.cpp
   test_control_capture.cpp

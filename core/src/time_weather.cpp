@@ -1,6 +1,7 @@
 #include "rg/time_weather.h"
 
 #include "rg/climate.h"
+#include "rg/weather_authority.h"
 
 #include "json_util.h"
 #include "rg/world_config.h"
@@ -326,8 +327,60 @@ TimeWeather::TimeWeather(SkyConfig config, GeoLocation location)
         start = {tm.tm_year + 1900, tm.tm_mon + 1, tm.tm_mday};
     }
     clock_ = TimeController(start, config_.start_local_time_h, config_.default_rate, config_.time_zone);
-    for (std::size_t i = 0; i < config_.weather_presets.size(); ++i)
-        if (config_.weather_presets[i].id == config_.default_weather) weather_ = i;
+    weather_.weather_id = weather_.from_id = config_.default_weather;
+    weather_.change_game_s = game_seconds(clock_);
+}
+
+TimeWeather::~TimeWeather() = default;
+TimeWeather::TimeWeather(TimeWeather&&) noexcept = default;
+TimeWeather& TimeWeather::operator=(TimeWeather&&) noexcept = default;
+
+void TimeWeather::advance(double real_dt_s) {
+    clock_.advance(real_dt_s);
+    if (real_dt_s > 0) exposure_dt_ += real_dt_s;
+    if (local_ && local_->update(game_seconds(clock_))) apply_broadcast(local_->current());
+}
+
+const WeatherPreset* TimeWeather::find_preset(const std::string& id) const {
+    for (const auto& p : config_.weather_presets)
+        if (p.id == id) return &p;
+    return nullptr;
+}
+
+void TimeWeather::set_weather_local(const std::string& id) {
+    WeatherBroadcast b;
+    b.revision = weather_.revision + 1;
+    b.from_id = weather_.weather_id;
+    b.weather_id = id;
+    b.change_game_s = game_seconds(clock_);
+    apply_broadcast(b);
+}
+
+void TimeWeather::set_weather_schedule(const WeatherScheduleConfig& schedule) {
+    remote_ = false;
+    local_ = std::make_unique<WeatherAuthority>(schedule, config_.weather_presets, climate_, location_, game_seconds(clock_),
+                                                weather_.weather_id, weather_.revision);
+    apply_broadcast(local_->current());
+}
+
+void TimeWeather::use_remote_weather() {
+    local_.reset();
+    remote_ = true;
+}
+
+bool TimeWeather::apply_broadcast(const WeatherBroadcast& b) {
+    if (b.revision <= weather_.revision || find_preset(b.weather_id) == nullptr) return false;
+    const bool snap = b.transition_s <= 0 && b.weather_id != weather_.weather_id;
+    weather_ = b;
+    if (find_preset(weather_.from_id) == nullptr) weather_.from_id = weather_.weather_id;
+    if (snap) ++weather_snaps_;
+    return true;
+}
+
+std::vector<std::string> TimeWeather::take_weather_requests() {
+    std::vector<std::string> out;
+    out.swap(requests_);
+    return out;
 }
 
 bool TimeWeather::weather_wired(const WeatherPreset& p) const {
@@ -346,10 +399,20 @@ TimeWeatherState TimeWeather::state() const {
     const double jd = clock_.julian_day_ut();
     s.sun = sun_position(jd, location_.latitude_deg, location_.longitude_deg);
     s.moon = moon_position(jd, location_.latitude_deg, location_.longitude_deg);
-    const auto& preset = config_.weather_presets[weather_];
-    s.weather = preset.state;
-    s.weather_id = preset.id;
-    s.weather_label = preset.label;
+    const WeatherPreset* to = find_preset(weather_.weather_id);
+    const WeatherPreset* from = find_preset(weather_.from_id);
+    if (to == nullptr) to = &config_.weather_presets.front();
+    if (from == nullptr) from = to;
+    const double now = game_seconds(clock_);
+    s.weather_blend = weather_.transition_s > 0 ? std::clamp((now - weather_.change_game_s) / weather_.transition_s, 0.0, 1.0) : 1.0;
+    s.weather = s.weather_blend >= 0.5 ? to->state : from->state;
+    s.weather.cloud_cover = from->state.cloud_cover + (to->state.cloud_cover - from->state.cloud_cover) * s.weather_blend;
+    s.weather_id = to->id;
+    s.weather_label = to->label;
+    s.weather_dynamic = weather_.dynamic;
+    s.weather_revision = weather_.revision;
+    s.next_weather_change_game_s = weather_.next_change_game_s;
+    if (weather_.transition_s > 0) s.weather_ramp_s = std::max(0.0, weather_.change_game_s + weather_.transition_s - now);
     s.lighting = sky_lighting(config_.lighting, s.sun, s.moon, s.weather.cloud_cover);
     s.icon = weather_icon(s.weather, s.sun.elevation_deg, config_.icon);
     s.rate = clock_.rate();
@@ -366,10 +429,10 @@ TimeWeatherState TimeWeather::state() const {
 
 TimeWeatherState TimeWeather::sample() {
     TimeWeatherState s = state();
-    if (clock_.revision() != exposure_revision_ || weather_ != exposure_weather_) {
+    if (clock_.revision() != exposure_revision_ || weather_snaps_ != exposure_weather_) {
         exposure_.reset(s.lighting.illuminance_lux);
         exposure_revision_ = clock_.revision();
-        exposure_weather_ = weather_;
+        exposure_weather_ = weather_snaps_;
     } else {
         exposure_.update(s.lighting.illuminance_lux, exposure_dt_);
     }
@@ -389,10 +452,12 @@ std::vector<SkyMenuItem> TimeWeather::menu() const {
         else std::snprintf(label, sizeof label, "x%g", r);
         items.push_back({"rate:" + std::to_string(i), "rate", label, true, r == clock_.rate(), ""});
     }
-    for (std::size_t i = 0; i < config_.weather_presets.size(); ++i) {
-        const auto& p = config_.weather_presets[i];
+    // "Changing" (the schedule) exists only where something runs one: a local authority, or a server (remote).
+    if (local_ || remote_) items.push_back({"weather:auto", "weather", "Changing", true, weather_.dynamic, ""});
+    for (const auto& p : config_.weather_presets) {
         const bool wired = weather_wired(p);
-        items.push_back({"weather:" + p.id, "weather", p.label, wired, i == weather_, wired ? "" : config_.unwired_reason});
+        items.push_back({"weather:" + p.id, "weather", p.label, wired, !weather_.dynamic && p.id == weather_.weather_id,
+                         wired ? "" : config_.unwired_reason});
     }
     return items;
 }
@@ -407,9 +472,12 @@ bool TimeWeather::choose(const std::string& id) {
                 if (p.id == key) clock_.set_local_time_h(p.local_time_h);
         } else if (item.group == "rate") {
             clock_.set_rate(config_.rate_options[std::stoul(key)]);
+        } else if (remote_) {
+            requests_.push_back(id); // the server decides; its broadcast comes back through apply_broadcast()
+        } else if (local_) {
+            if (local_->handle_request(id, game_seconds(clock_))) apply_broadcast(local_->current());
         } else {
-            for (std::size_t i = 0; i < config_.weather_presets.size(); ++i)
-                if (config_.weather_presets[i].id == key) weather_ = i;
+            set_weather_local(key);
         }
         return true;
     }
