@@ -5,7 +5,7 @@
 // motor efficiency, and the engine's own WOT curve - plus physics' pure envelope functions (motor_full_load_point,
 // battery_discharge_budget_w, fuel_cell_supply_w), which are a separate code path from the stepped dyno.
 // Every topology the garage offers: the catalogue EV (car_electric), the fuel-cell conversion, the battery hybrid (sedan
-// and hypercar), a DCT hybrid (no curve, a reason), and combustion cars unchanged.
+// and hypercar), automatic / dual-clutch / CVT hybrids (held gear, 2026-10-21), and combustion cars unchanged.
 #include "rg/garage_dyno.h"
 #include "rg/engine_store.h"
 #include "rg/gearbox_catalog.h"
@@ -105,6 +105,7 @@ double closed_form_torque(const pd::ElectricMotorDesc& m, double rpm, double bud
     if (wanted_w > budget_w) t *= budget_w / wanted_w;
     return t;
 }
+std::string ordinal_of(int n) { return std::to_string(n) + (n % 10 == 1 && n != 11 ? "st" : n % 10 == 2 && n != 12 ? "nd" : n % 10 == 3 && n != 13 ? "rd" : "th"); }
 rg::DynoResult wait(rg::GarageDyno& dyno) {
     const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(180);
     while (dyno.result().busy && std::chrono::steady_clock::now() < deadline) std::this_thread::sleep_for(std::chrono::milliseconds(10));
@@ -382,15 +383,61 @@ TEST_CASE("dyno determinism: 1 and 4 workers give the same points", "[garage_dyn
     }
 }
 
-TEST_CASE("dyno: a DCT hybrid gets a reason, not a curve; combustion cars are not electrified", "[garage_dyno][electric]") {
+TEST_CASE("dyno hybrid sedan: automatic, dual-clutch and CVT gearboxes are measured in a held gear", "[garage_dyno][electric][hybrid]") {
+    // physics_sim holds the gear (AutoTransmission::set_dyno_hold: TCU frozen, starting clutch / converter locked, a CVT's
+    // variator held at the virtual step's ratio). Sabotage: dropping the physics hold (set_dyno_gear_hold on an auto box) lets
+    // the TCU pick the gear, and the crank / motor speeds below leave the axis relation (verified in physics_sim A1-A4).
     Fixture f;
     ps::jobs::JobSystem pool(4);
-    const auto dct = f.load("car_sedan", {{"powertrain_install", std::string("hybrid_battery")}, {"gearbox_install", std::string("dct_7")}}, &pool);
-    const auto plan = rg::plan_electrified_dyno(dct, f.reference);
-    REQUIRE(plan.has_value());
-    CHECK_THAT(plan->unsupported_reason, Catch::Matchers::ContainsSubstring("dual-clutch"));
-    CHECK(rg::measure_electrified_dyno(dct, f.reference, *plan, &pool, nullptr, [](const auto&, int) {}).empty());
-    CHECK_FALSE(rg::plan_electrified_dyno(f.load("car_sedan", {}, &pool), f.reference).has_value());
+    for (const char* box : {"auto_8at", "dct_7", "cvt_converter", "cvt_clutch"}) {
+        INFO(box);
+        std::map<std::string, rg::SetupValue> values = {{"powertrain_install", std::string("hybrid_battery")}, {"gearbox_install", std::string(box)}};
+        // A CVT is rated 250 N*m, below the stock hybrid's N52 (the garage refuses that pairing): it gets the 2.0 L four.
+        if (std::string(box).rfind("cvt", 0) == 0) values["engine_install"] = std::string("default:i4_2l_na");
+        const auto vehicle = f.load("car_sedan", values, &pool);
+        const auto plan = rg::plan_electrified_dyno(vehicle, f.reference);
+        REQUIRE(plan.has_value());
+        INFO(plan->unsupported_reason);
+        CHECK(plan->unsupported_reason.empty());
+        CHECK(plan->topology == rg::DynoTopology::Hybrid);
+        CHECK(plan->axis == rg::DynoAxis::EngineRpm);
+        const auto gearbox = components<pd::GearboxDesc>(vehicle).at(0).second;
+        const bool cvt = gearbox.type == pd::GearboxType::Cvt;
+        REQUIRE(plan->gear >= 1);
+        REQUIRE(plan->gear <= static_cast<int>(gearbox.forward_ratios.size()));
+        // The gear whose ratio is nearest the reference ratio.
+        for (int g = 1; g <= static_cast<int>(gearbox.forward_ratios.size()); ++g)
+            CHECK(std::abs(gearbox.forward_ratios[static_cast<std::size_t>(plan->gear - 1)] - f.reference.reference_gear_ratio) <=
+                  std::abs(gearbox.forward_ratios[static_cast<std::size_t>(g - 1)] - f.reference.reference_gear_ratio) + 1e-12);
+        CHECK_THAT(plan->caption, Catch::Matchers::ContainsSubstring(cvt ? "at ratio" : ordinal_of(plan->gear)));
+        const auto engine = components<pd::TorqueMapEngineDesc>(vehicle).at(0).second;
+        const auto battery = components<pd::BatteryDesc>(vehicle).at(0).second;
+        pd::ElectricMotorDesc motor;
+        for (const auto& [id, m] : components<pd::ElectricMotorDesc>(vehicle)) if (id == "conversion_motor") motor = m;
+        double reduction = 0;
+        for (const auto& [id, g] : components<pd::GearPairDesc>(vehicle)) if (id == "conversion_reduction") reduction = g.ratio;
+        REQUIRE(reduction == 2.2);
+        // A starting-clutch box starts above its anti-stall rpm (the clutch opens below it), the others at idle.
+        CHECK(plan->axis_points.front() >= engine.idle_rpm);
+        CHECK(plan->axis_points.back() == engine.limiter.rpm - engine.limiter.hysteresis_rpm - 1);
+        const auto points = rg::measure_electrified_dyno(vehicle, f.reference, *plan, &pool, nullptr, [](const auto&, int) {});
+        REQUIRE(points.size() == 33);
+        for (const auto& p : points) {
+            INFO("rpm " << p.rpm);
+            CHECK(p.converged);
+            CHECK(p.engine_running);
+            CHECK(p.gear == (cvt ? 1 : plan->gear));
+            CHECK(p.engine_rpm == Approx(p.rpm).epsilon(0.001)); // clutch / converter locked at every point
+            CHECK(p.engine_torque_nm == Approx(engine.wot_torque_nm_vs_rpm.evaluate(p.rpm)).epsilon(0.01));
+            const double motor_rpm = p.rpm / gearbox.forward_ratios[static_cast<std::size_t>(plan->gear - 1)] * reduction;
+            REQUIRE(p.motors.size() == 1);
+            CHECK(p.motors[0].rpm == Approx(motor_rpm).epsilon(0.002));
+            CHECK(p.motors[0].torque_nm == Approx(closed_form_torque(motor, motor_rpm, battery.max_discharge_w)).epsilon(0.01).margin(1));
+            CHECK(p.power_kw < p.engine_power_kw + p.electric_power_kw);
+            CHECK(p.power_kw > 0.9 * (p.engine_power_kw + p.electric_power_kw));
+        }
+    }
+    CHECK_FALSE(rg::plan_electrified_dyno(f.load("car_sedan", {}, &pool), f.reference).has_value()); // combustion: not electrified
 }
 
 TEST_CASE("dyno worker: EV, DCT hybrid and the unchanged combustion sweep", "[garage_dyno][electric]") {
@@ -419,8 +466,10 @@ TEST_CASE("dyno worker: EV, DCT hybrid and the unchanged combustion sweep", "[ga
     dyno.request(request("car_sedan", {{"powertrain_install", std::string("hybrid_battery")}, {"gearbox_install", std::string("dct_7")}}, "dct"));
     auto dct = wait(dyno);
     CHECK(dct.error.empty());
-    CHECK(dct.points.empty());
-    CHECK_FALSE(dct.unsupported_reason.empty());
+    CHECK(dct.unsupported_reason.empty()); // dual-clutch boxes are measured since 2026-10-21 (held gear)
+    CHECK(dct.topology == rg::DynoTopology::Hybrid);
+    CHECK(dct.points.size() == 33);
+    CHECK(dct.reference_gear > 0);
     CHECK(dct.key == "dct");
     // Combustion: the classic crank sweep, the WOT curve exactly at the 33-point grid (as before the electric dyno).
     dyno.request(request("car_sedan", {}, "ice"));
