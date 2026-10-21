@@ -6,6 +6,7 @@
 #include "rg/vehicle_load.h"
 
 #include "driveline_swap_json.h"
+#include "ev_motor_json.h"
 #include "powertrain_swap_json.h"
 #include "json_util.h"
 
@@ -276,6 +277,9 @@ struct Files {
     // Drivetrain swap: the driveline right after a drive layout choice (before an axle differential choice); unset =
     // the car's own. The differential options show the axle's kind here as their stock.
     std::optional<DrivelineInfo> layout_info;
+    // EV motors (catalogs "ev_layouts"/"ev_motor_units"): the vehicle file as the powertrain conversion left it, before any
+    // motor layout or unit choice. The layout and unit options show what it has as their stock.
+    json ev_stock;
     // The removable / swappable parts as fitted (catalog "interior", then the part choices); a removed part is absent.
     std::vector<FittedPart> trim;
     // Automatic gearbox swap: what installing a clutch-to-clutch box changed on the car (for the player).
@@ -368,6 +372,7 @@ bool load_files(const CatalogEntry& entry, Files& files, std::string* err) {
     files.vehicle.path = norm_path(entry.vehicle_path);
     if (!read_doc(files.vehicle.path, files.vehicle.base, err)) return false;
     files.vehicle.work = files.vehicle.base;
+    files.ev_stock = files.vehicle.base;
     files.trim.clear();
     for (const auto& [slot, key] : entry.interior) files.trim.push_back(FittedPart{slot, key, 1.0, ""});
     const std::string dir = dir_of(files.vehicle.path);
@@ -503,6 +508,39 @@ std::string driveline_fit_error(const Files& files, const SetupOptionDef& def, c
         return std::string("the ") + def.axle + " axle is not driven";
     }
     return {};
+}
+
+bool is_ev_catalog(const SetupOptionDef& def) { return def.catalog == "ev_layouts" || def.catalog == "ev_motor_units"; }
+
+// EV motors: why the option cannot apply to the car as it stands now (its working vehicle file), or "".
+std::string ev_fit_error(const Files& files, const SetupOptionDef& def, const SetupContext& ctx) {
+    if (!ctx.ev_motors) return "the electric motor catalogue is unavailable";
+    const EvMotorInfo info = detail::describe_ev_motors_json(files.vehicle.work, ctx.ev_motors.get());
+    if (!info.swappable) return "this car's motors cannot be changed: " + info.reason;
+    if (def.catalog == "ev_motor_units" && (def.axle == "front" ? info.front : info.rear) == EvAxleDrive::None) {
+        return std::string("the ") + def.axle + " axle is not driven";
+    }
+    return {};
+}
+
+// A unit choice for an axle the chosen layout does not drive: it waits (the choice stays in the setup and applies again when
+// the axle is driven), it is no error.
+bool ev_axle_idle(const Files& files, const SetupOptionDef& def, const SetupContext& ctx) {
+    if (def.catalog != "ev_motor_units" || !ctx.ev_motors) return false;
+    const EvMotorInfo info = detail::describe_ev_motors_json(files.vehicle.work, ctx.ev_motors.get());
+    return info.swappable && (def.axle == "front" ? info.front : info.rear) == EvAxleDrive::None;
+}
+
+bool has_electric_motor(const json& vehicle) {
+    const auto pt = vehicle.find("powertrain");
+    if (pt == vehicle.end() || !pt->is_object()) return false;
+    const auto comps = pt->find("components");
+    if (comps == pt->end() || !comps->is_array()) return false;
+    for (const json& c : *comps) {
+        std::string ty;
+        if (c.is_object() && detail::get_string(c, "type", ty) && ty == "electric_motor") return true;
+    }
+    return false;
 }
 
 // "" when the installed engine's internals can be swapped, else the reason in the player's words.
@@ -644,6 +682,7 @@ bool file_choice_fits(Files& files, const SetupOptionDef& def, const CatalogEntr
     if (!entry_offers(entry, def.id)) return false;
     if(def.catalog=="powertrains")return !powertrain_parts(ctx).empty();
     if (is_driveline_catalog(def)) return driveline_fit_error(files, def, ctx).empty();
+    if (is_ev_catalog(def)) return ev_fit_error(files, def, ctx).empty();
     if (def.catalog.empty()) {
         // "*" in compatible_engines: the part does not depend on the engine (e.g. the assist electronics).
         const std::string& engine = files.engine_stem;
@@ -778,6 +817,7 @@ std::string install_catalog_part(Files& files, const SetupOptionDef& def, const 
             if(!e)return "conversion engine is missing from the engine catalogue";
             files.swapped=*e;
         }
+        files.ev_stock=files.vehicle.work; // the motors the conversion left are the stock of the motor options
         for(const char* path:{"/powertrain","/controllers","/cooling_system","/engine_thermal_start","/contents_mass"})files.derived_subtrees.push_back(path);
         for(const auto& p:powertrain_parts(ctx))if(p.id==id)files.powertrain_lines.push_back(p.label+": "+p.detail);
         return {};
@@ -791,6 +831,25 @@ std::string install_catalog_part(Files& files, const SetupOptionDef& def, const 
         files.derived_subtrees.push_back("/powertrain/components");
         files.derived_subtrees.push_back("/powertrain/shafts");
         files.layout_info = detail::describe_driveline_json(files.vehicle.work);
+        return {};
+    }
+    if (def.catalog == "ev_layouts") {
+        const EvLayoutEntry* l = ctx.ev_motors->find_layout(id);
+        if (l == nullptr) return def.id + ": \"" + id + "\" is not a motor layout in the catalogue";
+        const std::string e = detail::apply_ev_layout_json(files.vehicle.work, *l);
+        if (!e.empty()) return def.id + ": " + e;
+        // The motors, reductions and shafts are rebuilt by trusted code: exempt from the whitelist like a drive layout swap.
+        files.derived_subtrees.push_back("/powertrain/components");
+        files.derived_subtrees.push_back("/powertrain/shafts");
+        return {};
+    }
+    if (def.catalog == "ev_motor_units") {
+        const EvMotorUnit* u = ctx.ev_motors->find_unit(id);
+        if (u == nullptr) return def.id + ": \"" + id + "\" is not a motor unit in the catalogue";
+        std::vector<int> touched;
+        const std::string e = detail::apply_ev_unit_json(files.vehicle.work, def.axle == "front", *u, &touched);
+        if (!e.empty()) return def.id + ": " + e;
+        for (const int index : touched) files.derived_subtrees.push_back("/powertrain/components/" + std::to_string(index));
         return {};
     }
     if (def.catalog == "differentials") {
@@ -914,6 +973,14 @@ std::string install_file_part(Files& files, const SetupOptionDef& def, const Cat
         if (std::get<std::string>(value) == "stock") return {}; // keep the driveline as it is
         const std::string why = driveline_fit_error(files, def, ctx);
         if (!why.empty()) return def.id + ": " + why;
+    }
+    if (is_ev_catalog(def) && entry_offers(entry, def.id)) {
+        if (std::get<std::string>(value) == "stock") return {}; // keep the motors as they are
+        const std::string why = ev_fit_error(files, def, ctx);
+        if (!why.empty()) {
+            if (ev_axle_idle(files, def, ctx)) return {};
+            return def.id + ": " + why;
+        }
     }
     if (!file_choice_fits(files, def, entry, ctx)) {
         if (def.catalog == "turbo_kits" && entry_offers(entry, def.id)) return def.id + ": " + turbo_kit_blocker(files, ctx);
@@ -1658,6 +1725,13 @@ const SetupOptionDef* SetupOptionTable::find(const std::string& id) const {
     return nullptr;
 }
 
+const RetiredOption* SetupOptionTable::find_retired(const std::string& id) const {
+    for (const RetiredOption& r : retired) {
+        if (r.id == id) return &r;
+    }
+    return nullptr;
+}
+
 // ---- numbers in the player's units (garage numeric inputs) ---------------------------------------------------
 
 NumberEntry number_entry(const OptionView& view, int index) {
@@ -1935,8 +2009,9 @@ std::optional<SetupOptionTable> parse_setup_options(const std::string& json_text
             detail::get_string(o, "catalog", d.catalog);
             if (!d.catalog.empty() && d.catalog != "engines" && d.catalog != "fuels" && d.catalog != "gearboxes" &&
                 d.catalog != "drive_layouts" && d.catalog != "differentials" && d.catalog != "turbo_kits" && d.catalog != "charge_piping" &&
-                d.catalog != "engine_internals" && d.catalog != "cooling_upgrades" && d.catalog != "powertrains") {
-                return bad(where + ": \"catalog\" must be \"engines\", \"fuels\", \"gearboxes\", \"drive_layouts\", \"differentials\", \"turbo_kits\", \"charge_piping\", \"engine_internals\" or \"cooling_upgrades\"");
+                d.catalog != "engine_internals" && d.catalog != "cooling_upgrades" && d.catalog != "powertrains" &&
+                d.catalog != "ev_layouts" && d.catalog != "ev_motor_units") {
+                return bad(where + ": \"catalog\" must be \"engines\", \"fuels\", \"gearboxes\", \"drive_layouts\", \"differentials\", \"turbo_kits\", \"charge_piping\", \"engine_internals\", \"cooling_upgrades\", \"powertrains\", \"ev_layouts\" or \"ev_motor_units\"");
             }
             detail::get_string(o, "cooling_part", d.cooling_part);
             if ((d.catalog == "cooling_upgrades") != !d.cooling_part.empty()) {
@@ -1960,6 +2035,12 @@ std::optional<SetupOptionTable> parse_setup_options(const std::string& json_text
             }
             if (d.catalog == "differentials" && d.axle != "front" && d.axle != "rear") {
                 return bad(where + ": a differential choice needs \"axle\": front or rear");
+            }
+            if ((d.catalog == "ev_layouts" || d.catalog == "ev_motor_units") && d.file != "vehicle") {
+                return bad(where + ": an EV motor option edits the vehicle file");
+            }
+            if (d.catalog == "ev_motor_units" && d.axle != "front" && d.axle != "rear") {
+                return bad(where + ": a motor unit choice needs \"axle\": front or rear");
             }
             if (!d.catalog.empty()) {
                 if (o.contains("parts") || o.contains("compatible_engines")) {
@@ -1990,6 +2071,21 @@ std::optional<SetupOptionTable> parse_setup_options(const std::string& json_text
             }
         }
         table.options.push_back(std::move(d));
+    }
+    // Option ids that no longer exist: a saved setup that still carries one loads (see RetiredOption).
+    if (const auto retired = parsed->find("retired_options"); retired != parsed->end()) {
+        if (!retired->is_array()) return bad("\"retired_options\" must be an array");
+        for (const json& r : *retired) {
+            RetiredOption out;
+            if (!r.is_object() || !detail::get_string(r, "id", out.id) || out.id.empty()) return bad("a retired option needs an \"id\"");
+            detail::get_string(r, "replaced_by", out.replaced_by);
+            if (seen.count(out.id) != 0) return bad("retired option \"" + out.id + "\" is also a current option");
+            const SetupOptionDef* by = out.replaced_by.empty() ? nullptr : table.find(out.replaced_by);
+            if (!out.replaced_by.empty() && (by == nullptr || by->kind != OptionKind::Scale || by->slider)) {
+                return bad("retired option \"" + out.id + "\": \"replaced_by\" must name a scale option with min/max");
+            }
+            table.retired.push_back(std::move(out));
+        }
     }
     return table;
 }
@@ -2049,6 +2145,7 @@ std::optional<VehicleSetup> parse_setup(const std::string& json_text, const Setu
     if (options == parsed->end() || !options->is_object()) return bad("\"options\" must be an object");
     for (auto it = options->begin(); it != options->end(); ++it) {
         const SetupOptionDef* def = table.find(it.key());
+        if (def == nullptr && table.find_retired(it.key()) != nullptr) continue; // handled below
         if (def == nullptr) return bad("unknown option \"" + it.key() + "\"");
         const json& v = it.value();
         switch (def->kind) {
@@ -2080,6 +2177,16 @@ std::optional<VehicleSetup> parse_setup(const std::string& json_text, const Setu
                 out.values[it.key()] = v.get<std::string>();
                 break;
         }
+    }
+    // A retired option: its number becomes the replacing option's value (clamped to that option's range) unless the file
+    // already sets that option; anything else about it is dropped.
+    for (auto it = options->begin(); it != options->end(); ++it) {
+        const RetiredOption* retired = table.find_retired(it.key());
+        if (retired == nullptr || table.find(it.key()) != nullptr) continue;
+        const SetupOptionDef* by = retired->replaced_by.empty() ? nullptr : table.find(retired->replaced_by);
+        if (by == nullptr || !it.value().is_number() || !std::isfinite(it.value().get<double>())) continue;
+        if (out.values.count(by->id) != 0) continue;
+        out.values[by->id] = std::clamp(it.value().get<double>(), by->min, by->max);
     }
     return out;
 }
@@ -2152,6 +2259,31 @@ std::vector<SetupPart> parts_of(const SetupOptionDef& def, const SetupContext& c
             p.section = l.layout;
             p.subtitle = l.centre ? l.layout + " · " + diff_kind_label(l.centre->kind) + " centre" : l.layout;
             p.detail = l.description;
+            out.push_back(std::move(p));
+        }
+        return out;
+    }
+    if (def.catalog == "ev_layouts") {
+        if (!ctx.ev_motors) return out;
+        for (const EvLayoutEntry& l : ctx.ev_motors->layouts()) {
+            SetupPart p;
+            p.id = l.id;
+            p.label = l.name;
+            p.subtitle = std::to_string(l.motor_count()) + (l.motor_count() == 1 ? " motor" : " motors");
+            p.detail = l.description;
+            out.push_back(std::move(p));
+        }
+        return out;
+    }
+    if (def.catalog == "ev_motor_units") {
+        if (!ctx.ev_motors) return out;
+        for (const EvMotorUnit& u : ctx.ev_motors->units()) {
+            SetupPart p;
+            p.id = u.id;
+            p.label = u.label;
+            p.subtitle = u.inspiration;
+            p.detail = ev_unit_figures(u);
+            p.mass_kg = u.mass_kg;
             out.push_back(std::move(p));
         }
         return out;
@@ -2379,6 +2511,53 @@ void driveline_choices(const SetupOptionDef& def, const SetupContext& ctx, const
     }
 }
 
+// EV motors: the stock part and the choices of a motor layout or a drive unit option. Stock = what the powertrain conversion
+// left (the car's own motors), never offered again as a catalogue part.
+void ev_choices(const SetupOptionDef& def, const SetupContext& ctx, const Files& files, OptionView& v) {
+    const std::vector<SetupPart> all = parts_of(def, ctx, files);
+    SetupPart stock;
+    stock.id = "stock";
+    std::string stock_part;
+    if (def.catalog == "ev_layouts") {
+        const EvMotorInfo base = detail::describe_ev_motors_json(files.ev_stock, ctx.ev_motors.get());
+        stock.label = "Original layout";
+        if (base.swappable && !base.layout_id.empty()) stock_part = base.layout_id;
+        else if (base.swappable) stock.subtitle = std::to_string(base.motor_count) + " motors";
+        for (const SetupPart& p : all) {
+            if (p.id != stock_part) continue;
+            stock = p; // the catalogue's card for what is fitted
+            stock.id = "stock";
+            stock.label = "Original: " + p.label;
+            stock.subtitle = p.subtitle + " \xc2\xb7 fitted";
+        }
+    } else {
+        const std::optional<EvMotorUnit> own = detail::ev_axle_unit_json(files.ev_stock, def.axle == "front");
+        stock.label = def.axle == "front" ? "Original front motors" : "Original rear motors";
+        if (own) {
+            stock.detail = ev_unit_figures(*own);
+            stock.mass_kg = own->mass_kg;
+            char ratio[48];
+            std::snprintf(ratio, sizeof(ratio), "%.1f:1 reduction", own->reduction_ratio);
+            stock.subtitle = ratio;
+        }
+    }
+    v.parts.push_back(stock);
+    v.choices.push_back("stock");
+    for (const SetupPart& p : all) {
+        if (p.id == stock_part) continue;
+        SetupPart q = p;
+        if (def.catalog == "ev_motor_units") {
+            if (const EvMotorUnit* u = ctx.ev_motors->find_unit(p.id)) {
+                char ratio[48];
+                std::snprintf(ratio, sizeof(ratio), " \xc2\xb7 %.1f:1", u->reduction_ratio);
+                q.subtitle = u->inspiration + ratio;
+            }
+        }
+        v.parts.push_back(std::move(q));
+        v.choices.push_back(p.id);
+    }
+}
+
 // A part choice (weight reduction): swaps, lightens or removes the fitted part of the option's slot.
 std::string apply_part_choice(Files& files, const SetupOptionDef& def, const SetupValue& value) {
     if (!std::holds_alternative<std::string>(value)) return "option \"" + def.id + "\" needs a part id";
@@ -2558,6 +2737,14 @@ SetupModel build_setup_model(const CatalogEntry& entry, const SetupOptionTable& 
                 }
                 v.stock = std::string("stock");
                 v.available = file_choice_fits(files, def, entry, ctx);
+                if (is_ev_catalog(def)) {
+                    ev_choices(def, ctx, files, v);
+                    if (v.choices.size() < 2) v.available = false;
+                    if (!v.available && entry_offers(entry, def.id) && has_electric_motor(files.vehicle.work)) {
+                        v.unavailable_reason = ev_fit_error(files, def, ctx);
+                    }
+                    break;
+                }
                 if (is_driveline_catalog(def)) {
                     driveline_choices(def, ctx, files, v);
                     if (v.choices.size() < 2) v.available = false;

@@ -1,0 +1,126 @@
+{
+  "format": "rg.ev_motor_catalog/1",
+  "source": "Electric motor hardware and motor layouts (owner 2026-10-21: 'add options for single, dual, tri and quad-motor and add different motors with different weight. Base the motor specs loosely on real electric motors on the market'). A drive unit is the whole package a car buys: motor, inverter and the unit's own fixed reduction gear, so mass_kg covers all three and reduction_ratio is the ratio of that gear. Every number is [AS]: a loose, rounded class figure after the published numbers named in each unit's 'source', never a measured or claimed OEM datasheet, and the inspirations are class names only. The shipped car_electric motor (600 N*m, 300 kW, 20000 rpm, 80 kg, 9:1) is the car's own 'stock' unit and is not listed here. regen_torque_nm is a light fraction of the peak torque [AS] (the shipped motor regenerates at one sixth of its peak); efficiency is the motor-and-inverter figure on the same simple scale physics_sim's electric_motor uses. reduction_efficiency is the mesh efficiency of the unit's gear (physics_sim differential or gear_pair 'efficiency'). The layout of the motors is a generic transform of the vehicle file's powertrain (rg/ev_motor.h), never a per-car file: an axle unit is motor -> open differential -> two hubs, a per-wheel unit is motor -> gear_pair (the reduction) -> one hub.",
+  "layouts": [
+    {
+      "id": "single",
+      "name": "Single motor",
+      "front": "none",
+      "rear": "axle",
+      "description": "One drive unit on the rear axle, through an open differential. Lightest and cheapest: the front axle is not driven (rear-wheel drive)."
+    },
+    {
+      "id": "dual",
+      "name": "Dual motor",
+      "front": "axle",
+      "rear": "axle",
+      "description": "One drive unit per axle, each through an open differential (all-wheel drive). The two units get the same torque command: there is no torque vectoring between them."
+    },
+    {
+      "id": "tri",
+      "name": "Tri motor",
+      "front": "axle",
+      "rear": "wheel",
+      "description": "One drive unit on the front axle and one motor on each rear wheel (three motors, all-wheel drive). Every motor gets the same torque command: there is no torque vectoring, and the rear wheels have no differential."
+    },
+    {
+      "id": "quad",
+      "name": "Quad motor",
+      "front": "wheel",
+      "rear": "wheel",
+      "description": "One motor on every wheel (four motors, all-wheel drive, no differentials). Every motor gets the same torque command: there is no torque vectoring. Each motor carries its unit's full figures, so power and weight grow with the motor count."
+    }
+  ],
+  "units": [
+    {
+      "id": "economy_pmsm",
+      "label": "Economy PMSM",
+      "inspiration": "Nissan Leaf EM57 class",
+      "peak_torque_nm": 320,
+      "max_power_w": 110000,
+      "max_rpm": 10400,
+      "inertia_kgm2": 0.06,
+      "efficiency": 0.94,
+      "regen_torque_nm": 55,
+      "mass_kg": 125,
+      "reduction_ratio": 8.2,
+      "reduction_efficiency": 0.98,
+      "source": "[AS] after the published class figures of a 110 kW / 320 N*m, 10400 rpm permanent-magnet synchronous front unit with a single-stage reduction of about 8:1; mass of motor, inverter and reduction rounded from typical 120-130 kg drive units. Not an OEM datasheet."
+    },
+    {
+      "id": "compact_induction",
+      "label": "Compact induction",
+      "inspiration": "Tesla front induction unit class",
+      "peak_torque_nm": 330,
+      "max_power_w": 150000,
+      "max_rpm": 16000,
+      "inertia_kgm2": 0.05,
+      "efficiency": 0.91,
+      "regen_torque_nm": 60,
+      "mass_kg": 70,
+      "reduction_ratio": 9.0,
+      "reduction_efficiency": 0.98,
+      "source": "[AS] after the published class figures of a small AC induction drive unit (about 150 kW, 330 N*m, 16000 rpm, 9:1 single-stage reduction); light because it needs no magnets, lower efficiency than a permanent-magnet machine. Not an OEM datasheet."
+    },
+    {
+      "id": "compact_pmsm",
+      "label": "Compact PMSM",
+      "inspiration": "Tesla Model 3 rear unit class",
+      "peak_torque_nm": 420,
+      "max_power_w": 210000,
+      "max_rpm": 18000,
+      "inertia_kgm2": 0.07,
+      "efficiency": 0.96,
+      "regen_torque_nm": 85,
+      "mass_kg": 85,
+      "reduction_ratio": 9.0,
+      "reduction_efficiency": 0.98,
+      "source": "[AS] after the published class figures of a rear permanent-magnet drive unit of about 210 kW and 420 N*m at up to 18000 rpm with a 9:1 reduction; mass of motor, inverter and gearbox rounded from the typical 80-90 kg of such a unit. Not an OEM datasheet."
+    },
+    {
+      "id": "axial_flux",
+      "label": "Axial flux",
+      "inspiration": "YASA 750 class",
+      "peak_torque_nm": 790,
+      "max_power_w": 200000,
+      "max_rpm": 7000,
+      "inertia_kgm2": 0.035,
+      "efficiency": 0.95,
+      "regen_torque_nm": 150,
+      "mass_kg": 70,
+      "reduction_ratio": 4.2,
+      "reduction_efficiency": 0.98,
+      "source": "[AS] after the published class figures of a 790 N*m, 200 kW peak axial-flux machine of about 37 kg that turns only 7000 rpm, so its own reduction is a low 4:1 (unit mass here adds an assumed inverter and gear to the bare machine). Not an OEM datasheet."
+    },
+    {
+      "id": "high_density_pmsm",
+      "label": "High-density PMSM",
+      "inspiration": "Lucid Air drive unit class",
+      "peak_torque_nm": 640,
+      "max_power_w": 380000,
+      "max_rpm": 20000,
+      "inertia_kgm2": 0.08,
+      "efficiency": 0.97,
+      "regen_torque_nm": 120,
+      "mass_kg": 75,
+      "reduction_ratio": 9.2,
+      "reduction_efficiency": 0.98,
+      "source": "[AS] after the published class figures of a very compact, high-speed (about 20000 rpm) permanent-magnet drive unit near 380 kW and 640 N*m for about 75 kg including its inverter and gear. Not an OEM datasheet."
+    },
+    {
+      "id": "hypercar_oil_cooled",
+      "label": "Hypercar unit",
+      "inspiration": "Rimac Nevera class",
+      "peak_torque_nm": 650,
+      "max_power_w": 450000,
+      "max_rpm": 15000,
+      "inertia_kgm2": 0.09,
+      "efficiency": 0.97,
+      "regen_torque_nm": 300,
+      "mass_kg": 95,
+      "reduction_ratio": 5.4,
+      "reduction_efficiency": 0.98,
+      "source": "[AS] after the published class figures of an oil-cooled hypercar per-wheel drive unit (about 450 kW and 650 N*m, 15000 rpm, a short reduction for a top speed beyond 300 km/h) with a strong regeneration limit; mass of motor, inverter and reduction rounded. Not an OEM datasheet."
+    }
+  ]
+}

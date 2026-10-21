@@ -634,8 +634,34 @@ unchanged). Tests `[strip_visual][seats]`.
 ## Electric drive (PR #55)
 
 A car with an electric motor or a traction battery gets the top category "Electric drive" (Motors, Battery); a tile with
-no available option behind it is hidden unless "Show all" is on (then greyed out with its reason). Motors: the slider
-`ev_motor_scale` (x0.5-2.0 on every motor's peak torque, power, regen torque and mass). Battery: one card per pack of
+no available option behind it is hidden unless "Show all" is on (then greyed out with its reason). Motors (owner
+2026-10-21, branch `claude/ev-motor-layouts`): the motor hardware is a choice, the maximum performance a Tuning slider.
+
+- **Motor layout** (`ev_layout`, catalog `ev_layouts`, battery EVs only, an ICE car converted to `battery_ev` too): Single
+  (one motor, rear axle), Dual (one per axle, the car_electric stock), Tri (one front axle unit + one motor per rear
+  wheel), Quad (one motor per wheel). An axle unit is motor -> open differential -> two hubs; a wheel motor is motor ->
+  reduction `gear_pair` -> one hub (ids `motor_fl..rr`, `reduction_fl..rr`; `front_motor`/`front_diff`,
+  `rear_motor`/`rear_diff` for axle units). It is a generic transform of the powertrain (`core/src/ev_motor.cpp`, like the
+  driveline swap): battery, brakes and controllers are untouched, traction control finds the wheels from the graph. Every
+  motor gets the same torque command - there is no torque vectoring - and carries the unit's full figures, so power and
+  weight grow with the motor count (the battery pack still limits the power).
+- **Front motors / Rear motors** (`ev_front_motors`, `ev_rear_motors`, catalog `ev_motor_units`,
+  `data/electric_motors/motor_catalog.json`, format `rg.ev_motor_catalog/1`): six drive units (motor + inverter +
+  reduction, every figure [AS], class names only): Economy PMSM, Compact induction, Compact PMSM, Axial-flux, High-density
+  PMSM, Hypercar oil-cooled. The cards show power, torque, top rpm and mass. A unit sets peak torque, power, rpm, inertia,
+  efficiency, regen torque and `mass_kg` of every motor of the axle and the ratio/efficiency of its reduction. The
+  axle's card row is hidden while the layout does not drive that axle (Single shows only the rear choice); a choice for an
+  idle axle stays in the setup and applies again when the layout drives it.
+- **Motor output** (`ev_motor_output`, Tuning > Engine, x0.5-1.0): peak torque and power of every motor, not mass, not
+  regen. Replaces `ev_motor_scale`; a saved setup that still has it loads as Motor output (clamped to 0.5-1.0, see
+  `retired_options` in `setup_options.json`).
+- **Reduction ratio** (`ev_reduction_ratio`, Tuning > Rear, x0.8-1.2): every axle differential and wheel reduction, by
+  explicit component id, so it never touches `final_drive` of combustion cars.
+
+Materialisation order is the option table order: powertrain conversion, layout, units, output, ratio, battery pack. The
+dyno takes all five options (`electrified_setup_options` in `data/garage/dyno_reference.json`). Part-mass tree: a
+`gear_pair` is a node with no mass of its own (the unit's `mass_kg` includes the reduction) and a half shaft per wheel;
+a pure EV pays no layout-conversion penalty. Battery: one card per pack of
 `ev_battery_pack` (kind `scale_preset`); a pack sets energy, discharge and charge power and mass together, so there is
 no separate capacity or output selection. On car_electric (stock 90 kWh, 700 kW, 500 kg):
 

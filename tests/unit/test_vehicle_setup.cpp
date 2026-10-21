@@ -446,7 +446,7 @@ static void check_setup_touching_each_option(Fixture& f, const std::vector<std::
                 case rg::OptionKind::Colour: s.values[o.def.id] = std::string("#336699"); break;
             }
         }
-        if (e.id == "car_electric") CHECK(touched == 4); // Its catalogue offers the two axle tyre choices, the motor scale and the battery pack.
+        if (e.id == "car_electric") CHECK(touched == 5); // Its catalogue offers the two axle tyre choices, the Motor output and Reduction ratio sliders and the battery pack (the layout and motor unit choices are catalog options, tested in test_ev_motor_layouts.cpp).
         else CHECK(touched >= 10);
         const auto v = rg::validate_setup(e, f.table, f.ctx, s);
         INFO(v.message);

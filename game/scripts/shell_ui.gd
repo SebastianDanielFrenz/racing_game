@@ -1226,8 +1226,9 @@ func _any_option(id: String) -> Dictionary:
 			return opt
 	return {}
 
-# The electric-drive scale options (setup_options.json group "Electric drive"): motors, battery capacity, battery power.
-const EV_MOTOR_OPTIONS := ["ev_motor_scale"]
+# The electric-drive options (setup_options.json group "Electric drive"): the motor layout and drive-unit choices (the Motors
+# page; Motor output and Reduction ratio are Tuning sliders only) and the battery pack.
+const EV_MOTOR_OPTIONS := ["ev_layout", "ev_front_motors", "ev_rear_motors"]
 const EV_BATTERY_OPTIONS := ["ev_battery_pack"]
 
 # True when at least one of `ids` is available on this car (something the player can actually change).
@@ -1271,9 +1272,17 @@ func _chassis_tiles_unavailable() -> Array:
 	if _weight_reduction_options().is_empty(): out.append("Weight reduction")
 	return out
 
+# True when at least one of `ids` is available now (a choice the player can make, unlike _any_available, which also counts an
+# option that is only unavailable with a reason).
+func _any_offered(ids: Array) -> bool:
+	for id in ids:
+		var opt := _garage_option(str(id))
+		if not opt.is_empty() and bool(opt["available"]): return true
+	return false
+
 func _electric_tiles_unavailable() -> Array:
 	var out: Array = []
-	if not _any_available(EV_MOTOR_OPTIONS): out.append("Motors")
+	if not _any_offered(EV_MOTOR_OPTIONS): out.append("Motors")
 	if not _any_available(EV_BATTERY_OPTIONS): out.append("Battery")
 	return out
 
@@ -1286,15 +1295,19 @@ func _upgrade_categories_unavailable() -> Array:
 	if _drivetrain_tiles_unavailable().size() >= 3: out.append("Drivetrain")
 	return out
 
-# Electric drive / Motors or Battery: a slider row per scale option (the same rows Tuning lists under Engine) and a card per
-# pack for a preset option (the battery: each pack sets energy, power and mass together), each with its help text.
+# Electric drive / Motors or Battery: a card per choice for the motor layout and the front/rear drive units (power, torque,
+# rpm and mass on every card; an option the layout does not use, e.g. the front motors of a single-motor car, is not drawn),
+# a card per pack for a preset option (the battery: each pack sets energy, power and mass together), a slider row for a scale
+# option, each with its help text.
 func _draw_electric_drive(ids: Array) -> void:
 	var count := 0
 	for id in ids:
 		var opt := _garage_option(str(id))
-		if opt.is_empty(): continue
+		if opt.is_empty() or not bool(opt["available"]): continue
 		if str(opt["kind"]) == "scale_preset":
 			_draw_preset_cards(opt)
+		elif str(opt["kind"]) == "file_choice":
+			_draw_motor_cards(opt)
 		else:
 			_option_box.add_child(_option_row(opt))
 		if not str(opt.get("help", "")).is_empty():
@@ -1303,6 +1316,27 @@ func _draw_electric_drive(ids: Array) -> void:
 	if count == 0:
 		_option_box.add_child(_label("Nothing to upgrade here on this car.",16,HORIZONTAL_ALIGNMENT_LEFT,true))
 	_focus_tuning.call_deferred()
+
+# One card per choice of an electric motor option (layout or drive unit, core ev_motor.h): the card's figures line is the
+# catalogue's (e.g. "380 kW · 640 N*m · 20000 rpm · 75 kg"), its second line the inspiration class and reduction ratio.
+func _draw_motor_cards(opt: Dictionary) -> void:
+	_option_box.add_child(_label(str(opt["label"]),16,HORIZONTAL_ALIGNMENT_LEFT))
+	var grid := GridContainer.new()
+	grid.columns = 2
+	_option_box.add_child(grid)
+	var opt_id := str(opt["id"])
+	for part in opt.get("parts", []):
+		var part_id := str(part["id"])
+		var installed := str(opt["value"]) == part_id
+		var presentation := {"label":str(part["label"]), "image":str(part.get("image", "")),
+			"figures":str(part.get("subtitle", "")) + "\n" + str(part.get("size", ""))}
+		var card := _make_component_card(_with_badge(presentation,opt_id,{opt_id:part_id}),"INSTALLED" if installed else "Install")
+		card.tooltip_text = str(part.get("size", ""))
+		grid.add_child(card)
+		_buttons["part:" + opt_id + ":" + part_id] = card
+		card.pressed.connect(func(): _edit_option(opt_id,part_id); _draw_garage_options())
+		if installed or _garage_preferred == null: _garage_preferred = card
+	_focus_garage.call_deferred()
 
 # One card per preset of a scale_preset option (core vehicle_setup.h ScalePreset): the card's size line is the computed
 # figures (e.g. "135 kWh · 805 kW · 700 kg"); "stock" is the car's own part.
@@ -1907,6 +1941,18 @@ func _make_component_card(presentation: Dictionary, action: String) -> Button:
 	name_label.offset_top = -TILE_NAME_BAND
 	name_label.offset_bottom = -2
 	card.add_child(name_label)
+	var figures := str(presentation.get("figures", ""))
+	if not figures.is_empty():
+		var info := _label(figures, 11, HORIZONTAL_ALIGNMENT_CENTER)
+		info.name = "Figures"
+		info.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+		info.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		info.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+		info.offset_left = 6
+		info.offset_right = -6
+		info.offset_top = 18
+		info.offset_bottom = -TILE_NAME_BAND
+		card.add_child(info)
 	if action == "INSTALLED":
 		var mark := _label("INSTALLED", 10)
 		mark.name = "Installed"

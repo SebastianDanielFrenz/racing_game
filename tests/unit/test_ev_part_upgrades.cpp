@@ -1,13 +1,15 @@
 // test_ev_part_upgrades.cpp - garage upgrades for electric drives (owner 2026-10-21: "Allow for upgrading of electric motors
 // and battery size and battery power output on EVs"; then "the battery selection both sets capacity AND output", "no
-// dedicated capacity or output selection"): the scale option ev_motor_scale and the pack choice ev_battery_pack (kind
-// scale_preset) in data/vehicles/setup_options.json.
+// dedicated capacity or output selection"): the pack choice ev_battery_pack (kind scale_preset) in
+// data/vehicles/setup_options.json. The motor options (layout, drive units, Motor output, reduction ratio) are tested in
+// test_ev_motor_layouts.cpp; the motor hardware here is the Motor output slider (ev_motor_output, was ev_motor_scale).
 //
 // Checks: the options are available on car_electric and not on a combustion car; the pack cards carry the computed
 // figures; a setup scales exactly the documented leaves of every motor and the battery (motor mass with torque [AS], each
 // pack's own factors on energy, discharge, charge and mass [AS]) and nothing else; an unknown pack is rejected; the
 // part-mass tree follows the new component masses; the stock files are untouched.
 #include "rg/engine_store.h"
+#include "rg/ev_motor.h"
 #include "rg/part_mass.h"
 #include "rg/vehicle_setup.h"
 
@@ -54,6 +56,10 @@ struct Fixture {
         INFO(err);
         REQUIRE(masses.has_value());
         ctx.part_masses = std::make_shared<const rg::PartMassTable>(*masses);
+        auto motors = rg::EvMotorCatalog::open(kRoot + "/data/electric_motors/motor_catalog.json", &err);
+        INFO(err);
+        REQUIRE(motors != nullptr);
+        ctx.ev_motors = std::shared_ptr<const rg::EvMotorCatalog>(std::move(motors));
     }
     const rg::CatalogEntry& entry(const std::string& id) const {
         const rg::CatalogEntry* e = catalog.find(id);
@@ -87,7 +93,7 @@ const nlohmann::json& component(const nlohmann::json& vehicle, const std::string
     return none;
 }
 
-const char* const kEvOptions[] = {"ev_motor_scale", "ev_battery_pack"};
+const char* const kEvOptions[] = {"ev_motor_output", "ev_battery_pack"};
 
 } // namespace
 
@@ -130,14 +136,14 @@ TEST_CASE("ev parts: an unknown battery pack is rejected", "[setup][garage][ev]"
     CHECK(v.message.find("unknown choice") != std::string::npos);
 }
 
-TEST_CASE("ev parts: a setup scales the motors and the battery, and the mass follows", "[setup][garage][ev][part_mass]") {
+TEST_CASE("ev parts: a setup scales the motor output and the battery, and the mass follows", "[setup][garage][ev][part_mass]") {
     Fixture f;
     const rg::CatalogEntry& e = f.entry("car_electric");
     rg::ScopedWorkDir d0(f.ctx.work_root, "stock"), d1(f.ctx.work_root, "up");
     const rg::MaterialisedSetup m0 = rg::materialise_setup(e, f.table, f.ctx, setup_of("car_electric", {}), d0.path());
     const rg::MaterialisedSetup m1 = rg::materialise_setup(
         e, f.table, f.ctx,
-        setup_of("car_electric", {{"ev_motor_scale", 1.5}, {"ev_battery_pack", std::string("long_range")}}),
+        setup_of("car_electric", {{"ev_motor_output", 0.6}, {"ev_battery_pack", std::string("long_range")}}),
         d1.path());
     INFO(m0.error);
     INFO(m1.error);
@@ -152,12 +158,13 @@ TEST_CASE("ev parts: a setup scales the motors and the battery, and the mass fol
         INFO(motor);
         const nlohmann::json& a = component(v0, motor);
         const nlohmann::json& b = component(v1, motor);
-        for (const char* key : {"peak_torque_nm", "max_power_w", "regen_torque_nm", "mass_kg"}) {
+        // Motor output: the inverter limit scales torque and power; mass and regeneration are the hardware's and stay
+        for (const char* key : {"peak_torque_nm", "max_power_w"}) {
             INFO(key);
-            CHECK(b.at(key).get<double>() == Approx(a.at(key).get<double>() * 1.5).epsilon(1e-9));
+            CHECK(b.at(key).get<double>() == Approx(a.at(key).get<double>() * 0.6).epsilon(1e-9));
         }
-        // speed range, inertia and efficiency are the same machine design: unchanged
-        for (const char* key : {"max_rpm", "inertia", "efficiency"}) {
+        // speed range, inertia, efficiency, regeneration and mass are the same machine: unchanged
+        for (const char* key : {"max_rpm", "inertia", "efficiency", "regen_torque_nm", "mass_kg"}) {
             INFO(key);
             if (a.contains(key)) CHECK(b.at(key) == a.at(key));
         }
@@ -171,12 +178,10 @@ TEST_CASE("ev parts: a setup scales the motors and the battery, and the mass fol
     CHECK(b1.at("mass_kg").get<double>() == Approx(b0.at("mass_kg").get<double>() * 1.4).epsilon(1e-9));
     CHECK(b1.at("initial_soc") == b0.at("initial_soc"));
 
-    // part masses: the battery and motor nodes carry the new masses, the car total grows by exactly the difference
+    // part masses: the battery node carries the new mass, the car total grows by exactly the difference (the motors keep theirs)
     REQUIRE(m0.compiled.parts.ok);
     REQUIRE(m1.compiled.parts.ok);
-    double added = (b1.at("mass_kg").get<double>() - b0.at("mass_kg").get<double>());
-    for (const char* motor : {"front_motor", "rear_motor"})
-        added += component(v1, motor).at("mass_kg").get<double>() - component(v0, motor).at("mass_kg").get<double>();
+    const double added = (b1.at("mass_kg").get<double>() - b0.at("mass_kg").get<double>());
     CHECK(added > 100.0);
     const rg::PartNode* bat0 = m0.compiled.parts.root.find("drivetrain.battery");
     const rg::PartNode* bat1 = m1.compiled.parts.root.find("drivetrain.battery");

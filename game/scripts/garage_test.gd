@@ -747,7 +747,38 @@ func _check_electric_upgrades() -> void:
 	_check(ui.get_button("part:ev_battery_pack:stock") != null and ui.get_button("part:ev_battery_pack:long_range") != null and not ui._option_values.has("ev_battery_capacity"), "electric: the battery page shows pack cards, no capacity or output slider")
 	_press("part:ev_battery_pack:long_range")
 	_check(str(ui._garage_option("ev_battery_pack").get("value", "")) == "long_range" and garage.is_dirty() and bool(garage.get_validation()["ok"]), "electric: the long-range pack card installs and validates")
-	_check(bool(garage.set_option("ev_motor_scale", 1.3)["accepted"]) and bool(garage.get_validation()["ok"]), "electric: stronger motors are accepted and validate")
+	# Motors page (owner 2026-10-21): layout cards, then the front and rear drive-unit cards with their figures; a layout that
+	# does not drive an axle hides that axle's card row.
+	await _back_to_root()
+	_press("tile:Electric drive")
+	_press("tile:Motors")
+	var layout_ids := ["stock", "single", "tri", "quad"]
+	var layouts_ok := true
+	for layout_id in layout_ids:
+		layouts_ok = layouts_ok and ui.get_button("part:ev_layout:" + layout_id) != null
+	_check(layouts_ok, "electric: the Motors page shows the layout cards (original, single, tri, quad)")
+	_check(ui.get_button("part:ev_layout:dual") == null, "electric: the car's own layout (dual) is the 'Original' card, not offered twice")
+	var units_ok := true
+	for axle in ["ev_front_motors", "ev_rear_motors"]:
+		for unit_id in ["stock", "economy_pmsm", "compact_induction", "compact_pmsm", "axial_flux", "high_density_pmsm", "hypercar_oil_cooled"]:
+			units_ok = units_ok and ui.get_button("part:" + axle + ":" + unit_id) != null
+	_check(units_ok, "electric: the Motors page shows the front and rear drive-unit cards (stock + 6 units)")
+	var unit_card: Button = ui.get_button("part:ev_rear_motors:hypercar_oil_cooled")
+	var figures: Label = unit_card.get_node_or_null("Figures") if unit_card != null else null
+	_check(figures != null and "450 kW" in figures.text and "650 N*m" in figures.text and "15000 rpm" in figures.text and "95 kg" in figures.text, "electric: a unit card shows power, torque, rpm and mass (is '%s')" % (figures.text if figures != null else "no figures label"))
+	_check(not ui._garage_option("ev_motor_output").is_empty() and not ui._option_values.has("ev_motor_output") and not ui._option_values.has("ev_reduction_ratio"), "electric: Motor output and Reduction ratio are Tuning sliders, not on the Motors page")
+	_press("part:ev_layout:quad")
+	_check(str(ui._garage_option("ev_layout").get("value", "")) == "quad" and bool(garage.get_validation()["ok"]), "electric: the quad layout installs and validates")
+	_press("part:ev_front_motors:hypercar_oil_cooled")
+	_press("part:ev_rear_motors:hypercar_oil_cooled")
+	_check(str(ui._garage_option("ev_front_motors").get("value", "")) == "hypercar_oil_cooled" and str(ui._garage_option("ev_rear_motors").get("value", "")) == "hypercar_oil_cooled" and bool(garage.get_validation()["ok"]), "electric: quad with hypercar units validates")
+	_check(garage.is_dirty(), "electric: the motor choices make the car dirty")
+	_press("part:ev_layout:single")
+	_check(ui.get_button("part:ev_front_motors:stock") == null and ui.get_button("part:ev_rear_motors:stock") != null and bool(garage.get_validation()["ok"]), "electric: single shows only the rear choice and validates")
+	_press("part:ev_layout:quad")
+	_check(str(ui._garage_option("ev_front_motors").get("value", "")) == "hypercar_oil_cooled", "electric: the front unit choice survived the layout change")
+	_check(bool(garage.set_option("ev_motor_output", 0.7)["accepted"]) and bool(garage.set_option("ev_reduction_ratio", 1.1)["accepted"]) and bool(garage.get_validation()["ok"]), "electric: motor output and reduction ratio sliders are accepted and validate")
+	_check(not bool(garage.set_option("ev_motor_scale", 1.3)["accepted"]), "electric: the retired motor scale is no option any more")
 	garage.reset_all()
 	_check(not garage.is_dirty(), "electric: reset restores stock")
 	await _back_to_root()
