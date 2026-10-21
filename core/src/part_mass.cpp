@@ -430,6 +430,25 @@ PartTree build_part_tree(const PartMassTable& table, const PartTreeInput& in) {
                         if(component.is_object()&&detail::get_string(component,"type",motor_type)&&motor_type=="electric_motor"&&detail::get_string(component,"id",motor_id)&&it->second==motor_id+".shaft")local_motor=true; }
             if(far&&!local_motor)(front?need_front_prop:need_rear_prop)=true;
             drivetrain.children.push_back(std::move(axle));
+        } else if (type == "gear_pair") {
+            // A reduction gear (an electric car's per-wheel motor reduction, a hybrid's conversion reduction). Its mass is part
+            // of the drive unit's mass_kg on the motor it sits behind, so the gear itself weighs nothing here; one that ends in
+            // a wheel hub adds that wheel's half shaft and makes its axle driven.
+            std::vector<std::string> driven;
+            const auto out = linked.equal_range(cid + ".out");
+            for (auto it = out.first; it != out.second; ++it) {
+                if (it->second.rfind("wheel:", 0) == 0) driven.push_back(it->second.substr(6));
+            }
+            PartNode gear = group(unique_id("drivetrain." + cid), "Reduction gear");
+            gear.key = "gear_pair";
+            gear.source = "included in the drive unit's mass_kg";
+            for (const std::string& w : driven) {
+                (wheel_is_front(w) ? front_driven : rear_driven) = true;
+                PartNode h = b.leaf(gear.id + ".halfshaft_" + lower_name(w), "halfshaft");
+                h.label = "Half shaft " + w;
+                gear.children.push_back(std::move(h));
+            }
+            drivetrain.children.push_back(std::move(gear));
         } else if (type == "fuel_tank") {
             double cap = 0.0, initial = 0.0;
             detail::get_number(c, "capacity_kg", cap);
@@ -455,6 +474,8 @@ PartTree build_part_tree(const PartMassTable& table, const PartTreeInput& in) {
             PartNode bottle = b.leaf("bottle", "n2o_bottle", cap);
             bottle.children.push_back(contents_node("contents", "n2o", std::clamp(initial, 0.0, std::max(cap, 0.0)), "Nitrous oxide"));
             bottles.push_back(std::move(bottle));
+        } else if (type == "hybrid_control") {
+            // The hybrid supervisor is software: no hardware, no mass (the motors, battery and reduction are counted on their own).
         } else {
             tree.error = "part_masses: no mass rule for the powertrain component type \"" + type + "\" (" + cid + ")";
             return tree;
@@ -472,7 +493,8 @@ PartTree build_part_tree(const PartMassTable& table, const PartTreeInput& in) {
     // The new axle's differential and half shafts (and an AWD transfer case) come from the file like any other part;
     // on top of that the conversion adds its mounting hardware and, where the layout rule above gives the car no more
     // propshafts than it had stock, a driveline along the car.
-    if (!in.stock_vehicle_json.empty()) {
+    // A purely electric car has no axle layout to convert: its motor layout is an option of its own (ev_layout).
+    if (!in.stock_vehicle_json.empty() && has_ice) {
         PartTreeInput stock_in = in;
         stock_in.vehicle_json = in.stock_vehicle_json;
         stock_in.stock_vehicle_json.clear();

@@ -91,6 +91,7 @@ add_executable(rg_unit_tests
   test_engine_internals.cpp
   test_cooling_upgrades.cpp
   test_ev_part_upgrades.cpp
+  test_ev_motor_layouts.cpp
   test_damage.cpp
   test_damage_engine.cpp
   test_engine_bore.cpp

@@ -84,22 +84,101 @@
       ]
     },
     {
-      "id": "ev_motor_scale",
-      "label": "Electric motors",
+      "id": "ev_layout",
+      "label": "Motor layout",
+      "group": "Electric drive",
+      "area": "engine",
+      "kind": "file_choice",
+      "catalog": "ev_layouts",
+      "file": "vehicle",
+      "part_format": "rg.ev_motor_catalog/1",
+      "pointers": [
+        "/powertrain/components",
+        "/powertrain/shafts"
+      ],
+      "help": "How many traction motors the car has and where they sit: one on the rear axle (single), one per axle (dual), one on the front axle and one per rear wheel (tri) or one per wheel (quad). An axle unit drives both wheels of its axle through an open differential; a wheel motor drives its own wheel through its own reduction gear. Every motor gets the same torque command: there is no torque vectoring. Each motor carries the full figures of its drive unit, so power and weight grow with the motor count. The battery must still deliver the power. The units you picked stay when you change the layout. Offered on battery electric cars."
+    },
+    {
+      "id": "ev_front_motors",
+      "label": "Front motors",
+      "group": "Electric drive",
+      "area": "engine",
+      "kind": "file_choice",
+      "catalog": "ev_motor_units",
+      "axle": "front",
+      "file": "vehicle",
+      "part_format": "rg.ev_motor_catalog/1",
+      "pointers": [
+        "/powertrain/components/[type=electric_motor]/mass_kg"
+      ],
+      "help": "The drive unit of every motor on the front axle: motor, inverter and its own reduction gear, each with its own peak torque, power, top speed, mass and reduction ratio. All numbers are assumptions [AS] loosely after published classes of production and hypercar units, not OEM data. Offered while the front wheels are driven."
+    },
+    {
+      "id": "ev_rear_motors",
+      "label": "Rear motors",
+      "group": "Electric drive",
+      "area": "engine",
+      "kind": "file_choice",
+      "catalog": "ev_motor_units",
+      "axle": "rear",
+      "file": "vehicle",
+      "part_format": "rg.ev_motor_catalog/1",
+      "pointers": [
+        "/powertrain/components/[type=electric_motor]/mass_kg"
+      ],
+      "help": "The drive unit of every motor on the rear axle: motor, inverter and its own reduction gear, each with its own peak torque, power, top speed, mass and reduction ratio. All numbers are assumptions [AS] loosely after published classes of production and hypercar units, not OEM data. Offered while the rear wheels are driven."
+    },
+    {
+      "id": "ev_hybrid_motor",
+      "label": "Traction motor",
+      "group": "Electric drive",
+      "area": "engine",
+      "kind": "file_choice",
+      "catalog": "ev_motor_units",
+      "axle": "traction",
+      "file": "vehicle",
+      "part_format": "rg.ev_motor_catalog/1",
+      "pointers": [
+        "/powertrain/components/[type=electric_motor,crank_assist!=true]/mass_kg"
+      ],
+      "help": "The drive unit of a hybrid's traction motor: its peak torque, power, top speed, mass and efficiency. The unit's reduction ratio is its whole motor-to-wheel ratio, so the hybrid's reduction gear is set to that ratio divided by the car's final drive. The crank generator is not changed and the motor layout stays as it is. Offered on hybrids (a combustion engine plus a traction motor); the battery must still deliver the power. All numbers are assumptions [AS], not OEM data."
+    },
+    {
+      "id": "ev_motor_output",
+      "label": "Motor output",
       "group": "Electric drive",
       "area": "engine",
       "unit": "x",
-      "help": "Scales every traction motor: peak torque, power, regeneration torque and mass together ([AS] a bigger machine of the same design: torque and power grow with its active length, and so does its mass). The battery must still deliver the power: raise its power output too, or the motors stop at the battery's limit.",
+      "help": "The inverter's limit below the hardware's peak: scales the peak torque and the power of every traction motor (not a hybrid's crank generator), from half to the full peak of the fitted units. The motors' mass and regeneration are not changed; stronger motors are a hardware choice under Motors. The battery must still deliver the power.",
       "kind": "scale",
       "min": 0.5,
-      "max": 2.0,
+      "max": 1.0,
       "step": 0.05,
       "file": "vehicle",
       "pointers": [
-        "/powertrain/components/[type=electric_motor]/peak_torque_nm",
-        "/powertrain/components/[type=electric_motor]/max_power_w",
-        "/powertrain/components/[type=electric_motor]/regen_torque_nm",
-        "/powertrain/components/[type=electric_motor]/mass_kg"
+        "/powertrain/components/[type=electric_motor,crank_assist!=true]/peak_torque_nm",
+        "/powertrain/components/[type=electric_motor,crank_assist!=true]/max_power_w"
+      ]
+    },
+    {
+      "id": "ev_reduction_ratio",
+      "label": "Reduction ratio",
+      "group": "Electric drive",
+      "area": "rear",
+      "unit": "x",
+      "help": "Scales the reduction gear between the traction motors and the wheels (the axle differentials and the wheel motors' reduction gears). Higher = quicker acceleration, lower top speed. An electric car has no gearbox and no final drive, so this is its gearing.",
+      "kind": "scale",
+      "min": 0.8,
+      "max": 1.2,
+      "step": 0.01,
+      "file": "vehicle",
+      "pointers": [
+        "/powertrain/components/[id=front_diff]/ratio",
+        "/powertrain/components/[id=rear_diff]/ratio",
+        "/powertrain/components/[id=reduction_fl]/ratio",
+        "/powertrain/components/[id=reduction_fr]/ratio",
+        "/powertrain/components/[id=reduction_rl]/ratio",
+        "/powertrain/components/[id=reduction_rr]/ratio"
       ]
     },
     {
@@ -108,7 +187,7 @@
       "group": "Electric drive",
       "area": "engine",
       "unit": "",
-      "help": "The traction battery as a whole pack: each pack sets its energy (kWh), its power output (discharge and charge) and its mass together, relative to the car's own pack. Energy cells store more per kilogram but deliver less power; power cells the other way round. Every figure is an assumption [AS] from typical cell classes, not a measured pack.",
+      "help": "The traction battery as a whole pack: each pack sets its energy (kWh), its power output (discharge and charge) and its mass together, relative to the car's own pack. The cards show the absolute figures for this car. The pack's discharge power caps the electric power: motors that could deliver more are held to what the pack can give. Energy cells store more per kilogram but deliver less power; power cells the other way round. Every figure is an assumption [AS] from typical cell classes, not a measured pack.",
       "kind": "scale_preset",
       "file": "vehicle",
       "pointers": [
@@ -1106,5 +1185,12 @@
     {"id": "cooling_fan", "label": "Cooling fan", "group": "Cooling", "area": "engine", "kind": "file_choice", "catalog": "cooling_upgrades", "cooling_part": "fan", "file": "vehicle", "part_format": "rg.cooling_upgrades/1", "pointers": ["/cooling_system"], "help": "A stronger fan moves more air through the radiator when the car is slow; above about 10 m/s the ram air is faster than the fan and the fan changes nothing. It also switches on a few degrees earlier."},
     {"id": "cooling_oil_cooler", "label": "Oil cooler", "group": "Cooling", "area": "engine", "kind": "file_choice", "catalog": "cooling_upgrades", "cooling_part": "oil_cooler", "file": "vehicle", "part_format": "rg.cooling_upgrades/1", "pointers": ["/cooling_system"], "help": "An oil-to-air cooler adds heat rejection from the oil that grows with the speed of the air, per litre of displacement. The thermostat only regulates the coolant, so a cooler is the way to keep a hard-driven engine's oil down."},
     {"id": "cooling_block_cooling", "label": "Block cooling", "group": "Cooling", "area": "engine", "kind": "file_choice", "catalog": "cooling_upgrades", "cooling_part": "block_cooling", "file": "vehicle", "part_format": "rg.cooling_upgrades/1", "pointers": ["/cooling_system"], "help": "The engine thermal model has no water-jacket geometry, so the block is cooled by what it does have: a stronger coolant pump, more coolant in the block (slower to heat up, same steady state) and a thermostat that opens earlier. The setup check names the engine block as the part at risk when the coolant runs hotter than its limit."}
+  ],
+  "retired_options": [
+    {
+      "id": "ev_motor_scale",
+      "replaced_by": "ev_motor_output",
+      "note": "Owner 2026-10-21: the motors' maximum performance became a tuning option (Motor output, x0.5-1.0 of the hardware's peak) and the upgrade changes the motor hardware (layout and drive units). A saved setup that still holds the old scale keeps it as a Motor output factor, clamped to 0.5-1.0 (a stronger motor than the car's own is a hardware choice now and loads as the stock output)."
+    }
   ]
 }

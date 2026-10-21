@@ -38,6 +38,7 @@ struct GarageConfig {
     std::string engine_catalog_path; // data/engines/engine_catalog.json ("" = <repo_root>/data/engines/engine_catalog.json)
     std::string gearbox_catalog_path; // data/gearboxes/gearbox_catalog.json ("" = <repo_root>/data/gearboxes/gearbox_catalog.json)
     std::string driveline_catalog_path; // data/drivetrains/driveline_catalog.json ("" = <repo_root>/data/drivetrains/driveline_catalog.json)
+    std::string ev_motor_catalog_path;  // data/electric_motors/motor_catalog.json ("" = <repo_root>/data/electric_motors/motor_catalog.json)
     std::string tyre_families_path; // data/tyres/families.json ("" = no tyre choice)
     std::string turbo_map_extension_path; // data/engines/turbo_map_extension.json ("" = <repo_root>/data/engines/turbo_map_extension.json if it exists, else no extension)
     std::string turbo_kits_path; // data/engines/turbo_kits.json ("" = <repo_root>/data/engines/turbo_kits.json if it exists, else no turbo kits)

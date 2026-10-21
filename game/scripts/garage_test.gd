@@ -517,6 +517,7 @@ func _run() -> void:
 
 	# ---- the electric car: tiles it cannot modify are hidden, the Electric drive tile offers motors and battery ----
 	await _check_electric_upgrades()
+	await _check_hybrid_upgrades()
 
 	# ---- back to the hyper car through the garage: the same node count as after the stock drive ----
 	_press("garage")
@@ -745,16 +746,54 @@ func _check_electric_upgrades() -> void:
 	_check(ui.get_button("tile:Motors") != null and ui.get_button("tile:Battery") != null, "electric: Motors and Battery tiles")
 	_press("tile:Battery")
 	_check(ui.get_button("part:ev_battery_pack:stock") != null and ui.get_button("part:ev_battery_pack:long_range") != null and not ui._option_values.has("ev_battery_capacity"), "electric: the battery page shows pack cards, no capacity or output slider")
+	var pack_card: Button = ui.get_button("part:ev_battery_pack:grand_tourer")
+	var pack_figures: Label = pack_card.get_node_or_null("Figures") if pack_card != null else null
+	_check(pack_figures != null and "126 kWh · 1400 kW · 825 kg" in pack_figures.text, "electric: a pack card shows the absolute figures for this car (is '%s')" % (pack_figures.text if pack_figures != null else "no figures label"))
+	_check(_labels_containing(ui._option_box, "caps the electric power") == 1, "electric: the battery page shows the pack help once (%d)" % _labels_containing(ui._option_box, "caps the electric power"))
 	_press("part:ev_battery_pack:long_range")
 	_check(str(ui._garage_option("ev_battery_pack").get("value", "")) == "long_range" and garage.is_dirty() and bool(garage.get_validation()["ok"]), "electric: the long-range pack card installs and validates")
 	# the dyno must follow the motors (owner 2026-10-21: it measured the stock motors while the drive had the new ones)
 	_check(await _wait_until(func(): return not garage.get_dyno()["busy"] and garage.get_dyno()["points"].size() == 33, 120.0), "electric: the dyno finishes for the installed pack")
 	var ev_dyno_before: Dictionary = garage.get_dyno()
 	var ev_torque_before := float(ev_dyno_before["points"][0]["torque_nm"])
-	_check(bool(garage.set_option("ev_motor_scale", 1.3)["accepted"]) and bool(garage.get_validation()["ok"]), "electric: stronger motors are accepted and validate")
-	_check(await _wait_until(func(): return int(garage.get_dyno()["revision"]) != int(ev_dyno_before["revision"]) and not garage.get_dyno()["busy"], 120.0), "electric: the dyno recalculates for stronger motors")
+	_check(bool(garage.set_option("ev_motor_output", 0.7)["accepted"]) and bool(garage.get_validation()["ok"]), "electric: a lower motor output is accepted and validate")
+	_check(await _wait_until(func(): return int(garage.get_dyno()["revision"]) != int(ev_dyno_before["revision"]) and not garage.get_dyno()["busy"], 120.0), "electric: the dyno recalculates for the motor output")
 	var ev_torque_after := float(garage.get_dyno()["points"][0]["torque_nm"])
-	_check(ev_torque_before > 0.0 and absf(ev_torque_after / ev_torque_before - 1.3) < 0.08, "electric: the dyno's lowest-rpm torque follows the motors x1.3 (%.0f -> %.0f N*m)" % [ev_torque_before, ev_torque_after])
+	_check(ev_torque_before > 0.0 and absf(ev_torque_after / ev_torque_before - 0.7) < 0.08, "electric: the dyno's lowest-rpm torque follows the motor output x0.7 (%.0f -> %.0f N*m)" % [ev_torque_before, ev_torque_after])
+	garage.reset_all()
+	# Motors page (owner 2026-10-21): layout cards, then the front and rear drive-unit cards with their figures; a layout that
+	# does not drive an axle hides that axle's card row.
+	await _back_to_root()
+	_press("tile:Electric drive")
+	_press("tile:Motors")
+	var layout_ids := ["stock", "single", "tri", "quad"]
+	var layouts_ok := true
+	for layout_id in layout_ids:
+		layouts_ok = layouts_ok and ui.get_button("part:ev_layout:" + layout_id) != null
+	_check(layouts_ok, "electric: the Motors page shows the layout cards (original, single, tri, quad)")
+	_check(ui.get_button("part:ev_layout:dual") == null, "electric: the car's own layout (dual) is the 'Original' card, not offered twice")
+	var units_ok := true
+	for axle in ["ev_front_motors", "ev_rear_motors"]:
+		for unit_id in ["stock", "economy_pmsm", "compact_induction", "compact_pmsm", "axial_flux", "high_density_pmsm", "hypercar_oil_cooled"]:
+			units_ok = units_ok and ui.get_button("part:" + axle + ":" + unit_id) != null
+	_check(units_ok, "electric: the Motors page shows the front and rear drive-unit cards (stock + 6 units)")
+	var unit_card: Button = ui.get_button("part:ev_rear_motors:hypercar_oil_cooled")
+	var figures: Label = unit_card.get_node_or_null("Figures") if unit_card != null else null
+	_check(figures != null and "450 kW" in figures.text and "650 N*m" in figures.text and "15000 rpm" in figures.text and "95 kg" in figures.text, "electric: a unit card shows power, torque, rpm and mass (is '%s')" % (figures.text if figures != null else "no figures label"))
+	_check(_labels_containing(ui._option_box, "The drive unit of every motor on the front axle") == 1 and _labels_containing(ui._option_box, "How many traction motors the car has") == 1, "electric: the Motors page shows each option's help once")
+	_check(not ui._garage_option("ev_motor_output").is_empty() and not ui._option_values.has("ev_motor_output") and not ui._option_values.has("ev_reduction_ratio"), "electric: Motor output and Reduction ratio are Tuning sliders, not on the Motors page")
+	_press("part:ev_layout:quad")
+	_check(str(ui._garage_option("ev_layout").get("value", "")) == "quad" and bool(garage.get_validation()["ok"]), "electric: the quad layout installs and validates")
+	_press("part:ev_front_motors:hypercar_oil_cooled")
+	_press("part:ev_rear_motors:hypercar_oil_cooled")
+	_check(str(ui._garage_option("ev_front_motors").get("value", "")) == "hypercar_oil_cooled" and str(ui._garage_option("ev_rear_motors").get("value", "")) == "hypercar_oil_cooled" and bool(garage.get_validation()["ok"]), "electric: quad with hypercar units validates")
+	_check(garage.is_dirty(), "electric: the motor choices make the car dirty")
+	_press("part:ev_layout:single")
+	_check(ui.get_button("part:ev_front_motors:stock") == null and ui.get_button("part:ev_rear_motors:stock") != null and bool(garage.get_validation()["ok"]), "electric: single shows only the rear choice and validates")
+	_press("part:ev_layout:quad")
+	_check(str(ui._garage_option("ev_front_motors").get("value", "")) == "hypercar_oil_cooled", "electric: the front unit choice survived the layout change")
+	_check(bool(garage.set_option("ev_motor_output", 0.7)["accepted"]) and bool(garage.set_option("ev_reduction_ratio", 1.1)["accepted"]) and bool(garage.get_validation()["ok"]), "electric: motor output and reduction ratio sliders are accepted and validate")
+	_check(not bool(garage.set_option("ev_motor_scale", 1.3)["accepted"]), "electric: the retired motor scale is no option any more")
 	garage.reset_all()
 	_check(not garage.is_dirty(), "electric: reset restores stock")
 	await _back_to_root()
@@ -771,6 +810,56 @@ func _check_electric_upgrades() -> void:
 	_check(await _wait_until(func(): return _screen() == "vehicle_select", 5.0), "electric: back to the vehicle select (is '%s')" % _screen())
 	_press("back")
 	_check(await _wait_until(func(): return _screen() == "main_menu", 5.0), "electric: back to the main menu (is '%s')" % _screen())
+	await _wait_seconds(0.3)
+
+func _labels_containing(root: Node, needle: String) -> int:
+	var labels: Array = []
+	_labels_under(root, labels)
+	var n := 0
+	for label in labels:
+		if needle in (label as Label).text: n += 1
+	return n
+
+# A hybrid keeps a motor upgrade (owner 2026-10-21): the traction motor's drive-unit cards (no layout), absolute pack figures.
+func _check_hybrid_upgrades() -> void:
+	var ui: CanvasLayer = main.get_shell_ui()
+	var garage: Node = main.get_garage()
+	var car_id := "car_hyper_n2o"
+	_press("garage")
+	await _wait_seconds(0.4)
+	ui.browser().focus_car(car_id)
+	_press("choose")
+	if not _check(_screen() == "configurator" and str(garage.get_edit_id()) == car_id, "the hybrid test car's configurator opens (is '%s')" % _screen()):
+		return
+	_press("garage:upgrades")
+	_check(bool(garage.set_option("powertrain_install", "hybrid_battery")["accepted"]) and bool(garage.get_validation()["ok"]), "hybrid: the battery hybrid conversion is accepted and validates")
+	ui._draw_garage_options()
+	await _back_to_root()
+	_press("tile:Electric drive")
+	_check(ui.get_button("tile:Motors") != null and ui.get_button("tile:Battery") != null, "hybrid: Motors and Battery tiles")
+	_press("tile:Motors")
+	var unit_ok := true
+	for unit_id in ["stock", "economy_pmsm", "compact_induction", "compact_pmsm", "axial_flux", "high_density_pmsm", "hypercar_oil_cooled"]:
+		unit_ok = unit_ok and ui.get_button("part:ev_hybrid_motor:" + unit_id) != null
+	_check(unit_ok, "hybrid: the Motors page shows the traction motor's drive-unit cards (stock + 6 units)")
+	_check(ui.get_button("part:ev_layout:quad") == null and ui.get_button("part:ev_front_motors:stock") == null and ui.get_button("part:ev_rear_motors:stock") == null, "hybrid: no layout and no per-axle unit cards")
+	_check(_labels_containing(ui._option_box, "The drive unit of a hybrid") == 1, "hybrid: the Motors page shows the help once")
+	_press("part:ev_hybrid_motor:hypercar_oil_cooled")
+	_check(str(ui._garage_option("ev_hybrid_motor").get("value", "")) == "hypercar_oil_cooled" and bool(garage.get_validation()["ok"]) and garage.is_dirty(), "hybrid: the hypercar unit installs and validates")
+	await _back_to_root()
+	_press("tile:Electric drive")
+	_press("tile:Battery")
+	var pack_card: Button = ui.get_button("part:ev_battery_pack:grand_tourer")
+	var pack_figures: Label = pack_card.get_node_or_null("Figures") if pack_card != null else null
+	_check(pack_figures != null and "28 kWh · 300 kW · 231 kg" in pack_figures.text, "hybrid: a pack card shows the absolute figures for this car (is '%s')" % (pack_figures.text if pack_figures != null else "no figures label"))
+	_check(_labels_containing(ui._option_box, "caps the electric power") == 1, "hybrid: the battery page shows the pack help once")
+	garage.reset_all()
+	await _back_to_root()
+	await _press_escape()
+	_press("garage_exit:selection")
+	_check(await _wait_until(func(): return _screen() == "vehicle_select", 5.0), "hybrid: back to the vehicle select (is '%s')" % _screen())
+	_press("back")
+	_check(await _wait_until(func(): return _screen() == "main_menu", 5.0), "hybrid: back to the main menu (is '%s')" % _screen())
 	await _wait_seconds(0.3)
 
 func _back_to_root() -> void:

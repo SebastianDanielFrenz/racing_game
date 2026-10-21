@@ -298,6 +298,16 @@ std::unique_ptr<Garage> Garage::open(const GarageConfig& config, std::string* er
         }
         g->ctx_.drivelines = std::shared_ptr<const DrivelineCatalog>(std::move(lines));
     }
+    {
+        const std::string cat = config.ev_motor_catalog_path.empty() ? config.repo_root + "/data/electric_motors/motor_catalog.json"
+                                                                      : config.ev_motor_catalog_path;
+        auto motors = EvMotorCatalog::open(cat, &e);
+        if (!motors) {
+            if (err != nullptr) *err = e;
+            return nullptr;
+        }
+        g->ctx_.ev_motors = std::shared_ptr<const EvMotorCatalog>(std::move(motors));
+    }
 
     // A crashed run can leave its drive materialisation behind: remove it.
     std::error_code ec;

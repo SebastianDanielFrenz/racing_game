@@ -35,6 +35,7 @@
 
 #include "rg/engine_store.h"
 #include "rg/driveline_swap.h"
+#include "rg/ev_motor.h"
 #include "rg/gearbox_catalog.h"
 #include "rg/turbo_kit.h"
 #include "rg/engine_internals.h"
@@ -137,6 +138,10 @@ struct SetupOptionDef {
     // (FWD / RWD / AWD with a centre kind; ids = the catalogue ids), "differentials" = the axle differential units for
     // the axle named by `axle` (front | rear; offered only while that axle is driven). Both transform the vehicle file's
     // driveline in code (never a file reference) and are offered only on a car whose driveline the swap understands.
+    // EV motors (rg/ev_motor.h, data/electric_motors/motor_catalog.json): "ev_layouts" = the motor layouts (single, dual,
+    // tri, quad; ids = the catalogue ids), "ev_motor_units" = the drive units for the axle named by `axle` (front | rear;
+    // offered only while that axle is driven). Both transform the vehicle file's powertrain in code and are offered only on a
+    // battery EV whose motors the swap understands.
     std::string catalog;
     std::vector<std::string> compatible_engines; // original engine stems, an explicit game fitment list; "*" = any engine
     std::string part_format; // required referenced file format
@@ -170,10 +175,19 @@ struct SetupOptionDef {
     std::optional<InsertIfAbsent> insert_if_absent;
 };
 
+// An option id that no longer exists. A saved setup that still carries it loads: when `replaced_by` names a number option the
+// old value (clamped to that option's range) becomes the new option's value, otherwise the value is dropped.
+struct RetiredOption {
+    std::string id;
+    std::string replaced_by;
+};
+
 struct SetupOptionTable {
     std::string format;
     std::vector<SetupOptionDef> options;
+    std::vector<RetiredOption> retired;
     [[nodiscard]] const SetupOptionDef* find(const std::string& id) const;
+    [[nodiscard]] const RetiredOption* find_retired(const std::string& id) const;
 };
 
 std::optional<SetupOptionTable> load_setup_options(const std::string& path, std::string* err);
@@ -213,6 +227,8 @@ struct SetupContext {
     std::shared_ptr<const GearboxCatalog> gearboxes;
     // The drive layouts and differentials the "drive_layouts"/"differentials" options read. nullptr = unavailable.
     std::shared_ptr<const DrivelineCatalog> drivelines;
+    // The motor layouts and drive units the "ev_layouts"/"ev_motor_units" options read. nullptr = unavailable.
+    std::shared_ptr<const EvMotorCatalog> ev_motors;
     // Turbo stage map extension policy (rg/turbo_map_extension.h): when set, a load that finds the engine's air demand outside
     // the stage map extends and caches the map under engine_map_cache_dir. nullptr = maps are used as they are.
     std::shared_ptr<const TurboMapExtensionConfig> turbo_map_extension;
