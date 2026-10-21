@@ -79,12 +79,6 @@ func run() -> void:
 	# The game asks main.gd's BodyVisuals (not the VehicleVisual) for the adapter; without the forwarder driving_live was
 	# never set and every click was ignored (2026-10-21).
 	check(load("res://scripts/body_visuals.gd").new().has_method("get_cockpit_mouse"), "body_visuals.gd forwards get_cockpit_mouse (main.gd reads it there)")
-	# A mouse position is in canvas units (divided by the UI scale); the pick ray needs viewport pixels.
-	var old_factor: float = root.content_scale_factor
-	root.content_scale_factor = 1.5
-	var px: Vector2 = load("res://scripts/ui_scale.gd").canvas_to_viewport_pixels(root, Vector2(100, 200))
-	check(px.is_equal_approx(Vector2(150, 300)), "a click at canvas (100, 200) under UI scale 1.5 picks at pixel (150, 300) (got %s)" % px)
-	root.content_scale_factor = old_factor
 	actions = ClassDB.instantiate("RgDriverActions")
 	var cabin: Dictionary = JSON.parse_string(FileAccess.get_file_as_string(ProjectSettings.globalize_path("res://../data/controls/cabin.json")))
 	actions.configure_cabin(cabin)
@@ -231,6 +225,25 @@ func run() -> void:
 	check(not mouse.hit.is_enabled(), "not driving live disables clicks")
 	mouse.driving_live = true
 	frames(1)
+
+	# A real click under the UI scale. With content_scale_factor 1.5, InputEvent.position and Camera3D.unproject_position
+	# share one space, so a click at a control's projected position must pick it through _unhandled_input. Scaling the
+	# position by the factor (PR #62) put every pick 1.5x off the drawn button (owner 2026-10-21).
+	var old_factor: float = root.content_scale_factor
+	root.content_scale_factor = 1.5
+	var tc_centre: Vector3 = mouse.model_point_to_world(mouse.hit.hit_centre_model(mouse.hit.find("tc")))
+	camera.look_at(mouse.model_point_to_world(mouse.hit.hit_centre_model(mouse.hit.find("hazard"))), Vector3(0, 0, 1))
+	frames(1)
+	var ev := InputEventMouseButton.new()
+	ev.button_index = MOUSE_BUTTON_LEFT
+	ev.pressed = true
+	ev.position = camera.unproject_position(tc_centre)
+	mouse._unhandled_input(ev)
+	check(bool(mouse._down.get(0, false)) and mouse.hit.get_hover() == mouse.hit.find("tc"), "a click at TC's projected position under UI scale 1.5 picks TC (at %s, hover %d)" % [ev.position, mouse.hit.get_hover()])
+	mouse.release_button(0)
+	frames(25)
+	mouse.discard_pending()
+	root.content_scale_factor = old_factor
 
 	if "--capture" in OS.get_cmdline_user_args():
 		await capture()

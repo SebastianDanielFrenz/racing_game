@@ -28,16 +28,6 @@ static func detect() -> float:
 		s = maxf(s, float(dpi) / 96.0)
 	return clampf(s, 1.0, MAX_SCALE)
 
-# A mouse position (InputEvent.position, Viewport.get_mouse_position) is in canvas units, i.e. divided by the root's
-# content_scale_factor, while Camera3D.project_ray_* / unproject_position work in the viewport's physical pixels (3D
-# renders at full window resolution, see above). Picking a 3D object with the mouse must convert first, or every ray
-# misses by the UI scale (the hyper cockpit buttons ignored every click at 150 % Windows scaling, 2026-10-21).
-static func canvas_to_viewport_pixels(viewport: Viewport, at: Vector2) -> Vector2:
-	var window := viewport as Window
-	if window != null and window.content_scale_mode == Window.CONTENT_SCALE_MODE_DISABLED:
-		return at * window.content_scale_factor
-	return at
-
 static func apply(tree: SceneTree) -> void:
 	var f := detect()
 	tree.root.content_scale_factor = f
