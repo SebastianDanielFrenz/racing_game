@@ -981,6 +981,34 @@
       ]
     },
     {
+      "id": "nitrous_rpm_min",
+      "label": "Spray from",
+      "group": "N2O",
+      "area": "engine",
+      "unit": "x",
+      "help": "Lowest engine speed at which the armed kit sprays, 1000 to 15000 rpm. Too low and the shot's torque arrives where the turbos have not spooled and the tyres cannot carry it. Must stay below Spray up to. Stored as a multiple of the installed controller's own value.",
+      "kind": "scale",
+      "slider": {"mapping": "linear", "abs_min": 1000, "abs_max": 15000, "unit": "rpm", "decimals": 0},
+      "file": "nitrous_controller",
+      "pointers": [
+        "/min_rpm"
+      ]
+    },
+    {
+      "id": "nitrous_rpm_max",
+      "label": "Spray up to",
+      "group": "N2O",
+      "area": "engine",
+      "unit": "x",
+      "help": "Highest engine speed at which the armed kit sprays, 1000 to 15000 rpm. The flow fades to zero over the controller's last few hundred rpm below this value. Keep it under the rev limiter: if the limiter cuts first, the shot never reaches the top of the rev range. Raise it together with the rev limiter. Stored as a multiple of the installed controller's own value.",
+      "kind": "scale",
+      "slider": {"mapping": "linear", "abs_min": 1000, "abs_max": 15000, "unit": "rpm", "decimals": 0},
+      "file": "nitrous_controller",
+      "pointers": [
+        "/max_rpm"
+      ]
+    },
+    {
       "id": "trim_driver_seat",
       "label": "Driver seat",
       "group": "Weight reduction",

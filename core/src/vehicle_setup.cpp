@@ -272,6 +272,9 @@ struct Files {
     std::optional<FileDoc> gearbox;
     std::optional<FileDoc> engine;
     std::optional<FileDoc> turbo;
+    // The nitrous controller the kit runs (the kit component's "controller", else the kit file's default_controller);
+    // its rpm window is a Tuning option.
+    std::optional<FileDoc> nitrous_controller;
     std::string original_engine_path;
     // Engine garage G1. The engine whose options (turbo, nitrous) apply is the INSTALLED one: engine_stem is the
     // catalog stem of the default engine it is (a user engine: its base), the car's own at load.
@@ -394,6 +397,30 @@ bool load_turbo(Files& files, std::string* err) {
     return true;
 }
 
+// The nitrous_kit component's controller: its own "controller" key (relative to the vehicle file), else the kit file's
+// default_controller (relative to the kit). Called after the file choices, so a swapped kit brings its own controller.
+bool load_nitrous_controller(Files& files, std::string* err) {
+    files.nitrous_controller.reset();
+    const int idx = component_index(files.vehicle.work, "nitrous_kit");
+    if (idx < 0) return true;
+    const json& comp = files.vehicle.work["powertrain"]["components"][static_cast<std::size_t>(idx)];
+    std::string ref, dir = dir_of(files.vehicle.path);
+    if (!detail::get_string(comp, "controller", ref)) {
+        std::string kit_ref;
+        detail::get_string(comp, "ref", kit_ref);
+        const std::string kit_path = resolve_ref(dir, kit_ref);
+        json kit;
+        if (!read_doc(kit_path, kit, err)) return false;
+        if (!detail::get_string(kit, "default_controller", ref)) return true;
+        dir = dir_of(kit_path);
+    }
+    if (ref.empty()) return true;
+    FileDoc f; f.path = resolve_ref(dir, ref);
+    if (!read_doc(f.path, f.base, err)) return false;
+    f.work = f.base; files.nitrous_controller = std::move(f);
+    return true;
+}
+
 bool load_files(const CatalogEntry& entry, Files& files, std::string* err) {
     files.vehicle.path = norm_path(entry.vehicle_path);
     if (!read_doc(files.vehicle.path, files.vehicle.base, err)) return false;
@@ -408,7 +435,7 @@ bool load_files(const CatalogEntry& entry, Files& files, std::string* err) {
         files.original_engine_path = files.engine->path;
         files.engine_stem = stem_of_path(files.engine->path);
     }
-    return load_turbo(files, err);
+    return load_turbo(files, err) && load_nitrous_controller(files, err);
 }
 
 // ---- options: the entry's view of the table ----------------------------------------
@@ -449,7 +476,7 @@ std::pair<double, double> range_for(const CatalogEntry& entry, const SetupOption
 struct Target {
     FileDoc* file = nullptr;
     std::string pointer; // concrete JSON pointer in file->work
-    std::string kind;    // "vehicle" | "gearbox" | "engine" | "turbo"
+    std::string kind;    // "vehicle" | "gearbox" | "engine" | "turbo" | "nitrous_controller"
 };
 
 std::vector<Target> targets_of(Files& files, const SetupOptionDef& def, const std::vector<std::string>& patterns) {
@@ -465,6 +492,8 @@ std::vector<Target> targets_of(Files& files, const SetupOptionDef& def, const st
         if (files.engine) add(&*files.engine, "engine");
     } else if (def.file == "turbo") {
         if (files.turbo) add(&*files.turbo, "turbo");
+    } else if (def.file == "nitrous_controller") {
+        if (files.nitrous_controller) add(&*files.nitrous_controller, "nitrous_controller");
     }
     return out;
 }
@@ -1920,8 +1949,8 @@ std::optional<SetupOptionTable> parse_setup_options(const std::string& json_text
         }
         detail::get_string(o, "file", d.file);
         detail::get_string(o, "model_option", d.model_option);
-        if (d.file != "vehicle" && d.file != "gearbox" && d.file != "engine" && d.file != "turbo") {
-            return bad(where + ": \"file\" must be vehicle, gearbox, engine or turbo");
+        if (d.file != "vehicle" && d.file != "gearbox" && d.file != "engine" && d.file != "turbo" && d.file != "nitrous_controller") {
+            return bad(where + ": \"file\" must be vehicle, gearbox, engine, turbo or nitrous_controller");
         }
         detail::get_string(o, "monotonic", d.monotonic);
         if (!d.monotonic.empty() && d.monotonic != "decreasing") return bad(where + ": \"monotonic\" must be \"decreasing\"");
@@ -2654,7 +2683,7 @@ SetupModel build_setup_model(const CatalogEntry& entry, const SetupOptionTable& 
             if (const EngineEntry* own = ctx.engines->find_by_file(files.original_engine_path)) model.engine_key = own->key;
         }
     }
-    if (!load_turbo(files, &model.error)) return model;
+    if (!load_turbo(files, &model.error) || !load_nitrous_controller(files, &model.error)) return model;
     refresh_internals_parts(files, ctx); // after the swap: the limits and masses of the INSTALLED engine
     {
         std::map<std::string, std::string> cooling_options;
@@ -3020,6 +3049,8 @@ std::string apply_option(const CatalogEntry& entry, const SetupOptionDef& def, c
     if (!entry_offers(entry, id)) return "option \"" + id + "\" is not offered for " + entry.id;
     // Retain boost calibration as dormant when the player swaps to NA.
     if (def.file == "turbo" && !files.turbo) return {};
+    if (def.file == "nitrous_controller" && !files.nitrous_controller) return {}; // a car without a kit keeps the value
+
     const std::vector<std::string> patterns = pointers_for(entry, def);
     const auto range = range_for(entry, def);
     const auto type_error = [&](const char* expected) { return "option \"" + id + "\" needs " + expected; };
@@ -3279,7 +3310,7 @@ CompiledSetup compile_setup_internal(const CatalogEntry& entry, const SetupOptio
         out.chassis_mass_delta_kg = pkg.mass_delta_kg;
         if (files.swapped) out.engine_title = files.swapped->name;
     }
-    if (!load_turbo(files, &err)) { out.error = err; return out; }
+    if (!load_turbo(files, &err) || !load_nitrous_controller(files, &err)) { out.error = err; return out; }
     // Pass 2: everything else, in table order.
     for (const SetupOptionDef& def : table.options) {
         if (def.kind == OptionKind::TyreChoice || def.kind == OptionKind::FileChoice) continue;
@@ -3418,6 +3449,7 @@ CompiledSetup compile_setup_internal(const CatalogEntry& entry, const SetupOptio
     if (files.gearbox && !finish_file("gearbox", *files.gearbox, false)) return out;
     if (files.engine && !finish_file("engine", *files.engine, false)) return out;
     if (files.turbo && !finish_file("turbo", *files.turbo, false)) return out;
+    if (files.nitrous_controller && !finish_file("nitrous_controller", *files.nitrous_controller, false)) return out;
     // Trusted swap-package edits (no player option touches an electronics part, so no whitelist).
     for (const FileDoc& f : files.electronics) {
         const json patch = make_merge_patch(f.base, f.work);
@@ -3549,6 +3581,7 @@ MaterialisedSetup materialise_setup(const CatalogEntry& entry, const SetupOption
     if (files.cooling && !write_aux("cooling", *files.cooling)) return out;
     if (files.thermal && !write_aux("thermal", *files.thermal)) return out;
     if (files.turbo && !write_aux("turbo", *files.turbo)) return out;
+    if (files.nitrous_controller && !write_aux("nitrous_controller", *files.nitrous_controller)) return out;
     if (files.gearbox && !write_aux("gearbox", *files.gearbox)) return out;
     if (files.engine && !write_aux("engine", *files.engine)) return out;
     for (const FileDoc& f : files.electronics) {
@@ -3557,6 +3590,12 @@ MaterialisedSetup materialise_setup(const CatalogEntry& entry, const SetupOption
     json vehicle = files.vehicle.base;
     vehicle.merge_patch(*detail::parse_json(out.compiled.vehicle_patch));
     absolutise_refs(vehicle, dir_of(files.vehicle.path));
+    // A tuned controller named only by the kit's default_controller: the vehicle's kit component names it, so the
+    // physics loader picks the materialised copy (the kit file itself stays shared and unchanged).
+    if (files.nitrous_controller && moved.count(files.nitrous_controller->path)) {
+        const int idx = component_index(vehicle, "nitrous_kit");
+        if (idx >= 0) vehicle["powertrain"]["components"][static_cast<std::size_t>(idx)]["controller"] = files.nitrous_controller->path;
+    }
     replace_strings(vehicle, moved);
     const std::string vehicle_path =
         norm_path((fs::path(out_dir) / fs::path(files.vehicle.path).filename()).generic_string());
