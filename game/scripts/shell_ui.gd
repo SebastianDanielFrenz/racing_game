@@ -870,7 +870,7 @@ func _draw_garage_options() -> void:
 	var group := ""
 	var count := 0
 	for opt in garage.get_options():
-		if str(opt["id"]) == "clutch_capacity": continue
+		if str(opt["id"]) in ["clutch_capacity", "shift_clutch_capacity"]: continue
 		if str(opt["area"]) != _active_area or not bool(opt["available"]):
 			continue
 		if str(opt["kind"]) in ["tyre_choice", "file_choice", "part_choice"]:
@@ -1460,7 +1460,11 @@ func _draw_upgrades() -> void:
 		_focus_garage.call_deferred()
 		return
 	if top == "Drivetrain":
+		# A manual-clutch car offers clutch_capacity; an automatic / dual-clutch car has no clutch component and offers
+		# shift_clutch_capacity (the gearbox's own clutches) instead. Same tile, whichever applies.
 		var clutch := _garage_option("clutch_capacity")
+		if clutch.is_empty():
+			clutch = _garage_option("shift_clutch_capacity")
 		var gearbox := _garage_option("gearbox_install")
 		if _garage_path.size() == 1:
 			_draw_tiles(["Clutch", "Gearbox", "Gearing"], (["Clutch"] if clutch.is_empty() else []) + (["Gearbox"] if gearbox.is_empty() else []))
@@ -1568,15 +1572,19 @@ func _draw_clutch_upgrades(opt: Dictionary) -> void:
 	grid.columns = 2
 	_option_box.add_child(grid)
 	var levels := [{"label":"Stock", "factor":1.0}, {"label":"Reinforced", "factor":1.5}, {"label":"Competition", "factor":2.0}, {"label":"Heavy duty", "factor":3.0}, {"label":"Extreme", "factor":5.0}, {"label":"Drag competition", "factor":8.0}]
+	var opt_id := str(opt["id"])
+	if opt_id == "shift_clutch_capacity":
+		# The gearbox clutches use the option's own range (x1-4); cards at every 0.5 step plus x2.5 steps are named by factor.
+		levels = [{"label":"Stock", "factor":1.0}, {"label":"Reinforced x1.5", "factor":1.5}, {"label":"Competition x2", "factor":2.0}, {"label":"x2.5", "factor":2.5}, {"label":"Heavy duty x3", "factor":3.0}, {"label":"Maximum x4", "factor":4.0}]
 	for level in levels:
 		var factor := float(level["factor"])
 		if factor < float(opt["min"]) or factor > float(opt["max"]): continue
 		var installed := is_equal_approx(float(opt["value"]),factor)
-		var presentation := {"label":level["label"], "size":"Torque capacity · %.0f Nm" % (float(numbers[0])*factor), "image":"res://assets/components/drivetrain/clutch.svg"}
+		var presentation := {"label":level["label"] if opt_id != "shift_clutch_capacity" else str(level["label"]).replace("Stock", "Stock (gearbox clutches)"), "size":"Torque capacity · %.0f Nm" % (float(numbers[0])*factor), "image":"res://assets/components/drivetrain/clutch.svg"}
 		var card := _make_component_card(presentation,"INSTALLED" if installed else "Install")
 		grid.add_child(card)
 		_buttons["clutch:" + str(factor)] = card
-		card.pressed.connect(func(): _edit_option("clutch_capacity",factor); _draw_garage_options())
+		card.pressed.connect(func(): _edit_option(opt_id,factor); _draw_garage_options())
 		if installed or _garage_preferred == null: _garage_preferred = card
 	_focus_garage.call_deferred()
 
