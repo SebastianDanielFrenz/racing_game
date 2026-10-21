@@ -117,6 +117,11 @@ func _make_vehicle_visual() -> void:
 func get_cockpit() -> Node3D:
 	return _vehicle_visual.get_cockpit() if _vehicle_visual != null else null
 
+# The mouse adapter of the mounted common cockpit (cockpit_mouse.gd; car_hyper), or null. main.gd feeds it driving_live /
+# world_input_active every frame; without this forwarder it never did and every click was ignored.
+func get_cockpit_mouse() -> Node:
+	return _vehicle_visual.get_cockpit_mouse() if _vehicle_visual != null else null
+
 # R6: the garage's car for the next world (a different model, colours from its setup).
 # The same car again only re-binds; a different one replaces the visual.
 # `model_options`: the optional model parts the setup switches on (e.g. "roof", model_options.gd).
