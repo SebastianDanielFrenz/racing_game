@@ -288,6 +288,82 @@ json make_wheel_gear(const Reduction& r, const std::string& id) {
     return g;
 }
 
+// A hybrid's traction motors: a combustion engine plus electric motors that are no crank generator (crank_assist).
+struct HybridUnit {
+    std::string motor;
+    std::string reduction;     // the gear pair / differential the motor feeds alone on its shaft, "" = none
+    double downstream = 1.0;   // the final drive (differential carrier / gear pair input ratio) after that reduction
+};
+
+struct Hybrid {
+    bool ok = false;
+    std::string reason;
+    std::vector<HybridUnit> units;
+};
+
+Hybrid read_hybrid(const json& vehicle) {
+    Hybrid h;
+    const auto pt = vehicle.find("powertrain");
+    if (pt == vehicle.end() || !pt->is_object()) { h.reason = "the vehicle has no powertrain"; return h; }
+    const auto comps = pt->find("components");
+    const auto shafts = pt->find("shafts");
+    if (comps == pt->end() || !comps->is_array() || shafts == pt->end() || !shafts->is_array()) {
+        h.reason = "the powertrain has no components or shafts";
+        return h;
+    }
+    std::map<std::string, const json*> by_id;
+    std::map<std::string, std::string> type_of;
+    bool engine = false;
+    std::vector<std::string> motors;
+    for (const json& c : *comps) {
+        std::string id, ty;
+        if (!c.is_object() || !detail::get_string(c, "id", id) || !detail::get_string(c, "type", ty)) continue;
+        by_id[id] = &c;
+        type_of[id] = ty;
+        if (ty == "engine") engine = true;
+        if (ty == "electric_motor") {
+            bool assist = false;
+            detail::get_bool(c, "crank_assist", assist);
+            if (!assist) motors.push_back(id);
+        }
+    }
+    if (!engine) { h.reason = "it has no combustion engine"; return h; }
+    if (motors.empty()) { h.reason = "it has no traction motor"; return h; }
+    auto ports_holding = [&](const std::string& port) {
+        std::vector<std::string> out;
+        for (const json& s : *shafts) {
+            const auto ps = shaft_ports(s);
+            if (std::find(ps.begin(), ps.end(), port) != ps.end()) out = ps;
+        }
+        return out;
+    };
+    for (const std::string& m : motors) {
+        HybridUnit u;
+        u.motor = m;
+        const auto ps = ports_holding(m + ".shaft");
+        if (ps.size() == 2) {
+            const std::string peer = ps[0] == m + ".shaft" ? ps[1] : ps[0];
+            const auto ty = type_of.find(owner_of(peer));
+            if (ty != type_of.end() && ty->second == "gear_pair" && port_of(peer) == "in") {
+                u.reduction = owner_of(peer);
+                for (const std::string& p : ports_holding(u.reduction + ".out")) {
+                    const auto t2 = type_of.find(owner_of(p));
+                    if (t2 == type_of.end() || owner_of(p) == u.reduction) continue;
+                    const bool diff = t2->second == "differential" && port_of(p) == "carrier";
+                    const bool gear = t2->second == "gear_pair" && port_of(p) == "in";
+                    if (!diff && !gear) continue;
+                    double r = 0.0;
+                    detail::get_number(*by_id[owner_of(p)], "ratio", r);
+                    if (r > 0.0) { u.downstream = r; break; }
+                }
+            }
+        }
+        h.units.push_back(std::move(u));
+    }
+    h.ok = true;
+    return h;
+}
+
 } // namespace
 
 int EvLayoutEntry::motor_count() const { return drive_motors(front) + drive_motors(rear); }
@@ -387,7 +463,15 @@ EvMotorInfo describe_ev_motors_json(const json& vehicle, const EvMotorCatalog* c
     const Topology t = read_topology(vehicle);
     info.swappable = t.ok;
     info.reason = t.reason;
-    if (!t.ok) return info;
+    if (!t.ok) {
+        const Hybrid h = read_hybrid(vehicle);
+        if (h.ok) {
+            info.hybrid = true;
+            info.traction_motors = static_cast<int>(h.units.size());
+            info.reason = "it is a hybrid: only the drive unit of its traction motor changes, not the motor layout";
+        }
+        return info;
+    }
     info.front = t.front;
     info.rear = t.rear;
     info.motor_count = static_cast<int>(t.units.size());
@@ -548,6 +632,72 @@ std::string apply_ev_unit_json(json& vehicle, bool front, const EvMotorUnit& uni
     }
     if (!any) return std::string("the ") + (front ? "front" : "rear") + " axle is not driven";
     return {};
+}
+
+std::string apply_ev_hybrid_unit_json(json& vehicle, const EvMotorUnit& unit, std::vector<int>* touched) {
+    const Hybrid h = read_hybrid(vehicle);
+    if (!h.ok) return "this car's traction motor cannot be changed: " + h.reason;
+    double added_power_w = 0.0;  // the traction power the unit adds over the car's own motors
+    for (const HybridUnit& u : h.units) {
+        const int mi = component_index(vehicle, u.motor);
+        json& motor = vehicle["powertrain"]["components"][static_cast<std::size_t>(mi)];
+        double old_power = 0.0;
+        get_number(motor, "max_power_w", old_power);
+        added_power_w += std::max(0.0, unit.max_power_w - old_power);
+        motor["peak_torque_nm"] = unit.peak_torque_nm;
+        motor["max_power_w"] = unit.max_power_w;
+        motor["max_rpm"] = unit.max_rpm;
+        motor["inertia_kgm2"] = unit.inertia_kgm2;
+        motor["efficiency"] = unit.efficiency;
+        motor["regen_torque_nm"] = unit.regen_torque_nm;
+        motor["mass_kg"] = unit.mass_kg;
+        if (touched != nullptr) touched->push_back(mi);
+        if (u.reduction.empty()) continue;
+        const int ri = component_index(vehicle, u.reduction);
+        json& red = vehicle["powertrain"]["components"][static_cast<std::size_t>(ri)];
+        red["ratio"] = unit.reduction_ratio / u.downstream;
+        red["efficiency"] = unit.reduction_efficiency;
+        if (touched != nullptr) touched->push_back(ri);
+    }
+    // The hybrid supervisor asks the combustion engine for the part of the full-pedal request (requested_power_w, an authored
+    // rating) the motors cannot supply. A stronger motor would reach the old rating and switch the engine off at full pedal, so
+    // the rating grows with the motor power the unit adds (the car's own headroom for the engine stays).
+    if (added_power_w > 0.0) {
+        json& comps = vehicle["powertrain"]["components"];
+        for (std::size_t i = 0; i < comps.size(); ++i) {
+            std::string ty;
+            if (!comps[i].is_object() || !detail::get_string(comps[i], "type", ty) || ty != "hybrid_control") continue;
+            double requested = 0.0;
+            if (!get_number(comps[i], "requested_power_w", requested)) continue;
+            comps[i]["requested_power_w"] = requested + added_power_w;
+            if (touched != nullptr) touched->push_back(static_cast<int>(i));
+        }
+    }
+    return {};
+}
+
+std::optional<EvMotorUnit> ev_hybrid_unit_json(const json& vehicle) {
+    const Hybrid h = read_hybrid(vehicle);
+    if (!h.ok || h.units.empty()) return std::nullopt;
+    const HybridUnit& u = h.units.front();
+    const json& comps = vehicle["powertrain"]["components"];
+    const json& m = comps[static_cast<std::size_t>(component_index(vehicle, u.motor))];
+    EvMotorUnit out;
+    get_number(m, "peak_torque_nm", out.peak_torque_nm);
+    get_number(m, "max_power_w", out.max_power_w);
+    get_number(m, "max_rpm", out.max_rpm);
+    get_number(m, "inertia_kgm2", out.inertia_kgm2);
+    get_number(m, "efficiency", out.efficiency);
+    get_number(m, "regen_torque_nm", out.regen_torque_nm);
+    get_number(m, "mass_kg", out.mass_kg);
+    if (!u.reduction.empty()) {
+        const json& r = comps[static_cast<std::size_t>(component_index(vehicle, u.reduction))];
+        double ratio = 0.0;
+        get_number(r, "ratio", ratio);
+        out.reduction_ratio = ratio * u.downstream;
+        get_number(r, "efficiency", out.reduction_efficiency);
+    }
+    return out;
 }
 
 } // namespace detail

@@ -79,6 +79,10 @@ private:
 struct EvMotorInfo {
     bool swappable = false;   // a battery EV whose drive units the swap understands (see the file comment)
     std::string reason;       // why not, when !swappable
+    // A car with a combustion engine and traction motors (a hybrid): not swappable (the layout stays battery-EV only), but the
+    // drive unit of its traction motor(s) can change. The crank generator (crank_assist) is no traction motor.
+    bool hybrid = false;
+    int traction_motors = 0;  // hybrid only
     EvAxleDrive front = EvAxleDrive::None;
     EvAxleDrive rear = EvAxleDrive::None;
     int motor_count = 0;

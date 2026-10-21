@@ -19,4 +19,12 @@ std::string apply_ev_unit_json(json& vehicle, bool front, const EvMotorUnit& uni
 // ratio/efficiency of its reduction; nullopt when the car is not swappable. id/label/inspiration/source stay empty.
 std::optional<EvMotorUnit> ev_axle_unit_json(const json& vehicle, bool front);
 
+// Hybrids (a combustion engine plus traction motors; the crank generator is skipped): sets the unit's figures on every traction
+// motor. The unit's reduction ratio is the whole motor-to-wheel ratio, so a reduction the motor feeds (the hybrid conversion's
+// gear pair, which sits before the car's final drive) gets ratio / (the final drive it feeds). Efficiency as the unit.
+std::string apply_ev_hybrid_unit_json(json& vehicle, const EvMotorUnit& unit, std::vector<int>* touched = nullptr);
+// The first traction motor as a unit (its reduction ratio = the reduction times the final drive after it); nullopt when the car
+// is no hybrid.
+std::optional<EvMotorUnit> ev_hybrid_unit_json(const json& vehicle);
+
 } // namespace rg::detail

@@ -76,13 +76,21 @@ std::string escape_pointer_key(const std::string& k) {
 
 // ---- pointer patterns -----------------------------------------------------------
 // "/a/b/*/c" and "/wheels/[is_front=true]/tyre": a segment is a key or array
-// index, `*` (every array element) or `[key=value]` (the array elements whose
+// index, `*` (every array element) or `[key=value]` (several conditions comma separated, `key!=value` also true when absent; the array elements whose
 // field `key` equals `value`).
+
+// A filter holds one or more comma-separated conditions that must all hold: `key=value`, or `key!=value` (also true when the
+// element has no such field).
+struct Condition {
+    std::string key;
+    std::string value;
+    bool negate = false;
+};
 
 struct Segment {
     enum class Kind { Key, Wildcard, Filter } kind = Kind::Key;
     std::string key;
-    std::string value;
+    std::vector<Condition> conditions;
 };
 
 bool parse_pattern(const std::string& pattern, std::vector<Segment>& out, std::string* err) {
@@ -103,17 +111,30 @@ bool parse_pattern(const std::string& pattern, std::vector<Segment>& out, std::s
         if (seg == "*") {
             s.kind = Segment::Kind::Wildcard;
         } else if (seg.front() == '[') {
-            const std::size_t eq = seg.find('=');
-            if (seg.back() != ']' || eq == std::string::npos || eq < 2 || eq + 2 > seg.size() - 1 + 1) {
+            if (seg.back() != ']' || seg.size() < 5) {
                 if (err != nullptr) *err = "pointer \"" + pattern + "\": a filter must look like [key=value]";
                 return false;
             }
             s.kind = Segment::Kind::Filter;
-            s.key = seg.substr(1, eq - 1);
-            s.value = seg.substr(eq + 1, seg.size() - eq - 2);
-            if (s.key.empty() || s.value.empty()) {
-                if (err != nullptr) *err = "pointer \"" + pattern + "\": a filter must look like [key=value]";
-                return false;
+            const std::string body = seg.substr(1, seg.size() - 2);
+            std::size_t from = 0;
+            while (from <= body.size()) {
+                const std::size_t comma = body.find(',', from);
+                const std::string cond = body.substr(from, comma == std::string::npos ? std::string::npos : comma - from);
+                const std::size_t eq = cond.find('=');
+                Condition c;
+                if (eq != std::string::npos) {
+                    c.negate = eq > 0 && cond[eq - 1] == '!';
+                    c.key = cond.substr(0, c.negate ? eq - 1 : eq);
+                    c.value = cond.substr(eq + 1);
+                }
+                if (eq == std::string::npos || c.key.empty() || c.value.empty()) {
+                    if (err != nullptr) *err = "pointer \"" + pattern + "\": a filter must look like [key=value]";
+                    return false;
+                }
+                s.conditions.push_back(std::move(c));
+                if (comma == std::string::npos) break;
+                from = comma + 1;
             }
         } else {
             s.kind = Segment::Kind::Key;
@@ -166,8 +187,13 @@ void expand_from(const json& node, const std::vector<Segment>& segs, std::size_t
                 for (std::size_t k = 0; k < node.size(); ++k) {
                     const json& el = node[k];
                     if (!el.is_object()) continue;
-                    const auto f = el.find(s.key);
-                    if (f == el.end() || !field_matches(*f, s.value)) continue;
+                    bool all = true;
+                    for (const Condition& c : s.conditions) {
+                        const auto f = el.find(c.key);
+                        const bool hit = f != el.end() && field_matches(*f, c.value);
+                        if (hit == c.negate) { all = false; break; }
+                    }
+                    if (!all) continue;
                     expand_from(el, segs, i + 1, prefix + "/" + std::to_string(k), out);
                 }
             }
@@ -516,6 +542,12 @@ bool is_ev_catalog(const SetupOptionDef& def) { return def.catalog == "ev_layout
 std::string ev_fit_error(const Files& files, const SetupOptionDef& def, const SetupContext& ctx) {
     if (!ctx.ev_motors) return "the electric motor catalogue is unavailable";
     const EvMotorInfo info = detail::describe_ev_motors_json(files.vehicle.work, ctx.ev_motors.get());
+    if (def.catalog == "ev_motor_units" && def.axle == "traction") {
+        // A hybrid's traction motor(s): units only.
+        if (info.hybrid) return {};
+        return info.swappable ? "this car has no combustion engine: its front and rear motors carry the drive units"
+                              : "this car has no hybrid traction motor (" + info.reason + ")";
+    }
     if (!info.swappable) return "this car's motors cannot be changed: " + info.reason;
     if (def.catalog == "ev_motor_units" && (def.axle == "front" ? info.front : info.rear) == EvAxleDrive::None) {
         return std::string("the ") + def.axle + " axle is not driven";
@@ -526,7 +558,7 @@ std::string ev_fit_error(const Files& files, const SetupOptionDef& def, const Se
 // A unit choice for an axle the chosen layout does not drive: it waits (the choice stays in the setup and applies again when
 // the axle is driven), it is no error.
 bool ev_axle_idle(const Files& files, const SetupOptionDef& def, const SetupContext& ctx) {
-    if (def.catalog != "ev_motor_units" || !ctx.ev_motors) return false;
+    if (def.catalog != "ev_motor_units" || def.axle == "traction" || !ctx.ev_motors) return false;
     const EvMotorInfo info = detail::describe_ev_motors_json(files.vehicle.work, ctx.ev_motors.get());
     return info.swappable && (def.axle == "front" ? info.front : info.rear) == EvAxleDrive::None;
 }
@@ -847,7 +879,8 @@ std::string install_catalog_part(Files& files, const SetupOptionDef& def, const 
         const EvMotorUnit* u = ctx.ev_motors->find_unit(id);
         if (u == nullptr) return def.id + ": \"" + id + "\" is not a motor unit in the catalogue";
         std::vector<int> touched;
-        const std::string e = detail::apply_ev_unit_json(files.vehicle.work, def.axle == "front", *u, &touched);
+        const std::string e = def.axle == "traction" ? detail::apply_ev_hybrid_unit_json(files.vehicle.work, *u, &touched)
+                                                     : detail::apply_ev_unit_json(files.vehicle.work, def.axle == "front", *u, &touched);
         if (!e.empty()) return def.id + ": " + e;
         for (const int index : touched) files.derived_subtrees.push_back("/powertrain/components/" + std::to_string(index));
         return {};
@@ -2039,8 +2072,8 @@ std::optional<SetupOptionTable> parse_setup_options(const std::string& json_text
             if ((d.catalog == "ev_layouts" || d.catalog == "ev_motor_units") && d.file != "vehicle") {
                 return bad(where + ": an EV motor option edits the vehicle file");
             }
-            if (d.catalog == "ev_motor_units" && d.axle != "front" && d.axle != "rear") {
-                return bad(where + ": a motor unit choice needs \"axle\": front or rear");
+            if (d.catalog == "ev_motor_units" && d.axle != "front" && d.axle != "rear" && d.axle != "traction") {
+                return bad(where + ": a motor unit choice needs \"axle\": front, rear or traction (a hybrid)");
             }
             if (!d.catalog.empty()) {
                 if (o.contains("parts") || o.contains("compatible_engines")) {
@@ -2531,8 +2564,10 @@ void ev_choices(const SetupOptionDef& def, const SetupContext& ctx, const Files&
             stock.subtitle = p.subtitle + " \xc2\xb7 fitted";
         }
     } else {
-        const std::optional<EvMotorUnit> own = detail::ev_axle_unit_json(files.ev_stock, def.axle == "front");
-        stock.label = def.axle == "front" ? "Original front motors" : "Original rear motors";
+        const bool traction = def.axle == "traction";
+        const std::optional<EvMotorUnit> own = traction ? detail::ev_hybrid_unit_json(files.ev_stock)
+                                                        : detail::ev_axle_unit_json(files.ev_stock, def.axle == "front");
+        stock.label = traction ? "Original traction motor" : def.axle == "front" ? "Original front motors" : "Original rear motors";
         if (own) {
             stock.detail = ev_unit_figures(*own);
             stock.mass_kg = own->mass_kg;

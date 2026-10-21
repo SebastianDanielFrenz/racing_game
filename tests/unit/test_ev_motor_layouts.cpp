@@ -648,3 +648,162 @@ TEST_CASE("ev motors: report of the layouts and units", "[.][ev_motors_report]")
                     b.m.compiled.parts.root.total_kg(), d.kmh_at_3s, d.t100_s);
     }
 }
+
+// ---- hybrids: the traction motor's drive unit (owner 2026-10-21 follow-up) -------------------------------------------
+
+TEST_CASE("ev motors: a hybrid offers the drive unit of its traction motor, units only", "[ev][ev_motors][hybrid][setup]") {
+    Fixture f;
+    const std::vector<std::pair<std::string, rg::SetupValue>> hybrid = {{"powertrain_install", std::string("hybrid_battery")}};
+    const rg::VehicleSetup hybrid_setup = setup_of("car_hyper_n2o", hybrid);
+    const rg::SetupModel m = rg::build_setup_model(f.entry("car_hyper_n2o"), f.table, f.ctx, &hybrid_setup);
+    REQUIRE(m.error.empty());
+    const rg::OptionView* unit = view_of(m, "ev_hybrid_motor");
+    REQUIRE(unit != nullptr);
+    CHECK(unit->available);
+    REQUIRE(unit->parts.size() == f.motors->units().size() + 1);
+    CHECK(unit->parts.front().id == "stock");
+    CHECK_THAT(unit->parts.front().detail, ContainsSubstring("200 kW"));
+    // the layout and the per-axle options stay battery-EV only
+    for (const char* id : {"ev_layout", "ev_front_motors", "ev_rear_motors"}) {
+        INFO(id);
+        const rg::OptionView* v = view_of(m, id);
+        REQUIRE(v != nullptr);
+        CHECK_FALSE(v->available);
+    }
+    // a battery EV and an ICE car do not offer it
+    const rg::SetupModel ev = rg::build_setup_model(f.entry("car_electric"), f.table, f.ctx);
+    REQUIRE(view_of(ev, "ev_hybrid_motor") != nullptr);
+    CHECK_FALSE(view_of(ev, "ev_hybrid_motor")->available);
+    const rg::SetupModel ice = rg::build_setup_model(f.entry("car_hyper_n2o"), f.table, f.ctx);
+    REQUIRE(view_of(ice, "ev_hybrid_motor") != nullptr);
+    CHECK_FALSE(view_of(ice, "ev_hybrid_motor")->available);
+    // the layout cannot be set on a hybrid
+    CHECK_FALSE(rg::validate_setup(f.entry("car_hyper_n2o"), f.table, f.ctx,
+                                   setup_of("car_hyper_n2o", {{"powertrain_install", std::string("hybrid_battery")}, {"ev_layout", std::string("quad")}})).ok);
+}
+
+TEST_CASE("ev motors: a hypercar unit lands in the hybrid's traction motor and its reduction, the generator stays",
+          "[ev][ev_motors][hybrid]") {
+    Fixture f;
+    const Built stock = build(f, "car_hyper_n2o", {{"powertrain_install", std::string("hybrid_battery")}});
+    const Built b = build(f, "car_hyper_n2o", {{"powertrain_install", std::string("hybrid_battery")},
+                                               {"ev_hybrid_motor", std::string("hypercar_oil_cooled")}});
+    const rg::EvMotorUnit* u = f.motors->find_unit("hypercar_oil_cooled");
+    REQUIRE(u != nullptr);
+    const json* motor = component_of(b.vehicle, "conversion_motor");
+    const json* motor0 = component_of(stock.vehicle, "conversion_motor");
+    REQUIRE(motor != nullptr);
+    REQUIRE(motor0 != nullptr);
+    CHECK(motor->at("peak_torque_nm").get<double>() == Approx(u->peak_torque_nm));
+    CHECK(motor->at("max_power_w").get<double>() == Approx(u->max_power_w));
+    CHECK(motor->at("max_rpm").get<double>() == Approx(u->max_rpm));
+    CHECK(motor->at("mass_kg").get<double>() == Approx(u->mass_kg));
+    CHECK(motor->at("crank_assist").get<bool>() == false);
+    CHECK(motor->at("battery").get<std::string>() == "conversion_battery");
+    // the crank generator is untouched
+    CHECK(*component_of(b.vehicle, "conversion_generator") == *component_of(stock.vehicle, "conversion_generator"));
+    // the reduction: the unit's ratio is the whole motor-to-wheel ratio, so the reduction before the final drive is ratio / FD
+    const double final_drive = component_of(b.vehicle, "diff")->at("ratio").get<double>();
+    const json* red = component_of(b.vehicle, "conversion_reduction");
+    REQUIRE(red != nullptr);
+    CHECK(red->at("ratio").get<double>() * final_drive == Approx(u->reduction_ratio));
+    CHECK(red->at("efficiency").get<double>() == Approx(u->reduction_efficiency));
+    CHECK(component_of(stock.vehicle, "conversion_reduction")->at("ratio").get<double>() == Approx(2.2));
+    // the full-pedal rating the supervisor asks the engine against grows with the added motor power (else the engine would switch off)
+    CHECK(component_of(b.vehicle, "conversion_control")->at("requested_power_w").get<double>() == Approx(300000.0 + (u->max_power_w - 200000.0)));
+    // the part-mass tree follows the motor
+    auto motors_kg = [](const rg::PartTree& tree) {
+        double sum = 0;
+        std::vector<const rg::PartNode*> todo = {&tree.root};
+        while (!todo.empty()) {
+            const rg::PartNode* n = todo.back();
+            todo.pop_back();
+            if (n->key == "electric_motor") sum += n->total_kg();
+            for (const rg::PartNode& c : n->children) todo.push_back(&c);
+        }
+        return sum;
+    };
+    INFO(b.m.compiled.parts.error);
+    REQUIRE(b.m.compiled.parts.ok);
+    CHECK(motors_kg(b.m.compiled.parts) > motors_kg(stock.m.compiled.parts));
+    // Motor output scales the traction motor only
+    const Built half = build(f, "car_hyper_n2o", {{"powertrain_install", std::string("hybrid_battery")},
+                                                  {"ev_hybrid_motor", std::string("hypercar_oil_cooled")}, {"ev_motor_output", 0.5}});
+    CHECK(component_of(half.vehicle, "conversion_motor")->at("max_power_w").get<double>() == Approx(u->max_power_w * 0.5));
+    CHECK(*component_of(half.vehicle, "conversion_generator") == *component_of(stock.vehicle, "conversion_generator"));
+    // it validates, and loads in the physics
+    CHECK(rg::validate_setup(f.entry("car_hyper_n2o"), f.table, f.ctx,
+                             setup_of("car_hyper_n2o", {{"powertrain_install", std::string("hybrid_battery")}, {"ev_hybrid_motor", std::string("hypercar_oil_cooled")}})).ok);
+    ps::jobs::JobSystem pool(4);
+    ps::io::EngineMapOptions maps;
+    maps.cache_dir = f.ctx.engine_map_cache_dir;
+    maps.pool = &pool;
+    const auto vehicle = rg::load_vehicle(b.m.vehicle_path, maps);
+    CHECK_FALSE(vehicle.powertrain.components.empty());
+}
+
+TEST_CASE("ev motors: the garage dyno follows the hybrid's drive unit", "[ev][ev_motors][hybrid][garage_dyno]") {
+    Fixture f;
+    // a race pack (330 kW) lets the 450 kW unit show over the car's own 200 kW motor
+    const std::vector<std::pair<std::string, rg::SetupValue>> base = {{"powertrain_install", std::string("hybrid_battery")},
+                                                                      {"ev_battery_pack", std::string("race")}};
+    auto with_unit = base;
+    with_unit.push_back({"ev_hybrid_motor", std::string("hypercar_oil_cooled")});
+    const rg::VehicleSetup kept = rg::dyno_setup(f.table, f.entry("car_hyper_n2o"), setup_of("car_hyper_n2o", with_unit), &f.reference);
+    CHECK(kept.values.count("ev_hybrid_motor") == 1);
+    ps::jobs::JobSystem pool(4);
+    auto peak = [&](const std::vector<std::pair<std::string, rg::SetupValue>>& values, const char* tag) {
+        rg::ScopedWorkDir dir(f.ctx.work_root, std::string("hybdyno_") + tag);
+        const auto m = rg::materialise_setup(f.entry("car_hyper_n2o"), f.table, f.ctx,
+                                             rg::dyno_setup(f.table, f.entry("car_hyper_n2o"), setup_of("car_hyper_n2o", values), &f.reference),
+                                             dir.path());
+        INFO(m.error);
+        REQUIRE(m.ok);
+        ps::io::EngineMapOptions maps;
+        maps.cache_dir = f.ctx.engine_map_cache_dir;
+        maps.pool = &pool;
+        const auto vehicle = rg::load_vehicle(m.vehicle_path, maps);
+        const auto plan = rg::plan_electrified_dyno(vehicle, f.reference);
+        REQUIRE(plan.has_value());
+        const auto points = rg::measure_electrified_dyno(vehicle, f.reference, *plan, &pool, nullptr, [](const auto&, int) {});
+        double best = 0;
+        for (const auto& p : points) best = std::max(best, p.power_kw);
+        return best;
+    };
+    const double own = peak(base, "own");
+    const double hyper = peak(with_unit, "unit");
+    CHECK(hyper > own + 50.0); // the engine stays on: the hybrid rating grows with the motor
+}
+
+TEST_CASE("ev motors: battery pack cards show absolute figures for the car being edited", "[ev][ev_motors][hybrid][setup]") {
+    Fixture f;
+    auto pack_detail = [&](const std::string& car, std::vector<std::pair<std::string, rg::SetupValue>> values, const std::string& part) {
+        const rg::VehicleSetup vs = setup_of(car, std::move(values));
+        const rg::SetupModel m = rg::build_setup_model(f.entry(car), f.table, f.ctx, &vs);
+        REQUIRE(m.error.empty());
+        const rg::OptionView* v = view_of(m, "ev_battery_pack");
+        REQUIRE(v != nullptr);
+        for (const rg::SetupPart& p : v->parts) if (p.id == part) return p.detail;
+        FAIL("no such pack card " + part);
+        return std::string();
+    };
+    CHECK(pack_detail("car_hyper_n2o", {{"powertrain_install", std::string("hybrid_battery")}}, "grand_tourer") == "28 kWh \xc2\xb7 300 kW \xc2\xb7 231 kg");
+    CHECK(pack_detail("car_electric", {}, "grand_tourer") == "126 kWh \xc2\xb7 1400 kW \xc2\xb7 825 kg");
+    const rg::SetupModel m = rg::build_setup_model(f.entry("car_electric"), f.table, f.ctx);
+    CHECK_THAT(view_of(m, "ev_battery_pack")->def.help, ContainsSubstring("caps the electric power"));
+}
+
+TEST_CASE("ev motors: an old ev_motor_scale of 2.0 on a hybrid loads as Motor output 1.0", "[ev][ev_motors][hybrid][setup]") {
+    Fixture f;
+    std::string err;
+    const auto parsed = rg::parse_setup(
+        R"({"format":"racing_game.vehicle_setup/1","vehicle":"car_hyper_n2o","options":{"powertrain_install":"hybrid_battery","ev_motor_scale":2.0,"ev_battery_pack":"grand_tourer"}})",
+        f.table, "old setup", &err);
+    INFO(err);
+    REQUIRE(parsed.has_value());
+    CHECK(std::get<double>(parsed->values.at("ev_motor_output")) == Approx(1.0));
+    const Built b = build(f, "car_hyper_n2o", {{"powertrain_install", std::string("hybrid_battery")}, {"ev_motor_output", 1.0},
+                                               {"ev_battery_pack", std::string("grand_tourer")}});
+    CHECK(component_of(b.vehicle, "conversion_motor")->at("max_power_w").get<double>() == Approx(200000.0));
+    CHECK(component_of(b.vehicle, "conversion_battery")->at("max_discharge_w").get<double>() == Approx(300000.0));
+}

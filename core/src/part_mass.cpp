@@ -474,6 +474,8 @@ PartTree build_part_tree(const PartMassTable& table, const PartTreeInput& in) {
             PartNode bottle = b.leaf("bottle", "n2o_bottle", cap);
             bottle.children.push_back(contents_node("contents", "n2o", std::clamp(initial, 0.0, std::max(cap, 0.0)), "Nitrous oxide"));
             bottles.push_back(std::move(bottle));
+        } else if (type == "hybrid_control") {
+            // The hybrid supervisor is software: no hardware, no mass (the motors, battery and reduction are counted on their own).
         } else {
             tree.error = "part_masses: no mass rule for the powertrain component type \"" + type + "\" (" + cid + ")";
             return tree;

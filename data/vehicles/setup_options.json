@@ -129,20 +129,35 @@
       "help": "The drive unit of every motor on the rear axle: motor, inverter and its own reduction gear, each with its own peak torque, power, top speed, mass and reduction ratio. All numbers are assumptions [AS] loosely after published classes of production and hypercar units, not OEM data. Offered while the rear wheels are driven."
     },
     {
+      "id": "ev_hybrid_motor",
+      "label": "Traction motor",
+      "group": "Electric drive",
+      "area": "engine",
+      "kind": "file_choice",
+      "catalog": "ev_motor_units",
+      "axle": "traction",
+      "file": "vehicle",
+      "part_format": "rg.ev_motor_catalog/1",
+      "pointers": [
+        "/powertrain/components/[type=electric_motor,crank_assist!=true]/mass_kg"
+      ],
+      "help": "The drive unit of a hybrid's traction motor: its peak torque, power, top speed, mass and efficiency. The unit's reduction ratio is its whole motor-to-wheel ratio, so the hybrid's reduction gear is set to that ratio divided by the car's final drive. The crank generator is not changed and the motor layout stays as it is. Offered on hybrids (a combustion engine plus a traction motor); the battery must still deliver the power. All numbers are assumptions [AS], not OEM data."
+    },
+    {
       "id": "ev_motor_output",
       "label": "Motor output",
       "group": "Electric drive",
       "area": "engine",
       "unit": "x",
-      "help": "The inverter's limit below the hardware's peak: scales the peak torque and the power of every traction motor, from half to the full peak of the fitted units. The motors' mass and regeneration are not changed; stronger motors are a hardware choice under Motors. The battery must still deliver the power.",
+      "help": "The inverter's limit below the hardware's peak: scales the peak torque and the power of every traction motor (not a hybrid's crank generator), from half to the full peak of the fitted units. The motors' mass and regeneration are not changed; stronger motors are a hardware choice under Motors. The battery must still deliver the power.",
       "kind": "scale",
       "min": 0.5,
       "max": 1.0,
       "step": 0.05,
       "file": "vehicle",
       "pointers": [
-        "/powertrain/components/[type=electric_motor]/peak_torque_nm",
-        "/powertrain/components/[type=electric_motor]/max_power_w"
+        "/powertrain/components/[type=electric_motor,crank_assist!=true]/peak_torque_nm",
+        "/powertrain/components/[type=electric_motor,crank_assist!=true]/max_power_w"
       ]
     },
     {
@@ -172,7 +187,7 @@
       "group": "Electric drive",
       "area": "engine",
       "unit": "",
-      "help": "The traction battery as a whole pack: each pack sets its energy (kWh), its power output (discharge and charge) and its mass together, relative to the car's own pack. Energy cells store more per kilogram but deliver less power; power cells the other way round. Every figure is an assumption [AS] from typical cell classes, not a measured pack.",
+      "help": "The traction battery as a whole pack: each pack sets its energy (kWh), its power output (discharge and charge) and its mass together, relative to the car's own pack. The cards show the absolute figures for this car. The pack's discharge power caps the electric power: motors that could deliver more are held to what the pack can give. Energy cells store more per kilogram but deliver less power; power cells the other way round. Every figure is an assumption [AS] from typical cell classes, not a measured pack.",
       "kind": "scale_preset",
       "file": "vehicle",
       "pointers": [

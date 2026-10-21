@@ -1228,7 +1228,7 @@ func _any_option(id: String) -> Dictionary:
 
 # The electric-drive options (setup_options.json group "Electric drive"): the motor layout and drive-unit choices (the Motors
 # page; Motor output and Reduction ratio are Tuning sliders only) and the battery pack.
-const EV_MOTOR_OPTIONS := ["ev_layout", "ev_front_motors", "ev_rear_motors"]
+const EV_MOTOR_OPTIONS := ["ev_layout", "ev_front_motors", "ev_rear_motors", "ev_hybrid_motor"]
 const EV_BATTERY_OPTIONS := ["ev_battery_pack"]
 
 # True when at least one of `ids` is available on this car (something the player can actually change).
@@ -1309,7 +1309,10 @@ func _draw_electric_drive(ids: Array) -> void:
 		elif str(opt["kind"]) == "file_choice":
 			_draw_motor_cards(opt)
 		else:
+			# _option_row already shows the option's help under the slider: it is not added a second time.
 			_option_box.add_child(_option_row(opt))
+			count += 1
+			continue
 		if not str(opt.get("help", "")).is_empty():
 			_option_box.add_child(_label(str(opt["help"]),13,HORIZONTAL_ALIGNMENT_LEFT,true))
 		count += 1
@@ -1348,7 +1351,8 @@ func _draw_preset_cards(opt: Dictionary) -> void:
 	for part in opt.get("parts", []):
 		var part_id := str(part["id"])
 		var installed := str(opt["value"]) == part_id
-		var presentation := {"label":str(part["label"]), "size":str(part.get("size", "")), "image":str(part.get("image", ""))}
+		var presentation := {"label":str(part["label"]), "size":str(part.get("size", "")), "image":str(part.get("image", "")),
+			"figures":str(part.get("subtitle", "")) + "\n" + str(part.get("size", ""))}
 		var card := _make_component_card(_with_badge(presentation,opt_id,{opt_id:part_id}),"INSTALLED" if installed else "Install")
 		grid.add_child(card)
 		_buttons["part:" + opt_id + ":" + part_id] = card

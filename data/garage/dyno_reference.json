@@ -14,6 +14,6 @@
   "motor_rpm_top_fraction": 0.99,
   "hybrid_clutch_margin_rpm": 25,
   "ambient": { "pressure_pa": 101325.0, "temperature_k": 288.15 },
-  "electrified_setup_options": ["powertrain_install", "final_drive", "gear_ratios", "gearbox_install", "drive_layout", "diff_front", "diff_rear", "clutch_capacity", "ev_layout", "ev_front_motors", "ev_rear_motors", "ev_motor_output", "ev_reduction_ratio"],
+  "electrified_setup_options": ["powertrain_install", "final_drive", "gear_ratios", "gearbox_install", "drive_layout", "diff_front", "diff_rear", "clutch_capacity", "ev_layout", "ev_front_motors", "ev_rear_motors", "ev_hybrid_motor", "ev_motor_output", "ev_reduction_ratio"],
   "electrified_setup_options_help": "Options that change an electrified car's curve beyond the engine and turbo ones: gearing moves the motor's speed against the engine's; the clutch carries the engine share; the electric motor layout, drive units, output and reduction ratio change the motors the dyno measures."
 }

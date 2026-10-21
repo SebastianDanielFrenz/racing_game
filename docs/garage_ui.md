@@ -652,6 +652,17 @@ no available option behind it is hidden unless "Show all" is on (then greyed out
   efficiency, regen torque and `mass_kg` of every motor of the axle and the ratio/efficiency of its reduction. The
   axle's card row is hidden while the layout does not drive that axle (Single shows only the rear choice); a choice for an
   idle axle stays in the setup and applies again when the layout drives it.
+- **Traction motor of a hybrid** (`ev_hybrid_motor`, same catalog `ev_motor_units`, `axle: traction`): a hybrid (a
+  combustion engine plus a traction motor, e.g. `powertrain_install` `hybrid_battery`) keeps a motor upgrade, units only:
+  no layout, and the per-axle options stay battery-EV only. The unit sets peak torque, power, rpm, inertia, efficiency,
+  regen torque and mass of every traction motor (`crank_assist` false); the crank generator (`crank_assist` true) is never
+  touched, and Motor output skips it too (pointer filter `[type=electric_motor,crank_assist!=true]`, a filter holds comma
+  separated `key=value` / `key!=value` conditions). The unit's reduction ratio is the whole motor-to-wheel ratio, and the
+  hybrid's `conversion_reduction` sits before the car's final drive, so it is set to ratio / final drive (hypercar unit on
+  car_hyper_n2o: 5.4 / 3.35 = 1.61, was 2.2). The hybrid supervisor asks the engine for the part of
+  `hybrid_control.requested_power_w` the motors cannot supply, so a unit that adds motor power raises that rating by the
+  same amount (else the engine switches off at full pedal in Normal mode). The old `ev_motor_scale` 2.0 on a hybrid
+  loads as Motor output 1.0 (clamped).
 - **Motor output** (`ev_motor_output`, Tuning > Engine, x0.5-1.0): peak torque and power of every motor, not mass, not
   regen. Replaces `ev_motor_scale`; a saved setup that still has it loads as Motor output (clamped to 0.5-1.0, see
   `retired_options` in `setup_options.json`).
@@ -672,6 +683,11 @@ no separate capacity or output selection. On car_electric (stock 90 kWh, 700 kW,
 | Performance | 90 kWh | 1190 kW | 575 kg |
 | Race | 63 kWh | 1540 kW | 450 kg |
 | Extended performance | 126 kWh | 1400 kW | 825 kg |
+
+Every pack card shows its absolute figures for the car being edited (the pack's factors times that car's own battery, after
+the powertrain conversion): car_electric "126 kWh · 1400 kW · 825 kg" for Extended performance, the battery hybrid on
+car_hyper_n2o "28 kWh · 300 kW · 231 kg". The pack's discharge power caps the electric power. A scale option's help is
+shown once (`_option_row` already adds it; `_draw_electric_drive` adds the extra label only for card options).
 
 All pack factors are assumptions [AS] from typical cell classes (energy cells: more kWh per kg, less power; power cells
 the other way round), not measured packs. A `scale_preset` option: `pointers` (patterns), `presets` [{id, label,
