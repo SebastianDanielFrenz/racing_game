@@ -227,11 +227,20 @@ std::optional<ElectrifiedDynoPlan> plan_electrified_dyno(const ps::vehicle::Vehi
         if (const auto* e = std::get_if<pd::TorqueMapEngineDesc>(&c.params)) { engine = true; idle = e->idle_rpm; limit = top_of(e->limiter); }
     }
     if (plan.traction.empty()) return std::nullopt;
-    // A hybrid's supervisor always runs the auto-clutch; in its Launch law the clutch slips until the gearbox input turns
-    // faster than rolling_reengage_rpm, so below that the crank does not turn at the axis speed (it sits at the launch rpm).
+    // A manual-gearbox hybrid's supervisor always runs the auto-clutch; in its Launch law the clutch slips until the gearbox
+    // input turns faster than rolling_reengage_rpm, so below that the crank does not turn at the axis speed (it sits at the
+    // launch rpm). An automatic, dual-clutch or CVT box is held in the dyno gear with its starting clutch locked (physics_sim
+    // AutoTransmission::set_dyno_hold); only its anti-stall dump (a starting clutch opens below launch_anti_stall_rpm) still
+    // lets the crank leave the axis speed, so the sweep starts above that.
     double clutch_locks_rpm = 0;
-    for (const auto& c : vehicle.controllers)
+    for (const auto& c : vehicle.controllers) {
         if (const auto* t = std::get_if<pd::ManualTcuDesc>(&c.params)) clutch_locks_rpm = t->auto_clutch.rolling_reengage_rpm;
+        if (const auto* t = std::get_if<pd::AutomaticTcuDesc>(&c.params)) {
+            const bool starting_clutch = gearbox && (gearbox->type == pd::GearboxType::DualClutch ||
+                                                     (gearbox->type == pd::GearboxType::Cvt && !gearbox->converter));
+            if (starting_clutch) clutch_locks_rpm = t->launch_anti_stall_rpm;
+        }
+    }
     plan.topology = engine ? DynoTopology::Hybrid : fuel_cell ? DynoTopology::FuelCellElectric : DynoTopology::Electric;
     plan.battery_soc = fuel_cell ? std::clamp(stack_target_soc - reference.fuel_cell_soc_below_target, 0.0, 1.0) : reference.battery_soc;
     std::string caption = "Hubs · full pedal · battery " + percent(plan.battery_soc);
@@ -240,12 +249,6 @@ std::optional<ElectrifiedDynoPlan> plan_electrified_dyno(const ps::vehicle::Vehi
         std::string mode = reference.drive_mode;
         if (!mode.empty()) mode[0] = static_cast<char>(std::toupper(static_cast<unsigned char>(mode[0])));
         caption += " · " + mode + " mode";
-    }
-    if (gearbox && gearbox->type != pd::GearboxType::Manual && gearbox->type != pd::GearboxType::Sequential) {
-        plan.unsupported_reason = "Dyno not available yet: electric and hybrid drives with an automatic, dual-clutch or CVT "
-                                  "gearbox cannot be measured";
-        plan.caption = caption;
-        return plan;
     }
     const int n = reference.points;
     if (engine && gearbox && !gearbox->forward_ratios.empty()) {
@@ -256,7 +259,15 @@ std::optional<ElectrifiedDynoPlan> plan_electrified_dyno(const ps::vehicle::Vehi
             if (std::abs(gearbox->forward_ratios[g] - reference.reference_gear_ratio) <
                 std::abs(gearbox->forward_ratios[best] - reference.reference_gear_ratio)) best = g;
         plan.gear = best + 1;
-        caption += " · engine rpm in " + ordinal(plan.gear);
+        // A CVT has one forward gear: the held "gear" is the virtual step whose ratio is nearest the reference, and the
+        // variator is held at that ratio (physics_sim PowertrainDynoSpec::gear).
+        if (gearbox->type == pd::GearboxType::Cvt) {
+            char ratio[32];
+            std::snprintf(ratio, sizeof ratio, "%.2f", gearbox->forward_ratios[static_cast<std::size_t>(plan.gear - 1)]);
+            caption += std::string(" · engine rpm at ratio ") + ratio + ":1";
+        } else {
+            caption += " · engine rpm in " + ordinal(plan.gear);
+        }
         const double start = std::max(idle, clutch_locks_rpm > 0 ? clutch_locks_rpm + reference.hybrid_clutch_margin_rpm : idle);
         if (!(limit > start)) {
             plan.unsupported_reason = "Dyno not available: the engine's speed range is below the clutch's lock-up speed";
