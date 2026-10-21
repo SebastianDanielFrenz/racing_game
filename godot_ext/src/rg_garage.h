@@ -15,6 +15,8 @@
 #include "rg/garage_dyno.h"
 #include "rg/garage_set.h"
 #include "rg/upgrade_badges.h"
+#include "rg/number_format.h"
+#include "rg/upgrade_hints.h"
 #include "rg/limit_advisor.h"
 
 #include <godot_cpp/classes/ref_counted.hpp>
@@ -26,6 +28,7 @@
 #include <godot_cpp/variant/variant.hpp>
 #include <godot_cpp/variant/vector3.hpp>
 
+#include <map>
 #include <memory>
 #include <optional>
 #include <string>
@@ -106,6 +109,22 @@ public:
     // The badges of a part tile against the INSTALLED part of the option (rg/upgrade_badges.h): at most two, each
     // {quantity, delta, worse, text}. worse = red, else green. Empty for the installed part or an option without figures.
     [[nodiscard]] godot::Array get_part_badges(const godot::String& option_id, const godot::String& part_id) const;
+    // The numeric HINTS of a part tile (owner 2026-10-19): the change of whole-car figures when the tile's `edits`
+    // ({option_id: value}, applied in insertion order exactly as the tile's click would) are made on the car AS IT IS
+    // CONFIGURED NOW. `option_id` names the tile's category (data/garage/upgrade_badges.json: the option id, else its group).
+    // Returns {badges: [{quantity, delta, worse, pending, text}], pending: bool, error: String}. Figures that need the
+    // engine dyno are computed on a background thread: until they are ready their badges are placeholders (pending = true,
+    // text "...") and the caller asks again; a newer request or an edit cancels the running work. No badges for the
+    // installed part.
+    godot::Dictionary get_hints(const godot::String& option_id, const godot::Dictionary& edits);
+    godot::String format_number(double value, int max_decimals) const; // rg/number_format.h, the one formatter of every figure
+    godot::Dictionary get_working_spec(); // the left specification pane: the car as configured now (mass, layout, gears, power, torque)
+    // Blocks until no hint figure is being computed (tests and screenshot runs); false on timeout.
+    bool wait_for_hints(int timeout_ms);
+    // Drops queued hint work and cancels the running job.
+    void cancel_hints();
+    // {jobs_started, jobs_finished, jobs_cancelled, figure_sets_computed, cache_hits, last_job_seconds}.
+    [[nodiscard]] godot::Dictionary get_hint_stats() const;
     // Garage numeric inputs (rg::NumberEntry): `index` is the gear of a ScaleList (else 0). Pure maths in rg core.
     // The slider position in [0, 1] of a stored value (positional entries) / the stored value at a position.
     [[nodiscard]] double option_entry_position(const godot::String& option_id, int index, double value) const;
@@ -201,6 +220,10 @@ private:
     void refresh_dyno();
     std::unique_ptr<rg::LimitAdvisor> advisor_;
     std::string advisor_error_;
+    std::unique_ptr<rg::UpgradeHints> hints_; // null when the badge file is bad
+    void ensure_hint_base(const rg::CatalogEntry& entry, const std::string& current_json);
+    std::string hints_base_key_;              // what hints_ was last given as its base (car, current setup, catalogs)
+    std::map<std::string, rg::VehicleSetup> hint_candidates_; // candidate_setup results by edit list (valid for one base)
     rg::UpgradeBadgeConfig badge_config_; // data/garage/upgrade_badges.json; empty (no badges) when the file is bad
 };
 

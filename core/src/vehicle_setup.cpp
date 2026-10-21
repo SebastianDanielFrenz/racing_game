@@ -664,7 +664,10 @@ bool file_choice_fits(Files& files, const SetupOptionDef& def, const CatalogEntr
     }
     const int idx = component_index(files.vehicle.base, "engine");
     if (def.no_turbo_override && idx >= 0 && files.vehicle.base["powertrain"]["components"][idx].contains("forced_induction")) return false;
-    const json* base = def.file == "vehicle" ? &files.vehicle.work : (files.engine ? &files.engine->work : nullptr);
+    // The vehicle file is judged as it stands (a powertrain conversion rewrites it). The engine file is judged as LOADED
+    // (base = the installed engine's own file, also after an engine swap): an option's own conversion may erase the slot's
+    // key from the working copy (NA induction removes default_forced_induction) and must not hide the option it came from.
+    const json* base = def.file == "vehicle" ? &files.vehicle.work : (files.engine ? &files.engine->base : nullptr);
     if (!base) return false;
     if (!expand_patterns(*base, pointers_for(entry, def)).empty() || def.insert_if_absent.has_value()) return true;
     // A naturally aspirated conversion of this very option erased the reference from the working file

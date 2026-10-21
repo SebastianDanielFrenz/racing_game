@@ -1271,9 +1271,7 @@ AdviceSweep run_advice_sweep(const ps::vehicle::VehicleDesc& desc, const Advisor
 
 // ---- the background advisor -------------------------------------------------------------------------------------------
 
-namespace {
-
-int background_workers() {
+int background_worker_count() {
     // Leave four logical processors for rendering, audio and other work (like GarageDyno); RG_ENGINE_MAP_WORKERS overrides.
     int workers = static_cast<int>(std::max(1u, std::thread::hardware_concurrency() > 4 ? std::thread::hardware_concurrency() - 4 : 1u));
     if (const char* value = std::getenv("RG_ENGINE_MAP_WORKERS")) {
@@ -1284,6 +1282,8 @@ int background_workers() {
     }
     return workers;
 }
+
+namespace {
 
 // The part file a powertrain component of the materialised vehicle file names ("clutch", "gearbox"): absolute, "" when the
 // component is inline, missing or the file cannot be read. Only fills PartRef::file of the findings.
@@ -1390,7 +1390,7 @@ void LimitAdvisor::run() {
 #endif
     ps::jobs::JobSystemOptions pool_options;
     pool_options.background_priority = true;
-    ps::jobs::JobSystem pool(background_workers(), pool_options);
+    ps::jobs::JobSystem pool(background_worker_count(), pool_options);
     std::optional<AdviceSweep> last_sweep; // the sweep behind result_.items (worker thread only)
     std::uint64_t last_revision = 0;
 

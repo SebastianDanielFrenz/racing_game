@@ -35,6 +35,7 @@ add_executable(rg_unit_tests
   test_route_road_coverage.cpp
   test_route_road_render_path.cpp
   test_route_standalone_paths.cpp
+  test_surface_layers.cpp
   test_fixed_rate_loop.cpp
   test_terrain_view_streamer.cpp
   test_startup_watch.cpp
@@ -80,7 +81,9 @@ add_executable(rg_unit_tests
   test_garage_dyno_electric.cpp
   test_limit_advisor.cpp
   test_limit_advisor_electric.cpp
+  test_number_format.cpp
   test_upgrade_badges.cpp
+  test_upgrade_hints.cpp
   test_envelope_cost.cpp
   test_engine_garage.cpp
   test_turbo_kit.cpp
@@ -101,6 +104,7 @@ add_executable(rg_unit_tests
   test_camera_math.cpp
   test_camera_motion.cpp
   test_tyre_sound.cpp
+  test_wind_noise.cpp
   test_cinematic_obstacles.cpp
   test_render_pose.cpp
   test_deck_installer.cpp

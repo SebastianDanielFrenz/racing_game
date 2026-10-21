@@ -10,6 +10,7 @@
 #include "rg/world_terrain.h"
 #include "stream_trace.h"
 #include "rg/route_surface_mesh.h"
+#include "rg/surface_layers.h"
 #include "rg/route_check.h"
 
 #include "g2m/layer/layer_id.h"
@@ -509,6 +510,7 @@ std::shared_ptr<const g2m::world::RoadRibbonTile> WorldTerrain::road_visual_tile
         }
         if (const auto osm = source_osm_tile(key))
             append_standalone_path_mesh(mesh, *osm, key, ground, lift);
+        resolve_surface_layers(mesh); // layers never overlap (surface_layers.h); after every layer is appended
         const auto build_elapsed = std::chrono::duration_cast<std::chrono::microseconds>(
             std::chrono::steady_clock::now() - build_started).count();
         auto immutable = std::make_shared<const g2m::world::RoadRibbonTile>(std::move(mesh));

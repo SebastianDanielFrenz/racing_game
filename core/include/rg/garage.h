@@ -173,6 +173,17 @@ public:
     [[nodiscard]] PartTree stock_part_tree_of(const std::string& id) const;
     void reset_option(const std::string& option_id);
     void reset_all();
+    // The working setup as it WOULD be after the player made these edits one after the other (set_option's own rules: the
+    // options an engine/gearbox/layout change resets go back to stock), without changing the working copy, the validation or
+    // anything else: the whole-car candidate of an upgrade hint (rg/upgrade_hints.h). The edits are applied without
+    // validating the result (nothing is loaded; a candidate the loader refuses is found out when its figures are computed).
+    // nullopt + *err when no car is edited or an edit is not accepted (unknown/unavailable option, wrong value type).
+    [[nodiscard]] std::optional<VehicleSetup> candidate_setup(const std::vector<std::pair<std::string, SetupValue>>& edits,
+                                                              std::string* err = nullptr);
+    // true when every edit selects what is installed NOW (the option's current value): such a click changes nothing, so
+    // the tile of the installed part has no upgrade hint (rule of the core, not of the UI). candidate_setup of such edits
+    // is the working copy itself, bit for bit.
+    [[nodiscard]] bool edits_installed(const std::vector<std::pair<std::string, SetupValue>>& edits) const;
     [[nodiscard]] bool dirty() const; // the working copy differs from the saved one
     [[nodiscard]] const ValidationResult& validation() const { return validation_; }
     // Writes the working copy as the vehicle's saved setup (a working copy equal to the car's own
@@ -236,6 +247,7 @@ private:
     VehicleSetup saved_at_begin_;
     ValidationResult validation_;
     PartTree parts_;
+    bool probe_only_ = false; // candidate_setup: revalidate() rebuilds the model but loads and validates nothing
 
     std::string drive_dir_;
     CarBrowser browser_;

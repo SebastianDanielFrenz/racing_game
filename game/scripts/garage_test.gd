@@ -69,6 +69,14 @@ func _press(id: String) -> bool:
 	button.pressed.emit()
 	return true
 
+# The working value of a garage option, failing fast and loudly when the option is not offered (an empty
+# Dictionary from ShellUI._garage_option would otherwise raise a script error and leave the test to time out).
+func _installed_option_value(id: String) -> String:
+	var opt: Dictionary = main.get_shell_ui()._garage_option(id)
+	if not _check(not opt.is_empty(), "garage option '%s' is available (unavailable or unknown options come back empty)" % id):
+		return "<option '%s' unavailable>" % id
+	return str(opt.get("value", "<no value>"))
+
 func _press_escape() -> void:
 	for pressed in [true, false]:
 		var ev := InputEventKey.new()
@@ -284,12 +292,12 @@ func _run() -> void:
 	_press("induction:NA")
 	_check(ui._garage_path.size() == 2, "NA installs without opening a submenu")
 	_check(bool(garage.get_validation()["ok"]), "NA conversion passes native loader")
-	_check(str(ui._garage_option("turbo_install")["value"]) == "hyper_na", "NA induction persists in working setup")
+	_check(_installed_option_value("turbo_install") == "hyper_na", "NA induction persists in working setup")
 	_press("induction:Single turbo")
 	_check(ui._garage_path.size() == 2, "single turbo installs without opening a submenu")
 	_check(bool(garage.get_validation()["ok"]), "single forced-induction swap validates")
 	_press("induction:Twin turbo")
-	_check(str(ui._garage_option("turbo_install")["value"]) == "stock", "twin swap restores original hardware")
+	_check(_installed_option_value("turbo_install") == "stock", "twin swap restores original hardware")
 	_press("induction:Single turbo")
 	await _back_to_root()
 	_press("tile:Engine")
@@ -316,7 +324,7 @@ func _run() -> void:
 	_check(ui.get_button("part:gearbox_install:heavy_duty_6mt") == null and ui.get_button("part:gearbox_install:econ_5mt") == null, "boxes rated below the V8's torque are not listed")
 	_press("part:gearbox_install:straight_cut_6sq")
 	_check(garage.is_dirty() and bool(garage.get_validation()["ok"]), "the straight-cut gearbox validates")
-	_check(str(ui._garage_option("gearbox_install")["value"]) == "straight_cut_6sq", "the swapped gearbox is the working value")
+	_check(_installed_option_value("gearbox_install") == "straight_cut_6sq", "the swapped gearbox is the working value")
 	_press("part:gearbox_install:stock")
 	_check(not garage.is_dirty(), "stock gearbox restores the clean configuration")
 	_press("reset_all")
@@ -700,7 +708,7 @@ func _back_to_root() -> void:
 
 # Upgrades layout (owner 2026-10-18): the category tiles and the Chassis / Weight reduction tiles at two window sizes. Every
 # tile's name label lies inside its tile, no two tiles overlap, no other label sits on a tile, and a highlighted (focused)
-# tile shows at most two badges, the same ones RgGarage.get_part_badges returns, red when worse, green when better.
+# tile shows at most three hint badges, the same ones RgGarage.get_hints returns, red when worse, green when better.
 const UPGRADE_LAYOUT_SIZES := [Vector2i(1280, 720), Vector2i(1920, 1080)]
 
 func _tiles_under(node: Node, out: Array) -> void:
@@ -749,6 +757,46 @@ func _upgrade_layout_report(ui: CanvasLayer) -> Dictionary:
 				break
 	return report
 
+# The text of the pane line that starts with `prefix` ("Mass", "Power", ...).
+func _pane_line(ui: CanvasLayer, prefix: String) -> String:
+	var labels: Array = []
+	_labels_under(ui._garage_performance, labels)
+	for label in labels:
+		if str(label.text).begins_with(prefix):
+			return str(label.text)
+	return ""
+
+# Owner 2026-10-19: the left specification pane shows the car as configured now, and follows every edit (it is redrawn from
+# RgGarage.get_working_spec by the shell's own poll).
+func _check_spec_pane_follows_edits(ui: CanvasLayer) -> void:
+	ui.garage.wait_for_hints(120000)
+	await get_tree().create_timer(0.6).timeout
+	var before := _pane_line(ui, "Mass")
+	_check(before != "" and _pane_line(ui, "Power") != "", "the specification pane lists mass and power (%s / %s)" % [before, _pane_line(ui, "Power")])
+	var spec_before: Dictionary = ui.garage.get_working_spec()
+	ui._edit_option("trim_audio", "removed")
+	ui._edit_option("trim_sound_deadening", "removed")
+	var spec_after: Dictionary = ui.garage.get_working_spec()
+	_check(float(spec_after["mass_kg"]) < float(spec_before["mass_kg"]) - 1.0, "the working spec mass drops after removing parts (%s -> %s)" % [str(spec_before["mass_kg"]), str(spec_after["mass_kg"])])
+	await get_tree().create_timer(0.8).timeout
+	var after := _pane_line(ui, "Mass")
+	_check(after != before, "the pane's mass line follows the edit (%s -> %s)" % [before, after])
+	_check(not after.contains(" …"), "the pane shows no placeholder in its mass line")
+	# Power follows a turbo swap (figures come from the background worker: placeholder first, then the number).
+	var power_before := _pane_line(ui, "Power")
+	var opts: Array = ui.garage.get_options().filter(func(o): return str(o["id"]) == "turbo_install")
+	if not opts.is_empty():
+		ui._edit_option("turbo_install", "hyper_single_compact")
+		var waited := 0.0
+		while (_pane_line(ui, "Power").contains("…") or _pane_line(ui, "Power") == power_before) and waited < 120.0:
+			await get_tree().create_timer(0.5).timeout
+			waited += 0.5
+		_check(_pane_line(ui, "Power") != power_before and not _pane_line(ui, "Power").contains("…"), "the pane's power follows a turbo swap (%s -> %s)" % [power_before, _pane_line(ui, "Power")])
+	ui.garage.reset_all()
+	ui._spec_dirty = true
+	await get_tree().create_timer(0.6).timeout
+	_check(_pane_line(ui, "Mass") == before, "reset all brings the pane back (%s)" % _pane_line(ui, "Mass"))
+
 func _check_upgrade_layout() -> void:
 	var ui: CanvasLayer = main.get_shell_ui()
 	var pages := [[], ["tile:Chassis", "tile:Weight reduction"]]
@@ -768,7 +816,7 @@ func _check_upgrade_layout() -> void:
 			_check(int(report["overlap"]) == 0, "upgrades %s: no two tiles overlap (%d)" % [where, report["overlap"]])
 			_check(int(report["label_on_tile"]) == 0, "upgrades %s: no other label sits on a tile (%d)" % [where, report["label_on_tile"]])
 			print("RG_GARAGE_TEST info: upgrades %s viewport %s tiles %d overflow %d overlap %d label_on_tile %d" % [where, str(get_viewport().get_visible_rect().size), report["tiles"], report["overflow"], report["overlap"], report["label_on_tile"]])
-	# Highlight badges: focus each weight tile; the row holds at most two badges, and each badge text is the core's answer.
+	# Highlight badges: focus each weight tile; the row holds at most three badges, and each badge text is the core's answer.
 	await _back_to_root()
 	_press("tile:Chassis")
 	_press("tile:Weight reduction")
@@ -777,19 +825,25 @@ func _check_upgrade_layout() -> void:
 	_tiles_under(ui._option_box, tiles)
 	var with_badges := 0
 	for tile in tiles:
-		var row: HBoxContainer = tile.get_node_or_null("Badges")
+		var row: Container = tile.get_node_or_null("Badges")
 		if row == null:
 			continue
 		tile.grab_focus()
 		await get_tree().process_frame
+		# The figures come from a background thread: the first answer may be the "..." placeholder; wait for the core, then
+		# let the tile ask again (the UI's own poll does the same every 0.25 s).
+		ui.garage.wait_for_hints(60000)
+		ui._fill_badges(row, str(tile.get_meta("badge_option", "")), tile.get_meta("badge_edits", {}))
 		var texts: Array = []
 		for badge in row.get_children():
 			texts.append(str(badge.text))
-		_check(texts.size() <= 2, "a highlighted tile shows at most two badges (%d)" % texts.size())
+		_check(not texts.has("..."), "a hint placeholder is replaced once the core finished (%s)" % ", ".join(texts))
+		_check(texts.size() <= 3, "a highlighted tile shows at most three badges (%d)" % texts.size())
 		var expected: Array = []
-		for b in ui.garage.get_part_badges(str(tile.get_meta("badge_option", "")), str(tile.get_meta("badge_part", ""))):
+		for b in ui.garage.get_hints(str(tile.get_meta("badge_option", "")), tile.get_meta("badge_edits", {}))["badges"]:
 			expected.append(str(b["text"]))
 		_check(texts == expected, "highlighted badges equal the core answer (%s vs %s)" % [", ".join(texts), ", ".join(expected)])
 		with_badges += texts.size()
 	_check(with_badges > 0, "the weight page shows at least one badge on a highlighted tile (%d)" % with_badges)
+	await _check_spec_pane_follows_edits(ui)
 	await _back_to_root()

@@ -74,6 +74,7 @@ add_library(rg_core STATIC
     src/view_build_progress.cpp
     src/road_surface.cpp
     src/route_surface_mesh.cpp
+    src/surface_layers.cpp
     src/terrain_smoothing.cpp
     src/road_structures.cpp
     src/fixed_rate_loop.cpp
@@ -123,7 +124,9 @@ add_library(rg_core STATIC
     src/garage.cpp
     src/garage_dyno.cpp
     src/limit_advisor.cpp
+    src/number_format.cpp
     src/upgrade_badges.cpp
+    src/upgrade_hints.cpp
     src/turbo_map_extension.cpp
     src/turbo_kit.cpp
     src/engine_internals.cpp
@@ -133,6 +136,7 @@ add_library(rg_core STATIC
     src/camera_math.cpp
     src/camera_motion.cpp
     src/tyre_sound.cpp
+    src/wind_noise.cpp
     "${PS_ADAPTER_SRC_DIR}/frame_convert_core.cpp"
 )
 

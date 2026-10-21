@@ -25,6 +25,7 @@
 #include <fstream>
 #include <initializer_list>
 #include <memory>
+#include <stdexcept>
 #include <string>
 #include <utility>
 #include <variant>
@@ -175,15 +176,23 @@ rg::SwapEngine swap_engine_of(const rg::EngineStore& store, const rg::EngineEntr
     return s;
 }
 
+// A fresh, exclusively created directory. ctest runs every TEST_CASE in its own process (and with -j in parallel),
+// so a per-process counter is not unique: two processes both got "rg_g1_user_1" and removed/overwrote each other's
+// garage files. create_directory() is atomic and returns false when the name is taken, so the first free name wins.
 struct TempDir {
     std::string path;
     TempDir() {
         static int counter = 0;
-        const int n = ++counter;
-        path = (fs::temp_directory_path() / ("rg_g1_user_" + std::to_string(n))).generic_string();
+        const fs::path base = fs::temp_directory_path();
         std::error_code ec;
-        fs::remove_all(path, ec);
-        fs::create_directories(path, ec);
+        for (;;) {
+            const fs::path p = base / ("rg_g1_user_" + std::to_string(++counter));
+            if (fs::create_directory(p, ec)) {
+                path = p.generic_string();
+                break;
+            }
+            if (ec) throw std::runtime_error("TempDir: cannot create " + p.string() + ": " + ec.message());
+        }
     }
     ~TempDir() {
         std::error_code ec;
