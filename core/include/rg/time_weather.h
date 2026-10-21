@@ -166,7 +166,30 @@ struct TimeWeatherState {
     // TimeWeather::sample() (adapted over time); state() gives the instant value.
     double exposure = 0;
     double adapted_lux = 0;
+    // Weather source (rg/weather_authority.h): dynamic = the schedule changes it; weather_blend 0..1 through a
+    // scheduled change (cloud cover blends, precipitation/thunder switch at 0.5; 1 when settled or manual);
+    // weather_ramp_s = game seconds left of a scheduled change (the physics ramp), NaN for a manual change.
+    bool weather_dynamic = false;
+    double weather_blend = 1;
+    double weather_ramp_s = std::numeric_limits<double>::quiet_NaN();
+    std::uint64_t weather_revision = 0;
+    double next_weather_change_game_s = std::numeric_limits<double>::quiet_NaN();
 };
+
+// What decides the weather sends this (rg.weather_broadcast/1; rg/weather_authority.h has the authority, to_json and
+// parse_weather_broadcast). transition_s 0 = a manual change (the sky snaps, the physics ramps over the climate's
+// weather_ramp_s); > 0 = a scheduled change blending from from_id over [change_game_s, change_game_s + transition_s].
+// Game time = seconds since J2000.0 UT (game_seconds()).
+struct WeatherBroadcast {
+    std::uint64_t revision = 0;
+    bool dynamic = false;
+    std::string weather_id, from_id;
+    double change_game_s = 0;
+    double transition_s = 0;
+    double next_change_game_s = std::numeric_limits<double>::quiet_NaN(); // dynamic only: when the next change starts
+};
+struct WeatherScheduleConfig;
+class WeatherAuthority;
 
 // Session-frame (UTM grid: x east, y north, z up) unit direction towards a
 // body, rotated by the grid convergence.
@@ -175,10 +198,11 @@ std::array<double, 3> grid_direction(const SkyPosition& body, double grid_conver
 class TimeWeather {
 public:
     TimeWeather(SkyConfig config, GeoLocation location);
-    void advance(double real_dt_s) {
-        clock_.advance(real_dt_s);
-        if (real_dt_s > 0) exposure_dt_ += real_dt_s;
-    }
+    ~TimeWeather();
+    TimeWeather(TimeWeather&&) noexcept;
+    TimeWeather& operator=(TimeWeather&&) noexcept;
+    // Advances the clock and, with a local weather authority, the weather schedule.
+    void advance(double real_dt_s);
     TimeController& clock() { return clock_; }
     const TimeController& clock() const { return clock_; }
     const SkyConfig& config() const { return config_; }
@@ -196,16 +220,36 @@ public:
     void set_climate(std::shared_ptr<const ClimateConfig> climate) { climate_ = std::move(climate); }
     const std::shared_ptr<const ClimateConfig>& climate() const { return climate_; }
 
+    // Weather source. Without a schedule the menu's preset is the weather (the pre-schedule behaviour). With
+    // set_weather_schedule (call after set_climate: its temperature gates snow/rain) TimeWeather runs a LOCAL
+    // WeatherAuthority, the in-process server of single-player; the menu gains "weather:auto" (changing weather).
+    void set_weather_schedule(const WeatherScheduleConfig& schedule);
+    // Network client: no local authority; the weather comes only from apply_broadcast() and menu choices queue as
+    // requests for the server (take_weather_requests()).
+    void use_remote_weather();
+    // Takes a server broadcast; older or equal revisions are ignored (false).
+    bool apply_broadcast(const WeatherBroadcast& broadcast);
+    const WeatherBroadcast& weather_broadcast() const { return weather_; }
+    std::vector<std::string> take_weather_requests();
+    const WeatherAuthority* local_weather_authority() const { return local_.get(); }
+
 private:
+    const WeatherPreset* find_preset(const std::string& id) const;
+    void set_weather_local(const std::string& id); // no authority: the menu sets the weather directly
+
     SkyConfig config_;
     GeoLocation location_;
     TimeController clock_;
-    std::size_t weather_ = 0;
+    WeatherBroadcast weather_;
+    std::unique_ptr<WeatherAuthority> local_;
+    bool remote_ = false;
+    std::vector<std::string> requests_;
+    std::uint64_t weather_snaps_ = 0; // manual changes (snap the exposure)
     std::shared_ptr<const ClimateConfig> climate_;
     ExposureController exposure_;
     double exposure_dt_ = 0;
     std::uint64_t exposure_revision_ = ~std::uint64_t{0};
-    std::size_t exposure_weather_ = ~std::size_t{0};
+    std::uint64_t exposure_weather_ = ~std::uint64_t{0};
 };
 
 // "15 °C" (rounded) from kelvin; "-- °C" when not finite.

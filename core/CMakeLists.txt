@@ -101,6 +101,7 @@ add_library(rg_core STATIC
     src/wet_look.cpp
     src/rail_meshes.cpp
     src/weather_sync.cpp
+    src/weather_authority.cpp
     src/crops.cpp
     src/control_binding.cpp
     src/control_schema.cpp

@@ -432,7 +432,8 @@ public:
     // The cinematic camera wants FrameSnapshot::road_ahead. Off by default so a
     // session that never asks does no road tracing and allocates nothing.
     // V8 weather (no-ops without SessionConfig::weather). Thread-safe: applied on the stepping thread at the next tick.
-    // set_weather replaces the manual weather (all overrides cleared, the preset ramps in over ramp_s);
+    // set_weather with ramp_s > 0 ramps the preset in over ramp_s ON TOP of the weather now (overrides chain; one
+    // whose successor has fully ramped in is removed); ramp_s 0 replaces it at once (all overrides cleared);
     // set_environment_clock jumps the environment clock (env seconds, rg::env_clock_point) and its scale and
     // locks the calendar to fixed_day_index.
     void set_weather(const ps::environment::WeatherPresetDesc& preset, double ramp_s);
@@ -880,6 +881,8 @@ private:
         std::optional<std::pair<ps::environment::WeatherPresetDesc, double>> preset;
         std::optional<std::tuple<double, int, double>> clock;
     };
+    // Live physics weather overrides (stepping thread): id and the environment time it is fully ramped in.
+    std::vector<std::pair<int, double>> weather_overrides_;
     std::mutex weather_mutex_;
     WeatherRequests weather_requests_;
     std::atomic<bool> weather_pending_{false};

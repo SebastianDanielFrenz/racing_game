@@ -275,3 +275,18 @@ scene exposure, not with day/night switches on the lamps.
   ([auto_lights]), `test_settings.cpp`, `cockpit_test.gd`, `visual_world_test.gd` (lamp energies follow the exposure).
   Shots: `game/scripts/lights_exposure_shots.gd` with the states that
   `rg_unit_tests "[exposure_shots]"` writes.
+
+## Changing weather and the future weather server (2026-10-21)
+
+The weather changes on its own by default. `rg::WeatherAuthority` (`core/include/rg/weather_authority.h`) is the
+server role: it runs a seeded chain over the sky.json presets from `data/world/weather_schedule.json` and sends a small
+`rg.weather_broadcast/1` message whenever the weather changes (new preset, preset it blends from, start time, blend
+length, next change). In single-player `rg::TimeWeather` owns one locally. A network client calls
+`use_remote_weather()`, applies the server's broadcasts with `apply_broadcast()` and forwards menu choices from
+`take_weather_requests()`; the server answers them through `WeatherAuthority::handle_request()` ("weather:auto" =
+Changing, "weather:<preset>" = keep that preset). A late joiner needs only the latest broadcast.
+
+The weather menu gains "Changing"; picking a preset keeps that preset until Changing is chosen again (the chain then
+restarts from the current weather). A scheduled change blends the cloud cover over 30 game minutes; rain, snow and
+thunder start or stop halfway; the physics weather ramps over the same time on top of the weather now. Open: snow
+and ice grip (physics W8), a forecast in the widget, a per-session seed choice.

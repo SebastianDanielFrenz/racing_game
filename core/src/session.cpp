@@ -2105,8 +2105,22 @@ void Session::apply_weather_requests() {
             world_->set_environment_time_scale(scale);
         }
         if (req.preset) {
-            world_->clear_weather_overrides();
-            world_->add_weather_override_to_season_end(req.preset->first, req.preset->second);
+            const double ramp = req.preset->second;
+            double now = 0;
+            if (req.clock) now = std::get<0>(*req.clock);
+            else if (const auto* e = world_->environment_snapshot()) now = e->t_env_s;
+            // Overrides chain in start order, so a later one fully ramped in hides every earlier one exactly: those
+            // are removed. ps::environment holds at most 16; a full chain (never seen in play) falls back to a reset.
+            while (weather_overrides_.size() >= 2 && weather_overrides_[1].second <= now) {
+                world_->remove_weather_override(weather_overrides_.front().first);
+                weather_overrides_.erase(weather_overrides_.begin());
+            }
+            if (ramp <= 0 || weather_overrides_.size() >= 15) {
+                world_->clear_weather_overrides();
+                weather_overrides_.clear();
+            }
+            const int id = world_->add_weather_override_to_season_end(req.preset->first, ramp);
+            weather_overrides_.emplace_back(id, now + ramp);
         }
     } catch (const std::exception& e) {
         std::fprintf(stderr, "RG_WEATHER request rejected: %s\n", e.what());
