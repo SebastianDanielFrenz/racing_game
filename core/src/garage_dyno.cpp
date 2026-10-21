@@ -100,6 +100,19 @@ bool vehicle_file_is_electrified(const std::string& path) {
     const auto json = detail::parse_json(*text);
     return json && json->is_object() && detail::powertrain_kind(*json) != "ice";
 }
+// An option that changes the electric hardware the dyno measures: any motor, battery or fuel-cell stack (a pointer into such a
+// component of the vehicle file, or a part file of such a kind). Generic on purpose: whichever option kind or pointer edits
+// the hardware (a scale, a preset card, a part choice) reaches the dyno without being listed in the reference file.
+bool changes_electric_hardware(const SetupOptionDef& option) {
+    static const char* const kinds[] = {"[type=electric_motor]", "[type=battery]", "[type=fuel_cell]", "[type=hydrogen_tank]"};
+    for (const auto& pointer : option.pointers)
+        for (const char* kind : kinds)
+            if (pointer.find(kind) != std::string::npos) return true;
+    static const char* const formats[] = {"electric_motor", "battery", "fuel_cell"};
+    for (const char* format : formats)
+        if (option.part_format.find(format) != std::string::npos) return true;
+    return false;
+}
 } // namespace
 
 const char* to_string(DynoTopology t) {
@@ -191,7 +204,8 @@ VehicleSetup dyno_setup(const SetupOptionTable& table, const CatalogEntry& entry
         const bool gearing = electrified && reference &&
             std::find(reference->electrified_setup_options.begin(), reference->electrified_setup_options.end(), option.id) !=
                 reference->electrified_setup_options.end();
-        if (!engine && !conversion && !gearing) continue;
+        const bool hardware = electrified && changes_electric_hardware(option);
+        if (!engine && !conversion && !gearing && !hardware) continue;
         const auto value = working.values.find(option.id);
         if (value != working.values.end()) out.values.emplace(*value);
     }
