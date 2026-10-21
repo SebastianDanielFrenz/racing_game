@@ -873,7 +873,7 @@ func _draw_garage_options() -> void:
 		if str(opt["id"]) in ["clutch_capacity", "shift_clutch_capacity"]: continue
 		if str(opt["area"]) != _active_area or not bool(opt["available"]):
 			continue
-		if str(opt["kind"]) in ["tyre_choice", "file_choice", "part_choice"]:
+		if str(opt["kind"]) in ["tyre_choice", "file_choice", "part_choice", "scale_preset"]:
 			_option_box.add_child(_label("Installed " + str(opt["label"]).to_lower(),17,HORIZONTAL_ALIGNMENT_LEFT))
 			var installed := _label(_part_name(opt) if str(opt["kind"]) != "tyre_choice" else _display_value("tyre_choice",opt["value"]),14,HORIZONTAL_ALIGNMENT_LEFT,true)
 			installed.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
@@ -1104,14 +1104,20 @@ func _focus_tuning() -> void:
 			return
 
 # Navigation owns focus; installed markers remain separate from the moving cursor.
+# A tile in `unavailable` (nothing behind it the car can modify) is hidden; with "show all" it is listed greyed out with its
+# reason from `reasons` (else "Not available yet").
 func _draw_tiles(names: Array, unavailable: Array = [], reasons: Dictionary = {}) -> void:
 	var grid := GridContainer.new()
 	grid.columns = 2
 	grid.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_option_box.add_child(grid)
+	var shown := 0
 	for item in names:
 		var name := str(item)
-		var button := _button(grid,"tile:" + name,name + ("\nNot available yet" if unavailable.has(name) else ""),func(): _enter_garage_tile(name),0)
+		if unavailable.has(name) and not _show_all_upgrades(): continue
+		shown += 1
+		var reason := str(reasons.get(name, "Not available yet"))
+		var button := _button(grid,"tile:" + name,name + ("\n" + reason if unavailable.has(name) else ""),func(): _enter_garage_tile(name),0)
 		button.custom_minimum_size = Vector2(0,112)
 		button.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 		button.add_theme_font_size_override("font_size",16)
@@ -1119,6 +1125,8 @@ func _draw_tiles(names: Array, unavailable: Array = [], reasons: Dictionary = {}
 		button.disabled = unavailable.has(name)
 		if _garage_preferred == null and not button.disabled:
 			_garage_preferred = button
+	if shown == 0:
+		_option_box.add_child(_label("Nothing to upgrade here on this car.",16,HORIZONTAL_ALIGNMENT_LEFT,true))
 	_focus_garage.call_deferred()
 
 func _focus_garage() -> void:
@@ -1139,7 +1147,7 @@ func _focus_garage() -> void:
 
 func _enter_garage_tile(name: String) -> void:
 	_garage_path.append(name)
-	var area := {"Engine":"engine", "Wheels":"wheels", "Chassis":"wheels", "Drivetrain":"rear", "Appearance & assists":"overview", "Swaps":"engine"}
+	var area := {"Engine":"engine", "Wheels":"wheels", "Chassis":"wheels", "Drivetrain":"rear", "Appearance & assists":"overview", "Swaps":"engine", "Electric drive":"engine"}
 	_active_area = str(area.get(_garage_path[0],"overview"))
 	garage_area_chosen.emit(_active_area)
 	_draw_garage_options()
@@ -1218,15 +1226,101 @@ func _any_option(id: String) -> Dictionary:
 			return opt
 	return {}
 
-func _cooling_offered() -> bool:
-	for id in COOLING_OPTIONS:
-		if not _any_option(id).is_empty(): return true
+# The electric-drive scale options (setup_options.json group "Electric drive"): motors, battery capacity, battery power.
+const EV_MOTOR_OPTIONS := ["ev_motor_scale"]
+const EV_BATTERY_OPTIONS := ["ev_battery_pack"]
+
+# True when at least one of `ids` is available on this car (something the player can actually change).
+func _any_available(ids: Array) -> bool:
+	for id in ids:
+		if not _garage_option(str(id)).is_empty(): return true
 	return false
 
-func _internals_offered() -> bool:
-	for id in INTERNALS_OPTIONS:
-		if not _any_option(id).is_empty(): return true
-	return false
+func _turbo_modifiable() -> bool:
+	if _any_available(["turbo_install", "turbo_install_n2o"]): return true
+	var kit := _turbo_kit_option()
+	return not kit.is_empty() and bool(kit["available"])
+
+# The sub-tiles of each upgrades category the car cannot modify (no available option behind them). _draw_tiles hides them;
+# a category whose sub-tiles are all unmodifiable is hidden itself (_upgrade_categories_unavailable).
+func _engine_tiles_unavailable() -> Array:
+	var out: Array = ["Camshaft"] # no camshaft parts yet
+	if not _turbo_modifiable(): out.append("Turbo")
+	if not _any_available(["nitrous_install_hyper", "nitrous_install_sedan"]): out.append("N2O")
+	if not _any_available(INTERNALS_OPTIONS): out.append("Internals")
+	if not _any_available(COOLING_OPTIONS): out.append("Cooling")
+	return out
+
+func _swap_tiles_unavailable() -> Array:
+	var out: Array = []
+	if _garage_option("engine_install").is_empty(): out.append("Engine")
+	if _garage_option("fuel").is_empty(): out.append("Fuel")
+	if not _turbo_modifiable(): out.append("Forced induction")
+	if not _any_available(["drive_layout", "diff_front", "diff_rear"]): out.append("Drivetrain")
+	return out
+
+func _drivetrain_tiles_unavailable() -> Array:
+	var out: Array = []
+	if not _any_available(["clutch_capacity", "shift_clutch_capacity"]): out.append("Clutch")
+	if _garage_option("gearbox_install").is_empty(): out.append("Gearbox")
+	if not _any_available(["final_drive", "gear_ratios"]): out.append("Gearing")
+	return out
+
+func _chassis_tiles_unavailable() -> Array:
+	var out: Array = ["Aero"] # front diffuser and rear wing are not built yet
+	if _weight_reduction_options().is_empty(): out.append("Weight reduction")
+	return out
+
+func _electric_tiles_unavailable() -> Array:
+	var out: Array = []
+	if not _any_available(EV_MOTOR_OPTIONS): out.append("Motors")
+	if not _any_available(EV_BATTERY_OPTIONS): out.append("Battery")
+	return out
+
+const UPGRADE_CATEGORIES := ["Engine", "Electric drive", "Chassis", "Wheels", "Swaps", "Drivetrain", "Appearance & assists"]
+
+func _upgrade_categories_unavailable() -> Array:
+	var out: Array = []
+	if _engine_tiles_unavailable().size() >= 5: out.append("Engine")
+	if _electric_tiles_unavailable().size() >= 2: out.append("Electric drive")
+	if _drivetrain_tiles_unavailable().size() >= 3: out.append("Drivetrain")
+	return out
+
+# Electric drive / Motors or Battery: a slider row per scale option (the same rows Tuning lists under Engine) and a card per
+# pack for a preset option (the battery: each pack sets energy, power and mass together), each with its help text.
+func _draw_electric_drive(ids: Array) -> void:
+	var count := 0
+	for id in ids:
+		var opt := _garage_option(str(id))
+		if opt.is_empty(): continue
+		if str(opt["kind"]) == "scale_preset":
+			_draw_preset_cards(opt)
+		else:
+			_option_box.add_child(_option_row(opt))
+		if not str(opt.get("help", "")).is_empty():
+			_option_box.add_child(_label(str(opt["help"]),13,HORIZONTAL_ALIGNMENT_LEFT,true))
+		count += 1
+	if count == 0:
+		_option_box.add_child(_label("Nothing to upgrade here on this car.",16,HORIZONTAL_ALIGNMENT_LEFT,true))
+	_focus_tuning.call_deferred()
+
+# One card per preset of a scale_preset option (core vehicle_setup.h ScalePreset): the card's size line is the computed
+# figures (e.g. "135 kWh · 805 kW · 700 kg"); "stock" is the car's own part.
+func _draw_preset_cards(opt: Dictionary) -> void:
+	var grid := GridContainer.new()
+	grid.columns = 2
+	_option_box.add_child(grid)
+	var opt_id := str(opt["id"])
+	for part in opt.get("parts", []):
+		var part_id := str(part["id"])
+		var installed := str(opt["value"]) == part_id
+		var presentation := {"label":str(part["label"]), "size":str(part.get("size", "")), "image":str(part.get("image", ""))}
+		var card := _make_component_card(_with_badge(presentation,opt_id,{opt_id:part_id}),"INSTALLED" if installed else "Install")
+		grid.add_child(card)
+		_buttons["part:" + opt_id + ":" + part_id] = card
+		card.pressed.connect(func(): _edit_option(opt_id,part_id); _draw_garage_options())
+		if installed or _garage_preferred == null: _garage_preferred = card
+	_focus_garage.call_deferred()
 
 # Engine internals (core engine_internals.h): one row of grade cards per part. The engine's piston-speed limit is its
 # weakest part's; the setup check names the part that would fail. Nothing breaks yet (no damage model).
@@ -1385,9 +1479,15 @@ func _draw_upgrades() -> void:
 	_option_box.add_child(_label(" / ".join(_garage_path) if not _garage_path.is_empty() else "Upgrade categories",20,HORIZONTAL_ALIGNMENT_LEFT))
 	_draw_show_all_toggle()
 	if _garage_path.is_empty():
-		_draw_tiles(["Engine", "Chassis", "Wheels", "Swaps", "Drivetrain", "Appearance & assists"])
+		_draw_tiles(UPGRADE_CATEGORIES, _upgrade_categories_unavailable())
 		return
 	var top := _garage_path[0]
+	if top == "Electric drive":
+		if _garage_path.size() == 1:
+			_draw_tiles(["Motors", "Battery"], _electric_tiles_unavailable())
+		else:
+			_draw_electric_drive(EV_MOTOR_OPTIONS if _garage_path[1] == "Motors" else EV_BATTERY_OPTIONS)
+		return
 	if top == "Wheels":
 		if _garage_path.size() == 1:
 			_draw_tiles(["All", "Front", "Rear"])
@@ -1401,15 +1501,10 @@ func _draw_upgrades() -> void:
 		return
 	if top in ["Engine", "Swaps"]:
 		if _garage_path.size() == 1:
-			var disabled: Array = ["Camshaft"]
-			if _garage_option("engine_install").is_empty(): disabled.append("Engine")
-			if _garage_option("turbo_install").is_empty() and _garage_option("turbo_install_n2o").is_empty() and _turbo_kit_option().is_empty(): disabled.append("Turbo")
 			if top == "Swaps":
-				var no_fuel: bool = _garage_option("fuel").is_empty()
-				var no_drivetrain: bool = _garage_option("drive_layout").is_empty() and _garage_option("diff_front").is_empty() and _garage_option("diff_rear").is_empty()
-				_draw_tiles(["Powertrain", "Engine", "Fuel", "Forced induction", "Drivetrain"], [] + (["Engine"] if disabled.has("Engine") else []) + (["Fuel"] if no_fuel else []) + (["Forced induction"] if disabled.has("Turbo") else []) + (["Drivetrain"] if no_drivetrain else []),{"Engine":_swap_reason(["engine_install"]),"Fuel":_swap_reason(["fuel"]),"Forced induction":_swap_reason(["turbo_install","turbo_install_n2o","turbo_kit"]),"Drivetrain":_swap_reason(["drive_layout","diff_front","diff_rear"])})
+				_draw_tiles(["Powertrain", "Engine", "Fuel", "Forced induction", "Drivetrain"], _swap_tiles_unavailable(),{"Engine":_swap_reason(["engine_install"]),"Fuel":_swap_reason(["fuel"]),"Forced induction":_swap_reason(["turbo_install","turbo_install_n2o","turbo_kit"]),"Drivetrain":_swap_reason(["drive_layout","diff_front","diff_rear"])})
 			else:
-				_draw_tiles(["Turbo", "N2O", "Internals", "Cooling", "Camshaft"],disabled + (["N2O"] if _garage_option("nitrous_install_hyper").is_empty() and _garage_option("nitrous_install_sedan").is_empty() else []) + ([] if _internals_offered() else ["Internals"]) + ([] if _cooling_offered() else ["Cooling"]))
+				_draw_tiles(["Turbo", "N2O", "Internals", "Cooling", "Camshaft"],_engine_tiles_unavailable())
 			return
 		if top == "Engine" and _garage_path[1] == "Internals":
 			_draw_internals()
@@ -1467,7 +1562,7 @@ func _draw_upgrades() -> void:
 			clutch = _garage_option("shift_clutch_capacity")
 		var gearbox := _garage_option("gearbox_install")
 		if _garage_path.size() == 1:
-			_draw_tiles(["Clutch", "Gearbox", "Gearing"], (["Clutch"] if clutch.is_empty() else []) + (["Gearbox"] if gearbox.is_empty() else []))
+			_draw_tiles(["Clutch", "Gearbox", "Gearing"], _drivetrain_tiles_unavailable())
 		elif _garage_path[1] == "Clutch":
 			_draw_clutch_upgrades(clutch)
 		elif _garage_path[1] == "Gearbox":
@@ -1477,7 +1572,7 @@ func _draw_upgrades() -> void:
 		return
 	if top == "Chassis":
 		if _garage_path.size() == 1:
-			_draw_tiles(["Weight", "Weight reduction", "Aero", "Suspension & brakes"],["Weight reduction"] if _weight_reduction_options().is_empty() else [])
+			_draw_tiles(["Weight", "Weight reduction", "Aero", "Suspension & brakes"],_chassis_tiles_unavailable())
 		elif _garage_path[1] == "Weight":
 			_draw_mass_breakdown()
 		elif _garage_path[1] == "Weight reduction":

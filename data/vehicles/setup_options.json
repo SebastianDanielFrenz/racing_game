@@ -84,6 +84,54 @@
       ]
     },
     {
+      "id": "ev_motor_scale",
+      "label": "Electric motors",
+      "group": "Electric drive",
+      "area": "engine",
+      "unit": "x",
+      "help": "Scales every traction motor: peak torque, power, regeneration torque and mass together ([AS] a bigger machine of the same design: torque and power grow with its active length, and so does its mass). The battery must still deliver the power: raise its power output too, or the motors stop at the battery's limit.",
+      "kind": "scale",
+      "min": 0.5,
+      "max": 2.0,
+      "step": 0.05,
+      "file": "vehicle",
+      "pointers": [
+        "/powertrain/components/[type=electric_motor]/peak_torque_nm",
+        "/powertrain/components/[type=electric_motor]/max_power_w",
+        "/powertrain/components/[type=electric_motor]/regen_torque_nm",
+        "/powertrain/components/[type=electric_motor]/mass_kg"
+      ]
+    },
+    {
+      "id": "ev_battery_pack",
+      "label": "Battery pack",
+      "group": "Electric drive",
+      "area": "engine",
+      "unit": "",
+      "help": "The traction battery as a whole pack: each pack sets its energy (kWh), its power output (discharge and charge) and its mass together, relative to the car's own pack. Energy cells store more per kilogram but deliver less power; power cells the other way round. Every figure is an assumption [AS] from typical cell classes, not a measured pack.",
+      "kind": "scale_preset",
+      "file": "vehicle",
+      "pointers": [
+        "/powertrain/components/[type=battery]/capacity_kwh",
+        "/powertrain/components/[type=battery]/max_discharge_w",
+        "/powertrain/components/[type=battery]/max_charge_w",
+        "/powertrain/components/[type=battery]/mass_kg"
+      ],
+      "display": [
+        {"unit": "kWh", "multiplier": 1, "decimals": 0},
+        {"unit": "kW", "multiplier": 0.001, "decimals": 0},
+        {"unit": "", "multiplier": 1, "decimals": 0},
+        {"unit": "kg", "multiplier": 1, "decimals": 0}
+      ],
+      "presets": [
+        {"id": "compact_power", "label": "Compact power pack", "subtitle": "Power cells, small", "factors": [0.75, 1.3, 1.2, 0.8]},
+        {"id": "long_range", "label": "Long-range pack", "subtitle": "Energy cells, large", "factors": [1.5, 1.15, 1.15, 1.4]},
+        {"id": "performance", "label": "Performance pack", "subtitle": "Power cells", "factors": [1.0, 1.7, 1.4, 1.15]},
+        {"id": "race", "label": "Race pack", "subtitle": "High-power cells, light", "factors": [0.7, 2.2, 1.6, 0.9]},
+        {"id": "grand_tourer", "label": "Extended performance pack", "subtitle": "Power cells, large", "factors": [1.4, 2.0, 1.6, 1.65]}
+      ]
+    },
+    {
       "id": "brake_force",
       "label": "Brake force",
       "group": "Brakes",

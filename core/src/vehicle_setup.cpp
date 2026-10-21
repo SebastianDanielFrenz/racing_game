@@ -1637,6 +1637,7 @@ const char* to_string(OptionKind k) {
         case OptionKind::Bool: return "bool";
         case OptionKind::Colour: return "colour";
         case OptionKind::PartChoice: return "part_choice";
+        case OptionKind::ScalePreset: return "scale_preset";
     }
     return "scale";
 }
@@ -1772,6 +1773,7 @@ std::optional<SetupOptionTable> parse_setup_options(const std::string& json_text
         else if (kind == "bool") d.kind = OptionKind::Bool;
         else if (kind == "colour") d.kind = OptionKind::Colour;
         else if (kind == "part_choice") d.kind = OptionKind::PartChoice;
+        else if (kind == "scale_preset") d.kind = OptionKind::ScalePreset;
         else return bad(where + ": unknown kind \"" + kind + "\"");
         detail::get_number(o, "min", d.min);
         detail::get_number(o, "max", d.max);
@@ -1861,6 +1863,47 @@ std::optional<SetupOptionTable> parse_setup_options(const std::string& json_text
             continue;
         }
         if (d.kind != OptionKind::Colour && d.model_option.empty() && d.pointers.empty()) return bad(where + ": \"pointers\" (the whitelist) is empty");
+        if (d.kind == OptionKind::ScalePreset) {
+            // A preset choice: each preset scales pointer pattern k by factors[k]; nothing in between.
+            const std::size_t n = d.pointers.size();
+            if (!o.contains("presets") || !o["presets"].is_array() || o["presets"].empty()) return bad(where + ": presets missing");
+            std::set<std::string> ids;
+            for (const auto& preset : o["presets"]) {
+                SetupPart p;
+                if (!preset.is_object() || !detail::get_string(preset, "id", p.id) || p.id.empty() || p.id == "stock" ||
+                    !ids.insert(p.id).second || !detail::get_string(preset, "label", p.label) || p.label.empty())
+                    return bad(where + ": invalid or duplicate preset (each needs an id other than \"stock\" and a label)");
+                detail::get_string(preset, "image", p.image);
+                detail::get_string(preset, "subtitle", p.subtitle);
+                const auto f = preset.find("factors");
+                if (f == preset.end() || !f->is_array() || f->size() != n)
+                    return bad(where + ": preset \"" + p.id + "\" needs one factor per pointer (" + std::to_string(n) + ")");
+                for (const json& x : *f) {
+                    if (!x.is_number() || !(x.get<double>() > 0.0 && x.get<double>() < 10.0))
+                        return bad(where + ": preset \"" + p.id + "\": every factor must be a number in (0, 10)");
+                    p.factors.push_back(x.get<double>());
+                }
+                d.parts.push_back(std::move(p));
+            }
+            if (o.contains("display")) {
+                const json& disp = o["display"];
+                if (!disp.is_array() || disp.size() != n) return bad(where + ": \"display\" needs one entry per pointer");
+                for (const json& e : disp) {
+                    PresetDisplay pd;
+                    double decimals = 0.0;
+                    if (!e.is_object()) return bad(where + ": a display entry must be an object");
+                    detail::get_string(e, "unit", pd.unit);
+                    detail::get_number(e, "multiplier", pd.multiplier);
+                    detail::get_number(e, "decimals", decimals);
+                    pd.decimals = static_cast<int>(decimals);
+                    if (!(pd.multiplier > 0.0) || static_cast<double>(pd.decimals) != decimals || pd.decimals < 0 || pd.decimals > 3)
+                        return bad(where + ": a display entry needs multiplier > 0 and whole decimals 0..3");
+                    d.preset_display.push_back(std::move(pd));
+                }
+            }
+            table.options.push_back(std::move(d));
+            continue;
+        }
         if (d.kind == OptionKind::Colour && !d.pointers.empty()) return bad(where + ": a colour edits no file, so it has no pointers");
         // A slider option's factor range comes from its absolute bounds and the car's stock value, not from min/max.
         if ((d.kind == OptionKind::Scale || d.kind == OptionKind::ScaleList) && !d.slider &&
@@ -2032,6 +2075,7 @@ std::optional<VehicleSetup> parse_setup(const std::string& json_text, const Setu
             case OptionKind::TyreChoice:
             case OptionKind::Colour:
             case OptionKind::PartChoice:
+            case OptionKind::ScalePreset:
                 if (!v.is_string()) return bad("option \"" + it.key() + "\" must be a string");
                 out.values[it.key()] = v.get<std::string>();
                 break;
@@ -2416,6 +2460,48 @@ SetupModel build_setup_model(const CatalogEntry& entry, const SetupOptionTable& 
         v.max = range.second;
         v.available = entry_offers(entry, def.id);
         switch (def.kind) {
+            case OptionKind::ScalePreset: {
+                // Cards: the car's own values first ("stock"), then each preset with the values it would give.
+                v.stock = std::string("stock");
+                std::vector<double> stock_sum(v.def.pointers.size(), 0.0);
+                bool any = false;
+                for (std::size_t k = 0; k < v.def.pointers.size(); ++k) {
+                    for (const Target& tg : targets_of(files, def, {v.def.pointers[k]})) {
+                        const json* leaf = at_pointer(tg.file->work, tg.pointer);
+                        if (leaf == nullptr || !leaf->is_number()) continue;
+                        stock_sum[k] += leaf->get<double>();
+                        any = true;
+                    }
+                }
+                if (!any) {
+                    v.available = false;
+                    break;
+                }
+                v.stock_numbers = stock_sum;
+                const auto line = [&](const std::vector<double>& factors) {
+                    std::string text;
+                    for (std::size_t k = 0; k < def.preset_display.size() && k < stock_sum.size(); ++k) {
+                        const PresetDisplay& pd = def.preset_display[k];
+                        if (pd.unit.empty() || stock_sum[k] <= 0.0) continue;
+                        if (!text.empty()) text += " \xc2\xb7 ";
+                        text += fmt_fixed(stock_sum[k] * factors[k] * pd.multiplier, pd.decimals) + " " + pd.unit;
+                    }
+                    return text;
+                };
+                SetupPart stock;
+                stock.id = "stock";
+                stock.label = "Stock";
+                stock.detail = line(std::vector<double>(stock_sum.size(), 1.0));
+                v.parts.push_back(stock);
+                v.choices.push_back("stock");
+                for (const SetupPart& p : def.parts) {
+                    SetupPart q = p;
+                    q.detail = line(p.factors);
+                    v.parts.push_back(std::move(q));
+                    v.choices.push_back(p.id);
+                }
+                break;
+            }
             case OptionKind::Scale: {
                 v.stock = 1.0;
                 const auto targets = targets_of(files, def, v.def.pointers);
@@ -2719,6 +2805,26 @@ std::string apply_option(const CatalogEntry& entry, const SetupOptionDef& def, c
     switch (def.kind) {
         case OptionKind::FileChoice: return install_file_part(files, def, entry, ctx, value);
         case OptionKind::PartChoice: return apply_part_choice(files, def, value);
+        case OptionKind::ScalePreset: {
+            if (!std::holds_alternative<std::string>(value)) return type_error("a preset id");
+            const std::string& choice = std::get<std::string>(value);
+            if (choice == "stock") return {};
+            const auto preset = std::find_if(def.parts.begin(), def.parts.end(), [&](const SetupPart& p) { return p.id == choice; });
+            if (preset == def.parts.end()) return def.label + ": unknown choice \"" + choice + "\"";
+            bool any = false;
+            for (std::size_t k = 0; k < patterns.size() && k < preset->factors.size(); ++k) {
+                std::vector<Target> targets = targets_of(files, def, {patterns[k]});
+                for (Target& t : targets) {
+                    const json* leaf = at_pointer(t.file->work, t.pointer);
+                    if (leaf == nullptr || !leaf->is_number()) return "option \"" + id + "\": " + t.pointer + " is not a number";
+                    if (!set_number(t, leaf->get<double>() * preset->factors[k])) return "option \"" + id + "\": cannot edit " + t.pointer;
+                    touched.emplace_back(t.file, t.pointer);
+                    any = true;
+                }
+            }
+            if (!any) return "option \"" + id + "\" matches nothing in " + entry.id + "'s files";
+            return {};
+        }
         case OptionKind::Scale: {
             if (!std::holds_alternative<double>(value)) return type_error("a number");
             const double s = std::get<double>(value);

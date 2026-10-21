@@ -439,12 +439,13 @@ TEST_CASE("setup: every catalog entry accepts a setup touching each available op
                 case rg::OptionKind::BrakeBias: s.values[o.def.id] = std::get<double>(o.stock) + 0.02; ++touched; break;
                 case rg::OptionKind::FileChoice:
                 case rg::OptionKind::TyreChoice:
-                case rg::OptionKind::PartChoice: s.values[o.def.id] = o.choices.back(); ++touched; break;
+                case rg::OptionKind::PartChoice:
+                case rg::OptionKind::ScalePreset: s.values[o.def.id] = o.choices.back(); ++touched; break;
                 case rg::OptionKind::Bool: s.values[o.def.id] = !std::get<bool>(o.stock); ++touched; break;
                 case rg::OptionKind::Colour: s.values[o.def.id] = std::string("#336699"); break;
             }
         }
-        if (e.id == "car_electric") CHECK(touched == 2); // Its catalogue explicitly offers the two axle tyre choices.
+        if (e.id == "car_electric") CHECK(touched == 4); // Its catalogue offers the two axle tyre choices, the motor scale and the battery pack.
         else CHECK(touched >= 10);
         const auto v = rg::validate_setup(e, f.table, f.ctx, s);
         INFO(v.message);

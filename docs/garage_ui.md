@@ -630,3 +630,24 @@ is ignored (`Garage::effective_setup` drops it, `compile_setup` skips it). The R
 (`seat_vintage_bench`, 18 kg, the slot `seat_driver`) with no passenger-seat option; the Ventura GT and the two-seat
 hypercars have no `rear_seats` slot (the Ventura's 14 kg of rear-deck trim moved into its body mass, so its total is
 unchanged). Tests `[strip_visual][seats]`.
+
+## Electric drive (PR #55)
+
+A car with an electric motor or a traction battery gets the top category "Electric drive" (Motors, Battery); a tile with
+no available option behind it is hidden unless "Show all" is on (then greyed out with its reason). Motors: the slider
+`ev_motor_scale` (x0.5-2.0 on every motor's peak torque, power, regen torque and mass). Battery: one card per pack of
+`ev_battery_pack` (kind `scale_preset`); a pack sets energy, discharge and charge power and mass together, so there is
+no separate capacity or output selection. On car_electric (stock 90 kWh, 700 kW, 500 kg):
+
+| Pack | Energy | Discharge | Mass |
+|---|---|---|---|
+| Compact power | 67.5 kWh | 910 kW | 400 kg |
+| Long range | 135 kWh | 805 kW | 700 kg |
+| Performance | 90 kWh | 1190 kW | 575 kg |
+| Race | 63 kWh | 1540 kW | 450 kg |
+| Extended performance | 126 kWh | 1400 kW | 825 kg |
+
+All pack factors are assumptions [AS] from typical cell classes (energy cells: more kWh per kg, less power; power cells
+the other way round), not measured packs. A `scale_preset` option: `pointers` (patterns), `presets` [{id, label,
+subtitle?, image?, factors[one per pattern, in (0, 10)]}], optional `display` [{unit, multiplier, decimals}] for the
+card figures (an empty unit is left out); the value is the preset id, "stock" = the car's own part.

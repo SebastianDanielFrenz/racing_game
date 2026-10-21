@@ -515,6 +515,9 @@ func _run() -> void:
 			garage.discard()
 			await _pause_to_main_menu()
 
+	# ---- the electric car: tiles it cannot modify are hidden, the Electric drive tile offers motors and battery ----
+	await _check_electric_upgrades()
+
 	# ---- back to the hyper car through the garage: the same node count as after the stock drive ----
 	_press("garage")
 	ui.browser().focus_car(hyper_id)
@@ -719,6 +722,48 @@ func _numeric_entry_checks() -> void:
 	garage.reset_option("brake_bias")
 	await _back_to_root()
 	_press("tile:Engine")
+	await _wait_seconds(0.3)
+
+# Owner 2026-10-21: "Allow for upgrading of electric motors and battery size and battery power output on EVs" and "hide
+# tiles that cannot be modified, for an EV that means: Turbo, ...". From the main menu and back to it.
+func _check_electric_upgrades() -> void:
+	var ui: CanvasLayer = main.get_shell_ui()
+	var garage: Node = main.get_garage()
+	var ev_id := "car_electric"
+	_press("garage")
+	await _wait_seconds(0.4)
+	ui.browser().focus_car(ev_id)
+	_press("choose")
+	if not _check(_screen() == "configurator" and str(garage.get_edit_id()) == ev_id, "the electric car's configurator opens (is '%s')" % _screen()):
+		return
+	_press("garage:upgrades")
+	await _back_to_root()
+	var ids: Array = ui.button_ids()
+	_check(not ids.has("tile:Engine"), "electric: no Engine tile (nothing to modify; has %s)" % ", ".join(ids))
+	_check(ids.has("tile:Electric drive") and ids.has("tile:Swaps") and ids.has("tile:Wheels"), "electric: Electric drive, Swaps and Wheels tiles are shown")
+	_press("tile:Electric drive")
+	_check(ui.get_button("tile:Motors") != null and ui.get_button("tile:Battery") != null, "electric: Motors and Battery tiles")
+	_press("tile:Battery")
+	_check(ui.get_button("part:ev_battery_pack:stock") != null and ui.get_button("part:ev_battery_pack:long_range") != null and not ui._option_values.has("ev_battery_capacity"), "electric: the battery page shows pack cards, no capacity or output slider")
+	_press("part:ev_battery_pack:long_range")
+	_check(str(ui._garage_option("ev_battery_pack").get("value", "")) == "long_range" and garage.is_dirty() and bool(garage.get_validation()["ok"]), "electric: the long-range pack card installs and validates")
+	_check(bool(garage.set_option("ev_motor_scale", 1.3)["accepted"]) and bool(garage.get_validation()["ok"]), "electric: stronger motors are accepted and validate")
+	garage.reset_all()
+	_check(not garage.is_dirty(), "electric: reset restores stock")
+	await _back_to_root()
+	# with "show all" the hidden tiles come back greyed out
+	var show_all_before: bool = ui._show_all_upgrades()
+	ui.shell.set_setting("garage.show_all_upgrades", true)
+	ui._draw_garage_options()
+	var engine_tile: Button = ui.get_button("tile:Engine")
+	_check(engine_tile != null and engine_tile.disabled, "electric: show all lists the Engine tile greyed out")
+	ui.shell.set_setting("garage.show_all_upgrades", show_all_before)
+	ui._draw_garage_options()
+	await _press_escape()
+	_press("garage_exit:selection")
+	_check(await _wait_until(func(): return _screen() == "vehicle_select", 5.0), "electric: back to the vehicle select (is '%s')" % _screen())
+	_press("back")
+	_check(await _wait_until(func(): return _screen() == "main_menu", 5.0), "electric: back to the main menu (is '%s')" % _screen())
 	await _wait_seconds(0.3)
 
 func _back_to_root() -> void:
