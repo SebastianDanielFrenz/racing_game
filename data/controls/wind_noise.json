@@ -1,11 +1,11 @@
 {
   "format": "racing_game.wind_noise/1",
   "wind": {
-    "status": "NEW 2026-10-19 (owner: there was no wind noise; the sound heard as wind was the tyre layer). Every number is [AS] unless stated.",
+    "status": "NEW 2026-10-19 (owner: there was no wind noise; the sound heard as wind was the tyre layer). Every number is [AS] unless stated. 2026-10-21: interior slope 40 dB per decade (was 50).",
     "reference_speed_kmh": 100.0,
     "rms_at_reference": 0.0172,
-    "level_db_per_decade": 50.0,
-    "level_note": "Aerodynamic sound from turbulent flow over a body is a dipole/boundary-layer source: sound power ~ U^5 ... U^6 (Lighthill 1952, 'On sound generated aerodynamically I': monopole U^4, dipole U^6, quadrupole U^8; Hucho, Aerodynamics of Road Vehicles, aeroacoustics chapter: 50-60 log10 U). 50 dB per decade is the low end of that range: 15 dB per doubling of the airspeed. rms_at_reference is chosen so wind and tyre noise are equally loud at about 130 km/h: tyre dominates in town, wind on the motorway and above.",
+    "level_db_per_decade": 40.0,
+    "level_note": "What the driver hears is the wind noise INSIDE the cabin. Outside, flow noise over a body is a dipole/boundary-layer source growing 50-60 log10 U (Lighthill 1952: dipole U^6; Hucho, Aerodynamics of Road Vehicles: 50-60 log10 U), but the cabin's glass and seals attenuate more as the spectrum moves up with the airspeed, so the interior level grows less steeply: about 40 dB per decade [AS] (12 dB per doubling; passenger cars read roughly 65 dBA at 100 km/h and 76 dBA at 200 km/h in total). Was 50 (owner 2026-10-21: the wind scaled too aggressively). rms_at_reference is the 100 km/h level, unchanged; tyre noise (35 dB per decade) still dominates in town; the two layers are now equally loud at about 200 km/h (was 130).",
     "max_speed_kmh": 500.0,
     "full_above_kmh": 3.6,
     "centre_hz_at_reference": 700.0,

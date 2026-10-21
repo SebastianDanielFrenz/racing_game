@@ -3,7 +3,7 @@
 // "that was the tyre noise": it neither got louder nor changed pitch with wheel speed).
 //
 // What is pinned: both layers grow continuously and monotonically with speed over 0-450 km/h, with the CPX-style slope for
-// the tyre layer (30-40 dB per decade) and the dipole slope for the wind layer, with no audible step between adjacent km/h,
+// the tyre layer (30-40 dB per decade) and the interior slope (40 dB per decade) for the wind layer, with no audible step between adjacent km/h,
 // pitch (recording rate, hiss centre, tread tone, wind centre) rising with speed, the data files' rejections, and the mix
 // (tyre dominates in town, wind on the motorway). Recorded sabotages (see the notes at the end of each section):
 //   S1 tyre_roll_gain clamps v at 50 km/h             -> T2/T3/T4/T6/W9 fail (5 cases, 413 assertions)
@@ -271,10 +271,10 @@ TEST_CASE("T9 tyre config rejections", "[wind_noise][tyre_sound]") {
 
 // ---- wind law -------------------------------------------------------------------------------------------------------------
 
-TEST_CASE("W1 wind config: the shipped file parses and states the dipole law", "[wind_noise]") {
+TEST_CASE("W1 wind config: the shipped file parses and states the interior slope", "[wind_noise]") {
     const auto c = shipped_wind();
-    CHECK(c.level_db_per_decade >= 50.0);
-    CHECK(c.level_db_per_decade <= 60.0);
+    CHECK(c.level_db_per_decade >= 38.0); // interior: steeper than the tyre layer (35), below the exterior 50-60
+    CHECK(c.level_db_per_decade <= 45.0);
     CHECK(c.max_speed_mps >= kmh(450.0));
     CHECK(c.centre_exponent > 0.5);
 }
@@ -289,18 +289,18 @@ TEST_CASE("W2 wind level grows monotonically with the airspeed up to 450 km/h", 
         REQUIRE(a > prev);
         prev = a;
     }
-    CHECK(db(rg::wind_noise_amplitude(c, kmh(400.0)), rg::wind_noise_amplitude(c, kmh(200.0))) > 12.0);
+    CHECK(db(rg::wind_noise_amplitude(c, kmh(400.0)), rg::wind_noise_amplitude(c, kmh(200.0))) > 11.0);
 }
 
-TEST_CASE("W3 wind slope is 50-60 dB per decade at every doubling, no step between adjacent km/h, nothing at walking pace", "[wind_noise]") {
+TEST_CASE("W3 wind slope is 38-45 dB per decade at every doubling, no step between adjacent km/h, nothing at walking pace", "[wind_noise]") {
     const auto c = shipped_wind();
     for (double v = 20.0; v <= 240.0; v *= 2.0) {
         const double per_doubling = db(rg::wind_noise_amplitude(c, kmh(2.0 * v)), rg::wind_noise_amplitude(c, kmh(v)));
         INFO("from " << v << " km/h: " << per_doubling << " dB per doubling");
-        CHECK(per_doubling >= 50.0 * std::log10(2.0) - 0.05); // 15.05 dB
-        CHECK(per_doubling <= 60.0 * std::log10(2.0) + 0.05); // 18.06 dB
+        CHECK(per_doubling >= 38.0 * std::log10(2.0) - 0.05); // 11.44 dB
+        CHECK(per_doubling <= 45.0 * std::log10(2.0) + 0.05); // 13.55 dB
     }
-    CHECK(db(rg::wind_noise_amplitude(c, kmh(5.0)), rg::wind_noise_amplitude(c, kmh(100.0))) < -60.0);
+    CHECK(db(rg::wind_noise_amplitude(c, kmh(5.0)), rg::wind_noise_amplitude(c, kmh(100.0))) < -50.0);
     for (double v = 10.0; v < 450.0; v += 1.0) {
         const double step = db(rg::wind_noise_amplitude(c, kmh(v + 1.0)), rg::wind_noise_amplitude(c, kmh(v)));
         INFO("km/h " << v);
@@ -348,7 +348,7 @@ TEST_CASE("W5 wind voice: silent at rest, bounded, deterministic, block-size ind
     CHECK(changed);
 }
 
-TEST_CASE("W6 rendered wind: RMS follows 50 dB per decade, spectrum moves up, no flat region", "[wind_noise]") {
+TEST_CASE("W6 rendered wind: RMS follows 40 dB per decade, spectrum moves up, no flat region", "[wind_noise]") {
     const auto c = shipped_wind();
     double prev = 0.0;
     for (double v : {20.0, 30.0, 50.0, 70.0, 100.0, 150.0, 200.0, 250.0, 300.0, 400.0}) {
@@ -359,8 +359,8 @@ TEST_CASE("W6 rendered wind: RMS follows 50 dB per decade, spectrum moves up, no
     }
     const double r50 = wind_rms(c, kmh(50.0)), r100 = wind_rms(c, kmh(100.0)), r200 = wind_rms(c, kmh(200.0)), r400 = wind_rms(c, kmh(400.0));
     for (double per_doubling : {db(r100, r50), db(r200, r100), db(r400, r200)}) {
-        CHECK(per_doubling >= 14.0); // 15.05 nominal; the band shift and the gust modulation move the rendered value a little
-        CHECK(per_doubling <= 18.5);
+        CHECK(per_doubling >= 11.0); // 12.04 nominal; the band shift and the gust modulation move the rendered value a little
+        CHECK(per_doubling <= 15.5);
     }
     // The spectrum's weight moves up: the share of the energy below ~400 Hz (one-pole low-pass) falls with every doubling.
     auto low_share = [&](double v) {
@@ -416,23 +416,26 @@ TEST_CASE("W8 airspeed is relative to the air: a headwind makes the same ground 
 
 // ---- mix ------------------------------------------------------------------------------------------------------------------
 
-TEST_CASE("W9 balance: tyre noise dominates in town, wind from the motorway up, crossover 90-160 km/h", "[wind_noise][tyre_sound]") {
+TEST_CASE("W9 balance: tyre noise dominates in town and on the motorway, wind above about 200 km/h", "[wind_noise][tyre_sound]") {
     const auto tc = shipped_tyre();
     const auto wc = shipped_wind();
     const auto loop = shipped_loop(tc);
     REQUIRE(loop);
     auto margin = [&](double v) { return db(tyre_layer_rms(tc, loop, kmh(v)), wind_rms(wc, kmh(v))); }; // + = tyre louder
-    CHECK(margin(30.0) > 9.0);
-    CHECK(margin(50.0) > 5.5);
-    CHECK(margin(70.0) > 3.0);
-    CHECK(margin(200.0) < -2.0);
-    CHECK(margin(300.0) < -4.0);
+    // 2026-10-21 (owner: the wind scaled too aggressively): wind at 40 dB per decade against the tyre's 35 with the 100 km/h
+    // level kept moves the crossover from ~130 to ~200 km/h; measured margins 4.2 / 3.3 / 2.6 dB at 30 / 50 / 70 km/h,
+    // -0.9 dB at 300 km/h (was 9.6 / 6.2 / 4.0 / -5.4 at 50 dB per decade).
+    CHECK(margin(30.0) > 3.5);
+    CHECK(margin(50.0) > 2.5);
+    CHECK(margin(70.0) > 2.0);
+    CHECK(margin(300.0) < 0.0);
+    CHECK(margin(400.0) < -1.0);
     double crossover = 0.0;
     for (double v = 40.0; v <= 300.0; v += 2.0)
         if (margin(v) < 0.0) { crossover = v; break; }
     INFO("crossover km/h " << crossover);
-    CHECK(crossover >= 100.0);
-    CHECK(crossover <= 160.0);
+    CHECK(crossover >= 170.0);
+    CHECK(crossover <= 230.0);
     // Total level at 300 km/h stays below full scale (no clipping of the sum at the loudest speed).
     CHECK(tyre_layer_rms(tc, loop, kmh(300.0)) + wind_rms(wc, kmh(300.0)) < 0.5);
 }
