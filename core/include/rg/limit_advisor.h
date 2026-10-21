@@ -93,7 +93,7 @@ struct AdvisorConfig {
     double merge_gap_rpm = 300.0;
     std::map<std::string, int> decimals; // quantity name -> decimals (missing = the built-in default)
     std::vector<std::string> solve_points = {"worst", "last"};
-    std::vector<AdviceKindConfig> kinds; // file order = the order of equal-severity items
+    std::vector<AdviceKindConfig> kinds; // the "kinds" key order of the FILE (re-read with ordered_json; plain json sorts keys) = the order of equal-severity items
     // Static build-rule issues (ps::drivetrain::BuildIssue TurboStageMapCoverage, and the game's part limits above) shown after the sweep findings of
     // equal severity; same text/variant/min_severity vocabulary as `kinds`. The variant "beyond_map" is used for Limiting.
     std::vector<AdviceKindConfig> build_rules;
@@ -257,10 +257,16 @@ struct AdviceSweep {
     ps::drivetrain::RemedyRequest remedy_request; // what solve_remedy needs (engine copy, maps, spec)
     bool has_engine = false;
     double sweep_seconds = 0.0;
+    // A car without a combustion engine: the checks not made and why, in the player's words (the engine checks, the motor
+    // and battery checks physics has no limit kind for, and the driveline checks that do not apply).
+    std::vector<std::string> skipped;
+    // ... and, when a traction motor drives the gearbox input, the input rpm / torque the driveline checks were graded on.
+    std::vector<ps::drivetrain::DynoPoint> input_torque_points;
 };
 // The shift clutches of a clutch-to-clutch gearbox (automatic, dual-clutch, clutch-launched CVT: GearboxDesc::shift_clutch)
 // against the sweep's peak net torque, graded exactly like physics_sim's manual-clutch check (check_driveline_limits:
-// static capacity = capacity x static_factor; Limiting at the peak, Near within policy.driveline_torque_margin). Such a car has
+// static capacity = capacity x static_factor; Near within policy.driveline_torque_margin, Limiting at the peak, Exceeded more than
+// policy.gearbox_rating_over_exceeded over it - the owner's 2026-10-20 reuse of the gearbox band). Such a car has
 // no ClutchDesc, so that check never sees them. Findings are ClutchCapacity at part {"gearbox", gearbox_file,
 // "/shift_clutch/capacity_nm"} with a Closed remedy (required_min = peak / static_factor, required_margin x margin).
 [[nodiscard]] std::vector<ps::drivetrain::LimitFinding> check_shift_clutch_limits(const std::vector<ps::drivetrain::DynoPoint>& points,
@@ -272,6 +278,9 @@ struct AdviceSweep {
 // (clutch and, when its file names a rated_input_torque_nm, the gearbox). `config.policy` goes to the sweep
 // (DynoSweepSpec::policy) and the driveline check; remedy_request.spec keeps that pointer, so `config` must outlive
 // the returned AdviceSweep. `clutch_file` / `gearbox_file` (absolute paths, "" = unknown) only fill PartRef::file.
+// A car without a combustion engine (electric, fuel-cell) gets no engine sweep: the clutch and gearbox-input checks run
+// against the traction motors' peak input torque from ps::drivetrain::run_powertrain_dyno when a motor drives the gearbox
+// input; everything not checked is listed in AdviceSweep::skipped.
 // Throws ps::io::GenerationCancelled when `cancel` is set; std::runtime_error on an engine without a dyno harness.
 AdviceSweep run_advice_sweep(const ps::vehicle::VehicleDesc& desc, const AdvisorConfig& config, ps::jobs::JobSystem* pool,
                              const std::atomic<bool>* cancel, const std::string& clutch_file = {}, const std::string& gearbox_file = {});

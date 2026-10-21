@@ -96,6 +96,14 @@ func _run() -> void:
 	while main.get_shell_ui().garage.get_dyno().get("busy",false) and Time.get_ticks_msec() < dyno_deadline:
 		await _frames(1)
 	await _seconds(0.25)
+	if OS.get_cmdline_user_args().has("--advice-shots-only"):
+		await _advice_shots()
+		get_tree().quit()
+		return
+	if OS.get_cmdline_user_args().has("--dyno-shots-only"):
+		await _dyno_shots()
+		get_tree().quit()
+		return
 	if OS.get_cmdline_user_args().has("--upgrades-shots-only"):
 		await _upgrade_shots()
 		get_tree().quit()
@@ -168,6 +176,65 @@ func _run() -> void:
 	await _shot("garage_exit")
 	print("RG_GARAGE_SHOT done")
 	get_tree().quit()
+
+# `--dyno-shots-only`: the garage dyno chart for the stock car, then (cars with the powertrain conversion) the battery hybrid,
+# the fuel-cell EV and a dual-clutch hybrid (no curve, the reason shown): dyno_<conversion>.png.
+func _wait_dyno() -> void:
+	var g = main.get_shell_ui().garage
+	await _seconds(0.6)
+	var deadline := Time.get_ticks_msec() + 180000
+	while g.get_dyno().get("busy",false) and Time.get_ticks_msec() < deadline:
+		await _frames(1)
+	await _seconds(0.6)
+	var d: Dictionary = g.get_dyno()
+	print("RG_DYNO_SHOT topology=%s caption='%s' reason='%s' error='%s' points=%d" % [d.get("topology",""), d.get("caption",""),
+		d.get("unsupported_reason",""), d.get("error",""), d.get("points",[]).size()])
+
+func _dyno_shots() -> void:
+	var g = main.get_shell_ui().garage
+	await _wait_dyno()
+	await _shot("dyno_stock")
+	for install in [["hybrid_battery", ""], ["fuel_cell_ev", ""], ["hybrid_battery", "dct_7"]]:
+		var reply: Dictionary = g.set_option("powertrain_install", install[0])
+		if not bool(reply.get("accepted", false)):
+			print("RG_DYNO_SHOT skip %s: %s" % [install[0], reply])
+			continue
+		var name: String = install[0]
+		if install[1] != "":
+			var box: Dictionary = g.set_option("gearbox_install", install[1])
+			print("RG_DYNO_SHOT gearbox %s accepted=%s" % [install[1], box.get("accepted", false)])
+			name += "_" + install[1]
+		main.get_shell_ui()._draw_garage_options()
+		await _wait_dyno()
+		await _shot("dyno_" + name)
+		g.reset_all()
+	main.get_shell_ui()._draw_garage_options()
+
+# `--advice-shots-only`: the setup check of the car as the user dir's saved setup leaves it (setup_check_<car>.png); the
+# status line and every note are printed as RG_ADVICE_SHOT lines.
+func _advice_shots() -> void:
+	var ui: CanvasLayer = main.get_shell_ui()
+	var g = ui.garage
+	var deadline := Time.get_ticks_msec() + 180000
+	await _seconds(0.6)
+	while Time.get_ticks_msec() < deadline:
+		var a: Dictionary = g.get_advice()
+		if not bool(a.get("busy", false)) and (bool(a.get("have_result", false)) or str(a.get("error", "")) != ""):
+			break
+		await _frames(1)
+	await _seconds(0.6)
+	print("RG_ADVICE_SHOT status: %s" % ui.advice_status_text())
+	for item in g.get_advice().get("items", []):
+		print("RG_ADVICE_SHOT item sev=%d %s" % [int(item.get("severity", 0)), str(item.get("title", ""))])
+	await _shot("setup_check_" + vehicle)
+	# Open the first driveline note (clutch, then gearbox) to show a note's details.
+	for kind in ["ClutchCapacity", "GearboxInputTorque"]:
+		for item in g.get_advice().get("items", []):
+			if str(item.get("kind", "")) == kind:
+				_press("advice_note:" + str(item.get("id", "")))
+				await _seconds(0.4)
+				await _shot("setup_check_" + vehicle + "_open")
+				return
 
 # Render the real showroom model from the driver's seat, before and after removing cabin parts.
 func _strip_shots() -> void:

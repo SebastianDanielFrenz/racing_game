@@ -5,6 +5,8 @@
 
 #include "json_util.h"
 
+#include "ps/drivetrain/electric_drive_desc.h"
+#include "ps/drivetrain/powertrain_dyno.h"
 #include "ps/io/limit_policy_io.h"
 #include "ps/io/vehicle_io.h"
 #include "ps/jobs/job_system.h"
@@ -16,6 +18,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <filesystem>
+#include <map>
 #include <set>
 #include <stdexcept>
 #include <string_view>
@@ -477,6 +480,25 @@ std::optional<AdvisorConfig> parse_advisor_config(const std::string& json_text, 
         k.kind = *kind;
         if (!read_kind_body(*it, where, origin, k, err)) return std::nullopt;
         c.kinds.push_back(std::move(k));
+    }
+    {
+        // `json` keeps object keys sorted by name; equal-severity notes follow the FILE order of "kinds" (AdvisorConfig::kinds),
+        // so the key order is read once more with nlohmann::ordered_json.
+        const nlohmann::ordered_json ordered = nlohmann::ordered_json::parse(json_text, nullptr, /*allow_exceptions=*/false);
+        std::map<std::string, std::size_t> position;
+        if (!ordered.is_discarded()) {
+            if (const auto k = ordered.find("kinds"); k != ordered.end() && k->is_object()) {
+                for (auto it = k->begin(); it != k->end(); ++it) position.emplace(it.key(), position.size());
+            }
+        }
+        std::vector<std::pair<std::size_t, AdviceKindConfig>> keyed;
+        std::size_t i = 0;
+        for (auto it = kinds->begin(); it != kinds->end(); ++it, ++i) {
+            const auto p = position.find(it.key());
+            keyed.emplace_back(p != position.end() ? p->second : position.size() + i, std::move(c.kinds[i]));
+        }
+        std::stable_sort(keyed.begin(), keyed.end(), [](const auto& a, const auto& b) { return a.first < b.first; });
+        for (std::size_t j = 0; j < keyed.size(); ++j) c.kinds[j] = std::move(keyed[j].second);
     }
     if (const auto rules = root.find("build_rules"); rules != root.end()) {
         if (!rules->is_object()) {
@@ -1039,10 +1061,17 @@ std::vector<pd::LimitFinding> check_shift_clutch_limits(const std::vector<pd::Dy
         if (gb == nullptr || !(gb->shift_clutch.capacity_nm > 0.0)) continue;
         const double capacity = gb->shift_clutch.capacity_nm;
         const double static_capacity = capacity * gb->shift_clutch.static_factor;
+        // physics_sim clutch_capacity_severity (claude/clutch-grade, owner 2026-10-20): Limiting from the static capacity,
+        // Exceeded more than gearbox_rating_over_exceeded over it, Near within the margin.
         pd::LimitSeverity s = pd::LimitSeverity::Near;
-        if (peak->torque_nm >= static_capacity) s = pd::LimitSeverity::Limiting;
-        else if (peak->torque_nm * pol.driveline_torque_margin >= static_capacity) s = pd::LimitSeverity::Near;
-        else continue;
+        if (peak->torque_nm >= static_capacity) {
+            const double over = (peak->torque_nm - static_capacity) / static_capacity;
+            s = over > pol.gearbox_rating_over_exceeded ? pd::LimitSeverity::Exceeded : pd::LimitSeverity::Limiting;
+        } else if (peak->torque_nm * pol.driveline_torque_margin >= static_capacity) {
+            s = pd::LimitSeverity::Near;
+        } else {
+            continue;
+        }
         pd::LimitFinding f;
         f.kind = pd::LimitKind::ClutchCapacity;
         f.severity = s;
@@ -1064,6 +1093,120 @@ std::vector<pd::LimitFinding> check_shift_clutch_limits(const std::vector<pd::Dy
     }
     return out;
 }
+
+namespace {
+
+// The electric motors whose shaft reaches the gearbox INPUT through shafts, clutches (taken as locked) and gear pairs - the
+// motors whose torque the clutch and the gearbox input carry - each with its index among ALL motors (component order) and
+// its speed per unit input speed (its torque reflected to the input = motor torque x that factor). Diffs and the gearbox
+// itself are not crossed.
+struct FeedingMotor {
+    int index = 0;
+    double speed_per_input = 1.0;
+};
+std::vector<FeedingMotor> motors_feeding_gearbox_input(const pd::PowertrainDesc& pt, const std::string& gearbox_id) {
+    // Edges between "component.port" nodes: b's speed = a's speed x factor.
+    std::multimap<std::string, std::pair<std::string, double>> edges;
+    const auto link = [&](const std::string& a, const std::string& b, double factor) {
+        edges.emplace(a, std::make_pair(b, factor));
+        edges.emplace(b, std::make_pair(a, 1.0 / factor));
+    };
+    for (const pd::ShaftDesc& shaft : pt.shafts)
+        for (std::size_t i = 1; i < shaft.ports.size(); ++i)
+            link(shaft.ports[0].component + "." + shaft.ports[0].port, shaft.ports[i].component + "." + shaft.ports[i].port, 1.0);
+    for (const pd::ComponentDesc& c : pt.components) {
+        if (std::holds_alternative<pd::ClutchDesc>(c.params)) link(c.id + ".in", c.id + ".out", 1.0);
+        if (const auto* g = std::get_if<pd::GearPairDesc>(&c.params))
+            if (g->ratio != 0.0) link(c.id + ".in", c.id + ".out", 1.0 / g->ratio); // omega_in = ratio x omega_out
+    }
+    std::map<std::string, double> speed{{gearbox_id + ".in", 1.0}};
+    std::vector<std::string> open{gearbox_id + ".in"};
+    while (!open.empty()) {
+        const std::string node = open.back();
+        open.pop_back();
+        const auto [lo, hi] = edges.equal_range(node);
+        for (auto it = lo; it != hi; ++it)
+            if (speed.emplace(it->second.first, speed[node] * it->second.second).second) open.push_back(it->second.first);
+    }
+    std::vector<FeedingMotor> out;
+    int index = 0;
+    for (const pd::ComponentDesc& c : pt.components) {
+        if (!std::holds_alternative<pd::ElectricMotorDesc>(c.params)) continue;
+        if (const auto it = speed.find(c.id + ".shaft"); it != speed.end()) out.push_back({index, std::abs(it->second)});
+        ++index;
+    }
+    return out;
+}
+
+// A car without a combustion engine: the clutch / gearbox-input checks (physics check_driveline_limits) against the peak
+// torque the traction motors put into the gearbox input, measured by physics run_powertrain_dyno (the car's own powertrain
+// at full pedal in 1st gear, the gearbox input swept up to the first such motor's top speed). The input torque is the motors'
+// shaft torque reflected through any reduction to the input (its losses ignored: an upper bound), so a slipping clutch does
+// not distort it. Every check that does not apply
+// is named in `skipped` (no thresholds of our own: a check physics has no limit kind for is not made).
+void electric_driveline_checks(const ps::vehicle::VehicleDesc& desc, const AdvisorConfig& config, ps::jobs::JobSystem* pool,
+                               const std::atomic<bool>* cancel, const std::string& clutch_file, const std::string& gearbox_file,
+                               AdviceSweep& out) {
+    out.skipped.push_back("Engine checks (rpm limits, boost, fuel, nitrous, cooling): the car has no combustion engine");
+    out.skipped.push_back("Motor and battery checks: physics has no limit kind for electric machines or packs");
+    const pd::ComponentDesc* gearbox = nullptr;
+    bool clutch = false;
+    for (const pd::ComponentDesc& c : desc.powertrain.components) {
+        if (std::holds_alternative<pd::GearboxDesc>(c.params)) gearbox = &c;
+        if (std::holds_alternative<pd::ClutchDesc>(c.params)) clutch = true;
+    }
+    if (gearbox == nullptr) {
+        out.skipped.push_back(clutch ? "Clutch check: a clutch without a gearbox has no dyno axis (run_powertrain_dyno needs a gearbox)"
+                                     : "Clutch and gearbox checks: the car has neither");
+        return;
+    }
+    const auto& box = std::get<pd::GearboxDesc>(gearbox->params);
+    if (box.type != pd::GearboxType::Manual && box.type != pd::GearboxType::Sequential) {
+        out.skipped.push_back("Clutch and gearbox checks: run_powertrain_dyno does not support automatic, dual-clutch or CVT gearboxes yet");
+        return;
+    }
+    const std::vector<FeedingMotor> feeding = motors_feeding_gearbox_input(desc.powertrain, gearbox->id);
+    if (feeding.empty() || box.forward_ratios.empty()) {
+        out.skipped.push_back("Clutch and gearbox checks: no traction motor drives the gearbox input");
+        return;
+    }
+    const pd::ElectricMotorDesc* axis_motor = nullptr;
+    int index = 0;
+    for (const pd::ComponentDesc& c : desc.powertrain.components)
+        if (const auto* m = std::get_if<pd::ElectricMotorDesc>(&c.params)) {
+            if (index == feeding.front().index) axis_motor = m;
+            ++index;
+        }
+    pd::PowertrainDynoSpec spec;
+    // The axis is the gearbox input itself (the dyno's EngineRpm axis: the input shaft, engine or not); a motor ahead of a
+    // clutch is not on the kinematic chain the dyno probes, so the MotorRpm axis cannot be used here.
+    spec.axis = pd::PowertrainDynoAxis::EngineRpm;
+    spec.gear = 1;
+    const double step = config.sweep.rpm_step;
+    const double top_input_rpm = (axis_motor->max_rpm - config.sweep.limiter_margin_rpm) / feeding.front().speed_per_input;
+    for (double rpm = step; rpm < top_input_rpm; rpm += step) spec.points.push_back(rpm);
+    if (spec.points.empty()) return;
+    const auto t0 = std::chrono::steady_clock::now();
+    const std::vector<pd::PowertrainDynoPoint> points = pd::run_powertrain_dyno(desc, nullptr, spec, pool, cancel).points;
+    pd::DynoResult input; // the gearbox input as check_driveline_limits reads it: rpm and torque per point
+    for (const pd::PowertrainDynoPoint& p : points) {
+        const double input_rpm = p.axis_value;
+        if (!(input_rpm > 1.0)) continue;
+        double torque_nm = 0.0;
+        for (const FeedingMotor& m : feeding) torque_nm += p.motors.at(static_cast<std::size_t>(m.index)).torque_nm * m.speed_per_input;
+        pd::DynoPoint d;
+        d.rpm = input_rpm;
+        d.torque_nm = torque_nm;
+        d.power_kw = torque_nm * input_rpm * 3.14159265358979323846 / 30.0 / 1000.0;
+        input.points.push_back(d);
+    }
+    out.input_torque_points = input.points;
+    for (pd::LimitFinding& f : pd::check_driveline_limits(input, desc.powertrain, clutch_file, gearbox_file, &config.policy))
+        out.input.findings.push_back(std::move(f));
+    out.sweep_seconds = std::chrono::duration<double>(std::chrono::steady_clock::now() - t0).count();
+}
+
+} // namespace
 
 AdviceSweep run_advice_sweep(const ps::vehicle::VehicleDesc& desc, const AdvisorConfig& config, ps::jobs::JobSystem* pool,
                              const std::atomic<bool>* cancel, const std::string& clutch_file, const std::string& gearbox_file) {
@@ -1087,7 +1230,10 @@ AdviceSweep run_advice_sweep(const ps::vehicle::VehicleDesc& desc, const Advisor
         }
     }
     AdviceSweep out;
-    if (engine == nullptr) throw std::runtime_error("The vehicle has no engine the dyno can sweep");
+    if (engine == nullptr) { // electric and fuel-cell cars: no engine sweep; the driveline checks from the powertrain dyno
+        electric_driveline_checks(desc, config, pool, cancel, clutch_file, gearbox_file, out);
+        return out;
+    }
     out.has_engine = true;
 
     pd::DynoSweepSpec spec;

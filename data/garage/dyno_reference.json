@@ -1,0 +1,19 @@
+{
+  "format": "rg.garage_dyno_reference/1",
+  "source": "Reference conditions of the garage dyno for electric, fuel-cell and hybrid cars (2026-10-19, owner: 'start the hybrid dyno'; owner decision on the battery limit pending). The chart is physics_sim's run_powertrain_dyno: the car's own powertrain at full pedal on a chassis dyno, every hub held at speed, power absorbed at the hubs. The battery discharge limit is the pack's own (BatteryDesc::max_discharge_w), the same limit the drive applies; physics holds it flat at every state of charge above empty, so the state of charge below changes the curve only through the fuel-cell stack (it supplies power below its target SOC) and the hybrid's low-SOC charge latch. battery_soc 0.8 [AS] (coordinator default) for battery EVs and hybrids; fuel-cell cars instead hold the pack at the stack's own target_soc (FuelCellDesc, the car's data) minus fuel_cell_soc_below_target 0.05 [D] (physics fuel_cell_request_j: the stack ramps from 0 at target_soc to its full rating at target_soc - 0.05; owner 2026-10-20: at 0.8, the shipped stacks' target, the stack supplied 0 kW and its share was invisible; the pack's initial_soc 0.9 lies above the target too), hydrogen_fraction 1.0 [AS] (full tank), drive_mode normal [AS] (the hybrid drive modes' own default), pedal 1, ISA sea level [D]. Hybrids are drawn over crank rpm in the forward gear whose ratio is nearest reference_gear_ratio 1.0 [AS] (the direct gear), from the auto-clutch's lock-up speed (the car's ManualTcu rolling_reengage_rpm, [D] from physics: the hybrid supervisor always runs the auto-clutch, which slips below it) plus hybrid_clutch_margin_rpm 25 [AS] up to the limiter's fuel-cut restore speed (rpm - hysteresis - 1, [D]: a held point between restore and cut reads the latched cut); EVs over the first traction motor's rpm from motor_rpm_min 250 [AS] to motor_rpm_top_fraction 0.99 [AS] of its max_rpm. Combustion-only cars ignore this file.",
+  "battery_soc": 0.8,
+  "fuel_cell_soc_below_target": 0.05,
+  "fuel_cell_soc_below_target_help": "Fuel-cell cars hold the pack at the stack's own target_soc minus this instead of battery_soc (shown in the caption).",
+  "hydrogen_fraction": 1.0,
+  "drive_mode": "normal",
+  "pedal": 1.0,
+  "reference_gear_ratio": 1.0,
+  "points": 33,
+  "coarse_points": 9,
+  "motor_rpm_min": 250,
+  "motor_rpm_top_fraction": 0.99,
+  "hybrid_clutch_margin_rpm": 25,
+  "ambient": { "pressure_pa": 101325.0, "temperature_k": 288.15 },
+  "electrified_setup_options": ["powertrain_install", "final_drive", "gear_ratios", "gearbox_install", "drive_layout", "diff_front", "diff_rear", "clutch_capacity"],
+  "electrified_setup_options_help": "Options that change an electrified car's curve beyond the engine and turbo ones: gearing moves the motor's speed against the engine's; the clutch carries the engine share."
+}

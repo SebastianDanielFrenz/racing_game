@@ -675,6 +675,14 @@ TEST_CASE("engine parts: NA removes both turbo sources and single nitrous retain
             if (auto p = std::get_if<ps::drivetrain::SimulatedEngineDesc>(&c.params)) engine = p;
         REQUIRE(engine != nullptr);
         CHECK_FALSE(engine->turbo_pair.has_value());
+        // The conversion erases the turbo reference from the working engine; the option itself must stay offered, so
+        // the NA choice persists and a turbo can be installed again (regression from the work-file fit check, 5f9ac91).
+        const std::string id = nitrous ? "turbo_install_n2o" : "turbo_install";
+        const rg::VehicleSetup installed = setup_of(car, {{id.c_str(), std::string("hyper_na")}});
+        const rg::SetupModel model = rg::build_setup_model(e, f.table, f.ctx, &installed);
+        const auto opt = std::find_if(model.options.begin(), model.options.end(), [&](const rg::OptionView& v) { return v.def.id == id; });
+        REQUIRE(opt != model.options.end());
+        CHECK(opt->available);
     }
     const auto twin = ps::io::load_turbo_configuration_json(kRoot + "/external/physics_sim/data/turbo_configurations/hyper_twin_n2o.json");
     const auto single = ps::io::load_turbo_configuration_json(kRoot + "/data/turbo_configurations/garage_hyper_single_n2o.json");

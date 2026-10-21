@@ -259,6 +259,39 @@ TEST_CASE("advice grouping: contiguous rpm ranges merge, far ones stay apart, wo
     CHECK(rg::format_rpm_ranges(items[1].ranges, c) == "3000-3500, 6000 RPM");
 }
 
+TEST_CASE("advice order: within a grade, driveline notes (clutch, gearbox) come before turbo and thermal ones", "[limit_advisor][gearbox]") {
+    // Owner 2026-10-19 missed the shift-clutch warning as the 4th of 8 notes. advisor.json lists ClutchCapacity and
+    // GearboxInputTorque first in "kinds"; that FILE order (not the alphabetical order nlohmann::json keeps) breaks ties.
+    const rg::AdvisorConfig c = shipped_config();
+    REQUIRE(c.kinds.size() >= 3);
+    CHECK(c.kinds[0].kind == pd::LimitKind::ClutchCapacity);
+    CHECK(c.kinds[1].kind == pd::LimitKind::GearboxInputTorque);
+    rg::AdviceInput in;
+    in.points = sweep_points(2.0);
+    in.target_boost_bar = 1.8;
+    // All four at one grade: choke Limiting (sorts before GearboxInputTorque alphabetically), gearbox and clutch Limiting,
+    // coolant Limiting (reached after 150 s, a warning).
+    in.findings.push_back(F(pd::LimitKind::CompressorChoke, pd::LimitSeverity::Limiting, 6000.0, 1.03, 1.0, pd::LimitUnit::Fraction, "/max_mass_flow_kg_s"));
+    in.findings.push_back(F(pd::LimitKind::GearboxInputTorque, pd::LimitSeverity::Limiting, 5000.0, 1700.0, 1600.0, pd::LimitUnit::NewtonMetre, "/rated_input_torque_nm"));
+    in.findings.push_back(F(pd::LimitKind::ClutchCapacity, pd::LimitSeverity::Limiting, 5000.0, 2400.0, 2185.0, pd::LimitUnit::NewtonMetre, "/capacity_nm"));
+    in.thermal_ambient_c = 25.0;
+    in.thermal_air_speed_m_s = in.coolant_air_speed_m_s = in.oil_air_speed_m_s = 45.0;
+    in.coolant_peak_c = 122.0;
+    in.coolant_limit_c = 118.0;
+    in.coolant_limit_time_s = 150.0;
+    in.coolant_peak_rpm = 6000.0;
+    const auto items = rg::build_advice(in, c);
+    REQUIRE(items.size() == 4);
+    for (const auto& i : items) CHECK(i.severity == rg::AdviceSeverity::Warning);
+    CHECK(items[0].kind == pd::LimitKind::ClutchCapacity);
+    CHECK(items[1].kind == pd::LimitKind::GearboxInputTorque);
+    CHECK(items[2].kind == pd::LimitKind::CompressorChoke);
+    CHECK(items[3].rule_name == "CoolantTemperature");
+    // Severity still wins over the kind order: a critical choke goes first.
+    in.findings[0].severity = pd::LimitSeverity::Exceeded;
+    CHECK(rg::build_advice(in, c)[0].kind == pd::LimitKind::CompressorChoke);
+}
+
 TEST_CASE("advice grouping: the config's minimum severity filters before merging", "[limit_advisor]") {
     rg::AdvisorConfig c = shipped_config();
     rg::AdviceInput in;
@@ -763,7 +796,7 @@ TEST_CASE("advisor: a dual-clutch gearbox's shift clutches are checked and an up
     const auto found = rg::check_shift_clutch_limits(points(3150.0), powertrain, "g.json", &policy);
     REQUIRE(found.size() == 1);
     CHECK(found[0].kind == pd::LimitKind::ClutchCapacity);
-    CHECK(found[0].severity == pd::LimitSeverity::Limiting);
+    CHECK(found[0].severity == pd::LimitSeverity::Exceeded); // 44 % over the static capacity (owner 2026-10-20: > 15 % = Exceeded)
     CHECK(found[0].rpm == Catch::Approx(6000.0));
     CHECK(found[0].value == Catch::Approx(3150.0));
     CHECK(found[0].limit == Catch::Approx(1900.0 * 1.15));
@@ -774,6 +807,20 @@ TEST_CASE("advisor: a dual-clutch gearbox's shift clutches are checked and an up
     CHECK(found[0].remedy->current == Catch::Approx(1900.0));
     CHECK(found[0].remedy->required_min == Catch::Approx(3150.0 / 1.15));
     CHECK(found[0].remedy->required_margin == Catch::Approx(policy.driveline_torque_margin * 3150.0 / 1.15));
+    // The grades: physics_sim's clutch band through the same policy - Limiting up to gearbox_rating_over_exceeded over the
+    // static capacity (2185 N*m), Exceeded beyond, Near within the margin. Recorded sabotage: grading on
+    // gearbox_rating_over_limiting (5 %) makes the 2400 N*m case Exceeded.
+    const auto grade = [&](double peak, const pd::LimitPolicy& p) {
+        const auto f = rg::check_shift_clutch_limits(points(peak), powertrain, "g.json", &p);
+        return f.empty() ? -1 : static_cast<int>(f[0].severity);
+    };
+    CHECK(grade(2000.0, policy) == static_cast<int>(pd::LimitSeverity::Near));
+    CHECK(grade(2400.0, policy) == static_cast<int>(pd::LimitSeverity::Limiting));         // 9.8 % over
+    CHECK(grade(2185.0 * 1.15, policy) == static_cast<int>(pd::LimitSeverity::Limiting));  // exactly 15 %: not MORE
+    CHECK(grade(2185.0 * 1.1501, policy) == static_cast<int>(pd::LimitSeverity::Exceeded));
+    pd::LimitPolicy wide = policy;
+    wide.gearbox_rating_over_exceeded = 0.5;
+    CHECK(grade(3150.0, wide) == static_cast<int>(pd::LimitSeverity::Limiting));           // the policy decides the band
     // A manual-box car (shift_clutch left at 0) yields nothing.
     pd::PowertrainDesc manual;
     pd::ComponentDesc mc;
