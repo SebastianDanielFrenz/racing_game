@@ -444,7 +444,7 @@ TEST_CASE("setup: every catalog entry accepts a setup touching each available op
                 case rg::OptionKind::Colour: s.values[o.def.id] = std::string("#336699"); break;
             }
         }
-        if (e.id == "car_electric") CHECK(touched == 2); // Its catalogue explicitly offers the two axle tyre choices.
+        if (e.id == "car_electric") CHECK(touched == 5); // Its catalogue offers the two axle tyre choices and the three electric-drive scales.
         else CHECK(touched >= 10);
         const auto v = rg::validate_setup(e, f.table, f.ctx, s);
         INFO(v.message);
