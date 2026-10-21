@@ -74,6 +74,7 @@ add_library(rg_core STATIC
     src/view_build_progress.cpp
     src/road_surface.cpp
     src/route_surface_mesh.cpp
+    src/surface_layers.cpp
     src/terrain_smoothing.cpp
     src/road_structures.cpp
     src/fixed_rate_loop.cpp

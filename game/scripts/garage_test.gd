@@ -69,6 +69,14 @@ func _press(id: String) -> bool:
 	button.pressed.emit()
 	return true
 
+# The working value of a garage option, failing fast and loudly when the option is not offered (an empty
+# Dictionary from ShellUI._garage_option would otherwise raise a script error and leave the test to time out).
+func _installed_option_value(id: String) -> String:
+	var opt: Dictionary = main.get_shell_ui()._garage_option(id)
+	if not _check(not opt.is_empty(), "garage option '%s' is available (unavailable or unknown options come back empty)" % id):
+		return "<option '%s' unavailable>" % id
+	return str(opt.get("value", "<no value>"))
+
 func _press_escape() -> void:
 	for pressed in [true, false]:
 		var ev := InputEventKey.new()
@@ -284,12 +292,12 @@ func _run() -> void:
 	_press("induction:NA")
 	_check(ui._garage_path.size() == 2, "NA installs without opening a submenu")
 	_check(bool(garage.get_validation()["ok"]), "NA conversion passes native loader")
-	_check(str(ui._garage_option("turbo_install")["value"]) == "hyper_na", "NA induction persists in working setup")
+	_check(_installed_option_value("turbo_install") == "hyper_na", "NA induction persists in working setup")
 	_press("induction:Single turbo")
 	_check(ui._garage_path.size() == 2, "single turbo installs without opening a submenu")
 	_check(bool(garage.get_validation()["ok"]), "single forced-induction swap validates")
 	_press("induction:Twin turbo")
-	_check(str(ui._garage_option("turbo_install")["value"]) == "stock", "twin swap restores original hardware")
+	_check(_installed_option_value("turbo_install") == "stock", "twin swap restores original hardware")
 	_press("induction:Single turbo")
 	await _back_to_root()
 	_press("tile:Engine")
@@ -316,7 +324,7 @@ func _run() -> void:
 	_check(ui.get_button("part:gearbox_install:heavy_duty_6mt") == null and ui.get_button("part:gearbox_install:econ_5mt") == null, "boxes rated below the V8's torque are not listed")
 	_press("part:gearbox_install:straight_cut_6sq")
 	_check(garage.is_dirty() and bool(garage.get_validation()["ok"]), "the straight-cut gearbox validates")
-	_check(str(ui._garage_option("gearbox_install")["value"]) == "straight_cut_6sq", "the swapped gearbox is the working value")
+	_check(_installed_option_value("gearbox_install") == "straight_cut_6sq", "the swapped gearbox is the working value")
 	_press("part:gearbox_install:stock")
 	_check(not garage.is_dirty(), "stock gearbox restores the clean configuration")
 	_press("reset_all")
