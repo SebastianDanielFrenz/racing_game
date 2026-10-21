@@ -1,6 +1,6 @@
 {
   "format": "rg.headlights/1",
-  "description": "Car lamps (game/scripts/headlights.gd, exterior_lamps.gd). Photometric, constant physical intensity: spots in candela (intensity_cd, beam centre), lenses in cd/m2 (lens_luminance_nits per rig light kind). On screen they are multiplied by the scene exposure (data/world/sky.json \"exposure\", rg/exposure.h; game/scripts/light_exposure.gd converts to Godot units), so at noon (exposure ~5e-5) a dipped beam lighting the road with ~25 lux is invisible while at night (exposure ~0.09) it dominates; brake and tail lenses saturate red at night and fade into the body colour by day, headlamp and indicator lenses (high luminance) stay visibly lit by day. Values are typical-order figures [recalled, unverified]: UN R112/R48-era dipped beam hot spot ~10-20 kcd, main beam 40-100 kcd, tail 4-12 cd, brake 60-185 cd (EU single-lamp range), reverse 80-600 cd; lens luminances from intensity over lens area. fallback_exposure: used where no sky drives an exposure (garage, pure-GDScript runs) = sky.json key*pi/min_adapted_lux (checked by test_time_weather). attenuation = Godot spot_attenuation (falloff exponent: 2 = inverse square); Godot spots have no beam pattern, so the beams keep a flatter falloff (a real headlamp aims more light far than near) anchored at reference_m, where the spot gives exactly intensity_cd / reference_m^2 lux (light_exposure.gd spot_energy). lights_per_car 1 merges both lamps into one spot (half the GPU passes, see the cost note in headlights.gd). Shadows off: a shadowed spot renders a shadow map every frame. auto: the automatic headlamps (rg::CabinConfig auto_lights_*, merged into data/controls/cabin.json's config by input_map.gd): dipped beam on below on_lux for on_delay_s, off above off_lux for off_delay_s; thresholds after UN R48 6.2.7.6 (on below 1000 lux, off above 7000 lux) [recalled, unverified]; the light sensor reads rg::SkyLighting::illuminance_lux. The thresholds are universal: the same for every car and every weather (weather only changes the illuminance the sensor reads); nothing per car or per weather overrides them. They act only while the headlamp switch (rg::LightMode, key O cycles auto -> on -> off, hidden setting cabin.light_mode) is on auto.",
+  "description": "Car lamps (game/scripts/headlights.gd, exterior_lamps.gd). Photometric, constant physical intensity: spots in candela (intensity_cd, beam centre), lenses in cd/m2 (lens_luminance_nits per rig light kind). On screen they are multiplied by the scene exposure (data/world/sky.json \"exposure\", rg/exposure.h; game/scripts/light_exposure.gd converts to Godot units), so at noon (exposure ~5e-5) a dipped beam lighting the road with ~25 lux is invisible while at night (exposure ~4.7, sky.json min_adapted_lux 1) it dominates; brake and tail lenses saturate red at night and fade into the body colour by day, headlamp and indicator lenses (high luminance) stay visibly lit by day. Values are typical-order figures [recalled, unverified]: UN R112/R48-era dipped beam hot spot ~10-20 kcd, main beam 40-150 kcd, tail 4-12 cd, brake 60-185 cd (EU single-lamp range), reverse 80-600 cd; lens luminances from intensity over lens area. fallback_exposure: used where no sky drives an exposure (garage, pure-GDScript runs) = sky.json key*pi/min_adapted_lux (checked by test_time_weather). attenuation = Godot spot_attenuation (falloff exponent: 2 = inverse square); Godot spots have no beam pattern, so the beams keep a flatter falloff (a real headlamp aims more light far than near) anchored at reference_m (dipped 40 m: 12.5 lux there, the road lit to ~100 m; main beam aimed 0.3 deg down with reference 100 m, range 300 m), where the spot gives exactly intensity_cd / reference_m^2 lux (light_exposure.gd spot_energy). lights_per_car 1 merges both lamps into one spot (half the GPU passes, see the cost note in headlights.gd). Shadows off: a shadowed spot renders a shadow map every frame. auto: the automatic headlamps (rg::CabinConfig auto_lights_*, merged into data/controls/cabin.json's config by input_map.gd): dipped beam on below on_lux for on_delay_s, off above off_lux for off_delay_s; thresholds after UN R48 6.2.7.6 (on below 1000 lux, off above 7000 lux) [recalled, unverified]; the light sensor reads rg::SkyLighting::illuminance_lux. The thresholds are universal: the same for every car and every weather (weather only changes the illuminance the sensor reads); nothing per car or per weather overrides them. They act only while the headlamp switch (rg::LightMode, key O cycles auto -> on -> off, hidden setting cabin.light_mode) is on auto.",
   "auto": {
     "enabled": true,
     "on_lux": 1000.0,
@@ -8,7 +8,7 @@
     "on_delay_s": 2.0,
     "off_delay_s": 10.0
   },
-  "fallback_exposure": 0.0942478,
+  "fallback_exposure": 4.712389,
   "lights_per_car": 2,
   "shadows": false,
   "colour": [
@@ -17,22 +17,22 @@
     0.85
   ],
   "dipped": {
-    "range_m": 90.0,
+    "range_m": 150.0,
     "angle_deg": 32.0,
     "angle_attenuation": 1.6,
-    "attenuation": 0.9,
-    "reference_m": 25.0,
-    "intensity_cd": 15000.0,
-    "pitch_down_deg": 2.5
+    "attenuation": 0.5,
+    "reference_m": 40.0,
+    "intensity_cd": 20000.0,
+    "pitch_down_deg": 1.2
   },
   "main_beam": {
-    "range_m": 220.0,
-    "angle_deg": 22.0,
-    "angle_attenuation": 1.4,
-    "attenuation": 0.8,
-    "reference_m": 50.0,
-    "intensity_cd": 60000.0,
-    "pitch_down_deg": 0.6
+    "range_m": 300.0,
+    "angle_deg": 28.0,
+    "angle_attenuation": 2.0,
+    "attenuation": 0.3,
+    "reference_m": 100.0,
+    "intensity_cd": 120000.0,
+    "pitch_down_deg": 0.3
   },
   "tail": {
     "colour": [

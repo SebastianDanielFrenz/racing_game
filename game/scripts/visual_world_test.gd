@@ -133,15 +133,16 @@ func _run() -> void:
 	var ref: float = float(mb["reference_m"])
 	# At the reference distance the spot gives intensity / d^2 lux, i.e. energy / d^attenuation = cd / d^2 / pi x exposure.
 	check(is_equal_approx(main_night / pow(ref, float(mb["attenuation"])), float(mb["intensity_cd"]) / (ref * ref) / PI * night), "main beam: cd / d^2 at reference_m, x exposure: %s" % main_night)
-	LE.exposure = night / 2000.0 # ~ noon
+	var noon_e := 1.5 * PI / 100000.0 # sky.json key * pi / ~1e5 lux (high sun)
+	LE.exposure = noon_e
 	await process_frame
-	check(is_equal_approx(lights.spots[0].light_energy, main_night / 2000.0), "beam energy follows the exposure (noon: 1/2000 of night)")
+	check(is_equal_approx(lights.spots[0].light_energy, main_night * noon_e / night), "beam energy follows the exposure (noon: %s of night)" % str(noon_e / night))
 	LE.exposure = -1.0
 	await process_frame
 	check(is_equal_approx(lights.spots[0].light_energy, main_night), "and back")
 	var red := Color(1.0, 0.02, 0.01)
 	check(is_equal_approx(LE.lens_energy(8000.0, night, red), 1.0), "brake lens at night: clipped to the colour's peak (stays red)")
-	check(LE.lens_energy(8000.0, night / 2000.0, red) < 0.5, "brake lens at noon: below a sunlit surface")
+	check(LE.lens_energy(8000.0, noon_e, red) < 0.5, "brake lens at noon: below a sunlit surface")
 	check(is_equal_approx(LE.lens_energy(100.0, 0.001, Color(0.5, 0.25, 0.0)), 0.1), "lens energy = nits x exposure below the clip")
 	check(is_equal_approx(LE.lens_energy(1e6, 1.0, Color(0.5, 0.25, 0.0)), 2.0), "clip = 1 / peak channel")
 

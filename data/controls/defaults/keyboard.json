@@ -17,6 +17,7 @@
     "indicator_right": [{"type": "key", "key": "X"}],
     "horn": [{"type": "key", "key": "J"}],
     "lights": [{"type": "key", "key": "O"}],
+    "main_beam": [{"type": "key", "key": "Comma"}],
     "park": [{"type": "key", "key": "P"}],
     "manual_mode": [{"type": "key", "key": "Y"}],
     "ignition": [{"type": "key", "key": "I"}],

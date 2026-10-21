@@ -229,14 +229,14 @@ scene exposure, not with day/night switches on the lamps.
   recalled, unverified), log-interpolated, x (1 - 0.8 cover^1.5) for clouds
   (~0.3 overcast), plus moonlight (0.25 lux full moon at the zenith).
 - **Exposure** (`core/include/rg/exposure.h`): display = luminance (cd/m2) x
-  key x pi / A, A = adapted illuminance clamped to [50, 150000] lux and
+  key x pi / A, A = adapted illuminance clamped to [1, 150000] lux and
   adapted in log space (tau 1.5 s; a clock jump or weather choice snaps).
-  Night exposure 0.094, noon ~4.7e-5 (about 2000x apart). `TimeWeather::sample()`
+  Night exposure 4.71, noon ~4.7e-5 (about 1e5x apart; the floor was 50 lux / 0.094 until 2026-10-21, when the dipped beam left the road at 25-50 m nearly black - 1 lux is a night driver's mesopic adaptation to the beam-lit road). `TimeWeather::sample()`
   carries it; `RgSky.get_state()` reports `illuminance_lux`, `exposure`,
   `adapted_lux`, `night_exposure`. `combine_exposure()` is the seam for a
   renderer-measured exposure (geometric blend).
 - **Lamps** (`data/world/headlights.json`, `game/scripts/light_exposure.gd`):
-  spots in candela (dipped 15 kcd, main 60 kcd, tail 12 cd, brake 150 cd,
+  spots in candela (dipped 20 kcd, main 120 kcd, tail 12 cd, brake 150 cd,
   reverse 300 cd), lenses in cd/m2 (head 40k, indicators 25k, reverse 10k,
   brake 8k, tail 800), all x exposure. At night the beams light the road and
   the red lenses saturate (clipped per colour peak so they stay red); at noon a

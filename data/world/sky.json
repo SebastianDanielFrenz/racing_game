@@ -44,5 +44,5 @@
       {"sun_elevation_deg": 60.0, "sun_energy": 1.2, "sun_rgb": [1.0, 1.0, 0.97], "ambient_energy": 1.0, "sky_top_rgb": [0.36, 0.45, 0.58], "sky_horizon_rgb": [0.646, 0.656, 0.67], "illuminance_lux": 100000.0}
     ]
   },
-  "exposure": {"key": 1.5, "min_adapted_lux": 50.0, "max_adapted_lux": 150000.0, "adapt_tau_s": 1.5}
+  "exposure": {"key": 1.5, "min_adapted_lux": 1.0, "max_adapted_lux": 150000.0, "adapt_tau_s": 1.5}
 }
