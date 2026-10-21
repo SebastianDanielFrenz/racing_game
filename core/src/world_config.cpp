@@ -474,6 +474,24 @@ std::optional<WorldConfig> load_world_config(const std::string& path, std::strin
         }
     }
 
+    // --- rail (optional boolean) ---
+    if (root.contains("rail") && !get_bool(root, "rail", path, "top level", &cfg.rail_served, err)) {
+        return std::nullopt;
+    }
+    if (cfg.rail_served) {
+        // The look and collision numbers (rg.rail/1): "rail_config" relative to this file, default rail.json beside it.
+        std::string rail_file = "rail.json";
+        if (root.contains("rail_config")) {
+            if (!root.at("rail_config").is_string()) {
+                fail(err, path, "\"rail_config\" must be a string");
+                return std::nullopt;
+            }
+            rail_file = root.at("rail_config").get<std::string>();
+        }
+        const fs::path rail_path = fs::path(rail_file).is_absolute() ? fs::path(rail_file) : to_absolute(path).parent_path() / rail_file;
+        cfg.rail_config_path = rail_path.lexically_normal().string();
+    }
+
     if(root.contains("road_visuals")) {
         const auto& visual=root.at("road_visuals");
         if(!require_object(visual,path,"road_visuals",err))return std::nullopt;

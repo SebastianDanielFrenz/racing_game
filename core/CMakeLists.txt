@@ -99,6 +99,7 @@ add_library(rg_core STATIC
     src/exposure.cpp
     src/climate.cpp
     src/wet_look.cpp
+    src/rail_meshes.cpp
     src/weather_sync.cpp
     src/crops.cpp
     src/control_binding.cpp

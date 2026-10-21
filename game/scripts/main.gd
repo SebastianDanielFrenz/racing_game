@@ -114,6 +114,7 @@ var _weather_fx: Node3D          # weather_fx.gd (wet look, rain / snow)
 var _overlay: Node
 var _visuals: Node
 var _roads: Node3D
+var _rails: Node3D # railways (RACE-028), only in a world whose config has "rail": true
 var _buildings: Node3D
 var _world_view: Node # RgTerrainView shared with the real-world Session
 var _load_started_ms: int = 0
@@ -872,6 +873,10 @@ const AUDIO_SETTLE_S := 0.1
 var _quitting := false
 
 func _release_world_nodes() -> void:
+	if _rails != null:
+		_rails.shutdown()
+		_rails.queue_free()
+		_rails = null
 	if _roads != null:
 		_roads.shutdown()
 		_roads.queue_free()
@@ -1177,6 +1182,15 @@ func _attach_world_view() -> void:
 		add_child(_roads)
 		_world_view.tree_exiting.connect(_roads.shutdown, CONNECT_ONE_SHOT)
 		_simulation.tree_exiting.connect(_roads.shutdown, CONNECT_ONE_SHOT)
+	if bool(world_data.get("rail", false)) and _world_view.get_rail_info().get("enabled", false):
+		_rails = preload("res://scripts/rail_stream.gd").new()
+		_rails.view = _world_view
+		_rails.simulation = _simulation
+		_rails.director = _director
+		_rails.utm_origin = Vector2(world_data.session_origin_utm.e0, world_data.session_origin_utm.n0)
+		add_child(_rails)
+		_world_view.tree_exiting.connect(_rails.shutdown, CONNECT_ONE_SHOT)
+		_simulation.tree_exiting.connect(_rails.shutdown, CONNECT_ONE_SHOT)
 	var building_settings: Dictionary = world_data.get("buildings", {})
 	if bool(building_settings.get("enabled", true)):
 		_buildings = preload("res://scripts/building_stream.gd").new()

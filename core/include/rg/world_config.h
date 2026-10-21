@@ -119,6 +119,10 @@ struct WorldConfig {
     // separately when road physics needs it.
     bool render_classes_served = false;
     bool render_classes_none = false;
+    // Optional top-level "rail": true opts the release in to the served railway layer g2m.rail.geom (RACE-028). The
+    // release id changes, so a store derived for the default release is not reused; false (default) leaves it as it was.
+    bool rail_served = false;
+    std::string rail_config_path; // rg.rail/1 file, resolved at load when rail_served: "rail_config" (relative to the config) or rail.json beside it
     TerrainSmoothing terrain_smoothing;
     double road_verge_drop_m=0.06;
     // "road_separation" block (rg::RoadSeparation): grade-separated crossings in the road patch and approach decks.

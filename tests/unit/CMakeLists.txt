@@ -68,6 +68,7 @@ add_executable(rg_unit_tests
   test_exposure.cpp
   test_climate.cpp
   test_wet_look.cpp
+  test_rail_meshes.cpp
   test_session_weather.cpp
   test_crops.cpp
   test_controls.cpp

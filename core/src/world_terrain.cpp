@@ -159,6 +159,15 @@ std::unique_ptr<WorldTerrain> WorldTerrain::open(const WorldConfig& config, std:
     wt->served_terrain_class_ = config.render_classes_served || config.render_classes_none;
     wt->render_classes_disabled_ = config.render_classes_none;
     service_cfg.layers.classes = config.render_classes_served && !config.render_classes_none;
+    // Opt-in: g2m.rail.geom (RACE-028). Needs only src.osm and elev.base; the release id changes with it.
+    service_cfg.layers.rail = config.rail_served;
+    wt->rail_served_ = config.rail_served;
+    if (config.rail_served) {
+        std::string rail_err;
+        auto rail_config = load_rail_config(config.rail_config_path, &rail_err);
+        if (!rail_config) return fail("WorldTerrain::open: rail: " + rail_err);
+        wt->rail_config_ = std::make_shared<const RailConfig>(std::move(*rail_config));
+    }
     service_cfg.zone = g2m::geo::UtmZone{config.session_origin_utm.zone};
     service_cfg.e0_m = static_cast<std::int64_t>(e0_rounded);
     service_cfg.n0_m = static_cast<std::int64_t>(n0_rounded);
@@ -863,6 +872,109 @@ WorldTerrain::RouteMeshCacheStats WorldTerrain::route_mesh_cache_stats() const {
 WorldTerrain::OsmFetchStats WorldTerrain::osm_fetch_stats() const {
     return OsmFetchStats{osm_ok_.load(std::memory_order_relaxed), osm_fail_.load(std::memory_order_relaxed),
                           osm_cache_hits_.load(std::memory_order_relaxed)};
+}
+
+
+// ---- Railways (RACE-028) ----
+std::shared_ptr<const g2m::RailGeomTile> WorldTerrain::rail_tile(const g2m::TileKey& key, g2m::world::Priority priority) {
+    if (!rail_served_) return nullptr;
+    auto ticket = service_->rail_geom(key, priority);
+    if (!wait_ticket(ticket)) return nullptr;
+    if (ticket.state() == g2m::world::TileState::Absent) {
+        auto empty = std::make_shared<g2m::RailGeomTile>();
+        empty->key = key;
+        return empty;
+    }
+    if (ticket.state() != g2m::world::TileState::Ready) {
+        std::fprintf(stderr, "RG_RAIL fetch_failed key=%s message=%s\n", g2m::to_string(key).c_str(), ticket.message().c_str());
+        return nullptr;
+    }
+    return ticket.value();
+}
+
+void WorldTerrain::set_rail_config(std::shared_ptr<const RailConfig> config) {
+    std::lock_guard<std::mutex> lock(rail_mutex_);
+    rail_config_ = std::move(config);
+}
+
+std::shared_ptr<const RailConfig> WorldTerrain::rail_config() const {
+    std::lock_guard<std::mutex> lock(rail_mutex_);
+    return rail_config_;
+}
+
+std::vector<std::shared_ptr<const RoadDeck>> WorldTerrain::rail_decks_near(double easting, double northing, double radius_m) {
+    std::vector<std::shared_ptr<const RoadDeck>> result;
+    const auto config = rail_config();
+    if (!rail_served_ || !config || !config->collision_enabled) return result;
+    constexpr double kTile = 1024.0;
+    constexpr double kPieceReachM = 600.0; // a piece reaches up to 512 m (+ one segment) past the tile that owns it
+    const double reach = radius_m + kPieceReachM;
+    const int x0 = static_cast<int>(std::floor((easting - reach) / kTile)), x1 = static_cast<int>(std::floor((easting + reach) / kTile));
+    const int y0 = static_cast<int>(std::floor((northing - reach) / kTile)), y1 = static_cast<int>(std::floor((northing + reach) / kTile));
+    const auto now = std::chrono::steady_clock::now();
+    const double e0 = frame_->e0_m(), n0 = frame_->n0_m();
+    const RailGroundFn ground = [this, e0, n0](double e, double n) { return service_->surface_height_exact(e - e0, n - n0); };
+    for (int y = y0; y <= y1; ++y) {
+        for (int x = x0; x <= x1; ++x) {
+            const g2m::TileKey key{frame_->zone(), 2, x, y};
+            if (!key.valid()) continue;
+            auto& entry = rail_deck_tiles_[key];
+            if (!entry.final_ && now >= entry.retry_at) {
+                auto tile = service_->peek_rail_geom(key);
+                if (!tile) {
+                    // Ask in the background (a dropped ticket would withdraw the interest, so the entry keeps it).
+                    const auto state = entry.ticket ? entry.ticket.state() : g2m::world::TileState::Cancelled;
+                    if (state == g2m::world::TileState::Absent) {
+                        entry.final_ = true;
+                    } else if (state != g2m::world::TileState::Pending) {
+                        entry.ticket = service_->rail_geom(key, g2m::world::Priority::Prefetch);
+                        entry.retry_at = now + std::chrono::milliseconds(250);
+                    }
+                } else {
+                    int unknown = 0;
+                    auto meshes = build_rail_deck_meshes(*tile, *config, ground, &unknown);
+                    int bridge_pieces = 0;
+                    for (const auto& p : tile->pieces) bridge_pieces += (p.flags & g2m::kRailBridge) != 0 && (p.flags & (g2m::kRailTunnel | g2m::kRailDeclined)) == 0;
+                    if (bridge_pieces > 0 && (entry.attempts < 20 || entry.attempts % 12 == 0 || unknown == 0)) {
+                        int spans = 0, dropped = 0;
+                        for (const auto& m : meshes) { spans += m.spans; dropped += m.spans_dropped; }
+                        std::fprintf(stderr, "RG_RAIL decks key=%s bridge_pieces=%d decks=%zu spans_kept=%d spans_dropped=%d unknown_ground_spans=%d attempt=%d\n",
+                                     g2m::to_string(key).c_str(), bridge_pieces, meshes.size(), spans, dropped, unknown, entry.attempts + 1);
+                    }
+                    entry.decks.clear();
+                    for (auto& m : meshes) {
+                        auto deck = std::make_shared<RoadDeck>();
+                        deck->way_id = -m.way_id;
+                        deck->start_ref = 0;
+                        deck->start_station = static_cast<double>(m.piece);
+                        deck->end_station = static_cast<double>(m.piece) + 1.0;
+                        deck->min_easting = m.min_easting;
+                        deck->max_easting = m.max_easting;
+                        deck->min_northing = m.min_northing;
+                        deck->max_northing = m.max_northing;
+                        deck->land_class = g2m::LandClass::PavedRoad;
+                        deck->mesh.origin[0] = m.origin_e;
+                        deck->mesh.origin[1] = m.origin_n;
+                        deck->mesh.origin[2] = 0.0;
+                        deck->mesh.positions = std::move(m.positions);
+                        deck->mesh.indices = std::move(m.indices);
+                        entry.decks.push_back(std::move(deck));
+                    }
+                    // Ground tiles still loading (unknown heights under a deck): look again in a second, a few times.
+                    ++entry.attempts;
+                    const double retry_s = rail_deck_retry_delay_s(entry.attempts, unknown);
+                    if (retry_s <= 0.0) {
+                        entry.final_ = true;
+                        entry.ticket = {};
+                    } else {
+                        entry.retry_at = now + std::chrono::milliseconds(static_cast<long long>(retry_s * 1000.0));
+                    }
+                }
+            }
+            for (const auto& d : entry.decks) result.push_back(d);
+        }
+    }
+    return result;
 }
 
 } // namespace rg

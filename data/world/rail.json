@@ -1,0 +1,52 @@
+{
+  "format": "rg.rail/1",
+  "_comment": "Railways (core rg/rail_meshes.h, RACE-028): what the served g2m.rail.geom layer looks like and when a rail bridge has collision. All [AS] (assumed, typical single-track German main line: Ril 804 bridge cross-sections) except the standard gauge. Units metres. sample_spacing_m = longest step along a piece; max_tracks_drawn caps a piece tagged with more tracks; the profile height of a piece is the top of the ballast.",
+  "sample_spacing_m": 8.0,
+  "max_tracks_drawn": 4,
+  "track_spacing_m": 4.5,
+  "default_gauge_mm": 1435.0,
+  "view_distance_m": 2500.0,
+  "draw": {
+    "_comment": "classes by name (rail, light_rail, subway, tram); tunnels are never drawn (no portals in v1), subway and tram are off (street surface / tunnel). construction = railway=construction pieces (deck and ballast always, rails only with construction_rails). declined = pieces the layer could not profile.",
+    "classes": {
+      "rail": true,
+      "light_rail": true,
+      "subway": false,
+      "tram": false
+    },
+    "construction": true,
+    "construction_rails": false,
+    "declined": false
+  },
+  "bridge": {
+    "_comment": "Single-track deck (+ track_spacing_m per extra track): slab under a ballast trough, parapets at both edges rising parapet_height_m above the track bed.",
+    "deck_width_m": 5.4,
+    "deck_thickness_m": 0.9,
+    "parapet_height_m": 1.1,
+    "parapet_width_m": 0.3
+  },
+  "bed": {
+    "_comment": "Ballast trapezoid: ballast_top_width_m wide at the profile height (+ track_spacing_m per extra track); on a deck ballast_height_m thick, on the ground it reaches ballast_depth_m below the profile into the terrain; side slope = horizontal metres per vertical metre.",
+    "ballast_top_width_m": 3.6,
+    "ballast_height_m": 0.35,
+    "ballast_side_slope": 1.5,
+    "ballast_depth_m": 1.2
+  },
+  "rail": {
+    "head_width_m": 0.07,
+    "height_m": 0.17
+  },
+  "colours": {
+    "deck": [0.52, 0.52, 0.5],
+    "parapet": [0.62, 0.62, 0.6],
+    "ballast": [0.38, 0.35, 0.32],
+    "rail": [0.22, 0.22, 0.24]
+  },
+  "collision": {
+    "_comment": "A bridge piece gets a slab collider (deck + ballast) only over the spans whose underside is at least min_clearance_m above the ground there (probed at the centre and edge_margin_m inside both edges): a rail deck must never block the road under it - a span with less clearance keeps its look, a vehicle drives through it. unknown_ground_blocks false: where no ground height is known the span has no collision either. Rails, ballast beds on the ground and parapets have no collision in v1.",
+    "enabled": true,
+    "min_clearance_m": 5.0,
+    "edge_margin_m": 0.5,
+    "unknown_ground_blocks": false
+  }
+}

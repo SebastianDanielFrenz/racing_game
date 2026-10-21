@@ -92,6 +92,10 @@ public:
     bool initialize(const godot::String& world_config_absolute_path);
     godot::Dictionary get_road_visual_tile(int x,int y,double lift_m);
     godot::Dictionary get_building_tile(int x,int y,double min_height,double fallback_height,double storey_height);
+    // Railways (RACE-028): the mesh of one level-2 tile (vertices/normals in Godot axes, colours, clockwise indices,
+    // origin_session) - empty when the world has no rail layer; get_rail_info() = {enabled, view_distance_m}.
+    godot::Dictionary get_rail_tile(int x,int y);
+    godot::Dictionary get_rail_info() const;
 
     // R2.2 R7: reuses `sim`'s Session-owned WorldTerrain (render and physics
     // share the same decoded tiles since R4) instead of opening/decoding a
