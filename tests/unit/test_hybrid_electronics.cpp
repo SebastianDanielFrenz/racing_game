@@ -109,7 +109,7 @@ TEST_CASE("hybrid conversions keep the car's ABS, ESC and aero control and drop 
             CHECK(u.has_traction_control);
             CHECK(u.traction_control.modes_bits == hybrid.traction_control.modes_bits);
             REQUIRE(d.drive_modes.has_value());
-            CHECK(d.drive_modes->modes_bits == 15); // the hybrid modes replace the car's own
+            CHECK(d.drive_modes->modes_bits == 31); // eco normal sport racing electric; the hybrid modes replace the car's own
         }
     }
 }

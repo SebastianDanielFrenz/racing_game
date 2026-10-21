@@ -848,7 +848,7 @@ TEST_CASE("Powertrain swaps preserve the body and materialise all propulsion cat
   CHECK(count_components<ps::drivetrain::TorqueMapEngineDesc>(result.desc)==(ev?0:1));
   CHECK(count_components<ps::drivetrain::HybridControlDesc>(result.desc)==(std::string(choice).starts_with("hybrid")?1:0));
   CHECK(count_components<ps::drivetrain::FuelCellDesc>(result.desc)==((std::string(choice)=="fuel_cell_ev"||std::string(choice)=="hybrid_dual_hydrogen")?1:0));
-  if(std::string(choice).starts_with("hybrid")){REQUIRE(result.desc.drive_modes.has_value());CHECK(result.desc.drive_modes->modes_bits==15);}
+  if(std::string(choice).starts_with("hybrid")){REQUIRE(result.desc.drive_modes.has_value());CHECK(result.desc.drive_modes->modes_bits==31);} // eco normal sport racing electric
  }
 }
 TEST_CASE("Hybrid conversions retain modes through AT DCT and CVT installation and launch electrically", "[powertrain_swap][automatic]") {
@@ -861,7 +861,7 @@ TEST_CASE("Hybrid conversions retain modes through AT DCT and CVT installation a
   rg::SessionConfig cfg;cfg.vehicle_json_path=m.vehicle_path;cfg.surface_table_path=kRoot+"/data/surfaces/surfaces.json";cfg.chassis_mass_kg=1800;cfg.chassis_half_extents={2,.4,.15};cfg.chassis_z_m=.6;
   rg::Session session(cfg);auto& w=session.world();w.set_control("assist.drive_mode",0);w.set_control("gear_request",99);w.set_control("throttle",.25);
   for(int i=0;i<1200;++i)session.step();auto p=w.powertrain_state(session.vehicle_id());
-  CHECK(p.hybrid_fitted);CHECK(p.drive_modes_available_bits==15);CHECK(p.engine_state==ps::drivetrain::EngineState::Off);CHECK(w.get_motion(session.chassis_body()).linear.x>2);
+  CHECK(p.hybrid_fitted);CHECK(p.drive_modes_available_bits==31);CHECK(p.engine_state==ps::drivetrain::EngineState::Off);CHECK(w.get_motion(session.chassis_body()).linear.x>2);
   w.set_control("assist.drive_mode",2);for(int i=0;i<1200;++i)session.step();p=w.powertrain_state(session.vehicle_id());
   CHECK(p.engine_state==ps::drivetrain::EngineState::Running);CHECK(p.hybrid_ice_requested);
  }

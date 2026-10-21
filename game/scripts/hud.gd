@@ -83,10 +83,10 @@ func _on_visibility_changed() -> void:
 	_line_labels.clear()
 	_text_updated_s = -1.0
 
-# "ECO / NORMAL / SPORT / RACING" for the bits of the modes a car offers.
+# "ECO / NORMAL / SPORT / RACING / ELECTRIC" for the bits of the modes a car offers.
 func _offered_drive_modes(bits: int) -> String:
 	var names := PackedStringArray()
-	for code in range(4):
+	for code in range(5):
 		if (bits >> code) & 1 != 0:
 			names.append(str(RgAssists.drive_mode_name(code)))
 	return " / ".join(names)
@@ -332,11 +332,18 @@ func _process_body(_delta: float) -> void:
 		# state when the car has one. The whole readout takes a light tint of the mode colour.
 		var themed_readout := false
 		if bool(controls["dm"]["fitted"]):
-			lines.append("drive mode %s (M)   offered: %s" % [str(controls["dm"]["label"]), _offered_drive_modes(int(assist_pt.get("drive_modes_available_bits", 0)))])
+			var dm_bits := int(assist_pt.get("drive_modes_available_bits", 0))
+			lines.append("drive mode %s (M%s)   offered: %s" % [str(controls["dm"]["label"]), ", U: electric" if (dm_bits >> 4) & 1 != 0 else "", _offered_drive_modes(dm_bits)])
 			_set_line_colour(DriveModeTheme.accent_state(controls["dm"], Color.WHITE).lerp(Color.WHITE, 0.55))
 			themed_readout = true
 		if not themed_readout:
 			_set_line_colour(null)
+		# One-pedal B (EV, or a hybrid in Electric mode): shift up from D selects it. Numbers come from physics_sim (snapshot).
+		if bool(assist_pt.get("b_mode_available", false)):
+			if bool(assist_pt.get("b_mode_active", false)):
+				lines.append("B one-pedal: regen up to %.0f kW, drive up to %.0f kW, coasts at pedal %.0f%%%s" % [float(assist_pt.get("b_regen_capacity_kw", 0.0)), float(assist_pt.get("b_drive_capacity_kw", 0.0)), 100.0 * float(assist_pt.get("b_zero_power_pedal", 0.0)), "   (hold)" if float(assist_pt.get("b_hold_level", 0.0)) > 0.0 else ""])
+			else:
+				lines.append("B one-pedal available (shift up from D)")
 		if bool(controls["lc"]["fitted"]):
 			lines.append("launch control: %s" % str(controls["lc"]["label"]))
 		# Nitrous (physics_sim N2O): only a car with a kit (car_sedan_gen_n2o, car_hyper_n2o) has this line.

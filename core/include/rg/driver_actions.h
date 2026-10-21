@@ -59,6 +59,11 @@ struct DriverSnapshot {
     bool traction_active = false;
     std::uint32_t drive_modes = 0;
     int drive_mode_effective = 0;
+    // EV one-pedal B (physics_sim docs/electric_drive.md "B mode"): b_available = the selector has the B position now (a pure EV; a
+    // hybrid while it runs in Electric mode), b_active = B is selected. hybrid_electric = the hybrid runs in Electric mode.
+    bool b_available = false;
+    bool b_active = false;
+    bool hybrid_electric = false;
     int launch_phase = 0;
     LaunchLamp launch = LaunchLamp::Hidden;
     bool aero_active = false;
@@ -101,6 +106,7 @@ struct DriverSnapshot {
 // should still be forwarded. A manual-gearbox car gets no change and forward_counts true.
 constexpr double kGearRequestNoChange = -100.0;
 constexpr double kGearRequestDrive = 99.0;
+constexpr double kGearRequestB = 98.0; // physics_sim kGearRequestB (absolute request for B; the shift counters take the same D <-> B step)
 constexpr double kSelectorStandstillMps = 1.0;
 struct SelectorShift {
     double gear_request = kGearRequestNoChange;
@@ -112,11 +118,13 @@ SelectorShift selector_shift(const DriverSnapshot& snapshot, int up, int down);
 // A car with the P R N D selector: an automatic or dual-clutch box, a single-speed electric drive, or ANY hybrid whatever its
 // gearbox (the physics hybrid supervisor owns the gearbox and takes its D/N/R from gear_request; owner decision 2026-10-18).
 bool has_selector(const DriverSnapshot& snapshot);
-// The selector letter for HUD and cluster: "P", "R", "N", "D", "S" (sport) or "M<gear>" (manual mode); "" on a manual car.
+// The selector letter for HUD and cluster: "P", "R", "N", "D", "B" (EV one-pedal regeneration), "S" (sport) or "M<gear>" (manual
+// mode); "" on a manual car.
 std::string selector_label(const DriverSnapshot& snapshot);
 // The text of the gear indicator of a selector car, "" on a manual car: the selector letter, plus the gearbox gear after D/S
 // when it drives the wheels. An automatic shows it whenever a gear is in; a hybrid only while the combustion engine is
-// actually coupled (engine running, gear in, clutch engaged: "D3"); an electric-only hybrid or a pure EV shows just "D".
+// actually coupled (engine running, gear in, clutch engaged: "D3"); an electric-only hybrid or a pure EV shows just "D". A hybrid in
+// Electric mode shows "E" in D (no gear number: the combustion engine is off), B shows "B" everywhere.
 std::string selector_display(const DriverSnapshot& snapshot);
 
 struct VehicleContext {
@@ -199,10 +207,13 @@ private:
     CabinConfig config_;
     bool cabin_configured_ = false;
     bool manual_exit_pending_ = false;
+    // The drive mode the "electric_mode" action returns to when it switches Electric off (the mode that was requested when Electric
+    // was switched on; -1 = none yet, Normal then). Game-owned convenience state, not a physics fact.
+    int electric_return_mode_ = -1;
     double manual_exit_elapsed_s_ = 0;
     void update_auto_lights(double lux, double dt);
     void apply_light_mode();
-    std::array<bool, 18> held_{};
+    std::array<bool, 19> held_{};
     std::vector<ActionEvent> pending_;
 };
 

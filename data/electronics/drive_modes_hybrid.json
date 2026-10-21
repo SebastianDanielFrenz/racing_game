@@ -7,7 +7,8 @@
     "eco": {},
     "normal": {},
     "sport": {},
-    "racing": {}
+    "racing": {},
+    "electric": {}
   },
-  "source": "[AS] Mode availability only; the hybrid supervisor owns electric priority, combustion scheduling and neutral charging. Automatic schedule load uses combined available power."
+  "source": "[AS] Mode availability only (electric = the pure-electric mode, ICE off and disconnected, linear pedal, B available); the hybrid supervisor owns electric priority, combustion scheduling and neutral charging. Automatic schedule load uses combined available power."
 }

@@ -1020,6 +1020,11 @@ godot::Dictionary RgSimulation::get_vehicle_powertrain(const String& vehicle_nam
     d["traction_torque_fraction"] = p.traction_torque_fraction;
     d["traction_estimated_speed_m_s"] = p.traction_estimated_speed_m_s;
     d["traction_positive_slip"] = p.traction_positive_slip;
+    // EV one-pedal B and the hybrid Electric mode (physics_sim docs/electric_drive.md): kW / unit values of the last substep.
+    d["b_mode_available"]=p.b_mode_available;d["b_mode_active"]=p.b_mode_active;d["hybrid_electric_mode"]=p.hybrid_electric_mode;
+    d["hybrid_electric_leave_reason"]=static_cast<int>(p.hybrid_electric_leave_reason);
+    d["b_regen_capacity_kw"]=p.b_regen_capacity_w/1000;d["b_drive_capacity_kw"]=p.b_drive_capacity_w/1000;d["b_power_command_kw"]=p.b_power_command_w/1000;
+    d["b_zero_power_pedal"]=p.b_zero_power_pedal;d["b_slip_fraction"]=p.b_slip_fraction;d["b_hold_level"]=p.b_hold_level;
     d["hybrid_fitted"]=p.hybrid_fitted;d["hybrid_charging"]=p.hybrid_charging;d["hybrid_ice_requested"]=p.hybrid_ice_requested;
     d["hybrid_charge_target_soc"]=p.hybrid_charge_target_soc;d["hybrid_requested_power_kw"]=p.hybrid_requested_power_w/1000;d["hybrid_available_power_kw"]=p.hybrid_available_power_w/1000;
     d["fuel_cell_fitted"]=p.fuel_cell_fitted;d["fuel_cell_hydrogen_kg"]=p.fuel_cell_hydrogen_kg;d["fuel_cell_power_kw"]=p.fuel_cell_power_w/1000;
@@ -1068,7 +1073,7 @@ godot::Dictionary RgSimulation::get_vehicle_powertrain(const String& vehicle_nam
     d["aero_control_fitted"] = a.aero_fitted;
     d["aero_control_active"] = a.aero_active;
     d["aero_control_target_deg"] = a.aero_target_deg;
-    // Drive modes (assists I7): 0 eco, 1 normal, 2 sport; bit n of the available bits = code n. All 0/false on a car
+    // Drive modes (assists I7): 0 eco, 1 normal, 2 sport, 3 racing, 4 electric; bit n of the available bits = code n. All 0/false on a car
     // without a drive_modes part. The effective mode is the one that runs (the theme colour follows it).
     d["drive_mode_fitted"] = a.dm_fitted;
     d["drive_modes_available_bits"] = static_cast<int>(a.dm_available_bits);

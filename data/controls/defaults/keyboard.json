@@ -24,6 +24,7 @@
     "traction_control": [{"type": "key", "key": "F4"}],
     "toggle_aero": [{"type": "key", "key": "H"}],
     "drive_mode": [{"type": "key", "key": "M"}],
+    "electric_mode": [{"type": "key", "key": "U"}],
     "toggle_launch_control": [{"type": "key", "key": "L"}],
     "toggle_abs": [{"type": "key", "key": "F2"}],
     "cycle_esc": [{"type": "key", "key": "F3"}],

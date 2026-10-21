@@ -15,6 +15,9 @@ rg::DriverSnapshot convert(const godot::Dictionary& d) {
     s.traction_active = static_cast<bool>(d.get("assist_traction_control", false));
     s.drive_modes = static_cast<std::uint32_t>(static_cast<std::int64_t>(d.get("drive_modes_available_bits", 0)));
     s.drive_mode_effective = static_cast<int>(d.get("drive_mode_effective", 0));
+    s.b_available = static_cast<bool>(d.get("b_mode_available", false));
+    s.b_active = static_cast<bool>(d.get("b_mode_active", false));
+    s.hybrid_electric = static_cast<bool>(d.get("hybrid_electric_mode", false));
     s.launch_phase = static_cast<int>(d.get("launch_phase", 0));
     s.launch = static_cast<rg::LaunchLamp>(static_cast<int>(d.get("launch_lamp", 0)));
     s.aero_active = static_cast<bool>(d.get("aero_control_active", false));
