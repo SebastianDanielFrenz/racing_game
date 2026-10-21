@@ -131,6 +131,7 @@ add_executable(rg_unit_tests
   test_hybrid_electronics.cpp
   test_hybrid_selector.cpp
   test_hybrid_shift.cpp
+  test_electric_mode.cpp
 )
 
 target_link_libraries(rg_unit_tests

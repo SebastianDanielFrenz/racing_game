@@ -241,9 +241,14 @@ TEST_CASE("drive mode cycle: a car without the part does nothing", "[assist][dri
     CHECK(rg::next_drive_mode(0, 1) == -1);
     CHECK(rg::next_drive_mode(0, 0) == -1);
     CHECK(rg::next_drive_mode(0, -5) == -1);
-    // Bits above the four codes are no mode.
-    CHECK(rg::next_drive_mode(0b10000, 1) == -1);
-    CHECK(rg::next_drive_mode(0b10010, 1) == 1);
+    // Bits above the five codes are no mode.
+    CHECK(rg::next_drive_mode(0b100000, 1) == -1);
+    CHECK(rg::next_drive_mode(0b100010, 1) == 1);
+    // Electric (code 4, the hybrid's pure-electric mode) is cycled to only when offered, and wraps to Eco.
+    CHECK(rg::next_drive_mode(0b11111, 3) == 4);
+    CHECK(rg::next_drive_mode(0b11111, 4) == 0);
+    CHECK(rg::next_drive_mode(0b01111, 3) == 0);
+    CHECK(rg::next_drive_mode(0b10010, 1) == 4);
     // Racing (code 3) is cycled to only when offered.
     CHECK(rg::next_drive_mode(0b1111, 2) == 3);
     CHECK(rg::next_drive_mode(0b1111, 3) == 0);
@@ -258,12 +263,15 @@ TEST_CASE("drive mode: names and offered bits", "[assist][drive_mode][controls]"
     CHECK(std::string(rg::drive_mode_name(1)) == "NORMAL");
     CHECK(std::string(rg::drive_mode_name(2)) == "SPORT");
     CHECK(std::string(rg::drive_mode_name(3)) == "RACING");
-    CHECK(std::string(rg::drive_mode_name(4)) == "?");
+    CHECK(std::string(rg::drive_mode_name(4)) == "ELECTRIC");
+    CHECK(std::string(rg::drive_mode_name(5)) == "?");
     CHECK(std::string(rg::drive_mode_name(-1)) == "?");
     CHECK(rg::drive_mode_offered(kEcoSport, 2));
     CHECK_FALSE(rg::drive_mode_offered(kEcoSport, 1));
     CHECK_FALSE(rg::drive_mode_offered(kEcoSport, 3));
     CHECK(rg::drive_mode_offered(0b1000, 3));
+    CHECK(rg::drive_mode_offered(0b10000, 4));
+    CHECK_FALSE(rg::drive_mode_offered(0b01111, 4)); // ELECTRIC only when the car's part lists it
     CHECK_FALSE(rg::drive_mode_offered(0b0111, 3)); // RACING only when the car's part lists it
     CHECK_FALSE(rg::drive_mode_offered(kEcoSport, -1));
 }
