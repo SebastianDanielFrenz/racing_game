@@ -158,4 +158,5 @@ target_compile_definitions(rg_unit_tests PRIVATE RG_SOURCE_DIR="${CMAKE_SOURCE_D
 
 list(APPEND CMAKE_MODULE_PATH ${catch2_SOURCE_DIR}/extras)
 include(Catch)
-catch_discover_tests(rg_unit_tests)
+# Every Catch2 tag becomes a CTest label so ctest -L / -LE long selects by tag (tools/ci.ps1: default run = -LE long).
+catch_discover_tests(rg_unit_tests ADD_TAGS_AS_LABELS)

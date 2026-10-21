@@ -534,7 +534,7 @@ TEST_CASE("session terrain: start-up priming plans no traffic before the chassis
 }
 
 TEST_CASE("session terrain: a 30 s drive is deterministic across workers and fetch delay, no falls, no misses",
-          "[session_terrain]") {
+          "[session_terrain][long]") {
     const DriveRun a = run_drive(1, 0);
     const DriveRun b = run_drive(4, 0);
     const DriveRun c = run_drive(4, 20);
@@ -882,7 +882,7 @@ TEST_CASE("session terrain: cancelling a real-store start-up at several points",
 
 // --- G2.5a-grip R-c: road-mode grip (physics.road_surfaces) ---
 
-TEST_CASE("session terrain: road mode is deterministic across workers and fetch delay", "[session_terrain][grip]") {
+TEST_CASE("session terrain: road mode is deterministic across workers and fetch delay", "[session_terrain][grip][long]") {
     const DriveRun a = run_drive_road(1, 0);
     const DriveRun b = run_drive_road(4, 0);
     const DriveRun c = run_drive_road(4, 20);

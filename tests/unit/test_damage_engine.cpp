@@ -160,7 +160,7 @@ TEST_CASE("damage engine: worn bearings raise the friction and cost rpm, through
 }
 
 TEST_CASE("damage engine: the cascade - broken cooling keeps the oil hot, the internals wear, their friction heats the oil, the engine seizes",
-          "[damage][engine][session]") {
+          "[damage][engine][session][long]") {
     // The same hot start (coolant 125 C, oil 140 C, high revs in neutral). Working cooling pulls the oil back under the
     // bearings' 135 C within seconds; with a dead radiator and fan it stays hot, the bearings and pistons wear, the
     // friction they add heats the oil further, and the engine seizes and stops.

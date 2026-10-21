@@ -153,7 +153,8 @@ TEST_CASE("turbo map extension: an out-of-range demand generates once, the secon
     CHECK(r2.cache_key == r1.cache_key);
     CHECK(r2.uncovered_steps_after == r1.uncovered_steps_after);
     CHECK(fs::last_write_time(r1.cache_file) == stamp);
-    CHECK(r2.seconds < r1.seconds);
+    // The cache hit is shown by status == CacheHit, the unchanged generation counter (before_generate hook) and the untouched
+    // file above - not by wall time, which is flaky under parallel ctest load (0.6465 s vs 0.6353 s once).
     const auto* m1 = engine_of(first).turbo_pair->maps.get();
     const auto* m2 = engine_of(second).turbo_pair->maps.get();
     CHECK(m1->content_hash == m2->content_hash);

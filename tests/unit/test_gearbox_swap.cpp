@@ -239,7 +239,7 @@ TEST_CASE("gearbox catalogue: a bad catalogue is rejected with the reason", "[ge
     CHECK_THAT(write(R"({"format":"rg.gearbox_catalog/1","gearboxes":[)" + wrong_kind + "}]}"), ContainsSubstring("file's type is manual"));
 }
 
-TEST_CASE("gearbox swap: every catalogue box loads in each car it is compatible with", "[gearbox_swap][garage]") {
+TEST_CASE("gearbox swap: every catalogue box loads in each car it is compatible with", "[gearbox_swap][garage][long]") {
     Fixture f;
     int loads = 0;
     for (const rg::CatalogEntry* car : f.base_cars()) {

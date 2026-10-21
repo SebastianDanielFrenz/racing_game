@@ -159,7 +159,7 @@ TEST_CASE("TC owner repro (game car): WOT pull through 180 km/h", "[.][tc_repro]
 //   release), after the hand-over 0.242; 0-100 km/h 4.71 -> 4.04 s.
 //   Racing drive mode, WOT pull, 150-210 km/h: peak 0.340 -> 0.199, mean 0.096.
 //   Normal drive mode (TC On, target 0.08): pull band peak 0.116, standstill WOT launch peak 0.166 (unchanged).
-TEST_CASE("TC regression (game car): standstill launches and the 180 km/h pull keep the wheelspin bounded", "[tc_regression][assist]") {
+TEST_CASE("TC regression (game car): standstill launches and the 180 km/h pull keep the wheelspin bounded", "[tc_regression][assist][long]") {
     const auto wot = [](double, double) { return 1.0; };
     const Stats lc_racing = run("reg_lc_racing", 3, -1, 5, wot, 1.5);
     CHECK(lc_racing.slip_peak < 0.6);

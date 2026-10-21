@@ -267,7 +267,7 @@ TEST_CASE("driveline transform: the hypercar keeps its park pawl and gearing in 
     }
 }
 
-TEST_CASE("drivetrain swap: every catalog car loads in every layout and with every differential", "[drivetrain_swap][garage]") {
+TEST_CASE("drivetrain swap: every catalog car loads in every layout and with every differential", "[drivetrain_swap][garage][long]") {
     Fixture f;
     int loaded = 0;
     for (const rg::CatalogEntry* e : f.base_cars()) {
@@ -559,7 +559,7 @@ TEST_CASE("drivetrain swap: the hypercar on all four wheels with an assist unit 
     }
 }
 
-TEST_CASE("drivetrain swap: every catalog car builds a physics world in every layout", "[drivetrain_swap][drive]") {
+TEST_CASE("drivetrain swap: every catalog car builds a physics world in every layout", "[drivetrain_swap][drive][long]") {
     // The validate-only load does not run the powertrain builder's topology rules (a Torsen centre passes it and is
     // refused only when the World builds the vehicle), so every car x layout also builds a flat Session.
     Fixture f;
