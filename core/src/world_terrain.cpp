@@ -935,7 +935,7 @@ std::vector<std::shared_ptr<const RoadDeck>> WorldTerrain::rail_decks_near(doubl
                     auto meshes = build_rail_deck_meshes(*tile, *config, ground, &unknown);
                     int bridge_pieces = 0;
                     for (const auto& p : tile->pieces) bridge_pieces += (p.flags & g2m::kRailBridge) != 0 && (p.flags & (g2m::kRailTunnel | g2m::kRailDeclined)) == 0;
-                    if (bridge_pieces > 0) {
+                    if (bridge_pieces > 0 && (entry.attempts < 20 || entry.attempts % 12 == 0 || unknown == 0)) {
                         int spans = 0, dropped = 0;
                         for (const auto& m : meshes) { spans += m.spans; dropped += m.spans_dropped; }
                         std::fprintf(stderr, "RG_RAIL decks key=%s bridge_pieces=%d decks=%zu spans_kept=%d spans_dropped=%d unknown_ground_spans=%d attempt=%d\n",
@@ -962,11 +962,12 @@ std::vector<std::shared_ptr<const RoadDeck>> WorldTerrain::rail_decks_near(doubl
                     }
                     // Ground tiles still loading (unknown heights under a deck): look again in a second, a few times.
                     ++entry.attempts;
-                    if (unknown == 0 || entry.attempts >= 20) {
+                    const double retry_s = rail_deck_retry_delay_s(entry.attempts, unknown);
+                    if (retry_s <= 0.0) {
                         entry.final_ = true;
                         entry.ticket = {};
                     } else {
-                        entry.retry_at = now + std::chrono::seconds(1);
+                        entry.retry_at = now + std::chrono::milliseconds(static_cast<long long>(retry_s * 1000.0));
                     }
                 }
             }

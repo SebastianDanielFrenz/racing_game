@@ -451,3 +451,13 @@ TEST_CASE("rail: only the _rail world config opts in; its rail.json sits beside 
     // The rail derived store is its own folder: a rail release never shares tiles.sqlite3 with the plain one.
     CHECK(rail->derived_store.dir != plain->derived_store.dir);
 }
+
+TEST_CASE("rail: a tile whose ground is still unknown is built again without limit, a fully known one is final", "[rail][collision]") {
+    CHECK(rg::rail_deck_retry_delay_s(1, 0) == 0.0);
+    CHECK(rg::rail_deck_retry_delay_s(500, 0) == 0.0);
+    CHECK(rg::rail_deck_retry_delay_s(1, 11) == Approx(1.0));
+    CHECK(rg::rail_deck_retry_delay_s(19, 11) == Approx(1.0));
+    // Sabotage (the old rule): attempts >= 20 with unknown ground was final, the tile never got a deck once its ground loaded.
+    CHECK(rg::rail_deck_retry_delay_s(20, 11) > 0.0);
+    CHECK(rg::rail_deck_retry_delay_s(10000, 11) > 0.0);
+}

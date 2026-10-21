@@ -120,6 +120,12 @@ struct RailDeckMesh {
 
 // Bridge pieces only. A bridge whose every span is dropped gives no deck. `ground` null = no clearance test (every
 // span kept; tests and the flat world).
+// When to build a tile's collision decks again (world_terrain.cpp). 0 = never: the ground below every deck was known, the
+// result is final. Otherwise the delay in seconds: a second for the first attempts, then every 5 s without limit. Ground
+// tiles at the edge of the streamed area load only when the car comes closer; giving up after a fixed count (the old
+// 20 attempts) left such a tile without any collision deck for the rest of the session (RG_RAIL decks=0 unknown_ground_spans>0).
+[[nodiscard]] double rail_deck_retry_delay_s(int attempts_done, int unknown_ground_spans);
+
 [[nodiscard]] std::vector<RailDeckMesh> build_rail_deck_meshes(const g2m::RailGeomTile& tile, const RailConfig& config,
                                                                const RailGroundFn& ground, int* unknown_ground_spans = nullptr);
 

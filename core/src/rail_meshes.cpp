@@ -331,6 +331,11 @@ RailTileMesh build_rail_tile_mesh(const g2m::RailGeomTile& tile, const RailConfi
     return out;
 }
 
+double rail_deck_retry_delay_s(int attempts_done, int unknown_ground_spans) {
+    if (unknown_ground_spans <= 0) return 0.0;
+    return attempts_done < 20 ? 1.0 : 5.0;
+}
+
 std::vector<RailDeckMesh> build_rail_deck_meshes(const g2m::RailGeomTile& tile, const RailConfig& c, const RailGroundFn& ground, int* unknown_ground_spans) {
     std::vector<RailDeckMesh> decks;
     if (unknown_ground_spans) *unknown_ground_spans = 0;
