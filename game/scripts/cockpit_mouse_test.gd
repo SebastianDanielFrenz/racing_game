@@ -76,6 +76,15 @@ func run() -> void:
 		return
 	var count: int = mouse.hit.get_control_count()
 	check(count == 17, "17 controls (%d)" % count)
+	# The game asks main.gd's BodyVisuals (not the VehicleVisual) for the adapter; without the forwarder driving_live was
+	# never set and every click was ignored (2026-10-21).
+	check(load("res://scripts/body_visuals.gd").new().has_method("get_cockpit_mouse"), "body_visuals.gd forwards get_cockpit_mouse (main.gd reads it there)")
+	# A mouse position is in canvas units (divided by the UI scale); the pick ray needs viewport pixels.
+	var old_factor: float = root.content_scale_factor
+	root.content_scale_factor = 1.5
+	var px: Vector2 = load("res://scripts/ui_scale.gd").canvas_to_viewport_pixels(root, Vector2(100, 200))
+	check(px.is_equal_approx(Vector2(150, 300)), "a click at canvas (100, 200) under UI scale 1.5 picks at pixel (150, 300) (got %s)" % px)
+	root.content_scale_factor = old_factor
 	actions = ClassDB.instantiate("RgDriverActions")
 	var cabin: Dictionary = JSON.parse_string(FileAccess.get_file_as_string(ProjectSettings.globalize_path("res://../data/controls/cabin.json")))
 	actions.configure_cabin(cabin)
