@@ -9,9 +9,9 @@ namespace rg {
 namespace {
 // Preserve the original forwarding order; per-action events chain through the
 // last value written, irrespective of which device submitted them.
-constexpr std::array<std::string_view, 19> ids = {
+constexpr std::array<std::string_view, 20> ids = {
     "auto_shift", "traction_control", "toggle_aero", "toggle_launch_control", "drive_mode", "toggle_nitrous", "park", "epb", "start_stop", "hazard", "indicator_left", "indicator_right", "horn", "lights",
-    "transmission_mode", "manual_mode", "toggle_abs", "cycle_esc", "electric_mode"
+    "transmission_mode", "manual_mode", "toggle_abs", "cycle_esc", "electric_mode", "main_beam"
 };
 constexpr std::array<std::string_view, 8> channels = {
     "assist.auto_shift", "assist.traction_control", "assist.aero_control", "assist.launch_control", "assist.drive_mode", "nitrous_arm", "park_lock", "epb"
@@ -211,11 +211,17 @@ void DriverActions::apply(const VehicleContext& context, ChannelSink& sink) {
                 const long v = std::lround(event.value);
                 if (v < 0) cabin_.light_mode = LightMode::Auto;
                 else if (v == 0) { cabin_.light_mode = LightMode::Off; cabin_.lights = 0; }
-                else { cabin_.light_mode = LightMode::On; cabin_.lights = v >= 2 ? 2 : 1; }
+                else { cabin_.light_mode = LightMode::On; cabin_.lights = 1; cabin_.main_beam = v >= 2; }
             } else {
                 cabin_.light_mode = cabin_.light_mode == LightMode::Auto ? LightMode::On
                                   : cabin_.light_mode == LightMode::On ? LightMode::Off : LightMode::Auto;
             }
+            apply_light_mode();
+        } else if (index == 19) {
+            // Main beam (stalk push / key): Press toggles, Set picks. Only while the headlamps are on - with the
+            // lamps off the request does nothing (no latch that would surprise when the auto lamps come on).
+            const bool want = event.kind == DriverActionKind::Set ? event.value != 0 : !cabin_.main_beam;
+            cabin_.main_beam = want && cabin_.lights > 0;
             apply_light_mode();
         }
     }
@@ -372,14 +378,16 @@ void DriverActions::set_light_mode(LightMode mode) {
 }
 
 void DriverActions::apply_light_mode() {
+    bool on = cabin_.lights > 0;
     switch (cabin_.light_mode) {
-    case LightMode::Off: cabin_.lights = 0; break;
-    case LightMode::On: cabin_.lights = std::max(cabin_.lights, 1); break;
+    case LightMode::Off: on = false; break;
+    case LightMode::On: on = true; break;
     case LightMode::Auto:
-        if (config_.auto_lights && cabin_.light_sensor_valid)
-            cabin_.lights = cabin_.light_sensor_dark ? std::max(cabin_.lights, 1) : 0;
-        break;
+        if (config_.auto_lights && cabin_.light_sensor_valid) on = cabin_.light_sensor_dark;
+        break; // no sensor: Auto holds whatever the lamps were
     }
+    if (!on) cabin_.main_beam = false; // main beam needs the headlamps; it does not come back on its own
+    cabin_.lights = on ? (cabin_.main_beam ? 2 : 1) : 0;
 }
 
 void DriverActions::update_auto_lights(double lux, double dt) {

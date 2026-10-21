@@ -363,6 +363,37 @@ TEST_CASE("driver cabin: the lights key cycles the switch auto -> on -> off -> a
     CHECK(a.light_mode()==rg::LightMode::On); CHECK(s.get("cabin.lights")==1);
 }
 
+TEST_CASE("driver cabin: the main_beam action toggles high beam only while the headlamps are on", "[driver_actions][cabin][lights][auto_lights]") {
+    const auto cfg = auto_lights_config();
+    rg::DriverActions a; a.configure_cabin(cfg); Sink s; const auto snap=fitted();
+    const double day = cfg.auto_lights_off_lux*10, night = cfg.auto_lights_on_lux*0.001;
+    auto main_beam = [&](double lux) { a.submit({"main_beam"}); a.apply({snap,true},s); step_lux(a,s,snap,lux,0.1); };
+    // Auto by day: lamps off, so the request does nothing and is not remembered for the night.
+    step_lux(a,s,snap,day,0.1); main_beam(day);
+    CHECK(s.get("cabin.lights")==0); CHECK_FALSE(a.cabin().main_beam);
+    step_lux(a,s,snap,night,cfg.auto_lights_on_delay_s+1); CHECK(s.get("cabin.lights")==1);
+    // Auto at night: toggles main beam on and off; the dipped beam stays.
+    main_beam(night); CHECK(s.get("cabin.lights")==2); CHECK(rg::DriverActions::state("main_beam",snap,s).active);
+    CHECK(rg::DriverActions::state("lights",snap,s).label=="AUTO MAIN BEAM");
+    main_beam(night); CHECK(s.get("cabin.lights")==1); CHECK_FALSE(rg::DriverActions::state("main_beam",snap,s).active);
+    // A held key fires once per press (edge), Set picks a state.
+    a.submit({"main_beam",rg::DriverActionKind::Hold,1}); a.apply({snap,true},s); step_lux(a,s,snap,night,0.1);
+    a.submit({"main_beam",rg::DriverActionKind::Hold,1}); a.apply({snap,true},s); step_lux(a,s,snap,night,0.1);
+    CHECK(s.get("cabin.lights")==2);
+    a.submit({"main_beam",rg::DriverActionKind::Set,1}); a.apply({snap,true},s); step_lux(a,s,snap,night,0.1);
+    CHECK(s.get("cabin.lights")==2);
+    // Dawn switches the auto lamps off and drops main beam; the next night comes back on dipped.
+    step_lux(a,s,snap,day,cfg.auto_lights_off_delay_s+1); CHECK(s.get("cabin.lights")==0); CHECK_FALSE(a.cabin().main_beam);
+    step_lux(a,s,snap,night,cfg.auto_lights_on_delay_s+1); CHECK(s.get("cabin.lights")==1);
+    // Switch on by day: main beam works; switching off (lights key) drops it.
+    a.submit({"lights",rg::DriverActionKind::Set,1}); a.apply({snap,true},s); step_lux(a,s,snap,day,0.1);
+    main_beam(day); CHECK(s.get("cabin.lights")==2);
+    a.submit({"lights"}); a.apply({snap,true},s); step_lux(a,s,snap,day,0.1); // On -> Off
+    CHECK(s.get("cabin.lights")==0); CHECK_FALSE(a.cabin().main_beam);
+    a.submit({"lights",rg::DriverActionKind::Set,1}); a.apply({snap,true},s); step_lux(a,s,snap,day,0.1);
+    CHECK(s.get("cabin.lights")==1);
+}
+
 TEST_CASE("driver cabin: the headlamp switch survives a vehicle change and restores from its saved name", "[driver_actions][cabin][lights][auto_lights]") {
     rg::DriverActions a; a.configure_cabin(auto_lights_config()); Sink s; const auto snap=fitted();
     a.submit({"lights"}); a.submit({"lights",rg::DriverActionKind::Release,0}); a.apply({snap,true},s);

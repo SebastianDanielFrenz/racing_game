@@ -515,7 +515,9 @@ func activate(node_name: String, step: int = 1) -> bool:
 	match str(action.get("type", "")):
 		"toggle":
 			if driver_actions != null and channel == "lights":
-				_submit(channel, KIND_PRESS, 1.0) # the same cycle as the lights key: auto -> on -> off -> auto
+				# Click: the same cycle as the lights key (auto -> on -> off -> auto); shift + click / wheel down:
+				# main beam on / off (only while the lamps are on - DriverActions ignores it otherwise).
+				_submit("main_beam" if step < 0 else channel, KIND_PRESS, 1.0)
 				return true
 			if driver_actions != null and channel == "hazard":
 				_submit(channel, KIND_SET, 0.0 if _truthy(get_cosmetic(channel)) else 1.0)

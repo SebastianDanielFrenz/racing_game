@@ -121,7 +121,7 @@ const Expect kExpected[] = {
     {"start", rg::CockpitButton::Primary, "start_stop", rg::DriverActionKind::Press, 1, 0},
     {"hazard", rg::CockpitButton::Primary, "hazard", rg::DriverActionKind::Press, 1, 0},
     {"lights", rg::CockpitButton::Primary, "lights", rg::DriverActionKind::Press, 1, 0},
-    {"lights", rg::CockpitButton::Secondary, "lights", rg::DriverActionKind::Set, 2, 0},
+    {"lights", rg::CockpitButton::Secondary, "main_beam", rg::DriverActionKind::Press, 1, 0},
     {"stalk_L", rg::CockpitButton::Primary, "indicator_left", rg::DriverActionKind::Press, 1, 0},
     {"stalk_L", rg::CockpitButton::Secondary, "indicator_right", rg::DriverActionKind::Press, 1, 0},
     {"stalk_R", rg::CockpitButton::Primary, "indicator_right", rg::DriverActionKind::Press, 1, 0},

@@ -290,6 +290,8 @@ func _test_shared_switches(ck: Node3D, sim: FakeSim, spec: Dictionary, name: Str
 			ck.activate(node, 1)
 			ck.activate(node, 1)
 			check(fake.events.size() == 3 and fake.events[-1]["kind"] == 0 and ck.get_cosmetic("lights") == false, name + ": two more clicks cycle on -> off -> auto (daylight: off)")
+			ck.activate(node, -1) # shift + click / wheel down: main beam
+			check(fake.events.size() == 4 and fake.events[-1] == {"id": "main_beam", "kind": 0, "value": 1.0, "source": 3}, "%s: shift-click on the light switch submits a main_beam Press (%s)" % [name, fake.events])
 		elif ch == "indicator":
 			fake.events.clear()
 			ck.activate(node, 1) # off -> left

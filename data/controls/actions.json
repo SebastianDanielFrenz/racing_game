@@ -15,6 +15,7 @@
     {"id": "indicator_right", "label": "Right indicator", "group": "driving", "kind": "button", "mode": "edge", "modes": ["drive"]},
     {"id": "horn", "label": "Horn (hold)", "group": "driving", "kind": "button", "mode": "held", "modes": ["drive"]},
     {"id": "lights", "label": "Headlights auto / on / off", "group": "driving", "kind": "button", "mode": "edge", "help": "Cycles the headlamp switch: auto (light sensor, the default), on (dipped beam), off; data/world/headlights.json", "modes": ["drive"]},
+    {"id": "main_beam", "label": "Main beam on / off", "group": "driving", "kind": "button", "mode": "edge", "help": "High beam while the headlamps are on (switch on, or auto at night); switching the lamps off also drops it. In the hypercar: right-click the light switch", "modes": ["drive"]},
     {"id": "park", "label": "Park lock", "group": "driving", "kind": "button", "mode": "edge", "help": "Requests the fitted park pawl; shifting releases it", "modes": ["drive"]},
     {"id": "transmission_mode", "label": "Gearbox D / S schedule", "group": "driving", "kind": "button", "mode": "edge", "help": "Automatic and dual-clutch gearboxes: the sport shift schedule (no default key)", "modes": ["drive"]},
     {"id": "manual_mode", "label": "Gearbox manual mode", "group": "driving", "kind": "button", "mode": "edge", "help": "Automatic and dual-clutch gearboxes: in D, shift up / down change gears; pressing again returns to D", "modes": ["drive"]},

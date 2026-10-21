@@ -7,7 +7,7 @@
 // i.e. a white surface under the adapted illuminance shows at `key`. The eye/
 // camera adapts down to min_adapted_lux; below that (deep dusk, night) the
 // exposure stays at its night value, so night looks dark and lamps dominate.
-// At noon (A ~ 1e5 lux) the exposure is ~2000x lower than at night, so a lamp
+// At noon (A ~ 1e5 lux) the exposure is ~1e5x lower than at night (sky.json floor 1 lux), so a lamp
 // of constant physical intensity is negligible against daylight.
 //
 // Engine-neutral: no renderer assumption. How an adapter applies it depends on

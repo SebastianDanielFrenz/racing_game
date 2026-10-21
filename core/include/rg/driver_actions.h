@@ -16,7 +16,8 @@ enum class ActionSource { Keyboard, Pad, Hud, CockpitMouse, VrPoke, VrGrab, VrRa
 
 // Headlamp switch position (the "lights" action cycles Auto -> On -> Off -> Auto).
 // Auto: dipped beam follows the light sensor (CabinConfig auto_lights_*); On: dipped
-// beam (main beam stays its own choice, Set 2); Off: no lamps. Channel cabin.light_mode
+// beam (main beam is its own choice: the "main_beam" action toggles it while the lamps
+// are on, or "lights" Set 2); Off: no lamps, main beam off. Channel cabin.light_mode
 // carries the numeric value (0 auto, 1 on, 2 off).
 enum class LightMode { Auto = 0, On = 1, Off = 2 };
 const char* light_mode_name(LightMode mode); // "auto", "on", "off"
@@ -39,6 +40,7 @@ struct CabinState {
     bool hazard = false;
     int indicator = 0;
     int lights = 0; // 0 off, 1 dipped, 2 main beam ("lights" action; channel cabin.lights)
+    bool main_beam = false; // main beam selected ("main_beam" action); only while the headlamps are on
     LightMode light_mode = LightMode::Auto; // the switch position; survives a vehicle change (configure_auto_shift)
     int wipers = 0;
     double auto_crank_elapsed_s = 0;
@@ -213,7 +215,7 @@ private:
     double manual_exit_elapsed_s_ = 0;
     void update_auto_lights(double lux, double dt);
     void apply_light_mode();
-    std::array<bool, 19> held_{};
+    std::array<bool, 20> held_{};
     std::vector<ActionEvent> pending_;
 };
 
