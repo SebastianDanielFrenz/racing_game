@@ -747,6 +747,15 @@ func _check_electric_upgrades() -> void:
 	_check(ui.get_button("part:ev_battery_pack:stock") != null and ui.get_button("part:ev_battery_pack:long_range") != null and not ui._option_values.has("ev_battery_capacity"), "electric: the battery page shows pack cards, no capacity or output slider")
 	_press("part:ev_battery_pack:long_range")
 	_check(str(ui._garage_option("ev_battery_pack").get("value", "")) == "long_range" and garage.is_dirty() and bool(garage.get_validation()["ok"]), "electric: the long-range pack card installs and validates")
+	# the dyno must follow the motors (owner 2026-10-21: it measured the stock motors while the drive had the new ones)
+	_check(await _wait_until(func(): return not garage.get_dyno()["busy"] and garage.get_dyno()["points"].size() == 33, 120.0), "electric: the dyno finishes for the installed pack")
+	var ev_dyno_before: Dictionary = garage.get_dyno()
+	var ev_torque_before := float(ev_dyno_before["points"][0]["torque_nm"])
+	_check(bool(garage.set_option("ev_motor_output", 0.7)["accepted"]) and bool(garage.get_validation()["ok"]), "electric: a lower motor output is accepted and validate")
+	_check(await _wait_until(func(): return int(garage.get_dyno()["revision"]) != int(ev_dyno_before["revision"]) and not garage.get_dyno()["busy"], 120.0), "electric: the dyno recalculates for the motor output")
+	var ev_torque_after := float(garage.get_dyno()["points"][0]["torque_nm"])
+	_check(ev_torque_before > 0.0 and absf(ev_torque_after / ev_torque_before - 0.7) < 0.08, "electric: the dyno's lowest-rpm torque follows the motor output x0.7 (%.0f -> %.0f N*m)" % [ev_torque_before, ev_torque_after])
+	garage.reset_all()
 	# Motors page (owner 2026-10-21): layout cards, then the front and rear drive-unit cards with their figures; a layout that
 	# does not drive an axle hides that axle's card row.
 	await _back_to_root()

@@ -8,6 +8,7 @@
 // and hypercar), automatic / dual-clutch / CVT hybrids (held gear, 2026-10-21), and combustion cars unchanged.
 #include "rg/garage_dyno.h"
 #include "rg/engine_store.h"
+#include "rg/ev_motor.h"
 #include "rg/gearbox_catalog.h"
 #include "rg/vehicle_load.h"
 #include "rg/vehicle_setup.h"
@@ -61,6 +62,10 @@ struct Fixture {
         INFO(err);
         REQUIRE(g != nullptr);
         ctx.gearboxes = std::shared_ptr<const rg::GearboxCatalog>(std::move(g));
+        auto m = rg::EvMotorCatalog::open(kRoot + "/data/electric_motors/motor_catalog.json", &err);
+        INFO(err);
+        REQUIRE(m != nullptr);
+        ctx.ev_motors = std::shared_ptr<const rg::EvMotorCatalog>(std::move(m));
         auto r = rg::load_dyno_reference(kRoot + "/data/garage/dyno_reference.json", &err);
         INFO(err);
         REQUIRE(r.has_value());
@@ -546,4 +551,79 @@ TEST_CASE("dyno electric report", "[.][diag][garage_dyno][electric]") {
              << ", max electric " << pel << ", max stack " << pfc << "; low end " << points.front().rpm << " rpm "
              << points.front().power_kw << " kW / " << points.front().torque_nm << " N*m; " << points.size() << " points " << ms << " ms");
     }
+}
+
+// Owner 2026-10-21: "the garage dyno did not react to doubling engine power" (pure EV). dyno_setup kept only the engine,
+// turbo, conversion and gearing options, so Upgrades -> Electric drive (the motor scale, ev_battery_pack) never reached the
+// dyno's setup (nor its cache key): the chart measured the stock motors and pack while the drive had the new ones.
+namespace {
+// The garage binding's path (RgGarage::refresh_dyno): the filtered setup, its JSON as the key, the worker, the result.
+rg::DynoResult dyno_like_the_garage(Fixture& f, rg::GarageDyno& dyno, const std::string& car, const rg::VehicleSetup& working,
+                                    const std::shared_ptr<const rg::DynoReference>& reference) {
+    rg::DynoRequest r;
+    r.entry = f.entry(car);
+    r.table = f.table;
+    r.context = f.ctx;
+    r.setup = rg::dyno_setup(f.table, r.entry, working, reference.get());
+    r.key = rg::setup_to_json(r.setup);
+    r.reference = reference;
+    dyno.request(std::move(r));
+    auto result = wait(dyno);
+    INFO(result.error);
+    REQUIRE(result.error.empty());
+    REQUIRE(result.points.size() == 33);
+    return result;
+}
+rg::VehicleSetup ev_working(const std::map<std::string, rg::SetupValue>& values) {
+    rg::VehicleSetup working;
+    working.vehicle_id = "car_electric";
+    working.values = values;
+    return working;
+}
+} // namespace
+
+TEST_CASE("dyno setup: electric motor and battery options reach an electrified car's dyno", "[garage_dyno][electric]") {
+    Fixture f;
+    const auto& ev = f.entry("car_electric");
+    const auto working = ev_working({{"ev_motor_output", 0.5}, {"ev_layout", std::string("quad")}, {"ev_battery_pack", std::string("race")},
+                                     {"brake_force", 1.2}});
+    const auto filtered = rg::dyno_setup(f.table, ev, working, &f.reference);
+    CHECK(filtered.values.count("ev_motor_output") == 1);
+    CHECK(filtered.values.count("ev_layout") == 1);
+    CHECK(filtered.values.count("ev_battery_pack") == 1);
+    CHECK(filtered.values.count("brake_force") == 0); // still only what changes the curve
+    // The cache key follows, so a new motor output is a new request.
+    CHECK(rg::setup_to_json(filtered) != rg::setup_to_json(rg::dyno_setup(f.table, ev, ev_working({}), &f.reference)));
+    // A combustion car never takes electric hardware into its dyno setup.
+    rg::VehicleSetup sedan;
+    sedan.vehicle_id = "car_sedan";
+    sedan.values["ev_motor_output"] = 0.5;
+    CHECK(rg::dyno_setup(f.table, f.entry("car_sedan"), sedan, &f.reference).values.count("ev_motor_output") == 0);
+}
+
+TEST_CASE("dyno worker: motor output scales the low-rpm torque, the race pack lifts the battery cap", "[garage_dyno][electric]") {
+    Fixture f;
+    auto reference = std::make_shared<const rg::DynoReference>(f.reference);
+    rg::GarageDyno dyno;
+    const auto stock = dyno_like_the_garage(f, dyno, "car_electric", ev_working({}), reference);
+    const auto half = dyno_like_the_garage(f, dyno, "car_electric", ev_working({{"ev_motor_output", 0.5}}), reference);
+    const auto quad = dyno_like_the_garage(f, dyno, "car_electric", ev_working({{"ev_layout", std::string("quad")}}), reference);
+    const auto race = dyno_like_the_garage(f, dyno, "car_electric", ev_working({{"ev_layout", std::string("quad")}, {"ev_battery_pack", std::string("race")}}), reference);
+    const auto peak_kw = [](const rg::DynoResult& r) {
+        double best = 0;
+        for (const auto& p : r.points) best = std::max(best, p.power_kw);
+        return best;
+    };
+    // Lowest axis points: torque limited by the motor rating, not the pack: output x0.5, system torque x0.5.
+    for (int i = 0; i < 4; ++i) {
+        const auto k = static_cast<std::size_t>(i);
+        INFO("axis point " << i << " at " << stock.points[k].rpm << " rpm");
+        CHECK(half.points[k].torque_nm == Approx(0.5 * stock.points[k].torque_nm).epsilon(0.05));
+    }
+    // Four stock motors (1200 kW) are capped by the stock pack near its 700 kW; the race pack (x2.2 discharge) raises the cap.
+    CHECK(peak_kw(quad) > peak_kw(stock));
+    CHECK(peak_kw(quad) < 750.0);
+    CHECK(peak_kw(race) > 1.15 * peak_kw(quad));
+    WARN("peak system kW: stock " << peak_kw(stock) << ", quad " << peak_kw(quad) << ", quad + race pack " << peak_kw(race)
+         << "; torque at " << stock.points[0].rpm << " rpm: " << stock.points[0].torque_nm << " -> " << half.points[0].torque_nm << " at output x0.5");
 }

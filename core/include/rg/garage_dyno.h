@@ -48,7 +48,9 @@ enum class DynoAxis : std::uint8_t { EngineRpm = 0, MotorRpm = 1 };
 const char* to_string(DynoTopology t);
 
 // The setup options a dyno request needs: the engine and turbo options (as before), the powertrain conversion, and, for
-// an electrified car (`reference` given), reference->electrified_setup_options. Electrified = the conversion choice is
+// an electrified car (`reference` given), reference->electrified_setup_options plus every option that edits the electric
+// hardware itself (a pointer into an electric_motor / battery / fuel_cell / hydrogen_tank component, or a part file of such
+// a kind: motor scale, battery pack, motor cards), so the chart and its cache key follow the motors and pack. Electrified = the conversion choice is
 // not "ice", or no conversion is chosen and the catalogue car's own vehicle file has an electric motor.
 VehicleSetup dyno_setup(const SetupOptionTable& table, const CatalogEntry& entry, const VehicleSetup& working,
                         const DynoReference* reference);
