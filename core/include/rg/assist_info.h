@@ -54,17 +54,18 @@ inline constexpr std::uint32_t kAssistBitEsc = 1u << 9;  // assist unit esc bloc
 }
 
 // --- Drive modes (physics_sim assists I7, electronics kind drive_modes; car-specific part) ---------------------------
-// Channel assist.drive_mode, append-only codes: 0 eco, 1 normal, 2 sport, 3 racing (Q3 / I8). PowertrainSnapshot::drive_modes_available_bits
+// Channel assist.drive_mode, append-only codes: 0 eco, 1 normal, 2 sport, 3 racing (Q3 / I8), 4 electric (the hybrid's pure-electric
+// mode, physics_sim docs/electric_drive.md "Hybrid Electric mode"). PowertrainSnapshot::drive_modes_available_bits
 // has bit n = code n for every mode the car's part lists (0 on a car without the part, which also has no channel).
 // physics_sim owns every consequence of a mode (pedal bend, shift points, clutch close time, the traction-control
 // default of the mode, the launch-control and N2O gates): the game only cycles the REQUEST through the OFFERED modes
 // and shows the mode that runs. The game must NOT write assist.traction_control on a mode change - physics sets the TC
 // request to the mode's default itself.
-inline constexpr int kDriveModeCodeCount = 4;
-inline constexpr int kDriveModeEco = 0, kDriveModeNormal = 1, kDriveModeSport = 2, kDriveModeRacing = 3;
+inline constexpr int kDriveModeCodeCount = 5;
+inline constexpr int kDriveModeEco = 0, kDriveModeNormal = 1, kDriveModeSport = 2, kDriveModeRacing = 3, kDriveModeElectric = 4;
 
 [[nodiscard]] inline const char* drive_mode_name(int code) {
-    static const char* const names[kDriveModeCodeCount] = {"ECO", "NORMAL", "SPORT", "RACING"};
+    static const char* const names[kDriveModeCodeCount] = {"ECO", "NORMAL", "SPORT", "RACING", "ELECTRIC"};
     return (code >= 0 && code < kDriveModeCodeCount) ? names[code] : "?";
 }
 

@@ -9,9 +9,9 @@ namespace rg {
 namespace {
 // Preserve the original forwarding order; per-action events chain through the
 // last value written, irrespective of which device submitted them.
-constexpr std::array<std::string_view, 18> ids = {
+constexpr std::array<std::string_view, 19> ids = {
     "auto_shift", "traction_control", "toggle_aero", "toggle_launch_control", "drive_mode", "toggle_nitrous", "park", "epb", "start_stop", "hazard", "indicator_left", "indicator_right", "horn", "lights",
-    "transmission_mode", "manual_mode", "toggle_abs", "cycle_esc"
+    "transmission_mode", "manual_mode", "toggle_abs", "cycle_esc", "electric_mode"
 };
 constexpr std::array<std::string_view, 8> channels = {
     "assist.auto_shift", "assist.traction_control", "assist.aero_control", "assist.launch_control", "assist.drive_mode", "nitrous_arm", "park_lock", "epb"
@@ -132,6 +132,26 @@ void DriverActions::apply(const VehicleContext& context, ChannelSink& sink) {
             const int target = event.kind == DriverActionKind::Set ? mode(event.value) : next_esc_mode(snapshot.esc_modes, mode(current));
             if (target < 0 || target >= kEscModeCodeCount || !(snapshot.esc_modes & segment(target))) continue;
             sink.set("assist.esc", target);
+        } else if (index == 18) {
+            // Hybrid "E" key: Electric (drive mode 4) on / off. The channel is assist.drive_mode, the same one the mode cycle writes;
+            // a car whose drive_modes part does not offer Electric ignores the press. Switching off returns to the mode that was
+            // requested before (else Normal, else the first offered mode).
+            if (!(snapshot.drive_modes & segment(kDriveModeElectric))) continue;
+            const int current = mode(sink.get("assist.drive_mode"));
+            const bool want = event.kind == DriverActionKind::Set ? event.value >= 0.5 : current != kDriveModeElectric;
+            if (want == (current == kDriveModeElectric)) continue;
+            if (want) {
+                electric_return_mode_ = current >= 0 && current != kDriveModeElectric ? current : -1;
+                sink.set("assist.drive_mode", kDriveModeElectric);
+            } else {
+                int back = electric_return_mode_ >= 0 ? electric_return_mode_ : kDriveModeNormal;
+                if (back == kDriveModeElectric || !(snapshot.drive_modes & segment(back))) {
+                    back = -1;
+                    for (int code = 0; code < kDriveModeCodeCount && back < 0; ++code)
+                        if (code != kDriveModeElectric && (snapshot.drive_modes & segment(code))) back = code;
+                }
+                if (back >= 0) sink.set("assist.drive_mode", back);
+            }
         }
     }
     for (const auto& event : pending_) {
@@ -204,10 +224,10 @@ void DriverActions::apply(const VehicleContext& context, ChannelSink& sink) {
 
 namespace {
 // Selector positions in lever order.
-enum Pos { PosP = 0, PosR = 1, PosN = 2, PosD = 3 };
+enum Pos { PosP = 0, PosR = 1, PosN = 2, PosD = 3, PosB = 4 };
 int selector_pos(const DriverSnapshot& s) {
     if (s.transmission_selector < 0) return PosR;
-    if (s.transmission_selector > 0) return PosD;
+    if (s.transmission_selector > 0) return s.b_active ? PosB : PosD;
     return s.park_fitted && s.park_engaged ? PosP : PosN;
 }
 } // namespace
@@ -220,6 +240,14 @@ SelectorShift selector_shift(const DriverSnapshot& snapshot, int up, int down) {
     int pos = selector_pos(snapshot);
     if (pos == PosD && snapshot.transmission_manual) return out; // tiptronic: the counters change gears in physics
     out.forward_counts = false;
+    // B above D (EV one-pedal regeneration; a hybrid in Electric mode). Physics steps D <-> B on the shift counters itself, so ONE
+    // press that only moves between D and B is forwarded as counters and writes no gear_request (no request value to lose to an
+    // unchanged channel). Presses that go further (down past D) use the absolute request as before (B is the step above D: two presses down from B reach N).
+    if (snapshot.b_available && (pos == PosD || pos == PosB) && !(up > 0 && down > 0)) {
+        if (pos == PosD && up > 0) { out.forward_counts = true; return out; }
+        if (pos == PosB && up > 0) return out; // nothing above B
+        if (pos == PosB && down == 1) { out.forward_counts = true; return out; }
+    }
     const bool standstill = std::abs(snapshot.speed_mps) <= kSelectorStandstillMps;
     const int lowest = snapshot.park_fitted ? PosP : PosR;
     const int start = pos;
@@ -245,12 +273,14 @@ std::string selector_label(const DriverSnapshot& snapshot) {
     if (!has_selector(snapshot)) return {};
     if (snapshot.transmission_selector < 0) return "R";
     if (snapshot.transmission_selector == 0) return snapshot.park_engaged ? "P" : "N";
+    if (snapshot.b_active) return "B";
     if (snapshot.transmission_manual) return "M" + std::to_string(std::max(1, snapshot.gear));
     return snapshot.transmission_sport ? "S" : "D";
 }
 
 std::string selector_display(const DriverSnapshot& snapshot) {
     std::string text = selector_label(snapshot);
+    if (snapshot.hybrid_electric && text == "D") return "E"; // Electric mode: the combustion engine is off, no gear number to show
     if (text != "D" && text != "S") return text;
     bool gear_shown = false;
     if (snapshot.hybrid_fitted) gear_shown = snapshot.engine_running && snapshot.gear > 0 && snapshot.clutch_engagement >= 0.5;
@@ -445,7 +475,7 @@ ControlState DriverActions::state(std::string_view id, const DriverSnapshot& sna
         out.active = out.fitted;
         out.lamp_segments = out.fitted ? segment(snapshot.drive_mode_effective) : 0;
         out.label = out.fitted ? drive_mode_name(snapshot.drive_mode_effective) : "";
-        out.colour_role = out.value == 0 ? "eco" : out.value == 1 ? "normal" : out.value == 2 ? "sport" : "racing";
+        out.colour_role = out.value == 0 ? "eco" : out.value == 1 ? "normal" : out.value == 2 ? "sport" : out.value == 3 ? "racing" : "electric";
     } else if (id == "abs") {
         out.fitted = snapshot.abs_fitted;
         out.enabled = out.fitted;

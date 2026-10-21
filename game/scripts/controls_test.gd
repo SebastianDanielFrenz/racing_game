@@ -170,13 +170,13 @@ func _write() -> void:
 	_check(_has_key("keyboard", "throttle", "W"), "a cancelled capture changes nothing")
 	cui.get_hook("bind:throttle:0").pressed.emit()
 	await _frames(2)
-	await _tap_key(KEY_U)
+	await _tap_key(KEY_F9)
 	_check(not cui.is_capturing(), "a key press ends the capture")
-	_check(_has_key("keyboard", "throttle", "U") and not _has_key("keyboard", "throttle", "W"), "throttle on the keyboard is now U (not W): %s" % ", ".join(_texts("keyboard", "throttle")))
+	_check(_has_key("keyboard", "throttle", "F9") and not _has_key("keyboard", "throttle", "W"), "throttle on the keyboard is now U (not W): %s" % ", ".join(_texts("keyboard", "throttle")))
 	_check(controls.is_dirty(), "the controls are marked changed")
 	# the input map follows at once (it is suspended while this screen is up: lift that for the probe)
 	input_map.suspended = false
-	input_map.set_test_snapshot(_snap_keys(["U"]))
+	input_map.set_test_snapshot(_snap_keys(["F9"]))
 	await _frames(3)
 	var thr_u: float = input_map.get_throttle()
 	input_map.set_test_snapshot(_snap_keys(["W"]))
@@ -188,7 +188,7 @@ func _write() -> void:
 	# conflict: brake onto U too
 	cui.get_hook("bind:brake:0").pressed.emit()
 	await _frames(2)
-	await _tap_key(KEY_U)
+	await _tap_key(KEY_F9)
 	_check(controls.get_conflicts("keyboard").size() > 0, "binding U to the brake as well is reported as a conflict")
 	_check(cui.status_text().contains("also used by"), "the screen says so inline: '%s'" % cui.status_text())
 	_check(bool(_row("keyboard", "brake").get("conflict", false)) and bool(_row("keyboard", "throttle").get("conflict", false)), "both rows are flagged")
@@ -228,7 +228,7 @@ func _write() -> void:
 	_check(not cui.is_capturing() and pad_row.get("bindings", []).size() == 1 and str(pad_row["bindings"][0]["type"]) == "joy_button" and int(pad_row["bindings"][0]["index"]) == 0,
 		"pad button A is now the pad's throttle: %s" % ", ".join(_texts(key_a, "throttle")))
 	_check(bool(controls.get_devices().filter(func(d): return str(d["key"]) == key_a)[0]["customised"]), "the pad's profile is customised")
-	_check(_has_key("keyboard", "throttle", "U"), "the keyboard profile is untouched by the pad edit")
+	_check(_has_key("keyboard", "throttle", "F9"), "the keyboard profile is untouched by the pad edit")
 	# the input map: pad A button 0 throttles, a snapshot of another slot does not
 	input_map.suspended = false
 	input_map.set_test_snapshot(_snap_pad(900, [0], [0, 0, 0, 0, 0, 0]))
@@ -355,7 +355,7 @@ func _write() -> void:
 	for r in other_rows:
 		if str(r["action"]) == "throttle":
 			other_throttle = str(r["bindings"][0]["key"])
-	_check(other_throttle == "U", "the new instance has throttle on U")
+	_check(other_throttle == "F9", "the new instance has throttle on U")
 	var key_a_again: String = other.joypad_connected(5, GUID_A, "Xbox Wireless Controller", 0x045e, 0x02ea, true)
 	var found_button := false
 	for r in other.get_rows(key_a_again):
@@ -390,8 +390,8 @@ func _write() -> void:
 func _verify() -> void:
 	_check(str(controls.get_load_message()) == "", "the file of the previous run loaded without a message (%s)" % str(controls.get_load_message()))
 	_check(FileAccess.file_exists(str(controls.get_file_path())), "controls.json exists at boot")
-	_check(_has_key("keyboard", "throttle", "U") and not _has_key("keyboard", "throttle", "W"), "the keyboard throttle on U survived the restart")
-	input_map.set_test_snapshot(_snap_keys(["U"]))
+	_check(_has_key("keyboard", "throttle", "F9") and not _has_key("keyboard", "throttle", "W"), "the keyboard throttle on U survived the restart")
+	input_map.set_test_snapshot(_snap_keys(["F9"]))
 	await _frames(3)
 	var thr: float = input_map.get_throttle()
 	input_map.set_test_snapshot({})

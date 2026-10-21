@@ -72,7 +72,6 @@
     "crank_assist": true
   },
   "hybrid_control": {
-    "requested_power_w": 300000,
     "low_soc": 0.2,
     "charge_target_soc": 0.8,
     "charge_rpm": 2200,
