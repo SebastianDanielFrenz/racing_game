@@ -84,6 +84,58 @@
       ]
     },
     {
+      "id": "ev_motor_scale",
+      "label": "Electric motors",
+      "group": "Electric drive",
+      "area": "engine",
+      "unit": "x",
+      "help": "Scales every traction motor: peak torque, power, regeneration torque and mass together ([AS] a bigger machine of the same design: torque and power grow with its active length, and so does its mass). The battery must still deliver the power: raise its power output too, or the motors stop at the battery's limit.",
+      "kind": "scale",
+      "min": 0.5,
+      "max": 2.0,
+      "step": 0.05,
+      "file": "vehicle",
+      "pointers": [
+        "/powertrain/components/[type=electric_motor]/peak_torque_nm",
+        "/powertrain/components/[type=electric_motor]/max_power_w",
+        "/powertrain/components/[type=electric_motor]/regen_torque_nm",
+        "/powertrain/components/[type=electric_motor]/mass_kg"
+      ]
+    },
+    {
+      "id": "ev_battery_capacity",
+      "label": "Battery capacity",
+      "group": "Electric drive",
+      "area": "engine",
+      "unit": "x",
+      "help": "Scales the traction battery's energy (kWh) and its mass together ([AS] more cells of the same kind: the pack's energy per kilogram stays the same). More range, more weight; the power output is a separate option.",
+      "kind": "scale",
+      "min": 0.5,
+      "max": 2.0,
+      "step": 0.05,
+      "file": "vehicle",
+      "pointers": [
+        "/powertrain/components/[type=battery]/capacity_kwh",
+        "/powertrain/components/[type=battery]/mass_kg"
+      ]
+    },
+    {
+      "id": "ev_battery_power",
+      "label": "Battery power output",
+      "group": "Electric drive",
+      "area": "engine",
+      "unit": "x",
+      "help": "Scales the most power the traction battery can deliver (discharge). Above the motors' combined rating it changes nothing; below it the battery limits acceleration.",
+      "kind": "scale",
+      "min": 0.5,
+      "max": 3.0,
+      "step": 0.05,
+      "file": "vehicle",
+      "pointers": [
+        "/powertrain/components/[type=battery]/max_discharge_w"
+      ]
+    },
+    {
       "id": "brake_force",
       "label": "Brake force",
       "group": "Brakes",
