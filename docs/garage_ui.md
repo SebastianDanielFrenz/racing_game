@@ -116,6 +116,12 @@ Transparent images distinguish inline-four / inline-six and single / twin hardwa
 They are illustrative component renders, not exact scans. Calibration variants of
 the same hardware share an image. Rev limiter and throttle-response labels show
 RPM and milliseconds from the installed engine's baseline, rather than only factors.
+Tuning > Engine > N2O (cars with a nitrous kit, 2026-10-21): "Spray from" / "Spray up to" (`nitrous_rpm_min` /
+`nitrous_rpm_max`, 1000-15000 rpm linear) scale the `min_rpm` / `max_rpm` of the controller the kit runs (file kind
+`nitrous_controller`: the kit component's `controller`, else the kit file's `default_controller`). A tuned controller is
+materialised as `nitrous_controller_<stem>.json` and the vehicle's kit component names it; the kit file stays shared.
+The flow fades over the controller's last `max_rpm_fade_rpm` below the max, and a raised rev limiter needs a raised
+window or the spray stops at the stock 8100 rpm. An inverted window is refused with the physics loader's message.
 Stock engine specifications are labeled as stock: tuned dyno/benchmarks remain pending.
 ECU map parts, further engine internals, engine geometry design and engine-bay mesh
 replacement remain future work.

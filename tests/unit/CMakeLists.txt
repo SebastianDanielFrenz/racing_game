@@ -75,6 +75,7 @@ add_executable(rg_unit_tests
   test_control_capture.cpp
   test_vehicle_catalog.cpp
   test_vehicle_setup.cpp
+  test_nitrous_tuning.cpp
   test_slider_map.cpp
   test_rev_limit_extremes.cpp
   test_tyre_spec.cpp

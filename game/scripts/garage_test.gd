@@ -853,6 +853,15 @@ func _check_hybrid_upgrades() -> void:
 	var pack_figures: Label = pack_card.get_node_or_null("Figures") if pack_card != null else null
 	_check(pack_figures != null and "28 kWh · 300 kW · 231 kg" in pack_figures.text, "hybrid: a pack card shows the absolute figures for this car (is '%s')" % (pack_figures.text if pack_figures != null else "no figures label"))
 	_check(_labels_containing(ui._option_box, "caps the electric power") == 1, "hybrid: the battery page shows the pack help once")
+	# The N2O controller's rpm window is a Tuning slider (owner 2026-10-21).
+	await _back_to_root()
+	_press("garage:tuning")
+	_press("tile:Engine")
+	_check(ui.get_option_entry("nitrous_rpm_min") != null and ui.get_option_entry("nitrous_rpm_max") != null, "n2o: Tuning > Engine shows the spray rpm window (has %s)" % ", ".join(ui.option_control_ids()))
+	var n2o_stock := _option_stock("nitrous_rpm_max")
+	_type_entry("nitrous_rpm_max", "9200")
+	_check(is_equal_approx(float(_option_value("nitrous_rpm_max")) * n2o_stock, 9200.0) and bool(garage.get_validation()["ok"]), "n2o: typing 9200 rpm stores it and validates (%s)" % garage.get_validation()["message"])
+	_press("garage:upgrades")
 	garage.reset_all()
 	await _back_to_root()
 	await _press_escape()
