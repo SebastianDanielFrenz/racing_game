@@ -6,17 +6,18 @@
 //
 // Law (all numbers are config; [AS] = assumed, no published value for this exact car):
 //   amplitude  A(U) = rms_at_reference * (U / reference_speed)^(level_db_per_decade / 20)       (U clamped to max_speed)
-//   with level_db_per_decade = 50 [AS]: aerodynamic sound power from turbulent flow over a rigid body grows with a high
-//   power of speed - Lighthill (1952, "On sound generated aerodynamically I"): monopole U^4, dipole U^6, quadrupole U^8;
-//   the dipole (surface-pressure) mechanism that dominates a car's exterior and glass-transmitted noise gives ~U^6 for
-//   free flow and ~U^5 for boundary-layer-dominated flow, i.e. 50-60 dB per decade (Hucho, Aerodynamics of Road
-//   Vehicles, 4th ed., ch. on aeroacoustics, quotes "about 50 to 60 log10(v)"). 50 is the low end: the audible part of the
-//   spectrum (band-pass below) sees part of the growth as spectral shift instead of level.
+//   with level_db_per_decade = 40 [AS] (was 50; owner 2026-10-21: the wind scaled too aggressively). The layer is what the
+//   driver hears INSIDE the cabin. Outside, aerodynamic sound from turbulent flow over a body grows with a high power of
+//   speed - Lighthill (1952, "On sound generated aerodynamically I"): monopole U^4, dipole U^6, quadrupole U^8; Hucho,
+//   Aerodynamics of Road Vehicles, 4th ed., aeroacoustics chapter: "about 50 to 60 log10(v)". The glass and seals attenuate
+//   more as the spectrum moves up with the airspeed, so the interior level grows less steeply: 40 dB per decade = 12 dB
+//   per doubling, close to the total interior level of a passenger car (roughly 65 dBA at 100 km/h, 76 dBA at 200 km/h).
+//   The tyre layer grows at 35 dB per decade, so it still dominates in town.
 //   centre frequency f_c(U) = centre_hz_at_reference * (U / reference_speed)^centre_exponent, exponent 1 [AS]: a
 //   Strouhal-type scaling f = St * U / L (shedding from mirrors/A-pillars/antenna) puts the spectrum's weight at a
 //   frequency proportional to U.
 //   fade: A is multiplied by smoothstep(0, full_above_mps, U) so the layer is exactly 0 at rest; with the power law the
-//   level at walking pace is already > 60 dB below the level at the reference speed, so the fade is not audible as a threshold.
+//   level at walking pace is already > 50 dB below the level at the reference speed, so the fade is not audible as a threshold.
 //   gust modulation: a slow (gust_rate_hz) smoothed noise multiplies the level by (1 + gust_depth * g), g ~ unit std.
 #pragma once
 
@@ -31,7 +32,7 @@ namespace rg {
 struct WindNoiseConfig {
     double reference_speed_mps = 100.0 / 3.6; // [AS] speed the levels below are given at
     double rms_at_reference = 0.0172;         // [AS] output RMS (full scale = 1) at the reference speed, before the master gain
-    double level_db_per_decade = 50.0;        // [AS] see the header comment (Lighthill 1952; Hucho)
+    double level_db_per_decade = 40.0;        // [AS] interior slope, see the header comment
     double max_speed_mps = 500.0 / 3.6;       // the law stops growing here - above the hyper's 446 km/h top speed
     double full_above_mps = 1.0;              // smoothstep(0, this, U): exactly 0 at rest
     double centre_hz_at_reference = 700.0;    // [AS]
