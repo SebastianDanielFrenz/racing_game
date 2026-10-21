@@ -416,9 +416,10 @@ TEST_CASE("setup: the saved document round-trips", "[setup][garage]") {
     CHECK_THAT(err, ContainsSubstring("unknown option"));
 }
 
-TEST_CASE("setup: every catalog entry accepts a setup touching each available option", "[setup][garage]") {
-    Fixture f;
+// Shared by the short test (two entries, regular run) and the [long] one (every entry) below.
+static void check_setup_touching_each_option(Fixture& f, const std::vector<std::string>& ids) {
     for (const auto& e : f.catalog.entries) {
+        if (!ids.empty() && std::find(ids.begin(), ids.end(), e.id) == ids.end()) continue;
         INFO(e.id);
         const rg::SetupModel model = rg::build_setup_model(e, f.table, f.ctx);
         REQUIRE(model.error.empty());
@@ -450,6 +451,16 @@ TEST_CASE("setup: every catalog entry accepts a setup touching each available op
         INFO(v.message);
         CHECK(v.ok);
     }
+}
+
+TEST_CASE("setup: the sedan and the electric car accept a setup touching each available option", "[setup][garage]") {
+    Fixture f;
+    check_setup_touching_each_option(f, {"car_sedan", "car_electric"});
+}
+
+TEST_CASE("setup: every catalog entry accepts a setup touching each available option", "[setup][garage][long]") {
+    Fixture f;
+    check_setup_touching_each_option(f, {});
 }
 
 TEST_CASE("setup: tyre width changes geometry, grip and resistance together", "[setup][tyre_width][tyre_spec]") {
@@ -500,10 +511,11 @@ TEST_CASE("setup: tyre width changes geometry, grip and resistance together", "[
     CHECK(expanded.wheels[0].wheel_width == Approx(.275));
 }
 
-TEST_CASE("setup: the garage lists exactly the sizes the fitment allows", "[setup][tyre_width][tyre_spec]") {
-    Fixture f;
+// full_range = the brute force sweeps rim 12-26 and width 100-500 (the [long] test, ~25 s per car); otherwise it sweeps
+// only rim and width +-30 mm / +-1 in around the fitment (the regular-run test, about a second per car).
+static void check_garage_sizes(Fixture& f, std::initializer_list<const char*> cars, bool full_range) {
     const auto families = families_for(f);
-    for (const char* car : {"car_hyper", "car_hyper_n2o", "car_sedan", "car_sedan_awd"}) {
+    for (const char* car : cars) {
         const auto& e = f.entry(car);
         const auto stock = rg::load_vehicle(e.vehicle_path);
         const auto model = rg::build_setup_model(e, f.table, f.ctx);
@@ -516,9 +528,16 @@ TEST_CASE("setup: the garage lists exactly the sizes the fitment allows", "[setu
             const double diameter = 2000.0 * stock.wheels[front ? 0 : 2].wheel_radius;
             // Independent brute force over a much wider range than any fitment: every compound x rim x width x aspect.
             std::set<std::string> expected;
+            int rim_lo = 12, rim_hi = 26, width_lo = 100, width_hi = 500;
+            if (!full_range) {
+                rim_lo = *std::min_element(fit.rims_in.begin(), fit.rims_in.end()) - 1;
+                rim_hi = *std::max_element(fit.rims_in.begin(), fit.rims_in.end()) + 1;
+                width_lo = fit.min_width_mm - 30;
+                width_hi = fit.max_width_mm + 30;
+            }
             for (const auto& compound : families->compounds()) {
-                for (int rim = 12; rim <= 26; ++rim) {
-                    for (int width = 100; width <= 500; ++width) {
+                for (int rim = rim_lo; rim <= rim_hi; ++rim) {
+                    for (int width = width_lo; width <= width_hi; ++width) {
                         for (int aspect = 10; aspect <= 90; ++aspect) {
                             const rg::TyreSpec s{compound.id, width, aspect, rim};
                             if (rg::tyre_fit_error(s, fit, diameter).empty() && aspect == rg::tyre_aspect_for(rim, width, diameter)) expected.insert(rg::tyre_id(s));
@@ -542,6 +561,16 @@ TEST_CASE("setup: the garage lists exactly the sizes the fitment allows", "[setu
             }
         }
     }
+}
+
+TEST_CASE("setup: the sedan's garage lists exactly the sizes the fitment allows (narrow brute force)", "[setup][tyre_width][tyre_spec]") {
+    Fixture f;
+    check_garage_sizes(f, {"car_sedan"}, false);
+}
+
+TEST_CASE("setup: the garage lists exactly the sizes the fitment allows", "[setup][tyre_width][tyre_spec][long]") {
+    Fixture f;
+    check_garage_sizes(f, {"car_hyper", "car_hyper_n2o", "car_sedan", "car_sedan_awd"}, true);
 }
 
 TEST_CASE("setup: road tyre technology levels retain their physical tradeoffs", "[setup][tyre_width][tyre_spec]") {

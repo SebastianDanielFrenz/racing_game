@@ -687,7 +687,7 @@ TEST_CASE("cvt gearbox: installing one replaces the clutch and the manual TCU wi
     CHECK_THAT(weak.error, ContainsSubstring("gearbox: rated 250 N*m"));
 }
 
-TEST_CASE("cvt gearbox: the sedan with a CVT creeps and drives from rest on the variator", "[gearbox_swap][automatic][cvt][drive]") {
+TEST_CASE("cvt gearbox: the sedan with a CVT creeps and drives from rest on the variator", "[gearbox_swap][automatic][cvt][drive][long]") {
     Fixture f;
     for (const char* box : {"cvt_converter", "cvt_clutch"}) {
         INFO(box);
@@ -707,7 +707,7 @@ TEST_CASE("cvt gearbox: the sedan with a CVT creeps and drives from rest on the 
     }
 }
 
-TEST_CASE("dual clutch: repeated braking and part-throttle launches do not stall", "[automatic][dct_stop_start]") {
+TEST_CASE("dual clutch: repeated braking and part-throttle launches do not stall", "[automatic][dct_stop_start][long]") {
     Fixture f;
     for (const auto& car_box : {std::pair{"car_sedan", "dct_7"}, std::pair{"car_hyper", "hyper_7dct"}}) {
         INFO(car_box.first);
@@ -730,7 +730,7 @@ TEST_CASE("automatic gearbox: swaps preserve N2O hypercar driving modes", "[auto
     }
 }
 
-TEST_CASE("N2O hypercar modes scale the DCT pedal and preserve the manual pedal policy", "[automatic][drive_modes_auto][pedal]") {
+TEST_CASE("N2O hypercar modes scale the DCT pedal and preserve the manual pedal policy", "[automatic][drive_modes_auto][pedal][long]") {
     Fixture f;
     const auto& car = f.entry("car_hyper_n2o");
     for (const char* box : {"stock", "hyper_7dct"}) {
@@ -772,7 +772,7 @@ TEST_CASE("N2O hypercar modes scale the DCT pedal and preserve the manual pedal 
     }
 }
 
-TEST_CASE("hypercar DCT stays running through 10 kmh corners", "[automatic][dct_corner]") {
+TEST_CASE("hypercar DCT stays running through 10 kmh corners", "[automatic][dct_corner][long]") {
     Fixture f;
     for (int mode = 0; mode < 4; ++mode) {
         INFO(mode);
@@ -785,7 +785,7 @@ TEST_CASE("hypercar DCT stays running through 10 kmh corners", "[automatic][dct_
     }
 }
 
-TEST_CASE("DCT respawn preserves idle and allows the starter after ignition cycling", "[automatic][dct_respawn]") {
+TEST_CASE("DCT respawn preserves idle and allows the starter after ignition cycling", "[automatic][dct_respawn][long]") {
     Fixture f;
     const auto result = drive_auto(f, "hyper_7dct", 0.0, 15.0, "car_hyper_n2o", 0, -1, true);
     CHECK(result.started);
@@ -799,7 +799,7 @@ TEST_CASE("hypercar DCT TC still intervenes during a full-throttle launch", "[au
     CHECK(d.max_kmh > 30.0);
     CHECK(d.tc_interventions > 0);
 }
-TEST_CASE("Racing hypercar DCT launch control reaches 50 kmh promptly", "[automatic][racing_lc]") {
+TEST_CASE("Racing hypercar DCT launch control reaches 50 kmh promptly", "[automatic][racing_lc][long]") {
     Fixture f;
     const auto plain=drive_auto(f,"hyper_7dct",0,12,"car_hyper_n2o",0,-1,false,3,false);
     const auto lc=drive_auto(f,"hyper_7dct",0,12,"car_hyper_n2o",0,-1,false,3,true);

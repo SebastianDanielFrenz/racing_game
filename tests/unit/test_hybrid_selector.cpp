@@ -173,7 +173,7 @@ struct Drive {
 };
 } // namespace
 
-TEST_CASE("car_hyper + hybrid battery (manual hyper_7mt) starts in N, the shift keys select D and R and park locks it", "[hybrid_selector][powertrain_swap]") {
+TEST_CASE("car_hyper + hybrid battery (manual hyper_7mt) starts in N, the shift keys select D and R and park locks it", "[hybrid_selector][powertrain_swap][long]") {
     Fixture f;
     const rg::CatalogEntry* e = f.catalog.find("car_hyper");
     REQUIRE(e != nullptr);

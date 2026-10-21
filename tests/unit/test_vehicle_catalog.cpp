@@ -10,9 +10,11 @@
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/matchers/catch_matchers_string.hpp>
 
+#include <algorithm>
 #include <cmath>
 #include <string>
 #include <utility>
+#include <vector>
 
 namespace {
 const std::string kRoot = RG_SOURCE_DIR;
@@ -72,16 +74,26 @@ TEST_CASE("catalog: stats come from the data files", "[catalog][vehicle_select]"
     CHECK(hyper->peak_torque_nm == 1371.0);
 }
 
-TEST_CASE("catalog: every entry loads with the physics vehicle loader", "[catalog][vehicle_select]") {
+// ids empty = every entry (the [long] test); otherwise only the named ones (the regular-run test).
+static void check_entries_load(const std::vector<std::string>& ids) {
     const rg::VehicleCatalog c = load_catalog();
     ps::io::EngineMapOptions options;
     options.cache_dir = kRoot + "/out/godot_engine_cache";
     for (const auto& e : c.entries) {
+        if (!ids.empty() && std::find(ids.begin(), ids.end(), e.id) == ids.end()) continue;
         INFO(e.id);
         const ps::vehicle::VehicleDesc desc = rg::load_vehicle(e.vehicle_path, options);
         CHECK(desc.name == e.sim_name);
         CHECK(desc.wheels.size() == 4);
     }
+}
+
+TEST_CASE("catalog: the sedan and the electric car load with the physics vehicle loader", "[catalog][vehicle_select]") {
+    check_entries_load({"car_sedan", "car_electric"});
+}
+
+TEST_CASE("catalog: every entry loads with the physics vehicle loader", "[catalog][vehicle_select][long]") {
+    check_entries_load({});
 }
 
 TEST_CASE("catalog: malformed catalogs are rejected with a reason", "[catalog][vehicle_select]") {

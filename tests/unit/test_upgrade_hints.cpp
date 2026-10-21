@@ -865,7 +865,7 @@ TEST_CASE("hints: a powertrain swap shows peak power and weight only", "[upgrade
 
 // ---- the specification pane follows the working setup (owner 2026-10-19) ----------------------------------------------------
 
-TEST_CASE("hints: the specification pane reports the configuration being edited, not the stock car", "[upgrade_hints][garage]") {
+TEST_CASE("hints: the specification pane reports the configuration being edited, not the stock car", "[upgrade_hints][garage][long]") {
     Rig rig("car_hyper");
     auto hints = make_hints(0);
     hints->set_base(rig.base(), rig.garage->working());

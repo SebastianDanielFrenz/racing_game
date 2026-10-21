@@ -262,7 +262,7 @@ TEST_CASE("engine catalog: the loader rejects a malformed table", "[engine_garag
     CHECK_THAT(err, ContainsSubstring("mass_kg"));
 }
 
-TEST_CASE("engine swap: every catalog engine loads on every base car", "[engine_garage][engine_swap]") {
+TEST_CASE("engine swap: every catalog engine loads on every base car", "[engine_garage][engine_swap][long]") {
     Fixture f;
     const auto cars = f.ice_cars(); // an electric car has no engine bay to swap
     REQUIRE(cars.size() >= 6);
@@ -404,7 +404,7 @@ TEST_CASE("engine swap: the car's own engine changes nothing", "[engine_garage][
 }
 
 TEST_CASE("engine swap: the engine thermal model follows the engine (a thermal car loses its cooling system with a no-thermal engine)",
-          "[engine_garage][engine_swap][thermal]") {
+          "[engine_garage][engine_swap][thermal][long]") {
     Fixture f;
     int with_thermal = 0, without_thermal = 0;
     for (const rg::CatalogEntry* car : f.ice_cars()) { // an electric car has no engine thermal model
@@ -816,7 +816,7 @@ TEST_CASE("engine catalog: the cycle engines' peak figures match the engine dyno
 // "It fits, it's offered": every engine of the store (a user engine included) x every catalog car (presets included).
 // The engine list of every car offers every engine; one that does not fit stays listed and names the dimension. A pair
 // either fits and loads (validate only) or is refused by check_fit with exactly its reasons. Prints the matrix.
-TEST_CASE("engine fit: the full engine x car matrix - fits and loads, or is refused for its size alone", "[engine_garage][engine_swap][fit][matrix]") {
+TEST_CASE("engine fit: the full engine x car matrix - fits and loads, or is refused for its size alone", "[engine_garage][engine_swap][fit][matrix][long]") {
     TempDir user;
     Fixture f(user.path);
     std::string err;

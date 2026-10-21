@@ -27,6 +27,12 @@
     Skip the configure/build step (use an already-built out/build/<Preset> +
     game/bin/librg_godot.dll).
 
+.PARAMETER SkipTests
+    Skip the ctest step (tools/ci.ps1 passes it: ci.ps1 has already run the
+    unit tests, and every smoke invocation used to re-run the WHOLE suite
+    serially - the single biggest cost of a full ci run). Without it the step
+    runs the tests WITHOUT the [long] ones, in parallel.
+
 .PARAMETER Preset
     CMake preset to build/run (default 'debug' - this script's own
     long-standing default; pass 'relwithdebinfo' to smoke-test the
@@ -159,6 +165,7 @@
 param(
     [int]$QuitAfterFrames = 300,
     [switch]$SkipBuild,
+    [switch]$SkipTests,
     [string]$Preset = 'debug',
     [switch]$TerrainPreview,
     [switch]$TerrainStream,
@@ -245,11 +252,11 @@ if ($script:Failures.Count -eq 0) {
 # ---------------------------------------------------------------------------
 # rg_core unit tests via ctest.
 # ---------------------------------------------------------------------------
-if ($script:Failures.Count -eq 0) {
-    Write-Host "`n-- ctest --" -ForegroundColor Cyan
+if ($script:Failures.Count -eq 0 -and -not $SkipTests) {
+    Write-Host "`n-- ctest (without [long]) --" -ForegroundColor Cyan
     Push-Location $buildDir
     try {
-        & ctest --output-on-failure | Out-Host
+        & ctest --output-on-failure --parallel 8 -LE long | Out-Host
         $ctestExit = $LASTEXITCODE
     } finally {
         Pop-Location

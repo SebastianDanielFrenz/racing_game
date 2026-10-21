@@ -48,7 +48,7 @@ rg::DynoResult finished(rg::GarageDyno& dyno) {
     return result;
 }
 }
-TEST_CASE("garage dyno: actual WOT output, power units, newest setup wins", "[garage_dyno]") {
+TEST_CASE("garage dyno: actual WOT output, power units, newest setup wins", "[garage_dyno][long]") {
     rg::GarageDyno dyno;
     dyno.request(request("stock"));
     const auto stock=finished(dyno);
@@ -109,18 +109,20 @@ TEST_CASE("garage dyno: actual WOT output, power units, newest setup wins", "[ga
     CHECK(dyno.result().revision==na.revision);
 }
 
-TEST_CASE("Garage turbo choices load generated maps and settle at both timesteps", "[turbo_runtime]") {
+// Every size x layout x target x rpm is ~130 s ([long]); the regular-run test below settles one choice at one point.
+static void check_turbo_choices_settle(const std::vector<std::string>& sizes,const std::vector<std::string>& layouts,
+                                       const std::vector<double>& targets,const std::vector<double>& rpms) {
     auto r=request("turbo_runtime");
     ps::jobs::JobSystem workers(4);
     ps::io::EngineMapOptions maps;maps.pool=&workers;maps.cache_dir=r.context.engine_map_cache_dir;
     auto original=std::get<ps::drivetrain::SimulatedEngineDesc>(ps::io::load_engine_json(
         std::string(RG_SOURCE_DIR)+"/data/engines/hyper_v8_one1_audio.json",maps));
-    for(const std::string size:{"compact","standard","large","100mm","120mm"}) for(const std::string layout:{"single","twin"}) {
+    for(const std::string& size:sizes) for(const std::string& layout:layouts) {
         if(layout=="twin" && (size=="100mm" || size=="120mm"))continue;
         auto config=ps::io::load_turbo_configuration_json(std::string(RG_SOURCE_DIR)+"/data/turbo_configurations/hyper_"+layout+"_"+size+".json");
         REQUIRE(config.maps->stages);
         CHECK(config.maps->stages->solver=="meanline-4");
-        for(double target:{1.8,4.3,30.0}) for(double rpm:{4000.0,7500.0}) {
+        for(double target:targets) for(double rpm:rpms) {
             double reference=0;
             for(int hz:{960,1920}) {
                 auto desc=original;desc.turbo_pair=config;desc.turbo_pair->target_boost_pa=target*1e5;
@@ -142,6 +144,14 @@ TEST_CASE("Garage turbo choices load generated maps and settle at both timesteps
             }
         }
     }
+}
+
+TEST_CASE("Garage turbo choices: the standard single loads generated maps and settles at both timesteps", "[turbo_runtime]") {
+    check_turbo_choices_settle({"standard"},{"single"},{1.8},{7500.0});
+}
+
+TEST_CASE("Garage turbo choices load generated maps and settle at both timesteps", "[turbo_runtime][long]") {
+    check_turbo_choices_settle({"compact","standard","large","100mm","120mm"},{"single","twin"},{1.8,4.3,30.0},{4000.0,7500.0});
 }
 
 TEST_CASE("diagnose hyper boost target against actual pressure and losses", "[.boost_diagnostic]") {

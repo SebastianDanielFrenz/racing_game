@@ -184,7 +184,7 @@ Pull wot_pull(Rig& r, double seconds) {
 }
 } // namespace
 
-TEST_CASE("hybrid + dual-clutch box: D shifts through the gears by itself", "[hybrid_shift][powertrain_swap]") {
+TEST_CASE("hybrid + dual-clutch box: D shifts through the gears by itself", "[hybrid_shift][powertrain_swap][long]") {
     Fx f;
     Rig r(f, "car_hyper_n2o", "hyper_7dct", "t_hs_dct");
     const Pull p = wot_pull(r, 9.0);
@@ -209,7 +209,7 @@ TEST_CASE("hybrid + manual ManualTcu box: D shifts 1 -> 2 -> 3 on the schedule",
     CHECK(p.max_gear >= 3);
 }
 
-TEST_CASE("hybrid + dual-clutch box: Y enters manual mode, up/up/down change gears, Y returns to D", "[hybrid_shift][driver_actions]") {
+TEST_CASE("hybrid + dual-clutch box: Y enters manual mode, up/up/down change gears, Y returns to D", "[hybrid_shift][driver_actions][long]") {
     Fx f;
     Rig r(f, "car_hyper_n2o", "hyper_7dct", "t_hs_manual");
     r.ses->set_control("assist.drive_mode", 2); // Sport: the combustion engine is coupled
