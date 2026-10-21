@@ -709,8 +709,8 @@ TEST_CASE("ev motors: a hypercar unit lands in the hybrid's traction motor and i
     CHECK(red->at("ratio").get<double>() * final_drive == Approx(u->reduction_ratio));
     CHECK(red->at("efficiency").get<double>() == Approx(u->reduction_efficiency));
     CHECK(component_of(stock.vehicle, "conversion_reduction")->at("ratio").get<double>() == Approx(2.2));
-    // the full-pedal rating the supervisor asks the engine against grows with the added motor power (else the engine would switch off)
-    CHECK(component_of(b.vehicle, "conversion_control")->at("requested_power_w").get<double>() == Approx(300000.0 + (u->max_power_w - 200000.0)));
+    // the swap authors no full-pedal rating: physics derives it (electric available + engine peak), so the unit adds none
+    CHECK_FALSE(component_of(b.vehicle, "conversion_control")->contains("requested_power_w"));
     // the part-mass tree follows the motor
     auto motors_kg = [](const rg::PartTree& tree) {
         double sum = 0;

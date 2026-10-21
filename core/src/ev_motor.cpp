@@ -662,6 +662,7 @@ std::string apply_ev_hybrid_unit_json(json& vehicle, const EvMotorUnit& unit, st
     // The hybrid supervisor asks the combustion engine for the part of the full-pedal request (requested_power_w, an authored
     // rating) the motors cannot supply. A stronger motor would reach the old rating and switch the engine off at full pedal, so
     // the rating grows with the motor power the unit adds (the car's own headroom for the engine stays).
+    // Without an authored rating (the shipped swap) physics derives the request and nothing needs raising.
     if (added_power_w > 0.0) {
         json& comps = vehicle["powertrain"]["components"];
         for (std::size_t i = 0; i < comps.size(); ++i) {
