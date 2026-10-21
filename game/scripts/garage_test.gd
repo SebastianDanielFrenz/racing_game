@@ -327,6 +327,26 @@ func _run() -> void:
 	_check(_installed_option_value("gearbox_install") == "straight_cut_6sq", "the swapped gearbox is the working value")
 	_press("part:gearbox_install:stock")
 	_check(not garage.is_dirty(), "stock gearbox restores the clean configuration")
+	# ---- a dual-clutch box has no clutch component: the Clutch tile edits the gearbox's own clutches ----
+	_check(ui._garage_option("clutch_capacity") != {} and ui._garage_option("shift_clutch_capacity").is_empty(), "manual 7-speed: Clutch option offered, gearbox clutches not")
+	if ui.get_button("part:gearbox_install:hyper_7dct") != null:
+		_press("part:gearbox_install:hyper_7dct")
+		_check(ui._garage_option("clutch_capacity").is_empty() and not ui._garage_option("shift_clutch_capacity").is_empty(), "dual-clutch box: only the gearbox clutches option is offered")
+		await _back_to_root()
+		_press("tile:Drivetrain")
+		var clutch_tile: BaseButton = ui.get_button("tile:Clutch")
+		_check(clutch_tile != null and not clutch_tile.disabled, "dual-clutch box: the Clutch tile is enabled")
+		_press("tile:Clutch")
+		var shift_opt: Dictionary = ui._garage_option("shift_clutch_capacity")
+		var stock_cap: float = float(shift_opt["stock_numbers"][0])
+		_check(ui.get_button("clutch:4.0") != null and ui.get_button("clutch:8.0") == null, "gearbox clutches page uses the option's x1-4 range")
+		_press("clutch:2.5")
+		_check(is_equal_approx(float(ui._garage_option("shift_clutch_capacity")["value"]), 2.5), "gearbox clutches set to x2.5")
+		_check(garage.is_dirty() and bool(garage.get_validation()["ok"]), "x2.5 gearbox clutches validate")
+		var done: Dictionary = garage.set_option("shift_clutch_capacity", 2.5)
+		_check(bool(done["accepted"]) and is_equal_approx(float(ui._garage_option("shift_clutch_capacity")["stock_numbers"][0]), stock_cap), "the shift clutch capacity edit is accepted (stock %.0f Nm x2.5 = %.0f Nm)" % [stock_cap, stock_cap * 2.5])
+	else:
+		_check(false, "the hyper_7dct gearbox card is listed for the hypercar")
 	_press("reset_all")
 	# ---- a valid change through the real control ----
 	_press("garage:tuning")

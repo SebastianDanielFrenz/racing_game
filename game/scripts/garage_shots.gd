@@ -96,6 +96,21 @@ func _run() -> void:
 	while main.get_shell_ui().garage.get_dyno().get("busy",false) and Time.get_ticks_msec() < dyno_deadline:
 		await _frames(1)
 	await _seconds(0.25)
+	if OS.get_cmdline_user_args().has("--clutch-shots-only"):
+		# A dual-clutch gearbox swapped in: the Drivetrain tiles (Clutch enabled) and the "Gearbox clutches" page at x2.5.
+		var cui: CanvasLayer = main.get_shell_ui()
+		cui.garage.set_option("gearbox_install", "hyper_7dct")
+		cui._draw_garage_options()
+		_press("tile:Drivetrain")
+		await _seconds(0.5)
+		await _shot("drivetrain_tiles_dct")
+		_press("tile:Clutch")
+		await _seconds(0.5)
+		_press("clutch:2.5")
+		await _seconds(0.5)
+		await _shot("gearbox_clutches_page")
+		get_tree().quit()
+		return
 	if OS.get_cmdline_user_args().has("--advice-shots-only"):
 		await _advice_shots()
 		get_tree().quit()
