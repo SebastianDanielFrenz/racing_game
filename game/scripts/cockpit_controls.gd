@@ -642,8 +642,7 @@ func _unhandled_input(event: InputEvent) -> void:
 		return
 	if not mb.pressed or not _in_car(camera):
 		return
-	var at := preload("res://scripts/ui_scale.gd").canvas_to_viewport_pixels(get_viewport(), mb.position) # canvas -> pixels
-	var hit := pick(camera.project_ray_origin(at), camera.project_ray_normal(at))
+	var hit := pick(camera.project_ray_origin(mb.position), camera.project_ray_normal(mb.position)) # same space, no UI-scale conversion
 	if hit == "":
 		return
 	var handled := false

@@ -12,7 +12,6 @@ extends Node
 # toggles the capture, as for the other cockpits), no menu is open, no UI control is under the pointer and the camera sits
 # within the layout's mouse.max_eye_distance_m of the driver eye.
 const DriverState := preload("res://scripts/driver_state.gd")
-const UiScale := preload("res://scripts/ui_scale.gd")
 const BUTTON_PRIMARY := 0
 const BUTTON_SECONDARY := 1
 const HOVER_COLOUR := Color(1.0, 0.85, 0.3, 0.35)
@@ -23,7 +22,7 @@ var vehicle_name := ""
 var driving_live := false     # set by main.gd every frame: the car is driven live (not paused, not unattended)
 var world_input_active := true # set by main.gd every frame (input_map.is_world_input_active)
 var wheel_angle_override := NAN # tests: steering wheel angle (rad) instead of the vehicle visual's
-var pointer_override := Vector2(-1, -1) # tests: viewport PIXEL position used instead of the real mouse (x < 0 = real mouse)
+var pointer_override := Vector2(-1, -1) # tests: viewport position (as Camera3D.unproject_position gives it) instead of the real mouse (x < 0 = real mouse)
 var hit: RgCockpit
 var _model: Node3D
 var _parts: Dictionary = {}
@@ -128,12 +127,12 @@ func _allowed(camera: Camera3D) -> bool:
 		return false
 	return true
 
-# `at` in the camera's viewport pixels (UiScale.canvas_to_viewport_pixels for a real mouse position).
+# `at` as InputEvent.position / Viewport.get_mouse_position report it. Under the UI scale (content_scale_factor 1.5)
+# that is the same space Camera3D.unproject_position / project_ray_* use - measured with the real cursor on a drawn
+# button, get_mouse_position() == unproject_position(button). Do not scale it: x1.5 put every pick off the drawn
+# button by the factor (2026-10-21).
 func _mouse_ray(camera: Camera3D, at: Vector2) -> Array:
 	return world_ray_to_model(camera.project_ray_origin(at), camera.project_ray_normal(at))
-
-func _pointer_pixels(at_canvas: Vector2) -> Vector2:
-	return UiScale.canvas_to_viewport_pixels(get_viewport(), at_canvas)
 
 # ---- input -------------------------------------------------------------------------------------------------------
 
@@ -150,7 +149,7 @@ func _unhandled_input(event: InputEvent) -> void:
 	var camera := get_viewport().get_camera_3d()
 	if not _allowed(camera):
 		return
-	var ray := _mouse_ray(camera, _pointer_pixels(event.position))
+	var ray := _mouse_ray(camera, event.position)
 	if hit.pointer_down(ray[0], ray[1], button) >= 0:
 		_down[button] = true
 		get_viewport().set_input_as_handled()
@@ -179,90 +178,9 @@ func release_button(button: int = BUTTON_PRIMARY) -> void:
 
 # ---- per frame ---------------------------------------------------------------------------------------------------
 
-# ---- diagnostics (RG_COCKPIT_PROBE=1) ------------------------------------------------------------------------------
-var _probe_t := 0.0
-var _probe_i := 0
-
-# Why a click would not count right now ("" = it would). Mirrors _allowed().
-func block_reason(camera: Camera3D, at: Vector2) -> String:
-	if not _ready_for_use: return "not ready"
-	if not driving_live: return "driving_live false"
-	if not world_input_active: return "world input inactive"
-	if camera == null: return "no camera"
-	if Input.mouse_mode == Input.MOUSE_MODE_CAPTURED: return "mouse captured"
-	if _menu_open(): return "menu open"
-	if _eye == null: return "no driver eye"
-	var d := camera.global_position.distance_to(_eye.global_position)
-	if d > _max_eye_m: return "camera %.2f m from the eye" % d
-	var under := controls_under(at)
-	if not under.is_empty(): return "UI under pointer: " + ", ".join(under)
-	return ""
-
-# Every visible Control with a mouse filter that is not IGNORE whose rect holds `at` (what would eat a click there).
-func controls_under(at: Vector2) -> Array:
-	var out: Array = []
-	_collect_controls(get_tree().root, at, out)
-	return out
-
-func _collect_controls(node: Node, at: Vector2, out: Array) -> void:
-	if node is CanvasItem and not (node as CanvasItem).is_visible_in_tree():
-		return
-	if node is Control:
-		var c := node as Control
-		if c.mouse_filter != Control.MOUSE_FILTER_IGNORE and c.get_global_rect().has_point(at):
-			out.append("%s(%s,%s)" % [c.get_path(), c.get_class(), "STOP" if c.mouse_filter == Control.MOUSE_FILTER_STOP else "PASS"])
-	for child in node.get_children():
-		_collect_controls(child, at, out)
-
-var _probe_at := Vector2.ZERO
-var _probe_id := ""
-var _probe_armed := false
-
-# Every 2 s: aim at the next control and free the cursor (what the middle click does); 0.3 s later click it through
-# Godot's input pipeline (GUI first, then _unhandled_input) and log what happened.
-func _probe(delta: float) -> void:
-	_probe_t += delta
-	var main_node := get_tree().current_scene
-	if main_node != null and main_node.get("_drive_view") != null:
-		main_node.set("_drive_view", "cockpit")
-	var camera := get_viewport().get_camera_3d()
-	if _probe_armed and _probe_t >= 0.3:
-		_probe_armed = false
-		# parse_input_event takes WINDOW pixels (an OS click) and hands _unhandled_input canvas units, like a real click.
-		var reason := block_reason(camera, _probe_at / get_tree().root.content_scale_factor)
-		var ev := InputEventMouseButton.new()
-		ev.button_index = MOUSE_BUTTON_LEFT
-		ev.pressed = true
-		ev.position = _probe_at
-		ev.global_position = _probe_at
-		Input.parse_input_event(ev)
-		Input.flush_buffered_events()
-		var reached := bool(_down.get(BUTTON_PRIMARY, false))
-		var up := ev.duplicate() as InputEventMouseButton
-		up.pressed = false
-		Input.parse_input_event(up)
-		Input.flush_buffered_events()
-		print("COCKPIT_PROBE %s at %s block='%s' click_reached_core=%s hover=%s capture=%d" % [_probe_id, _probe_at, reason, reached, hovered_id(), Input.mouse_mode])
-		return
-	if _probe_t < 2.0 or camera == null or _info.is_empty():
-		return
-	_probe_t = 0.0
-	var info: Dictionary = _info[_probe_i % _info.size()]
-	_probe_i += 1
-	var part: Node3D = _parts.get(info["id"])
-	if part == null:
-		return
-	_probe_id = str(info["id"])
-	_probe_at = camera.unproject_position(part.global_position)
-	pointer_override = _probe_at
-	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
-	_probe_armed = true
-
 func _process(delta: float) -> void:
 	if not _ready_for_use:
 		return
-	if OS.get_environment("RG_COCKPIT_PROBE") == "1":
-		_probe(delta)
 	var camera := get_viewport().get_camera_3d()
 	var allowed := _allowed(camera)
 	hit.set_enabled(allowed)
@@ -271,7 +189,7 @@ func _process(delta: float) -> void:
 			_down[button] = false
 	hit.set_wheel_angle(_wheel_angle())
 	if allowed:
-		var ray := _mouse_ray(camera, _pointer_pixels(get_viewport().get_mouse_position()) if pointer_override.x < 0.0 else pointer_override)
+		var ray := _mouse_ray(camera, get_viewport().get_mouse_position() if pointer_override.x < 0.0 else pointer_override)
 		hit.pointer_move(ray[0], ray[1])
 	var snapshot: Dictionary = {}
 	var channels: Dictionary = {}
