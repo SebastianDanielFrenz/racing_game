@@ -576,6 +576,18 @@ std::optional<WorldConfig> load_world_config(const std::string& path, std::strin
                 return std::nullopt;
             }
         }
+        for (const char* field : {"lookahead_s", "lookahead_cap_m"}) {
+            double* value = std::string(field) == "lookahead_s" ? &cfg.physics.lookahead_s : &cfg.physics.lookahead_cap_m;
+            if (physics.contains(field)) {
+                if (!get_number(physics, field, path, "\"physics\"", value, err)) return std::nullopt;
+                if (!(*value >= 0.0) || *value > 120.0 * (std::string(field) == "lookahead_s" ? 1.0 : 100.0)) {
+                    fail(err, path, std::string("\"physics.") + field + "\" must be in [0, " +
+                                        (std::string(field) == "lookahead_s" ? "120" : "12000") + "] (got " +
+                                        std::to_string(*value) + ")");
+                    return std::nullopt;
+                }
+            }
+        }
         if (physics.contains("spawn_clearance_m")) {
             if (!get_number(physics, "spawn_clearance_m", path, "\"physics\"", &cfg.physics.spawn_clearance_m,
                             err)) {
@@ -595,6 +607,16 @@ std::optional<WorldConfig> load_world_config(const std::string& path, std::strin
             if (cfg.physics.startup_timeout_s <= 0.0) {
                 fail(err, path, "\"physics.startup_timeout_s\" must be > 0 (got " +
                                     std::to_string(cfg.physics.startup_timeout_s) + ")");
+                return std::nullopt;
+            }
+        }
+        if (physics.contains("startup_max_s")) {
+            if (!get_number(physics, "startup_max_s", path, "\"physics\"", &cfg.physics.startup_max_s, err)) {
+                return std::nullopt;
+            }
+            if (cfg.physics.startup_max_s < 0.0) {
+                fail(err, path, "\"physics.startup_max_s\" must be >= 0 (got " +
+                                    std::to_string(cfg.physics.startup_max_s) + ")");
                 return std::nullopt;
             }
         }

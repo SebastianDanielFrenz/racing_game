@@ -83,6 +83,11 @@ var _garage_performance: VBoxContainer
 var _garage_dyno: Control
 var _garage_dyno_status: Label
 var _dyno_poll := 0.0
+# The left specification pane follows the working setup: marked stale by every edit, redrawn at most every 0.1 s, and polled
+# every 0.25 s while the core still computes its power/torque off this thread.
+var _spec_dirty := true
+var _spec_pending := false
+var _spec_poll := 0.0
 # Limit advisor (setup check): simulation-derived notes for the pending setup; the core decides everything.
 var _advice_box: VBoxContainer
 var _advice_status: Label
@@ -203,6 +208,10 @@ func status_text() -> String:
 
 func _process(delta: float) -> void:
 	_fit_garage_panels()
+	_spec_poll -= delta
+	if screen == "configurator" and _garage_performance != null and is_instance_valid(_garage_performance) and (_spec_dirty or _spec_pending) and _spec_poll <= 0.0:
+		_spec_poll = 0.25 if _spec_pending and not _spec_dirty else 0.1
+		_refresh_performance()
 	_dyno_poll -= delta
 	if screen == "configurator" and is_instance_valid(_garage_dyno) and _dyno_poll <= 0.0:
 		_dyno_poll = 0.15
@@ -685,6 +694,7 @@ func _build_configurator() -> void:
 	column.add_child(footer)
 	_button(footer,"reset_all","Reset all",func():
 		garage.reset_all()
+		_spec_dirty = true
 		_draw_garage_options()
 		garage_option_changed.emit("")
 		_refresh_status(),0)
@@ -799,10 +809,25 @@ func _set_garage_mode(mode: String) -> void:
 func _refresh_performance() -> void:
 	if _garage_performance == null:
 		return
+	_spec_dirty = false
 	for child in _garage_performance.get_children():
 		_garage_performance.remove_child(child)
 		child.queue_free()
-	var stats: Dictionary = garage.get_vehicle(garage_vehicle).get("stats", {})
+	# The car as configured NOW (unsaved edits included), from the core: RgGarage.get_working_spec.
+	var spec: Dictionary = garage.get_working_spec() if garage.has_method("get_working_spec") else {}
+	_spec_pending = bool(spec.get("pending", false))
+	_garage_performance.add_child(_label("Current configuration",19,HORIZONTAL_ALIGNMENT_LEFT))
+	if not bool(spec.get("ok", false)):
+		_garage_performance.add_child(_label("Specification unavailable",14,HORIZONTAL_ALIGNMENT_LEFT,true))
+		spec = {"ok": false}
+	if bool(spec.get("ok", false)):
+		var power := "%s kW" % _spec_number(float(spec["power_kw"])) if spec.has("power_kw") else ("…" if _spec_pending else "–")
+		var torque := "%s Nm" % _spec_number(float(spec["torque_nm"])) if spec.has("torque_nm") else ("…" if _spec_pending else "–")
+		var gears := int(spec.get("gear_count",0))
+		var drive := str(spec.get("layout",""))
+		for text in ["Mass  %s kg" % _spec_number(float(spec.get("mass_kg",0))),"Power  %s" % power,"Torque  %s" % torque,"%s · %d gears" % [drive,gears] if gears > 0 else drive]:
+			_garage_performance.add_child(_label(text,16,HORIZONTAL_ALIGNMENT_LEFT))
+	_garage_performance.add_child(HSeparator.new())
 	_garage_performance.add_child(_label("Acceleration",20,HORIZONTAL_ALIGNMENT_LEFT))
 	# No made-up times: measured results will be supplied by the performance model.
 	var note := _label("No measured acceleration runs for this setup yet.",14,HORIZONTAL_ALIGNMENT_LEFT,true)
@@ -812,11 +837,10 @@ func _refresh_performance() -> void:
 		_garage_performance.add_child(_label(heading,17,HORIZONTAL_ALIGNMENT_LEFT))
 		_garage_performance.add_child(_label("Not measured",14,HORIZONTAL_ALIGNMENT_LEFT,true))
 	_garage_performance.add_child(HSeparator.new())
-	_garage_performance.add_child(_label("Stock vehicle specification",19,HORIZONTAL_ALIGNMENT_LEFT))
-	for text in ["Mass  %.0f kg" % float(stats.get("mass_kg",0)),"Power  %.1f kW" % float(stats.get("peak_power_kw",0)),"Torque  %.0f Nm" % float(stats.get("peak_torque_nm",0)),"%s · %d gears" % [str(stats.get("layout","")),int(stats.get("gear_count",0))]]:
-		_garage_performance.add_child(_label(text,16,HORIZONTAL_ALIGNMENT_LEFT))
-	if bool(stats.get("figures_declared",false)):
-		_garage_performance.add_child(_label("Declared engine figures",13,HORIZONTAL_ALIGNMENT_LEFT,true))
+
+# The pane's numbers go through the core's one formatter (magnitude decides the decimals).
+func _spec_number(value: float) -> String:
+	return garage.format_number(value, 3) if garage.has_method("format_number") else "%.0f" % value
 
 func _draw_garage_options() -> void:
 	if _option_box == null:
@@ -996,7 +1020,7 @@ func _focus_tuning() -> void:
 			return
 
 # Navigation owns focus; installed markers remain separate from the moving cursor.
-func _draw_tiles(names: Array, unavailable: Array = []) -> void:
+func _draw_tiles(names: Array, unavailable: Array = [], reasons: Dictionary = {}) -> void:
 	var grid := GridContainer.new()
 	grid.columns = 2
 	grid.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -1036,6 +1060,14 @@ func _enter_garage_tile(name: String) -> void:
 	garage_area_chosen.emit(_active_area)
 	_draw_garage_options()
 
+# Why a Swaps tile is greyed out: the first reason core gives for any of the options behind it.
+func _swap_reason(ids: Array) -> String:
+	for id in ids:
+		for opt in garage.get_options():
+			if str(opt["id"]) == id and not bool(opt["available"]) and not str(opt.get("unavailable_reason", "")).is_empty():
+				return str(opt["unavailable_reason"])
+	return "Not available for this car"
+
 func _garage_option(id: String) -> Dictionary:
 	for opt in garage.get_options():
 		if str(opt["id"]) == id and bool(opt["available"]):
@@ -1068,7 +1100,7 @@ func _draw_turbo_kit(kit: Dictionary) -> void:
 		if not _part_visible(part) and not installed: continue
 		var presentation: Dictionary = part.duplicate()
 		presentation["size"] = str(part.get("detail", ""))
-		var card := _make_component_card(presentation,"INSTALLED" if installed else "Install")
+		var card := _make_component_card(_with_badge(presentation,"turbo_kit",{"turbo_kit":str(part["id"])}),"INSTALLED" if installed else "Install")
 		_grey_if_unfit(card, part)
 		grid.add_child(card)
 		_buttons["part:turbo_kit:" + str(part["id"])] = card
@@ -1085,7 +1117,7 @@ func _draw_turbo_kit(kit: Dictionary) -> void:
 			var fitted := str(part["id"]) == str(piping["value"])
 			var shown: Dictionary = part.duplicate()
 			shown["size"] = str(part.get("detail", ""))
-			var pcard := _make_component_card(shown,"INSTALLED" if fitted else "Install")
+			var pcard := _make_component_card(_with_badge(shown,"charge_piping",{"charge_piping":str(part["id"])}),"INSTALLED" if fitted else "Install")
 			pgrid.add_child(pcard)
 			_buttons["part:charge_piping:" + str(part["id"])] = pcard
 			pcard.pressed.connect(func(): _edit_option("charge_piping",str(part["id"])); _draw_garage_options())
@@ -1167,7 +1199,7 @@ func _draw_grade_rows(ids: Array, note_text: String) -> void:
 			if not _part_visible(part) and not fitted: continue
 			var shown: Dictionary = part.duplicate()
 			shown["size"] = str(part.get("detail", ""))
-			var card := _make_component_card(shown,"INSTALLED" if fitted else "Install")
+			var card := _make_component_card(_with_badge(shown,str(id),{str(id):str(part["id"])}),"INSTALLED" if fitted else "Install")
 			_grey_if_unfit(card, part)
 			grid.add_child(card)
 			_buttons["part:" + id + ":" + str(part["id"])] = card
@@ -1215,6 +1247,56 @@ func _draw_show_all_toggle() -> void:
 	_option_box.add_child(check)
 	_buttons["show_all_upgrades"] = check
 
+func _draw_powertrain_swaps() -> void:
+	var opt := _garage_option("powertrain_install")
+	if opt.is_empty():
+		return
+	if _garage_path.size() == 2:
+		_draw_tiles(["Internal combustion", "EV", "Hybrid"])
+		return
+	var category: String = _garage_path[2]
+	if category == "Internal combustion" and _garage_path.size() == 3:
+		_draw_tiles(["Gasoline", "Diesel", "Hydrogen"])
+		return
+	var parts: Array = opt["parts"]
+	var option_id := "powertrain_install"
+	var value: String = str(opt["value"])
+	if category == "Internal combustion":
+		# Probe the ICE conversion's engine list even when the installed car is electric.
+		var engine_parts: Array = garage.get_powertrain_engine_choices()
+		parts = engine_parts
+		option_id = "engine_install"
+		value = str(_garage_option("engine_install").get("value", "")) if str(opt["value"]) == "ice" else ""
+	var grid := GridContainer.new()
+	grid.columns = 2
+	_option_box.add_child(grid)
+	for part in parts:
+		var section: String = str(part.get("section", ""))
+		if category == "Internal combustion":
+			if section != _garage_path[3]:
+				continue
+		elif section != category:
+			continue
+		var installed := str(part["id"]) == value
+		if not _part_visible(part) and not installed:
+			continue
+		var swap_edits: Dictionary = {option_id: str(part["id"])}
+		if category == "Internal combustion":
+			swap_edits = {"powertrain_install": "ice", option_id: str(part["id"])}
+		var card := _make_component_card(_with_badge(part, option_id, swap_edits), "INSTALLED" if installed else "Install")
+		_grey_if_unfit(card, part)
+		grid.add_child(card)
+		_buttons["part:" + option_id + ":" + str(part["id"])] = card
+		card.pressed.connect(func():
+			if category == "Internal combustion":
+				_edit_option("powertrain_install", "ice")
+			_edit_option(option_id, str(part["id"]))
+			_draw_garage_options())
+		if installed or _garage_preferred == null:
+			_garage_preferred = card
+	_draw_swap_summary()
+	_focus_garage.call_deferred()
+
 func _draw_upgrades() -> void:
 	_option_box.add_child(_label(" / ".join(_garage_path) if not _garage_path.is_empty() else "Upgrade categories",20,HORIZONTAL_ALIGNMENT_LEFT))
 	_draw_show_all_toggle()
@@ -1230,6 +1312,9 @@ func _draw_upgrades() -> void:
 		else:
 			_draw_wheel_parts()
 		return
+	if top == "Swaps" and _garage_path.size() >= 2 and _garage_path[1] == "Powertrain":
+		_draw_powertrain_swaps()
+		return
 	if top in ["Engine", "Swaps"]:
 		if _garage_path.size() == 1:
 			var disabled: Array = ["Camshaft"]
@@ -1238,7 +1323,7 @@ func _draw_upgrades() -> void:
 			if top == "Swaps":
 				var no_fuel: bool = _garage_option("fuel").is_empty()
 				var no_drivetrain: bool = _garage_option("drive_layout").is_empty() and _garage_option("diff_front").is_empty() and _garage_option("diff_rear").is_empty()
-				_draw_tiles(["Engine", "Fuel", "Forced induction", "Drivetrain"], [] + (["Engine"] if disabled.has("Engine") else []) + (["Fuel"] if no_fuel else []) + (["Forced induction"] if disabled.has("Turbo") else []) + (["Drivetrain"] if no_drivetrain else []))
+				_draw_tiles(["Powertrain", "Engine", "Fuel", "Forced induction", "Drivetrain"], [] + (["Engine"] if disabled.has("Engine") else []) + (["Fuel"] if no_fuel else []) + (["Forced induction"] if disabled.has("Turbo") else []) + (["Drivetrain"] if no_drivetrain else []),{"Engine":_swap_reason(["engine_install"]),"Fuel":_swap_reason(["fuel"]),"Forced induction":_swap_reason(["turbo_install","turbo_install_n2o","turbo_kit"]),"Drivetrain":_swap_reason(["drive_layout","diff_front","diff_rear"])})
 			else:
 				_draw_tiles(["Turbo", "N2O", "Internals", "Cooling", "Camshaft"],disabled + (["N2O"] if _garage_option("nitrous_install_hyper").is_empty() and _garage_option("nitrous_install_sedan").is_empty() else []) + ([] if _internals_offered() else ["Internals"]) + ([] if _cooling_offered() else ["Cooling"]))
 			return
@@ -1280,7 +1365,7 @@ func _draw_upgrades() -> void:
 				if str(part["id"]).contains("single") != single: continue
 			var installed := str(part["id"]) == str(opt["value"])
 			if not _part_visible(part) and not installed: continue
-			var card := _make_component_card(part,"INSTALLED" if installed else "Install")
+			var card := _make_component_card(_with_badge(part,str(opt["id"]),{str(opt["id"]):str(part["id"])}),"INSTALLED" if installed else "Install")
 			_grey_if_unfit(card, part)
 			grid.add_child(card)
 			_buttons["part:" + str(opt["id"]) + ":" + str(part["id"])] = card
@@ -1356,9 +1441,6 @@ func _draw_weight_reduction() -> void:
 		var total := float(info["total_kg"])
 		var delta := total - float(info.get("stock_kg", total))
 		_option_box.add_child(_label("Total %.0f kg%s" % [total, ("  (%+.0f kg vs stock)" % delta) if absf(delta) >= 0.5 else ""], 16, HORIZONTAL_ALIGNMENT_LEFT))
-	var note := _label("Removed parts leave the car where its model has a separate part for them.", 13, HORIZONTAL_ALIGNMENT_LEFT, true)
-	note.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	_option_box.add_child(note)
 	for opt in _weight_reduction_options():
 		_option_box.add_child(_label(str(opt["label"]), 17, HORIZONTAL_ALIGNMENT_LEFT))
 		var grid := GridContainer.new()
@@ -1367,9 +1449,8 @@ func _draw_weight_reduction() -> void:
 		_option_box.add_child(grid)
 		for part in opt["parts"]:
 			var installed := str(part["id"]) == str(opt["value"])
-			var card := _make_component_card(part, "INSTALLED" if installed else "Install")
-			card.custom_minimum_size = Vector2(0, 110)
-			card.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+			var presentation: Dictionary = _with_badge(part, str(opt["id"]), {str(opt["id"]): str(part["id"])})
+			var card := _make_component_card(presentation, "INSTALLED" if installed else "Install")
 			grid.add_child(card)
 			var opt_id := str(opt["id"])
 			var part_id := str(part["id"])
@@ -1445,7 +1526,7 @@ func _draw_gearbox_choices(opt: Dictionary) -> void:
 			var installed := str(part["id"]) == str(opt["value"])
 			var presentation: Dictionary = part.duplicate()
 			presentation["size"] = (str(part.get("subtitle", "")) + "\n" + str(part.get("size", ""))).strip_edges()
-			var card := _make_component_card(presentation,"INSTALLED" if installed else "Install")
+			var card := _make_component_card(_with_badge(presentation,str(opt["id"]),{str(opt["id"]):str(part["id"])}),"INSTALLED" if installed else "Install")
 			grid.add_child(card)
 			_buttons["part:" + str(opt["id"]) + ":" + str(part["id"])] = card
 			card.pressed.connect(func(): _edit_option(str(opt["id"]),str(part["id"])); _draw_garage_options())
@@ -1493,7 +1574,7 @@ func _draw_part_grid(opt: Dictionary, parts: Array) -> void:
 		var installed := str(part["id"]) == str(opt["value"])
 		var presentation: Dictionary = part.duplicate()
 		presentation["size"] = (str(part.get("subtitle", "")) + "\n" + str(part.get("detail", ""))).strip_edges()
-		var card := _make_component_card(presentation,"INSTALLED" if installed else "Install")
+		var card := _make_component_card(_with_badge(presentation,str(opt["id"]),{str(opt["id"]):str(part["id"])}),"INSTALLED" if installed else "Install")
 		grid.add_child(card)
 		_buttons["part:" + str(opt["id"]) + ":" + str(part["id"])] = card
 		card.pressed.connect(func(): _edit_option(str(opt["id"]),str(part["id"])); _draw_garage_options())
@@ -1517,7 +1598,7 @@ func _draw_induction_swaps(opt: Dictionary) -> void:
 		var presentation := target.duplicate()
 		presentation["label"] = type_name
 		presentation["size"] = "Naturally aspirated" if type_name == "NA" else "Select hardware in Engine upgrades"
-		var card := _make_component_card(presentation,"INSTALLED" if installed else "Install")
+		var card := _make_component_card(presentation if target.is_empty() else _with_badge(presentation,str(opt["id"]),{str(opt["id"]):str(target["id"])}),"INSTALLED" if installed else "Install")
 		card.disabled = target.is_empty()
 		grid.add_child(card)
 		_buttons["induction:" + type_name] = card
@@ -1587,7 +1668,7 @@ func _draw_wheel_parts() -> void:
 		else:
 			presentation["label"] = "%d mm" % int(key)
 			if options.size() == 2: presentation["size"] = "Both axles · preserves compounds"
-		var card := _make_component_card(presentation,"INSTALLED" if installed else "Install")
+		var card := _make_component_card(_with_badge(presentation,str(options[0]["id"]),installs),"INSTALLED" if installed else "Install")
 		grid.add_child(card)
 		_buttons["tyre:" + str(key)] = card
 		card.pressed.connect(func():
@@ -1597,40 +1678,135 @@ func _draw_wheel_parts() -> void:
 		if installed or _garage_preferred == null: _garage_preferred = card
 	_focus_garage.call_deferred()
 
+# One part tile (owner 2026-10-18): the picture, the part's name and an INSTALLED mark, all INSIDE the tile. The tile has a
+# fixed height and the name lives in a band at its bottom, clipped, so no text can leave the tile or reach the next row.
+# A highlighted tile (focus or hover) shows its numeric upgrade HINTS (rg/upgrade_hints.h, through RgGarage.get_hints) at its
+# bottom middle: the change of the whole car against the car as configured now; red when worse, green when better. The action
+# text ("Install") is gone.
+const TILE_HEIGHT := 150.0
+const TILE_NAME_BAND := 40.0
+const BADGE_WORSE := Color(0.78, 0.16, 0.16, 0.85)
+const BADGE_BETTER := Color(0.16, 0.6, 0.25, 0.85)
+const BADGE_PENDING := Color(0.35, 0.35, 0.38, 0.85)
+
 func _make_component_card(presentation: Dictionary, action: String) -> Button:
 	var card := Button.new()
-	card.custom_minimum_size = Vector2(0,240)
+	card.custom_minimum_size = Vector2(0, TILE_HEIGHT)
+	card.clip_contents = true
+	card.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	var focus_style := StyleBoxFlat.new()
 	focus_style.bg_color = Color(0,0,0,0)
 	focus_style.border_color = Color(1.0,0.55,0.2)
 	focus_style.set_border_width_all(3)
 	focus_style.set_corner_radius_all(4)
 	card.add_theme_stylebox_override("focus",focus_style)
-	var content := VBoxContainer.new()
-	content.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	content.offset_left = 6
-	content.offset_right = -6
-	content.offset_top = 8
-	content.offset_bottom = -8
-	content.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	card.add_child(content)
 	var picture := TextureRect.new()
 	picture.texture = _component_texture(str(presentation.get("image", "")))
 	picture.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 	picture.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
-	picture.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	picture.custom_minimum_size.y = 110
+	picture.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	picture.offset_left = 6
+	picture.offset_right = -6
+	picture.offset_top = 6
+	picture.offset_bottom = -TILE_NAME_BAND
 	picture.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	content.add_child(picture)
-	for text in [str(presentation.get("label", "Tyre")), str(presentation.get("size", "")), ("Rated %d km/h" % int(presentation["rated_speed_kmh"])) if presentation.has("rated_speed_kmh") else "", action]:
-		if text.is_empty():
-			continue
-		var caption := _label(text, 12, HORIZONTAL_ALIGNMENT_CENTER)
-		caption.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-		caption.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		content.add_child(caption)
-	card.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	card.add_child(picture)
+	var name_label := _label(str(presentation.get("label", "Tyre")), 12, HORIZONTAL_ALIGNMENT_CENTER)
+	name_label.name = "Name"
+	name_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	name_label.clip_text = true
+	name_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	name_label.set_anchors_and_offsets_preset(Control.PRESET_BOTTOM_WIDE)
+	name_label.offset_top = -TILE_NAME_BAND
+	name_label.offset_bottom = -2
+	card.add_child(name_label)
+	if action == "INSTALLED":
+		var mark := _label("INSTALLED", 10)
+		mark.name = "Installed"
+		mark.autowrap_mode = TextServer.AUTOWRAP_OFF
+		mark.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		mark.add_theme_stylebox_override("normal", _chip_style(Color(0,0,0,0.6)))
+		mark.set_anchors_and_offsets_preset(Control.PRESET_TOP_LEFT)
+		mark.offset_left = 4
+		mark.offset_top = 4
+		card.add_child(mark)
+	var opt_id := str(presentation.get("badge_option", ""))
+	var badge_edits: Dictionary = presentation.get("badge_edits", {})
+	if not opt_id.is_empty() and not badge_edits.is_empty():
+		card.set_meta("badge_option", opt_id)
+		card.set_meta("badge_edits", badge_edits)
+		# A flow row: up to three chips wrap to a second line on a narrow tile instead of leaving it; the first line is the bottom one.
+		var row := HFlowContainer.new()
+		row.name = "Badges"
+		row.alignment = FlowContainer.ALIGNMENT_CENTER
+		row.last_wrap_alignment = FlowContainer.LAST_WRAP_ALIGNMENT_CENTER
+		row.reverse_fill = true
+		row.add_theme_constant_override("h_separation", 3)
+		row.add_theme_constant_override("v_separation", 2)
+		row.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		row.visible = false
+		row.set_anchors_and_offsets_preset(Control.PRESET_BOTTOM_WIDE)
+		row.offset_left = 2
+		row.offset_right = -2
+		row.offset_top = -TILE_NAME_BAND - 68
+		row.offset_bottom = -TILE_NAME_BAND - 2
+		card.add_child(row)
+		var show_badges := func():
+			_fill_badges(row, opt_id, badge_edits)
+			row.visible = true
+		var hide_badges := func(): row.visible = false
+		card.focus_entered.connect(show_badges)
+		card.mouse_entered.connect(show_badges)
+		card.focus_exited.connect(hide_badges)
+		card.mouse_exited.connect(hide_badges)
 	return card
+
+func _chip_style(color: Color, margin_x := 4, margin_y := 4) -> StyleBoxFlat:
+	var style := StyleBoxFlat.new()
+	style.bg_color = color
+	style.set_corner_radius_all(4)
+	style.content_margin_left = margin_x
+	style.content_margin_right = margin_x
+	style.content_margin_top = margin_y
+	style.content_margin_bottom = margin_y
+	return style
+
+# A tile's presentation with its upgrade hints (owner 2026-10-19): `option_id` names the hint category (an option id, else its
+# group, data/garage/upgrade_badges.json), `edits` is what a click on the tile sets, in order ({option_id: value}).
+func _with_badge(presentation: Dictionary, option_id: String, edits: Dictionary) -> Dictionary:
+	var shown: Dictionary = presentation.duplicate()
+	shown["badge_option"] = option_id
+	shown["badge_edits"] = edits
+	return shown
+
+# The seconds between two asks for a hint figure that is still being computed (the core computes it off this thread).
+const HINT_POLL_S := 0.25
+
+# The hints of one tile: the change of the whole car when the tile's edits are made now (core RgGarage.get_hints), the core
+# decides what, how many and the text. A figure still being computed shows as a grey "..." chip and the tile asks again.
+func _fill_badges(row: Container, option_id: String, edits: Dictionary) -> void:
+	for child in row.get_children():
+		row.remove_child(child)
+		child.free()
+	if garage == null or not garage.has_method("get_hints"):
+		return
+	var hints: Dictionary = garage.get_hints(option_id, edits)
+	for badge in hints.get("badges", []):
+		var label := _label(str(badge["text"]), 11)
+		label.autowrap_mode = TextServer.AUTOWRAP_OFF
+		label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		var chip := BADGE_PENDING if bool(badge.get("pending", false)) else (BADGE_WORSE if bool(badge["worse"]) else BADGE_BETTER)
+		label.add_theme_stylebox_override("normal", _chip_style(chip, 3, 1))
+		row.add_child(label)
+	if bool(hints.get("pending", false)) and is_inside_tree():
+		var token := int(row.get_meta("hint_poll", 0)) + 1
+		row.set_meta("hint_poll", token)
+		# A weak reference: a redrawn page frees the row, and a freed lambda capture is an engine error.
+		var weak_row: WeakRef = weakref(row)
+		get_tree().create_timer(HINT_POLL_S).timeout.connect(func():
+			var live = weak_row.get_ref()
+			if live != null and live.visible and int(live.get_meta("hint_poll", 0)) == token:
+				_fill_badges(live, option_id, edits))
 
 func _part_name(opt: Dictionary) -> String:
 	for part in opt.get("parts", []):
@@ -1686,6 +1862,12 @@ func _component_texture(path: String) -> Texture2D:
 		if path.ends_with(".svg"):
 			_component_textures[path] = load(path) as Texture2D
 			return _component_textures[path]
+		# Prefer the imported resource (works in an export); the raw read is only the fallback before the first import.
+		if ResourceLoader.exists(path):
+			var imported := load(path) as Texture2D
+			if imported != null:
+				_component_textures[path] = imported
+				return imported
 		# Read the PNG directly so the first launch does not depend on editor imports.
 		var source := Image.load_from_file(path)
 		_component_textures[path] = ImageTexture.create_from_image(source) if source != null else null
@@ -2012,6 +2194,7 @@ func _edit_option(option_id: String, value: Variant) -> Dictionary:
 	if result.has("value"):
 		_sync_row(option_id, result["value"])
 	garage_option_changed.emit(option_id)
+	_spec_dirty = true
 	_refresh_status()
 	return result
 

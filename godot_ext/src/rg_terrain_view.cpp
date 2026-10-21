@@ -35,9 +35,20 @@ namespace {
 
 std::string to_std_string(const String& s) { return std::string(s.utf8().get_data()); }
 
+// Streamer options. initial_build_threads: the cold initial build is IO/derive bound (every chunk blocks on
+// gather_window), so it is not capped at 8 like the geo2map default; RG_VIEW_INITIAL_THREADS overrides for A/B runs.
+rg::TerrainViewStreamer::Options view_streamer_options() {
+    rg::TerrainViewStreamer::Options o{};
+    const char* env = std::getenv("RG_VIEW_INITIAL_THREADS");
+    const long v = env != nullptr ? std::strtol(env, nullptr, 10) : 0;
+    if (v > 0) o.initial_build_threads = static_cast<unsigned>(v);
+    return o;
+}
+
 } // namespace
 
 RgTerrainView::~RgTerrainView() {
+    join_preview();
     reset_packing(); // pack_job_ is declared before chunks_, which its worker reads
     cancel_heal_rebuild();
     streamer_.reset(); // cancel + join the worker before anything else goes
@@ -63,7 +74,16 @@ void RgTerrainView::reset_chunks() {
     diff_errors_ = 0;
 }
 
+void RgTerrainView::join_preview() {
+    // build_initial cannot be cancelled: wait for it (it reads terrain_ and owns streamer_'s build).
+    if (preview_future_.valid()) preview_future_.wait();
+    preview_future_ = std::future<void>();
+    preview_chunks_.clear();
+    preview_state_ = PreviewState::Idle;
+}
+
 void RgTerrainView::teardown_terrain() {
+    join_preview();
     cancel_heal_rebuild();
     if (heal_future_.valid()) heal_future_.wait(); // the re-carve thread reads terrain_
     streamer_.reset(); // before terrain_: its TerrainViewSource points into it
@@ -127,6 +147,8 @@ bool RgTerrainView::load_preview(float spawn_x, float spawn_y) {
         return false;
     }
 
+    join_preview();
+
     cancel_heal_rebuild();
     streamer_.reset();
     reset_chunks();
@@ -137,7 +159,7 @@ bool RgTerrainView::load_preview(float spawn_x, float spawn_y) {
     // (TerrainViewStreamer::build_initial == build_static_view for the same
     // point, same chunk order), so update_focus() can stream from here on.
     streamer_ = std::make_unique<rg::TerrainViewStreamer>(terrain_->view_source(),
-                                                          rg::TerrainViewStreamer::Options{});
+                                                          view_streamer_options());
     const auto start = std::chrono::steady_clock::now();
     streamer_->build_initial(static_cast<double>(spawn_x), static_cast<double>(spawn_y), chunks_);
     const auto end = std::chrono::steady_clock::now();
@@ -154,13 +176,77 @@ bool RgTerrainView::load_preview(float spawn_x, float spawn_y) {
     return true;
 }
 
+bool RgTerrainView::begin_preview(float spawn_x, float spawn_y) {
+    if (terrain_ == nullptr) {
+        last_error_ = String("RgTerrainView::begin_preview: initialize() was not called successfully first");
+        return false;
+    }
+    join_preview();
+    cancel_heal_rebuild();
+    streamer_.reset();
+    reset_chunks();
+    total_upload_time_ms_ = 0.0;
+
+    apply_view_lod_to_terrain();
+    preview_progress_ = std::make_shared<rg::ViewBuildProgress>();
+    rg::TerrainViewSource source = terrain_->view_source();
+    rg::announce_view_build_total(source, static_cast<double>(spawn_x), static_cast<double>(spawn_y), *preview_progress_);
+    rg::attach_view_build_progress(source, preview_progress_);
+    streamer_ = std::make_unique<rg::TerrainViewStreamer>(std::move(source), view_streamer_options());
+    preview_started_ = std::chrono::steady_clock::now();
+    preview_state_ = PreviewState::Building;
+    rg::TerrainViewStreamer* streamer = streamer_.get();
+    const double x = static_cast<double>(spawn_x), y = static_cast<double>(spawn_y);
+    preview_future_ = std::async(std::launch::async, [this, streamer, x, y]() {
+        streamer->build_initial(x, y, preview_chunks_);
+    });
+    last_error_ = String();
+    return true;
+}
+
+godot::Dictionary RgTerrainView::poll_preview() {
+    godot::Dictionary d;
+    if (preview_state_ == PreviewState::Building && preview_future_.valid() &&
+        preview_future_.wait_for(std::chrono::seconds(0)) == std::future_status::ready) {
+        try {
+            preview_future_.get();
+            last_build_time_ms_ =
+                std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - preview_started_).count();
+            chunks_ = std::move(preview_chunks_);
+            preview_chunks_.clear();
+            for (std::size_t i = 0; i < chunks_.size(); ++i) index_of_[chunks_[i].key] = i;
+            bulk_loading_ = true;
+            start_packing(0);
+            mesh_rids_.reserve(chunks_.size());
+            instance_rids_.reserve(chunks_.size());
+            preview_state_ = PreviewState::Ready;
+        } catch (const std::exception& e) {
+            last_error_ = String(e.what());
+            preview_state_ = PreviewState::Failed;
+        }
+        preview_future_ = std::future<void>();
+    }
+    const char* name = "idle";
+    switch (preview_state_) {
+        case PreviewState::Building: name = "building"; break;
+        case PreviewState::Ready: name = "ready"; break;
+        case PreviewState::Failed: name = "error"; break;
+        case PreviewState::Idle: break;
+    }
+    d["state"] = String(name);
+    d["done"] = preview_progress_ ? static_cast<int64_t>(preview_progress_->done.load(std::memory_order_relaxed)) : 0;
+    d["total"] = preview_progress_ ? static_cast<int64_t>(preview_progress_->total.load(std::memory_order_relaxed)) : 0;
+    d["message"] = last_error_;
+    return d;
+}
+
 bool RgTerrainView::load_synthetic_preview(double spawn_x, double spawn_y, double max_distance_m) {
     teardown_terrain();
     total_upload_time_ms_ = 0.0;
     synthetic_ = std::make_unique<rg::SyntheticTerrain>(464000.0, 5559000.0);
     g2m::mesh::LodParams params;
     if (max_distance_m > 0.0) params.max_distance_m = max_distance_m;
-    streamer_ = std::make_unique<rg::TerrainViewStreamer>(synthetic_->view_source(params), rg::TerrainViewStreamer::Options{});
+    streamer_ = std::make_unique<rg::TerrainViewStreamer>(synthetic_->view_source(params), view_streamer_options());
     const auto start = std::chrono::steady_clock::now();
     streamer_->build_initial(spawn_x, spawn_y, chunks_);
     last_build_time_ms_ = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start).count();
@@ -245,7 +331,7 @@ void RgTerrainView::set_upload_budget_ms(double budget_ms) { upload_budget_ms_ =
 void RgTerrainView::update_focus(double session_x, double session_y) {
     focus_vx_ = 0.0;
     focus_vy_ = 0.0;
-    if (streamer_ != nullptr) {
+    if (streamer_ != nullptr && preview_state_ != PreviewState::Building) {
         streamer_->update_focus(session_x, session_y);
     }
 }
@@ -254,7 +340,7 @@ void RgTerrainView::update_focus_moving(double session_x, double session_y, doub
                                         double ref_y) {
     focus_vx_ = vx;
     focus_vy_ = vy;
-    if (streamer_ != nullptr) {
+    if (streamer_ != nullptr && preview_state_ != PreviewState::Building) {
         streamer_->update_focus(session_x, session_y, vx, vy, ref_x, ref_y);
     }
 }
@@ -761,7 +847,7 @@ void RgTerrainView::apply_diff(std::chrono::steady_clock::time_point frame_start
     // 1. Take a ready diff (only one in progress at a time - the streamer
     //    itself never has more than one). Its adds join the upload queue.
     // A new diff is taken only while the pack worker is idle: appending its adds may move chunks_, which the worker reads.
-    if (!diff_in_progress_ && streamer_ != nullptr && pack_idle()) {
+    if (!diff_in_progress_ && streamer_ != nullptr && preview_state_ != PreviewState::Building && pack_idle()) {
         rg::TerrainViewDiff diff;
         if (streamer_->poll(diff)) {
             diff_in_progress_ = true;
@@ -894,6 +980,8 @@ void RgTerrainView::_bind_methods() {
     godot::ClassDB::bind_method(D_METHOD("get_spawn_x"), &RgTerrainView::get_spawn_x);
     godot::ClassDB::bind_method(D_METHOD("get_spawn_y"), &RgTerrainView::get_spawn_y);
     godot::ClassDB::bind_method(D_METHOD("load_preview", "spawn_x", "spawn_y"), &RgTerrainView::load_preview);
+    godot::ClassDB::bind_method(D_METHOD("begin_preview", "spawn_x", "spawn_y"), &RgTerrainView::begin_preview);
+    godot::ClassDB::bind_method(D_METHOD("poll_preview"), &RgTerrainView::poll_preview);
     godot::ClassDB::bind_method(D_METHOD("set_render_origin", "session_origin"), &RgTerrainView::set_render_origin);
     godot::ClassDB::bind_method(D_METHOD("set_material", "material_rid"), &RgTerrainView::set_material);
     godot::ClassDB::bind_method(D_METHOD("get_last_error"), &RgTerrainView::get_last_error);

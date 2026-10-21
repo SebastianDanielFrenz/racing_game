@@ -360,11 +360,17 @@ PartTree build_part_tree(const PartMassTable& table, const PartTreeInput& in) {
         if (type == "engine") {
             continue; // the engine node above (the installed engine's catalogue figure)
         }
-        if(type=="battery"||type=="electric_motor") {
+        if(type=="battery"||type=="electric_motor"||type=="fuel_cell") {
             PartNode part=group(unique_id("drivetrain."+cid),type=="battery"?"Traction battery":"Electric motor");
             part.key=type;
             if(!detail::get_number(c,"mass_kg",part.own_kg)||part.own_kg<0){tree.error="electric components require a nonnegative mass_kg";return tree;}
             part.source="[AS] electric component mass_kg";
+            if(type=="fuel_cell") {
+                part.label="Hydrogen fuel cell and tank";
+                PartNode contents=group(part.id+".contents","Hydrogen");
+                detail::get_number(c,"initial_hydrogen_kg",contents.own_kg);contents.carried_by_physics=contents_live;
+                contents.source="fuel-cell initial hydrogen fill";part.children.push_back(std::move(contents));
+            }
             drivetrain.children.push_back(std::move(part));
         } else if (type == "clutch") {
             drivetrain.children.push_back(b.leaf(unique_id("drivetrain.clutch"), "clutch"));

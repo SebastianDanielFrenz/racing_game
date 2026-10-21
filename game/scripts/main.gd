@@ -85,6 +85,9 @@ var fetch_delay_ms: int = 0
 # Non-empty: overrides the driving input group (channel -> value), used by the
 # scripted smoke and screenshot tour instead of an autopilot.
 var scripted_controls: Dictionary = {}
+# FPV drone counterpart (hs_drive_test.gd --hs-fly): [move_right, move_up, move_forward, yaw, pitch]; while non-empty it
+# replaces the input map in fpv_drone mode (without it _forward_flying overwrites a test script's input every frame).
+var scripted_fpv_input: Array = []
 # On-foot counterpart of scripted_controls (drive_smoke.gd): while non-empty
 # {move_right, move_forward, look (Godot-frame Vector3), run} replaces the
 # player's walking input.
@@ -114,6 +117,9 @@ var _roads: Node3D
 var _buildings: Node3D
 var _world_view: Node # RgTerrainView shared with the real-world Session
 var _load_started_ms: int = 0
+var _stage_name := ""            # the loading stage being timed (_note_stage)
+var _stage_started_ms: int = 0
+var _view_build_started := false   # RgTerrainView.begin_preview was called for this load
 var _last_report_ms: int = 0
 const FRAME_SPIKE_S := 0.05
 const FrameProbe := preload("res://scripts/frame_probe.gd")
@@ -145,8 +151,13 @@ var _ab_saved_bg := -1
 var _spawn_reported: bool = false
 var _drive_diag_history: Array[Dictionary] = []
 var _drive_diag_last_sample_s: float = -1.0e9
+# Post-trigger recording of owner marks: RgMarkTail (rg_core) does the window timing, these hold the payloads by id.
+var _mark_tail := RgMarkTail.new()
+var _pending_marks: Dictionary = {}
 const DRIVE_DIAG_HISTORY_S := 5.2
 const DRIVE_DIAG_SAMPLE_PERIOD_S := 0.1
+# Seconds recorded after an owner mark (same sample rate): data/world/drive_marks.json, validated in rg_core.
+var OWNER_MARK_POST_WINDOW_S: float = RgMarkTail.load_window_s(ProjectSettings.globalize_path("res://../data/world/drive_marks.json"))
 
 # --- shell (R5) ---
 var _shell: Node # RgShell: flow, settings, credits, spawn presets
@@ -539,12 +550,18 @@ func _build_scene(user_args: PackedStringArray) -> void:
 
 	# --- simulation node ---
 	_simulation = ClassDB.instantiate("RgSimulation")
+	var dashboard_config = JSON.parse_string(FileAccess.get_file_as_string(ProjectSettings.globalize_path("res://../data/controls/dashboard.json")))
+	if dashboard_config is Dictionary:
+		_simulation.configure_dashboard(dashboard_config)
 	_simulation.name = "Simulation"
 	var rolling_config = JSON.parse_string(FileAccess.get_file_as_string(_world_config_path()))
 	if rolling_config is Dictionary:
 		_simulation.set_rolling_resistance_model(str(rolling_config.get("physics", {}).get("rolling_resistance_model", "quadratic")))
 	_simulation.set_aero_map_selection_path(ProjectSettings.globalize_path("res://../data/aero/hypercar_map.json"))
-	var fpv_err: String = _simulation.set_fpv_drone_config(ProjectSettings.globalize_path("res://../data/controls/fpv_drone.json"))
+	var fpv_config_path := OS.get_environment("RG_FPV_CONFIG") # test knob (hs_drive_test.gd --hs-fly: a faster drone)
+	if fpv_config_path == "":
+		fpv_config_path = ProjectSettings.globalize_path("res://../data/controls/fpv_drone.json")
+	var fpv_err: String = _simulation.set_fpv_drone_config(fpv_config_path)
 	if fpv_err != "":
 		push_warning("fpv drone config: " + fpv_err + " (built-in defaults)")
 	add_child(_simulation)
@@ -874,6 +891,7 @@ func _load_world(kind: String, keep_spawn_override: bool = false) -> void:
 	ready_sim_time = -1.0
 	_spawn_reported = false
 	_load_started_ms = Time.get_ticks_msec()
+	_reset_stage_log()
 	_hud.reset_tick_window()
 	_visuals.show_ground = kind == "flat"
 	var sel: Dictionary = _prepare_vehicle()
@@ -946,11 +964,30 @@ func _apply_start_controls() -> void:
 	_simulation.set_control("assist.auto_blip", 1.0 if bool(_drive_selection.get("assist_auto_blip", true)) else 0.0)
 	_simulation.set_control("assist.auto_shift", 1.0 if _input_map.get_auto_shift() else 0.0)
 
+# One "RG_WORLD stage" line per loading-stage change: the stage that ended (with its duration) and the one that
+# starts (with the time since the load began), so a player's log shows where a slow load spent its time.
+func _note_stage(stage: String) -> void:
+	if stage == "" or stage == _stage_name:
+		return
+	var now := Time.get_ticks_msec()
+	if _stage_name != "":
+		print("RG_WORLD stage %s end ms=%d" % [_stage_name, now - _stage_started_ms])
+	_stage_name = stage
+	_stage_started_ms = now
+	if stage != "done_all":
+		print("RG_WORLD stage %s start t_ms=%d" % [stage, now - _load_started_ms])
+
+func _reset_stage_log() -> void:
+	_stage_name = ""
+	_stage_started_ms = Time.get_ticks_msec()
+	_view_build_started = false
+
 func _poll_loading() -> void:
 	var st: Dictionary = _simulation.get_init_status()
 	st["engine_title"] = str(_drive_selection.get("engine_title", ""))
 	st["swap_lines"] = _drive_selection.get("swap_lines", PackedStringArray())
 	var elapsed := (Time.get_ticks_msec() - _load_started_ms) / 1000.0
+	_note_stage(str(st.get("stage", "")) if str(st.get("state", "")) != "error" else "")
 	match str(st.get("state", "")):
 		"loading":
 			_overlay.show_loading(WORLD_LABEL[world_kind], st, elapsed, _loading_footer(), str(_world_request.get("label", "")))
@@ -1087,16 +1124,38 @@ func _print_surface_census() -> void:
 func _attach_world_view() -> void:
 	if int(_simulation.get_step_count()) <= 0:
 		return
-	if not _world_view.initialize_shared(_simulation):
-		_load_failed("RgTerrainView.initialize_shared: %s" % _world_view.get_last_error())
-		return
-	_world_view.set_material(_terrain_material.get_rid())
-	_world_view.set_render_origin(_simulation.get_render_origin_session())
-	SurfaceMaterials.set_render_origin(_simulation.get_render_origin_session())
+	if not _view_build_started:
+		if not _world_view.initialize_shared(_simulation):
+			_load_failed("RgTerrainView.initialize_shared: %s" % _world_view.get_last_error())
+			return
+		_world_view.set_material(_terrain_material.get_rid())
+		_world_view.set_render_origin(_simulation.get_render_origin_session())
+		SurfaceMaterials.set_render_origin(_simulation.get_render_origin_session())
+		var start_pos := chassis_session_position()
+		# The first chunk build derives every coarse LOD tile (minutes on a cold store): on a worker, as its own
+		# loading stage with a chunk counter, so this thread keeps drawing the loading screen.
+		if not _world_view.begin_preview(start_pos.x, start_pos.y):
+			_load_failed("RgTerrainView.begin_preview: %s" % _world_view.get_last_error())
+			return
+		_view_build_started = true
+	var pv: Dictionary = _world_view.poll_preview()
+	_note_stage("terrain_view")
+	var elapsed := (Time.get_ticks_msec() - _load_started_ms) / 1000.0
+	var st: Dictionary = _simulation.get_init_status()
+	st["stage"] = "terrain_view"
+	st["view_done"] = int(pv.get("done", 0))
+	st["view_total"] = int(pv.get("total", 0))
+	st["engine_title"] = str(_drive_selection.get("engine_title", ""))
+	match str(pv.get("state", "")):
+		"building":
+			_overlay.show_loading(WORLD_LABEL[world_kind], st, elapsed, _loading_footer(), str(_world_request.get("label", "")))
+			return
+		"error":
+			_load_failed("RgTerrainView.begin_preview: %s" % str(pv.get("message", "")))
+			return
+	_note_stage("done_all")
+	print("RG_WORLD stage done total_ms=%d view_chunks=%d" % [Time.get_ticks_msec() - _load_started_ms, int(pv.get("total", 0))])
 	var chassis := chassis_session_position()
-	if not _world_view.load_preview(chassis.x, chassis.y):
-		_load_failed("RgTerrainView.load_preview: %s" % _world_view.get_last_error())
-		return
 	_director.set_terrain_view(_world_view)
 	var world_data: Dictionary = JSON.parse_string(FileAccess.get_file_as_string(_world_config_path()))
 	var road_settings: Dictionary = world_data.get("road_visuals", {})
@@ -1238,6 +1297,7 @@ func _notification(what: int) -> void:
 		if _quitting:
 			return
 		_quitting = true
+		_flush_owner_marks()
 		if world_kind == "real_world" and world_state == "running":
 			_save_drive_location()
 		if _shell != null:
@@ -1351,6 +1411,9 @@ func _forward_walking(live: bool) -> void:
 func _forward_flying(live: bool) -> void:
 	if not bool(_simulation.is_running()):
 		return
+	if scripted_fpv_input.size() == 5:
+		_simulation.set_fpv_input(float(scripted_fpv_input[0]), float(scripted_fpv_input[1]), float(scripted_fpv_input[2]), float(scripted_fpv_input[3]), float(scripted_fpv_input[4]))
+		return
 	if not live or _panel_open():
 		_simulation.set_fpv_input(0.0, 0.0, 0.0, 0.0, 0.0)
 		return
@@ -1366,18 +1429,26 @@ func _forward_driving(live: bool, delta: float) -> void:
 		cabin_cockpit.set("driver_actions", _input_map.driver_actions) # cockpit switches submit through the shared instance
 	var up: int = _input_map.consume_shift_up_count()
 	var down: int = _input_map.consume_shift_down_count()
+	# Mounted common cockpit (car_hyper, cockpit_mouse.gd): clicks count only while the car is driven live.
+	var cockpit_mouse: Node = _visuals.get_cockpit_mouse() if _visuals != null and _visuals.has_method("get_cockpit_mouse") else null
+	if cockpit_mouse != null:
+		cockpit_mouse.set("world_input_active", _input_map.is_world_input_active())
+		cockpit_mouse.set("driving_live", live and bool(_simulation.is_running()) and scripted_controls.is_empty())
 	if not live or not bool(_simulation.is_running()):
+		if cockpit_mouse != null: cockpit_mouse.discard_pending()
 		_input_map.advance_cabin(_simulation,{},delta,false,VEHICLE_NAME)
 		_steering.reset()
 		return
 	if get_tree().get_nodes_in_group("seat_adjustment_open").size() > 0 or get_tree().get_nodes_in_group("address_teleport_open").size() > 0:
 		_input_map.driver_actions.discard_pending()
+		if cockpit_mouse != null: cockpit_mouse.discard_pending()
 		_simulation.set_control("steer", 0.0)
 		_simulation.set_control("throttle", 0.0)
 		_simulation.set_control("brake", 1.0)
 		_input_map.advance_cabin(_simulation,{},delta,false,VEHICLE_NAME)
 		return
 	if not scripted_controls.is_empty():
+		if cockpit_mouse != null: cockpit_mouse.discard_pending()
 		_input_map.advance_cabin(_simulation,{},delta,false,VEHICLE_NAME)
 		for channel in scripted_controls:
 			_simulation.set_control(channel, float(scripted_controls[channel]))
@@ -1409,6 +1480,11 @@ func _forward_driving(live: bool, delta: float) -> void:
 	_simulation.set_control("starter", 1.0 if (_input_map.get_starter() or cockpit_starter) else 0.0)
 	if cockpit != null:
 		cockpit.submit_held()
+	if cockpit_mouse != null:
+		# Paddles are shift edges like the keys; every other control submits its DriverActions event (source CockpitMouse).
+		cockpit_mouse.flush_to(_input_map.driver_actions)
+		up += cockpit_mouse.consume_shift_up()
+		down += cockpit_mouse.consume_shift_down()
 	var pt: Dictionary = _simulation.get_vehicle_powertrain(VEHICLE_NAME)
 	pt["speed_mps"] = _simulation.get_body_speed_mps("chassis")
 	var channels: Dictionary = DriverState.channels(_simulation)
@@ -1428,7 +1504,8 @@ func _forward_driving(live: bool, delta: float) -> void:
 	# side (session.cpp's kControlChannelNames): add this frame's edges.
 	# Automatic and dual-clutch gearboxes (physics automatic_tcu): the shift keys step the selector P-R-N-D
 	# (rg::selector_shift decides); in D with manual mode on (Y) they change gears.
-	if (up > 0 or down > 0) and int(pt.get("transmission_kind",0)) != 0:
+	# Every hybrid has the same selector whatever its gearbox (the hybrid supervisor owns the gearbox, a manual box included).
+	if (up > 0 or down > 0) and (int(pt.get("transmission_kind",0)) != 0 or bool(pt.get("hybrid_fitted",false))):
 		var sel: Dictionary = RgDriverActions.selector_shift(pt,up,down)
 		if sel["change"]:
 			_simulation.set_control("gear_request",float(sel["gear_request"]))
@@ -1656,6 +1733,7 @@ func _process_body(delta: float) -> void:
 	for _i in range(_input_map.consume_log_marker()):
 		if in_drive and world_state == "running": _log_owner_mark()
 	if _input_map.consume_reset_car() > 0 and in_drive and world_state == "running":
+		_flush_owner_marks()
 		_simulation.reset_vehicle_to_spawn()
 	if _input_map.consume_flip_upright() > 0 and in_drive and world_state == "running" and _simulation.get_player_mode() == "drive":
 		_simulation.flip_vehicle_upright()
@@ -2070,6 +2148,7 @@ func _apply_transition(transition: Dictionary) -> void:
 				_set_paused(bool(action["flag"]))
 			"reset_car":
 				if world_state == "running":
+					_flush_owner_marks()
 					_simulation.reset_vehicle_to_spawn()
 			"repair_car":
 				_repair_car(str(action.get("vehicle", "")))
@@ -2146,6 +2225,7 @@ func _begin_world_load(world: Dictionary, respawn: bool = false) -> void:
 # Back to "no world": stops the sim thread, the terrain streaming and the audio
 # (RgSimulation.unload) after freeing the nodes that read them.
 func _unload_world() -> void:
+	_flush_owner_marks()
 	_release_world_nodes()
 	_simulation.unload()
 	_visuals.clear_vehicle()
@@ -2366,6 +2446,7 @@ func _log_owner_mark() -> void:
 		"nitrous_arm": _simulation.get_control("nitrous_arm")}
 	mark["aero"] = _simulation.get_aero_state()
 	mark["pretrigger_drive_samples"] = _drive_diag_history.duplicate(true)
+	mark["posttrigger_drive_samples"] = []
 	mark["npc_truck"] = _simulation.get_npc_truck_state()
 	var traffic: Dictionary = _simulation.get_traffic_state()
 	var actors: Array = traffic.get("actors", [])
@@ -2386,6 +2467,22 @@ func _log_owner_mark() -> void:
 			if not ll.is_empty():
 				mark["latlon"] = [ll["lat"], ll["lon"]]
 				copy_text = "%.6f, %.6f" % [ll["lat"], ll["lon"]] + "  " + copy_text
+	# The mark is written when its post-trigger window is full (or flushed early: car reset, session end).
+	var mark_id: int = _mark_tail.begin(_simulation.get_sim_time(), OWNER_MARK_POST_WINDOW_S)
+	_pending_marks[mark_id] = mark
+	DisplayServer.clipboard_set(copy_text)
+	print("RG_OWNER_MARK_COPY " + copy_text)
+	if _hud != null:
+		_hud.show_message("Marked (copied): " + copy_text, 6.0)
+
+func _write_owner_mark(finished: Dictionary) -> void:
+	var mark_id := int(finished["id"])
+	if not _pending_marks.has(mark_id):
+		return
+	var mark: Dictionary = _pending_marks[mark_id]
+	_pending_marks.erase(mark_id)
+	mark["posttrigger_window_s"] = float(finished["covered_s"])
+	mark["posttrigger_complete"] = bool(finished["complete"])
 	var encoded := JSON.stringify(mark)
 	print("RG_OWNER_MARK " + encoded)
 	var mark_path := "user://drive_marks.jsonl"
@@ -2394,10 +2491,11 @@ func _log_owner_mark() -> void:
 		file.seek_end()
 		file.store_line(encoded)
 		file.flush()
-	DisplayServer.clipboard_set(copy_text)
-	print("RG_OWNER_MARK_COPY " + copy_text)
-	if _hud != null:
-		_hud.show_message("Marked (copied): " + copy_text, 6.0)
+
+# Writes every mark still waiting for its post-trigger window, with the shorter window it got.
+func _flush_owner_marks() -> void:
+	for finished in _mark_tail.flush():
+		_write_owner_mark(finished)
 
 # Keep a small rolling window so an owner bookmark captures the loss-of-control
 # onset, not just the state after the car has already left the road. Sampling is
@@ -2405,6 +2503,7 @@ func _log_owner_mark() -> void:
 func _record_drive_diag_sample() -> void:
 	var sim_t: float = _simulation.get_sim_time()
 	if sim_t < _drive_diag_last_sample_s:
+		_flush_owner_marks()
 		_drive_diag_history.clear()
 		_drive_diag_last_sample_s = -1.0e9
 	if sim_t - _drive_diag_last_sample_s < DRIVE_DIAG_SAMPLE_PERIOD_S:
@@ -2420,7 +2519,7 @@ func _record_drive_diag_sample() -> void:
 			"fx_n": _simulation.get_wheel_fx(VEHICLE_NAME, wheel),
 			"fy_n": _simulation.get_wheel_fy(VEHICLE_NAME, wheel),
 			"surface": _simulation.get_wheel_surface_name(VEHICLE_NAME, wheel)})
-	_drive_diag_history.append({"sim_time_s": sim_t, "tick": _simulation.get_step_count(),
+	var sample := {"sim_time_s": sim_t, "tick": _simulation.get_step_count(),
 		"chassis": _simulation.get_chassis_session_pose(),
 		"speed_kmh": _simulation.get_body_speed_mps("chassis") * 3.6,
 		"controls": {"steer": _simulation.get_control("steer"), "throttle": _simulation.get_control("throttle"),
@@ -2428,6 +2527,11 @@ func _record_drive_diag_sample() -> void:
 			"traction_control": _simulation.get_control("assist.traction_control"),
 			"drive_mode": _simulation.get_control("assist.drive_mode"), "nitrous_arm": _simulation.get_control("nitrous_arm")},
 		"wheels": wheels, "powertrain": _simulation.get_vehicle_powertrain(VEHICLE_NAME),
-		"nitrous": _simulation.get_vehicle_nitrous(VEHICLE_NAME)})
+		"nitrous": _simulation.get_vehicle_nitrous(VEHICLE_NAME)}
+	_drive_diag_history.append(sample)
+	for open_id in _mark_tail.open_ids():
+		_pending_marks[int(open_id)]["posttrigger_drive_samples"].append(sample)
+	for finished in _mark_tail.advance(sim_t):
+		_write_owner_mark(finished)
 	while not _drive_diag_history.is_empty() and sim_t - float(_drive_diag_history[0].get("sim_time_s", sim_t)) > DRIVE_DIAG_HISTORY_S:
 		_drive_diag_history.pop_front()

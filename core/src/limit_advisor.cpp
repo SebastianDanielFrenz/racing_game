@@ -148,6 +148,7 @@ bool read_advice_text(const json& o, bool base, AdviceText& out, const std::stri
     if (!read_text(o, "suggestion", out.suggestion, false, where, origin, err)) return false;
     if (!read_text(o, "remedy", out.remedy, false, where, origin, err)) return false;
     if (!read_text(o, "remedy_failed", out.remedy_failed, false, where, origin, err)) return false;
+    detail::get_string(o, "option", out.option);
     std::string cap;
     if (detail::get_string(o, "max_severity", cap)) {
         bool ok = false;
@@ -669,6 +670,7 @@ AdviceText resolve_text(const AdviceKindConfig& k, const std::string& variant) {
     if (!v.suggestion.empty()) t.suggestion = v.suggestion;
     if (!v.remedy.empty()) t.remedy = v.remedy;
     if (!v.remedy_failed.empty()) t.remedy_failed = v.remedy_failed;
+    if (!v.option.empty()) t.option = v.option;
     if (v.max_severity) t.max_severity = v.max_severity;
     return t;
 }
@@ -745,6 +747,8 @@ std::vector<AdviceItem> build_advice(const AdviceInput& input, const AdvisorConf
         if (item.kind == pd::LimitKind::BoostBelowTarget && item.ranges.size() == 1 && std::isfinite(first_rpm)) {
             if (a <= first_rpm + kEps && b < last_rpm - kEps) item.variant = "spool";
             else if (a > first_rpm + kEps && b >= last_rpm - kEps) item.variant = "falloff";
+        } else if (item.kind == pd::LimitKind::ClutchCapacity && fs.front().part.field.rfind("/shift_clutch", 0) == 0) {
+            item.variant = "shift_clutch"; // the gearbox's own clutches (no manual clutch on this car)
         } else if (item.kind == pd::LimitKind::MapGridEdge && fs.front().part.field.find("p_im") == std::string::npos) {
             item.variant = "rpm";
         }
@@ -800,6 +804,7 @@ std::vector<AdviceItem> build_advice(const AdviceInput& input, const AdvisorConf
             }
         }
         const AdviceText text = resolve_text(kc, item.variant);
+        if (!text.option.empty()) item.option_id = text.option;
         if (closed != nullptr) {
             add_remedy_facts(facts, *closed, config);
             item.remedy_state = RemedyState::Closed;
@@ -1020,6 +1025,46 @@ void apply_solved_remedy(AdviceItem& item, const std::vector<pd::Remedy>& solved
 
 // ---- the physics part -------------------------------------------------------------------------------------------------
 
+std::vector<pd::LimitFinding> check_shift_clutch_limits(const std::vector<pd::DynoPoint>& points, const pd::PowertrainDesc& powertrain,
+                                                         const std::string& gearbox_file, const pd::LimitPolicy* policy) {
+    std::vector<pd::LimitFinding> out;
+    const pd::DynoPoint* peak = nullptr;
+    for (const pd::DynoPoint& p : points) {
+        if (std::isfinite(p.torque_nm) && (peak == nullptr || p.torque_nm > peak->torque_nm)) peak = &p;
+    }
+    if (peak == nullptr || !(peak->torque_nm > 0.0)) return out;
+    const pd::LimitPolicy& pol = pd::resolve_limit_policy(policy);
+    for (const pd::ComponentDesc& c : powertrain.components) {
+        const auto* gb = std::get_if<pd::GearboxDesc>(&c.params);
+        if (gb == nullptr || !(gb->shift_clutch.capacity_nm > 0.0)) continue;
+        const double capacity = gb->shift_clutch.capacity_nm;
+        const double static_capacity = capacity * gb->shift_clutch.static_factor;
+        pd::LimitSeverity s = pd::LimitSeverity::Near;
+        if (peak->torque_nm >= static_capacity) s = pd::LimitSeverity::Limiting;
+        else if (peak->torque_nm * pol.driveline_torque_margin >= static_capacity) s = pd::LimitSeverity::Near;
+        else continue;
+        pd::LimitFinding f;
+        f.kind = pd::LimitKind::ClutchCapacity;
+        f.severity = s;
+        f.rpm = peak->rpm;
+        f.value = peak->torque_nm;
+        f.limit = static_capacity;
+        f.unit = pd::LimitUnit::NewtonMetre;
+        f.part = pd::PartRef{"gearbox", gearbox_file, "/shift_clutch/capacity_nm"};
+        pd::Remedy r;
+        r.part = f.part;
+        r.current = capacity;
+        r.required_min = peak->torque_nm / gb->shift_clutch.static_factor;
+        r.required_margin = pol.driveline_torque_margin * peak->torque_nm / gb->shift_clutch.static_factor;
+        r.unit = pd::LimitUnit::NewtonMetre;
+        r.cost = pd::RemedyCost::Closed;
+        r.solved = true;
+        f.remedy = std::move(r);
+        out.push_back(std::move(f));
+    }
+    return out;
+}
+
 AdviceSweep run_advice_sweep(const ps::vehicle::VehicleDesc& desc, const AdvisorConfig& config, ps::jobs::JobSystem* pool,
                              const std::atomic<bool>* cancel, const std::string& clutch_file, const std::string& gearbox_file) {
     const pd::ComponentParams* engine = nullptr;
@@ -1069,6 +1114,9 @@ AdviceSweep run_advice_sweep(const ps::vehicle::VehicleDesc& desc, const Advisor
     for (pd::LimitFinding& f : pd::check_driveline_limits(dyno, desc.powertrain, clutch_file, gearbox_file, &config.policy)) {
         out.input.findings.push_back(std::move(f));
     }
+    for (pd::LimitFinding& f : check_shift_clutch_limits(dyno.points, desc.powertrain, gearbox_file, &config.policy)) {
+        out.input.findings.push_back(std::move(f));
+    }
     out.input.points = dyno.points;
     out.remedy_request = pd::RemedyRequest{*engine, nullptr, spec};
     out.sweep_seconds = std::chrono::duration<double>(std::chrono::steady_clock::now() - t0).count();
@@ -1077,9 +1125,7 @@ AdviceSweep run_advice_sweep(const ps::vehicle::VehicleDesc& desc, const Advisor
 
 // ---- the background advisor -------------------------------------------------------------------------------------------
 
-namespace {
-
-int background_workers() {
+int background_worker_count() {
     // Leave four logical processors for rendering, audio and other work (like GarageDyno); RG_ENGINE_MAP_WORKERS overrides.
     int workers = static_cast<int>(std::max(1u, std::thread::hardware_concurrency() > 4 ? std::thread::hardware_concurrency() - 4 : 1u));
     if (const char* value = std::getenv("RG_ENGINE_MAP_WORKERS")) {
@@ -1090,6 +1136,8 @@ int background_workers() {
     }
     return workers;
 }
+
+namespace {
 
 // The part file a powertrain component of the materialised vehicle file names ("clutch", "gearbox"): absolute, "" when the
 // component is inline, missing or the file cannot be read. Only fills PartRef::file of the findings.
@@ -1196,7 +1244,7 @@ void LimitAdvisor::run() {
 #endif
     ps::jobs::JobSystemOptions pool_options;
     pool_options.background_priority = true;
-    ps::jobs::JobSystem pool(background_workers(), pool_options);
+    ps::jobs::JobSystem pool(background_worker_count(), pool_options);
     std::optional<AdviceSweep> last_sweep; // the sweep behind result_.items (worker thread only)
     std::uint64_t last_revision = 0;
 

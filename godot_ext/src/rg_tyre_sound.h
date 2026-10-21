@@ -5,6 +5,7 @@
 #include "rg/tyre_sound.h"
 
 #include <godot_cpp/classes/ref_counted.hpp>
+#include <godot_cpp/variant/dictionary.hpp>
 #include <godot_cpp/variant/packed_byte_array.hpp>
 #include <godot_cpp/variant/packed_float32_array.hpp>
 #include <godot_cpp/variant/packed_vector2_array.hpp>
@@ -19,9 +20,16 @@ class RgTyreSound : public godot::RefCounted {
 
 public:
     // squeal_pcm: the 16-bit mono recording's data (AudioStreamWAV.data), may be empty.
-    void setup(int wheels, int base_seed, const godot::PackedByteArray& squeal_pcm);
+    // roll_pcm/roll_channels: the owner's rolling recording (16-bit interleaved), config_json: the TEXT of
+    // data/controls/tyre_sound.json (parsed by rg::parse_tyre_roll_config; on an error the defaults are used, the message is
+    // returned). Empty roll_pcm = procedural hiss everywhere. Returns "" on success.
+    godot::String setup(int wheels, int base_seed, const godot::PackedByteArray& squeal_pcm, const godot::PackedByteArray& roll_pcm,
+                        int roll_channels, const godot::String& config_json);
+    // `surface`: the wheel's surface NAME; sealed-ness and the level offset come from the config's "surfaces" table.
     void update_wheel(int wheel, double speed, double tread_speed, double slip_ratio, double slip_angle, double load_n,
-                      double fx, double fy, double wetness);
+                      double fx, double fy, double wetness, const godot::String& surface);
+    // Parameters the car-level layer used at the last render: gain, rate, hiss_hz, tone_hz, speed (m/s).
+    godot::Dictionary get_roll_state() const;
     // `frames` frames, interleaved wheels, scaled by gain.
     godot::PackedFloat32Array render(int frames, double gain);
     // Channel `channel` of interleaved `samples` as a stereo (L = R) buffer.

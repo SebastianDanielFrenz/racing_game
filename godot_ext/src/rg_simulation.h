@@ -13,6 +13,7 @@
 
 #pragma once
 
+#include "rg/dashboard_info.h"
 #include "rg/building_footprints.h"
 #include "rg/camera_math.h"
 #include "rg/player_mode.h"
@@ -343,6 +344,9 @@ public:
     [[nodiscard]] godot::Dictionary get_steering_kinematics() const;
     [[nodiscard]] godot::Variant get_camera_ground_height(godot::Vector3 position) const;
     [[nodiscard]] float get_body_speed_mps(const godot::String& body_name) const;
+    // Speed of the chassis relative to the AIR in m/s (the aero airspeed when the vehicle has an aero model - wind, gusts and
+    // slipstream included - else |chassis velocity - environment wind|). Cheap: the wind-noise layer reads it every frame.
+    [[nodiscard]] float get_airspeed_mps() const;
 
     // --- Named control channels (PLAN.md P2) ---
     void set_control(const godot::String& channel, double value);
@@ -390,6 +394,8 @@ public:
     [[nodiscard]] float get_wheel_steer_angle(const godot::String& vehicle_name, std::int64_t wheel_index) const; // rad, this wheel's own post-Ackermann angle
 
     [[nodiscard]] godot::Dictionary get_vehicle_gauge_info(const godot::String& vehicle_name) const;
+    // data/controls/dashboard.json (battery thresholds, inner motor scale); main.gd passes it once after instantiating.
+    void configure_dashboard(const godot::Dictionary& d);
     [[nodiscard]] godot::Dictionary get_vehicle_speed_limit(const godot::String& vehicle_name) const;
     [[nodiscard]] godot::Dictionary get_vehicle_powertrain(const godot::String& vehicle_name) const;
     // Nitrous kit state for the HUD; {present: false} for a car without a kit (see the .cpp).
@@ -417,6 +423,7 @@ private:
     godot::Ref<RgSky> weather_sky_;
     std::shared_ptr<const rg::SessionWeather> next_weather_; // written before an init worker starts, read by it
     rg::WeatherSync weather_sync_;
+    rg::DashboardConfig dashboard_config_;
     rg::WetLookFilter wet_look_;
     void prepare_weather();
     mutable std::optional<rg::FrameSnapshot> render_snapshot_;

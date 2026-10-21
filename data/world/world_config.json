@@ -31,6 +31,7 @@
     "rolling_resistance_model": "quadratic",
     "prefetch_margin_tiles": 1,
     "prefetch_max_tiles": 24,
+    "loader_workers": 16,
     "road_surfaces": {
       "enabled": true,
       "paved": "asphalt",

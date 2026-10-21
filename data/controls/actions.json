@@ -25,6 +25,8 @@
     {"id": "toggle_aero", "label": "Aero automation on / off", "group": "driving", "kind": "button", "mode": "edge", "help": "Cars whose assist unit has rear-wing automation (Racing assists) only", "modes": ["drive"]},
     {"id": "drive_mode", "label": "Drive mode (cycle)", "group": "driving", "kind": "button", "mode": "edge", "help": "Cycles through the modes the car offers (Eco, Normal, Sport); cars with a drive-modes part only", "modes": ["drive"]},
     {"id": "toggle_launch_control", "label": "Launch control on / off", "group": "driving", "kind": "button", "mode": "edge", "help": "Cars with launch control (assist unit or two-step) only; a drive-mode change also sets it", "modes": ["drive"]},
+    {"id": "toggle_abs", "label": "ABS on / off", "group": "driving", "kind": "button", "mode": "edge", "help": "Cars whose assist unit has anti-lock brakes only; the dash shows ABS or ABS OFF", "modes": ["drive"]},
+    {"id": "cycle_esc", "label": "Stability control mode (cycle)", "group": "driving", "kind": "button", "mode": "edge", "help": "Cars whose assist unit has stability control only: Off, On, Sport as the unit offers them", "modes": ["drive"]},
     {"id": "auto_shift", "label": "Automatic shifting on / off", "group": "driving", "kind": "button", "mode": "edge", "modes": ["drive"]},
     {"id": "toggle_nitrous", "label": "Nitrous arm on / off", "group": "driving", "kind": "button", "mode": "edge", "help": "Cars with a nitrous kit only", "modes": ["drive"]},
     {"id": "flip_upright", "label": "Flip the car upright", "group": "driving", "kind": "button", "mode": "edge", "modes": ["drive"]},

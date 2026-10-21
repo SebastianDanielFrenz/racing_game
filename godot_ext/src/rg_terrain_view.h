@@ -47,6 +47,7 @@
 #include "rg/terrain_render.h"
 #include "rg/terrain_stream.h"
 #include "rg/terrain_view_streamer.h"
+#include "rg/view_build_progress.h"
 #include "rg/world_terrain.h"
 #include "terrain_surface_pack.h"
 
@@ -135,6 +136,13 @@ public:
     // runs through a fresh rg::TerrainViewStreamer's build_initial (the same
     // chunk set and order), which then streams from update_focus() on.
     bool load_preview(float spawn_x, float spawn_y);
+    // Same selection as load_preview but built on a worker (the first build derives every coarse LOD tile and takes
+    // minutes on a cold store): returns at once; poll_preview() every frame gives {state: building|ready|error|idle,
+    // done, total (chunks), message}; the chunks are queued for upload when the poll first reports "ready". Streaming
+    // (update_focus) is ignored while building. A second call, load_preview, release() or destruction waits for a
+    // running build (it cannot be cancelled).
+    bool begin_preview(float spawn_x, float spawn_y);
+    godot::Dictionary poll_preview();
     // Headless benchmark scene (C9): drops any terrain, then streams rg::SyntheticTerrain (rolling hills, no map store)
     // exactly like load_preview + update_focus stream a real world (same LodParams defaults; max_distance_m > 0
     // overrides). The terrain-only queries (bed/ground checks, road and building tiles, decks, heal) see no terrain.
@@ -339,6 +347,15 @@ private:
     std::vector<rg::RenderChunk> heal_ready_;
     double heal_swap_ms_ = 0.0;
     std::future<std::size_t> heal_future_;
+
+    // begin_preview(): the initial build on a worker.
+    enum class PreviewState { Idle, Building, Ready, Failed };
+    void join_preview();
+    PreviewState preview_state_ = PreviewState::Idle;
+    std::future<void> preview_future_;
+    std::vector<rg::RenderChunk> preview_chunks_;
+    std::shared_ptr<rg::ViewBuildProgress> preview_progress_;
+    std::chrono::steady_clock::time_point preview_started_{};
     double heal_next_check_s_ = 0.0;
     std::int64_t healed_tiles_total_ = 0;
     std::int64_t rebuilt_chunks_total_ = 0;

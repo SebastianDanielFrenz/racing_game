@@ -444,7 +444,8 @@ TEST_CASE("setup: every catalog entry accepts a setup touching each available op
                 case rg::OptionKind::Colour: s.values[o.def.id] = std::string("#336699"); break;
             }
         }
-        CHECK(touched >= 10);
+        if (e.id == "car_electric") CHECK(touched == 2); // Its catalogue explicitly offers the two axle tyre choices.
+        else CHECK(touched >= 10);
         const auto v = rg::validate_setup(e, f.table, f.ctx, s);
         INFO(v.message);
         CHECK(v.ok);
@@ -718,9 +719,11 @@ TEST_CASE("N2O upgrades retain existing plumbing and reject unequipped vehicles"
 
 TEST_CASE("garage: the assist unit is a selectable part on the hypercars", "[garage][assist]") {
     Fixture f;
-    // part id -> traction_modes_available_bits of the unit (Racing is the stock part of both hypers)
+    // part id -> traction_modes_available_bits of the unit (Racing + ABS/ESC is the stock part of both hypers; the ABS-only
+    // units have no traction-control block, so the car's own Off/On shows)
     const std::pair<const char*, std::uint32_t> grades[] = {{"assists_street", 0b00011}, {"assists_sport", 0b01111}, {"stock", 0b11111},
-                                                            {"assists_street_abs_esc", 0b00011}, {"assists_sport_abs_esc", 0b01111}, {"assists_racing_abs_esc", 0b11111}};
+                                                            {"assists_street_abs_esc", 0b00011}, {"assists_sport_abs_esc", 0b01111}, {"assists_racing", 0b11111},
+                                                            {"assists_abs", 0}, {"assists_abs_esc", 0}, {"assists_electric_abs_esc", 0b11111}};
     for (const char* car : {"car_hyper", "car_hyper_n2o"}) {
         INFO(car);
         const auto& e = f.entry(car);
@@ -730,8 +733,9 @@ TEST_CASE("garage: the assist unit is a selectable part on the hypercars", "[gar
         for (const auto& o : model.options) if (o.def.id == "assist_unit") view = &o;
         REQUIRE(view != nullptr);
         CHECK(view->available);
-        REQUIRE(view->choices.size() == 6);
+        REQUIRE(view->choices.size() == 9);
         CHECK(view->choices.front() == "stock");
+        CHECK(view->parts.front().label == "Racing Assists + ABS/ESC");
         for (const auto& [part, bits] : grades) {
             INFO(part);
             const auto setup = setup_of(car, {{"assist_unit", std::string(part)}});
@@ -747,23 +751,24 @@ TEST_CASE("garage: the assist unit is a selectable part on the hypercars", "[gar
             options.generate = false;
             const ps::vehicle::VehicleDesc desc = rg::load_vehicle(m.vehicle_path, options);
             REQUIRE(desc.assist_unit.has_value());
-            CHECK(ps::vehicle::traction_modes_available_bits(desc.assist_unit, desc.traction_control.fitted) == bits);
+            if (bits != 0) CHECK(ps::vehicle::traction_modes_available_bits(desc.assist_unit, desc.traction_control.fitted) == bits);
             // Only the Racing units carry the wing automation.
             const std::string id = part;
-            CHECK(ps::vehicle::find_aero_control_surface(desc.aero, desc.assist_unit).has_value() == (id == "stock" || id == "assists_racing_abs_esc"));
-            // ABS and ESC only come with the + ABS/ESC variants (A5).
-            const bool with_abs_esc = id.find("_abs_esc") != std::string::npos;
-            CHECK(desc.assist_unit->abs.has_value() == with_abs_esc);
+            CHECK(ps::vehicle::find_aero_control_surface(desc.aero, desc.assist_unit).has_value() == (id == "stock" || id == "assists_racing"));
+            // ABS and ESC come with the stock unit and the + ABS/ESC variants (A5); a unit without them removes them.
+            const bool with_abs_esc = id == "stock" || id.find("abs_esc") != std::string::npos;
+            const bool with_abs = with_abs_esc || id == "assists_abs";
+            CHECK(desc.assist_unit->abs.has_value() == with_abs);
             CHECK(desc.assist_unit->esc.has_value() == with_abs_esc);
         }
     }
 }
 
-TEST_CASE("garage: the sedans offer an assist unit that is added to the stock file", "[garage][assist][setup]") {
+TEST_CASE("garage: cars without a factory unit get an assist unit added to the stock file, the sedans swap theirs", "[garage][assist][setup]") {
     Fixture f;
     const std::pair<const char*, std::uint32_t> grades[] = {{"assists_street", 0b00011}, {"assists_sport", 0b01111}, {"assists_racing", 0b11111},
                                                             {"assists_street_abs_esc", 0b00011}, {"assists_racing_abs_esc", 0b11111}};
-    for (const char* car : {"car_sedan", "car_sedan_gen_n2o"}) {
+    for (const char* car : {"car_gt70", "car_runabout"}) {
         INFO(car);
         const auto& e = f.entry(car);
         const rg::SetupModel model = rg::build_setup_model(e, f.table, f.ctx);
@@ -772,7 +777,7 @@ TEST_CASE("garage: the sedans offer an assist unit that is added to the stock fi
         for (const auto& o : model.options) if (o.def.id == "assist_unit") view = &o;
         REQUIRE(view != nullptr);
         CHECK(view->available);
-        REQUIRE(view->choices.size() == 7);
+        REQUIRE(view->choices.size() == 10);
         CHECK(view->choices.front() == "stock");
         CHECK(view->parts.front().label == "No assist unit");
         // Stock materialises without an assists entry.

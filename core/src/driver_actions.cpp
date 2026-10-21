@@ -9,9 +9,9 @@ namespace rg {
 namespace {
 // Preserve the original forwarding order; per-action events chain through the
 // last value written, irrespective of which device submitted them.
-constexpr std::array<std::string_view, 16> ids = {
+constexpr std::array<std::string_view, 18> ids = {
     "auto_shift", "traction_control", "toggle_aero", "toggle_launch_control", "drive_mode", "toggle_nitrous", "park", "epb", "start_stop", "hazard", "indicator_left", "indicator_right", "horn", "lights",
-    "transmission_mode", "manual_mode"
+    "transmission_mode", "manual_mode", "toggle_abs", "cycle_esc"
 };
 constexpr std::array<std::string_view, 8> channels = {
     "assist.auto_shift", "assist.traction_control", "assist.aero_control", "assist.launch_control", "assist.drive_mode", "nitrous_arm", "park_lock", "epb"
@@ -109,7 +109,7 @@ void DriverActions::apply(const VehicleContext& context, ChannelSink& sink) {
                 if (!snapshot.park_fitted) continue;
                 next = event.kind == DriverActionKind::Set ? (event.value != 0 ? 1 : 0) : 1;
                 // An automatic's P = N + park lock (physics automatic_tcu).
-                if (snapshot.transmission_kind != 0 && next != 0) sink.set("gear_request", 0);
+                if (has_selector(snapshot) && next != 0) sink.set("gear_request", 0);
             } else if (index == 7) {
                 if (!snapshot.epb_fitted) continue;
                 // Switch LEVEL only; never reconstruct or retry the physics latch.
@@ -119,9 +119,25 @@ void DriverActions::apply(const VehicleContext& context, ChannelSink& sink) {
         }
     }
     for (const auto& event : pending_) {
+        // ABS switch and ESC mode (assist unit abs / esc blocks): the CURRENT channel value is the base, a car without the
+        // block ignores the press silently (no channel exists in its World).
+        const int index = slot(event.id);
+        if (index == 16) {
+            if (!(snapshot.fitted_bits & kAssistBitAbs)) continue;
+            const double current = sink.get("assist.abs");
+            sink.set("assist.abs", event.kind == DriverActionKind::Set ? (event.value >= 0.5 ? 1 : 0) : toggled_abs(snapshot.fitted_bits, current));
+        } else if (index == 17) {
+            if (!(snapshot.fitted_bits & kAssistBitEsc)) continue;
+            const double current = sink.get("assist.esc");
+            const int target = event.kind == DriverActionKind::Set ? mode(event.value) : next_esc_mode(snapshot.esc_modes, mode(current));
+            if (target < 0 || target >= kEscModeCodeCount || !(snapshot.esc_modes & segment(target))) continue;
+            sink.set("assist.esc", target);
+        }
+    }
+    for (const auto& event : pending_) {
         // Automatic gearbox plan A1: the S/D schedule and manual (tiptronic) mode, only on an automatic or dual-clutch box.
         const int index = slot(event.id);
-        if (index < 14 || snapshot.transmission_kind == 0) continue;
+        if (index < 14 || index > 15 || snapshot.transmission_kind == 0) continue;
         if (index == 14) {
             const double current = sink.get("transmission.mode");
             sink.set("transmission.mode", event.kind == DriverActionKind::Set ? (event.value >= 0.5 ? 1 : 0) : (current >= 0.5 ? 0 : 1));
@@ -135,6 +151,12 @@ void DriverActions::apply(const VehicleContext& context, ChannelSink& sink) {
             // Physics enters manual mode on a shift count in D; one up plus one down changes no gear.
             sink.set("shift_up_count", sink.get("shift_up_count") + 1);
             sink.set("shift_down_count", sink.get("shift_down_count") + 1);
+        } else if (snapshot.hybrid_fitted) {
+            // The hybrid supervisor owns the gearbox request (always 99 while it drives): only a selector change ends manual
+            // mode, so go through N for manual_exit_hold_s and back to D (advance() sends the D).
+            sink.set("gear_request", 0);
+            manual_exit_pending_ = true;
+            manual_exit_elapsed_s_ = 0;
         } else {
             // Back to D: a changed gear_request ends manual mode (any value >= the gear count is plain D).
             sink.set("gear_request", sink.get("gear_request") == kGearRequestDrive ? kGearRequestDrive - 1 : kGearRequestDrive);
@@ -144,7 +166,7 @@ void DriverActions::apply(const VehicleContext& context, ChannelSink& sink) {
         const int index = slot(event.id);
         if (!cabin_configured_) continue;
         if (index == 8) {
-            if(snapshot.transmission_kind==4) {
+            if((snapshot.transmission_kind==4||snapshot.hybrid_fitted)) {
                 if(!snapshot.electric_ready||std::abs(snapshot.speed_mps)<config_.stop_max_speed_mps)
                     sink.set("electric.ready",snapshot.electric_ready?0:1);
                 cabin_.auto_cranking=false;sink.set("starter",0);
@@ -190,9 +212,11 @@ int selector_pos(const DriverSnapshot& s) {
 }
 } // namespace
 
+bool has_selector(const DriverSnapshot& snapshot) { return snapshot.transmission_kind != 0 || snapshot.hybrid_fitted; }
+
 SelectorShift selector_shift(const DriverSnapshot& snapshot, int up, int down) {
     SelectorShift out;
-    if (snapshot.transmission_kind == 0 || (up <= 0 && down <= 0)) return out;
+    if (!has_selector(snapshot) || (up <= 0 && down <= 0)) return out;
     int pos = selector_pos(snapshot);
     if (pos == PosD && snapshot.transmission_manual) return out; // tiptronic: the counters change gears in physics
     out.forward_counts = false;
@@ -218,11 +242,20 @@ SelectorShift selector_shift(const DriverSnapshot& snapshot, int up, int down) {
 }
 
 std::string selector_label(const DriverSnapshot& snapshot) {
-    if (snapshot.transmission_kind == 0) return {};
+    if (!has_selector(snapshot)) return {};
     if (snapshot.transmission_selector < 0) return "R";
     if (snapshot.transmission_selector == 0) return snapshot.park_engaged ? "P" : "N";
     if (snapshot.transmission_manual) return "M" + std::to_string(std::max(1, snapshot.gear));
     return snapshot.transmission_sport ? "S" : "D";
+}
+
+std::string selector_display(const DriverSnapshot& snapshot) {
+    std::string text = selector_label(snapshot);
+    if (text != "D" && text != "S") return text;
+    bool gear_shown = false;
+    if (snapshot.hybrid_fitted) gear_shown = snapshot.engine_running && snapshot.gear > 0 && snapshot.clutch_engagement >= 0.5;
+    else if (snapshot.transmission_kind != 4) gear_shown = snapshot.gear > 0;
+    return gear_shown ? text + std::to_string(snapshot.gear) : text;
 }
 
 void DriverActions::configure_cabin(const CabinConfig& c) {
@@ -231,7 +264,8 @@ void DriverActions::configure_cabin(const CabinConfig& c) {
         !std::isfinite(c.blink_hz) || c.blink_hz <= 0 ||
         !std::isfinite(c.indicator_arm_deg) || !std::isfinite(c.indicator_cancel_deg) ||
         c.indicator_cancel_deg < 0 || c.indicator_arm_deg <= c.indicator_cancel_deg ||
-        !std::isfinite(c.brake_lamp_threshold) || c.brake_lamp_threshold < 0 || c.brake_lamp_threshold > 1)
+        !std::isfinite(c.brake_lamp_threshold) || c.brake_lamp_threshold < 0 || c.brake_lamp_threshold > 1 ||
+        !std::isfinite(c.manual_exit_hold_s) || c.manual_exit_hold_s <= 0)
         throw std::invalid_argument("invalid cabin control configuration");
     if (c.auto_lights &&
         (!std::isfinite(c.auto_lights_on_lux) || !std::isfinite(c.auto_lights_off_lux) || c.auto_lights_on_lux <= 0 ||
@@ -243,8 +277,16 @@ void DriverActions::configure_cabin(const CabinConfig& c) {
 }
 
 void DriverActions::advance(const VehicleContext& context, ChannelSink& sink, double dt) {
-    if (!cabin_configured_) return;
     if (!std::isfinite(dt) || dt < 0) dt = 0;
+    if (manual_exit_pending_) {
+        // Second half of the hybrid manual-mode exit; anything else touching gear_request in the meantime cancels it.
+        manual_exit_elapsed_s_ += dt;
+        if (manual_exit_elapsed_s_ >= config_.manual_exit_hold_s) {
+            manual_exit_pending_ = false;
+            if (sink.get("gear_request") == 0) sink.set("gear_request", kGearRequestDrive);
+        }
+    }
+    if (!cabin_configured_) return;
     if (!context.driving_enabled) {
         cabin_.horn = false; cabin_.auto_cranking = false;
         sink.set("starter",0); sink.set("cabin.horn",0);
@@ -337,10 +379,10 @@ ControlState DriverActions::state(std::string_view id, const DriverSnapshot& sna
     } else if (id == "hazard" || id == "indicator_left" || id == "indicator_right" || id == "horn" || id == "start_stop") {
         out.fitted = true; out.enabled = true;
         const auto channel = id == "hazard" ? "cabin.hazard" : id == "horn" ? "cabin.horn" : id == "start_stop" ? "ignition" : id == "indicator_left" ? "cabin.indicator_left" : "cabin.indicator_right";
-        out.value = sink.get(id=="start_stop"&&snapshot.transmission_kind==4?"electric.ready":channel); out.active = out.value != 0;
-        out.lamp_segments = id == "hazard" ? (out.active && sink.get("cabin.indicator_left") != 0 ? 1 : 0) : id == "start_stop" ? ((snapshot.transmission_kind==4?snapshot.electric_ready:snapshot.engine_running) ? 1 : 0) : out.active ? 1 : 0;
+        out.value = sink.get(id=="start_stop"&&(snapshot.transmission_kind==4||snapshot.hybrid_fitted)?"electric.ready":channel); out.active = out.value != 0;
+        out.lamp_segments = id == "hazard" ? (out.active && sink.get("cabin.indicator_left") != 0 ? 1 : 0) : id == "start_stop" ? (((snapshot.transmission_kind==4||snapshot.hybrid_fitted)?snapshot.electric_ready:snapshot.engine_running) ? 1 : 0) : out.active ? 1 : 0;
         out.blink = id == "hazard" && out.active;
-        out.label = id == "start_stop" ? (snapshot.transmission_kind==4?(snapshot.electric_ready?"READY":"OFF"):(snapshot.engine_running?"RUNNING":"OFF")) : std::string(id);
+        out.label = id == "start_stop" ? ((snapshot.transmission_kind==4||snapshot.hybrid_fitted)?(snapshot.electric_ready?"READY":"OFF"):(snapshot.engine_running?"RUNNING":"OFF")) : std::string(id);
         out.colour_role = out.active ? "ok" : "off";
     } else if (id == "lights" || id == "head_lamp" || id == "tail_lamp" || id == "main_beam") {
         out.fitted = true; out.enabled = true;
@@ -370,12 +412,12 @@ ControlState DriverActions::state(std::string_view id, const DriverSnapshot& sna
         out.colour_role = out.active ? "warning" : "off";
     } else if (id == "transmission") {
         // Automatic gearbox plan A1: the selector letter (P R N D S M<n>) of an automatic or dual-clutch box.
-        out.fitted = snapshot.transmission_kind != 0;
+        out.fitted = has_selector(snapshot);
         out.enabled = out.fitted;
         out.value = snapshot.transmission_selector;
         out.active = out.fitted && snapshot.transmission_selector != 0;
         out.lamp_segments = out.fitted ? 1 : 0;
-        out.label = selector_label(snapshot);
+        out.label = selector_display(snapshot);
         out.lamp_state = snapshot.transmission_kind;
         out.colour_role = !out.fitted ? "off" : snapshot.transmission_sport ? "sport" : "normal";
     } else if (id == "epb") {

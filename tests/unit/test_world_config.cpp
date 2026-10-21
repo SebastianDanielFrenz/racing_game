@@ -653,8 +653,11 @@ TEST_CASE("load_world_config: physics absent defaults to radius_m 400", "[world_
     CHECK(cfg->physics.terrain_surface == "asphalt");
     CHECK(cfg->physics.max_tile_fills_per_tick == 1);
     CHECK(cfg->physics.loader_workers == 2);
+    CHECK(cfg->physics.lookahead_s == 3.0);
+    CHECK(cfg->physics.lookahead_cap_m == 510.0);
     CHECK(cfg->physics.spawn_clearance_m == 0.10);
-    CHECK(cfg->physics.startup_timeout_s == 30.0);
+    CHECK(cfg->physics.startup_timeout_s == 60.0);
+    CHECK(cfg->physics.startup_max_s == 900.0);
 }
 
 TEST_CASE("load_world_config: physics fields override every default", "[world_config]") {
@@ -664,6 +667,8 @@ TEST_CASE("load_world_config: physics fields override every default", "[world_co
                      {"terrain_surface", "dirt"},
                      {"max_tile_fills_per_tick", 4},
                      {"loader_workers", 6},
+                     {"lookahead_s", 5.0},
+                     {"lookahead_cap_m", 800.0},
                      {"spawn_clearance_m", 0.25},
                      {"startup_timeout_s", 12.5}};
     TempFile file = TempFile::from_json(j);
@@ -675,6 +680,8 @@ TEST_CASE("load_world_config: physics fields override every default", "[world_co
     CHECK(cfg->physics.terrain_surface == "dirt");
     CHECK(cfg->physics.max_tile_fills_per_tick == 4);
     CHECK(cfg->physics.loader_workers == 6);
+    CHECK(cfg->physics.lookahead_s == 5.0);
+    CHECK(cfg->physics.lookahead_cap_m == 800.0);
     CHECK(cfg->physics.spawn_clearance_m == 0.25);
     CHECK(cfg->physics.startup_timeout_s == 12.5);
 }
@@ -776,6 +783,17 @@ TEST_CASE("load_world_config: physics.loader_workers must be >= 1", "[world_conf
     auto cfg = rg::load_world_config(file.path(), &err);
     CHECK_FALSE(cfg.has_value());
     CHECK_FALSE(err.empty());
+}
+
+TEST_CASE("load_world_config: physics.lookahead_s out of range", "[world_config]") {
+    ScopedEnvVar env("RG_G2M_HOME", "S:/some/test/g2m/home");
+    json j = valid_world_config_json();
+    j["physics"] = {{"lookahead_s", 500.0}};
+    TempFile file = TempFile::from_json(j);
+    std::string err;
+    auto cfg = rg::load_world_config(file.path(), &err);
+    CHECK_FALSE(cfg.has_value());
+    CHECK(err.find("lookahead_s") != std::string::npos);
 }
 
 TEST_CASE("load_world_config: physics.loader_workers wrong type", "[world_config]") {
@@ -1012,9 +1030,10 @@ TEST_CASE("load_world_config: the real committed data/world/world_config.json st
     CHECK(cfg->physics.radius_m == 400.0);
     CHECK(cfg->physics.terrain_surface == "asphalt");
     CHECK(cfg->physics.max_tile_fills_per_tick == 1);
-    CHECK(cfg->physics.loader_workers == 2);
+    CHECK(cfg->physics.loader_workers == 16);
     CHECK(cfg->physics.spawn_clearance_m == 0.10);
-    CHECK(cfg->physics.startup_timeout_s == 30.0);
+    CHECK(cfg->physics.startup_timeout_s == 60.0);
+    CHECK(cfg->physics.startup_max_s == 900.0);
     CHECK(cfg->physics.road_surfaces.enabled);
     CHECK(cfg->physics.road_surfaces.paved == "asphalt");
     CHECK(cfg->physics.road_surfaces.unpaved == "dirt");

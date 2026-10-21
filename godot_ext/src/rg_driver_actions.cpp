@@ -29,6 +29,7 @@ rg::DriverSnapshot convert(const godot::Dictionary& d) {
     s.abs_on = static_cast<bool>(d.get("abs_on", false));
     s.abs_intervening = static_cast<bool>(d.get("abs_active", false));
     s.esc_fitted = static_cast<bool>(d.get("esc_fitted", false));
+    s.esc_modes = static_cast<std::uint32_t>(static_cast<std::int64_t>(d.get("esc_modes_available_bits", 0)));
     s.esc_effective = static_cast<int>(d.get("esc_mode_effective", 0));
     s.esc_intervening = static_cast<bool>(d.get("esc_active", false));
     s.gear = static_cast<int>(d.get("gear",0));
@@ -36,6 +37,8 @@ rg::DriverSnapshot convert(const godot::Dictionary& d) {
     s.transmission_selector = static_cast<int>(d.get("transmission_selector", 0));
     s.transmission_manual = static_cast<bool>(d.get("transmission_manual_mode", false));
     s.transmission_sport = static_cast<bool>(d.get("transmission_sport_mode", false));
+    s.hybrid_fitted = static_cast<bool>(d.get("hybrid_fitted",false));
+    s.clutch_engagement = static_cast<double>(d.get("clutch_engagement", 1.0));
     s.electric_ready = static_cast<bool>(d.get("electric_ready",false));
     s.engine_running = godot::String(d.get("engine_state", "")) == "Running";
     s.speed_mps = static_cast<double>(d.get("speed_mps",0.0));
@@ -60,6 +63,7 @@ public:
     godot::Array writes;
 };
 }
+rg::DriverSnapshot driver_snapshot_from(const godot::Dictionary& d) { return convert(d); }
 bool RgDriverActions::submit(const godot::String& id, int kind, double value, int source) {
     if (kind < PRESS || kind > HOLD || source < KEYBOARD || source > SCRIPT) return false;
     return actions_.submit({id.utf8().get_data(), static_cast<rg::DriverActionKind>(kind), value, static_cast<rg::ActionSource>(source)});
@@ -77,6 +81,7 @@ void RgDriverActions::configure_cabin(const godot::Dictionary& d) {
     c.indicator_arm_deg = d.get("indicator_arm_deg",c.indicator_arm_deg);
     c.indicator_cancel_deg = d.get("indicator_cancel_deg",c.indicator_cancel_deg);
     c.brake_lamp_threshold = d.get("brake_lamp_threshold",c.brake_lamp_threshold);
+    c.manual_exit_hold_s = d.get("manual_exit_hold_s",c.manual_exit_hold_s);
     c.auto_lights = d.get("auto_lights",c.auto_lights);
     c.auto_lights_on_lux = d.get("auto_lights_on_lux",c.auto_lights_on_lux);
     c.auto_lights_off_lux = d.get("auto_lights_off_lux",c.auto_lights_off_lux);

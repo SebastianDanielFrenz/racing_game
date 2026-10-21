@@ -426,3 +426,60 @@ TEST_CASE("EV start stop toggles READY without cranking or changing combustion i
     CHECK(actions.submit({"start_stop"}));actions.apply({snapshot,true},sink);
     CHECK(sink.get("electric.ready")==1);
 }
+
+TEST_CASE("driver actions: toggle_abs flips assist.abs and cycle_esc steps the offered ESC modes", "[driver_actions][abs][esc]") {
+    rg::DriverSnapshot s;
+    s.fitted_bits = rg::kAssistBitAbs | rg::kAssistBitEsc;
+    s.abs_fitted = s.esc_fitted = true;
+    s.esc_modes = 0b111; // off, on, sport
+    rg::DriverActions actions; Sink sink;
+    sink.values["assist.abs"] = 1; // the unit's default
+    sink.values["assist.esc"] = 1;
+    actions.submit({"toggle_abs"});
+    actions.apply({s, true}, sink);
+    CHECK(sink.get("assist.abs") == 0);
+    actions.submit({"toggle_abs"});
+    actions.apply({s, true}, sink);
+    CHECK(sink.get("assist.abs") == 1);
+    // ESC: on -> sport -> off -> on; presses in one frame chain through the value written last
+    actions.submit({"cycle_esc"});
+    actions.apply({s, true}, sink);
+    CHECK(sink.get("assist.esc") == 2);
+    actions.submit({"cycle_esc"}); actions.submit({"cycle_esc"});
+    actions.apply({s, true}, sink);
+    CHECK(sink.get("assist.esc") == 1);
+    // a unit that offers only off and on never reaches sport
+    s.esc_modes = 0b011;
+    sink.values["assist.esc"] = 1;
+    actions.submit({"cycle_esc"});
+    actions.apply({s, true}, sink);
+    CHECK(sink.get("assist.esc") == 0);
+    // the displays follow the state the keys changed
+    s.abs_on = false;
+    CHECK(rg::DriverActions::state("abs", s, sink).label == "ABS OFF");
+    s.abs_on = true;
+    CHECK(rg::DriverActions::state("abs", s, sink).label == "ABS");
+    // an explicit Set (a script) works; a Set to an unoffered mode is refused
+    actions.submit({"cycle_esc", rg::DriverActionKind::Set, 2});
+    actions.apply({s, true}, sink);
+    CHECK(sink.get("assist.esc") == 0);
+    actions.submit({"toggle_abs", rg::DriverActionKind::Set, 0});
+    actions.apply({s, true}, sink);
+    CHECK(sink.get("assist.abs") == 0);
+}
+
+TEST_CASE("driver actions: the ABS and ESC keys do nothing on a car without the blocks", "[driver_actions][abs][esc]") {
+    rg::DriverActions actions; Sink sink;
+    rg::DriverSnapshot s = fitted(); // TC, aero, LC only
+    s.esc_modes = 0b111;
+    actions.submit({"toggle_abs"}); actions.submit({"cycle_esc"});
+    actions.apply({s, true}, sink);
+    CHECK(sink.values.count("assist.abs") == 0);
+    CHECK(sink.values.count("assist.esc") == 0);
+    // ABS only (the 1990s cars): the ESC key stays silent
+    s.fitted_bits |= rg::kAssistBitAbs;
+    actions.submit({"toggle_abs"}); actions.submit({"cycle_esc"});
+    actions.apply({s, true}, sink);
+    CHECK(sink.get("assist.abs") == 1);
+    CHECK(sink.values.count("assist.esc") == 0);
+}

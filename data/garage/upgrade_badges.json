@@ -1,0 +1,73 @@
+{
+  "format": "rg.upgrade_badges/2",
+  "source": "Garage Upgrades page (owner 2026-10-18/19): a highlighted part tile shows HINTS, numbers instead of prose. A hint is always an offset against the CURRENTLY SELECTED configuration: the whole car with the candidate part swapped in minus the whole car as it is configured now (never against stock, never part against part). Totals (lap and acceleration times, top speed) are not hints, they live in the left pane. This file decides, per quantity, the unit, which direction is better (every quantity must declare it: there is no default), the most decimals shown, the smallest change worth showing and whether the shown change is relative; per upgrade category (an option id, else its group) the ordered metrics; and the reference conditions the figures are measured under. max_badges: at most this many badges on a tile; a metric whose change is below its min_change (or rounds to nothing) is skipped, the next one takes its place. [AS] unless a source says otherwise.",
+
+  "max_badges": 3,
+
+  "references": {
+    "source": "Every reference condition of a figure is here, none is in code. The figures come from physics_sim's public API only: the tyre model (create_pacejka_tyre_model), the engine dyno (run_dyno_sweep) and the engine thermal model (the steady state of the setup check, rg/cooling_upgrades.h steady_thermal).",
+    "tyres": {
+      "surface_table": "../surfaces/surfaces.json",
+      "surface": "asphalt",
+      "rolling_resistance_speed_kmh": 100.0,
+      "source": "Grip is the peak force of the car's tyres at its static corner loads (m g shared by the wheels with the centre of mass at the chassis origin and no weight transfer) on the dry reference surface of the game's surface table, summed over the wheels and divided by m g (an offset in g). Rolling resistance is the same sum at the reference speed, cruising (no slip), divided by m g; it is shown as a relative change. [AS] the reference speed."
+    },
+    "dyno": {
+      "quality": "sketch",
+      "rpm_step": 250,
+      "rpm_min": 2000,
+      "limiter_margin_rpm": 50,
+      "debounce_ms": 200,
+      "source": "Peak power and torque are the maxima of the engine dyno sweep (wide open throttle, ISA sea level, settled turbo points) on this engine-map quality and rpm grid; the same as the limit advisor's (data/garage/advisor.json sweep) so the maps are shared through the engine-map cache. A hover must rest debounce_ms before a sweep starts."
+    },
+    "thermal": {
+      "ambient_c": 30.0,
+      "air_speed_kmh": 100.0,
+      "friction_power_fraction": 0.09,
+      "source": "Steady-state coolant and oil temperature at sustained full power: the engine thermal model's steady state at the rpm of the peak power, this ambient temperature and this ram air speed; wall heat = the engine's wall-heat fraction x the released fuel energy, friction heat = this share of the shaft power (the setup check's figure, data/cooling_systems/cooling_upgrades.json check.friction_power_fraction)."
+    }
+  },
+
+  "quantities": {
+    "weight":              {"unit": "kg",   "higher_is_better": false, "max_decimals": 1, "min_change": 0.05, "source": "The part-mass tree total of the whole car (rg/part_mass.h)."},
+    "power":               {"unit": "kW",   "higher_is_better": true,  "max_decimals": 1, "min_change": 0.5,  "source": "Peak power of the engine dyno sweep (references.dyno); an electric machine adds its rated power capped by the battery's discharge limit. A category with nitrous_armed measures it with the car's N2O kit armed."},
+    "torque":              {"unit": "N*m",  "higher_is_better": true,  "max_decimals": 0, "min_change": 1.0,  "source": "Peak torque of the same sweep."},
+    "downforce":           {"unit": "N",    "higher_is_better": true,  "max_decimals": 0, "min_change": 5.0,  "source": "Declared for aero parts; no aero option exists yet, so no figure is produced."},
+    "braking_torque":      {"unit": "N*m",  "higher_is_better": true,  "max_decimals": 0, "min_change": 5.0,  "source": "Declared for brake parts; the brake options are sliders (no part tiles), so no figure is produced yet."},
+    "battery_kwh":         {"unit": "kWh",  "higher_is_better": true,  "max_decimals": 1, "min_change": 0.1,  "source": "The battery capacity of the vehicle file (0 without a battery)."},
+    "grip_longitudinal":   {"unit": "g",    "higher_is_better": true,  "max_decimals": 3, "min_change": 0.0005, "source": "Peak longitudinal tyre force (accelerating or braking) of all wheels at the static corner loads, divided by the car's weight (m g)."},
+    "grip_lateral":        {"unit": "g",    "higher_is_better": true,  "max_decimals": 3, "min_change": 0.0005, "source": "Peak lateral tyre force of all wheels at the static corner loads, divided by m g."},
+    "rolling_resistance":  {"unit": "%",    "higher_is_better": false, "max_decimals": 1, "min_change": 0.05, "relative": true, "source": "Rolling resistance force at references.tyres.rolling_resistance_speed_kmh divided by m g, as a relative change (candidate - current) / current."},
+    "rpm_tolerance":       {"unit": "rpm",  "higher_is_better": true,  "max_decimals": 0, "min_change": 10.0, "source": "The engine speed at which the weakest installed internal part (rods, pistons, crankshaft, valve springs) reaches its rating (rg/engine_internals.h limit_rpm)."},
+    "coolant_temperature": {"unit": "K",    "higher_is_better": false, "max_decimals": 1, "min_change": 0.2,  "source": "Steady-state coolant temperature at sustained full power (references.thermal), shown as a difference."},
+    "oil_temperature":     {"unit": "K",    "higher_is_better": false, "max_decimals": 1, "min_change": 0.2,  "source": "Steady-state oil temperature at sustained full power (references.thermal), shown as a difference."}
+  },
+
+  "categories": {
+    "Weight reduction": {"metrics": ["weight"]},
+
+    "Tyres": {"metrics": ["grip_longitudinal", "grip_lateral", "rolling_resistance"], "source": "Owner 2026-10-19: tyre compound and width. The tyre part data carries no mass, so weight is not a hint here."},
+
+    "powertrain_install": {"metrics": ["power", "weight"], "source": "Owner 2026-10-19: powertrain swap = peak power and weight, nothing else. A battery figure was tried and dropped: an electric conversion carrying a battery is what its name already says."},
+    "engine_install": {"metrics": ["power", "weight"], "source": "The ICE swap of the Swaps page: same hints as the powertrain swap."},
+    "fuel": {"metrics": ["power"], "source": "[inferred] A fuel changes the heating value and the knock limit: peak power."},
+
+    "Turbo system": {"metrics": ["power"], "source": "Owner 2026-10-19: forced induction swap = peak power."},
+    "turbo_kit": {"metrics": ["power", "weight"], "source": "[inferred] A garage turbo kit adds hardware mass."},
+    "charge_piping": {"metrics": ["weight"], "source": "[inferred] The piping grade changes the burst rating (an advice item), not the power; its mass is the hint."},
+    "Turbo calibration": {"metrics": ["power"], "source": "[inferred] Boost target: peak power."},
+    "Engine calibration": {"metrics": ["power"], "source": "[inferred] Rev limit and throttle response: peak power."},
+
+    "Engine internals": {"metrics": ["rpm_tolerance", "weight"], "source": "Owner 2026-10-19: rpm tolerance of the part; mass of the set [inferred]."},
+    "engine_bore": {"metrics": ["power", "rpm_tolerance", "coolant_temperature", "oil_temperature"], "source": "A bored block adds displacement (power and heat) and heavier pistons (the rod-limited rpm drops)."},
+
+    "N2O": {"metrics": ["power"], "nitrous_armed": true, "source": "Owner 2026-10-19: the power the kit adds with the kit armed, at the car's current configuration."},
+
+    "gearbox_install": {"metrics": ["weight"], "source": "Owner 2026-10-19: gearbox swap = weight."},
+    "drive_layout": {"metrics": ["weight"], "source": "[inferred] The layout conversion node of the part-mass tree (propshaft, mounting hardware)."},
+    "diff_front": {"metrics": ["weight"], "source": "[inferred] Differential mass."},
+    "diff_rear": {"metrics": ["weight"], "source": "[inferred] Differential mass."},
+
+    "Cooling": {"metrics": ["coolant_temperature", "oil_temperature", "weight"], "source": "[inferred] Cooling parts: steady-state coolant and oil temperature at full power, and the mass they add."}
+  }
+}

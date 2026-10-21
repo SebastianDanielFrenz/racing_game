@@ -6,8 +6,11 @@ var simulation: Node
 var director: Node
 var vehicle_name := "car_hyper"
 var tyre_bank: RgTyreSound # native tyre voices (rg/tyre_sound.h)
+var wind_noise: RgWindNoise # native wind layer driven by the airspeed (rg/wind_noise.h), mixed into the tyre channels
 var _wheel_count := 0
 var tyre_points := PackedVector3Array()
+var _param_log: FileAccess # RG_AUDIO_PARAM_LOG=<csv>: one row per frame of the sound-source parameters (measurement runs)
+var _param_log_t := 0.0
 var tyre_spatial: RefCounted
 var engine_spatial: RefCounted
 var fallback_players: Array[AudioStreamPlayer3D] = []
@@ -83,7 +86,30 @@ func _initialize_audio() -> void:
 		var wav := AudioStreamWAV.load_from_file(ProjectSettings.globalize_path("res://../external/physics_sim/adapters/godot/demo/audio/tyres/asphalt_squeal.wav"))
 		if wav != null:
 			squeal_pcm = wav.data
-		tyre_bank.setup(_wheel_count, 1234, squeal_pcm)
+		# Owner's recorded rolling layer on sealed surfaces (data/controls/tyre_sound.json); missing file = procedural hiss.
+		var roll_pcm := PackedByteArray()
+		var roll_channels := 1
+		# The whole config (level law, pitch law, surfaces) is parsed natively by rg::parse_tyre_roll_config; only the file name is read here.
+		var tyre_json := FileAccess.get_file_as_string(ProjectSettings.globalize_path("res://../data/controls/tyre_sound.json"))
+		var tyre_cfg = JSON.parse_string(tyre_json)
+		var roll_cfg: Dictionary = tyre_cfg.get("roll", {}) if tyre_cfg is Dictionary else {}
+		if roll_cfg.has("file"):
+			var roll_wav := AudioStreamWAV.load_from_file(ProjectSettings.globalize_path("res://../" + String(roll_cfg["file"])))
+			if roll_wav != null and roll_wav.format == AudioStreamWAV.FORMAT_16_BITS:
+				roll_pcm = roll_wav.data
+				roll_channels = 2 if roll_wav.stereo else 1
+		var tyre_error: String = tyre_bank.setup(_wheel_count, 1234, squeal_pcm, roll_pcm, roll_channels, tyre_json)
+		if tyre_error != "":
+			push_warning("tyre_sound.json: " + tyre_error + " (defaults used)")
+		wind_noise = RgWindNoise.new()
+		var wind_error: String = wind_noise.setup(FileAccess.get_file_as_string(ProjectSettings.globalize_path("res://../data/controls/wind_noise.json")))
+		if wind_error != "":
+			push_warning("wind_noise.json: " + wind_error + " (defaults used)")
+		var log_path := OS.get_environment("RG_AUDIO_PARAM_LOG")
+		if log_path != "":
+			_param_log = FileAccess.open(log_path, FileAccess.WRITE)
+			if _param_log != null:
+				_param_log.store_line("t_s,speed_kmh,airspeed_kmh,tyre_gain,tyre_rate,tyre_hiss_hz,tyre_tone_hz,wind_amp,wind_centre_hz,wheel_tread_kmh")
 		for wheel in range(_wheel_count):
 			var point: Vector3 = simulation.get_wheel_attachment_local(vehicle_name, wheel)
 			point.z -= simulation.get_wheel_radius(vehicle_name, wheel)
@@ -98,6 +124,9 @@ func _initialize_audio() -> void:
 	var powertrain: Dictionary = simulation.get_vehicle_powertrain(vehicle_name)
 	if bool(powertrain.get("electric_fitted", false)):
 		_motor_sound = RgElectricMotorSound.new()
+		var motor_levels = JSON.parse_string(FileAccess.get_file_as_string(ProjectSettings.globalize_path("res://../data/controls/electric_motor_sound.json")))
+		if motor_levels is Dictionary:
+			_motor_sound.configure(motor_levels)
 		_motor_spatial = _open_spatial(RATE, 1)
 		if _motor_spatial == null:
 			_motor_players.append(_player(RATE, _motor_points[0]))
@@ -189,12 +218,16 @@ func _process_body(delta: float) -> void:
 			engine_players.append(_player(engine_rate, point))
 	var frozen: bool = simulation.get_streaming_status().get("frozen", false)
 	var tyre_speed: float = simulation.get_body_speed_mps("chassis")
+	var airspeed: float = simulation.get_airspeed_mps() # relative to the air (wind, gusts, slipstream), NOT the ground speed
+	if wind_noise != null:
+		wind_noise.set_airspeed(0.0 if frozen else airspeed)
 	for wheel in range(_wheel_count):
 		var radius: float = simulation.get_wheel_radius(vehicle_name, wheel)
 		tyre_bank.update_wheel(wheel, tyre_speed, simulation.get_wheel_omega(vehicle_name, wheel) * radius,
 			simulation.get_wheel_slip_ratio(vehicle_name, wheel), simulation.get_wheel_slip_angle(vehicle_name, wheel),
 			0.0 if frozen else simulation.get_wheel_load_n(vehicle_name, wheel), simulation.get_wheel_fx(vehicle_name, wheel),
-			simulation.get_wheel_fy(vehicle_name, wheel), 0.0)
+			simulation.get_wheel_fy(vehicle_name, wheel), 0.0,
+			simulation.get_wheel_surface_name(vehicle_name, wheel))
 	var needed := 0
 	if tyre_spatial != null:
 		tyre_spatial.set_positions(_relative(tyre_points))
@@ -202,7 +235,12 @@ func _process_body(delta: float) -> void:
 	else:
 		needed = _fallback_needed(fallback_players, RATE, false)
 	if _wheel_count > 0:
-		_output(tyre_bank.render(needed, _applied_tyre_gain()), _wheel_count, tyre_spatial, fallback_players)
+		var tyre_pcm: PackedFloat32Array = tyre_bank.render(needed, _applied_tyre_gain())
+		# Wind rides on the tyre channels (the same spatial objects at the wheels) and the tyre volume setting.
+		if wind_noise != null:
+			tyre_pcm = wind_noise.mix_into(tyre_pcm, _wheel_count, _applied_tyre_gain())
+		_output(tyre_pcm, _wheel_count, tyre_spatial, fallback_players)
+		_log_params(delta, tyre_speed, airspeed)
 	var view: String = str(director.active_name)
 	var level: float = float(_view_levels.get("engine_chase_db", -12.0))
 	if view in ["cockpit", "xr_cockpit"]:
@@ -253,8 +291,24 @@ func _update_motor_audio(frozen: bool) -> void:
 			needed = mini(available, maxi(0, target - (_motor_capacity - available)))
 	_output(_motor_sound.render(needed, _applied_engine_gain()), 1, _motor_spatial, _motor_players)
 
+func _log_params(delta: float, ground_speed: float, airspeed: float) -> void:
+	if _param_log == null or tyre_bank == null or wind_noise == null:
+		return
+	_param_log_t += delta
+	var roll: Dictionary = tyre_bank.get_roll_state()
+	var wind: Dictionary = wind_noise.get_state()
+	var tread := 0.0
+	for wheel in range(_wheel_count):
+		tread = maxf(tread, absf(simulation.get_wheel_omega(vehicle_name, wheel) * simulation.get_wheel_radius(vehicle_name, wheel)))
+	_param_log.store_line("%.3f,%.2f,%.2f,%.5f,%.3f,%.1f,%.1f,%.5f,%.1f,%.2f" % [_param_log_t, ground_speed * 3.6, airspeed * 3.6,
+		float(roll.get("gain", 0.0)), float(roll.get("rate", 0.0)), float(roll.get("hiss_hz", 0.0)), float(roll.get("tone_hz", 0.0)),
+		float(wind.get("amplitude", 0.0)), float(wind.get("centre_hz", 0.0)), tread * 3.6])
+
 func get_audio_diagnostics() -> Dictionary:
 	var result := {"engine_native": _engine_native, "electric_motor": _motor_sound != null}
+	if tyre_bank != null and wind_noise != null:
+		result["tyre_roll"] = tyre_bank.get_roll_state()
+		result["wind"] = wind_noise.get_state()
 	if engine_spatial != null:
 		result["engine"] = engine_spatial.get_output_diagnostics()
 	if tyre_spatial != null:
@@ -276,6 +330,8 @@ func shutdown() -> void:
 	if is_instance_valid(simulation):
 		simulation.stop_engine_audio()
 	tyre_bank = null
+	wind_noise = null
+	_param_log = null
 	fallback_players.clear()
 	engine_players.clear()
 	tyre_spatial = null

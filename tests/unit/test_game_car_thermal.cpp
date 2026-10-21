@@ -25,6 +25,7 @@
 #include <cstdlib>
 #include <filesystem>
 #include <string>
+#include <variant>
 #include <vector>
 
 namespace {
@@ -62,6 +63,12 @@ TEST_CASE("game cars: every shipped car has the engine thermal model with sane t
         options.generate = false; // validate-only: the thermal block is resolved, no engine maps are generated
         const ps::vehicle::VehicleDesc desc = rg::load_vehicle(path, options);
         const rg::EngineThermalInfo info = rg::engine_thermal_info(desc);
+        if (!info.present) { // an electric car has no engine, so no engine thermal model
+            bool has_engine = false;
+            for (const auto& comp : desc.powertrain.components) has_engine = has_engine || std::holds_alternative<ps::drivetrain::TorqueMapEngineDesc>(comp.params) || std::holds_alternative<ps::drivetrain::SimulatedEngineDesc>(comp.params);
+            CHECK_FALSE(has_engine);
+            continue;
+        }
         REQUIRE(info.present);
         REQUIRE(desc.powertrain.thermal.has_value());
         CHECK(desc.powertrain.thermal->start == ps::drivetrain::ThermalStartKind::Warm);

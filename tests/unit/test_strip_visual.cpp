@@ -324,7 +324,8 @@ TEST_CASE("strip visual: a car without a separate seat does not offer to remove 
             }
             g->discard();
             INFO(option);
-            CHECK(available == has(slot));
+            const bool allowed = e.setup_options.empty() || std::find(e.setup_options.begin(), e.setup_options.end(), option) != e.setup_options.end();
+            CHECK(available == (has(slot) && allowed));
             CHECK(available == rg::part_choice_offered(e, *g->options().find(option)));
         }
     }

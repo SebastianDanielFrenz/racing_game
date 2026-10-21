@@ -6,6 +6,7 @@
 #include "rg/vehicle_load.h"
 
 #include "driveline_swap_json.h"
+#include "powertrain_swap_json.h"
 #include "json_util.h"
 
 #include "ps/io/vehicle_io.h"
@@ -279,6 +280,7 @@ struct Files {
     std::vector<FittedPart> trim;
     // Automatic gearbox swap: what installing a clutch-to-clutch box changed on the car (for the player).
     std::vector<std::string> gearbox_lines;
+    std::vector<std::string> powertrain_lines;
 };
 
 bool read_doc(const std::string& path, json& out, std::string* err) {
@@ -302,6 +304,17 @@ std::string stem_of_path(const std::string& path) { return fs::path(path).stem()
 std::string resolve_ref(const std::string& dir, const std::string& ref) {
     const fs::path p(ref);
     return norm_path(p.is_absolute() ? ref : (fs::path(dir) / p).generic_string());
+}
+
+std::string powertrain_config(const SetupContext& ctx) {
+    if(ctx.tyre_families_path.empty())return {};
+    return (fs::path(ctx.tyre_families_path).parent_path().parent_path()/"powertrains/swaps.json").generic_string();
+}
+std::vector<SetupPart> powertrain_parts(const SetupContext& ctx) {
+    json config;std::vector<SetupPart> parts;
+    if(!read_doc(powertrain_config(ctx),config,nullptr)||!config.contains("choices"))return parts;
+    for(const auto& c:config["choices"]){SetupPart p;p.id=c.at("id").get<std::string>();p.label=c.at("label").get<std::string>();p.section=c.at("section").get<std::string>();p.detail=c.at("detail").get<std::string>();p.path="powertrain:"+p.id;parts.push_back(std::move(p));}
+    return parts;
 }
 
 // Index of the powertrain component of `type` in the vehicle doc, or -1.
@@ -370,6 +383,8 @@ bool load_files(const CatalogEntry& entry, Files& files, std::string* err) {
 // ---- options: the entry's view of the table ----------------------------------------
 
 bool entry_offers(const CatalogEntry& entry, const std::string& id) {
+    if(id=="powertrain_install")return true;
+    if(entry.id=="car_electric"&&(id=="engine_install"||id=="fuel"||id=="gearbox_install"||id=="clutch_capacity"||id=="gear_ratios"||id=="final_drive"))return true;
     if (entry.setup_options.empty()) return true;
     return std::find(entry.setup_options.begin(), entry.setup_options.end(), id) != entry.setup_options.end();
 }
@@ -627,6 +642,7 @@ std::string refresh_cooling(Files& files, const SetupContext& ctx, const std::ma
 
 bool file_choice_fits(Files& files, const SetupOptionDef& def, const CatalogEntry& entry, const SetupContext& ctx) {
     if (!entry_offers(entry, def.id)) return false;
+    if(def.catalog=="powertrains")return !powertrain_parts(ctx).empty();
     if (is_driveline_catalog(def)) return driveline_fit_error(files, def, ctx).empty();
     if (def.catalog.empty()) {
         // "*" in compatible_engines: the part does not depend on the engine (e.g. the assist electronics).
@@ -648,7 +664,7 @@ bool file_choice_fits(Files& files, const SetupOptionDef& def, const CatalogEntr
     }
     const int idx = component_index(files.vehicle.base, "engine");
     if (def.no_turbo_override && idx >= 0 && files.vehicle.base["powertrain"]["components"][idx].contains("forced_induction")) return false;
-    const json* base = def.file == "vehicle" ? &files.vehicle.base : (files.engine ? &files.engine->base : nullptr);
+    const json* base = def.file == "vehicle" ? &files.vehicle.work : (files.engine ? &files.engine->work : nullptr);
     if (!base) return false;
     return !expand_patterns(*base, pointers_for(entry, def)).empty() || def.insert_if_absent.has_value();
 }
@@ -740,6 +756,24 @@ std::string fit_turbo_kit(Files& files, const CatalogEntry& entry, const SetupCo
 // Engine garage G1: a choice from the engine store ("engines") or the installed engine's fuels ("fuels").
 std::string install_catalog_part(Files& files, const SetupOptionDef& def, const CatalogEntry& entry, const SetupContext& ctx,
                                  const std::string& id) {
+    if(def.catalog=="powertrains") {
+        const std::string old_engine=files.engine?files.engine->path:std::string{};
+        const std::string error=detail::swap_powertrain(files.vehicle.work,id,powertrain_config(ctx),files.vehicle.path);
+        if(!error.empty())return error;
+        files.engine.reset();files.gearbox.reset();files.turbo.reset();files.swapped.reset();
+        std::string err;
+        if(!load_aux(files.vehicle.work,dir_of(files.vehicle.path),"engine",files.engine,&err)||
+           !load_aux(files.vehicle.work,dir_of(files.vehicle.path),"gearbox",files.gearbox,&err))return err;
+        files.engine_stem=files.engine?stem_of_path(files.engine->path):std::string{};
+        if(files.engine&&ctx.engines&&files.engine->path!=old_engine) {
+            const auto* e=ctx.engines->find_by_file(files.engine->path);
+            if(!e)return "conversion engine is missing from the engine catalogue";
+            files.swapped=*e;
+        }
+        for(const char* path:{"/powertrain","/controllers","/cooling_system","/engine_thermal_start","/contents_mass"})files.derived_subtrees.push_back(path);
+        for(const auto& p:powertrain_parts(ctx))if(p.id==id)files.powertrain_lines.push_back(p.label+": "+p.detail);
+        return {};
+    }
     if (def.catalog == "drive_layouts") {
         const DriveLayoutEntry* l = ctx.drivelines->find_layout(id);
         if (l == nullptr) return def.id + ": \"" + id + "\" is not a drive layout in the catalogue";
@@ -1114,6 +1148,43 @@ std::string install_clutch_to_clutch(Files& files, const GearboxEntry& g) {
     return {};
 }
 
+// A hybrid-converted car keeps its own assist unit (swap_powertrain left the controller in place): the unit's file is
+// re-written with the hybrid unit's traction control and no launch control, ABS/ESC/aero untouched. A car without a unit
+// got the hybrid unit itself and needs nothing here.
+std::string apply_hybrid_unit(Files& files, const SetupContext& ctx) {
+    json& veh = files.vehicle.work;
+    if (!veh.contains("controllers") || !veh["controllers"].is_array()) return {};
+    bool hybrid = false;
+    for (const json& c : veh["controllers"]) {
+        std::string id;
+        if (c.is_object() && detail::get_string(c, "id", id) && id == "hybrid_modes") hybrid = true;
+    }
+    if (!hybrid) return {};
+    for (const json& c : veh["controllers"]) {
+        std::string id, ty, ref, kind;
+        if (!c.is_object() || !detail::get_string(c, "id", id) || id == "hybrid_assists" || !detail::get_string(c, "type", ty) || ty != "electronics" ||
+            !detail::get_string(c, "ref", ref))
+            continue;
+        FileDoc doc;
+        doc.path = resolve_ref(dir_of(files.vehicle.path), ref);
+        std::string err;
+        if (!read_doc(doc.path, doc.base, &err)) return err;
+        detail::get_string(doc.base, "kind", kind);
+        if (kind != "assist_unit") continue;
+        const auto own = load_effective_json(doc.path, &err);
+        if (!own) return err;
+        const std::string hybrid_path = norm_path((fs::path(powertrain_config(ctx)).parent_path() / ".." / "electronics" / "assist_unit_hybrid.json").generic_string());
+        const auto hyb = load_effective_json(hybrid_path, &err);
+        if (!hyb) return err;
+        doc.work = detail::merge_hybrid_unit(*own, *hyb);
+        files.electronics.erase(std::remove_if(files.electronics.begin(), files.electronics.end(), [&](const FileDoc& d) { return d.path == doc.path; }),
+                                files.electronics.end());
+        files.electronics.push_back(std::move(doc));
+        break;
+    }
+    return {};
+}
+
 const char* const kEngineSlotKeys[] = {"ecu", "cam", "forced_induction", "installation", "thermal"};
 
 // Derives the swap package for the installed engine / chosen fuel and applies it to the working vehicle file.
@@ -1180,7 +1251,6 @@ std::string apply_swap(Files& files, const CatalogEntry& entry, const SetupConte
     }
     // A launch rpm is a second rev limit of the old engine: one outside the new engine's idle..limiter band is moved
     // to 60 % of the new limiter (at least idle + 300 rpm), else the loader rejects the car.
-    files.electronics.clear();
     if (files.swapped && eng.limiter_rpm > eng.idle_rpm && veh.contains("controllers") && veh["controllers"].is_array()) {
         const double launch = std::min(std::round(std::max(eng.idle_rpm + 300.0, 0.6 * eng.limiter_rpm) / 50.0) * 50.0,
                                        eng.limiter_rpm - 100.0);
@@ -1195,15 +1265,29 @@ std::string apply_swap(Files& files, const CatalogEntry& entry, const SetupConte
             detail::get_string(doc.base, "kind", kind);
             json* holder = nullptr;
             const char* key = nullptr;
+            double rpm = 0.0;
             if (kind == "launch_control") {
                 holder = &doc.work;
                 key = "rpm";
-            } else if (kind == "assist_unit" && doc.work.contains("launch_control") && doc.work["launch_control"].is_object()) {
+                if (!detail::get_number(*holder, key, rpm)) continue;
+            } else if (kind == "assist_unit") {
+                // A unit that "extends" a parent (the ABS/ESC variants of the Racing unit) inherits its launch block: the
+                // launch rpm is read from the effective file and the new value is written into this file's own launch block,
+                // which is merged over the parent's on load.
+                json effective = doc.base;
+                if (doc.base.contains("extends")) {
+                    auto eff = load_effective_json(doc.path, nullptr);
+                    if (!eff) continue;
+                    effective = std::move(*eff);
+                }
+                if (!effective.contains("launch_control") || !effective["launch_control"].is_object() ||
+                    !detail::get_number(effective["launch_control"], "launch_rpm", rpm))
+                    continue;
+                if (!doc.work.contains("launch_control") || !doc.work["launch_control"].is_object()) doc.work["launch_control"] = json::object();
                 holder = &doc.work["launch_control"];
                 key = "launch_rpm";
             }
-            double rpm = 0.0;
-            if (holder == nullptr || !detail::get_number(*holder, key, rpm)) continue;
+            if (holder == nullptr) continue;
             if (rpm > eng.idle_rpm && rpm < eng.limiter_rpm) continue;
             (*holder)[key] = launch;
             pkg.lines.push_back("Launch control: launch rpm moved from " + std::to_string(static_cast<int>(rpm)) + " to " +
@@ -1800,7 +1884,7 @@ std::optional<SetupOptionTable> parse_setup_options(const std::string& json_text
             detail::get_string(o, "catalog", d.catalog);
             if (!d.catalog.empty() && d.catalog != "engines" && d.catalog != "fuels" && d.catalog != "gearboxes" &&
                 d.catalog != "drive_layouts" && d.catalog != "differentials" && d.catalog != "turbo_kits" && d.catalog != "charge_piping" &&
-                d.catalog != "engine_internals" && d.catalog != "cooling_upgrades") {
+                d.catalog != "engine_internals" && d.catalog != "cooling_upgrades" && d.catalog != "powertrains") {
                 return bad(where + ": \"catalog\" must be \"engines\", \"fuels\", \"gearboxes\", \"drive_layouts\", \"differentials\", \"turbo_kits\", \"charge_piping\", \"engine_internals\" or \"cooling_upgrades\"");
             }
             detail::get_string(o, "cooling_part", d.cooling_part);
@@ -2160,6 +2244,11 @@ std::vector<SetupPart> parts_of(const SetupOptionDef& def, const SetupContext& c
             p.label = e.name;
             p.path = e.file;
             p.image = e.image;
+            p.section="Gasoline";
+            if(const auto facts=read_engine_facts(e.file,nullptr);facts&&!facts->fuels.empty()) {
+                if(facts->fuels.front().name=="diesel")p.section="Diesel";
+                if(facts->fuels.front().name=="hydrogen")p.section="Hydrogen";
+            }
             std::string detail = e.family;
             const std::string power = power_text(ctx.engines->peaks(e));
             if (!power.empty()) detail += (detail.empty() ? "" : " · ") + power;
@@ -2286,13 +2375,16 @@ SetupModel build_setup_model(const CatalogEntry& entry, const SetupOptionTable& 
         SwapPackage pkg;
         model.error = apply_swap(files, entry, ctx, pkg);
         if (!model.error.empty()) return model;
+        model.error = apply_hybrid_unit(files, ctx);
+        if (!model.error.empty()) return model;
         model.swap_lines = pkg.lines;
+        model.swap_lines.insert(model.swap_lines.end(),files.powertrain_lines.begin(),files.powertrain_lines.end());
         model.swap_lines.insert(model.swap_lines.end(), files.gearbox_lines.begin(), files.gearbox_lines.end());
         model.chassis_mass_delta_kg = pkg.mass_delta_kg;
         if (files.swapped) model.engine_title = files.swapped->name;
         if (files.swapped) {
             model.engine_key = files.swapped->key;
-        } else if (ctx.engines) {
+        } else if (ctx.engines && files.engine) {
             if (const EngineEntry* own = ctx.engines->find_by_file(files.original_engine_path)) model.engine_key = own->key;
         }
     }
@@ -2363,11 +2455,22 @@ SetupModel build_setup_model(const CatalogEntry& entry, const SetupOptionTable& 
                 break;
             }
             case OptionKind::FileChoice: {
+                if(def.catalog=="powertrains") {
+                    v.stock=detail::powertrain_kind(files.vehicle.base);
+                    v.parts=powertrain_parts(ctx);
+                    for(const auto& p:v.parts)v.choices.push_back(p.id);
+                    v.available=!v.parts.empty();
+                    break;
+                }
                 v.stock = std::string("stock");
                 v.available = file_choice_fits(files, def, entry, ctx);
                 if (is_driveline_catalog(def)) {
                     driveline_choices(def, ctx, files, v);
                     if (v.choices.size() < 2) v.available = false;
+                    if (!v.available && entry_offers(entry, def.id)) {
+                        v.unavailable_reason = driveline_fit_error(files, def, ctx);
+                        if (v.unavailable_reason.empty()) v.unavailable_reason = "No other layout or differential fits this car.";
+                    }
                     break;
                 }
                 SetupPart stock;
@@ -2384,6 +2487,7 @@ SetupModel build_setup_model(const CatalogEntry& entry, const SetupOptionTable& 
                         if (leaf && leaf->is_string()) original = resolve_ref(dir_of(original_file->path), leaf->get<std::string>());
                     }
                 }
+                if(def.catalog=="engines"&&original.empty()&&files.engine)original=files.engine->path;
                 const std::vector<SetupPart> candidates = parts_of(def, ctx, files, &entry);
                 for (const auto& part : candidates) if (norm_path(part.path) == original) { stock = part; stock.id = "stock"; }
                 v.parts.push_back(stock);
@@ -2401,6 +2505,18 @@ SetupModel build_setup_model(const CatalogEntry& entry, const SetupOptionTable& 
                     if (!why.empty()) v.parts.back().detail += (v.parts.back().detail.empty() ? "" : " · ") + std::string("Does not fit: ") + why;
                 }
                 if (v.choices.size() < 2) v.available = false;
+                if (!v.available && entry_offers(entry, def.id) && v.unavailable_reason.empty()) {
+                    // Why the swap tile is greyed out (the garage prints it under the tile).
+                    if (def.catalog == "fuels") {
+                        v.unavailable_reason = !files.engine ? std::string("This car has no combustion engine.")
+                                               : candidates.empty() ? std::string("The installed engine lists no fuel.")
+                                                                    : std::string("The installed engine runs on one fuel only (") + candidates.front().label + ").";
+                    } else if (def.catalog == "engines") {
+                        v.unavailable_reason = "No other engine fits this car.";
+                    } else if (def.catalog == "gearboxes") {
+                        v.unavailable_reason = "No other gearbox is rated for this engine.";
+                    }
+                }
                 if (def.catalog == "turbo_kits") {
                     v.parts.front().label = "No turbo (as built)";
                     if (!v.available && entry_offers(entry, def.id)) v.unavailable_reason = turbo_kit_blocker(files, ctx);
@@ -2493,11 +2609,10 @@ SetupModel build_setup_model(const CatalogEntry& entry, const SetupOptionTable& 
                     v.available = false;
                     break;
                 }
-                const auto kg = [](double m) { return fmt_fixed(m, 1) + " kg"; };
                 SetupPart stock;
                 stock.id = "stock";
                 stock.label = own->label;
-                stock.detail = kg(own->mass_kg);
+                stock.mass_kg = own->mass_kg;
                 stock.mass_key = own->key;
                 v.parts.push_back(stock);
                 v.choices.push_back("stock");
@@ -2514,8 +2629,9 @@ SetupModel build_setup_model(const CatalogEntry& entry, const SetupOptionTable& 
                     } else {
                         m = own->mass_kg * p.mass_factor;
                     }
-                    const double saved = own->mass_kg - m;
-                    q.detail = (p.removed ? std::string("removed") : kg(m)) + (saved >= 0.0 ? ", saves " + kg(saved) : ", adds " + kg(-saved));
+                    // The numbers go to the tile's badge (upgrade_badges.h), not to prose: the detail stays empty.
+                    q.detail.clear();
+                    q.mass_kg = m;
                     v.parts.push_back(q);
                     v.choices.push_back(q.id);
                 }
@@ -2816,7 +2932,13 @@ CompiledSetup compile_setup_internal(const CatalogEntry& entry, const SetupOptio
             out.error = err;
             return out;
         }
+        err = apply_hybrid_unit(files, ctx);
+        if (!err.empty()) {
+            out.error = err;
+            return out;
+        }
         out.swap_lines = pkg.lines;
+        out.swap_lines.insert(out.swap_lines.end(),files.powertrain_lines.begin(),files.powertrain_lines.end());
         out.swap_lines.insert(out.swap_lines.end(), files.gearbox_lines.begin(), files.gearbox_lines.end());
         out.chassis_mass_delta_kg = pkg.mass_delta_kg;
         if (files.swapped) out.engine_title = files.swapped->name;

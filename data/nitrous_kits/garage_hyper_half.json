@@ -6,7 +6,7 @@
   "nitrous_jet_diameter_mm": 2.6940768363207463,
   "nitrous_jet_cd": 0.66,
   "flow_model": "hem",
-  "fuel_jet_diameter_mm": 1.0854089091213506,
+  "fuel_jet_diameter_mm": 1.3046,
   "fuel_jet_cd": 0.7,
   "fuel_pressure": {
     "gauge_bar": 4.0,
@@ -19,5 +19,5 @@
     "source": "Nominal half-flow jet-area scaling; actual added power depends on engine operating conditions."
   },
   "default_controller": "../../external/physics_sim/data/nitrous_controllers/custom_wet_800.json",
-  "source": "Game half-flow wet kit: both jet areas halved while retaining fuel/nitrous balance and the original controller. Nominal rating, not a measured dyno result."
+  "source": "Game half-flow wet kit: both jet areas halved while retaining fuel/nitrous balance and the original controller. 2026-10-19 E85 re-jet [D]: fuel jet area x (14.5/9.783568)*sqrt(747.5/787.025) = 1.4444 (AFR_gasoline/AFR_E85 times sqrt(rho_gasoline/rho_E85), the same rule as physics_sim 30310f5 for the full kit, 1.535 -> 1.845 mm), so half the full kit jet 1.845/sqrt(2) = 1.3046 mm (was 1.0854); the hyper burns E85. Nominal rating, not a measured dyno result."
 }

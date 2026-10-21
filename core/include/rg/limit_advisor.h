@@ -61,6 +61,9 @@ struct AdviceText {
     std::string suggestion;
     std::string remedy;        // the line of a solved (or Closed) remedy
     std::string remedy_failed; // a Simulated remedy that found no value
+    // A variant only: the garage option this variant is fixed with when it differs from the kind's (ClutchCapacity on a
+    // clutch-to-clutch gearbox: "shift_clutch_capacity" instead of the manual clutch's "clutch_capacity"). "" = the kind's.
+    std::string option;
     // Caps the item's severity (the item is never louder than this); nullopt = no cap. Variants only in practice.
     std::optional<ps::drivetrain::LimitSeverity> max_severity;
 };
@@ -255,6 +258,16 @@ struct AdviceSweep {
     bool has_engine = false;
     double sweep_seconds = 0.0;
 };
+// The shift clutches of a clutch-to-clutch gearbox (automatic, dual-clutch, clutch-launched CVT: GearboxDesc::shift_clutch)
+// against the sweep's peak net torque, graded exactly like physics_sim's manual-clutch check (check_driveline_limits:
+// static capacity = capacity x static_factor; Limiting at the peak, Near within policy.driveline_torque_margin). Such a car has
+// no ClutchDesc, so that check never sees them. Findings are ClutchCapacity at part {"gearbox", gearbox_file,
+// "/shift_clutch/capacity_nm"} with a Closed remedy (required_min = peak / static_factor, required_margin x margin).
+[[nodiscard]] std::vector<ps::drivetrain::LimitFinding> check_shift_clutch_limits(const std::vector<ps::drivetrain::DynoPoint>& points,
+                                                                                   const ps::drivetrain::PowertrainDesc& powertrain,
+                                                                                   const std::string& gearbox_file,
+                                                                                   const ps::drivetrain::LimitPolicy* policy);
+
 // Sweeps the engine of `desc` (simulated or torque-map) over rpm and collects the findings, plus the driveline check
 // (clutch and, when its file names a rated_input_torque_nm, the gearbox). `config.policy` goes to the sweep
 // (DynoSweepSpec::policy) and the driveline check; remedy_request.spec keeps that pointer, so `config` must outlive
@@ -262,6 +275,10 @@ struct AdviceSweep {
 // Throws ps::io::GenerationCancelled when `cancel` is set; std::runtime_error on an engine without a dyno harness.
 AdviceSweep run_advice_sweep(const ps::vehicle::VehicleDesc& desc, const AdvisorConfig& config, ps::jobs::JobSystem* pool,
                              const std::atomic<bool>* cancel, const std::string& clutch_file = {}, const std::string& gearbox_file = {});
+
+// The worker count of the garage's background pools (limit advisor, upgrade hints): all but four logical processors (at least
+// one), RG_ENGINE_MAP_WORKERS (1..64) overrides.
+int background_worker_count();
 
 // ---- the background advisor -------------------------------------------------------------------------------------------
 

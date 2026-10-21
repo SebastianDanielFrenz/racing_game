@@ -2,8 +2,10 @@
 #include "rg_damage_convert.h"
 
 #include "rg/engine_swap.h"
+#include "rg/upgrade_badges.h"
 
 #include <godot_cpp/core/class_db.hpp>
+#include <godot_cpp/variant/utility_functions.hpp>
 #include <godot_cpp/variant/packed_float64_array.hpp>
 #include <godot_cpp/variant/packed_string_array.hpp>
 
@@ -107,6 +109,9 @@ godot::Dictionary RgGarage::initialize(const String& repo_root, const String& us
                                       const String& catalog_path) {
     dyno_.cancel();
     advisor_.reset();
+    hints_.reset();
+    hints_base_key_.clear();
+    hint_candidates_.clear();
     advisor_error_.clear();
     garage_.reset();
     camera_.reset();
@@ -129,6 +134,14 @@ godot::Dictionary RgGarage::initialize(const String& repo_root, const String& us
         advisor_ = std::make_unique<rg::LimitAdvisor>(std::move(*advisor_config));
     else
         advisor_error_ = advisor_err;
+    // Upgrade badges (data/garage/upgrade_badges.json) are optional too: a bad file shows no badges and is reported once.
+    badge_config_ = {};
+    std::string badge_err;
+    if (auto badges = rg::load_upgrade_badge_config(c.repo_root + "/data/garage/upgrade_badges.json", &badge_err)) {
+        badge_config_ = std::move(*badges);
+        hints_ = std::make_unique<rg::UpgradeHints>(badge_config_);
+    } else
+        godot::UtilityFunctions::push_warning(from_std("upgrade badges off: " + badge_err));
     return ok_reply();
 }
 
@@ -321,6 +334,169 @@ godot::Dictionary RgGarage::option_entry_parse(const String& option_id, int inde
     return d;
 }
 
+godot::Array RgGarage::get_powertrain_engine_choices() const {
+    godot::Array out;if(!garage_)return out;
+    for(const auto& p:garage_->powertrain_engine_choices()) {
+        godot::Dictionary d;d["id"]=from_std(p.id);d["label"]=from_std(p.label);d["image"]=from_std(p.image);d["size"]=from_std(p.detail);
+        d["section"]=from_std(p.section);d["subtitle"]=from_std(p.subtitle);d["fits"]=p.fits;d["fit_reason"]=from_std(p.fit_reason);out.push_back(d);
+    }return out;
+}
+
+godot::Array RgGarage::get_part_badges(const String& option_id, const String& part_id) const {
+    godot::Array out;
+    if (garage_ == nullptr || !garage_->editing()) return out;
+    const std::string opt = to_std(option_id);
+    const rg::OptionView* view = nullptr;
+    for (const rg::OptionView& v : garage_->model().options) {
+        if (v.def.id == opt) view = &v;
+    }
+    if (view == nullptr) return out;
+    const rg::SetupValue cur = garage_->current_value(opt);
+    const std::string* installed = std::get_if<std::string>(&cur);
+    if (installed == nullptr) return out;
+    for (const rg::UpgradeBadge& b : rg::option_part_badges(badge_config_, *view, *installed, to_std(part_id))) {
+        godot::Dictionary d;
+        d["quantity"] = static_cast<int64_t>(b.quantity);
+        d["delta"] = b.delta;
+        d["worse"] = b.worse;
+        d["text"] = from_std(b.text);
+        out.push_back(d);
+    }
+    return out;
+}
+
+// The base of the figures: the car, its current whole setup and the catalogs. Handed over only when it changed (an
+// unchanged base must not cancel running work).
+void RgGarage::ensure_hint_base(const rg::CatalogEntry& entry, const std::string& current_json) {
+    const rg::SetupContext context = garage_->context_for(entry);
+    const std::string base_key = entry.id + "#" + current_json + "#" +
+                                 std::to_string(reinterpret_cast<std::uintptr_t>(context.engines.get())) + "#" +
+                                 std::to_string(reinterpret_cast<std::uintptr_t>(context.gearboxes.get())) + "#" +
+                                 std::to_string(reinterpret_cast<std::uintptr_t>(context.drivelines.get()));
+    if (base_key != hints_base_key_) {
+        hints_->set_base(rg::HintBase{entry, garage_->options(), context}, garage_->working());
+        hints_base_key_ = base_key;
+        hint_candidates_.clear();
+    }
+}
+
+// The left specification pane (owner 2026-10-19): the car AS CONFIGURED NOW, unsaved edits included - mass, layout and gears
+// from the working setup, peak power and torque from the same background figures the tile hints use (so a tile's hint and
+// the pane move together), a pending flag until they are ready.
+godot::String RgGarage::format_number(double value, int max_decimals) const { return from_std(rg::format_number(value, max_decimals)); }
+
+godot::Dictionary RgGarage::get_working_spec() {
+    godot::Dictionary out;
+    out["ok"] = false;
+    out["pending"] = false;
+    if (garage_ == nullptr || !garage_->editing() || hints_ == nullptr) return out;
+    const rg::CatalogEntry* entry = garage_->catalog().find(garage_->edit_id());
+    if (entry == nullptr) return out;
+    std::string err;
+    if (const auto s = garage_->stats(entry->id, &err)) {
+        out["ok"] = true;
+        out["mass_kg"] = s->mass_kg;
+        out["layout"] = from_std(s->layout);
+        out["driveline"] = from_std(s->driveline);
+        out["gear_count"] = static_cast<int64_t>(s->gear_count);
+    } else {
+        out["error"] = from_std(err);
+        return out;
+    }
+    ensure_hint_base(*entry, rg::setup_to_json(garage_->working()));
+    const rg::HintAnswer a = hints_->request_current({rg::UpgradeQuantity::Power, rg::UpgradeQuantity::Torque});
+    out["pending"] = !a.pending.empty();
+    if (!a.error.empty()) out["figure_error"] = from_std(a.error);
+    if (const auto p = a.installed.find(rg::UpgradeQuantity::Power); p != a.installed.end()) out["power_kw"] = p->second;
+    if (const auto t = a.installed.find(rg::UpgradeQuantity::Torque); t != a.installed.end()) out["torque_nm"] = t->second;
+    return out;
+}
+
+godot::Dictionary RgGarage::get_hints(const String& option_id, const godot::Dictionary& edits) {
+    godot::Dictionary out;
+    godot::Array badges;
+    out["badges"] = badges;
+    out["pending"] = false;
+    out["error"] = String();
+    if (garage_ == nullptr || !garage_->editing() || hints_ == nullptr) return out;
+    const std::string opt = to_std(option_id);
+    const rg::OptionView* view = nullptr;
+    for (const rg::OptionView& v : garage_->model().options) {
+        if (v.def.id == opt) view = &v;
+    }
+    if (view == nullptr) return out;
+    std::string category_key;
+    const rg::UpgradeCategoryMetrics* category = rg::upgrade_category_for(badge_config_, opt, view->def.group, &category_key);
+    if (category == nullptr) return out;
+
+    std::vector<std::pair<std::string, rg::SetupValue>> list;
+    const godot::Array names = edits.keys();
+    std::string edit_key;
+    for (int i = 0; i < names.size(); ++i) {
+        rg::SetupValue v;
+        std::string err;
+        if (!variant_to_value(edits[names[i]], &v, &err)) {
+            out["error"] = from_std(err);
+            return out;
+        }
+        list.emplace_back(to_std(String(names[i])), std::move(v));
+        edit_key += "|" + list.back().first + "=" + to_std(String(edits[names[i]]));
+    }
+    // The installed part has no hint at all (rule of the core): its click selects what the car has already.
+    if (garage_->edits_installed(list)) return out;
+    const rg::CatalogEntry* entry = garage_->catalog().find(garage_->edit_id());
+    if (entry == nullptr) return out;
+    const std::string current_json = rg::setup_to_json(garage_->working());
+    ensure_hint_base(*entry, current_json);
+    // The candidate: the click's edits replayed on a copy of the current setup (the working copy is kept).
+    auto found = hint_candidates_.find(edit_key);
+    if (found == hint_candidates_.end()) {
+        std::string err;
+        auto candidate = garage_->candidate_setup(list, &err);
+        if (!candidate) {
+            out["error"] = from_std(err);
+            return out;
+        }
+        if (hint_candidates_.size() > 256) hint_candidates_.clear();
+        found = hint_candidates_.emplace(edit_key, std::move(*candidate)).first;
+    }
+    if (rg::setup_to_json(found->second) == current_json) return out; // the installed part: nothing changes
+
+    const rg::HintAnswer answer = hints_->request(found->second, category->metrics, category->nitrous_armed);
+    out["error"] = from_std(answer.error);
+    out["pending"] = !answer.pending.empty();
+    for (const rg::UpgradeBadge& b : rg::upgrade_badges(badge_config_, category_key, answer.candidate, answer.installed, &answer.pending)) {
+        godot::Dictionary d;
+        d["quantity"] = static_cast<int64_t>(b.quantity);
+        d["delta"] = b.delta;
+        d["worse"] = b.worse;
+        d["pending"] = b.pending;
+        d["text"] = from_std(b.text);
+        badges.push_back(d);
+    }
+    out["badges"] = badges;
+    return out;
+}
+
+bool RgGarage::wait_for_hints(int timeout_ms) { return hints_ == nullptr || hints_->wait_idle(timeout_ms); }
+
+void RgGarage::cancel_hints() {
+    if (hints_) hints_->cancel();
+}
+
+godot::Dictionary RgGarage::get_hint_stats() const {
+    godot::Dictionary d;
+    if (hints_ == nullptr) return d;
+    const rg::HintStats s = hints_->stats();
+    d["jobs_started"] = s.jobs_started;
+    d["jobs_finished"] = s.jobs_finished;
+    d["jobs_cancelled"] = s.jobs_cancelled;
+    d["figure_sets_computed"] = s.figure_sets_computed;
+    d["cache_hits"] = s.cache_hits;
+    d["last_job_seconds"] = s.last_job_seconds;
+    return d;
+}
+
 godot::Array RgGarage::get_options() const {
     godot::Array out;
     if (garage_ == nullptr || !garage_->editing()) return out;
@@ -458,6 +634,7 @@ godot::Dictionary RgGarage::save() {
 void RgGarage::discard() {
     dyno_.cancel();
     if (advisor_) advisor_->cancel();
+    if (hints_) hints_->cancel();
     if (garage_ != nullptr) garage_->discard();
 }
 
@@ -689,6 +866,7 @@ godot::Dictionary RgGarage::remove_user_engine(const String& key) {
 void RgGarage::cleanup() {
     dyno_.cancel();
     if (advisor_) advisor_->cancel();
+    if (hints_) hints_->cancel();
     if (garage_ != nullptr) garage_->cleanup();
 }
 
@@ -756,7 +934,8 @@ void RgGarage::refresh_dyno() {
     }
     rg::VehicleSetup engine_setup; engine_setup.vehicle_id=entry->id;
     for(const auto& option:garage_->options().options) {
-        if(option.file!="engine" && option.file!="turbo" && option.part_format!="physics_sim.engine/1" && option.part_format!="physics_sim.turbo_configuration/1") continue;
+        // The powertrain choice decides which engine the dyno sweeps (an ICE conversion, a hybrid's engine), so it counts too.
+        if(option.id!="powertrain_install" && option.file!="engine" && option.file!="turbo" && option.part_format!="physics_sim.engine/1" && option.part_format!="physics_sim.turbo_configuration/1") continue;
         auto value=garage_->working().values.find(option.id);
         if(value!=garage_->working().values.end()) engine_setup.values.emplace(*value);
     }
@@ -830,6 +1009,8 @@ void RgGarage::_bind_methods() {
     ClassDB::bind_method(D_METHOD("initialize", "repo_root", "user_dir", "work_root", "catalog_path"), &RgGarage::initialize, DEFVAL(String()));
     bind_browser_methods();
     ClassDB::bind_method(D_METHOD("get_dyno"), &RgGarage::get_dyno);
+    ClassDB::bind_method(D_METHOD("get_working_spec"), &RgGarage::get_working_spec);
+    ClassDB::bind_method(D_METHOD("format_number", "value", "max_decimals"), &RgGarage::format_number);
     ClassDB::bind_method(D_METHOD("get_advice"), &RgGarage::get_advice);
     ClassDB::bind_method(D_METHOD("solve_advice", "item_id"), &RgGarage::solve_advice);
     ClassDB::bind_method(D_METHOD("is_ready"), &RgGarage::is_ready);
@@ -841,6 +1022,12 @@ void RgGarage::_bind_methods() {
     ClassDB::bind_method(D_METHOD("begin_edit", "id"), &RgGarage::begin_edit);
     ClassDB::bind_method(D_METHOD("get_edit_id"), &RgGarage::get_edit_id);
     ClassDB::bind_method(D_METHOD("get_options"), &RgGarage::get_options);
+    ClassDB::bind_method(D_METHOD("get_part_badges", "option_id", "part_id"), &RgGarage::get_part_badges);
+    ClassDB::bind_method(D_METHOD("get_hints", "option_id", "edits"), &RgGarage::get_hints);
+    ClassDB::bind_method(D_METHOD("wait_for_hints", "timeout_ms"), &RgGarage::wait_for_hints);
+    ClassDB::bind_method(D_METHOD("cancel_hints"), &RgGarage::cancel_hints);
+    ClassDB::bind_method(D_METHOD("get_hint_stats"), &RgGarage::get_hint_stats);
+    ClassDB::bind_method(D_METHOD("get_powertrain_engine_choices"), &RgGarage::get_powertrain_engine_choices);
     ClassDB::bind_method(D_METHOD("option_entry_position", "option_id", "index", "value"), &RgGarage::option_entry_position);
     ClassDB::bind_method(D_METHOD("option_entry_value", "option_id", "index", "position"), &RgGarage::option_entry_value);
     ClassDB::bind_method(D_METHOD("option_entry_text", "option_id", "index", "value"), &RgGarage::option_entry_text);

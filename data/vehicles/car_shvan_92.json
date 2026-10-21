@@ -324,6 +324,11 @@
         "min_time_in_gear_s": 1.0
       },
       "max_pending_steps": 2
+    },
+    {
+      "id": "assists",
+      "type": "electronics",
+      "ref": "../electronics/assist_unit_abs.json"
     }
   ]
 }

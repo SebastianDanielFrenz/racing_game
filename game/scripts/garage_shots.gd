@@ -24,6 +24,7 @@ func _seconds(s: float) -> void:
 		await get_tree().process_frame
 
 func _shot(name: String) -> void:
+	_stage = "shot " + name
 	await RenderingServer.frame_post_draw
 	var image := get_viewport().get_texture().get_image()
 	var path := out_dir.path_join(prefix + name + ".png")
@@ -38,7 +39,15 @@ func _press(id: String) -> void:
 		return
 	button.pressed.emit()
 
+# A shots run can never hang (the upgrades walker once sat ~40 min with idle CPU): every run ends after this many seconds.
+const SHOTS_TIMEOUT_S := 420.0
+var _stage := "start"
+
 func _run() -> void:
+	var guard := get_tree().create_timer(SHOTS_TIMEOUT_S * (5.0 if OS.get_cmdline_user_args().has("--hint-shots-only") else 1.0))
+	guard.timeout.connect(func():
+		print("RG_GARAGE_SHOT FAIL timeout in stage '%s'" % _stage)
+		get_tree().quit(1))
 	DirAccess.make_dir_recursive_absolute(out_dir)
 	await _seconds(0.5)
 	main._apply_transition(main.get_shell().boot_finished())
@@ -87,6 +96,18 @@ func _run() -> void:
 	while main.get_shell_ui().garage.get_dyno().get("busy",false) and Time.get_ticks_msec() < dyno_deadline:
 		await _frames(1)
 	await _seconds(0.25)
+	if OS.get_cmdline_user_args().has("--upgrades-shots-only"):
+		await _upgrade_shots()
+		get_tree().quit()
+		return
+	if OS.get_cmdline_user_args().has("--hint-shots-only"):
+		await _hint_shots()
+		get_tree().quit()
+		return
+	if OS.get_cmdline_user_args().has("--spec-shots-only"):
+		await _spec_shots()
+		get_tree().quit()
+		return
 	if OS.get_cmdline_user_args().has("--strip-shots-only"):
 		await _strip_shots()
 		get_tree().quit()
@@ -174,3 +195,223 @@ func _strip_shots() -> void:
 	await RenderingServer.frame_post_draw
 	scene.capture_image().save_png(out_dir.path_join("cabin_stripped.png"))
 	print("RG_STRIP_SHOT done")
+
+# Upgrades screens (owner 2026-10-18): every Upgrades page two levels deep, at each window size, into out_dir as
+# upgrades_<width>_<page path>.png. Pages are walked from the root; a tile that is missing on a page is skipped.
+const UPGRADE_SHOT_SIZES := [Vector2i(1280, 720), Vector2i(1920, 1080)]
+
+func _back_to_root_shots(ui: CanvasLayer) -> void:
+	while not ui._garage_path.is_empty():
+		main._on_escape()
+		await _frames(2)
+
+func _slug(text: String) -> String:
+	var re := RegEx.new()
+	re.compile("[^A-Za-z0-9]+")
+	return re.sub(text, "_", true).trim_prefix("_").trim_suffix("_")
+
+func _walk_upgrades(ui: CanvasLayer, path: Array, depth: int, visited: Dictionary) -> void:
+	var key := " / ".join(path)
+	if visited.has(key):
+		return
+	visited[key] = true
+	await _back_to_root_shots(ui)
+	for step in path:
+		_press(step)
+		await _frames(3)
+	var tiles: Array = []
+	for id in ui.button_ids():
+		var text := str(id)
+		if text.begins_with("tile:") and not text.begins_with("tile:tune") and not text.begins_with("tile:Tune"):
+			tiles.append(text)
+	for size in UPGRADE_SHOT_SIZES:
+		get_window().size = size
+		await _seconds(0.6)
+		await _page_shots(ui, "upgrades_%d_%s" % [size.x, _slug(key) if not key.is_empty() else "root"])
+		if key.ends_with("tile:Weight reduction"):
+			await _badge_shots(ui, "upgrades_%d_weight_badge" % size.x)
+	if depth < 2:
+		for id in tiles:
+			await _walk_upgrades(ui, path + [id], depth + 1, visited)
+
+func _upgrade_shots() -> void:
+	var ui: CanvasLayer = main.get_shell_ui()
+	await _walk_upgrades(ui, [], 0, {})
+	await _back_to_root_shots(ui)
+
+# The option page, whole: the setup-check panel is hidden for the shot (it would leave the page ~150 px of scroll area at
+# 720 p), then the page is shot at scroll offsets of one view height each (at most 4), names <name>_1, _2, ...
+func _page_shots(ui: CanvasLayer, name: String) -> void:
+	var scroll: ScrollContainer = ui._option_box.get_parent() if ui._option_box != null else null
+	if scroll == null:
+		await _shot(name)
+		return
+	if ui._advice_box != null and is_instance_valid(ui._advice_box):
+		ui._advice_box.visible = false
+	await _seconds(0.3)
+	var view := maxf(scroll.size.y, 1.0)
+	var total: float = ui._option_box.size.y
+	var pages := clampi(int(ceil(total / view)), 1, 4)
+	for i in range(pages):
+		scroll.scroll_vertical = int(i * (view - 40.0))
+		await _frames(3)
+		await _shot("%s_%d" % [name, i + 1] if pages > 1 else name)
+	scroll.scroll_vertical = 0
+	if ui._advice_box != null and is_instance_valid(ui._advice_box):
+		ui._advice_box.visible = true
+
+# Upgrade HINTS (owner 2026-10-19) on every category page: all hint rows of a page are shown at once (not only the focused
+# tile's) after the core finished the figures, one shot set per page, plus a log line per tile with the badge texts.
+# `--hint-shots-only`; at most HINT_TILES_PER_PAGE tiles per page are asked (a swap page lists dozens of engines).
+const HINT_TILES_PER_PAGE := 8
+const HINT_PAGES := [
+	["tyres_compounds", ["tile:Wheels", "tile:All", "tile:Compounds"]],
+	["tyres_dimensions", ["tile:Wheels", "tile:All", "tile:Dimensions"]],
+	["swaps_engine", ["tile:Swaps", "tile:Engine"]],
+	["swaps_fuel", ["tile:Swaps", "tile:Fuel"]],
+	["swaps_forced_induction", ["tile:Swaps", "tile:Forced induction"]],
+	["swaps_drivetrain", ["tile:Swaps", "tile:Drivetrain"]],
+	["engine_turbo", ["tile:Engine", "tile:Turbo"]],
+	["engine_n2o", ["tile:Engine", "tile:N2O"]],
+	["engine_internals", ["tile:Engine", "tile:Internals"]],
+	["engine_cooling", ["tile:Engine", "tile:Cooling"]],
+	["drivetrain_gearbox", ["tile:Drivetrain", "tile:Gearbox"]],
+	["chassis_weight_reduction", ["tile:Chassis", "tile:Weight reduction"]],
+]
+
+func _hint_shots() -> void:
+	var ui: CanvasLayer = main.get_shell_ui()
+	for page in HINT_PAGES:
+		var name := str(page[0])
+		_stage = "hints " + name
+		await _back_to_root_shots(ui)
+		for step in page[1]:
+			_press(step)
+			await _frames(3)
+		await _seconds(0.5)
+		var tiles: Array = []
+		_collect_tiles(ui._option_box, tiles)
+		tiles = tiles.filter(func(t): return not t.has_node("Installed")) # the installed part has no hints
+		if tiles.size() > HINT_TILES_PER_PAGE:
+			tiles = tiles.slice(0, HINT_TILES_PER_PAGE)
+		var rows: Array = []
+		for tile in tiles:
+			var row: Container = tile.get_node_or_null("Badges")
+			if row == null:
+				continue
+			rows.append([tile, row])
+			# The request, then wait until the core finished it (the newest request cancels the previous one's work).
+			ui._fill_badges(row, str(tile.get_meta("badge_option")), tile.get_meta("badge_edits"))
+			var t0 := Time.get_ticks_msec()
+			ui.garage.wait_for_hints(600000)
+			print("RG_HINT_SHOT %s wait %.2f s" % [name, (Time.get_ticks_msec() - t0) / 1000.0])
+		for pair in rows:
+			var tile: Button = pair[0]
+			var row: Container = pair[1]
+			ui._fill_badges(row, str(tile.get_meta("badge_option")), tile.get_meta("badge_edits"))
+			row.visible = true
+			var texts: Array = []
+			for chip in row.get_children():
+				texts.append(str(chip.text))
+			var label: Label = tile.get_node_or_null("Name")
+			print("RG_HINT_SHOT %s tile '%s' edits %s -> [%s]" % [name, label.text if label != null else "?", str(tile.get_meta("badge_edits")), " | ".join(texts)])
+		await _seconds(0.3)
+		if rows.is_empty():
+			print("RG_HINT_SHOT %s no tiles with hints" % name)
+		await _page_shots(ui, "hints_" + name)
+		print("RG_HINT_SHOT stats %s" % str(ui.garage.get_hint_stats()))
+	await _back_to_root_shots(ui)
+
+# The left specification pane after swaps (owner 2026-10-19: it must show the configuration being edited, not the stock car).
+# `--spec-shots-only`: the stock pane, then after each swap of SPEC_SWAPS[vehicle] the figures once the core and the dyno finished,
+# with a swap page whose tiles show their hints (the installed tile none).
+const SPEC_SWAPS := {
+	"car_hyper": [["single_turbo", {"turbo_install": "hyper_single_compact"}, ["tile:Swaps", "tile:Forced induction"]]],
+	"car_sedan": [
+		["v8", {"engine_install": "default:ventura_v8_5l0_na"}, ["tile:Swaps", "tile:Engine"]],
+		["hybrid", {"powertrain_install": "hybrid_battery"}, ["tile:Swaps", "tile:Powertrain", "tile:Hybrid"]],
+	],
+}
+
+func _spec_wait(ui: CanvasLayer) -> void:
+	ui.garage.wait_for_hints(600000)
+	var deadline := Time.get_ticks_msec() + 300000
+	await _seconds(0.6)
+	while bool(ui.garage.get_dyno().get("busy", false)) and Time.get_ticks_msec() < deadline:
+		await _frames(2)
+	ui.garage.wait_for_hints(600000)
+	await _seconds(1.0)
+
+func _spec_shots() -> void:
+	var ui: CanvasLayer = main.get_shell_ui()
+	await _back_to_root_shots(ui)
+	await _spec_wait(ui)
+	print("RG_SPEC stock: %s" % str(ui.garage.get_working_spec()))
+	await _shot("spec_stock")
+	var vehicle := str(OS.get_cmdline_user_args()[OS.get_cmdline_user_args().find("--garage-shots-vehicle") + 1]) if OS.get_cmdline_user_args().has("--garage-shots-vehicle") else ""
+	for swap in SPEC_SWAPS.get(vehicle, []):
+		_stage = "spec " + str(swap[0])
+		await _back_to_root_shots(ui)
+		var edits: Dictionary = swap[1]
+		for id in edits:
+			ui._edit_option(str(id), edits[id])
+		await _spec_wait(ui)
+		print("RG_SPEC after %s: %s" % [str(swap[0]), str(ui.garage.get_working_spec())])
+		for step in swap[2]:
+			_press(step)
+			await _frames(3)
+		await _seconds(0.5)
+		var tiles: Array = []
+		_collect_tiles(ui._option_box, tiles)
+		if tiles.size() > HINT_TILES_PER_PAGE:
+			tiles = tiles.slice(0, HINT_TILES_PER_PAGE)
+		for tile in tiles:
+			var row: Container = tile.get_node_or_null("Badges")
+			if row != null:
+				ui._fill_badges(row, str(tile.get_meta("badge_option")), tile.get_meta("badge_edits"))
+				ui.garage.wait_for_hints(600000) # the newest request cancels the previous one's work: one tile at a time
+		var texts := []
+		for tile in tiles:
+			var row: Container = tile.get_node_or_null("Badges")
+			if row == null:
+				continue
+			ui._fill_badges(row, str(tile.get_meta("badge_option")), tile.get_meta("badge_edits"))
+			row.visible = true
+			var chips := []
+			for chip in row.get_children():
+				chips.append(str(chip.text))
+			var label: Label = tile.get_node_or_null("Name")
+			print("RG_SPEC tile '%s'%s -> [%s]" % [label.text if label != null else "?", " (installed)" if tile.has_node("Installed") else "", " | ".join(chips)])
+		await _seconds(0.5)
+		await _shot("spec_after_" + str(swap[0]))
+	await _back_to_root_shots(ui)
+
+# One heavier (red) and one lighter (green) weight tile highlighted by focus, the badge at its bottom middle.
+func _badge_shots(ui: CanvasLayer, name: String) -> void:
+	var scroll: ScrollContainer = ui._option_box.get_parent()
+	if ui._advice_box != null and is_instance_valid(ui._advice_box):
+		ui._advice_box.visible = false
+	await _seconds(0.3)
+	var want := {"red": true, "green": true}
+	var tiles: Array = []
+	_collect_tiles(ui._option_box, tiles)
+	for tile in tiles:
+		for badge in ui.garage.get_hints(str(tile.get_meta("badge_option")), tile.get_meta("badge_edits"))["badges"]:
+			var colour := "red" if bool(badge["worse"]) else "green"
+			if not want.get(colour, false):
+				continue
+			want[colour] = false
+			scroll.ensure_control_visible(tile)
+			await _frames(2)
+			tile.grab_focus()
+			await _frames(3)
+			await _shot("%s_%s" % [name, colour])
+	if ui._advice_box != null and is_instance_valid(ui._advice_box):
+		ui._advice_box.visible = true
+
+func _collect_tiles(node: Node, out: Array) -> void:
+	for child in node.get_children():
+		if child is Button and child.has_meta("badge_option"):
+			out.append(child)
+		else:
+			_collect_tiles(child, out)

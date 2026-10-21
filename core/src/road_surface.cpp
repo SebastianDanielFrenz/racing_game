@@ -12,6 +12,20 @@ double smooth(double t) { t=std::clamp(t,0.0,1.0); return t*t*(3-2*t); }
 // geo2map D59 (terrain_carve.cpp kUnderpassWallFadeM): past an underpass deck's end plane a carve segment's weight
 // fades to zero over this distance, so the cutting under the deck keeps steep walls.
 constexpr double kUnderpassWallFadeM = 1.0;
+// Junction tie-in (see apply): a road ties into a wider one it meets at more than 30 degrees (fully from about 40),
+// when the wider half-width exceeds its own by more than kTieInMinWidthGapM (fully from 1 m more).
+constexpr double kTieInMaxCos = 0.8660254037844386;
+constexpr double kTieInMinWidthGapM = 0.25;
+constexpr double kTieInAngleBand = 0.1;  // cosine band over which the angle gate fades in (30 to about 40 degrees)
+constexpr double kTieInWidthBandM = 1.0; // half-width band over which the width gate fades in
+// The side road returns to its own profile over the wider road's shoulder plus at most this much of its own blend, so
+// a long-blend ramp (motorway_link, 15 m) leaving at an angle is not pulled toward the carriageway far from it.
+constexpr double kTieInMaxRampM = 3.0;
+// Only an at-grade meeting ties in: a side road up to kTieInFullGapM off the wider carriageway's surface (crown and
+// profile-fit mismatch at a junction are centimetres to decimetres) ties fully, one more than kTieInFullGapM +
+// kTieInGapBandM off (an embankment or cutting crossing it) not at all - independent of the grade-separation clearance.
+constexpr double kTieInFullGapM = 0.5;
+constexpr double kTieInGapBandM = 0.5;
 }
 RoadSurfacePatch::RoadSurfacePatch(const g2m::RoadGeomTile& geometry,double verge_drop,const RoadSeparation& separation) : verge_drop_m_(verge_drop),separation_(separation) {
     decks=build_road_decks(geometry,separation);
@@ -134,19 +148,24 @@ std::size_t RoadSurfacePatch::apply(g2m::HeightTile& tile) const {
         }
         if(roads.empty()) continue;
         // Each nearby road's own surface height at this cell (camber, verge drop; no terrain blend yet).
-        struct Road { const Segment* segment; double score, fraction, d, z, wall; bool protects, kept; };
+        struct Road { const Segment* segment; double score, fraction, d, z, wall; bool protects, kept; double bed_z; };
         std::vector<Road> near; near.reserve(roads.size());
         for(const auto& [id,c]:roads) {
             (void)id;const auto& r=*c.segment;const double d=c.score*(r.half_width+r.shoulder),lateral=std::min(d,r.half_width);
             double z=r.z0+(r.z1-r.z0)*c.fraction-r.crown*(std::sqrt(lateral*lateral+.25)-.5)-verge_drop_m_*smooth((d-r.half_width)/std::max(.001,r.shoulder));
+            // The carriageway surface continued flat past its edge (no verge): what a side road ties into.
+            double bed_z=r.z0+(r.z1-r.z0)*c.fraction-r.crown*(std::sqrt(lateral*lateral+.25)-.5);
             if(r.footprint) {
                 const auto& f=*r.footprint;
                 const double signed_d=((r.x1-r.x0)*(n-r.y0)-(r.y1-r.y0)*(e-r.x0))>=0?d:-d;
                 const double t=std::clamp(r.reference_offset+signed_d,f.outer_right,f.outer_left);
                 z=r.z0+(r.z1-r.z0)*c.fraction+g2m::road_crown_m(f.crown,r.crown,t-f.crown_pivot,.5)
                     -g2m::road_crown_m(f.crown,r.crown,-f.crown_pivot,.5)+g2m::road_verge_m(f,t,verge_drop_m_);
+                const double tb=std::clamp(r.reference_offset+signed_d,f.roadbed_right,f.roadbed_left);
+                bed_z=r.z0+(r.z1-r.z0)*c.fraction+g2m::road_crown_m(f.crown,r.crown,tb-f.crown_pivot,.5)
+                    -g2m::road_crown_m(f.crown,r.crown,-f.crown_pivot,.5);
             }
-            near.push_back({&r,c.score,c.fraction,d,z,c.wall,!r.tunnel&&d<=r.half_width+r.shoulder+separation_.margin_m,true});
+            near.push_back({&r,c.score,c.fraction,d,z,c.wall,!r.tunnel&&d<=r.half_width+r.shoulder+separation_.margin_m,true,bed_z});
         }
         // Grade separation (RoadSeparation): inside a road's protected footprint, a road more than clearance_m above it
         // is on a structure here and must not lift the terrain, and one more than clearance_m below it (that does not
@@ -170,6 +189,36 @@ std::size_t RoadSurfacePatch::apply(g2m::HeightTile& tile) const {
                     if(b.wall<=0){b.kept=false;break;}
                 }
             }
+        }
+        // Junction tie-in: a narrower road meeting a wider one at an angle takes the wider carriageway's own surface
+        // (its crossfall) inside that carriageway and returns to its own profile over the wider road's shoulder plus its
+        // own blend. Without it the side road's uncrowned centre-line height owns cells inside the wider road's lanes
+        // (its normalised score is small there) and lifts a hump across them at every driveway or parking aisle.
+        {
+            std::vector<double> tied(near.size());const std::size_t count=near.size();
+            for(std::size_t i=0;i<count;++i) {
+                auto& b=near[i];tied[i]=b.z;if(!b.kept||b.segment->tunnel) continue;
+                const auto& B=*b.segment;const double bx=B.x1-B.x0,by=B.y1-B.y0,bl=std::hypot(bx,by);if(bl<1e-9) continue;
+                // Every gate is continuous (a hard angle/width/host switch puts a step between neighbouring cells): the
+                // tie weight is the strongest host's angle x width x distance weight, the target the weighted mean of
+                // the hosts' carriageway surfaces.
+                double tie=0,sum=0,weights=0;
+                for(const auto& a:near) {
+                    if(&a==&b||!a.kept||a.segment->tunnel) continue;
+                    const auto& A=*a.segment;
+                    const double gap=std::abs(b.z-a.bed_z);
+                    if(A.layer!=B.layer||A.blend<=B.blend||gap>separation_.clearance_m) continue;
+                    const double ax=A.x1-A.x0,ay=A.y1-A.y0,al=std::hypot(ax,ay);if(al<1e-9) continue;
+                    const double cosine=std::abs(ax*bx+ay*by)/(al*bl);
+                    const double g=smooth((kTieInMaxCos-cosine)/kTieInAngleBand)*smooth((A.half_width-B.half_width-kTieInMinWidthGapM)/kTieInWidthBandM)
+                        *(1-smooth((a.d-A.half_width)/std::max(.001,A.shoulder+std::min(B.blend,kTieInMaxRampM))))
+                        *(1-smooth((gap-kTieInFullGapM)/kTieInGapBandM));
+                    if(g<=0) continue;
+                    tie=std::max(tie,g);sum+=g*a.bed_z;weights+=g;
+                }
+                if(weights>0) tied[i]=b.z+(sum/weights-b.z)*tie;
+            }
+            for(std::size_t i=0;i<count;++i) near[i].z=tied[i];
         }
         const Road* best=nullptr;
         for(const auto& r:near) if(r.kept&&(!best||r.score<best->score)) best=&r; // map order: ties go to the smaller id

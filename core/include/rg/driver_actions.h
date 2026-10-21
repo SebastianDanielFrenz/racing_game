@@ -73,6 +73,7 @@ struct DriverSnapshot {
     bool abs_on = false;
     bool abs_intervening = false;
     bool esc_fitted = false;
+    std::uint32_t esc_modes = 0; // bit n = ESC mode code n offered (0 off, 1 on, 2 sport)
     int esc_effective = 0; // 0 off, 1 on, 2 sport
     bool esc_intervening = false;
     int gear = 0;
@@ -82,6 +83,8 @@ struct DriverSnapshot {
     bool transmission_manual = false; // paddles took over in D
     bool transmission_sport = false;
     bool engine_running = false;
+    double clutch_engagement = 1.0; // effective engagement of the engine clutch (1 on a car without one)
+    bool hybrid_fitted=false;
     bool electric_ready = false;
     double speed_mps = 0;
     double steering_wheel_deg = 0;
@@ -106,8 +109,15 @@ struct SelectorShift {
     bool refused = false;
 };
 SelectorShift selector_shift(const DriverSnapshot& snapshot, int up, int down);
+// A car with the P R N D selector: an automatic or dual-clutch box, a single-speed electric drive, or ANY hybrid whatever its
+// gearbox (the physics hybrid supervisor owns the gearbox and takes its D/N/R from gear_request; owner decision 2026-10-18).
+bool has_selector(const DriverSnapshot& snapshot);
 // The selector letter for HUD and cluster: "P", "R", "N", "D", "S" (sport) or "M<gear>" (manual mode); "" on a manual car.
 std::string selector_label(const DriverSnapshot& snapshot);
+// The text of the gear indicator of a selector car, "" on a manual car: the selector letter, plus the gearbox gear after D/S
+// when it drives the wheels. An automatic shows it whenever a gear is in; a hybrid only while the combustion engine is
+// actually coupled (engine running, gear in, clutch engaged: "D3"); an electric-only hybrid or a pure EV shows just "D".
+std::string selector_display(const DriverSnapshot& snapshot);
 
 struct VehicleContext {
     DriverSnapshot snapshot;
@@ -141,6 +151,10 @@ struct CabinConfig {
     double indicator_arm_deg = 0;
     double indicator_cancel_deg = 0;
     double brake_lamp_threshold = 0;
+    // Hybrid manual mode (tiptronic): the physics hybrid supervisor re-sends gear_request 99 whatever the game writes, so the usual
+    // "change gear_request" exit never reaches the gearbox. Leaving manual mode therefore requests N for this long (the box drops
+    // manual mode on the selector change) and then D again.
+    double manual_exit_hold_s = 0.05;
     // Automatic headlamps (LightMode::Auto, the default switch position): dipped
     // beam on once the sensor reads below on_lux for on_delay_s, off once it reads
     // above off_lux for off_delay_s (hysteresis: on_lux <= off_lux). The first
@@ -184,6 +198,8 @@ private:
     CabinState cabin_;
     CabinConfig config_;
     bool cabin_configured_ = false;
+    bool manual_exit_pending_ = false;
+    double manual_exit_elapsed_s_ = 0;
     void update_auto_lights(double lux, double dt);
     void apply_light_mode();
     std::array<bool, 18> held_{};

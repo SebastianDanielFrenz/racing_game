@@ -1,0 +1,8 @@
+{
+  "format": "physics_sim.electronics/1",
+  "kind": "assist_unit",
+  "name": "Street ABS",
+  "extends": "../../external/physics_sim/data/electronics/assist_unit_abs_esc.json",
+  "esc": null,
+  "source": "racing_game-owned: physics_sim's assist_unit_abs_esc.json without the esc block (anti-lock braking only, no traction control). Shipped by the 1990s cars (car_shvan_92, car_lct_3000); newer cars carry the full unit with ESC."
+}

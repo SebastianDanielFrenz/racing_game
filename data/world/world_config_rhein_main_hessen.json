@@ -30,6 +30,7 @@
     "engine_map_cache_enabled": true,
     "prefetch_margin_tiles": 1,
     "prefetch_max_tiles": 24,
+    "loader_workers": 16,
     "road_surfaces": {
       "enabled": true,
       "paved": "asphalt",

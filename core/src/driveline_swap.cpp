@@ -74,6 +74,9 @@ void set_kind(json& diff, const json& params) {
     for (auto it = params.begin(); it != params.end(); ++it) diff[it.key()] = it.value();
 }
 
+// Id of the gear_pair the hybrid conversion adds between its traction motor and the gearbox output shaft.
+const char* const kHybridReduction = "conversion_reduction";
+
 struct WheelInfo {
     std::string name;
     bool front = false;
@@ -140,6 +143,9 @@ Topology read_topology(const json& vehicle) {
         std::string id, ty;
         if (!c.is_object() || !detail::get_string(c, "id", id) || !detail::get_string(c, "type", ty)) continue;
         type_of[id] = ty;
+        // The battery-hybrid conversion's motor reduction (powertrain_swap_json.cpp) sits on the gearbox output shaft next to the
+        // differential carrier: the motor rides on whatever the gearbox output drives, so it is an attachment, not a second driveline.
+        if (ty == "gear_pair" && id == kHybridReduction) continue;
         if (ty == "transfer_case" || ty == "gear_pair") return fail("it has a " + ty + " (" + id + ")");
         if (ty == "gearbox") {
             if (!gearbox.empty()) return fail("it has two gearboxes");
