@@ -130,3 +130,53 @@ fallback must never silently change physics under an existing release ID.
   and Godot `--script res://scripts/geographic_terrain_test.gd` (headless supported).
 - See `external/geo2map_engine/docs/pipeline/geographic_elevation.md` for commands,
   exact hashes, bounds and source-specific limitations.
+
+### Prepared fallback and ground joins (2026-10-22)
+
+- geo2map 8df9057 adds local PMTiles v3 extraction, pinned WebP-to-RGBA
+  preparation, native Terrarium mosaic sampling and the combined
+  `g2m_elevation_prepare` command. Explicit offline preparation supports ordered
+  measured-primary -> Mapterhorn -> GLO-30 source priority. DSM correction runs
+  at a globally aligned coarse source scale before canonical 1 m upsampling;
+  known DTM and unknown source kinds pass through without DSM filtering.
+- Blending preserves every valid primary integer sample. Only fallback cells
+  receive bounded, distance-decaying overlap corrections. Composed halos and
+  stable tie-breaking make tile boundaries deterministic. Input roles, hashes,
+  missing primary dependencies and options are pinned in provenance; a changed
+  source/provenance requires a new scope. Writer claims prevent concurrent
+  preparation into the same destination.
+- Mixed/unknown-reference composites use explicit `VerticalDatum::Unspecified`
+  (container value 3), supported by road, rail and carving consumers. Unknown
+  documentation is permitted per the owner's revised ruling. Known conflicting
+  DHHN2016/EGM2008 dependencies still fail. Existing source containers are unchanged;
+  older binaries reject the new value and must be upgraded with these sources.
+- Windows native unit suite: 2,351,836 assertions / 161 cases passed, 12
+  external-data cases skipped. World suite: 1,374,379 assertions / 125 cases.
+  Affected container/road/rail/carve subset: 13,009 assertions / 30 cases passed
+  on Windows and Linux. Source samplers: 342 assertions / 11 cases on both;
+  ground/blend/DSM: 34,193 assertions / 12 cases on both. Native command tests:
+  four passed on each platform. Offline Python tools: nine preparation and eleven
+  extraction tests; Windows symlink cases skipped, Linux symlink cases passed;
+  real WebP decoding passed using Pillow 12.3.0 on Windows (Linux codec case skipped).
+- Real Hessen comparison: raw/prepared RMS errors (metres) 3.147/1.837,
+  1.604/1.339, 2.067/1.490 and 17.547/17.438 at 16,384 points per tile.
+  All 1,048,576 primary cells per tile were preserved exactly. The large fourth
+  residual remains unresolved; these mixed-source checks do not establish global
+  accuracy. Updated Windows/Linux preparation of tile 455/5421 produced identical
+  canonical container SHA256
+  `0fc3522a724232747c65a0e320fd27087d0b0a8141d9779f4321ff89ea3d76f8`.
+- P5/P6/P7 advance through explicit prepared-source ingestion, not automatic
+  worldwide acquisition. A bounded live Mapterhorn XYZ probe returned HTTP 403;
+  current provider pixels remain unvalidated. The codec/PMTiles tests use generated
+  fixtures, while GLO-30 tests also use pinned real COGs. No existing region is
+  replaced, and full playable-region inputs and broader P0-P16 acceptance remain.
+- Reproduction and limits:
+  `external/geo2map_engine/docs/pipeline/elevation_preparation.md`,
+  `mapterhorn_preparation.md` and `mapterhorn_pmtiles.md`.
+
+- Game integration: rebuilt `rg_godot` and `rg_unit_tests` against 8df9057.
+  Prepared Unspecified-reference composite loaded through the native service and
+  Godot mesh binding: 181 chunks / 811,785 vertices, no script errors. Game
+  terrain/config/surface/credits suite: 7,632 assertions / 98 cases passed; one
+  optional local B8-data case skipped. This headless probe validates source and
+  mesh plumbing, not driving, visual quality, VR or ARM64 hardware acceptance.
