@@ -90,8 +90,9 @@ public:
     // RgSimulation is running in terrain mode, so the decoded tiles are not
     // fetched/decoded twice.
     bool initialize(const godot::String& world_config_absolute_path);
-    godot::Dictionary get_road_visual_tile(int x,int y,double lift_m);
+    godot::Dictionary get_road_visual_tile(int x,int y,double lift_m,double line_width_m);
     godot::Dictionary get_building_tile(int x,int y,double min_height,double fallback_height,double storey_height);
+    godot::Dictionary get_building_mesh_tile(int x,int y,double min_height,double fallback_height,double storey_height,double skyline_height);
     // Railways (RACE-028): the mesh of one level-2 tile (vertices/normals in Godot axes, colours, clockwise indices,
     // origin_session) - empty when the world has no rail layer; get_rail_info() = {enabled, view_distance_m}.
     godot::Dictionary get_rail_tile(int x,int y);

@@ -1,5 +1,5 @@
 extends Node3D
-# OSM placement is independent of the replaceable appearance layer.
+# Placement and procedural appearance are generated in geo2map. This script only streams/uploads meshes.
 var view: Node
 var simulation: Node
 var director: Node
@@ -15,8 +15,8 @@ var _tiles: Dictionary = {}
 # RingStreamer (full within ordinary_distance_m + 725 m, skyline-only within
 # skyline_distance_m + 725 m; downgraded / evicted beyond the distance + 2048 m).
 var _ring := RgRingStreamer.new()
-var _material := StandardMaterial3D.new()
-var _placed_origin := Vector3.ZERO # the render origin every resident tile is placed against
+var _materials := preload("res://scripts/building_materials.gd").shared()
+var _placed_origin := Vector3.ZERO
 func _ready() -> void:
 	process_priority = 100
 	settings["ordinary_distance_m"] = clampf(float(settings.get("ordinary_distance_m",2200.0)),256.0,10000.0)
@@ -25,9 +25,6 @@ func _ready() -> void:
 	settings["fallback_height_m"] = clampf(float(settings.get("fallback_height_m",8.0)),1.0,100.0)
 	settings["storey_height_m"] = clampf(float(settings.get("storey_height_m",3.0)),1.0,10.0)
 	_ring.configure({"full_m":float(settings.ordinary_distance_m),"far_m":float(settings.skyline_distance_m),"empty_keeps_resident":false})
-	_material.vertex_color_use_as_albedo = true
-	_material.roughness = 1.0
-	_material.cull_mode = BaseMaterial3D.CULL_DISABLED
 	_thread.start(_worker)
 func shutdown() -> void:
 	_mutex.lock()
@@ -102,103 +99,34 @@ func _worker() -> void:
 			_wake.wait()
 			continue
 		var threshold := float(settings.get("skyline_min_height_m",50.0))
-		var data: Dictionary = view.get_building_tile(int(job.x),int(job.y),0.0 if job.full else threshold,float(settings.get("fallback_height_m",8.0)),float(settings.get("storey_height_m",3.0)))
-		var near_arrays := _empty_arrays()
-		var tall_arrays := _empty_arrays()
-		for building: Dictionary in data.get("buildings",[]):
-			_tessellate(building,tall_arrays if float(building.height)>=threshold else near_arrays)
+		var data: Dictionary = view.get_building_mesh_tile(int(job.x),int(job.y),0.0 if job.full else threshold,float(settings.get("fallback_height_m",8.0)),float(settings.get("storey_height_m",3.0)),threshold)
+		var near_arrays: Array = data.get("near",_empty_arrays())
+		var tall_arrays: Array = data.get("tall",_empty_arrays())
 		_mutex.lock()
 		# The meshes (format, compression, AABB) are built here, not on the main thread; _upload only attaches them.
 		_results.append({"key":Vector2i(int(job.x),int(job.y)),"full":bool(job.full),"origin":data.get("origin_session",Vector3.ZERO),"near":_mesh(near_arrays),"tall":_mesh(tall_arrays)})
 		_mutex.unlock()
 func _empty_arrays() -> Array:
-	return [PackedVector3Array(),PackedVector3Array(),PackedColorArray()]
-func _vertex(arrays: Array,point: Vector2,z: float,normal: Vector3,colour: Color) -> void:
-	arrays[0].append(Vector3(-point.y,z,-point.x))
-	arrays[1].append(normal)
-	arrays[2].append(colour)
-func _tessellate(building: Dictionary,arrays: Array) -> void:
-	var seed_value := posmod(int(building.id),19)/19.0
-	var colour := Color(.55+seed_value*.15,.53+seed_value*.13,.49+seed_value*.12)
-	if Color.html_is_valid(str(building.colour)):
-		colour = Color.html(str(building.colour))
-	var top := float(building.base)+float(building.height)
-	var bottom := float(building.bottom)
-	var rings: Array = building.outers.duplicate()
-	rings.append_array(building.inners)
-	for ring_index in rings.size():
-		var ring: PackedVector2Array = rings[ring_index]
-		var area := 0.0
-		for i in ring.size():
-			var a := ring[i]
-			var b := ring[(i+1)%ring.size()]
-			area += a.x*b.y-b.x*a.y
-		var facing := (1.0 if area>=0 else -1.0)*(1.0 if ring_index<building.outers.size() else -1.0)
-		for i in ring.size():
-			var a := ring[i]
-			var b := ring[(i+1)%ring.size()]
-			if a.distance_squared_to(b)<.0001:
-				continue
-			var normal := Vector3(-(b.y-a.y),0,-(b.x-a.x)).cross(Vector3.UP).normalized()*facing
-			for v: Array in [[a,bottom],[b,bottom],[b,top],[a,bottom],[b,top],[a,top]]:
-				_vertex(arrays,v[0],v[1],normal,colour)
-	for outer: PackedVector2Array in building.outers:
-		var holes: Array = []
-		for inner: PackedVector2Array in building.inners:
-			if Geometry2D.is_point_in_polygon(inner[0],outer):
-				holes.append(inner)
-		if not holes.is_empty():
-			_roof_with_holes(outer,holes,top,colour.darkened(.25),arrays)
-			continue
-		var triangles := Geometry2D.triangulate_polygon(outer)
-		for index in triangles:
-			_vertex(arrays,outer[index],top,Vector3.UP,colour.darkened(.25))
-func _roof_with_holes(outer: PackedVector2Array,holes: Array,top: float,colour: Color,arrays: Array) -> void:
-	# Horizontal slabs use an even/odd fill: exact concave contours and courtyards,
-	# without unconstrained triangulation crossing a boundary or covering a hole.
-	var rings: Array = [outer]
-	rings.append_array(holes)
-	var ys: Array[float] = []
-	for ring: PackedVector2Array in rings:
-		for p in ring:
-			ys.append(p.y)
-	ys.sort()
-	for slab in range(ys.size()-1):
-		var lo := ys[slab]
-		var hi := ys[slab+1]
-		if hi-lo < .00001:
-			continue
-		var mid := (lo+hi)*.5
-		var crossings: Array = []
-		for ring: PackedVector2Array in rings:
-			for i in ring.size():
-				var a := ring[i]
-				var b := ring[(i+1)%ring.size()]
-				if mid <= minf(a.y,b.y) or mid >= maxf(a.y,b.y):
-					continue
-				var slope := (b.x-a.x)/(b.y-a.y)
-				crossings.append({"mid":a.x+(mid-a.y)*slope,"lo":a.x+(lo-a.y)*slope,"hi":a.x+(hi-a.y)*slope})
-		crossings.sort_custom(func(a: Dictionary,b: Dictionary) -> bool: return a.mid<b.mid)
-		for i in range(0,crossings.size()-1,2):
-			var left: Dictionary = crossings[i]
-			var right: Dictionary = crossings[i+1]
-			var a := Vector2(left.lo,lo)
-			var b := Vector2(right.lo,lo)
-			var c := Vector2(right.hi,hi)
-			var d := Vector2(left.hi,hi)
-			for point: Vector2 in [a,b,c,a,c,d]:
-				_vertex(arrays,point,top,Vector3.UP,colour)
-func _mesh(arrays: Array) -> ArrayMesh:
-	if arrays[0].is_empty():
+	return []
+func _mesh(surfaces: Array) -> ArrayMesh:
+	if surfaces.is_empty():
 		return null
-	var surface: Array = []
-	surface.resize(Mesh.ARRAY_MAX)
-	surface[Mesh.ARRAY_VERTEX] = arrays[0]
-	surface[Mesh.ARRAY_NORMAL] = arrays[1]
-	surface[Mesh.ARRAY_COLOR] = arrays[2]
 	var mesh := ArrayMesh.new()
-	mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES,surface)
-	mesh.surface_set_material(0,_material)
+	for record: Dictionary in surfaces:
+		var arrays: Array = record.arrays
+		if arrays[0].is_empty():
+			continue
+		var surface: Array = []
+		surface.resize(Mesh.ARRAY_MAX)
+		surface[Mesh.ARRAY_VERTEX] = arrays[0]
+		surface[Mesh.ARRAY_NORMAL] = arrays[1]
+		surface[Mesh.ARRAY_COLOR] = arrays[2]
+		surface[Mesh.ARRAY_TEX_UV] = arrays[3]
+		mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES,surface)
+		mesh.surface_set_material(mesh.get_surface_count()-1,_materials[int(record.material)])
+	if mesh.get_surface_count() == 0:
+		return null
+	mesh.regen_normal_maps()
 	return mesh
 func _upload(result: Dictionary) -> void:
 	var key: Vector2i = result.key

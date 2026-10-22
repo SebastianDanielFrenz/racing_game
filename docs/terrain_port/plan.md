@@ -21,6 +21,8 @@ the owner's October surface-alignment reports and instructions.
 | Baked -> raw -> self-acquired source fallback | Retain one canonical derivation path | D2 owner ruling: all paths must agree on input bytes and output hashes |
 | UTM tiles, orthometric heights, floating origin | Retain; adapt provider projections at import | D8/native DGM1 grid; replacing keys would discard working storage, profiles and physics |
 | Determinism and immutable release identity | Retain pinned source hashes, sorted iteration, det math | Multiplayer hash verification D12 and cross-platform derivation |
+| Worldwide elevation sources | Mapterhorn and Copernicus GLO-30 approved | Owner 2026-10-22: use both; retain source provenance and evaluate terrain results |
+| Vertical datum policy | Missing verification is not an availability blocker | Owner explicitly rescinded the earlier restriction on 2026-10-22: prioritize resulting terrain; use known conversions where available, validate joins and road/physics alignment, record inferred adjustments |
 | Source quality | Keep measured DGM1/DTM; correct only identified DSM fallback | Good ground must not be degraded by a global lower-resolution surface model |
 | Road ownership | Retain served cross-sections, profiles, junctions and shared surface sampler | Owner: visible and logical asphalt/path surfaces must agree; stop terrain paint masquerading as paths |
 | Heights / grades | Endpoints and mapped heights win; report exceptions | Existing owner ruling: do not clamp endpoint heights to a class-grade default |
@@ -28,6 +30,7 @@ the owner's October surface-alignment reports and instructions.
 | Sources / network | Bounded extracts and pinned public COGs; no live OSM or Mapterhorn hotlink default | D13 and source-service limits; new request does not select a different source policy |
 | Deployment | Integrated/local and estate server remain supported | D3: development on this PC, owner/friends; no imposed hosted dependency |
 | Assets | Original or compatible licensed material sets, provenance recorded | Public repos; BeamNG stock assets are proprietary and outside the mod's MIT licence |
+| Building appearance | Actual textured 3D models, not footprint extrusion as the result | Owner 2026-10-22 follow-up; silhouettes, facades and material detail are part of acceptance |
 | Buildings | Mapped facts before inferred regional defaults; keep courtyards and foundations | P4 official LoD2 priority in Hessen; procedural facades fill missing appearance, not replace measured geometry |
 | Vegetation | Generic scatter/season descriptors; no tree collision in v1 | D6 and future farming use; keep mapped trees before inferred scatter |
 | Renderer | Geometry/material semantics in native library; thin Godot preview, UE-compatible data | Existing renderer-migration choice; do not introduce a new custom Godot shader dependency |
@@ -68,7 +71,7 @@ No discarded component is allowed to hide a missing user-visible feature.
 ## Fundamental incompatibility policy
 
 Ask the owner with a concrete comparison only when no prior decision resolves it:
-incompatible vertical datums without a conversion; mapped LoD2 vs conflicting OSM
+mapped LoD2 vs conflicting OSM
 geometry; ambiguous current/replacement bridge identity; unavailable permissible
 imagery/materials where appearance cannot be reproduced; a feature requiring a
 change to the physical ground or the existing source-hosting policy.
@@ -81,5 +84,23 @@ fallback must never silently change physics under an existing release ID.
 - P0: dedicated sibling worktrees created from the tested baselines; other
   sessions' working trees left untouched. Plan records owner rationale separately
   from implementation choices.
-- Remaining slices: pending implementation/validation. Update this ledger with
-  exact commands, test results, measured limits, and unresolved cases as work lands.
+- P1 partial: native roofs clipped to concave footprints/courtyards, metric UVs,
+  eight material semantics, window frames/sills, residential entrances and chimneys.
+  Godot uploads native geometry with pinned CC0 PBR assets. Official LoD2 ingestion,
+  roof direction support and broader regional archetypes remain pending.
+- P2 partial: bounded explicit paint clipped to draped road geometry, preserving
+  configurable line width and three-argument binding compatibility.
+- P3 partial: tagged bridge visual members on authoritative physical decks;
+  inventory enrichment, supports/clearances and long-span acceptance remain pending.
+- P7 partial: deterministic masked DSM correction with composed tiled halos;
+  not yet connected to worldwide ingestion.
+- Windows world suite: 1,341,164 assertions in 115 cases passed at geo2map 18cc542.
+  Linux port fixtures: 115,251 assertions in 22 cases passed, including matching
+  geometry/DSM golden hashes. Actual game probe: 533 buildings, 72 pitched roofs,
+  48 entrances, 36 chimneys, 18,074 windows; 459,318 vertices, ~71 ms native
+  building generation on this machine. Materials: 13.33 MiB; 12 pinned asset files
+  verified. Windows game/native build and Vulkan probe passed. These timings
+  are one tile, not a general streaming performance guarantee.
+- P5/P6 next: source manifests/acquisition and worldwide elevation inputs, with
+  source-aware joins and result checks. Both providers approved; no hard datum
+  exclusion. Remaining P4-P16 acceptance is pending; this is not full parity.
