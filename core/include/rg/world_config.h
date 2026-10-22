@@ -13,6 +13,7 @@
 namespace rg {
 
 struct WorldConfig {
+    std::string server_url; // optional HTTP world service; empty = local stores
     struct UtmOrigin {
         int zone = 0;    // 1..60 (g2m::geo::UtmZone's own range)
         double e0 = 0.0; // metres

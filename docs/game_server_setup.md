@@ -61,8 +61,7 @@ date/time and UTC offset are also included. The `weather` field is the existing
 `rg.weather_broadcast/1` message, with transition origin/duration, next change
 and revision. `air_temperature_c` is derived by the existing climate model.
 Clients must discard their clock/revision history when `instance_id` changes.
-Ping-based clock estimation and an actual game client adapter are still pending;
-polling this API alone does not synchronize existing game sessions.
+The game client adapter below uses these snapshots with a minimum-RTT estimate; the later UDP clock protocol remains pending.
 
 There are no remote mutation/admin endpoints. HTTP is plaintext; hosted access
 should use the planned private WireGuard network or an appropriate reverse
@@ -100,6 +99,68 @@ exclusive checkpoint ownership, restart continuity, rejected mutation and
 corrupt-state failure. Existing `[weather_authority]` tests cover the seeded
 schedule and client broadcast reconstruction in more depth.
 
-Next increments: client endpoint/configuration and time synchronization;
+Next increments: UDP clock synchronization and player replication;
 environment content identity/checkpoints; ENet player state relay and remote
 visuals (S1/S2); shared traffic; authenticated administration and persistence.
+
+## Game client (2026-10-22)
+
+Build the extension from the same `codex/game-server` checkout (its geo2map pin
+includes the additive remote `TerrainService` transport seam):
+
+```powershell
+cmake --preset relwithdebinfo -DRG_BUILD_SERVER=ON -DRG_BUILD_GODOT_EXTENSION=ON
+cmake --build out/build/relwithdebinfo --target rg_server rg_godot
+$env:RG_SERVER_URL = 'http://127.0.0.1:47101'
+tools/run.ps1 -SkipBuild
+```
+
+Alternatively, set **Settings > Network > World server URL**. It applies when
+the next world loads. An explicit `RG_SERVER_URL` overrides the saved setting.
+Clear the setting and remove that environment variable to use local single
+player again. The endpoint is a plain HTTP **base URL**, without `/rg/v1`.
+HTTP support now builds with the game client as well as the dedicated server.
+
+While connected:
+
+- The sky, lighting and physics weather follow the server clock and broadcast.
+  HTTP polling runs on a dedicated worker, not on a rendering or physics tick.
+- The client checks that its sky and climate files match the server's advertised
+  content. It uses the authority's climate location. Mismatches stay disconnected
+  rather than quietly producing different weather.
+- Time/weather menus and the time slider are read-only. The weather widget shows
+  connection status; its status tooltip contains failure details.
+- Clock samples use a minimum-RTT midpoint estimate. Later corrections hold or
+  advance the clock, never rewind it within one server instance. A restarted
+  server establishes a fresh clock/revision namespace.
+- After three seconds without a valid snapshot the clock and weather hold. They
+  resume after reconnection. This is initial HTTP synchronization (500 ms polling,
+  up to 50 ms server snapshot age), not the later UDP clock protocol.
+- Real-world initialization discovers the map URL and **pins its release ID**.
+  All terrain, source OSM, road and rail requests use the existing asynchronous
+  tile scheduler over HTTP. Remote mode does not open a local source store or
+  derive missing server tiles locally. Missing required layers fail explicitly.
+- Validated tile containers are cached by release/layer/tile in a bounded 5 GiB
+  disk cache under `<derived_store.dir>/remote`. Already cached tiles remain
+  usable through an outage. New world initialization still needs discovery and
+  the release manifest; it currently requires the server to be reachable.
+
+Enable `map.enabled` on the server for real-world driving; environment-only
+servers can still supply time/weather to the flat world. The selected client
+world config must describe the intended region/session frame and have its
+required layers enabled on the server. This increment does not distribute a
+world config, surface-condition checkpoints, traffic or other players.
+
+Acceptance (requires an existing home-r1 source store and Godot console):
+
+```powershell
+cmake --build out/build/relwithdebinfo --target rg_world_client_probe
+python tools/world_client_smoke.py --root . --source S:/claude_code/geo2map_cache/home-r1 --godot <godot-console.exe> --full-startup
+```
+
+This harness uses only its own temporary checkpoints, caches and processes. It
+checks remote terrain without a local source store, the actual `RgSky` binding,
+authoritative controls, cache availability after server shutdown and stale-clock
+hold. The optional full startup also initializes the actual physics terrain
+gate. `--bindings-test` and the existing weather/settings/terrain unit tests
+cover the local single-player path. Linux runtime acceptance is still pending.

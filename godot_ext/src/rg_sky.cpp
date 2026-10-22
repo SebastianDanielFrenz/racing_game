@@ -50,18 +50,25 @@ bool RgSky::initialize(const godot::String& sky_json_path, const godot::String& 
         tw_->set_weather_schedule(*schedule);
     else
         godot::UtilityFunctions::push_warning(godot::String::utf8(("sky: weather stays as picked: " + schedule_err).c_str()));
+    const auto server = rg::world_server_url();
+    if (!server.empty()) {
+        tw_->use_remote_weather();
+        remote_ = std::make_unique<rg::WorldServiceClient>(server, sky_path, sky_path.substr(0, slash == std::string::npos ? 0 : slash + 1) + "climate.json");
+    } else remote_.reset();
     return true;
 }
 
-void RgSky::advance(double dt) { if (tw_) tw_->advance(dt); }
-void RgSky::set_local_time_h(double h) { if (tw_) tw_->clock().set_local_time_h(h); }
-void RgSky::set_rate(double r) { if (tw_) tw_->clock().set_rate(r); }
+void RgSky::advance(double dt) { if (tw_) { if (remote_) remote_->advance(*tw_, dt); else tw_->advance(dt); } }
+void RgSky::set_local_time_h(double h) { if (tw_ && !remote_) tw_->clock().set_local_time_h(h); }
+void RgSky::set_rate(double r) { if (tw_ && !remote_) tw_->clock().set_rate(r); }
 
 godot::Dictionary RgSky::get_state() {
     godot::Dictionary d;
     if (!tw_) return d;
     const auto s = tw_->sample();
     const double gamma = tw_->location().grid_convergence_deg;
+    d["server_status"] = remote_ ? godot::String::utf8(remote_->status().c_str()) : godot::String("offline");
+    d["server_authoritative"] = remote_ != nullptr;
     d["clock_text"] = godot::String(s.clock_text.c_str());
     d["date_text"] = godot::String(s.date_text.c_str());
     d["local_time_h"] = s.local_time_h;
@@ -101,15 +108,15 @@ godot::Array RgSky::get_menu() const {
         d["id"] = godot::String(item.id.c_str());
         d["group"] = godot::String(item.group.c_str());
         d["label"] = godot::String::utf8(item.label.c_str());
-        d["enabled"] = item.enabled;
+        d["enabled"] = item.enabled && !remote_;
         d["selected"] = item.selected;
-        d["reason"] = godot::String::utf8(item.reason.c_str());
+        d["reason"] = remote_ ? godot::String("Controlled by the world server") : godot::String::utf8(item.reason.c_str());
         out.push_back(d);
     }
     return out;
 }
 
-bool RgSky::choose(const godot::String& id) { return tw_ && tw_->choose(utf8(id)); }
+bool RgSky::choose(const godot::String& id) { return tw_ && !remote_ && tw_->choose(utf8(id)); }
 
 godot::String RgSky::format_temperature_c(double kelvin) {
     return godot::String::utf8(rg::format_temperature_c(kelvin).c_str());

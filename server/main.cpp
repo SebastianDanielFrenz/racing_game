@@ -230,7 +230,7 @@ int run(const fs::path& root, const fs::path& config, double run_for) {
     });
     http.Get("/rg/v1/server", [&](const httplib::Request&, httplib::Response& res) {
         reply(res, {{"format", "rg.server_info/1"}, {"instance_id", instance}, {"environment", "/rg/v1/environment"},
-            {"map", maps.discovery}, {"player_replication", false}, {"shared_traffic", false}});
+            {"map", maps.discovery}, {"environment_content", identity}, {"player_replication", false}, {"shared_traffic", false}});
     });
     http.Get("/rg/v1/environment", [&](const httplib::Request&, httplib::Response& res) {
         std::lock_guard guard(mutex); reply(res, published);

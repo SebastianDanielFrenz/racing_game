@@ -13,6 +13,7 @@
 // checked with .contains()/.is_*() before any .get<T>() call - no throw, no
 // catch, anywhere in this file.
 #include "rg/world_config.h"
+#include "rg/world_service_client.h"
 
 #include "g2m/core/geo/utm.h"
 
@@ -712,6 +713,7 @@ std::optional<WorldConfig> load_world_config(const std::string& path, std::strin
     cfg.surface_map = resolved_surface_map.lexically_normal().string();
     cfg.palette = resolved_palette.lexically_normal().string();
 
+    cfg.server_url = world_server_url();
     return cfg;
 }
 

@@ -17,6 +17,7 @@ var _panel: PanelContainer
 var _icon: Control
 var _time_label: Label
 var _info_label: Label
+var _server_label: Label
 var _menu: PanelContainer
 var _menu_box: VBoxContainer
 var _slider: HSlider
@@ -56,6 +57,9 @@ func _ready() -> void:
 	_info_label.add_theme_color_override("font_color", Color(0.75, 0.78, 0.82))
 	_info_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	texts.add_child(_info_label)
+	_server_label = Label.new()
+	_server_label.add_theme_font_size_override("font_size", 12)
+	texts.add_child(_server_label)
 
 	_menu = PanelContainer.new()
 	_menu.name = "WeatherMenu"
@@ -101,6 +105,10 @@ func _process(delta: float) -> void:
 		return
 	_panel.visible = true
 	var s: Dictionary = sky.get_state()
+	_server_label.visible = bool(s.get("server_authoritative", false))
+	var status := str(s.get("server_status", ""))
+	_server_label.text = "World server" if status == "connected" else "World server: connecting" if status == "connecting" else "World server: disconnected"
+	_server_label.tooltip_text = status
 	_icon.icon = s["icon"]
 	_time_label.text = s["clock_text"]
 	var temperature := "-- °C"
@@ -134,6 +142,7 @@ func _rebuild_menu() -> void:
 	var s: Dictionary = sky.get_state()
 	_menu_box.add_child(_heading("Time of day"))
 	_slider = HSlider.new()
+	_slider.editable = not bool(s.get("server_authoritative", false))
 	_slider.min_value = 0.0
 	_slider.max_value = 24.0
 	_slider.step = 0.25

@@ -8,6 +8,7 @@
 // invalid zone - is guarded by an explicit check in WorldTerrain::open()
 // before it is ever called, so this file never needs a try/catch.
 #include "rg/world_terrain.h"
+#include "rg/world_service_client.h"
 #include "stream_trace.h"
 #include "rg/route_surface_mesh.h"
 #include "rg/surface_layers.h"
@@ -176,6 +177,11 @@ std::unique_ptr<WorldTerrain> WorldTerrain::open(const WorldConfig& config, std:
                            "Hessisches Landesamt fuer Bodenmanagement und Geoinformation (HVBG), dl-de/zero-2-0",
                            false}};
     service_cfg.derive_workers = 0; // auto
+    if (!config.server_url.empty()) {
+        std::string remote_error;
+        if (!configure_remote_terrain(service_cfg, config.server_url, config.derived_store.dir + "/remote", &remote_error))
+            return fail("World server: " + remote_error);
+    }
     auto service_result = g2m::world::TerrainService::open(service_cfg);
     if (!service_result.ok()) {
         return fail("WorldTerrain::open: " + service_result.error().message);

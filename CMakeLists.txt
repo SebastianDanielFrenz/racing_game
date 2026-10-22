@@ -57,9 +57,7 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 option(RG_BUILD_SERVER "Build the headless world services (HTTP dependency)" OFF)
-if(RG_BUILD_SERVER)
-  set(G2M_BUILD_HTTP ON CACHE BOOL "" FORCE)
-endif()
+set(G2M_BUILD_HTTP ON CACHE BOOL "HTTP world services and terrain client" FORCE)
 
 option(RG_BUILD_TESTS "Build the Catch2 unit test suite for rg_core" ON)
 option(RG_BUILD_GODOT_EXTENSION "Build the rg_godot GDExtension" ON)

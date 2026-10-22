@@ -108,6 +108,8 @@ var _mode_seen: String = "drive"
 var _seat_ui: CanvasLayer
 var _director: Node
 var _hud: Node
+var _sky_server_url := ""
+var _server_env_override := OS.get_environment("RG_SERVER_URL")
 var _sky: Node            # sky_controller.gd
 var _weather_widget: CanvasLayer # weather_widget.gd (top right)
 var _weather_fx: Node3D          # weather_fx.gd (wet look, rain / snow)
@@ -503,6 +505,7 @@ func _build_terrain_preview_scene() -> void:
 # Sun, moon, sky and ambient follow the time of day (sky_controller.gd, RgSky,
 # data/world/sky.json); the weather/time widget sits top right.
 func _add_sun_and_sky() -> void:
+	_sky_server_url = OS.get_environment("RG_SERVER_URL")
 	_sky = load("res://scripts/sky_controller.gd").new()
 	_sky.name = "Sky"
 	add_child(_sky)
@@ -898,6 +901,10 @@ func _release_world_nodes() -> void:
 	_director.set_terrain_view(null)
 
 func _load_world(kind: String, keep_spawn_override: bool = false) -> void:
+	var server_url := OS.get_environment("RG_SERVER_URL")
+	if server_url != _sky_server_url and _sky != null and _sky.sky != null:
+		_sky_server_url = server_url
+		_sky.sky.initialize(_rg_data_path("world/sky.json"), _world_config_path())
 	_release_world_nodes()
 	world_kind = kind
 	world_state = "loading"
@@ -2411,6 +2418,8 @@ func _apply_setting(key: String) -> void:
 			_director.set_body_motion_strength(float(value))
 		"audio.master_volume", "audio.engine_volume", "audio.tyre_volume":
 			_apply_audio_settings()
+		"network.server_url":
+			OS.set_environment("RG_SERVER_URL", _server_env_override if _server_env_override != "" else str(value).strip_edges())
 		"map_data.store_dir":
 			_simulation.set_store_dir_override(str(value))
 		"lod.view_distance_m", "lod.terrain_detail", "lod.road_detail", "lod.map_detail":
