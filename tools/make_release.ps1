@@ -231,13 +231,13 @@ Write-RgLaunchers -Dir $partial -GodotGui $godotGui
 # which derived release ids (scopes) the derived store already holds.
 $storeInfo = New-Object System.Collections.Generic.List[string]
 try {
-    $wcPath = Join-Path $repoRoot 'data\world\world_config_rhein_main_corridor.json'
+    $wcPath = $worldConfigPath
     $wc = Get-Content -Raw -Path $wcPath | ConvertFrom-Json
     $expand = { param($s) $s.Replace('${RG_G2M_CACHE}', $g2mCache).Replace('${RG_G2M_HOME}', $g2mHome) }
     $srcDir = & $expand $wc.source_store.dir
     $derDir = & $expand $wc.derived_store.dir
     $derDb  = Join-Path $derDir ($wc.derived_store.name + '.sqlite3')
-    $storeInfo.Add("default world config : data/world/world_config_rhein_main_corridor.json")
+    $storeInfo.Add("default world config : $worldConfig")
     $storeInfo.Add("source store         : $([System.IO.Path]::GetFullPath($srcDir)) (scope $($wc.source_store.scope))")
     $storeInfo.Add("derived store        : $derDb")
     $py = Get-Command python -ErrorAction SilentlyContinue
