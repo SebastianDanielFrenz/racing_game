@@ -1135,3 +1135,19 @@ TEST_CASE("rolling resistance selection defaults, accepts both laws and rejects 
     auto bad=TempFile::from_json(j);
     CHECK_FALSE(rg::load_world_config(bad.path(), &err));
 }
+
+TEST_CASE("world config selects an imported elevation source explicitly", "[world_config][geographic_source]") {
+    auto j=valid_world_config_json();
+    auto original=TempFile::from_json(j);std::string err;
+    auto old=rg::load_world_config(original.path(),&err);REQUIRE(old);
+    CHECK(old->source_store.elevation_layer=="g2m.src.elev.dgm1");
+    for(const auto* layer:{"g2m.src.elev.glo30","g2m.src.elev.mapterhorn","g2m.src.osm","g2m.src.elev.","g2m.src.elev.a.b"}) {
+        j["source_store"]["elevation_layer"]=layer;auto file=TempFile::from_json(j);
+        auto cfg=rg::load_world_config(file.path(),&err);
+        if(std::string(layer)=="g2m.src.elev.glo30" || std::string(layer)=="g2m.src.elev.mapterhorn") {
+            REQUIRE(cfg);CHECK(cfg->source_store.elevation_layer==layer);
+        } else {CHECK_FALSE(cfg);CHECK(err.find("elevation_layer")!=std::string::npos);}
+    }
+    j["source_store"]["elevation_layer"]=5;auto file=TempFile::from_json(j);
+    CHECK_FALSE(rg::load_world_config(file.path(),&err));
+}

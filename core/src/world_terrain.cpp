@@ -147,6 +147,7 @@ std::unique_ptr<WorldTerrain> WorldTerrain::open(const WorldConfig& config, std:
     g2m::world::TerrainServiceConfig service_cfg;
     service_cfg.stores.source_dir = config.source_store.dir;
     service_cfg.stores.source_scope = config.source_store.scope;
+    service_cfg.elevation_source = config.source_store.elevation_layer;
     service_cfg.stores.source_read_only = config.source_store.read_only;
     service_cfg.stores.derived_dir = config.derived_store.dir;
     if (!config.derived_store.name.empty()) {

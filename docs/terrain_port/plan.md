@@ -104,3 +104,26 @@ fallback must never silently change physics under an existing release ID.
 - P5/P6 next: source manifests/acquisition and worldwide elevation inputs, with
   source-aware joins and result checks. Both providers approved; no hard datum
   exclusion. Remaining P4-P16 acceptance is pending; this is not full parity.
+
+
+### Geographic source slice (2026-10-22)
+
+- geo2map 468cb4b adds bounded explicit GLO-30 acquisition with a SHA256 source
+  lock, cached EPSG:4326 COG mosaic sampling, UTM reprojection, a native importer
+  and explicit elevation-layer selection in TerrainService. Source metadata is
+  retained through the height pyramid; established DGM1 defaults keep their config
+  hash. Multiple imported elevation products can coexist in a scope.
+- racing_game exposes `source_store.elevation_layer` (default DGM1) and forwards
+  it to the shared terrain service. No existing playable region is replaced.
+- Real N49/E008 GLO-30 import: 1,048,576 valid samples, no NoData, ~0.62-0.66 s
+  sampling/encoding; byte-identical Windows/Linux containers. Native decoder/import
+  suite: 2,351,806 assertions passed (154 cases, 12 external-data cases skipped).
+  Windows world suite: 1,341,235 assertions in 116 cases. Linux service subset:
+  69,284 assertions in 22 cases. Game world/config/surface regressions: 971
+  assertions in 85 cases. Five acquisition tests passed with a fake network.
+- P5/P6 remain partial: this is explicit offline acquisition/import and selectable
+  serving, not automatic worldwide fallback. Mapterhorn WebP/PMTiles decoding,
+  source blending, DSM filtering integration and complete regional inputs remain
+  pending. Full native layer regression is tracked separately while running.
+- See `external/geo2map_engine/docs/pipeline/geographic_elevation.md` for commands,
+  exact hashes, bounds and source-specific limitations.

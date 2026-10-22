@@ -23,6 +23,7 @@ struct WorldConfig {
     struct SourceStore {
         std::string dir; // ${VAR}-expanded; NOT resolved against the repo root (an external cache/store path)
         std::string scope;
+        std::string elevation_layer = "g2m.src.elev.dgm1"; // optional imported source
         bool read_only = false;
     };
 
