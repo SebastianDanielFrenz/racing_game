@@ -8,7 +8,21 @@ into a smaller library is a later build optimisation.
 
 ## Build and run
 
-Windows, from a Developer PowerShell with clang-cl and Ninja available:
+Windows, from an ordinary PowerShell:
+
+```powershell
+tools/run_server.ps1
+```
+
+The launcher enters the Visual Studio toolchain environment, configures with
+absolute compiler paths, builds only `rg_server`, and launches it. Use
+`-BuildOnly` to build without launching, `-SkipBuild` to launch the existing
+binary, or `-RunFor 5` for a bounded smoke run. If a previous direct CMake
+configure left a broken compiler cache, repair it once with
+`tools/run_server.ps1 -Fresh`. `-Fresh` resets CMake cache options; it retains
+compiled objects and server world data.
+
+Manual commands, only after entering a Developer PowerShell with clang-cl available:
 
 ```powershell
 cmake --preset relwithdebinfo -DRG_BUILD_SERVER=ON -DRG_BUILD_GODOT_EXTENSION=OFF
