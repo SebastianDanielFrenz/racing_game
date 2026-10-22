@@ -124,6 +124,9 @@ fallback must never silently change physics under an existing release ID.
 - P5/P6 remain partial: this is explicit offline acquisition/import and selectable
   serving, not automatic worldwide fallback. Mapterhorn WebP/PMTiles decoding,
   source blending, DSM filtering integration and complete regional inputs remain
-  pending. Full native layer regression is tracked separately while running.
+  pending. Full native layer regression passed: 18,512,011 assertions in 345 cases.
+  Real-data game mesh probe passed with 163 selected chunks / 731,055 vertices.
+  Reproduce with `RG_GLO30_SOURCE_STORE` pointing to the documented probe store
+  and Godot `--script res://scripts/geographic_terrain_test.gd` (headless supported).
 - See `external/geo2map_engine/docs/pipeline/geographic_elevation.md` for commands,
   exact hashes, bounds and source-specific limitations.
