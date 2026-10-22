@@ -180,3 +180,36 @@ fallback must never silently change physics under an existing release ID.
   terrain/config/surface/credits suite: 7,632 assertions / 98 cases passed; one
   optional local B8-data case skipped. This headless probe validates source and
   mesh plumbing, not driving, visual quality, VR or ARM64 hardware acceptance.
+
+### Mapped roofs and curved bridge appearance (2026-10-22)
+
+- geo2map fb6239a adds numeric/16-point compass `roof:direction` handling.
+  Slopes follow mapped downhill direction; the tag takes precedence over relative
+  `roof:orientation`. Directional roofs use the exact polygon clipping path even
+  on rectangular outlines, so a rotated projection envelope cannot spill outside
+  the footprint. Courtyards stay open; mapped total height stays the upper bound.
+  Short-axis hipped roof peaks and attached chimney bases use consistent planes.
+  Invalid directions remain explicit unsupported fallbacks; no physical geometry
+  changes. Official LoD2 ingestion and broader archetypes remain pending in P1.
+- P3: adaptive parapet chords follow deck edge rows in 3D within 5 cm, with
+  bounded work/geometry and no partial mesh on capacity failure. Existing straight
+  station layout and geometry hashes remain unchanged. Curved structural bodies
+  without a safe topology-aware layout retain parapets and report unsupported.
+  A generic arch tag alone no longer invents an above-deck arch; facts remain
+  attached while the structure-specific body is unsupported. Inventory/subtype
+  enrichment, actual support locations and broader long-span acceptance remain.
+- Windows full world suite: 1,546,781 assertions / 132 cases passed.
+  Windows/Linux roof/bridge/golden subset: 286,375 assertions / 19 cases passed,
+  including mapped roof hash `8fa3eb8ea315fa64`. Coverage includes rotated outlines,
+  courtyards, skillion downhill sign, short ridge peaks, horizontal/vertical deck
+  curvature, rail-face interior clearance and capacity rejection.
+- Rebuilt game `rg_godot`; actual material upload probe passed: 533 buildings,
+  72 pitched roofs, 18,074 windows, 48 doors, 36 chimneys / 459,318 vertices;
+  native road paint completed (82,634 triangles). This fixture has zero mapped
+  roof-direction tags, so mapped-direction geometry evidence is in native
+  synthetic fixtures rather than a claim of real-source coverage. The headless
+  probe does not establish visual/hardware/streaming-performance acceptance.
+- Pure corrected GLO-30 fallback also passed the game terrain loader probe
+  independently of the primary composite: 163 chunks / 731,055 vertices.
+  Runtime building diagnostics now expose roof facts and mapped/supported counts;
+  `RG_TERRAIN_PORT_SOURCE_STORE` overrides the optional building probe input path.

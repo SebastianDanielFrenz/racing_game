@@ -15,7 +15,10 @@ func run() -> void:
 	out = repo.path_join("out/terrain_port_probe")
 	DirAccess.make_dir_recursive_absolute(out)
 	var config: Dictionary = JSON.parse_string(FileAccess.get_file_as_string(repo.path_join("data/world/world_config_rhein_main_corridor.json")))
-	config.source_store.dir = "S:/claude_code/geo2map_cache/rhein-main-corridor-r2"
+	var source_store := OS.get_environment("RG_TERRAIN_PORT_SOURCE_STORE")
+	if source_store.is_empty():
+		source_store = "S:/claude_code/geo2map_cache/rhein-main-corridor-r2"
+	config.source_store.dir = source_store
 	config.derived_store.dir = out.path_join("derived")
 	config.surface_map = repo.path_join("data/world/landclass_surfaces.json")
 	config.palette = repo.path_join("data/world/landclass_palette.json")
@@ -66,7 +69,7 @@ func run() -> void:
 		fail("Native paint exceeded its bounds or rejected the real-store mesh")
 		return
 	print("TERRAIN_PORT buildings=%d windows=%d unsupported_roofs=%d vertices=%d building_ms=%.3f paint_triangles=%d road_ms=%.3f" % [data.building_count,data.windows,data.unsupported_roofs,vertex_count,elapsed,road.paint_triangles,road_ms])
-	print("TERRAIN_PORT models pitched=%d doors=%d chimneys=%d" % [data.pitched_roofs,data.doors,data.chimneys])
+	print("TERRAIN_PORT models pitched=%d doors=%d chimneys=%d mapped_directions=%d supported_directions=%d" % [data.pitched_roofs,data.doors,data.chimneys,data.mapped_roof_directions,data.supported_roof_directions])
 	if DisplayServer.get_name() != "headless":
 		var environment := Environment.new()
 		environment.background_mode = Environment.BG_COLOR

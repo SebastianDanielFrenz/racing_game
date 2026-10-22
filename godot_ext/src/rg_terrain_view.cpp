@@ -319,6 +319,7 @@ godot::Dictionary RgTerrainView::get_building_tile(int x,int y,double min_height
         godot::Dictionary item;item["id"]=b.id;item["relation"]=b.relation;item["height"]=b.height;item["base"]=b.base;item["bottom"]=b.bottom;
         item["type"]=godot::String(b.type.c_str());item["min_height"]=b.min_height;
         item["height_source"]=godot::String(b.height_source.c_str());item["colour"]=godot::String(b.colour.c_str());
+        item["roof_shape"]=godot::String(b.roof_shape.c_str());item["roof_direction"]=godot::String(b.roof_direction.c_str());item["roof_orientation"]=godot::String(b.roof_orientation.c_str());
         godot::Array outer,inner;
         const auto rings=[&](const auto& source,godot::Array& target){for(const auto& ring:source){godot::PackedVector2Array points;for(auto p:ring)points.append({static_cast<float>(p.e-x*1024),static_cast<float>(p.n-y*1024)});target.append(points);}};
         rings(b.outers,outer);rings(b.inners,inner);item["outers"]=outer;item["inners"]=inner;buildings.append(item);
@@ -331,11 +332,12 @@ godot::Dictionary RgTerrainView::get_building_mesh_tile(int x,int y,double min_h
     godot::Dictionary out;if(!terrain_)return out;
     const g2m::TileKey key{terrain_->frame().zone(),2,x,y};
     godot::PackedVector3Array points[2][8],normals[2][8];godot::PackedColorArray colours[2][8];godot::PackedVector2Array uv[2][8];
-    std::int64_t unsupported=0,window_count=0,building_count=0,doors=0,chimneys=0,pitched=0;
+    std::int64_t unsupported=0,window_count=0,building_count=0,doors=0,chimneys=0,pitched=0,directed=0,directed_supported=0;
     g2m::world::BuildingMeshOptions options;options.origin_e=static_cast<double>(x)*1024;options.origin_n=static_cast<double>(y)*1024;options.storey_height_m=storey;
     for(const auto& b:terrain_->buildings_tile(key,min_height,fallback,storey)) {
         const int tier=b.height>=skyline?1:0;options.facade_detail=tier==0;
         const auto mesh=g2m::world::build_building_mesh(b,options);unsupported+=mesh.unsupported_roof;window_count+=mesh.windows;doors+=mesh.doors;chimneys+=mesh.chimneys;pitched+=mesh.roof!=g2m::world::RoofForm::Flat;++building_count;
+        if(!b.roof_direction.empty()){++directed;if(!mesh.unsupported_roof&&mesh.roof!=g2m::world::RoofForm::Flat)++directed_supported;}
         // Native CCW -> Godot clockwise; E/N/up -> -N/up/-E.
         for(std::size_t i=0;i+2<mesh.vertices.size();i+=3)for(const auto j:{i,i+2,i+1}){
             const auto& v=mesh.vertices[j];const auto material=static_cast<unsigned>(v.material);
@@ -351,6 +353,7 @@ godot::Dictionary RgTerrainView::get_building_mesh_tile(int x,int y,double min_h
         out[tier==0?"near":"tall"]=surfaces;}
     out["origin_session"]=godot::Vector3(options.origin_e-terrain_->frame().e0_m(),options.origin_n-terrain_->frame().n0_m(),0);
     out["doors"]=doors;out["chimneys"]=chimneys;out["pitched_roofs"]=pitched;
+    out["mapped_roof_directions"]=directed;out["supported_roof_directions"]=directed_supported;
     out["unsupported_roofs"]=unsupported;out["windows"]=window_count;out["building_count"]=building_count;return out;
 }
 
