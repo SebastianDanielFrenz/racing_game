@@ -1,0 +1,30 @@
+{
+  "format": "rg.server/1",
+  "bind": "127.0.0.1",
+  "port": 47101,
+  "threads": 4,
+  "state_file": "out/server/world.json",
+  "checkpoint_interval_s": 5,
+  "sky": "data/world/sky.json",
+  "climate": "data/world/climate.json",
+  "schedule": "data/world/weather_schedule.json",
+  "latitude_deg": 50.1109,
+  "longitude_deg": 8.6821,
+  "map": {
+    "enabled": false,
+    "source": "cache/g2m/rhein-main-corridor-r2",
+    "source_name": "tiles",
+    "scope": "rhein-main-corridor-2026-10r2",
+    "derived": "out/server/derived",
+    "bind": "127.0.0.1",
+    "port": 47102,
+    "threads": 8,
+    "public_url": "",
+    "roads": true,
+    "geometry": true,
+    "carved": true,
+    "classes": false,
+    "rail": true,
+    "world_seed": 0
+  }
+}
