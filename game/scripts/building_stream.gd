@@ -102,9 +102,12 @@ func _worker() -> void:
 		var data: Dictionary = view.get_building_mesh_tile(int(job.x),int(job.y),0.0 if job.full else threshold,float(settings.get("fallback_height_m",8.0)),float(settings.get("storey_height_m",3.0)),threshold)
 		var near_arrays: Array = data.get("near",_empty_arrays())
 		var tall_arrays: Array = data.get("tall",_empty_arrays())
+		# RenderingServer calls (including tangent readback) can wait for the main
+		# thread. Build outside the queue mutex: the main thread polls that mutex.
+		var near_mesh := _mesh(near_arrays)
+		var tall_mesh := _mesh(tall_arrays)
 		_mutex.lock()
-		# The meshes (format, compression, AABB) are built here, not on the main thread; _upload only attaches them.
-		_results.append({"key":Vector2i(int(job.x),int(job.y)),"full":bool(job.full),"origin":data.get("origin_session",Vector3.ZERO),"near":_mesh(near_arrays),"tall":_mesh(tall_arrays)})
+		_results.append({"key":Vector2i(int(job.x),int(job.y)),"full":bool(job.full),"origin":data.get("origin_session",Vector3.ZERO),"near":near_mesh,"tall":tall_mesh})
 		_mutex.unlock()
 func _empty_arrays() -> Array:
 	return []

@@ -213,3 +213,28 @@ fallback must never silently change physics under an existing release ID.
   independently of the primary composite: 163 chunks / 731,055 vertices.
   Runtime building diagnostics now expose roof facts and mapped/supported counts;
   `RG_TERRAIN_PORT_SOURCE_STORE` overrides the optional building probe input path.
+
+### Release acceptance and streaming lock fix (2026-10-22)
+
+- Built a Windows x64 `Release` DLL and native test executable. Corrected
+  worktree revision dependencies (Git returns absolute metadata paths in sibling
+  worktrees) and made snapshot store metadata follow the selected world config
+  instead of always reporting the corridor config. Runtime verified optimized
+  Release / source revision 49a7168219 before the final fix commit rebuild.
+- Real Hessen driving acceptance exposed a building-stream lock inversion:
+  `_worker` held the result-queue mutex while `_mesh` called RenderingServer
+  operations (including tangent readback). The renderer can wait for the main
+  thread while `_process_body` waits for the queue mutex. Move mesh construction
+  outside that mutex, keeping only result publication inside it. A static native
+  building upload probe did not exercise this worker/main-thread interaction.
+- Real-world scripted drive after the fix completed with `result=ok`, 51.8 m
+  driven, four world switches, cancellation, camera/on-foot checks and clean
+  shutdown; no falls or terrain misses. Observed initial load 13.86 s, subsequent
+  real-world load 7.09 s on this machine, with 479 selected chunks. These are local
+  headless observations, not a general cold-start/performance guarantee.
+- Standard optimized Release CTest run: all 953 short tests passed. An NPC
+  lifecycle test initially failed under parallel contention because fixed 120/40
+  ms sleeps did not establish that a simulation tick published. Bounded polling
+  now waits for active/tick progress, post-flip movement and published removal;
+  speed, wake, collision and lifecycle assertions remain intact. Long-labelled
+  tests and hardware VR/ARM64 acceptance are outside this release check.
