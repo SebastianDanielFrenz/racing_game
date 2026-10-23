@@ -13,6 +13,7 @@
 namespace rg {
 
 struct WorldConfig {
+    std::string server_url; // optional HTTP world service; empty = local stores
     struct UtmOrigin {
         int zone = 0;    // 1..60 (g2m::geo::UtmZone's own range)
         double e0 = 0.0; // metres
@@ -22,6 +23,7 @@ struct WorldConfig {
     struct SourceStore {
         std::string dir; // ${VAR}-expanded; NOT resolved against the repo root (an external cache/store path)
         std::string scope;
+        std::string elevation_layer = "g2m.src.elev.dgm1"; // optional imported source
         bool read_only = false;
     };
 

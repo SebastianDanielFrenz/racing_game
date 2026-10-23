@@ -338,7 +338,7 @@ func _process_body(_delta: float) -> void:
 			themed_readout = true
 		if not themed_readout:
 			_set_line_colour(null)
-		# One-pedal B (EV, or a hybrid in Electric mode): shift up from D selects it. Numbers come from physics_sim (snapshot).
+		# One-pedal B (EV, or a hybrid in Eco / Electric mode): shift up from D selects it. Numbers come from physics_sim (snapshot).
 		if bool(assist_pt.get("b_mode_available", false)):
 			if bool(assist_pt.get("b_mode_active", false)):
 				lines.append("B one-pedal: regen up to %.0f kW, drive up to %.0f kW, coasts at pedal %.0f%%%s" % [float(assist_pt.get("b_regen_capacity_kw", 0.0)), float(assist_pt.get("b_drive_capacity_kw", 0.0)), 100.0 * float(assist_pt.get("b_zero_power_pedal", 0.0)), "   (hold)" if float(assist_pt.get("b_hold_level", 0.0)) > 0.0 else ""])

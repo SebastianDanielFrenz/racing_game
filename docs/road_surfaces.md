@@ -208,3 +208,20 @@ fitted with up to 32 m bow (the B8 track strip of site 2), the terrain visual me
 lattice) can stand 0.3 m above a ribbon draped by bilinear sampling on steep banks (B8 interchange, sites 3 and 5),
 `merge_to_left/right` and `slight_*` turn:lanes tokens are drawn as turn-style bent arrows, and an on-ramp merge
 is not tapered.
+
+
+### Two-node pedestrian paths and metre texture coordinates (2026-10-23)
+
+At 50.135524, 8.521275 (UTM32 E465787.8 N5553808.8), a two-node dirt
+path generated a roughly 68 m triangle sampled only at the source endpoints.
+`round_path_corners` returned early for fewer than three nodes, bypassing the
+one-metre subdivision as well as corner rounding. On varying terrain, the
+resulting chord floated above the physical ground and looked like a stretched
+sheet. Two-node ways now pass through subdivision too. The shader receives
+signed lateral metres and cumulative path distance, rather than normalized
+0/1 width and source row indices. Station accumulates even across segments owned
+by a different tile, preserving texture phase. No wall collider is added; the
+path follows the sampled terrain and retains the existing shared grip stamping.
+A nonlinear six-metre-depression regression checks surface tracking, short
+triangles and metric UVs. The owner location is checked through the actual game
+mesh binding. Lattice-exact draping on steep banks remains a separate issue.

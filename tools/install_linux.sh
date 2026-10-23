@@ -142,6 +142,7 @@ PY
     git -C "$INSTALL_DIR" lfs install --local
     git -C "$INSTALL_DIR" lfs pull
     git -C "$INSTALL_DIR" lfs fsck
+    python3 "$INSTALL_DIR/tools/fetch_building_assets.py"
     # Native build, deliberately not the x86-host ARM cross-compilation preset.
     cmake -S "$INSTALL_DIR" -B "$STATE_DIR/build" -G Ninja \
         -DCMAKE_BUILD_TYPE=Release -DRG_BUILD_TESTS=OFF \

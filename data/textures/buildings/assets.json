@@ -1,0 +1,158 @@
+{
+  "format": "rg.building_assets/1",
+  "licence": "CC0-1.0",
+  "licence_url": "https://polyhaven.com/license",
+  "snapshot_date": "2026-10-22",
+  "assets": [
+    {
+      "id": "plastered_wall_05",
+      "name": "Plastered Wall 05",
+      "authors": [
+        "Charlotte Baglioni"
+      ],
+      "source": "https://polyhaven.com/a/plastered_wall_05",
+      "dimensions_mm": [
+        2000,
+        2000
+      ],
+      "files_hash": "54bbeadb70e4f20a54af2f1a6633d195d344308c"
+    },
+    {
+      "id": "roof_tiles",
+      "name": "Roof Tiles",
+      "authors": [
+        "Stephan Seeliger"
+      ],
+      "source": "https://polyhaven.com/a/roof_tiles",
+      "dimensions_mm": [
+        2000,
+        2000
+      ],
+      "files_hash": "9be0342a471bf04a52dcf336b9b19876f214afcb"
+    },
+    {
+      "id": "red_bricks_04",
+      "name": "Red Bricks 04",
+      "authors": [
+        "Rob Tuytel"
+      ],
+      "source": "https://polyhaven.com/a/red_bricks_04",
+      "dimensions_mm": [
+        2500,
+        2500
+      ],
+      "files_hash": "d014230a431d9cd4cb59000dc50e6da35144054c"
+    },
+    {
+      "id": "roof_slates_02",
+      "name": "Roof Slates 02",
+      "authors": [
+        "Rob Tuytel"
+      ],
+      "source": "https://polyhaven.com/a/roof_slates_02",
+      "dimensions_mm": [
+        3000,
+        3000
+      ],
+      "files_hash": "747e15373011aa8372cdd7524f5da06130839f8f"
+    }
+  ],
+  "files": [
+    {
+      "asset": "plastered_wall_05",
+      "channel": "Diffuse",
+      "path": "plastered_wall_05/plastered_wall_05_diff_1k.jpg",
+      "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/1k/plastered_wall_05/plastered_wall_05_diff_1k.jpg",
+      "size": 557082,
+      "sha256": "b10e2fc12c6f6bb8a355fe7c5d6eab19222337414ce055df0701e75f5f603764"
+    },
+    {
+      "asset": "plastered_wall_05",
+      "channel": "nor_gl",
+      "path": "plastered_wall_05/plastered_wall_05_nor_gl_1k.jpg",
+      "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/1k/plastered_wall_05/plastered_wall_05_nor_gl_1k.jpg",
+      "size": 1051165,
+      "sha256": "560ca5b81f8c37a1bf9d44f9d20adc983d1cad3a7c6aa23835a1e1c1b63da98f"
+    },
+    {
+      "asset": "plastered_wall_05",
+      "channel": "Rough",
+      "path": "plastered_wall_05/plastered_wall_05_rough_1k.jpg",
+      "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/1k/plastered_wall_05/plastered_wall_05_rough_1k.jpg",
+      "size": 149189,
+      "sha256": "5e9439a03d2895acc902596a6a899509bb2b42dfb16ab4ea10a2a6a22c1329cf"
+    },
+    {
+      "asset": "roof_tiles",
+      "channel": "Diffuse",
+      "path": "roof_tiles/roof_tiles_diff_1k.jpg",
+      "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/1k/roof_tiles/roof_tiles_diff_1k.jpg",
+      "size": 1105673,
+      "sha256": "1b30c1f0a9d3f761afb1354d95b36990fc670fac5f811889af8cb2ab682c8e66"
+    },
+    {
+      "asset": "roof_tiles",
+      "channel": "nor_gl",
+      "path": "roof_tiles/roof_tiles_nor_gl_1k.jpg",
+      "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/1k/roof_tiles/roof_tiles_nor_gl_1k.jpg",
+      "size": 883229,
+      "sha256": "1eb4e911e3d1b38c7c3b06bdecb6fde5f9646dca5498caf67ffa651cb6cb8d8c"
+    },
+    {
+      "asset": "roof_tiles",
+      "channel": "Rough",
+      "path": "roof_tiles/roof_tiles_rough_1k.jpg",
+      "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/1k/roof_tiles/roof_tiles_rough_1k.jpg",
+      "size": 919232,
+      "sha256": "b4e832d544fb663728128fe178919d1c9be4d937236d8e8d3f7669a8b896e86c"
+    },
+    {
+      "asset": "red_bricks_04",
+      "channel": "Diffuse",
+      "path": "red_bricks_04/red_bricks_04_diff_1k.jpg",
+      "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/1k/red_bricks_04/red_bricks_04_diff_1k.jpg",
+      "size": 283965,
+      "sha256": "c3a51662fd3e859242d949843e88e8ca7ae50dd3bb57c4cad5b544d0a16111cd"
+    },
+    {
+      "asset": "red_bricks_04",
+      "channel": "nor_gl",
+      "path": "red_bricks_04/red_bricks_04_nor_gl_1k.jpg",
+      "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/1k/red_bricks_04/red_bricks_04_nor_gl_1k.jpg",
+      "size": 339216,
+      "sha256": "cb9d3da93ef192ddbe5f649b15bd940fe2631bb8715002ff31a0f19294b354da"
+    },
+    {
+      "asset": "red_bricks_04",
+      "channel": "Rough",
+      "path": "red_bricks_04/red_bricks_04_rough_1k.jpg",
+      "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/1k/red_bricks_04/red_bricks_04_rough_1k.jpg",
+      "size": 234867,
+      "sha256": "793b7206535ccdfe285d4f90366019cb13c56bae9cdcefab6bb49065155875dd"
+    },
+    {
+      "asset": "roof_slates_02",
+      "channel": "Diffuse",
+      "path": "roof_slates_02/roof_slates_02_diff_1k.jpg",
+      "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/1k/roof_slates_02/roof_slates_02_diff_1k.jpg",
+      "size": 515626,
+      "sha256": "de3d2729ab385c5f7dd7106d3b435c737f6d2c3ea8883cea37de53cec2a34867"
+    },
+    {
+      "asset": "roof_slates_02",
+      "channel": "nor_gl",
+      "path": "roof_slates_02/roof_slates_02_nor_gl_1k.jpg",
+      "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/1k/roof_slates_02/roof_slates_02_nor_gl_1k.jpg",
+      "size": 763206,
+      "sha256": "32be0c0ba1565856156a315dc98a773d72f1a03415930657b8a8ad62bf60c1bf"
+    },
+    {
+      "asset": "roof_slates_02",
+      "channel": "Rough",
+      "path": "roof_slates_02/roof_slates_02_rough_1k.jpg",
+      "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/1k/roof_slates_02/roof_slates_02_rough_1k.jpg",
+      "size": 307076,
+      "sha256": "737f95fdbb09e49670cbce09a78fe75c18bbaed597524db832f0227df0dce2cd"
+    }
+  ]
+}

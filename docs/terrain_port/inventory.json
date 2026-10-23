@@ -1,0 +1,501 @@
+{
+  "format": "rg.terrain_port_inventory/1",
+  "upstream_commit": "606ba0fb966529659d07a3120c31c01c0fc3df92",
+  "modules": [
+    {
+      "upstream": "server/airportgrade.py",
+      "sha256": "a3001647f015d43d6685d0eaa09f6e1ff3f2810e63785feecca04df715c5d24c",
+      "slice": "P12",
+      "disposition": "adapt missing feature algorithms",
+      "status": "pending comparison/integration"
+    },
+    {
+      "upstream": "server/airportpreview.py",
+      "sha256": "1675e3d3e98eb62dd42a65f6c2ab3baf090dfe0f60f24df00397f898cc0f3a7c",
+      "slice": "P12",
+      "disposition": "adapt missing feature algorithms",
+      "status": "pending comparison/integration"
+    },
+    {
+      "upstream": "server/airports.py",
+      "sha256": "172af76fe0428a5e988c186b5feeebf78eb348b275bcd0abc9ceffda8763520e",
+      "slice": "P12",
+      "disposition": "adapt missing feature algorithms",
+      "status": "pending comparison/integration"
+    },
+    {
+      "upstream": "server/bc7.py",
+      "sha256": "a93f4d8765af4d07c6bc4a1fd366abee659d2fae6bfd8a7ed4eefc17f9f7e3ee",
+      "slice": "P16",
+      "disposition": "replace engine/runtime glue with existing g2m/game equivalent; retain credits and packaging goals",
+      "status": "pending comparison/integration"
+    },
+    {
+      "upstream": "server/blockworker.py",
+      "sha256": "264884e4e792a65a4bf428e2123333b4cff96d963041c2b6366dadf35be1e6e7",
+      "slice": "P13",
+      "disposition": "adapt missing feature algorithms",
+      "status": "pending comparison/integration"
+    },
+    {
+      "upstream": "server/bridgetypes.py",
+      "sha256": "782b66c03f2b86a5faeac65d4e3eac72912b85165aad899e6ecf1ca215735c71",
+      "slice": "P3",
+      "disposition": "adapt missing feature algorithms",
+      "status": "partial prototype"
+    },
+    {
+      "upstream": "server/budget.py",
+      "sha256": "95028cd9ae5bccd0898439b10f4145e44d9a4b54e10f29e5cdb1c8b596547e80",
+      "slice": "P5",
+      "disposition": "adapt missing feature algorithms",
+      "status": "pending comparison/integration"
+    },
+    {
+      "upstream": "server/buildings.py",
+      "sha256": "0a24971f0ed4d0f3721e437a019f203761d37105384e73799c838a62a5bfdd39",
+      "slice": "P1",
+      "disposition": "adapt missing feature algorithms",
+      "status": "partial prototype"
+    },
+    {
+      "upstream": "server/cache.py",
+      "sha256": "234192929c2b1ee63a86423180e3b34fa0ab5bf18b597fd2703794324846fc97",
+      "slice": "P5",
+      "disposition": "adapt missing feature algorithms",
+      "status": "pending comparison/integration"
+    },
+    {
+      "upstream": "server/cdae.py",
+      "sha256": "8c2e73bb6185075d038c250f44e513ba0d85405eb6706011cfba289d0e8df37c",
+      "slice": "P16",
+      "disposition": "replace engine/runtime glue with existing g2m/game equivalent; retain credits and packaging goals",
+      "status": "pending comparison/integration"
+    },
+    {
+      "upstream": "server/cog.py",
+      "sha256": "b057b71abf869e4b535f138e6a49e019a1888df0d47e168f230e7fae8a78bb8c",
+      "slice": "P5",
+      "disposition": "adapt missing feature algorithms",
+      "status": "pending comparison/integration"
+    },
+    {
+      "upstream": "server/colormatch.py",
+      "sha256": "3f45ec6cbfd451be3bf85a5dd6a5aa713211d1bc9bb0be87da30f0708884b241",
+      "slice": "P10",
+      "disposition": "adapt missing feature algorithms",
+      "status": "pending comparison/integration"
+    },
+    {
+      "upstream": "server/cpupin.py",
+      "sha256": "c8069cf8b4c6505529a12010f1d51d3e8acf0e485574ac4f9fc9ba83452675ad",
+      "slice": "P13",
+      "disposition": "adapt missing feature algorithms",
+      "status": "pending comparison/integration"
+    },
+    {
+      "upstream": "server/credits.py",
+      "sha256": "15d232ebae45cd3e1fb99c0603781fe69d9c26aa37c8995ff661123258818800",
+      "slice": "P16",
+      "disposition": "replace engine/runtime glue with existing g2m/game equivalent; retain credits and packaging goals",
+      "status": "pending comparison/integration"
+    },
+    {
+      "upstream": "server/dae.py",
+      "sha256": "3fe746486008eaaef3269db7ec4b9c43615568a2d9f7eed05f82e1b9d8ce2a79",
+      "slice": "P16",
+      "disposition": "replace engine/runtime glue with existing g2m/game equivalent; retain credits and packaging goals",
+      "status": "pending comparison/integration"
+    },
+    {
+      "upstream": "server/dem.py",
+      "sha256": "aa642f169ffaef8767a21a01a48d285b50c8876f695815fe341f541e61a17017",
+      "slice": "P6",
+      "disposition": "adapt missing feature algorithms",
+      "status": "pending comparison/integration"
+    },
+    {
+      "upstream": "server/deshadow.py",
+      "sha256": "bc358a341da268cc9b707884d2ed634b81583648798570e9cddc2c3345b32336",
+      "slice": "P10",
+      "disposition": "adapt missing feature algorithms",
+      "status": "pending comparison/integration"
+    },
+    {
+      "upstream": "server/dsmground.py",
+      "sha256": "04e9d510b1a674e83faf9862a620d180f685c9d852d2af509349943cd85ec5c4",
+      "slice": "P7",
+      "disposition": "adapt missing feature algorithms",
+      "status": "partial prototype"
+    },
+    {
+      "upstream": "server/earthd.py",
+      "sha256": "3270b59dadff6839a0354720a0ed6f2712957ab3d7d69d6c3939909b8e75f53d",
+      "slice": "P16",
+      "disposition": "replace engine/runtime glue with existing g2m/game equivalent; retain credits and packaging goals",
+      "status": "pending comparison/integration"
+    },
+    {
+      "upstream": "server/farfield.py",
+      "sha256": "9eef450144d9fb6447ae37afd352e5e7e5474df4992ee5b91f9b60359f2a912a",
+      "slice": "P13",
+      "disposition": "adapt missing feature algorithms",
+      "status": "pending comparison/integration"
+    },
+    {
+      "upstream": "server/fast.py",
+      "sha256": "454f3d8696664874e6afdaa2174e3457e3b947f4c6329369515f548e16d5dba2",
+      "slice": "P16",
+      "disposition": "replace engine/runtime glue with existing g2m/game equivalent; retain credits and packaging goals",
+      "status": "pending comparison/integration"
+    },
+    {
+      "upstream": "server/furniture.py",
+      "sha256": "5fcee11e9d3f6b7149c19aa57defb21a3718a9b587bc86ff4c0717cdcbbb7b6f",
+      "slice": "P4",
+      "disposition": "adapt missing feature algorithms",
+      "status": "pending comparison/integration"
+    },
+    {
+      "upstream": "server/geocode.py",
+      "sha256": "726ebe62e2786672930048015b2c47f470d7a10403412b6673e9c06bac824bc7",
+      "slice": "P14",
+      "disposition": "adapt missing feature algorithms",
+      "status": "pending comparison/integration"
+    },
+    {
+      "upstream": "server/geodesy.py",
+      "sha256": "1fb0be14e9b32b938df08a2e78eacbfec3aa857a1d1f68524165ede50dc6cd1a",
+      "slice": "P6",
+      "disposition": "adapt missing feature algorithms",
+      "status": "pending comparison/integration"
+    },
+    {
+      "upstream": "server/grading.py",
+      "sha256": "65a14e699aece0a4e1038f566cf0b7e6d1d917eb5c5dfca535c7fa367c0ba075",
+      "slice": "P8",
+      "disposition": "adapt missing feature algorithms",
+      "status": "pending comparison/integration"
+    },
+    {
+      "upstream": "server/gravity.py",
+      "sha256": "a780721b365ec36edf15ce152266f9d86857cc9fcfd36d09e2587f60f459cc65",
+      "slice": "P15",
+      "disposition": "retain existing authoritative weather/gravity; compare missing presentation features",
+      "status": "pending comparison/integration"
+    },
+    {
+      "upstream": "server/groundahead.py",
+      "sha256": "325d25bd2d18e26168b2eca512e31f66d827dc4ea66920cd0024cf8bce30bb0c",
+      "slice": "P8",
+      "disposition": "adapt missing feature algorithms",
+      "status": "pending comparison/integration"
+    },
+    {
+      "upstream": "server/heightmap.py",
+      "sha256": "df19661f0ea57d01a5003fef5e2b1bec61881be7faf2cbc6ccc7b9b1b6e8f638",
+      "slice": "P6",
+      "disposition": "adapt missing feature algorithms",
+      "status": "pending comparison/integration"
+    },
+    {
+      "upstream": "server/imagery.py",
+      "sha256": "9dbc044a7b4fd471da86ce8a66a4274564b508bd2e862bb7accd99fedec96eb3",
+      "slice": "P10",
+      "disposition": "adapt missing feature algorithms",
+      "status": "pending comparison/integration"
+    },
+    {
+      "upstream": "server/imagery_regional.py",
+      "sha256": "68ad3b05f0b34e7e585f4382fd7abc435bec964b882c5b0fb90fdaf2da36a0c5",
+      "slice": "P10",
+      "disposition": "adapt missing feature algorithms",
+      "status": "pending comparison/integration"
+    },
+    {
+      "upstream": "server/islands.py",
+      "sha256": "32463c7c7441ddedd0ac9ce14ec5fadf40fa32d4701959d51f6c7f2e7bd4c951",
+      "slice": "P9",
+      "disposition": "adapt missing feature algorithms",
+      "status": "pending comparison/integration"
+    },
+    {
+      "upstream": "server/junctions.py",
+      "sha256": "111222a2f32bff0b1c7dbad526643994c9360ac7b2e9fccb64699654c8333050",
+      "slice": "P8",
+      "disposition": "adapt missing feature algorithms",
+      "status": "pending comparison/integration"
+    },
+    {
+      "upstream": "server/mapcells.py",
+      "sha256": "3512189c1d06f4cf6053f5e1d9339d5864d5f55a32bd2a8e599af8878a0db6fd",
+      "slice": "P13",
+      "disposition": "adapt missing feature algorithms",
+      "status": "pending comparison/integration"
+    },
+    {
+      "upstream": "server/mapdata.py",
+      "sha256": "8be18aabc66635887208161159a51b8c161ba1332fd7d72f2d093c5c85a829b8",
+      "slice": "P14",
+      "disposition": "adapt missing feature algorithms",
+      "status": "pending comparison/integration"
+    },
+    {
+      "upstream": "server/mapgeom.py",
+      "sha256": "2f2ea86d79652523d416624097b2a5b5c6930e53c954fd0c44b2a803f13e66eb",
+      "slice": "P14",
+      "disposition": "adapt missing feature algorithms",
+      "status": "pending comparison/integration"
+    },
+    {
+      "upstream": "server/maprasters.py",
+      "sha256": "f48fa2db60044b484bda61a12498eab5710defc0f4b4b115cd92cdfae9aae8bf",
+      "slice": "P10",
+      "disposition": "adapt missing feature algorithms",
+      "status": "pending comparison/integration"
+    },
+    {
+      "upstream": "server/maptiles.py",
+      "sha256": "df949436a0e41dbb7bcc2c6b4a77c9a2a9d6d54665bc0d37f2a9d6f9972bd2ee",
+      "slice": "P13",
+      "disposition": "adapt missing feature algorithms",
+      "status": "pending comparison/integration"
+    },
+    {
+      "upstream": "server/matslots.py",
+      "sha256": "86fac926c06b3992c41ec21cbd5489f52505f4437b8e0595ed420ed929b1de8e",
+      "slice": "P10",
+      "disposition": "adapt missing feature algorithms",
+      "status": "pending comparison/integration"
+    },
+    {
+      "upstream": "server/navgraph.py",
+      "sha256": "330ddbad3115e4430242471210f15b74816fd9ed1ef22fe45c6433383bb0ae7c",
+      "slice": "P14",
+      "disposition": "adapt missing feature algorithms",
+      "status": "pending comparison/integration"
+    },
+    {
+      "upstream": "server/netfetch.py",
+      "sha256": "181c00579ec7c1c25ca8b0d794ac0856a568b93708ad39f9d350628bbe1fa004",
+      "slice": "P5",
+      "disposition": "adapt missing feature algorithms",
+      "status": "pending comparison/integration"
+    },
+    {
+      "upstream": "server/overture.py",
+      "sha256": "2c6ec2f50d01adb8e59d392a6e34d84ed64366ff04de042119d3041f236e48d6",
+      "slice": "P14",
+      "disposition": "adapt missing feature algorithms",
+      "status": "pending comparison/integration"
+    },
+    {
+      "upstream": "server/pacer.py",
+      "sha256": "a5eb25eb160ee7f1bbc86083947ecfaa2d87edff23dac51d80d1cf2a17a1cb8c",
+      "slice": "P13",
+      "disposition": "adapt missing feature algorithms",
+      "status": "pending comparison/integration"
+    },
+    {
+      "upstream": "server/parking.py",
+      "sha256": "5331acc75ce237b613764bd29f360c3e61696a1d4d8d387b47d9dc42042f274e",
+      "slice": "P4",
+      "disposition": "adapt missing feature algorithms",
+      "status": "pending comparison/integration"
+    },
+    {
+      "upstream": "server/placepreview.py",
+      "sha256": "33a23b0abf07939c19ccdd10daeebbbd4eae2b28e1865104b2b8473ad767c2da",
+      "slice": "P14",
+      "disposition": "adapt missing feature algorithms",
+      "status": "pending comparison/integration"
+    },
+    {
+      "upstream": "server/plazas.py",
+      "sha256": "2e07187d0553624de605c4634fe04a6431f571861808a1010ecbbd4bbed19dd4",
+      "slice": "P4",
+      "disposition": "adapt missing feature algorithms",
+      "status": "pending comparison/integration"
+    },
+    {
+      "upstream": "server/polygon.py",
+      "sha256": "1c0677139757a768f95cb3043081c63a6cb49702781f84773e7adbc01cd1eefd",
+      "slice": "P14",
+      "disposition": "adapt missing feature algorithms",
+      "status": "pending comparison/integration"
+    },
+    {
+      "upstream": "server/pools.py",
+      "sha256": "a5c5553cb469e2dacc5496d683b19538aabddf4c2c5248c3d3297d405ff426d3",
+      "slice": "P13",
+      "disposition": "adapt missing feature algorithms",
+      "status": "pending comparison/integration"
+    },
+    {
+      "upstream": "server/prewarm.py",
+      "sha256": "87ce2e0427d06f27639fb92443edb43a3e4f9f6db8b8e557c3923182b05496eb",
+      "slice": "P13",
+      "disposition": "adapt missing feature algorithms",
+      "status": "pending comparison/integration"
+    },
+    {
+      "upstream": "server/protocol.py",
+      "sha256": "f61c833844b82f180ba41978a74dcd09cb7555b1b1e5a205e3b653b7266a72ca",
+      "slice": "P16",
+      "disposition": "replace engine/runtime glue with existing g2m/game equivalent; retain credits and packaging goals",
+      "status": "pending comparison/integration"
+    },
+    {
+      "upstream": "server/randomplace.py",
+      "sha256": "58ec2c1763f3723537300a45f967266d93edf56353584fa606ea325611bb8207",
+      "slice": "P14",
+      "disposition": "adapt missing feature algorithms",
+      "status": "pending comparison/integration"
+    },
+    {
+      "upstream": "server/rangeread.py",
+      "sha256": "32fde6828e62f93ff72e5786ed9851fe75643562a28db3bd2c19f614fce91e65",
+      "slice": "P5",
+      "disposition": "adapt missing feature algorithms",
+      "status": "pending comparison/integration"
+    },
+    {
+      "upstream": "server/riverlines.py",
+      "sha256": "757fde49436e8a56cb1b3639ab21d457d334126e08c79fff3be913f64661d958",
+      "slice": "P9",
+      "disposition": "adapt missing feature algorithms",
+      "status": "pending comparison/integration"
+    },
+    {
+      "upstream": "server/roadmesh.py",
+      "sha256": "97a3282ba26d0a05ab8dc5769250a861a9f0c655d5f92cbe6a63662b1394a178",
+      "slice": "P2",
+      "disposition": "adapt missing feature algorithms",
+      "status": "partial prototype"
+    },
+    {
+      "upstream": "server/roads.py",
+      "sha256": "570897401e69f46d0c0183e966ab013725771b8a2b6a7f05b0c3d7a3ebc5ab78",
+      "slice": "P14",
+      "disposition": "adapt missing feature algorithms",
+      "status": "pending comparison/integration"
+    },
+    {
+      "upstream": "server/roadwidth.py",
+      "sha256": "ef5bdf542a0e1e4043a572c37666301333951c905a3d59d846a103cde3a061ef",
+      "slice": "P14",
+      "disposition": "adapt missing feature algorithms",
+      "status": "pending comparison/integration"
+    },
+    {
+      "upstream": "server/rockface.py",
+      "sha256": "9d1cabf34e8ace531cf05afe35a071183367e0becf27ee409bcfa9740ee23136",
+      "slice": "P8",
+      "disposition": "adapt missing feature algorithms",
+      "status": "pending comparison/integration"
+    },
+    {
+      "upstream": "server/routing.py",
+      "sha256": "94fb750f3ac33f44d717f28e32c129cb6c0740151a5ac371c67d4d4bb0293ec8",
+      "slice": "P14",
+      "disposition": "adapt missing feature algorithms",
+      "status": "pending comparison/integration"
+    },
+    {
+      "upstream": "server/runwaygeom.py",
+      "sha256": "227d79235034720f2986bfaa19b89dbfc8f67cab4cea28eaed821ae5e5ef398d",
+      "slice": "P12",
+      "disposition": "adapt missing feature algorithms",
+      "status": "pending comparison/integration"
+    },
+    {
+      "upstream": "server/runwaymarks.py",
+      "sha256": "72001335a00f3c9194aabcc69fd773e087fb7603a9ebbff0a0242e993755bb47",
+      "slice": "P12",
+      "disposition": "adapt missing feature algorithms",
+      "status": "pending comparison/integration"
+    },
+    {
+      "upstream": "server/sampler.py",
+      "sha256": "98d2976b431067b1ba09a4cbd89ff0fece8cc424b2859faf718fbf45f98c381d",
+      "slice": "P6",
+      "disposition": "adapt missing feature algorithms",
+      "status": "pending comparison/integration"
+    },
+    {
+      "upstream": "server/seacarve.py",
+      "sha256": "07d451da5f6ff9f9c11d93166576229e53c19db58d03eca4e0133e8368e0143f",
+      "slice": "P9",
+      "disposition": "adapt missing feature algorithms",
+      "status": "pending comparison/integration"
+    },
+    {
+      "upstream": "server/season.py",
+      "sha256": "f5f4bf2a969b0bdd3f1c832f8c1d434ee1b1f22bcaac37a1744fba7ac274c369",
+      "slice": "P11",
+      "disposition": "adapt missing feature algorithms",
+      "status": "pending comparison/integration"
+    },
+    {
+      "upstream": "server/seatiles.py",
+      "sha256": "85e294768ba05f1e1f37707adab07c7785299f9f5cc0e8dcc6a2dd906b0e63ed",
+      "slice": "P9",
+      "disposition": "adapt missing feature algorithms",
+      "status": "pending comparison/integration"
+    },
+    {
+      "upstream": "server/sidewalks.py",
+      "sha256": "37ed025e8d530d1325af814b8e95c7ea5a4915db6164460be15d4a214fcb9c4f",
+      "slice": "P4",
+      "disposition": "adapt missing feature algorithms",
+      "status": "pending comparison/integration"
+    },
+    {
+      "upstream": "server/staging.py",
+      "sha256": "54264133db461e18b3544a883479206bbf434da5ff607ea48be65f1bc79f1ac1",
+      "slice": "P13",
+      "disposition": "adapt missing feature algorithms",
+      "status": "pending comparison/integration"
+    },
+    {
+      "upstream": "server/surface.py",
+      "sha256": "00dabd66778eca6d739e091c60ea2fb1b4758f3e919cf9d6ff91f87b89281341",
+      "slice": "P10",
+      "disposition": "adapt missing feature algorithms",
+      "status": "pending comparison/integration"
+    },
+    {
+      "upstream": "server/terraincache.py",
+      "sha256": "56eb04cb2b65f047503d8005707cad6e70ca1d10cdf05ea4f7c93135992e1e74",
+      "slice": "P13",
+      "disposition": "adapt missing feature algorithms",
+      "status": "pending comparison/integration"
+    },
+    {
+      "upstream": "server/updates.py",
+      "sha256": "7a1d782e7a6ae9eace45e8b8995409f282613d5e289f3d31702d548548b0eb0a",
+      "slice": "P16",
+      "disposition": "replace engine/runtime glue with existing g2m/game equivalent; retain credits and packaging goals",
+      "status": "pending comparison/integration"
+    },
+    {
+      "upstream": "server/vegetation.py",
+      "sha256": "d066ffff5fdc1235f2ada1c6c045ccc8302ad083f6fd64c1f1efdc49d4a3f894",
+      "slice": "P11",
+      "disposition": "adapt missing feature algorithms",
+      "status": "pending comparison/integration"
+    },
+    {
+      "upstream": "server/weather.py",
+      "sha256": "0f0e4fb79b61d3b26a09dddc2042963f5510b9a90ec9ceaef2e703fe391fd12e",
+      "slice": "P15",
+      "disposition": "retain existing authoritative weather/gravity; compare missing presentation features",
+      "status": "pending comparison/integration"
+    }
+  ],
+  "excluded_binaries": [
+    "server/earthfast.pyd",
+    "server/earthfast.abi3.so"
+  ],
+  "note": "No upstream executable was run. Source inventory does not claim parity or test coverage."
+}

@@ -8,8 +8,8 @@
 // Rule (owner, R5): no placebo controls. A key is in the schema only when the
 // game acts on it. Today: graphics.window_mode / vsync / max_fps,
 // camera.fov_deg, audio.master_volume / engine_volume / tyre_volume,
-// map_data.store_dir. (Not here, because nothing consumes them yet: map-server
-// endpoint, pin region, cache size - g2m_server does not exist; resolution
+// map_data.store_dir and network.server_url. (Not here yet:
+// pin region, cache size; resolution
 // scale / FSR - the project renders with the Compatibility renderer, which has
 // no 3D scaling (later added as graphics.render_scale); traffic - the F7 panel and user://traffic.cfg stay the one
 // traffic settings model.)

@@ -9,6 +9,8 @@
 #include "ps/types.h"
 
 #include "g2m/world/height_sampler.h"
+#include "g2m/world/building_mesh.h"
+#include "g2m/world/road_paint.h"
 
 #include <godot_cpp/classes/rendering_server.hpp>
 #include <godot_cpp/classes/world3d.hpp>
@@ -19,6 +21,7 @@
 #include <godot_cpp/variant/packed_color_array.hpp>
 #include <godot_cpp/variant/packed_int32_array.hpp>
 #include <godot_cpp/variant/packed_vector3_array.hpp>
+#include <godot_cpp/variant/packed_vector2_array.hpp>
 
 #include <algorithm>
 #include <chrono>
@@ -257,11 +260,15 @@ bool RgTerrainView::load_synthetic_preview(double spawn_x, double spawn_y, doubl
     return true;
 }
 
-godot::Dictionary RgTerrainView::get_road_visual_tile(int x,int y,double lift) {
+godot::Dictionary RgTerrainView::get_road_visual_tile(int x,int y,double lift,double line_width_m) {
     godot::Dictionary out;if(!terrain_)return out;
     const g2m::TileKey key{terrain_->frame().zone(),2,x,y};const auto shared=terrain_->road_visual_tile_shared(key,0.0);
     if(!shared)return out;
-    const auto& mesh=*shared;
+    // Render-only explicit paint; do not enlarge the physics/cache route mesh.
+    g2m::world::RoadPaintOptions paint_options;paint_options.line_width_m=line_width_m;
+    const auto paint=g2m::world::build_road_paint(*shared,paint_options);
+    const auto& mesh=paint.mesh;
+    out["native_paint_complete"]=paint.complete;out["paint_triangles"]=static_cast<int64_t>(paint.paint_triangles);
     godot::PackedVector3Array points,normals;godot::PackedVector2Array uv,uv2;godot::PackedColorArray colours;godot::PackedInt32Array indices;
     for(const auto& v:mesh.vertices){points.append({-v.y,v.z+static_cast<float>(lift),-v.x});normals.append({0,1,0});uv.append({v.u,v.v});uv2.append({v.width,v.fade});const int flags=static_cast<int>(v.flags)|(v.verge>.5f?256:0);colours.append({v.lanes/32,v.forward/32,static_cast<float>(flags&255)/255,static_cast<float>(flags>>8)/255});}
     for(auto i:mesh.indices)indices.append(i);
@@ -312,12 +319,42 @@ godot::Dictionary RgTerrainView::get_building_tile(int x,int y,double min_height
         godot::Dictionary item;item["id"]=b.id;item["relation"]=b.relation;item["height"]=b.height;item["base"]=b.base;item["bottom"]=b.bottom;
         item["type"]=godot::String(b.type.c_str());item["min_height"]=b.min_height;
         item["height_source"]=godot::String(b.height_source.c_str());item["colour"]=godot::String(b.colour.c_str());
+        item["roof_shape"]=godot::String(b.roof_shape.c_str());item["roof_direction"]=godot::String(b.roof_direction.c_str());item["roof_orientation"]=godot::String(b.roof_orientation.c_str());
         godot::Array outer,inner;
         const auto rings=[&](const auto& source,godot::Array& target){for(const auto& ring:source){godot::PackedVector2Array points;for(auto p:ring)points.append({static_cast<float>(p.e-x*1024),static_cast<float>(p.n-y*1024)});target.append(points);}};
         rings(b.outers,outer);rings(b.inners,inner);item["outers"]=outer;item["inners"]=inner;buildings.append(item);
     }
     output["buildings"]=buildings;output["origin_session"]=godot::Vector3(static_cast<double>(x)*1024-terrain_->frame().e0_m(),static_cast<double>(y)*1024-terrain_->frame().n0_m(),0);
     return output;
+}
+
+godot::Dictionary RgTerrainView::get_building_mesh_tile(int x,int y,double min_height,double fallback,double storey,double skyline) {
+    godot::Dictionary out;if(!terrain_)return out;
+    const g2m::TileKey key{terrain_->frame().zone(),2,x,y};
+    godot::PackedVector3Array points[2][8],normals[2][8];godot::PackedColorArray colours[2][8];godot::PackedVector2Array uv[2][8];
+    std::int64_t unsupported=0,window_count=0,building_count=0,doors=0,chimneys=0,pitched=0,directed=0,directed_supported=0;
+    g2m::world::BuildingMeshOptions options;options.origin_e=static_cast<double>(x)*1024;options.origin_n=static_cast<double>(y)*1024;options.storey_height_m=storey;
+    for(const auto& b:terrain_->buildings_tile(key,min_height,fallback,storey)) {
+        const int tier=b.height>=skyline?1:0;options.facade_detail=tier==0;
+        const auto mesh=g2m::world::build_building_mesh(b,options);unsupported+=mesh.unsupported_roof;window_count+=mesh.windows;doors+=mesh.doors;chimneys+=mesh.chimneys;pitched+=mesh.roof!=g2m::world::RoofForm::Flat;++building_count;
+        if(!b.roof_direction.empty()){++directed;if(!mesh.unsupported_roof&&mesh.roof!=g2m::world::RoofForm::Flat)++directed_supported;}
+        // Native CCW -> Godot clockwise; E/N/up -> -N/up/-E.
+        for(std::size_t i=0;i+2<mesh.vertices.size();i+=3)for(const auto j:{i,i+2,i+1}){
+            const auto& v=mesh.vertices[j];const auto material=static_cast<unsigned>(v.material);
+            points[tier][material].append({-v.position[1],v.position[2],-v.position[0]});
+            normals[tier][material].append({-v.normal[1],v.normal[2],-v.normal[0]});colours[tier][material].append({v.colour[0],v.colour[1],v.colour[2]});
+            uv[tier][material].append({v.uv[0],v.uv[1]});
+        }
+    }
+    for(int tier=0;tier<2;++tier){godot::Array surfaces;
+        for(int material=0;material<8;++material){if(points[tier][material].is_empty())continue;
+            godot::Array arrays;arrays.append(points[tier][material]);arrays.append(normals[tier][material]);arrays.append(colours[tier][material]);arrays.append(uv[tier][material]);
+            godot::Dictionary surface;surface["material"]=material;surface["arrays"]=arrays;surfaces.append(surface);}
+        out[tier==0?"near":"tall"]=surfaces;}
+    out["origin_session"]=godot::Vector3(options.origin_e-terrain_->frame().e0_m(),options.origin_n-terrain_->frame().n0_m(),0);
+    out["doors"]=doors;out["chimneys"]=chimneys;out["pitched_roofs"]=pitched;
+    out["mapped_roof_directions"]=directed;out["supported_roof_directions"]=directed_supported;
+    out["unsupported_roofs"]=unsupported;out["windows"]=window_count;out["building_count"]=building_count;return out;
 }
 
 void RgTerrainView::set_render_origin(godot::Vector3 session_origin) {
@@ -754,6 +791,18 @@ void RgTerrainView::sync_road_decks() {
         instance.chunk.origin_session[0]=deck->mesh.origin[0]-terrain_->frame().e0_m();
         instance.chunk.origin_session[1]=deck->mesh.origin[1]-terrain_->frame().n0_m();
         instance.chunk.rgba.assign(deck->mesh.positions.size()/3,deck->land_class==g2m::LandClass::PavedRoad?0x4c4c5200u:0x5c472900u);
+        // Appearance is generated on geo2map's structure worker. Only the
+        // rendering copy is extended; physics still consumes deck->mesh alone.
+        const auto& visual=deck->appearance.mesh;
+        const auto base=instance.chunk.mesh.positions.size()/3;
+        if(!visual.positions.empty() && base+visual.positions.size()/3<65536){
+            auto& mesh=instance.chunk.mesh;
+            mesh.positions.insert(mesh.positions.end(),visual.positions.begin(),visual.positions.end());
+            mesh.normals.insert(mesh.normals.end(),visual.normals.begin(),visual.normals.end());
+            mesh.land_class.insert(mesh.land_class.end(),visual.land_class.begin(),visual.land_class.end());
+            for(auto i:visual.indices)mesh.indices.push_back(static_cast<std::uint16_t>(base+i));
+            instance.chunk.rgba.insert(instance.chunk.rgba.end(),visual.positions.size()/3,deck->appearance.rgba);
+        }
         upload_one_chunk(instance.chunk);
         instance.mesh=mesh_rids_.back();instance.instance=instance_rids_.back();
         mesh_rids_.pop_back();instance_rids_.pop_back();
@@ -1008,10 +1057,11 @@ void RgTerrainView::_process(double /*delta*/) {
 
 void RgTerrainView::_bind_methods() {
     godot::ClassDB::bind_method(D_METHOD("initialize", "world_config_absolute_path"), &RgTerrainView::initialize);
-    godot::ClassDB::bind_method(D_METHOD("get_road_visual_tile", "x", "y", "lift_m"), &RgTerrainView::get_road_visual_tile);
+    godot::ClassDB::bind_method(D_METHOD("get_road_visual_tile", "x", "y", "lift_m", "line_width_m"), &RgTerrainView::get_road_visual_tile, DEFVAL(0.15));
     godot::ClassDB::bind_method(D_METHOD("get_rail_tile", "x", "y"), &RgTerrainView::get_rail_tile);
     godot::ClassDB::bind_method(D_METHOD("get_rail_info"), &RgTerrainView::get_rail_info);
     godot::ClassDB::bind_method(D_METHOD("get_building_tile", "x", "y", "min_height", "fallback_height", "storey_height"), &RgTerrainView::get_building_tile);
+    godot::ClassDB::bind_method(D_METHOD("get_building_mesh_tile", "x", "y", "min_height", "fallback_height", "storey_height", "skyline_height"), &RgTerrainView::get_building_mesh_tile);
     godot::ClassDB::bind_method(D_METHOD("initialize_shared", "sim"), &RgTerrainView::initialize_shared);
     godot::ClassDB::bind_method(D_METHOD("release"), &RgTerrainView::release);
     godot::ClassDB::bind_method(D_METHOD("load_synthetic_preview", "spawn_x", "spawn_y", "max_distance_m"), &RgTerrainView::load_synthetic_preview);

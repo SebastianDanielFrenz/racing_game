@@ -1,6 +1,6 @@
 # racing_game game server - implementation plan
 
-Status: PLAN ONLY (2026-10-05). Nothing here is built. Moved into racing_game from physics_sim `out/game_server_plan.md`
+Status: INITIAL WORLD SERVICES IMPLEMENTED (2026-10-22). `rg_server` serves shared time/weather and optional geo2map HTTP tiles; see [setup and current limits](game_server_setup.md). Player replication, shared traffic and physics condition checkpoints remain planned. The original multiplayer increments below are not yet implemented. Moved into racing_game from physics_sim `out/game_server_plan.md`
 (vault RACE-009); section 16.1 holds the owner's binding answers to the open questions. The text below is otherwise
 the planning agent's original.
 

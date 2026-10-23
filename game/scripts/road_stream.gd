@@ -100,7 +100,7 @@ func _worker() -> void:
 		if job.is_empty():
 			_wake.wait()
 			continue
-		var data: Dictionary = view.get_road_visual_tile(int(job.x),int(job.y),float(settings.surface_lift_m))
+		var data: Dictionary = view.get_road_visual_tile(int(job.x),int(job.y),float(settings.surface_lift_m),float(settings.line_width_m))
 		data["key"] = Vector2i(int(job.x),int(job.y))
 		# Packing the arrays into a mesh (format, compression, AABB) is the 20-50 ms part of a tile: here, not in the
 		# main thread's _process (RenderingServer queues the GPU part for the main thread). Attaching it there is cheap.
