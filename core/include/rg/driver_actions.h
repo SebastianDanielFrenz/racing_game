@@ -62,7 +62,7 @@ struct DriverSnapshot {
     std::uint32_t drive_modes = 0;
     int drive_mode_effective = 0;
     // EV one-pedal B (physics_sim docs/electric_drive.md "B mode"): b_available = the selector has the B position now (a pure EV; a
-    // hybrid while it runs in Electric mode), b_active = B is selected. hybrid_electric = the hybrid runs in Electric mode.
+    // hybrid while it runs in Eco or Electric mode), b_active = B is selected. hybrid_electric = the hybrid runs in Electric mode.
     bool b_available = false;
     bool b_active = false;
     bool hybrid_electric = false;
