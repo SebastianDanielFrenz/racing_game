@@ -1,4 +1,4 @@
-// rg/turbo_kit.h - a turbo system for an engine that has none (garage "Turbo kit", owner request on PR #5:
+// rg/turbo_kit.h - shared turbo systems for compatible engines (garage "Turbo kit", owner request on PR #5:
 // "Turbos cannot be fitted yet to many engines").
 //
 // No per-engine turbo files. One rule sizes the hardware from the engine's own air demand, the same similarity method
@@ -15,7 +15,7 @@
 // manifold-pressure axis becomes ps::drivetrain::boost_grid_p_im(cycle, target) and the compression ratio is lowered to
 // the kit's ceiling where it is above it. Knock, lambda and spark are the engine's own ECU and the physics' knock model.
 //
-// Which engines: simulated engines with a cycle block and no turbo of their own, with 1 to 4 turbos whatever the cylinder
+// Which engines: simulated engines with a cycle block including engines with factory turbos, with 1 to 4 turbos whatever the cylinder
 // count (a quad on a 1.0 L three is allowed when it fits the bay: turbo_kit_envelope_mm + check_fit). Torque-curve engines
 // have no air path (refusal text from turbo_kit_refusal, shown by the garage instead of hiding the option).
 // More turbos on the same engine = each gets 1/N of the air: a smaller wheel (s ~ 1/sqrt(N)), a higher reference speed and
@@ -40,9 +40,10 @@ namespace rg {
 struct TurboKitSpec {
     std::string id;          // lower_snake, unique ("sport_single")
     std::string label;       // "Sport turbo kit"
-    int count = 1;           // turbos, 1 to 4 on any engine: a shortcut for a count and a starting boost; the boost slider
-                             // (turbo_boost_target) then moves the target freely and the kit is re-sized for it
-    double target_boost_bar = 0.8; // gauge
+    int count = 1;           // turbos, 1 to 4; boost tuning does not resize the selected hardware
+    double target_boost_bar = 0.8; // nominal hardware sizing pressure, gauge
+    double exducer_mm = 0.0; // optional fixed wheel size
+    std::string configuration; // optional existing hardware configuration, shared by every compatible engine
 };
 
 // Charge piping (compressor -> intercooler -> throttle) material: a separate part the player chooses. The rating is what

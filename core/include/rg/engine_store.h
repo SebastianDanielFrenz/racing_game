@@ -56,6 +56,7 @@ struct EngineEntry {
     // The generated engine mesh's bounding box, mm (x along the crank, y, z up), from the row's "envelope" file
     // (rg.engine_envelope/1, tools/cargen/engine_mesh.py); a user engine takes its default's. None = unknown size.
     std::optional<std::array<double, 3>> envelope_mm;
+    std::optional<std::array<double, 3>> naturally_aspirated_envelope_mm; // mesh without factory turbos; replacements start here
     std::string envelope_path; // absolute; "" without one
     std::string envelope_layout; // the envelope file's "layout": "inline" | "v" | "rotary" ("" = unknown)
     std::string model_path;    // absolute .glb of the generated mesh (next to the envelope); "" without one

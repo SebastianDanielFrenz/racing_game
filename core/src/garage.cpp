@@ -659,7 +659,8 @@ EditResult Garage::set_option(const std::string& option_id, const SetupValue& va
     {
         const auto held = working_.values.find(option_id);
         const SetupValue& now = held != working_.values.end() ? held->second : view->stock;
-        if (setup_values_equal(stored, now)) {
+        if (setup_values_equal(stored, now) && !(option_id == "turbo_kit" &&
+            (working_.values.count("turbo_install") || working_.values.count("turbo_install_n2o")))) {
             r.accepted = true;
             r.validation = validation_;
             return r;
@@ -669,6 +670,12 @@ EditResult Garage::set_option(const std::string& option_id, const SetupValue& va
         working_.values.erase(option_id); // back to stock: not part of the overlay
     } else {
         working_.values[option_id] = stored;
+    }
+    if(option_id=="turbo_kit") {
+        working_.values.erase("turbo_install");working_.values.erase("turbo_install_n2o");
+    } else if((option_id=="turbo_install" || option_id=="turbo_install_n2o") &&
+              std::holds_alternative<std::string>(stored) && std::get<std::string>(stored)!="stock") {
+        working_.values.erase("turbo_kit");
     }
     if(option_id=="powertrain_install") {
         for(const auto& def:options_.options) {

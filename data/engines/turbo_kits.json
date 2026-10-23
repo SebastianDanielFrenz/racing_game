@@ -1,6 +1,6 @@
 {
   "format": "rg.turbo_kits/1",
-  "source": "Garage turbo kits for engines that have no turbo (owner on PR #5, 2026-10-15: 'Turbos cannot be fitted yet to many engines'). One rule, no per-engine files: rg::size_turbo_kit (core/src/turbo_kit.cpp) sizes each kit from the engine's own swept volume and limiter rpm and scales the anchor turbo at constant tip speed, the hardware-family method of physics_sim docs/data_formats/turbo.md. The conversion (boost grid, compression ratio ceiling) is physics_sim docs/data_formats/engine.md 'Adding or removing forced induction'.",
+  "source": "Shared replacement and conversion catalogue for compatible simulated engines, including factory-turbo engines. Stock hardware remains available separately. Generic family sizes are nominal installation sizes; boost tuning does not change hardware.",
   "anchor_hardware": "external/physics_sim/data/turbos/hyper_turbo_approx.json",
   "anchor_exducer_mm": 82.0,
   "anchor_exducer_source": "GTX3582R Gen II class compressor wheel 66/82 mm (the anchor file's rotor_inertia_source); only used for the card text.",
@@ -57,9 +57,25 @@
       "label": "Quad-turbo kit",
       "count": 4,
       "target_boost_bar": 1.0
+    },
+    {
+      "id": "single_100mm",
+      "label": "Single turbo - 100 mm inducer",
+      "count": 1,
+      "target_boost_bar": 1.8,
+      "exducer_mm": 124.24242424242425,
+      "configuration": "data/turbo_configurations/hyper_single_100mm.json"
+    },
+    {
+      "id": "single_120mm",
+      "label": "Single turbo - 120 mm inducer",
+      "count": 1,
+      "target_boost_bar": 1.8,
+      "exducer_mm": 149.0909090909091,
+      "configuration": "data/turbo_configurations/hyper_single_120mm.json"
     }
   ],
-  "kits_help": "Shortcuts for a turbo count (1 to 4, any engine) and a starting boost target. The boost slider (turbo_boost_target) then moves the target freely and the kit is re-sized for the final target; whether the engine and its turbos fit the car's engine bay is checked from the envelope rule below.",
+  "kits_help": "Shared turbo hardware choices; factory equipment remains a stock option. Physical fit and engine model compatibility are checked. Boost target is adjusted separately without resizing the turbo.",
   "envelope": {
     "unit_length_per_exducer": 2.6,
     "unit_length_add_mm": 60.0,

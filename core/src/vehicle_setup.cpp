@@ -441,7 +441,7 @@ bool load_files(const CatalogEntry& entry, Files& files, std::string* err) {
 // ---- options: the entry's view of the table ----------------------------------------
 
 bool entry_offers(const CatalogEntry& entry, const std::string& id) {
-    if(id=="powertrain_install")return true;
+    if(id=="powertrain_install" || id=="turbo_kit")return true;
     if(entry.id=="car_electric"&&(id=="engine_install"||id=="fuel"||id=="gearbox_install"||id=="clutch_capacity"||id=="gear_ratios"||id=="final_drive"))return true;
     if (entry.setup_options.empty()) return true;
     return std::find(entry.setup_options.begin(), entry.setup_options.end(), id) != entry.setup_options.end();
@@ -525,6 +525,22 @@ double installed_engine_peak_torque(const Files& files, const SetupContext& ctx)
 }
 
 // Why no garage turbo kit can go on the installed engine ("" = one can).
+std::string factory_turbo_path(const Files& files) {
+    if(!files.engine)return {};
+    std::string ref;
+    detail::get_string(files.engine->base,"default_forced_induction",ref);
+    std::string path=ref.empty()||ref=="none"?std::string{}:resolve_ref(dir_of(files.engine->path),ref);
+    if(!files.swapped) {
+        const int idx=component_index(files.vehicle.base,"engine");
+        if(idx>=0 && detail::get_string(files.vehicle.base["powertrain"]["components"][idx],"forced_induction",ref))
+            path=ref.empty()||ref=="none"?std::string{}:resolve_ref(dir_of(files.vehicle.path),ref);
+    }
+    return path;
+}
+std::string turbo_section(int count) {
+    return count==0?"NA":count==1?"Single turbo":count==2?"Twin turbo":count==4?"Quad turbo":std::to_string(count)+" turbos";
+}
+
 std::string turbo_kit_blocker(const Files& files, const SetupContext& ctx) {
     if (!ctx.turbo_kits) return "No turbo kits are available.";
     if (!files.engine) return "This car has no engine.";
@@ -539,16 +555,6 @@ std::string turbo_kit_blocker(const Files& files, const SetupContext& ctx) {
     }
     std::string why = turbo_kit_refusal(*facts, name);
     if (!why.empty()) return why;
-    // The car's own vehicle file names a turbo for its engine (the slot override wins over the engine's default). An
-    // engine swap drops that override with the old engine (apply_swap), so it only counts on the car's own engine.
-    const int idx = component_index(files.vehicle.work, "engine");
-    if (idx >= 0 && !files.swapped) {
-        std::string fi;
-        if (detail::get_string(files.vehicle.work["powertrain"]["components"][static_cast<std::size_t>(idx)], "forced_induction", fi) &&
-            !fi.empty() && fi != "none") {
-            return "This car's engine is turbocharged already: choose its turbo hardware under Turbo.";
-        }
-    }
     return {};
 }
 
@@ -802,7 +808,7 @@ std::optional<TurboKitBuild> refresh_kit_parts(Files& files, const SetupContext&
     if (piping == nullptr) return std::nullopt;
     TurboKitBuild build = describe_turbo_kit(*ctx.turbo_kits, spec, sizing, *piping);
     if (const EngineEntry* eng = installed_engine_entry(files, ctx); eng != nullptr && eng->envelope_mm) {
-        build.envelope_mm = turbo_kit_envelope_mm(*ctx.turbo_kits, spec.count, sizing, *eng->envelope_mm, eng->envelope_layout == "v");
+        build.envelope_mm = turbo_kit_envelope_mm(*ctx.turbo_kits, spec.count, sizing, eng->naturally_aspirated_envelope_mm.value_or(*eng->envelope_mm), eng->envelope_layout == "v");
     }
     files.part_extras.push_back(turbo_kit_parts(build));
     return build;
@@ -829,12 +835,13 @@ std::optional<EngineInternalsBuild> refresh_internals_parts(Files& files, const 
 // generated files and converts the engine (default_forced_induction, boost grid, compression ratio). "" when fine.
 std::string fit_turbo_kit(Files& files, const CatalogEntry& entry, const SetupContext& ctx, const TurboKitSpec& spec) {
     std::string err;
-    const auto facts = installed_engine_facts(files, ctx, &err); // a bored engine: the kit sizes for its displacement
+    auto facts = installed_engine_facts(files, ctx, &err); // a bored engine: the kit sizes for its displacement
+    if(facts && !factory_turbo_path(files).empty())facts->has_turbo=true;
     if (!facts) return err;
     const TurboKitSizing sizing = size_turbo_kit(*ctx.turbo_kits, spec, *facts, facts->limiter_rpm);
     if (!sizing.ok) return sizing.error;
     if (const EngineEntry* eng = installed_engine_entry(files, ctx); eng != nullptr && eng->envelope_mm) {
-        const auto box = turbo_kit_envelope_mm(*ctx.turbo_kits, spec.count, sizing, *eng->envelope_mm, eng->envelope_layout == "v");
+        const auto box = turbo_kit_envelope_mm(*ctx.turbo_kits, spec.count, sizing, eng->naturally_aspirated_envelope_mm.value_or(*eng->envelope_mm), eng->envelope_layout == "v");
         const FitResult fit = check_fit_size(entry, box);
         if (!fit.allowed) {
             std::string why;
@@ -844,18 +851,30 @@ std::string fit_turbo_kit(Files& files, const CatalogEntry& entry, const SetupCo
         }
     }
     const std::string cache = !ctx.engine_map_cache_dir.empty() ? ctx.engine_map_cache_dir : ctx.work_root;
-    const std::string config_path = write_turbo_kit(*ctx.turbo_kits, spec, sizing, stem_of_path(files.engine->path), cache, &err);
+    TurboKitSpec installed=spec;
+    if(files.turbo)installed.target_boost_bar=files.turbo->work.value("target_boost_bar",spec.target_boost_bar);
+    const std::string config_path = write_turbo_kit(*ctx.turbo_kits, installed, sizing, stem_of_path(files.engine->path), cache, &err);
     if (config_path.empty()) return err;
     const auto grid = turbo_kit_grid_kpa(*facts, spec.target_boost_bar, &err);
     if (!grid) return err;
     json& work = files.engine->work;
     work["default_forced_induction"] = norm_path(config_path);
     work["cycle"]["grid_p_im_kpa"] = *grid;
+    const int engine_idx=component_index(files.vehicle.work,"engine");
+    if(engine_idx>=0) {
+        files.vehicle.work["powertrain"]["components"][engine_idx].erase("forced_induction");
+        files.derived_subtrees.push_back("/powertrain/components/"+std::to_string(engine_idx)+"/forced_induction");
+    }
     if (sizing.compression_ratio < facts->compression_ratio) work["cycle"]["compression_ratio"] = sizing.compression_ratio;
     files.kit_label = spec.label;
     // Against the engine's catalogue peak (the unbored engine): a bored engine makes displacement-ratio more before boost.
     const double bore_ratio = facts->factory_displacement_l > 0.0 ? facts->displacement_l / facts->factory_displacement_l : 1.0;
-    files.kit_torque_factor = sizing.torque_factor * bore_ratio;
+    double factory_pr=1.0;
+    json factory;
+    const auto factory_path=factory_turbo_path(files);
+    if(!factory_path.empty() && read_doc(factory_path,factory,nullptr))
+        factory_pr=1.0+factory.value("target_boost_bar",0.0)*100.0/ctx.turbo_kits->ambient_pressure_kpa;
+    files.kit_torque_factor = sizing.torque_factor / factory_pr * bore_ratio;
     files.kit_spec = spec;
     refresh_kit_parts(files, ctx);
     return {};
@@ -973,6 +992,15 @@ std::string install_catalog_part(Files& files, const SetupOptionDef& def, const 
         return {};
     }
     if (def.catalog == "turbo_kits") {
+        if(id=="none") {
+            files.engine->work.erase("default_forced_induction");
+            const int idx=component_index(files.vehicle.work,"engine");
+            if(idx>=0) {
+                files.vehicle.work["powertrain"]["components"][idx].erase("forced_induction");
+                files.derived_subtrees.push_back("/powertrain/components/"+std::to_string(idx)+"/forced_induction");
+            }
+            files.turbo.reset();return {};
+        }
         const TurboKitSpec* spec = ctx.turbo_kits->find(id);
         if (spec == nullptr) return def.id + ": \"" + id + "\" is not a turbo kit";
         const std::string why = fit_turbo_kit(files, entry, ctx, *spec);
@@ -2386,13 +2414,17 @@ std::vector<SetupPart> parts_of(const SetupOptionDef& def, const SetupContext& c
         const auto facts = installed_engine_facts(files, ctx, nullptr);
         if (!facts || !turbo_kit_refusal(*facts, {}).empty()) return out;
         const EngineEntry* eng = installed_engine_entry(files, ctx);
+        if(!factory_turbo_path(files).empty()) {
+            SetupPart na;na.id="none";na.label="Naturally aspirated";na.section="NA";na.naturally_aspirated=true;na.path="turbo_kit:none";out.push_back(na);
+        }
         for (const TurboKitSpec& k : ctx.turbo_kits->kits) {
             const TurboKitSizing z = size_turbo_kit(*ctx.turbo_kits, k, *facts, facts->limiter_rpm);
             if (!z.ok) continue;
             SetupPart p;
             p.id = k.id;
             p.label = k.label;
-            p.path = "turbo_kit:" + k.id; // generated on install, never a stock file
+            p.section = turbo_section(k.count);
+            p.path = k.configuration.empty()?"turbo_kit:"+k.id:k.configuration; // generated on install, never a stock file
             p.image = k.count > 1 ? "res://assets/components/engines/turbo_twin.png" : "res://assets/components/engines/turbo_single.png";
             p.detail = turbo_kit_detail(*ctx.turbo_kits, k, z);
             const TurboKitBuild b = describe_turbo_kit(*ctx.turbo_kits, k, z, *ctx.turbo_kits->find_piping(ctx.turbo_kits->default_piping));
@@ -2400,7 +2432,7 @@ std::vector<SetupPart> parts_of(const SetupOptionDef& def, const SetupContext& c
             std::snprintf(mass, sizeof(mass), " · %.0f kg", b.total_mass_kg());
             p.detail += mass;
             if (eng != nullptr && eng->envelope_mm && entry_for_fit != nullptr) {
-                const FitResult fit = check_fit_size(*entry_for_fit, turbo_kit_envelope_mm(*ctx.turbo_kits, k.count, z, *eng->envelope_mm, eng->envelope_layout == "v"));
+                const FitResult fit = check_fit_size(*entry_for_fit, turbo_kit_envelope_mm(*ctx.turbo_kits, k.count, z, eng->naturally_aspirated_envelope_mm.value_or(*eng->envelope_mm), eng->envelope_layout == "v"));
                 if (!fit.allowed) {
                     p.detail += " · does not fit the engine bay (" + fit.reasons.front() + ")";
                     p.fits = false;
@@ -2833,6 +2865,7 @@ SetupModel build_setup_model(const CatalogEntry& entry, const SetupOptionTable& 
                     }
                 }
                 if(def.catalog=="engines"&&original.empty()&&files.engine)original=files.engine->path;
+                if(def.catalog=="turbo_kits")original=factory_turbo_path(files);
                 const std::vector<SetupPart> candidates = parts_of(def, ctx, files, &entry);
                 for (const auto& part : candidates) if (norm_path(part.path) == original) { stock = part; stock.id = "stock"; }
                 v.parts.push_back(stock);
@@ -2863,7 +2896,16 @@ SetupModel build_setup_model(const CatalogEntry& entry, const SetupOptionTable& 
                     }
                 }
                 if (def.catalog == "turbo_kits") {
-                    v.parts.front().label = "No turbo (as built)";
+                    auto& stock=v.parts.front();
+                    json factory;
+                    const bool boosted=!original.empty()&&read_doc(original,factory,nullptr);
+                    const int count=boosted?factory.value("count",0):0;
+                    stock.label=boosted?"Factory "+turbo_section(count):"No turbo (as built)";
+                    stock.section=turbo_section(count);stock.path=original;
+                    stock.naturally_aspirated=!boosted;
+                    if(boosted)for(const auto& option:table.options)for(const auto& part:option.parts)
+                        if(norm_path(part.path)==norm_path(original)){stock.label=part.label;stock.image=part.image;stock.detail=part.detail;}
+
                     if (!v.available && entry_offers(entry, def.id)) v.unavailable_reason = turbo_kit_blocker(files, ctx);
                 }
                 if (def.catalog == "engine_internals" && def.internal == kCylinderBoreKind) {
@@ -3331,27 +3373,8 @@ CompiledSetup compile_setup_internal(const CatalogEntry& entry, const SetupOptio
         }
     }
 
-    // A garage turbo kit: the boost slider moved the target away from the kit's starting one, so the hardware, the boost
-    // grid and the fit are redone for the target actually set (the regenerated configuration carries that target).
-    if (files.kit_spec && ctx.turbo_kits && files.engine) {
-        TurboKitSpec spec = *files.kit_spec;
-        if (files.turbo) {
-            const double target = files.turbo->work.value("target_boost_bar", spec.target_boost_bar);
-            if (std::abs(target - spec.target_boost_bar) > 1.0e-9) {
-                spec.target_boost_bar = target;
-                const std::string why = fit_turbo_kit(files, entry, ctx, spec);
-                if (!why.empty()) {
-                    out.error = "turbo_boost_target: " + why;
-                    return out;
-                }
-                if (!load_turbo(files, &err)) {
-                    out.error = err;
-                    return out;
-                }
-            }
-        }
-        out.turbo_kit = refresh_kit_parts(files, ctx);
-    }
+    // Hardware is selected by the catalogue; boost tuning never resizes it.
+    if(files.kit_spec && ctx.turbo_kits && files.engine) out.turbo_kit=refresh_kit_parts(files,ctx);
 
     // Merge patches (the mechanism) and the whitelist check on the result.
     // Engine-affecting garage edits request interpolation-driven maps. Bounds

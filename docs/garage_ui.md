@@ -165,18 +165,20 @@ Verification: 195 garage checks and 80 native assertions across four engine-part
 cases passed. Logs: out/garage_induction_final.log, out/garage_induction_polish_unit.log.
 N2O swap screen captured in out/garage_induction_ready_shots/induction_types.png.
 
-## Turbo kits for engines without a turbo (2026-10-15)
+## Shared turbo catalogue (2026-10-23)
 
 Owner on PR #5: "Turbos cannot be fitted yet to many engines." The option `turbo_kit` (setup_options.json, catalog
 `turbo_kits`, group "Turbo system") fits a turbo system to the INSTALLED engine when it is a simulated engine with a cycle
-block and no turbo of its own (pico, ventura, runabout, the demo pipe I4, the A25A; also after an engine swap into any
-car). The generated hardware and configuration files are content-addressed under `<engine map cache>/turbo_kits/`.
+block, including factory-turbo engines and engine swaps. Factory hardware is the stock choice; a configuration
+already present in the catalogue is not duplicated. Swaps -> Forced induction selects NA/single/twin/quad from the
+catalogue, and Engine -> Turbo shows hardware for the installed type. Legacy turbo selections remain readable;
+selecting a shared catalogue option clears them. The generated hardware and configuration files are content-addressed under `<engine map cache>/turbo_kits/`.
 
 Installing a kit sets the engine's `default_forced_induction` to the generated configuration, its
 `cycle.grid_p_im_kpa` to `ps::drivetrain::boost_grid_p_im(cycle, target)` and lowers a compression ratio above 10.0 to
-10.0 (physics_sim engine.md "Adding or removing forced induction"; knock, lambda and spark stay the physics' own
+10.0 only for NA conversions; factory-turbo engines retain their compression ratio (physics_sim engine.md "Adding or removing forced induction"; knock, lambda and spark stay the physics' own
 models). The swap package treats a kit like a torque increase: the clutch rule (1.5 x peak) uses peak x the charge
-pressure ratio, and the gearbox notice counts the boosted torque. Torque-curve engines, already-turbocharged engines,
+pressure ratio, and the gearbox notice counts the boosted torque. Torque-curve engines,
 rotaries and lift-family engines are refused: `OptionView::unavailable_reason` (RgGarage `unavailable_reason`) says why,
 and Engine -> Turbo / Swaps -> Forced induction show that text instead of hiding the tile. Changing to an engine that
 cannot take a kit drops it (`Garage::drop_unavailable_values`).
@@ -186,7 +188,9 @@ cannot take a kit drops it (`Garage::drop_unavailable_values`).
 The kits in `data/engines/turbo_kits.json` (rg.turbo_kits/1) are shortcuts for a turbo COUNT and a STARTING boost:
 Street (1, 0.5 bar), Sport (1, 1.0 bar), Twin-turbo (2, 1.0 bar), Quad-turbo (4, 1.0 bar). Any count goes on any eligible
 engine (no cylinder rule); the boost slider (`turbo_boost_target`) then moves the target freely. One rule, applied to the
-final target (compile re-sizes the kit after the slider: `CompiledSetup::turbo_kit`):
+kit's nominal sizing pressure, fixes the hardware dimensions. Boost tuning changes calibration without resizing it.
+Factory-turbo replacements retain the factory boost baseline. Fixed 100 mm and 120 mm single-turbo options reuse
+the existing offline-map hardware configurations on any compatible engine. The generated family uses this rule:
 
 1. Air demand of the whole engine at the limiter: charge density (ambient compressed to the target at the anchor's
    efficiency, then the intercooler at 0.75 effectiveness) x swept volume x limiter rpm / 120 x VE 0.9.
@@ -197,7 +201,8 @@ final target (compile re-sizes the kit after the slider: `CompiledSetup::turbo_k
    units; a quad on a 1.0 L three reaches the 0.3 clamp (four 25 mm units, slightly oversized).
 4. Envelope per unit from its exducer D: 2.6 D + 60 mm long, 2.2 D across. The units sit in a row along the crank on the
    exhaust side (a V engine with more than one: split over both banks); the row sets the length when longer than the
-   engine; width grows by 0.5 x 2.2 D per side (the turbo takes the NA exhaust manifold's place, which the engine envelope
+   engine; factory-turbo replacements start from the generated mesh without its factory turbos
+   (`naturally_aspirated_size_mm`) so they are not counted twice. Width grows by 0.5 x 2.2 D per side (the turbo takes the NA exhaust manifold's place, which the engine envelope
    already holds). `rg::check_fit_size` holds engine + kit against the car's `engine_bay_envelope`; a kit that does not
    fit is refused on install ("... does not fit Pico (556 mm long, the bay takes 500 mm)") and its card says so first.
    The charge pipe and the front-mounted intercooler are not in the box.
