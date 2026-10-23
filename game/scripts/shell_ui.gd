@@ -218,13 +218,13 @@ func _process(delta: float) -> void:
 	if screen == "configurator" and is_instance_valid(_garage_dyno) and _dyno_poll <= 0.0:
 		_dyno_poll = 0.15
 		if not garage.has_method("get_dyno"):
-			_garage_dyno_status.text = "Dyno build pending · restart after installation"
+			_garage_dyno_status.text = "Dyno build pending Â· restart after installation"
 			return
 		var data: Dictionary = garage.get_dyno()
 		_garage_dyno.update_result(data)
 		_garage_dyno_heading.text = "ENGINE DYNO" if str(data.get("topology","combustion")) == "combustion" else "POWERTRAIN DYNO"
-		var label := "Provisional · refining" if not data.get("provisional_points",[]).is_empty() else "Updating"
-		_garage_dyno_status.text = ("%s · %d%%" % [label,int(data.get("progress",0))]) if bool(data.get("busy",false)) else ("Dyno failed · previous curve retained" if not str(data.get("error","")).is_empty() else (str(data.get("caption","")) if not str(data.get("caption","")).is_empty() else "Crank · WOT · ISA · N₂O off"))
+		var label := "Provisional Â· refining" if not data.get("provisional_points",[]).is_empty() else "Updating"
+		_garage_dyno_status.text = ("%s Â· %d%%" % [label,int(data.get("progress",0))]) if bool(data.get("busy",false)) else ("Dyno failed Â· previous curve retained" if not str(data.get("error","")).is_empty() else (str(data.get("caption","")) if not str(data.get("caption","")).is_empty() else "Crank Â· WOT Â· ISA Â· Nâ‚‚O off"))
 		if not bool(data.get("busy",false)) and str(data.get("error","")).is_empty():
 			var simulated_turbo := false
 			var mixed_turbo := false
@@ -232,7 +232,7 @@ func _process(delta: float) -> void:
 				simulated_turbo = simulated_turbo or bool(point.get("turbo_simulation",false))
 				mixed_turbo = mixed_turbo or float(point.get("turbo_fallback_fraction",0.0)) > 0.0
 			if simulated_turbo:
-				_garage_dyno_status.text += " · Turbo: sim + fallback" if mixed_turbo else " · Turbo: simulated"
+				_garage_dyno_status.text += " Â· Turbo: sim + fallback" if mixed_turbo else " Â· Turbo: simulated"
 		_garage_dyno_status.tooltip_text = str(data.get("error",""))
 	_advice_poll -= delta
 	if screen == "configurator" and _advice_box != null and is_instance_valid(_advice_box) and _advice_poll <= 0.0:
@@ -662,7 +662,7 @@ func _build_configurator() -> void:
 	_garage_dyno = preload("res://scripts/garage_dyno_chart.gd").new()
 	_garage_dyno.name = "DynoChart"
 	left.add_child(_garage_dyno)
-	_garage_dyno_status = _label("Computing dyno…",12,HORIZONTAL_ALIGNMENT_LEFT,true)
+	_garage_dyno_status = _label("Computing dynoâ€¦",12,HORIZONTAL_ALIGNMENT_LEFT,true)
 	_garage_dyno_status.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	left.add_child(_garage_dyno_status)
 	_dyno_poll = 0.0
@@ -769,7 +769,7 @@ func _open_garage_exit() -> void:
 	if not valid:
 		_garage_exit_note.text = "Fix the setup before saving. B / Esc returns to editing."
 	else:
-		column.add_child(_label("B / Esc · Keep editing",14,HORIZONTAL_ALIGNMENT_CENTER,true))
+		column.add_child(_label("B / Esc Â· Keep editing",14,HORIZONTAL_ALIGNMENT_CENTER,true))
 	# Keep directional controller/keyboard focus within the two choices.
 	for button in [drive,selection]:
 		var other: Button = selection if button == drive else drive
@@ -825,11 +825,11 @@ func _refresh_performance() -> void:
 		_garage_performance.add_child(_label("Specification unavailable",14,HORIZONTAL_ALIGNMENT_LEFT,true))
 		spec = {"ok": false}
 	if bool(spec.get("ok", false)):
-		var power := "%s kW" % _spec_number(float(spec["power_kw"])) if spec.has("power_kw") else ("…" if _spec_pending else "–")
-		var torque := "%s Nm" % _spec_number(float(spec["torque_nm"])) if spec.has("torque_nm") else ("…" if _spec_pending else "–")
+		var power := "%s kW" % _spec_number(float(spec["power_kw"])) if spec.has("power_kw") else ("â€¦" if _spec_pending else "â€“")
+		var torque := "%s Nm" % _spec_number(float(spec["torque_nm"])) if spec.has("torque_nm") else ("â€¦" if _spec_pending else "â€“")
 		var gears := int(spec.get("gear_count",0))
 		var drive := str(spec.get("layout",""))
-		for text in ["Mass  %s kg" % _spec_number(float(spec.get("mass_kg",0))),"Power  %s" % power,"Torque  %s" % torque,"%s · %d gears" % [drive,gears] if gears > 0 else drive]:
+		for text in ["Mass  %s kg" % _spec_number(float(spec.get("mass_kg",0))),"Power  %s" % power,"Torque  %s" % torque,"%s Â· %d gears" % [drive,gears] if gears > 0 else drive]:
 			_garage_performance.add_child(_label(text,16,HORIZONTAL_ALIGNMENT_LEFT))
 	_garage_performance.add_child(HSeparator.new())
 	_garage_performance.add_child(_label("Acceleration",20,HORIZONTAL_ALIGNMENT_LEFT))
@@ -858,7 +858,7 @@ func _draw_garage_options() -> void:
 	_option_notes.clear()
 	_garage_preferred = null
 	for key in _buttons.keys():
-		if str(key).begins_with("tile:") or str(key).begins_with("part:") or str(key).begins_with("tyre:"):
+		if str(key).begins_with("tile:") or str(key).begins_with("part:") or str(key).begins_with("tyre:") or str(key).begins_with("induction:"):
 			_buttons.erase(key)
 	if _garage_mode == "upgrades":
 		_draw_upgrades()
@@ -870,6 +870,8 @@ func _draw_garage_options() -> void:
 	var group := ""
 	var count := 0
 	for opt in garage.get_options():
+		if str(opt["id"]) in ["turbo_install", "turbo_install_n2o"]: continue
+		if str(opt["id"]) == "turbo_kit": opt = _active_turbo_catalogue()
 		if str(opt["id"]) in ["clutch_capacity", "shift_clutch_capacity"]: continue
 		if str(opt["area"]) != _active_area or not bool(opt["available"]):
 			continue
@@ -928,12 +930,12 @@ func _build_advice_panel(column: VBoxContainer) -> void:
 # The advisor's findings never block an edit (owner 2026-10-13: allow extreme setups, show warnings).
 func _refresh_advice() -> void:
 	if not garage.has_method("get_advice"):
-		_advice_status.text = "Setup check pending · restart after installation"
+		_advice_status.text = "Setup check pending Â· restart after installation"
 		return
 	var data: Dictionary = garage.get_advice()
 	_advice_data = data
 	if not bool(data.get("available", false)):
-		_advice_status.text = "SETUP CHECK · unavailable"
+		_advice_status.text = "SETUP CHECK Â· unavailable"
 		_advice_status.tooltip_text = str(data.get("error", ""))
 		return
 	var busy := bool(data.get("busy", false))
@@ -943,14 +945,14 @@ func _refresh_advice() -> void:
 		worst = maxi(worst, int(item.get("severity", 0)))
 	var text := "SETUP CHECK"
 	if busy:
-		text += " · checking… %d%%" % int(data.get("progress", 0))
+		text += " Â· checkingâ€¦ %d%%" % int(data.get("progress", 0))
 	elif not str(data.get("error", "")).is_empty():
-		text += " · check failed"
+		text += " Â· check failed"
 	elif bool(data.get("have_result", false)):
-		text += " · %s" % ("no issues found" if items.is_empty() else ("%d note%s" % [items.size(), "" if items.size() == 1 else "s"]))
+		text += " Â· %s" % ("no issues found" if items.is_empty() else ("%d note%s" % [items.size(), "" if items.size() == 1 else "s"]))
 		# The worst note by name (the advisor orders them: worst grade first, driveline before engine and thermal notes).
 		if not items.is_empty() and worst >= 1:
-			text += " · %s" % str(items[0].get("title", ""))
+			text += " Â· %s" % str(items[0].get("title", ""))
 	_advice_status.text = text
 	_advice_status.tooltip_text = str(data.get("error", "")) if not busy else str(data.get("stage", ""))
 	_advice_status.modulate = ADVICE_COLOURS[worst] if (worst >= 0 and not busy) else Color(1, 1, 1, 0.7)
@@ -1024,7 +1026,7 @@ func _advice_item_control(item: Dictionary, stale: bool, open_by_default: bool) 
 	var title := Button.new()
 	title.flat = true
 	title.alignment = HORIZONTAL_ALIGNMENT_LEFT
-	title.text = ("▾ " if open else "▸ ") + str(item.get("title", ""))
+	title.text = ("â–¾ " if open else "â–¸ ") + str(item.get("title", ""))
 	title.add_theme_font_size_override("font_size", 15)
 	title.custom_minimum_size = Vector2.ZERO
 	for state_name in ["font_color", "font_hover_color", "font_pressed_color", "font_focus_color"]:
@@ -1062,13 +1064,13 @@ func _advice_item_control(item: Dictionary, stale: bool, open_by_default: bool) 
 	if bool(item.get("can_solve", false)) and state in [2, 3]:
 		var id := str(item.get("id", ""))
 		var button := Button.new()
-		button.text = "Searching…" if state == 3 else "Find fix"
+		button.text = "Searchingâ€¦" if state == 3 else "Find fix"
 		button.disabled = state == 3
 		button.add_theme_font_size_override("font_size", 14)
 		button.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
 		button.pressed.connect(func():
 			garage.solve_advice(id)
-			button.text = "Searching…"
+			button.text = "Searchingâ€¦"
 			button.disabled = true)
 		box.add_child(button)
 		_buttons["advice_fix:" + id] = button
@@ -1173,14 +1175,18 @@ func _turbo_kit_option() -> Dictionary:
 			return opt
 	return {}
 
-# Turbo kits for an engine without a turbo of its own: generic cards, or the reason none can be fitted.
+# Shared turbo hardware, including the factory installation.
 func _draw_turbo_kit(kit: Dictionary) -> void:
 	if not bool(kit["available"]):
 		var why := _label(str(kit.get("unavailable_reason", "")),16,HORIZONTAL_ALIGNMENT_LEFT,true)
 		why.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 		_option_box.add_child(why)
 		return
-	var note := _label("Turbo, intercooler and wastegate sized for the installed engine.",13,HORIZONTAL_ALIGNMENT_LEFT,true)
+	var current_type := _catalogue_induction_type(kit)
+	if current_type == "NA":
+		_option_box.add_child(_label("Naturally aspirated engine. Select forced induction in Swaps to fit turbo hardware.",16,HORIZONTAL_ALIGNMENT_LEFT,true))
+		return
+	var note := _label("Boost target is adjusted separately in Tuning.",13,HORIZONTAL_ALIGNMENT_LEFT,true)
 	note.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	_option_box.add_child(note)
 	var grid := GridContainer.new()
@@ -1188,6 +1194,7 @@ func _draw_turbo_kit(kit: Dictionary) -> void:
 	_option_box.add_child(grid)
 	_add_hidden_note(kit)
 	for part in kit["parts"]:
+		if str(part.get("section", "")) != current_type: continue
 		var installed := str(part["id"]) == str(kit["value"])
 		if not _part_visible(part) and not installed: continue
 		var presentation: Dictionary = part.duplicate()
@@ -1196,7 +1203,9 @@ func _draw_turbo_kit(kit: Dictionary) -> void:
 		_grey_if_unfit(card, part)
 		grid.add_child(card)
 		_buttons["part:turbo_kit:" + str(part["id"])] = card
-		card.pressed.connect(func(): _edit_option("turbo_kit",str(part["id"])); _draw_garage_options())
+		card.pressed.connect(func():
+			if not bool(part.get("legacy_installed", false)): _edit_option("turbo_kit",str(part["id"]))
+			_draw_garage_options())
 		if installed or _garage_preferred == null: _garage_preferred = card
 	# Charge piping (plastic / aluminium / steel): its rating is what the setup check holds the boost against.
 	var piping := _garage_option("charge_piping")
@@ -1321,7 +1330,7 @@ func _draw_electric_drive(ids: Array) -> void:
 	_focus_tuning.call_deferred()
 
 # One card per choice of an electric motor option (layout or drive unit, core ev_motor.h): the card's figures line is the
-# catalogue's (e.g. "380 kW · 640 N*m · 20000 rpm · 75 kg"), its second line the inspiration class and reduction ratio.
+# catalogue's (e.g. "380 kW Â· 640 N*m Â· 20000 rpm Â· 75 kg"), its second line the inspiration class and reduction ratio.
 func _draw_motor_cards(opt: Dictionary) -> void:
 	_option_box.add_child(_label(str(opt["label"]),16,HORIZONTAL_ALIGNMENT_LEFT))
 	var grid := GridContainer.new()
@@ -1342,7 +1351,7 @@ func _draw_motor_cards(opt: Dictionary) -> void:
 	_focus_garage.call_deferred()
 
 # One card per preset of a scale_preset option (core vehicle_setup.h ScalePreset): the card's size line is the computed
-# figures (e.g. "135 kWh · 805 kW · 700 kg"); "stock" is the car's own part.
+# figures (e.g. "135 kWh Â· 805 kW Â· 700 kg"); "stock" is the car's own part.
 func _draw_preset_cards(opt: Dictionary) -> void:
 	var grid := GridContainer.new()
 	grid.columns = 2
@@ -1553,6 +1562,11 @@ func _draw_upgrades() -> void:
 		if top == "Swaps" and _garage_path[1] == "Drivetrain":
 			_draw_drivetrain_swaps()
 			return
+		if _garage_path[1] in ["Turbo", "Forced induction"] and not _turbo_kit_option().is_empty():
+			var kit := _active_turbo_catalogue()
+			if top == "Swaps" and bool(kit["available"]): _draw_catalogue_induction_swaps(kit)
+			else: _draw_turbo_kit(kit)
+			return
 		var opt := _garage_option("engine_install") if _garage_path[1] == "Engine" else _garage_option("turbo_install")
 		if _garage_path[1] == "Fuel": opt = _garage_option("fuel")
 		if opt.is_empty() and _garage_path[1] != "Fuel": opt = _garage_option("turbo_install_n2o")
@@ -1713,7 +1727,7 @@ func _draw_clutch_upgrades(opt: Dictionary) -> void:
 		var factor := float(level["factor"])
 		if factor < float(opt["min"]) or factor > float(opt["max"]): continue
 		var installed := is_equal_approx(float(opt["value"]),factor)
-		var presentation := {"label":level["label"] if opt_id != "shift_clutch_capacity" else str(level["label"]).replace("Stock", "Stock (gearbox clutches)"), "size":"Torque capacity · %.0f Nm" % (float(numbers[0])*factor), "image":"res://assets/components/drivetrain/clutch.svg"}
+		var presentation := {"label":level["label"] if opt_id != "shift_clutch_capacity" else str(level["label"]).replace("Stock", "Stock (gearbox clutches)"), "size":"Torque capacity Â· %.0f Nm" % (float(numbers[0])*factor), "image":"res://assets/components/drivetrain/clutch.svg"}
 		var card := _make_component_card(presentation,"INSTALLED" if installed else "Install")
 		grid.add_child(card)
 		_buttons["clutch:" + str(factor)] = card
@@ -1805,6 +1819,56 @@ func _draw_part_grid(opt: Dictionary, parts: Array) -> void:
 		card.pressed.connect(func(): _edit_option(str(opt["id"]),str(part["id"])); _draw_garage_options())
 		if installed or _garage_preferred == null: _garage_preferred = card
 
+# Saved pre-catalogue installations remain visible until a shared option replaces them.
+func _active_turbo_catalogue() -> Dictionary:
+	var kit := _turbo_kit_option().duplicate(true)
+	if str(kit.get("value", "stock")) != "stock": return kit
+	for id in ["turbo_install", "turbo_install_n2o"]:
+		var old := _garage_option(id)
+		if old.is_empty() or str(old["value"]) == "stock": continue
+		for part in old["parts"]:
+			if str(part["id"]) != str(old["value"]): continue
+			var shown: Dictionary = part.duplicate()
+			shown["id"] = "legacy:" + id + ":" + str(part["id"])
+			shown["section"] = _induction_type(str(part["id"]))
+			shown["legacy_installed"] = true
+			kit["parts"].append(shown)
+			kit["value"] = shown["id"]
+	return kit
+
+func _catalogue_induction_type(kit: Dictionary) -> String:
+	for part in kit["parts"]:
+		if str(part["id"]) == str(kit["value"]): return str(part.get("section", "NA"))
+	return "NA"
+
+func _draw_catalogue_induction_swaps(kit: Dictionary) -> void:
+	var types: Array = []
+	for part in kit["parts"]:
+		var kind := str(part.get("section", "NA"))
+		if not types.has(kind): types.append(kind)
+	var grid := GridContainer.new()
+	grid.columns = 2
+	_option_box.add_child(grid)
+	var current_type := _catalogue_induction_type(kit)
+	for kind in types:
+		var target: Dictionary = {}
+		for part in kit["parts"]:
+			if str(part.get("section", "NA")) != kind: continue
+			if target.is_empty() or (not _part_visible(target) and _part_visible(part)) or str(part["id"]) == str(kit["value"]): target = part
+		var installed: bool = current_type == kind
+		var shown := target.duplicate()
+		shown["label"] = kind
+		shown["size"] = "Naturally aspirated" if kind == "NA" else "Select hardware in Engine upgrades"
+		var card := _make_component_card(_with_badge(shown,"turbo_kit",{"turbo_kit":str(target["id"])}),"INSTALLED" if installed else "Install")
+		_grey_if_unfit(card, target)
+		grid.add_child(card)
+		_buttons["induction:" + kind] = card
+		card.pressed.connect(func():
+			if not installed: _edit_option("turbo_kit",str(target["id"]))
+			_draw_garage_options())
+		if installed or _garage_preferred == null: _garage_preferred = card
+	_focus_garage.call_deferred()
+
 func _induction_type(part_id: String) -> String:
 	if part_id == "hyper_na": return "NA"
 	return "Single turbo" if part_id.contains("single") else "Twin turbo"
@@ -1892,7 +1956,7 @@ func _draw_wheel_parts() -> void:
 		if compounds: presentation.erase("size")
 		else:
 			presentation["label"] = "%d mm" % int(key)
-			if options.size() == 2: presentation["size"] = "Both axles · preserves compounds"
+			if options.size() == 2: presentation["size"] = "Both axles Â· preserves compounds"
 		var card := _make_component_card(_with_badge(presentation,str(options[0]["id"]),installs),"INSTALLED" if installed else "Install")
 		grid.add_child(card)
 		_buttons["tyre:" + str(key)] = card

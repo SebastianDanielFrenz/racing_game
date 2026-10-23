@@ -826,7 +826,7 @@
       "pointers": [
         "/default_forced_induction"
       ],
-      "help": "Fit a turbo system to an engine that has none: the turbo, intercooler and wastegate are sized for the installed engine's air flow (data/engines/turbo_kits.json), the boost map is regenerated and a compression ratio above 10:1 is lowered. Boost pressure is adjusted separately in Tuning. Torque-curve engines cannot take a kit; the garage says why."
+      "help": "Install or replace turbo hardware from the shared catalogue. Factory hardware remains available. Compression is changed only for a naturally aspirated conversion. Boost is tuned separately and does not resize the selected turbo."
     },
     {
       "id": "charge_piping",

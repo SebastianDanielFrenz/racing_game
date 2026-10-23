@@ -490,6 +490,13 @@ def build_one(row):
                   "10 mm, deck = stroke / 2 + rod + 0.33 x bore, head and cover heights by valve count, manifolds "
                   "drawn compact); the bounding box is the generated mesh's own." % d["source"],
     }
+    if d["turbos"]:
+        bare = Model(eid, row["name"], "Engine without factory turbos", "Same frame")
+        materials(bare, LOOKS.get(eid, dict(block="aluminium", cover=(0.15, 0.15, 0.16))))
+        unboosted = dict(d, turbos=0)
+        build_piston(bare, unboosted)
+        bare_lo, bare_hi = bounds(bare.mb)
+        env["naturally_aspirated_size_mm"] = [round((bare_hi[i] - bare_lo[i]) * 1000.0) for i in range(3)]
     write_json(os.path.join(folder, eid + ".envelope.json"), env)
     return stats, env
 

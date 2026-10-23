@@ -293,6 +293,17 @@ std::unique_ptr<EngineStore> EngineStore::open(const std::string& catalog_path, 
                 mm[i] = (*size)[i].get<double>();
             }
             e.envelope_mm = mm;
+            if (env->contains("naturally_aspirated_size_mm")) {
+                const auto& bare=env->at("naturally_aspirated_size_mm");
+                if(!bare.is_array() || bare.size()!=3) return fail(where+e.envelope_path+": naturally_aspirated_size_mm must be [x, y, z]");
+                std::array<double,3> dims{};
+                for(std::size_t i=0;i<3;++i) {
+                    if(!bare[i].is_number() || !std::isfinite(bare[i].get<double>()) || bare[i].get<double>()<=0)
+                        return fail(where+e.envelope_path+": naturally_aspirated_size_mm must be finite and > 0");
+                    dims[i]=bare[i].get<double>();
+                }
+                e.naturally_aspirated_envelope_mm=dims;
+            }
             detail::get_string(*env, "layout", e.envelope_layout);
             const fs::path glb = fs::path(e.envelope_path).parent_path() / (e.id + ".glb");
             std::error_code gec;
