@@ -3400,6 +3400,34 @@ CompiledSetup compile_setup_internal(const CatalogEntry& entry, const SetupOptio
             cycle["pressure_sampling"] = std::move(sampling);
         }
     }
+    // A rev limit above the top node of the generated maps' rpm axis: extend the axis to the new limit, so the maps are
+    // generated up to the limit instead of holding the old top node's values above it (the lookups clamp at an edge).
+    // The axis is a map-generator input, so the engine-map cache key changes and new maps are generated. Rule: physics_sim
+    // extend_grid_rpm's (the last node spacing continued, the limit itself as the top node), with the spacing widened so
+    // at most kMaxAddedRpmNodes nodes are added - the hyper's 250 rpm top spacing continued to the 20000 rpm slider end
+    // would add 47 rpm rows and multiply the generation time. Engines without a cycle block (measured curves only) cannot
+    // be extended; the setup check warns for them.
+    constexpr int kMaxAddedRpmNodes = 8; // [AS] generation cost bound; a smooth VE/friction trend above the stock range
+    bool rpm_grid_extended = false;
+    if (files.engine && files.engine->work.contains("cycle")) {
+        json& work = files.engine->work;
+        const json* limiter = at_pointer(work, "/limiter/rpm");
+        const json* grid = at_pointer(work, "/cycle/grid_rpm");
+        if (limiter != nullptr && limiter->is_number() && grid != nullptr && grid->is_array() && grid->size() >= 2 &&
+            std::all_of(grid->begin(), grid->end(), [](const json& v) { return v.is_number(); })) {
+            const double limit = limiter->get<double>();
+            const double top = grid->back().get<double>();
+            const double last_step = top - (*grid)[grid->size() - 2].get<double>();
+            if (limit > top && last_step > 0.0) {
+                const double step = std::max(last_step, (limit - top) / kMaxAddedRpmNodes);
+                json extended = *grid;
+                for (double node = top + step; limit - node > 0.5 * step; node += step) extended.push_back(node);
+                extended.push_back(limit);
+                work["cycle"]["grid_rpm"] = std::move(extended);
+                rpm_grid_extended = true;
+            }
+        }
+    }
     std::map<std::string, std::string> cooling_options;
     for (const SetupOptionDef& def : table.options) {
         if (def.catalog == "cooling_upgrades" && entry_offers(entry, def.id)) cooling_options.emplace(def.cooling_part, def.id);
@@ -3452,6 +3480,8 @@ CompiledSetup compile_setup_internal(const CatalogEntry& entry, const SetupOptio
         // This generator policy is constructed above, never supplied by a
         // player option. Check every remaining edit against the normal list.
         if (adaptive_pressure && std::string(kind) == "engine") whitelist_base["cycle"]["pressure_sampling"] = f.work["cycle"]["pressure_sampling"];
+        // The rpm axis follows the rev limit (above), trusted code driven by the rev-limit option.
+        if (rpm_grid_extended && std::string(kind) == "engine") whitelist_base["cycle"]["grid_rpm"] = f.work["cycle"]["grid_rpm"];
         // The turbo kit conversion (install_catalog_part, trusted code driven by the turbo_kits option) sets these.
         if (!files.kit_label.empty() && std::string(kind) == "engine") {
             whitelist_base["default_forced_induction"] = f.work["default_forced_induction"];

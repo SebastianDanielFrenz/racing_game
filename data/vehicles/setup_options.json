@@ -469,7 +469,7 @@
       "group": "Engine calibration",
       "area": "engine",
       "unit": "x",
-      "help": "Engine rev limit in rpm, 2000 to 20000 on a logarithmic slider. Above the stock limit the engine may leave its data range or run its pistons too fast: the setup check warns about both. Stored as a multiple of the installed engine's own limit.",
+      "help": "Engine rev limit in rpm, 2000 to 20000 on a logarithmic slider. Above the top of a simulated engine's map range the rpm range is extended to the new limit and new maps are generated (up to 8 added rpm points); an engine with measured curves only keeps its last values there. Above the stock limit the pistons may also run too fast: the setup check warns. Stored as a multiple of the installed engine's own limit.",
       "kind": "scale",
       "slider": {"mapping": "log", "abs_min": 2000, "abs_max": 20000, "unit": "rpm", "decimals": 0},
       "file": "engine",
