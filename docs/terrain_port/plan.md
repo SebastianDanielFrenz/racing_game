@@ -238,3 +238,22 @@ fallback must never silently change physics under an existing release ID.
   now waits for active/tick progress, post-flip movement and published removal;
   speed, wake, collision and lifecycle assertions remain intact. Long-labelled
   tests and hardware VR/ARM64 acceptance are outside this release check.
+
+### Owner marker: floating two-node dirt path (2026-10-23)
+
+- At 50.135524,8.521275 (UTM32 E465787.8 N5553808.8 z126), the original
+  render binding returned a roughly 68 m unpaved walkway triangle (flags40960)
+  with normalized UVs0..1 and endpoints at z125.49..129.21. Two-node OSM paths
+  returned before the one-metre densification shared by longer paths. The
+  resulting ground chord floated above terrain and stretched a single texture
+  repeat, explaining the apparent sheet without matching raised collision.
+- All path ways now pass through subdivision. UVs use signed lateral metres
+  and cumulative distance, including segments owned by other tiles. No wall
+  collider or ground-height modification is introduced. Exact lattice draping
+  on steep banks remains separate; this fixes the skipped two-node subdivision.
+- New nonlinear six-metre-depression fixture fails before the fix and passes
+  after it. Route/surface overlap subset:2148assertions13casespassed. All954
+  short optimized Release CTests passed. The real marker mesh probe no longer
+  finds the former long elevated triangle. Same-camera GPU before/after renders
+  of the old snapshot/current build confirm the floating strip is replaced by
+  a ground-following dirt path (out/stretch_render/before.png and after.png).
