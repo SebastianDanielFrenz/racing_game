@@ -299,9 +299,15 @@ func _run() -> void:
 	_press("back")
 	_check(_screen() == "main_menu", "Back returns from Credits to the main menu")
 
+	# Browsing a different car must not override the last car actually driven.
+	var garage: Node = main.get_garage()
+	_check(bool(garage.remember_drive("car_hyper_n2o").get("ok", false)), "seed non-default last-driven car")
+	garage.select("car_sedan")
 	# ---- free roam, round 1 ----
 	var node_count_before: int = _count_nodes(main)
 	if await _start_flat_world("round 1"):
+		_check(str(main._drive_selection.get("vehicle_id", "")) == "car_hyper_n2o", "Free roam starts the last-driven car rather than the browsed car")
+		_check(str(garage.get_last_driven_id()) == "car_hyper_n2o", "successful load remembers the driven car")
 		await _check_nitrous_toggle()
 		# pause with a real Esc key event
 		_press_escape()

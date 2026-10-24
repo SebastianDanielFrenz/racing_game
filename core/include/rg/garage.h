@@ -117,6 +117,8 @@ public:
     // ---- selection (persisted) ----
     [[nodiscard]] const std::string& selected_id() const { return selected_; }
     bool select(const std::string& id, std::string* err); // persists
+    [[nodiscard]] const std::string& last_driven_id() const { return last_driven_; }
+    bool remember_drive(const std::string& id, std::string* err); // call only once a world is drivable
     // ---- per-vehicle data ----
     // mass_kg is the car's part-mass tree total with its setup applied (a preset: its overlay, owner on PR #22), the
     // catalog chassis.mass_kg only when the tree cannot be built.
@@ -241,6 +243,7 @@ private:
     [[nodiscard]] std::vector<std::string> hidden_nodes_for(const CatalogEntry& e, const VehicleSetup& setup) const;
     std::shared_ptr<EngineStore> store_;
     std::string selected_;
+    std::string last_driven_;
 
     std::string edit_id_;
     SetupModel model_;

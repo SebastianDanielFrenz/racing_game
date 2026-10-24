@@ -72,6 +72,40 @@ TEST_CASE("garage: selection persists across a restart", "[garage]") {
     CHECK(g2->selected_id() == "car_sedan_awd");
 }
 
+TEST_CASE("garage: last driven car survives browsing and restarts", "[garage][last_car]") {
+    TempDirs t;
+    {
+        auto g = open_garage(t);
+        CHECK(g->last_driven_id() == g->catalog().default_id);
+        std::string err;
+        REQUIRE(g->remember_drive("car_sedan_awd", &err));
+        REQUIRE(g->select("car_sedan", &err)); // browsing another car is not driving it
+        CHECK(g->last_driven_id() == "car_sedan_awd");
+        CHECK_FALSE(g->remember_drive("removed_car", &err));
+        CHECK(g->last_driven_id() == "car_sedan_awd");
+    }
+    auto g = open_garage(t);
+    CHECK(g->selected_id() == "car_sedan");
+    CHECK(g->last_driven_id() == "car_sedan_awd");
+    std::string err;
+    REQUIRE(g->remember_drive("car_sedan_rwd", &err));
+    g.reset();
+    CHECK(open_garage(t)->last_driven_id() == "car_sedan_rwd");
+}
+
+TEST_CASE("garage: old or removed last-car records fall back to the saved selection", "[garage][last_car]") {
+    TempDirs t;
+    fs::create_directories(t.base + "/user/garage");
+    for (const std::string& contents : {
+             std::string{R"({"selected":"car_sedan_awd"})"},
+             std::string{R"({"selected":"car_sedan_awd","last_driven":"removed_car"})"}}) {
+        std::ofstream(t.base + "/user/garage/selected.json") << contents;
+        auto g = open_garage(t);
+        CHECK(g->selected_id() == "car_sedan_awd");
+        CHECK(g->last_driven_id() == "car_sedan_awd");
+    }
+}
+
 TEST_CASE("garage: an edit is validated, saved, persisted and applied to the drive", "[garage]") {
     TempDirs t;
     auto g = open_garage(t);
