@@ -252,7 +252,7 @@ $startSh = @'
 # Written by tools/frame_install.ps1; started by the Steam Library entry.
 #   start.sh                    OpenXR (VR) mode, game shell menus
 #   start.sh -- --drive         VR, straight into the real world
-#   start.sh --desktop [args]   flat-screen window, args go to Godot (e.g. --headless --quit-after 300 -- --bindings-test)
+#   start.sh --desktop [args]   flat-screen window, args go to Godot (e.g. --headless -- --bindings-test)
 # Map stores live in ./maps (rhein-main-corridor-r2, home-r1).
 HERE=$(cd "$(dirname "$0")" && pwd) || exit 1
 export RG_G2M_CACHE="${RG_G2M_CACHE:-$HERE/maps}"
@@ -305,7 +305,7 @@ cd '$stageW'
 export RG_G2M_CACHE='$stageW/maps' RG_G2M_HOME='$stageW/maps/home-r1'
 export XDG_DATA_HOME=/tmp/rg_qemu_xdg/data XDG_CONFIG_HOME=/tmp/rg_qemu_xdg/config XDG_CACHE_HOME=/tmp/rg_qemu_xdg/cache
 mkdir -p /tmp/rg_qemu_xdg/data /tmp/rg_qemu_xdg/config /tmp/rg_qemu_xdg/cache
-timeout 600 qemu-aarch64 -L "`$SR" './godot/$godotName' --headless --path game --quit-after 300 -- --bindings-test > '$qw/qemu_bindings.out' 2>&1
+timeout 600 qemu-aarch64 -L "`$SR" './godot/$godotName' --headless --path game -- --bindings-test > '$qw/qemu_bindings.out' 2>&1
 echo "exit=`$?"
 grep -c 'ERROR' '$qw/qemu_bindings.out'
 grep -E 'bindings test: ok|ERROR|RG_' '$qw/qemu_bindings.out' | head -20
@@ -490,7 +490,7 @@ mkdir -p .verify_home
 L1=.verify_home/bindings.log
 L2=.verify_home/drive.log
 echo "== bindings test"
-timeout 240 ./start.sh --desktop --headless --quit-after 300 -- --bindings-test > "$L1" 2>&1; rc1=$?
+timeout 240 ./start.sh --desktop --headless -- --bindings-test > "$L1" 2>&1; rc1=$?
 tail -n 12 "$L1"
 echo "== drive smoke (real world, home map)"
 timeout 600 ./start.sh --desktop --headless --quit-after 200000 -- --drive --drive-smoke > "$L2" 2>&1; rc2=$?
