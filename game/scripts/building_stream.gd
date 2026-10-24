@@ -102,12 +102,10 @@ func _worker() -> void:
 		var data: Dictionary = view.get_building_mesh_tile(int(job.x),int(job.y),0.0 if job.full else threshold,float(settings.get("fallback_height_m",8.0)),float(settings.get("storey_height_m",3.0)),threshold)
 		var near_arrays: Array = data.get("near",_empty_arrays())
 		var tall_arrays: Array = data.get("tall",_empty_arrays())
-		# RenderingServer calls (including tangent readback) can wait for the main
-		# thread. Build outside the queue mutex: the main thread polls that mutex.
-		var near_mesh := _mesh(near_arrays)
-		var tall_mesh := _mesh(tall_arrays)
+		# Queue CPU data only. Shutdown joins this worker on the main thread;
+		# RenderingServer calls here can wait for that same thread and deadlock.
 		_mutex.lock()
-		_results.append({"key":Vector2i(int(job.x),int(job.y)),"full":bool(job.full),"origin":data.get("origin_session",Vector3.ZERO),"near":near_mesh,"tall":tall_mesh})
+		_results.append({"key":Vector2i(int(job.x),int(job.y)),"full":bool(job.full),"origin":data.get("origin_session",Vector3.ZERO),"near":near_arrays,"tall":tall_arrays})
 		_mutex.unlock()
 func _empty_arrays() -> Array:
 	return []
@@ -133,7 +131,7 @@ func _mesh(surfaces: Array) -> ArrayMesh:
 	return mesh
 func _upload(result: Dictionary) -> void:
 	var key: Vector2i = result.key
-	var has_content: bool = result.near != null or result.tall != null
+	var has_content: bool = not result.near.is_empty() or not result.tall.is_empty()
 	var accepted: int = _ring.accept(key.x, key.y, bool(result.full), has_content)
 	if accepted==0:
 		return
@@ -142,8 +140,8 @@ func _upload(result: Dictionary) -> void:
 		_tiles.erase(key)
 	if accepted!=2:
 		return
-	var near_mesh: ArrayMesh = result.near
-	var tall_mesh: ArrayMesh = result.tall
+	var near_mesh: ArrayMesh = _mesh(result.near)
+	var tall_mesh: ArrayMesh = _mesh(result.tall)
 	var root := Node3D.new()
 	var near_node := MeshInstance3D.new()
 	var tall_node := MeshInstance3D.new()

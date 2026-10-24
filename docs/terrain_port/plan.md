@@ -295,3 +295,19 @@ fallback must never silently change physics under an existing release ID.
   acceptance remain open. This update is a reviewable improvement, not completion
   of the comprehensive graphical port.
 - Integrated optimized Release validation after taking current main: all 956 short CTests passed (37.5 s locally). Long-labelled tests and hardware VR/ARM acceptance were not rerun for this appearance update.
+
+### Building-stream shutdown follow-up (2026-10-24)
+
+- Packaged drive smoke stalled at real-world -> flat teardown while the worker
+  was still permitted to create ArrayMesh objects and regenerate tangents. Moving
+  those renderer calls outside the result mutex fixed the earlier queue lock
+  inversion, but did not remove the shutdown dependency: the main thread joins
+  the worker, and renderer readback on that worker can require the main thread.
+- Worker now publishes CPU surface arrays only. Main-thread `_upload` accepts the
+  ring result before creating meshes, assigning materials and regenerating
+  tangents. The four-result queue bound and one-result-per-frame upload remain.
+  Native building generation stays on the worker; renderer objects do not.
+- The same real-world smoke after this change completed 49.1 m, relocation,
+  on-foot round trip, four world switches and cancellation (324 ms), with
+  `result=ok`, zero falls and zero terrain misses. The initial d68129e snapshot
+  is superseded by the following snapshot containing this shutdown fix.
