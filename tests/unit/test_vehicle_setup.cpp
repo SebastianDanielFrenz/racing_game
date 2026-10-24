@@ -432,7 +432,12 @@ static void check_setup_touching_each_option(Fixture& f, const std::vector<std::
             // (test_engine_swap.cpp: every engine on every car, fuel kept or changed).
             if (!o.def.catalog.empty()) continue;
             switch (o.def.kind) {
-                case rg::OptionKind::Scale: s.values[o.def.id] = o.max; ++touched; break;
+                // "Spray from" at its maximum would equal "Spray up to" at its maximum (both 15000 rpm), which the
+                // controller rightly rejects (test_nitrous_tuning.cpp); it is touched at its minimum instead.
+                case rg::OptionKind::Scale:
+                    s.values[o.def.id] = o.def.id == "nitrous_rpm_min" ? o.min : o.max;
+                    ++touched;
+                    break;
                 case rg::OptionKind::ScaleList:
                     s.values[o.def.id] = std::vector<double>(static_cast<std::size_t>(o.list_size), 1.05);
                     ++touched;
