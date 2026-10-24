@@ -1116,7 +1116,7 @@ func _draw_tiles(names: Array, unavailable: Array = [], reasons: Dictionary = {}
 	var shown := 0
 	for item in names:
 		var name := str(item)
-		if unavailable.has(name) and not _show_all_upgrades(): continue
+		if unavailable.has(name): continue
 		shown += 1
 		var reason := str(reasons.get(name, "Not available yet"))
 		var button := _button(grid,"tile:" + name,name + ("\n" + reason if unavailable.has(name) else ""),func(): _enter_garage_tile(name),0)
@@ -1263,6 +1263,7 @@ func _engine_tiles_unavailable() -> Array:
 
 func _swap_tiles_unavailable() -> Array:
 	var out: Array = []
+	if not _any_offered(["powertrain_install"]): out.append("Powertrain")
 	if _garage_option("engine_install").is_empty(): out.append("Engine")
 	if _garage_option("fuel").is_empty(): out.append("Fuel")
 	if not _turbo_modifiable(): out.append("Forced induction")
@@ -1276,9 +1277,15 @@ func _drivetrain_tiles_unavailable() -> Array:
 	if not _any_available(["final_drive", "gear_ratios"]): out.append("Gearing")
 	return out
 
+func _any_editable_group(groups: Array) -> bool:
+	for opt in garage.get_options():
+		if bool(opt["available"]) and str(opt.get("group", "")) in groups: return true
+	return false
+
 func _chassis_tiles_unavailable() -> Array:
 	var out: Array = ["Aero"] # front diffuser and rear wing are not built yet
 	if _weight_reduction_options().is_empty(): out.append("Weight reduction")
+	if not _any_editable_group(["Suspension", "Brakes"]): out.append("Suspension & brakes")
 	return out
 
 # True when at least one of `ids` is available now (a choice the player can make, unlike _any_available, which also counts an
@@ -1297,11 +1304,22 @@ func _electric_tiles_unavailable() -> Array:
 
 const UPGRADE_CATEGORIES := ["Engine", "Electric drive", "Chassis", "Wheels", "Swaps", "Drivetrain", "Appearance & assists"]
 
+const APPEARANCE_TILES := ["Paint", "Rims", "Driver assists"]
+func _appearance_tiles_unavailable() -> Array:
+	var out: Array = []
+	for item in [["Paint", "paint"], ["Rims", "rim"], ["Driver assists", "assist_unit"]]:
+		if not _any_offered([item[1]]): out.append(item[0])
+	return out
+
 func _upgrade_categories_unavailable() -> Array:
 	var out: Array = []
 	if _engine_tiles_unavailable().size() >= 5: out.append("Engine")
 	if _electric_tiles_unavailable().size() >= 2: out.append("Electric drive")
 	if _drivetrain_tiles_unavailable().size() >= 3: out.append("Drivetrain")
+	if _appearance_tiles_unavailable().size() == APPEARANCE_TILES.size(): out.append("Appearance & assists")
+	if _swap_tiles_unavailable().size() >= 5: out.append("Swaps")
+	if not _any_offered(["tyre_front", "tyre_rear"]): out.append("Wheels")
+	if _weight_reduction_options().is_empty() and not _any_editable_group(["Suspension", "Brakes"]): out.append("Chassis")
 	return out
 
 # Electric drive / Motors or Battery: a card per choice for the motor layout and the front/rear drive units (power, torque,
@@ -1529,6 +1547,15 @@ func _draw_upgrades() -> void:
 		_draw_tiles(UPGRADE_CATEGORIES, _upgrade_categories_unavailable())
 		return
 	var top := _garage_path[0]
+	if top == "Appearance & assists":
+		if _garage_path.size() == 1:
+			_draw_tiles(APPEARANCE_TILES, _appearance_tiles_unavailable())
+		elif _garage_path[1] == "Driver assists":
+			_draw_grade_rows(["assist_unit"], "Install assist electronics. Sport/Racing units include combustion Launch Control; hybrid Sport/Racing modes enable it.")
+		else:
+			var opt := _garage_option("paint" if _garage_path[1] == "Paint" else "rim")
+			if not opt.is_empty(): _option_box.add_child(_option_row(opt))
+		return
 	if top == "Electric drive":
 		if _garage_path.size() == 1:
 			_draw_tiles(["Motors", "Battery"], _electric_tiles_unavailable())

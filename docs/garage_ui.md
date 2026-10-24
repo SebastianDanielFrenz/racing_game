@@ -715,3 +715,19 @@ All pack factors are assumptions [AS] from typical cell classes (energy cells: m
 the other way round), not measured packs. A `scale_preset` option: `pointers` (patterns), `presets` [{id, label,
 subtitle?, image?, factors[one per pattern, in (0, 10)]}], optional `display` [{unit, multiplier, decimals}] for the
 card figures (an empty unit is left out); the value is the preset id, "stock" = the car's own part.
+
+### Driver assist upgrades and category visibility
+
+Appearance & assists opens Paint, Rims and Driver assists. Driver assists installs the native assist-unit choices,
+including their TC modes, ABS, ESC and combustion Launch Control where fitted. Sport/Racing LC units require a
+combustion engine; incompatible units are hidden by the usual parts-fit filter. Manual and dual-clutch gearboxes can
+arm the existing controller; converter automatics/CVTs do not arm it.
+
+Hybrid conversions retain the selected unit's grade and capabilities, including Launch Control. Hybrid TC tuning only
+adapts modes the unit offers. Sport/Racing permit LC; Eco/Normal/Electric disable it. While staging, wheel-path electric
+motors are held; on launch they respect the same launch torque ceiling as the engine. The crank generator and regen
+remain available. The default launch toggle is L (rebindable).
+
+Upgrade categories and subcategories with no editable options are hidden even with Show all enabled. Show all exposes
+parts that do not fit; it does not reintroduce unimplemented or empty categories. The standalone driver_assists_test.gd
+covers the real install flow and empty-category hiding in both Show all states.

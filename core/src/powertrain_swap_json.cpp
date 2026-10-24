@@ -68,7 +68,7 @@ std::string swap_powertrain(json& v,const std::string& choice,const std::string&
    if(controller.value("type",std::string{})!="electronics"||parking_brake(controller)){kept.push_back(controller);continue;}
    if(!own_unit&&electronics_kind(controller)=="assist_unit"){own_unit=true;kept.push_back(controller);}
   }
-  if(!own_unit)kept.push_back({{"id","hybrid_assists"},{"type","electronics"},{"ref",(dir/"../electronics/assist_unit_hybrid.json").lexically_normal().generic_string()}});kept.push_back({{"id","hybrid_modes"},{"type","electronics"},{"ref",(dir/"../electronics/drive_modes_hybrid.json").lexically_normal().generic_string()}});v["controllers"]=kept;
+  if(!own_unit)kept.push_back({{"id","assists"},{"type","electronics"},{"ref",(dir/"../electronics/assist_unit_hybrid.json").lexically_normal().generic_string()}});kept.push_back({{"id","hybrid_modes"},{"type","electronics"},{"ref",(dir/"../electronics/drive_modes_hybrid.json").lexically_normal().generic_string()}});v["controllers"]=kept;
 
  }
  if(choice=="fuel_cell_ev"||choice=="hybrid_dual_hydrogen"){
@@ -88,11 +88,16 @@ std::string swap_powertrain(json& v,const std::string& choice,const std::string&
 }
 json merge_hybrid_unit(const json& own,const json& hybrid){
  json unit=own;unit.erase("extends");
- // The hybrid supervisor needs its own traction-control modes; the conversion has no launch control. ABS, ESC and aero stay.
- if(hybrid.contains("traction_control"))unit["traction_control"]=hybrid["traction_control"];
- unit.erase("launch_control");
- unit["grade"]=hybrid.value("grade",std::string{"racing"});
- unit["source"]=own.value("source",std::string{})+" [AS] Hybrid conversion: traction control replaced by the hybrid unit's, launch control removed.";
+ // Keep the fitted grade, modes and launch/ABS/ESC/aero capabilities. Only adapt
+ // tuning for TC modes the chosen unit actually offers; an ABS-only unit stays ABS-only.
+ if(unit.contains("traction_control") && unit["traction_control"].is_object() &&
+    hybrid.contains("traction_control") && hybrid["traction_control"].contains("mode_params")) {
+  auto& tc=unit["traction_control"];
+  const auto& tuning=hybrid["traction_control"]["mode_params"];
+  if(tc.contains("modes"))for(const auto& mode:tc["modes"])
+   if(mode.is_string()&&tuning.contains(mode.get<std::string>()))tc["mode_params"][mode.get<std::string>()]=tuning[mode.get<std::string>()];
+ }
+ unit["source"]=own.value("source",std::string{})+" [AS] Hybrid conversion: preserve fitted assist capabilities and adapt offered TC modes.";
  return unit;
 }
 }
