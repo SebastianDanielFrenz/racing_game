@@ -770,3 +770,74 @@ TEST_CASE("turbo kits: factory hypercars use the shared catalogue without losing
         INFO(na.error);REQUIRE(na.ok);CHECK_FALSE(sim_engine(na.desc)->turbo_pair.has_value());
     }
 }
+
+TEST_CASE("generic turbo sizes: each induction layout offers fixed 30 to 120 mm wheels", "[turbo_kit][generic_turbo_sizes]") {
+    Fixture f;
+    const auto& cfg = *f.ctx.turbo_kits;
+    const auto engines = f.kit_engines();
+    REQUIRE_FALSE(engines.empty());
+    const auto facts = rg::read_engine_facts(engines.front()->file, nullptr);
+    REQUIRE(facts);
+    for (const std::string& kind : {std::string{"single"}, std::string{"twin"}, std::string{"quad"}}) {
+        for (int mm : {30, 40, 50, 60, 70, 80, 100, 120}) {
+            const std::string id = "generic_" + kind + "_" + std::to_string(mm) + "mm";
+            INFO(id);
+            const auto* kit = cfg.find(id);
+            REQUIRE(kit);
+            CHECK(kit->count == (kind == "single" ? 1 : kind == "twin" ? 2 : 4));
+            CHECK(kit->exducer_mm * 66.0 / 82.0 == Approx(mm));
+            const auto base = rg::size_turbo_kit(cfg, *kit, *facts, facts->limiter_rpm);
+            REQUIRE(base.ok);
+            CHECK(base.exducer_mm == Approx(kit->exducer_mm));
+            CHECK_THAT(rg::turbo_kit_detail(cfg, *kit, base), ContainsSubstring("fixed hardware"));
+            // A fixed wheel cannot silently grow with engine demand, boost or limiter changes.
+            auto high = *kit;
+            high.target_boost_bar = 3;
+            for (const auto* e : engines) {
+                const auto other = rg::read_engine_facts(e->file, nullptr);
+                REQUIRE(other);
+                const auto z = rg::size_turbo_kit(cfg, high, *other, other->limiter_rpm * 1.2);
+                REQUIRE(z.ok);
+                CHECK(z.exducer_mm == base.exducer_mm);
+                CHECK(z.max_mass_flow_kg_s == base.max_mass_flow_kg_s);
+                CHECK(z.rotor_inertia_kgm2 == base.rotor_inertia_kgm2);
+            }
+        }
+    }
+    const auto small = rg::size_turbo_kit(cfg, *cfg.find("generic_single_40mm"), *facts, facts->limiter_rpm);
+    const auto large = rg::size_turbo_kit(cfg, *cfg.find("generic_single_80mm"), *facts, facts->limiter_rpm);
+    CHECK(large.rotor_inertia_kgm2 == Approx(32 * small.rotor_inertia_kgm2));
+    CHECK(large.max_mass_flow_kg_s > 3.9 * small.max_mass_flow_kg_s);
+    CHECK(large.unit_mass_kg > small.unit_mass_kg);
+}
+
+TEST_CASE("generic turbo sizes: upgrade choices install real hardware and retain it under boost tuning", "[turbo_kit][generic_turbo_sizes]") {
+    Fixture f;
+    const auto model = rg::build_setup_model(f.entry("car_hyper"), f.table, f.ctx);
+    const auto* option = view_of(model, "turbo_kit");
+    REQUIRE(option);
+    for (const char* id : {"generic_single_40mm", "generic_single_80mm", "generic_twin_60mm", "generic_quad_30mm"}) {
+        INFO(id);
+        const rg::SetupPart* card = nullptr;
+        for (const auto& part : option->parts) if (part.id == id) card = &part;
+        REQUIRE(card);
+        CHECK_THAT(card->label, ContainsSubstring("mm inducer"));
+        CHECK(card->section == (std::string(id).find("single") != std::string::npos ? "Single turbo" : std::string(id).find("twin") != std::string::npos ? "Twin turbo" : "Quad turbo"));
+        const Loaded base = load_setup(f, f.entry("car_hyper"), setup_of("car_hyper", {{"turbo_kit", std::string(id)}}));
+        INFO(base.error);
+        REQUIRE(base.ok);
+        const Loaded boost = load_setup(f, f.entry("car_hyper"), setup_of("car_hyper", {{"turbo_kit", std::string(id)}, {"turbo_boost_target", 2.0}}));
+        INFO(boost.error);
+        REQUIRE(boost.ok);
+        const auto* a = sim_engine(base.desc);
+        const auto* b = sim_engine(boost.desc);
+        REQUIRE(a); REQUIRE(b); REQUIRE(a->turbo_pair); REQUIRE(b->turbo_pair);
+        CHECK(b->turbo_pair->target_boost_pa == Approx(2 * a->turbo_pair->target_boost_pa));
+        CHECK(b->turbo_pair->rotor_inertia_kgm2 == a->turbo_pair->rotor_inertia_kgm2);
+        CHECK(b->turbo_pair->max_mass_flow_kg_s == a->turbo_pair->max_mass_flow_kg_s);
+        REQUIRE(base.compiled.turbo_kit);
+        const auto& built = *base.compiled.turbo_kit;
+        CHECK(a->turbo_pair->rotor_inertia_kgm2 == Approx(built.spec.count * built.sizing.rotor_inertia_kgm2));
+        CHECK(a->turbo_pair->max_mass_flow_kg_s == Approx(built.spec.count * built.sizing.max_mass_flow_kg_s));
+    }
+}
