@@ -1186,7 +1186,7 @@ func _draw_turbo_kit(kit: Dictionary) -> void:
 	if current_type == "NA":
 		_option_box.add_child(_label("Naturally aspirated engine. Select forced induction in Swaps to fit turbo hardware.",16,HORIZONTAL_ALIGNMENT_LEFT,true))
 		return
-	var note := _label("Boost target is adjusted separately in Tuning.",13,HORIZONTAL_ALIGNMENT_LEFT,true)
+	var note := _label("Choose compressor inducer size in mm. Larger wheels trade slower spool for more flow. Set boost separately in Tuning.",13,HORIZONTAL_ALIGNMENT_LEFT,true)
 	note.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	_option_box.add_child(note)
 	var grid := GridContainer.new()

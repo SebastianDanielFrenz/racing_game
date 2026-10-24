@@ -458,7 +458,7 @@ std::string turbo_kit_detail(const TurboKitConfig& config, const TurboKitSpec& s
     char buf[200];
     std::snprintf(buf, sizeof(buf), "%d x %.0f/%.0f mm compressor; %.2f kg/s per unit; %s",
                   spec.count, z.exducer_mm * 66.0/82.0, z.exducer_mm, z.max_mass_flow_kg_s,
-                  spec.configuration.empty()?"sized for this engine":"fixed hardware");
+                  spec.exducer_mm > 0.0 ? "fixed hardware" : "sized for this engine");
     return buf;
 }
 
