@@ -1239,6 +1239,7 @@ func _any_option(id: String) -> Dictionary:
 # page; Motor output and Reduction ratio are Tuning sliders only) and the battery pack.
 const EV_MOTOR_OPTIONS := ["ev_layout", "ev_front_motors", "ev_rear_motors", "ev_hybrid_motor"]
 const EV_BATTERY_OPTIONS := ["ev_battery_pack"]
+const EV_GENERATOR_OPTIONS := ["hybrid_generator"]
 
 # True when at least one of `ids` is available on this car (something the player can actually change).
 func _any_available(ids: Array) -> bool:
@@ -1293,6 +1294,7 @@ func _electric_tiles_unavailable() -> Array:
 	var out: Array = []
 	if not _any_offered(EV_MOTOR_OPTIONS): out.append("Motors")
 	if not _any_available(EV_BATTERY_OPTIONS): out.append("Battery")
+	if not _any_offered(EV_GENERATOR_OPTIONS): out.append("Generator")
 	return out
 
 const UPGRADE_CATEGORIES := ["Engine", "Electric drive", "Chassis", "Wheels", "Swaps", "Drivetrain", "Appearance & assists"]
@@ -1300,7 +1302,7 @@ const UPGRADE_CATEGORIES := ["Engine", "Electric drive", "Chassis", "Wheels", "S
 func _upgrade_categories_unavailable() -> Array:
 	var out: Array = []
 	if _engine_tiles_unavailable().size() >= 5: out.append("Engine")
-	if _electric_tiles_unavailable().size() >= 2: out.append("Electric drive")
+	if _electric_tiles_unavailable().size() >= 3: out.append("Electric drive")
 	if _drivetrain_tiles_unavailable().size() >= 3: out.append("Drivetrain")
 	return out
 
@@ -1531,9 +1533,9 @@ func _draw_upgrades() -> void:
 	var top := _garage_path[0]
 	if top == "Electric drive":
 		if _garage_path.size() == 1:
-			_draw_tiles(["Motors", "Battery"], _electric_tiles_unavailable())
+			_draw_tiles(["Motors", "Battery", "Generator"], _electric_tiles_unavailable())
 		else:
-			_draw_electric_drive(EV_MOTOR_OPTIONS if _garage_path[1] == "Motors" else EV_BATTERY_OPTIONS)
+			_draw_electric_drive(EV_MOTOR_OPTIONS if _garage_path[1] == "Motors" else (EV_GENERATOR_OPTIONS if _garage_path[1] == "Generator" else EV_BATTERY_OPTIONS))
 		return
 	if top == "Wheels":
 		if _garage_path.size() == 1:

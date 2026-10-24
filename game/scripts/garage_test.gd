@@ -153,6 +153,10 @@ func _run() -> void:
 	_check(await _wait_until(func(): return _screen() == "main_menu", 10.0), "the boot splash ends and the main menu follows")
 	_check(ui.button_ids().has("garage"), "the main menu offers Garage (has %s)" % ", ".join(ui.button_ids()))
 	await _wait_seconds(0.3)
+	if "--garage-hybrid-only" in OS.get_cmdline_user_args():
+		await _check_hybrid_upgrades()
+		_finish()
+		return
 	var nodes_before: int = _count_nodes(main)
 	var vehicles: Array = garage.get_vehicles()
 	_check(vehicles.size() >= 2, "the catalog lists %d cars" % vehicles.size())
@@ -853,6 +857,20 @@ func _check_hybrid_upgrades() -> void:
 	var pack_figures: Label = pack_card.get_node_or_null("Figures") if pack_card != null else null
 	_check(pack_figures != null and "28 kWh · 300 kW · 231 kg" in pack_figures.text, "hybrid: a pack card shows the absolute figures for this car (is '%s')" % (pack_figures.text if pack_figures != null else "no figures label"))
 	_check(_labels_containing(ui._option_box, "caps the electric power") == 1, "hybrid: the battery page shows the pack help once")
+	await _back_to_root()
+	_press("tile:Electric drive")
+	_check(ui.get_button("tile:Generator") != null, "hybrid: Generator has its own hardware page")
+	_press("tile:Generator")
+	for generator_id in ["stock", "performance", "heavy_duty", "race"]:
+		_check(ui.get_button("part:hybrid_generator:" + generator_id) != null, "hybrid: generator card " + generator_id)
+	_press("part:hybrid_generator:race")
+	_check(str(ui._garage_option("hybrid_generator").get("value", "")) == "race" and bool(garage.get_validation()["ok"]), "hybrid: high-output generator installs and validates")
+	_press("garage:tuning")
+	_press("tile:Engine")
+	_check(ui._option_values.has("hybrid_charge_power"), "hybrid: charging power is a Tuning slider")
+	_type_entry("hybrid_charge_power", "100")
+	_check(is_equal_approx(float(_option_value("hybrid_charge_power")), 2.0) and bool(garage.get_validation()["ok"]), "hybrid: typing 100 kW stores the charging target and validates")
+	_press("garage:upgrades")
 	# The N2O controller's rpm window is a Tuning slider (owner 2026-10-21).
 	await _back_to_root()
 	_press("garage:tuning")
