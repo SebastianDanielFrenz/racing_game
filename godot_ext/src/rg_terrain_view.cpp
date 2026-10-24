@@ -331,7 +331,8 @@ godot::Dictionary RgTerrainView::get_building_tile(int x,int y,double min_height
 godot::Dictionary RgTerrainView::get_building_mesh_tile(int x,int y,double min_height,double fallback,double storey,double skyline) {
     godot::Dictionary out;if(!terrain_)return out;
     const g2m::TileKey key{terrain_->frame().zone(),2,x,y};
-    godot::PackedVector3Array points[2][8],normals[2][8];godot::PackedColorArray colours[2][8];godot::PackedVector2Array uv[2][8];
+    constexpr int material_count=static_cast<int>(g2m::world::BuildingMaterial::Count);
+    godot::PackedVector3Array points[2][material_count],normals[2][material_count];godot::PackedColorArray colours[2][material_count];godot::PackedVector2Array uv[2][material_count];
     std::int64_t unsupported=0,window_count=0,building_count=0,doors=0,chimneys=0,pitched=0,directed=0,directed_supported=0;
     g2m::world::BuildingMeshOptions options;options.origin_e=static_cast<double>(x)*1024;options.origin_n=static_cast<double>(y)*1024;options.storey_height_m=storey;
     for(const auto& b:terrain_->buildings_tile(key,min_height,fallback,storey)) {
@@ -347,7 +348,7 @@ godot::Dictionary RgTerrainView::get_building_mesh_tile(int x,int y,double min_h
         }
     }
     for(int tier=0;tier<2;++tier){godot::Array surfaces;
-        for(int material=0;material<8;++material){if(points[tier][material].is_empty())continue;
+        for(int material=0;material<material_count;++material){if(points[tier][material].is_empty())continue;
             godot::Array arrays;arrays.append(points[tier][material]);arrays.append(normals[tier][material]);arrays.append(colours[tier][material]);arrays.append(uv[tier][material]);
             godot::Dictionary surface;surface["material"]=material;surface["arrays"]=arrays;surfaces.append(surface);}
         out[tier==0?"near":"tall"]=surfaces;}

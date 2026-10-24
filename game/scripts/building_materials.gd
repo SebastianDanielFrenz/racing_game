@@ -18,7 +18,7 @@ static func shared() -> Array[StandardMaterial3D]:
 		material.roughness = float(entry.get("roughness",.9))
 		if str(entry.name) == "glass":
 			material.metallic = .25
-		if str(entry.name) == "metal":
+		if str(entry.name) in ["metal","cladding"]:
 			material.metallic = .7
 		var maps: Dictionary = entry.get("maps",{})
 		for channel: String in maps:
@@ -43,6 +43,10 @@ static func shared() -> Array[StandardMaterial3D]:
 				material.normal_enabled = true
 				material.normal_texture = texture
 				material.normal_scale = float(entry.get("normal_strength",.6))
+			elif channel == "Metal":
+				material.metallic = 1.0
+				material.metallic_texture = texture
+				material.metallic_texture_channel = BaseMaterial3D.TEXTURE_CHANNEL_RED
 			elif channel == "Rough":
 				material.roughness_texture = texture
 				material.roughness_texture_channel = BaseMaterial3D.TEXTURE_CHANNEL_RED

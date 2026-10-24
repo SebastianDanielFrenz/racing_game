@@ -2,7 +2,7 @@
   "format": "rg.building_assets/1",
   "licence": "CC0-1.0",
   "licence_url": "https://polyhaven.com/license",
-  "snapshot_date": "2026-10-22",
+  "snapshot_date": "2026-10-23",
   "assets": [
     {
       "id": "plastered_wall_05",
@@ -55,6 +55,60 @@
         3000
       ],
       "files_hash": "747e15373011aa8372cdd7524f5da06130839f8f"
+    },
+    {
+      "id": "stone_wall",
+      "name": "Stone Wall",
+      "authors": [
+        "Dario Barresi",
+        "Charlotte Baglioni"
+      ],
+      "source": "https://polyhaven.com/a/stone_wall",
+      "dimensions_mm": [
+        2000,
+        2000
+      ],
+      "files_hash": "10cda9d9a6482bb64c4dd2cb7014f8d35fa426dc"
+    },
+    {
+      "id": "wood_plank_wall",
+      "name": "Wood Plank Wall",
+      "authors": [
+        "Dimitrios Savva"
+      ],
+      "source": "https://polyhaven.com/a/wood_plank_wall",
+      "dimensions_mm": [
+        1000,
+        1000
+      ],
+      "files_hash": "8f5479dc8011f76e526cc29dd55f7f9adbfb8dfe"
+    },
+    {
+      "id": "grey_plaster",
+      "name": "Grey Plaster",
+      "authors": [
+        "Rob Tuytel"
+      ],
+      "source": "https://polyhaven.com/a/grey_plaster",
+      "dimensions_mm": [
+        1000,
+        1000
+      ],
+      "files_hash": "a50b917a248abd0044b4c81bd68baa02d6584b66"
+    },
+    {
+      "id": "corrugated_iron_02",
+      "name": "Corrugated Iron 02",
+      "authors": [
+        "Jenelle van Heerden",
+        "Sergej Majboroda"
+      ],
+      "source": "https://polyhaven.com/a/corrugated_iron_02",
+      "dimensions_mm": [
+        2700,
+        2700
+      ],
+      "files_hash": "8c9a1acc82e561a5f13ecff80add1908fd1b6e90"
     }
   ],
   "files": [
@@ -153,6 +207,110 @@
       "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/1k/roof_slates_02/roof_slates_02_rough_1k.jpg",
       "size": 307076,
       "sha256": "737f95fdbb09e49670cbce09a78fe75c18bbaed597524db832f0227df0dce2cd"
+    },
+    {
+      "asset": "stone_wall",
+      "channel": "Diffuse",
+      "path": "stone_wall/stone_wall_diff_1k.jpg",
+      "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/1k/stone_wall/stone_wall_diff_1k.jpg",
+      "size": 836975,
+      "sha256": "390969aead48d9a10ac731a5e0af8761cc4ed89faa02ba775b913930b4398d87"
+    },
+    {
+      "asset": "stone_wall",
+      "channel": "nor_gl",
+      "path": "stone_wall/stone_wall_nor_gl_1k.jpg",
+      "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/1k/stone_wall/stone_wall_nor_gl_1k.jpg",
+      "size": 1172420,
+      "sha256": "801d7ff8bc472e5ad95872546c19a4c63cc776060b4ced629fece2d08591964e"
+    },
+    {
+      "asset": "stone_wall",
+      "channel": "Rough",
+      "path": "stone_wall/stone_wall_rough_1k.jpg",
+      "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/1k/stone_wall/stone_wall_rough_1k.jpg",
+      "size": 301003,
+      "sha256": "8c06e7c67d0d9701966732cc90c4e356b5bd5656aa35bf82650576e78322cbdd"
+    },
+    {
+      "asset": "wood_plank_wall",
+      "channel": "Diffuse",
+      "path": "wood_plank_wall/wood_plank_wall_diff_1k.jpg",
+      "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/1k/wood_plank_wall/wood_plank_wall_diff_1k.jpg",
+      "size": 498698,
+      "sha256": "680a9959d3f805254e00b3ce9adaffb7b01dccbe84f3e89379bb5f91a116ada5"
+    },
+    {
+      "asset": "wood_plank_wall",
+      "channel": "nor_gl",
+      "path": "wood_plank_wall/wood_plank_wall_nor_gl_1k.jpg",
+      "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/1k/wood_plank_wall/wood_plank_wall_nor_gl_1k.jpg",
+      "size": 683480,
+      "sha256": "c0745689b801cd8fa296ed9badf0643cda2f9328ef310636c993cf3c3c413196"
+    },
+    {
+      "asset": "wood_plank_wall",
+      "channel": "Rough",
+      "path": "wood_plank_wall/wood_plank_wall_rough_1k.jpg",
+      "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/1k/wood_plank_wall/wood_plank_wall_rough_1k.jpg",
+      "size": 384348,
+      "sha256": "11f02759e2e5f49c9963848ea537a7e020661c4913b734e6be7a432e23b75210"
+    },
+    {
+      "asset": "grey_plaster",
+      "channel": "Diffuse",
+      "path": "grey_plaster/grey_plaster_diff_1k.jpg",
+      "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/1k/grey_plaster/grey_plaster_diff_1k.jpg",
+      "size": 704079,
+      "sha256": "dcf34c5f3801cc43189f0edae3c430b602c827956e9d6ce4b89a85e53e952da9"
+    },
+    {
+      "asset": "grey_plaster",
+      "channel": "nor_gl",
+      "path": "grey_plaster/grey_plaster_nor_gl_1k.jpg",
+      "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/1k/grey_plaster/grey_plaster_nor_gl_1k.jpg",
+      "size": 355288,
+      "sha256": "85fe18209cb354b582003892898ee0cd6fe6b853644e01983718fc011140c0c2"
+    },
+    {
+      "asset": "grey_plaster",
+      "channel": "Rough",
+      "path": "grey_plaster/grey_plaster_rough_1k.jpg",
+      "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/1k/grey_plaster/grey_plaster_rough_1k.jpg",
+      "size": 635335,
+      "sha256": "67566b1b5ee25502596916303c246b08d47725b8a697283cfdc1494e6f659aa2"
+    },
+    {
+      "asset": "corrugated_iron_02",
+      "channel": "Diffuse",
+      "path": "corrugated_iron_02/corrugated_iron_02_diff_1k.jpg",
+      "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/1k/corrugated_iron_02/corrugated_iron_02_diff_1k.jpg",
+      "size": 568492,
+      "sha256": "7a7b43099d015c1b08ebb175da5965caeae44b86de65a727b3fffa20a7c69a93"
+    },
+    {
+      "asset": "corrugated_iron_02",
+      "channel": "nor_gl",
+      "path": "corrugated_iron_02/corrugated_iron_02_nor_gl_1k.jpg",
+      "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/1k/corrugated_iron_02/corrugated_iron_02_nor_gl_1k.jpg",
+      "size": 489773,
+      "sha256": "9743c93668689c36a67e9c4dc8d6a0870fe91202f82dcdaf70ddc330c12f9ecb"
+    },
+    {
+      "asset": "corrugated_iron_02",
+      "channel": "Rough",
+      "path": "corrugated_iron_02/corrugated_iron_02_rough_1k.jpg",
+      "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/1k/corrugated_iron_02/corrugated_iron_02_rough_1k.jpg",
+      "size": 793854,
+      "sha256": "56ec8d8b04bac56b5d85ee2f35256b7b00d8c7a0ef13e6791cdabc5c05ed2f4b"
+    },
+    {
+      "asset": "corrugated_iron_02",
+      "channel": "Metal",
+      "path": "corrugated_iron_02/corrugated_iron_02_metal_1k.jpg",
+      "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/1k/corrugated_iron_02/corrugated_iron_02_metal_1k.jpg",
+      "size": 137627,
+      "sha256": "1fa893891c41df69b2ef1864b0640c9ffa23aa7b33cb98800fd2b97217afd8dc"
     }
   ]
 }

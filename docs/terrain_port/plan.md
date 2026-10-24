@@ -257,3 +257,41 @@ fallback must never silently change physics under an existing release ID.
   finds the former long elevated triangle. Same-camera GPU before/after renders
   of the old snapshot/current build confirm the floating strip is replaced by
   a ground-following dirt path (out/stretch_render/before.png and after.png).
+
+### Facade archetypes and safety railings (2026-10-24)
+
+- Owner clarification: the repeating criss-cross bars meant the safety railings,
+  not the load-bearing bridge structure. The native builder now chooses concrete
+  parapets, road guardrails or vertical-picket pedestrian railings from carrying
+  way tags; explicit barrier tags take precedence. Railway-tagged carrying ways
+  have a taller parapet, but this does not add a pure-railway source pipeline.
+  Structural truss tags remain separate. Deck geometry, collision and heights
+  remain authoritative and unchanged by these render-only additions.
+- Building types now select residential, terrace, apartment, commercial and
+  industrial opening rhythms, frames, plinths, entrances and floor bands.
+  Stable IDs select modest whole-building variants. Mapped wall material and
+  colour override inferred defaults. All floors have their own window heights;
+  a visual review caught overlapping ground-floor windows before integration.
+- Building material IDs 0..7 stay stable; stone, timber, smooth wall and cladding
+  append IDs 8..11. Four additional Poly Haven texture sets are pinned by hashes
+  in the asset manifest, with credits and metric repeat scales. The binding uses
+  the native material count, and the renderer binds the cladding metallic map.
+- Reproducible native fixtures: build `g2m_appearance_preview`, then run
+  `game/scripts/appearance_review.gd` with RG_APPEARANCE_FIXTURE and
+  RG_APPEARANCE_IMAGE. [Reviewed Godot comparison](appearance_review.png).
+  These are inferred appearance examples, not reconstructions of actual facades.
+- Native Windows full-world suite: 1,516,690 assertions in 137 cases passed.
+  Linux appearance subset: 256,284 assertions in 24 cases passed, including the
+  same reviewed geometry hashes as Windows. Asset verification: 25 pinned files
+  plus four manifest tests passed. A real Unterliederbach tile loaded through
+  the shipping binding: 533 buildings, 18,697 windows and 327,168 vertices;
+  native building generation 66.5 ms locally. These are local observations,
+  not a hardware-independent performance guarantee.
+- The terrain branch also incorporates main through 3d76e14 (the unified turbo
+  catalogue), preserving development merged while this task was paused.
+- Remaining visual target: facades are still procedural approximations with
+  broad archetypes, generic roofs and limited ornamentation. Surveyed or richer
+  regional facade models, bridge inventory enrichment and broader P0-P16 visual
+  acceptance remain open. This update is a reviewable improvement, not completion
+  of the comprehensive graphical port.
+- Integrated optimized Release validation after taking current main: all 956 short CTests passed (37.5 s locally). Long-labelled tests and hardware VR/ARM acceptance were not rerun for this appearance update.

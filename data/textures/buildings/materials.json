@@ -93,6 +93,67 @@
       "name": "metal",
       "roughness": 0.4,
       "normal_strength": 0.6
+    },
+    {
+      "index": 8,
+      "name": "stone",
+      "roughness": 0.85,
+      "normal_strength": 0.4,
+      "tile_m": [
+        2.0,
+        2.0
+      ],
+      "maps": {
+        "Diffuse": "stone_wall/stone_wall_diff_1k.jpg",
+        "nor_gl": "stone_wall/stone_wall_nor_gl_1k.jpg",
+        "Rough": "stone_wall/stone_wall_rough_1k.jpg"
+      }
+    },
+    {
+      "index": 9,
+      "name": "timber",
+      "roughness": 0.85,
+      "normal_strength": 0.4,
+      "tile_m": [
+        1.0,
+        1.0
+      ],
+      "maps": {
+        "Diffuse": "wood_plank_wall/wood_plank_wall_diff_1k.jpg",
+        "nor_gl": "wood_plank_wall/wood_plank_wall_nor_gl_1k.jpg",
+        "Rough": "wood_plank_wall/wood_plank_wall_rough_1k.jpg"
+      }
+    },
+    {
+      "index": 10,
+      "name": "smooth_wall",
+      "roughness": 0.85,
+      "normal_strength": 0.4,
+      "tile_m": [
+        1.0,
+        1.0
+      ],
+      "maps": {
+        "Diffuse": "grey_plaster/grey_plaster_diff_1k.jpg",
+        "nor_gl": "grey_plaster/grey_plaster_nor_gl_1k.jpg",
+        "Rough": "grey_plaster/grey_plaster_rough_1k.jpg"
+      }
+    },
+    {
+      "index": 11,
+      "name": "cladding",
+      "roughness": 0.5,
+      "normal_strength": 0.4,
+      "tile_m": [
+        2.7,
+        2.7
+      ],
+      "maps": {
+        "Diffuse": "corrugated_iron_02/corrugated_iron_02_diff_1k.jpg",
+        "nor_gl": "corrugated_iron_02/corrugated_iron_02_nor_gl_1k.jpg",
+        "Rough": "corrugated_iron_02/corrugated_iron_02_rough_1k.jpg",
+        "Metal": "corrugated_iron_02/corrugated_iron_02_metal_1k.jpg"
+      }
     }
   ]
 }
