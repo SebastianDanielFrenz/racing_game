@@ -311,3 +311,25 @@ fallback must never silently change physics under an existing release ID.
   on-foot round trip, four world switches and cancellation (324 ms), with
   `result=ok`, zero falls and zero terrain misses. The initial d68129e snapshot
   is superseded by the following snapshot containing this shutdown fix.
+
+### Complete facade texture pass (2026-10-24)
+
+- Owner requested complete facade detail (frames, glazing, sills, doors and
+  weathering) and explicitly required preserving performance/LOD. New assets,
+  atlas mappings and measured budgets are documented in
+  [facade_textures.md](facade_textures.md), with an actual Godot render.
+- Native atlas UV/material changes: geo2map 93caf28. All window quads keep six
+  vertices, door inserts shrink from 36 to 6, and the detail-free skyline path
+  still emits no windows/doors/frames. Ring distances are unchanged. New shared
+  batches are per tile/material, never per building or window.
+- Asset verifier: 36 files and seven network-free installer tests pass, including
+  archive/member corruption and selected-member-only extraction. Native Windows
+  full world: 1,519,156 assertions in 138 cases passed; Linux facade/golden subset: 32,500
+  assertions in 15 cases passed with identical hashes. All 956 short Release game
+  CTests passed. Longer and hardware VR/ARM acceptance remain separate.
+- Bridge discovery during this review: production BridgeVisual is currently
+  merged into the terrain/deck material without independent UV/material groups;
+  its alpha-zero tint is interpreted as asphalt. The isolated comparison's
+  plain railing material did not establish production rail texturing. A separate
+  render-only bridge material path is still needed; this facade pass does not
+  claim to texture the bridge railings.

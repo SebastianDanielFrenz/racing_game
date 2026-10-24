@@ -2,7 +2,7 @@
   "format": "rg.building_assets/1",
   "licence": "CC0-1.0",
   "licence_url": "https://polyhaven.com/license",
-  "snapshot_date": "2026-10-23",
+  "snapshot_date": "2026-10-24",
   "assets": [
     {
       "id": "plastered_wall_05",
@@ -109,6 +109,57 @@
         2700
       ],
       "files_hash": "8c9a1acc82e561a5f13ecff80add1908fd1b6e90"
+    },
+    {
+      "id": "white_plaster_02",
+      "name": "White Plaster 02",
+      "authors": [
+        "Rob Tuytel"
+      ],
+      "source": "https://polyhaven.com/a/white_plaster_02",
+      "dimensions_mm": [
+        1000,
+        1000
+      ],
+      "files_hash": "508068441dd24eb06ef6d269a43f6ea7c8bade6b"
+    },
+    {
+      "id": "rough_pine_door",
+      "name": "Rough Pine Door",
+      "authors": [
+        "Dimitrios Savva"
+      ],
+      "source": "https://polyhaven.com/a/rough_pine_door",
+      "dimensions_mm": [
+        2000,
+        2000
+      ],
+      "files_hash": "144b2cd6ad790ffd8d12e00fa1ec5eff826636b1"
+    },
+    {
+      "id": "modular_factory_facade",
+      "name": "Modular Factory Facade",
+      "authors": [
+        "James Ray Cock"
+      ],
+      "source": "https://polyhaven.com/a/modular_factory_facade",
+      "dimensions_mm": [
+        53329.99801635742,
+        5356.249764561653,
+        29000
+      ],
+      "files_hash": "4716a794d840f5d4ebf75b1db1d8a8b7e8d57a61"
+    },
+    {
+      "id": "urban_facades",
+      "name": "Free Urban Textures: Buildings, Apartments, Shop Fronts",
+      "authors": [
+        "Scouser"
+      ],
+      "source": "https://opengameart.org/content/free-urban-textures-buildings-apartments-shop-fronts",
+      "licence": "CC0-1.0",
+      "note": "Only two selected original photographs installed; archive is a source download and is not shipped.",
+      "licence_url": "https://creativecommons.org/publicdomain/zero/1.0/"
     }
   ],
   "files": [
@@ -311,6 +362,82 @@
       "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/1k/corrugated_iron_02/corrugated_iron_02_metal_1k.jpg",
       "size": 137627,
       "sha256": "1fa893891c41df69b2ef1864b0640c9ffa23aa7b33cb98800fd2b97217afd8dc"
+    },
+    {
+      "path": "white_plaster_02/white_plaster_02_diff_1k.jpg",
+      "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/1k/white_plaster_02/white_plaster_02_diff_1k.jpg",
+      "size": 527219,
+      "sha256": "a1ebbe091bd1ae93d2abd5de8d69f9003a8d0ee6532bcf9a87c2492c97051f23"
+    },
+    {
+      "path": "white_plaster_02/white_plaster_02_nor_gl_1k.jpg",
+      "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/1k/white_plaster_02/white_plaster_02_nor_gl_1k.jpg",
+      "size": 652310,
+      "sha256": "eb572ca3630d5bfde72e2601b1f02412da23ca005cd19384dced8690be4cb783"
+    },
+    {
+      "path": "white_plaster_02/white_plaster_02_rough_1k.jpg",
+      "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/1k/white_plaster_02/white_plaster_02_rough_1k.jpg",
+      "size": 295900,
+      "sha256": "4ff1fe957cd161b07f721fe6c28a9459c8c2e8ec65627a26c16e483a07c80d85"
+    },
+    {
+      "path": "rough_pine_door/rough_pine_door_diff_1k.jpg",
+      "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/1k/rough_pine_door/rough_pine_door_diff_1k.jpg",
+      "size": 721865,
+      "sha256": "1a9b6a8a75d299a52fbfdcadeb71dcac8915503cb88fc817ccb2d24dd1086d07"
+    },
+    {
+      "path": "rough_pine_door/rough_pine_door_nor_gl_1k.jpg",
+      "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/1k/rough_pine_door/rough_pine_door_nor_gl_1k.jpg",
+      "size": 717358,
+      "sha256": "0ddb4e16752e9dd443918f63d07c8a23c04fd0da2a907f6717b071650e587557"
+    },
+    {
+      "path": "rough_pine_door/rough_pine_door_rough_1k.jpg",
+      "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/1k/rough_pine_door/rough_pine_door_rough_1k.jpg",
+      "size": 217135,
+      "sha256": "ff2e2058c19e963619df52880c224f589a1b68cbe7a0245121c9ceeed3789d3a"
+    },
+    {
+      "path": "modular_factory_facade/modular_factory_facade_windows_diff_2k.jpg",
+      "url": "https://dl.polyhaven.org/file/ph-assets/Models/jpg/2k/modular_factory_facade/modular_factory_facade_windows_diff_2k.jpg",
+      "size": 2316599,
+      "sha256": "2ca66aa0a753ab7fb6dcf605ec64a90fe116d6271719b20ee1a2069b568d2edd"
+    },
+    {
+      "path": "modular_factory_facade/modular_factory_facade_windows_nor_gl_2k.jpg",
+      "url": "https://dl.polyhaven.org/file/ph-assets/Models/jpg/2k/modular_factory_facade/modular_factory_facade_windows_nor_gl_2k.jpg",
+      "size": 2675074,
+      "sha256": "7d66b69bf4715555085b1d3c0f95fc2e28f325d8a1ab7a68d1078dca7db7ab04"
+    },
+    {
+      "path": "modular_factory_facade/modular_factory_facade_windows_rough_2k.jpg",
+      "url": "https://dl.polyhaven.org/file/ph-assets/Models/jpg/2k/modular_factory_facade/modular_factory_facade_windows_rough_2k.jpg",
+      "size": 2805391,
+      "sha256": "81043151e9fe0b4f5cd413e3f75903a7048943c2d562b1a5f1d434354b2bdcc2"
+    },
+    {
+      "path": "urban_facades/building_h_windows.png",
+      "archive": "urban_facades",
+      "member": "buildings-apartments-shopfronts-shutters/building_h_windows.png",
+      "size": 1465256,
+      "sha256": "c9f39186846eae916800cdd09122080d10a3d9e5c619782b01c4940cb122a61d"
+    },
+    {
+      "path": "urban_facades/building_modern2.png",
+      "archive": "urban_facades",
+      "member": "buildings-apartments-shopfronts-shutters/building_modern2.png",
+      "size": 886345,
+      "sha256": "b0b099705cfe1fa227467835397ae29cfd831fdbc6ea1b3e4795a7c0e00b8221"
+    }
+  ],
+  "archives": [
+    {
+      "id": "urban_facades",
+      "url": "https://opengameart.org/sites/default/files/buildings-apartments-shopfronts-shutters.zip",
+      "size": 205364012,
+      "sha256": "bca2e357732ab4794aac39ed52f7ba5600ddd0450b7aac49ef970a12cc81cfdd"
     }
   ]
 }

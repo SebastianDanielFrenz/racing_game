@@ -11,12 +11,15 @@ static func shared() -> Array[StandardMaterial3D]:
 	assert(str(config.get("format","")) == "rg.building_materials/1")
 	var bytes := 0
 	var count := 0
+	var cache: Dictionary = {}
 	for entry: Dictionary in config.materials:
 		var material := StandardMaterial3D.new()
 		material.vertex_color_use_as_albedo = true
+		material.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS_ANISOTROPIC
+		assert(int(entry.index) == _shared.size())
 		material.cull_mode = BaseMaterial3D.CULL_DISABLED
 		material.roughness = float(entry.get("roughness",.9))
-		if str(entry.name) == "glass":
+		if str(entry.name) == "glass" or str(entry.name).ends_with("_window"):
 			material.metallic = .25
 		if str(entry.name) in ["metal","cladding"]:
 			material.metallic = .7
@@ -26,17 +29,20 @@ static func shared() -> Array[StandardMaterial3D]:
 			if not FileAccess.file_exists(file):
 				push_warning("Building textures missing; run python tools/fetch_building_assets.py: " + file)
 				continue
-			var image := Image.load_from_file(file)
-			if image == null or image.is_empty():
-				push_warning("Cannot load building texture: " + file)
-				continue
-			image.generate_mipmaps(channel == "nor_gl")
-			# Reuse the ground-texture compression policy; exported runtimes without
-			# a compressor retain mipmapped pixels, never lose the texture.
-			image.compress(Image.COMPRESS_S3TC,Image.COMPRESS_SOURCE_NORMAL if channel == "nor_gl" else Image.COMPRESS_SOURCE_GENERIC)
-			bytes += image.get_data_size()
-			var texture := ImageTexture.create_from_image(image)
-			count += 1
+			var cache_key := file + ":" + channel
+			var texture: ImageTexture = cache.get(cache_key)
+			if texture == null:
+				var image := Image.load_from_file(file)
+				if image == null or image.is_empty():
+					push_warning("Cannot load building texture: " + file)
+					continue
+				image.generate_mipmaps(channel == "nor_gl")
+				# Compressed shared maps are loaded once, not once per material/tile.
+				image.compress(Image.COMPRESS_S3TC,Image.COMPRESS_SOURCE_NORMAL if channel == "nor_gl" else Image.COMPRESS_SOURCE_GENERIC)
+				bytes += image.get_data_size()
+				texture = ImageTexture.create_from_image(image)
+				cache[cache_key] = texture
+				count += 1
 			if channel == "Diffuse":
 				material.albedo_texture = texture
 			elif channel == "nor_gl":
@@ -52,6 +58,11 @@ static func shared() -> Array[StandardMaterial3D]:
 				material.roughness_texture_channel = BaseMaterial3D.TEXTURE_CHANNEL_RED
 		if entry.has("tile_m"):
 			material.uv1_scale = Vector3(1.0/float(entry.tile_m[0]),1.0/float(entry.tile_m[1]),1.0)
+		if entry.has("atlas_rect"):
+			var rect: Array = entry.atlas_rect
+			assert(rect.size() == 4 and float(rect[2]) > 0 and float(rect[3]) > 0)
+			material.uv1_scale = Vector3(float(rect[2]),float(rect[3]),1.0)
+			material.uv1_offset = Vector3(float(rect[0]),float(rect[1]),0.0)
 		_shared.append(material)
 	print("RG_BUILDING_MATERIALS materials=%d maps=%d vram_mb=%.2f" % [_shared.size(),count,bytes/1048576.0])
 	return _shared

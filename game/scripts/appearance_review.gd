@@ -5,7 +5,7 @@ func _initialize() -> void:
     run.call_deferred()
 func mesh_from_vertices(vertices: Array) -> ArrayMesh:
     var groups: Array = []
-    for material in range(12):
+    for material in range(uploader._materials.size()):
         groups.append([PackedVector3Array(),PackedVector3Array(),PackedColorArray(),PackedVector2Array()])
     for i in range(0,vertices.size(),3):
         for j in [i,i+2,i+1]:
@@ -121,7 +121,7 @@ func run() -> void:
         material.roughness = .8
         instance.material_override = material
         world.add_child(instance)
-    for i in range(12):
+    for i in range(uploader._materials.size()):
         await process_frame
     await RenderingServer.frame_post_draw
     var error := root.get_texture().get_image().save_png(output)

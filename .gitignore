@@ -16,3 +16,5 @@ cache/
 
 # Pinned CC0 building textures fetched by tools/fetch_building_assets.py (D14)
 /data/textures/buildings/*/*.jpg
+
+/data/textures/buildings/urban_facades/*.png

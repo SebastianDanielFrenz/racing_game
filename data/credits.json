@@ -18,10 +18,10 @@
       "id": "polyhaven_buildings",
       "kind": "assets",
       "name": "Building wall and roof PBR textures",
-      "provider": "Poly Haven: Charlotte Baglioni, Dario Barresi, Dimitrios Savva, Jenelle van Heerden, Rob Tuytel, Sergej Majboroda, Stephan Seeliger",
+      "provider": "Poly Haven: Charlotte Baglioni, Dario Barresi, Dimitrios Savva, James Ray Cock, Jenelle van Heerden, Rob Tuytel, Sergej Majboroda, Stephan Seeliger",
       "licence": "CC0 1.0",
       "licence_url": "https://polyhaven.com/license",
-      "attribution_text": "Poly Haven: Plastered Wall 05, Roof Tiles, Red Bricks 04, Roof Slates 02, Stone Wall, Wood Plank Wall, Grey Plaster, Corrugated Iron 02.",
+      "attribution_text": "Poly Haven: Plastered Wall 05, Roof Tiles, Red Bricks 04, Roof Slates 02, Stone Wall, Wood Plank Wall, Grey Plaster, Corrugated Iron 02, White Plaster 02, Rough Pine Door, Modular Factory Facade.",
       "attribution_required": false,
       "in_game": true,
       "on_attribution_line": false
@@ -546,6 +546,19 @@
       "attribution_required": false,
       "in_game": true,
       "note": "data/textures/sett/PavingStones048_1K_*.jpg: colour, OpenGL normal and roughness maps resized to 1024 px (DirectX normals converted to OpenGL). ambientCG publishes every asset under CC0; attribution is optional and kept for provenance. The ambientCG hosts are not reachable from the build container, so the original files were taken byte for byte from a public mirror of the unmodified ambientCG download: github.com/HenriMichelonEsimed/godot-correction-TD@cb515f2 game/assets/textures/architecture/PavingStones048/."
+    },
+    {
+      "id": "scouser_urban_facades",
+      "kind": "assets",
+      "name": "Photographic facade windows",
+      "provider": "Scouser / OpenGameArt.org",
+      "licence": "CC0 1.0",
+      "licence_url": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "source": "https://opengameart.org/content/free-urban-textures-buildings-apartments-shop-fronts",
+      "attribution_text": "Scouser: Free Urban Textures: Buildings, Apartments, Shop Fronts. Selected original facade photographs.",
+      "attribution_required": false,
+      "in_game": true,
+      "on_attribution_line": false
     }
   ]
 }

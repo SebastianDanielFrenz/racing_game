@@ -1,0 +1,35 @@
+{
+  "baseline": "20261024-0953_9043e30",
+  "native_candidate": "93caf28",
+  "method": "Same static real-tile GPU camera, warmed caches; elapsed frame intervals include CPU/driver scheduling, not isolated GPU timing.",
+  "before": {
+    "buildings": 533,
+    "draw_calls": 7,
+    "format": "rg.building_texture_benchmark/1",
+    "frames": 19829,
+    "generation_ms": 49.678,
+    "gpu": "AMD Radeon RX 7900 XT",
+    "median_frame_ms": 0.146,
+    "p95_frame_ms": 0.217,
+    "renderer": "gl_compatibility",
+    "scope": "Static real building tile, same close camera, 1s warmup and 3s sampling. Not a full driving/VR benchmark.",
+    "texture_bytes": 35285083,
+    "vertices": 327168,
+    "warm_generation_median_ms": 27.692
+  },
+  "after": {
+    "buildings": 533,
+    "draw_calls": 9,
+    "format": "rg.building_texture_benchmark/1",
+    "frames": 19490,
+    "generation_ms": 48.599,
+    "gpu": "AMD Radeon RX 7900 XT",
+    "median_frame_ms": 0.15,
+    "p95_frame_ms": 0.22,
+    "renderer": "gl_compatibility",
+    "scope": "Static real building tile, same close camera, 1s warmup and 3s sampling. Not a full driving/VR benchmark.",
+    "texture_bytes": 50314811,
+    "vertices": 324288,
+    "warm_generation_median_ms": 27.507
+  }
+}

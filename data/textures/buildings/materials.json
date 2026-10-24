@@ -7,13 +7,13 @@
       "roughness": 0.92,
       "normal_strength": 0.6,
       "tile_m": [
-        2.0,
-        2.0
+        2,
+        2
       ],
       "maps": {
-        "Diffuse": "plastered_wall_05/plastered_wall_05_diff_1k.jpg",
-        "nor_gl": "plastered_wall_05/plastered_wall_05_nor_gl_1k.jpg",
-        "Rough": "plastered_wall_05/plastered_wall_05_rough_1k.jpg"
+        "Diffuse": "white_plaster_02/white_plaster_02_diff_1k.jpg",
+        "nor_gl": "white_plaster_02/white_plaster_02_nor_gl_1k.jpg",
+        "Rough": "white_plaster_02/white_plaster_02_rough_1k.jpg"
       }
     },
     {
@@ -33,15 +33,32 @@
     },
     {
       "index": 2,
-      "name": "glass",
-      "roughness": 0.18,
-      "normal_strength": 0.6
+      "name": "residential_window",
+      "roughness": 0.45,
+      "atlas_rect": [
+        0.087890625,
+        0.189453125,
+        0.275390625,
+        0.5654296875
+      ],
+      "maps": {
+        "Diffuse": "urban_facades/building_h_windows.png"
+      }
     },
     {
       "index": 3,
       "name": "frame",
       "roughness": 0.92,
-      "normal_strength": 0.6
+      "normal_strength": 0.25,
+      "maps": {
+        "Diffuse": "../concrete/Concrete012_1K_Color.jpg",
+        "nor_gl": "../concrete/Concrete012_1K_NormalGL.jpg",
+        "Rough": "../concrete/Concrete012_1K_Roughness.jpg"
+      },
+      "tile_m": [
+        2,
+        2
+      ]
     },
     {
       "index": 4,
@@ -153,6 +170,47 @@
         "nor_gl": "corrugated_iron_02/corrugated_iron_02_nor_gl_1k.jpg",
         "Rough": "corrugated_iron_02/corrugated_iron_02_rough_1k.jpg",
         "Metal": "corrugated_iron_02/corrugated_iron_02_metal_1k.jpg"
+      }
+    },
+    {
+      "index": 12,
+      "name": "door",
+      "roughness": 0.85,
+      "maps": {
+        "Diffuse": "rough_pine_door/rough_pine_door_diff_1k.jpg",
+        "nor_gl": "rough_pine_door/rough_pine_door_nor_gl_1k.jpg",
+        "Rough": "rough_pine_door/rough_pine_door_rough_1k.jpg"
+      }
+    },
+    {
+      "index": 13,
+      "name": "office_window",
+      "roughness": 0.3,
+      "atlas_rect": [
+        0.1044921875,
+        0.10546875,
+        0.197265625,
+        0.150390625
+      ],
+      "maps": {
+        "Diffuse": "urban_facades/building_modern2.png"
+      }
+    },
+    {
+      "index": 14,
+      "name": "industrial_window",
+      "roughness": 0.65,
+      "normal_strength": 0.4,
+      "atlas_rect": [
+        0.01953125,
+        0.515625,
+        0.2138671875,
+        0.2353515625
+      ],
+      "maps": {
+        "Diffuse": "modular_factory_facade/modular_factory_facade_windows_diff_2k.jpg",
+        "nor_gl": "modular_factory_facade/modular_factory_facade_windows_nor_gl_2k.jpg",
+        "Rough": "modular_factory_facade/modular_factory_facade_windows_rough_2k.jpg"
       }
     }
   ]
