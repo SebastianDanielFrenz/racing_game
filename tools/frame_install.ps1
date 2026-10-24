@@ -206,8 +206,15 @@ if (-not $SkipBuild) {
     $build = @"
 set -e
 cd '$repoW'
-[ -f ~/build/racing_game/linux-arm64-release/CMakeCache.txt ] || cmake --preset linux-arm64-release
-cmake --build --preset linux-arm64-release
+# The preset's build dir belongs to whichever checkout configured it first; any
+# other checkout (a worktree) gets its own, or it would build that other tree.
+B=~/build/racing_game/linux-arm64-release
+if [ -f "`$B/CMakeCache.txt" ] && ! grep -qx "CMAKE_HOME_DIRECTORY:INTERNAL=`$PWD" "`$B/CMakeCache.txt"; then
+  B=~/build/`$(basename "`$PWD")/linux-arm64-release
+fi
+echo "build dir: `$B"
+[ -f "`$B/CMakeCache.txt" ] || cmake --preset linux-arm64-release -B "`$B"
+cmake --build "`$B" --target rg_godot
 "@
     $rc = Invoke-WslScript -Name 'build_arm64' -Text $build -TailLines 12
     if ($rc -ne 0) { throw "arm64 build failed (exit $rc), log: $workDir\build_arm64.log" }
