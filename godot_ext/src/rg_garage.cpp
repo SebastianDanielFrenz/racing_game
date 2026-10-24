@@ -201,6 +201,15 @@ godot::Dictionary RgGarage::get_vehicle(const String& id) {
 
 String RgGarage::get_selected_id() const { return garage_ ? from_std(garage_->selected_id()) : String(); }
 
+String RgGarage::get_last_driven_id() const { return garage_ ? from_std(garage_->last_driven_id()) : String(); }
+
+godot::Dictionary RgGarage::remember_drive(const String& id) {
+    if (!garage_) return fail_reply("garage not initialized");
+    std::string err;
+    if (!garage_->remember_drive(to_std(id), &err)) return fail_reply(err);
+    return ok_reply();
+}
+
 godot::Dictionary RgGarage::select(const String& id) {
     if (garage_ == nullptr) return fail_reply("garage not initialised");
     std::string err;
@@ -1033,6 +1042,8 @@ void RgGarage::_bind_methods() {
     ClassDB::bind_method(D_METHOD("get_vehicles"), &RgGarage::get_vehicles);
     ClassDB::bind_method(D_METHOD("get_vehicle", "id"), &RgGarage::get_vehicle);
     ClassDB::bind_method(D_METHOD("get_selected_id"), &RgGarage::get_selected_id);
+    ClassDB::bind_method(D_METHOD("get_last_driven_id"), &RgGarage::get_last_driven_id);
+    ClassDB::bind_method(D_METHOD("remember_drive", "id"), &RgGarage::remember_drive);
     ClassDB::bind_method(D_METHOD("select", "id"), &RgGarage::select);
     ClassDB::bind_method(D_METHOD("get_set"), &RgGarage::get_set);
     ClassDB::bind_method(D_METHOD("begin_edit", "id"), &RgGarage::begin_edit);

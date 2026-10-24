@@ -57,6 +57,8 @@ public:
     //   layout, driven_wheels, wheel_count, gear_count}}]
     [[nodiscard]] godot::Array get_vehicles();
     [[nodiscard]] godot::String get_selected_id() const;
+    [[nodiscard]] godot::String get_last_driven_id() const;
+    godot::Dictionary remember_drive(const godot::String& id);
     godot::Dictionary select(const godot::String& id); // {ok, error}; persisted
     [[nodiscard]] godot::Dictionary get_vehicle(const godot::String& id);
 

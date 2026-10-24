@@ -320,11 +320,14 @@ std::unique_ptr<Garage> Garage::open(const GarageConfig& config, std::string* er
         }
     }
 
-    g->selected_ = g->catalog_.default_id;
+    g->selected_ = g->last_driven_ = g->catalog_.default_id;
     if (const auto text = detail::read_text_file(g->garage_dir() + "/selected.json")) {
         if (const auto doc = detail::parse_json(*text); doc && doc->is_object()) {
             std::string id;
             if (detail::get_string(*doc, "selected", id) && g->catalog_.find(id) != nullptr) g->selected_ = id;
+            // Older files have no drive history; retain their valid saved choice.
+            g->last_driven_ = g->selected_;
+            if (detail::get_string(*doc, "last_driven", id) && g->catalog_.find(id) != nullptr) g->last_driven_ = id;
         }
     }
     g->refresh_browser();
@@ -337,6 +340,7 @@ bool Garage::write_selection(std::string* err) const {
     json doc = json::object();
     doc["format"] = "racing_game.garage/1";
     doc["selected"] = selected_;
+    doc["last_driven"] = last_driven_;
     return write_file_atomic(garage_dir() + "/selected.json", doc.dump(2) + "\n", err);
 }
 
@@ -348,6 +352,19 @@ bool Garage::select(const std::string& id, std::string* err) {
     if (selected_ == id) return true;
     selected_ = id;
     return write_selection(err);
+}
+
+bool Garage::remember_drive(const std::string& id, std::string* err) {
+    if (catalog_.find(id) == nullptr) {
+        if (err != nullptr) *err = "unknown vehicle \"" + id + "\"";
+        return false;
+    }
+    if (last_driven_ == id) return true;
+    const std::string previous = last_driven_;
+    last_driven_ = id;
+    if (write_selection(err)) return true;
+    last_driven_ = previous;
+    return false;
 }
 
 const EngineEntry* Garage::bay_engine(const std::string& id) const {
