@@ -11,6 +11,37 @@ func fail(message: String) -> void:
 	if view != null:
 		view.release()
 	quit(1)
+# The native per-triangle tangents against Godot's own MikkTSpace on the same vertices (rg/flat_tangent.h).
+func check_tangents(arrays: Array) -> String:
+	var native: PackedFloat32Array = arrays[4]
+	if native.size() != arrays[0].size()*4:
+		return "Mismatched native tangent array"
+	var surface: Array = []
+	surface.resize(Mesh.ARRAY_MAX)
+	surface[Mesh.ARRAY_VERTEX] = arrays[0]
+	surface[Mesh.ARRAY_NORMAL] = arrays[1]
+	surface[Mesh.ARRAY_TEX_UV] = arrays[3]
+	var mesh := ArrayMesh.new()
+	mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES,surface)
+	var tool := SurfaceTool.new()
+	tool.create_from(mesh,0)
+	tool.generate_tangents()
+	var reference: PackedFloat32Array = tool.commit_to_arrays()[Mesh.ARRAY_TANGENT]
+	if reference.size() != native.size():
+		return "MikkTSpace reference has %d tangent values, native %d" % [reference.size(),native.size()]
+	var compared := 0
+	var matching := 0
+	for i in range(0,native.size(),4):
+		var r := Vector3(reference[i],reference[i+1],reference[i+2])
+		if r.length_squared() < 0.25:
+			continue
+		compared += 1
+		if Vector3(native[i],native[i+1],native[i+2]).dot(r.normalized()) > 0.98 and native[i+3] == reference[i+3]:
+			matching += 1
+	print("RG_TANGENT_CHECK vertices=%d compared=%d matching=%d" % [native.size()/4,compared,matching])
+	if compared == 0 or matching < compared*0.97:
+		return "Native tangents differ from MikkTSpace: %d of %d match" % [matching,compared]
+	return ""
 func run() -> void:
 	out = repo.path_join("out/terrain_port_probe")
 	DirAccess.make_dir_recursive_absolute(out)
@@ -56,6 +87,10 @@ func run() -> void:
 				if not p.is_finite():
 					fail("Non-finite building vertex")
 					return
+			var tangent_error := check_tangents(arrays)
+			if not tangent_error.is_empty():
+				fail(tangent_error)
+				return
 		var mesh: ArrayMesh = uploader._mesh(surfaces)
 		if mesh != null:
 			var instance := MeshInstance3D.new()

@@ -1314,7 +1314,7 @@ std::string install_clutch_to_clutch(Files& files, const GearboxEntry& g) {
 }
 
 // A hybrid-converted car keeps its own assist unit (swap_powertrain left the controller in place): the unit's file is
-// re-written with the hybrid unit's traction control and no launch control, ABS/ESC/aero untouched. A car without a unit
+// re-written with hybrid tuning for its offered TC modes; fitted capabilities are retained. A car without a unit
 // got the hybrid unit itself and needs nothing here.
 std::string apply_hybrid_unit(Files& files, const SetupContext& ctx) {
     json& veh = files.vehicle.work;
@@ -2338,7 +2338,19 @@ std::string power_text(const EnginePeaks& p) {
 // The approved parts of a file choice: the option table's own list, or - a catalog option - the store's.
 std::vector<SetupPart> parts_of(const SetupOptionDef& def, const SetupContext& ctx, const Files& files,
                                  const CatalogEntry* entry_for_fit = nullptr) {
-    if (def.catalog.empty()) return def.parts;
+    if (def.catalog.empty()) {
+        auto parts = def.parts;
+        if (def.id == "assist_unit" && !files.engine) {
+            for (auto& part : parts) {
+                const auto unit = load_effective_json(part.path, nullptr);
+                if (unit && unit->contains("launch_control")) {
+                    part.fits = false;
+                    part.fit_reason = "This unit requires a combustion engine for launch control. Choose electric assists or a unit without launch control.";
+                }
+            }
+        }
+        return parts;
+    }
     std::vector<SetupPart> out;
     if (def.catalog == "drive_layouts") {
         if (!ctx.drivelines) return out;

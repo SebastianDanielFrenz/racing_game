@@ -227,6 +227,9 @@ fallback must never silently change physics under an existing release ID.
   thread while `_process_body` waits for the queue mutex. Move mesh construction
   outside that mutex, keeping only result publication inside it. A static native
   building upload probe did not exercise this worker/main-thread interaction.
+  (2026-10-30: the readback is gone. `get_building_mesh_tile` returns the
+  tangents, `core/include/rg/flat_tangent.h`, so `regen_normal_maps` no longer
+  runs, and shutdown serves RenderingServer calls while it waits for the worker.)
 - Real-world scripted drive after the fix completed with `result=ok`, 51.8 m
   driven, four world switches, cancellation, camera/on-foot checks and clean
   shutdown; no falls or terrain misses. Observed initial load 13.86 s, subsequent
