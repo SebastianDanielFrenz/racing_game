@@ -101,6 +101,7 @@ add_library(rg_core STATIC
     src/wet_look.cpp
     src/rail_meshes.cpp
     src/weather_sync.cpp
+    src/world_service_client.cpp
     src/weather_authority.cpp
     src/crops.cpp
     src/control_binding.cpp
@@ -162,6 +163,7 @@ target_include_directories(rg_core
 target_link_libraries(rg_core
     PUBLIC
         ps_core
+        g2m_http
         g2m_server
         g2m_client
         g2m_layers
@@ -175,4 +177,5 @@ target_link_libraries(rg_core
         nlohmann_json::nlohmann_json
     PRIVATE
         rg_options
+        g2m_dep_httplib
 )

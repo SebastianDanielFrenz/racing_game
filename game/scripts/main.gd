@@ -108,6 +108,8 @@ var _mode_seen: String = "drive"
 var _seat_ui: CanvasLayer
 var _director: Node
 var _hud: Node
+var _sky_server_url := ""
+var _server_env_override := OS.get_environment("RG_SERVER_URL")
 var _sky: Node            # sky_controller.gd
 var _weather_widget: CanvasLayer # weather_widget.gd (top right)
 var _weather_fx: Node3D          # weather_fx.gd (wet look, rain / snow)
@@ -170,7 +172,7 @@ var _garage_scene: CanvasLayer    # garage_scene.gd while the garage is open, el
 var _thumbs: Node                 # car_thumbnails.gd while the car browser is up, else null (R6c)
 var _catalog_override: String = "" # --catalog <path>: a different vehicle catalog (tests, the 200-car synthetic one)
 var _drive_selection: Dictionary = {} # RgGarage.prepare_drive() of the car being driven
-var _direct_vehicle: String = ""  # direct-start flags drive --vehicle <id> or the catalog default, never the saved choice
+var _direct_vehicle: String = ""  # explicit --vehicle, otherwise the last successfully driven car
 var _teleport_dialog: CanvasLayer
 var _gauge: Control
 var _screen: String = "boot" # mirrors rg::ShellFlow's screen
@@ -503,6 +505,7 @@ func _build_terrain_preview_scene() -> void:
 # Sun, moon, sky and ambient follow the time of day (sky_controller.gd, RgSky,
 # data/world/sky.json); the weather/time widget sits top right.
 func _add_sun_and_sky() -> void:
+	_sky_server_url = OS.get_environment("RG_SERVER_URL")
 	_sky = load("res://scripts/sky_controller.gd").new()
 	_sky.name = "Sky"
 	add_child(_sky)
@@ -898,6 +901,10 @@ func _release_world_nodes() -> void:
 	_director.set_terrain_view(null)
 
 func _load_world(kind: String, keep_spawn_override: bool = false) -> void:
+	var server_url := OS.get_environment("RG_SERVER_URL")
+	if server_url != _sky_server_url and _sky != null and _sky.sky != null:
+		_sky_server_url = server_url
+		_sky.sky.initialize(_rg_data_path("world/sky.json"), _world_config_path())
 	_release_world_nodes()
 	world_kind = kind
 	world_state = "loading"
@@ -953,6 +960,9 @@ func _load_failed(message: String) -> void:
 # The flow hears about it one frame later (_post_load_ready) so a transition that
 # started the load has finished applying its own actions first.
 func _world_running() -> void:
+	var remembered: Dictionary = _garage.remember_drive(str(_drive_selection.get("vehicle_id", "")))
+	if not bool(remembered.get("ok", false)):
+		push_warning("Could not remember last driven car: %s" % remembered.get("error", "?"))
 	_simulation.set_road_ahead_wanted(_drive_view == "cinematic")
 	_apply_audio_settings()
 	call_deferred("_post_load_ready")
@@ -1839,16 +1849,8 @@ func _input(event: InputEvent) -> void:
 
 # --- garage (R6) ------------------------------------------------------------------
 
-# The catalog's default car (data/vehicles/catalog.json "default").
-func _default_vehicle_id() -> String:
-	for v in _garage.get_vehicles():
-		if bool(v["default"]):
-			return str(v["id"])
-	var all: Array = _garage.get_vehicles()
-	return str(all[0]["id"]) if not all.is_empty() else "car_hyper"
-
-# Which car the next world load drives: a direct-start flag run the catalog default
-# (or --vehicle), a menu start the player's saved choice.
+# Direct starts use the last-driven car (or explicit --vehicle); Free roam restores
+# that same car, while an explicit garage choice drives the selected car.
 func _vehicle_choice() -> String:
 	return _direct_vehicle if _direct_start else str(_garage.get_selected_id())
 
@@ -2109,7 +2111,7 @@ func _build_shell(user_args: PackedStringArray) -> void:
 	_shell_ui.controls = _controls
 	_shell_ui.input_map = _input_map
 	_shell_ui.controls_changed.connect(func(): _input_map.sync_menu_actions())
-	_shell_ui.menu_item_chosen.connect(func(id: String): _apply_transition(_shell.menu_item(id)))
+	_shell_ui.menu_item_chosen.connect(_on_menu_item_chosen)
 	_shell_ui.spawn_chosen.connect(func(id: String): _apply_transition(_shell.spawn_picked(id)))
 	_shell_ui.back_requested.connect(func(): _apply_transition(_shell.back()))
 	_shell_ui.boot_finished.connect(func(): _apply_transition(_shell.boot_finished()))
@@ -2125,7 +2127,7 @@ func _build_shell(user_args: PackedStringArray) -> void:
 		print("RG_GARAGE ready vehicles=%d selected=%s" % [_garage.get_vehicles().size(), _garage.get_selected_id()])
 	else:
 		push_error("RG_GARAGE initialise failed: %s" % garage_report.get("error", "?"))
-	_direct_vehicle = _default_vehicle_id()
+	_direct_vehicle = str(_garage.get_last_driven_id())
 	var vehicle_flag := user_args.find("--vehicle")
 	if vehicle_flag >= 0 and vehicle_flag + 1 < user_args.size():
 		_direct_vehicle = user_args[vehicle_flag + 1]
@@ -2145,6 +2147,13 @@ func _build_shell(user_args: PackedStringArray) -> void:
 	for section in _shell.get_settings_schema():
 		for def in section["settings"]:
 			_apply_setting(str(def["key"]))
+
+# Free roam restores drive history; garage browsing keeps its separate selection.
+func _on_menu_item_chosen(id: String) -> void:
+	if id == "free_roam":
+		_direct_vehicle = str(_garage.get_last_driven_id())
+		_garage.select(_direct_vehicle)
+	_apply_transition(_shell.menu_item(id))
 
 # Carries out what rg::ShellFlow decided. `show_screen` is always the last action
 # of a transition, so a load or an unload has been started when the new screen
@@ -2411,6 +2420,8 @@ func _apply_setting(key: String) -> void:
 			_director.set_body_motion_strength(float(value))
 		"audio.master_volume", "audio.engine_volume", "audio.tyre_volume":
 			_apply_audio_settings()
+		"network.server_url":
+			OS.set_environment("RG_SERVER_URL", _server_env_override if _server_env_override != "" else str(value).strip_edges())
 		"map_data.store_dir":
 			_simulation.set_store_dir_override(str(value))
 		"lod.view_distance_m", "lod.terrain_detail", "lod.road_detail", "lod.map_detail":

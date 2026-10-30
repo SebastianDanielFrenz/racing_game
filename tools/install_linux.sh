@@ -184,6 +184,10 @@ PY
     git -C "$INSTALL_DIR" lfs pull
     git -C "$INSTALL_DIR" lfs fsck
     [[ -f "$INSTALL_DIR/CMakeLists.txt" && -f "$INSTALL_DIR/game/project.godot" ]] || die "Revision $(git -C "$INSTALL_DIR" rev-parse --short HEAD) has no buildable game (no CMakeLists.txt or game/project.godot); choose another commit."
+    # --commit can name a revision from before the building textures.
+    if [[ -f "$INSTALL_DIR/tools/fetch_building_assets.py" ]]; then
+        python3 "$INSTALL_DIR/tools/fetch_building_assets.py"
+    fi
     # Native build, deliberately not the x86-host ARM cross-compilation preset.
     cmake -S "$INSTALL_DIR" -B "$STATE_DIR/build" -G Ninja \
         -DCMAKE_BUILD_TYPE=Release -DRG_BUILD_TESTS=OFF \

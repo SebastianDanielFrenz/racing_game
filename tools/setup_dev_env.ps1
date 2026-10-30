@@ -299,6 +299,16 @@ if ($sshExe) { Write-Ok "ssh.exe -> $($sshExe.Source) (frame_install.ps1 also ne
 if ($Frame -and -not $frameOk) { $script:AllOk = $false }
 
 # ---------------------------------------------------------------------------
+Write-Section "Pinned building textures (CC0)"
+$buildingPython = Get-Command python -ErrorAction SilentlyContinue
+if ($buildingPython) {
+    $buildingAssetArgs = @((Join-Path $RepoRoot 'tools/fetch_building_assets.py'))
+    if ($CheckOnly) { $buildingAssetArgs += '--verify' }
+    & $buildingPython.Source @buildingAssetArgs
+    if ($LASTEXITCODE -eq 0) { Write-Ok 'Building texture bytes match the pinned manifest' }
+    else { Write-Missing 'Building textures; run python tools/fetch_building_assets.py' }
+} else { Write-Info 'Copy data/textures/buildings from a prepared machine or run the asset fetcher with Python 3.10+' }
+
 Write-Section "Result"
 if ($script:AllOk) {
     Write-Host "Ready. First build and run (builds everything, fetches CMake dependencies):" -ForegroundColor Green

@@ -115,3 +115,44 @@ TEST_CASE("standalone foot and cycle paths stay out of car routing and share ren
     CHECK(has_contact_class(left,ground,32768u,zone,g2m::LandClass::PavedRoad,g2m::SurfaceKind::Asphalt));
     CHECK(has_contact_class(right,ground,32768u,zone,g2m::LandClass::PavedRoad,g2m::SurfaceKind::Asphalt));
 }
+
+TEST_CASE("two-node paths follow terrain relief and keep metre texture coordinates",
+          "[route_surface][path_drape]") {
+    const g2m::geo::UtmZone zone{32,g2m::geo::Hemisphere::North};
+    const auto key = g2m::tile_key_at(zone,std::uint8_t{2},500000.0,5550000.0);
+    REQUIRE(key);
+    const double e0=key->min_easting(), n0=key->min_northing();
+    g2m::osm::OsmBuilder builder;
+    add_utm_node(builder,1,zone,e0+100,n0+200);
+    add_utm_node(builder,2,zone,e0+180,n0+200);
+    builder.add_way(100,{1,2},tags({{"highway","path"},{"surface","dirt"},{"width","1.5"}}));
+    const auto data=builder.build(); REQUIRE(data);
+    const auto ground=[&](double e,double) -> std::optional<double> {
+        const double t=(e-e0-100.0)/80.0;
+        return 100.0-24.0*t*(1.0-t); // six-metre depression between the mapped endpoints
+    };
+    g2m::world::RoadRibbonTile mesh;
+    rg::append_standalone_path_mesh(mesh,g2m::OsmTile{128,*data},*key,ground,0.0);
+    REQUIRE_FALSE(mesh.indices.empty());
+    float station_max=0;
+    for(const auto& v:mesh.vertices) {
+        station_max=std::max(station_max,v.v);
+        CHECK(std::abs(v.u)<=.751f);
+    }
+    CHECK(station_max>79.9f);
+    CHECK(station_max<80.1f);
+    for(std::size_t i=0;i+2<mesh.indices.size();i+=3) {
+        const auto& a=mesh.vertices[static_cast<std::size_t>(mesh.indices[i])];
+        const auto& b=mesh.vertices[static_cast<std::size_t>(mesh.indices[i+1])];
+        const auto& c=mesh.vertices[static_cast<std::size_t>(mesh.indices[i+2])];
+        const double e=e0+(static_cast<double>(a.x)+b.x+c.x)/3;
+        const double n=n0+(static_cast<double>(a.y)+b.y+c.y)/3;
+        const double z=(static_cast<double>(a.z)+b.z+c.z)/3;
+        CHECK(std::abs(z-(*ground(e,n)+.01))<.02);
+        for(const auto edge: {std::pair{&a,&b},std::pair{&b,&c},std::pair{&c,&a}}) {
+            const double distance=std::hypot(edge.first->x-edge.second->x,edge.first->y-edge.second->y);
+            CHECK(distance<2.0);
+            CHECK(std::abs(std::hypot(edge.first->u-edge.second->u,edge.first->v-edge.second->v)-distance)<.001);
+        }
+    }
+}

@@ -151,6 +151,12 @@ std::vector<SettingDef> build_schema() {
     store.default_value = std::string();
     store.applies_live = false;
     s.push_back(std::move(store));
+    SettingDef server;
+    server.section = "network"; server.key = "network.server_url";
+    server.label = "World server URL";
+    server.help = "HTTP endpoint, e.g. http://127.0.0.1:47101. Empty = local single player. Takes effect when the next world loads; RG_SERVER_URL overrides this setting.";
+    server.type = SettingType::Path; server.default_value = std::string(); server.applies_live = false;
+    s.push_back(std::move(server));
 
     // Car browser view state (R6c): persisted, not shown on the settings screen.
     const auto hidden = [](SettingDef d) {
@@ -331,6 +337,7 @@ std::string settings_section_title(const std::string& section) {
     if (section == "camera") return "Camera";
     if (section == "audio") return "Audio";
     if (section == "difficulty") return "Difficulty";
+    if (section == "network") return "Network";
     if (section == "map_data") return "Map data";
     if (const auto it = extension_titles().find(section); it != extension_titles().end()) return it->second;
     return section;

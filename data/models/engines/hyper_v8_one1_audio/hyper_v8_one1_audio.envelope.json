@@ -48,5 +48,10 @@
     "block_w": 0.152,
     "case_w": 0.2253
   },
-  "source": "tools/cargen/engine_mesh.py from the engine file's own geometry (data/engines/hyper_v8_one1_audio.json). Proportions are [AS] rules of thumb (bore pitch 1.12 x bore + 10 mm, deck = stroke / 2 + rod + 0.33 x bore, head and cover heights by valve count, manifolds drawn compact); the bounding box is the generated mesh's own."
+  "source": "tools/cargen/engine_mesh.py from the engine file's own geometry (data/engines/hyper_v8_one1_audio.json). Proportions are [AS] rules of thumb (bore pitch 1.12 x bore + 10 mm, deck = stroke / 2 + rod + 0.33 x bore, head and cover heights by valve count, manifolds drawn compact); the bounding box is the generated mesh's own.",
+  "naturally_aspirated_size_mm": [
+    643,
+    753,
+    640
+  ]
 }

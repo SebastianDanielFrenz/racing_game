@@ -1,0 +1,98 @@
+{
+  "format": "rg.building_materials/1",
+  "materials": [
+    {
+      "index": 0,
+      "name": "plaster",
+      "roughness": 0.92,
+      "normal_strength": 0.6,
+      "tile_m": [
+        2.0,
+        2.0
+      ],
+      "maps": {
+        "Diffuse": "plastered_wall_05/plastered_wall_05_diff_1k.jpg",
+        "nor_gl": "plastered_wall_05/plastered_wall_05_nor_gl_1k.jpg",
+        "Rough": "plastered_wall_05/plastered_wall_05_rough_1k.jpg"
+      }
+    },
+    {
+      "index": 1,
+      "name": "roof_tiles",
+      "roughness": 0.92,
+      "normal_strength": 0.6,
+      "tile_m": [
+        2.0,
+        2.0
+      ],
+      "maps": {
+        "Diffuse": "roof_tiles/roof_tiles_diff_1k.jpg",
+        "nor_gl": "roof_tiles/roof_tiles_nor_gl_1k.jpg",
+        "Rough": "roof_tiles/roof_tiles_rough_1k.jpg"
+      }
+    },
+    {
+      "index": 2,
+      "name": "glass",
+      "roughness": 0.18,
+      "normal_strength": 0.6
+    },
+    {
+      "index": 3,
+      "name": "frame",
+      "roughness": 0.92,
+      "normal_strength": 0.6
+    },
+    {
+      "index": 4,
+      "name": "brick",
+      "roughness": 0.92,
+      "normal_strength": 0.6,
+      "tile_m": [
+        2.5,
+        2.5
+      ],
+      "maps": {
+        "Diffuse": "red_bricks_04/red_bricks_04_diff_1k.jpg",
+        "nor_gl": "red_bricks_04/red_bricks_04_nor_gl_1k.jpg",
+        "Rough": "red_bricks_04/red_bricks_04_rough_1k.jpg"
+      }
+    },
+    {
+      "index": 5,
+      "name": "slate",
+      "roughness": 0.92,
+      "normal_strength": 0.6,
+      "tile_m": [
+        3.0,
+        3.0
+      ],
+      "maps": {
+        "Diffuse": "roof_slates_02/roof_slates_02_diff_1k.jpg",
+        "nor_gl": "roof_slates_02/roof_slates_02_nor_gl_1k.jpg",
+        "Rough": "roof_slates_02/roof_slates_02_rough_1k.jpg"
+      }
+    },
+    {
+      "index": 6,
+      "name": "flat_roof",
+      "roughness": 0.92,
+      "normal_strength": 0.6,
+      "tile_m": [
+        4,
+        4
+      ],
+      "maps": {
+        "Diffuse": "../concrete/Concrete012_1K_Color.jpg",
+        "nor_gl": "../concrete/Concrete012_1K_NormalGL.jpg",
+        "Rough": "../concrete/Concrete012_1K_Roughness.jpg"
+      }
+    },
+    {
+      "index": 7,
+      "name": "metal",
+      "roughness": 0.4,
+      "normal_strength": 0.6
+    }
+  ]
+}

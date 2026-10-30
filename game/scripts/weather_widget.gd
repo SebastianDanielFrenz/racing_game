@@ -10,6 +10,7 @@ extends CanvasLayer
 # air_temp_c (no world loaded).
 
 const BG := Color(0.08, 0.09, 0.11, 1.0)
+const RIGHT_MARGIN := 16.0
 var sky_controller: Node
 var simulation: Node
 
@@ -17,6 +18,7 @@ var _panel: PanelContainer
 var _icon: Control
 var _time_label: Label
 var _info_label: Label
+var _server_label: Label
 var _menu: PanelContainer
 var _menu_box: VBoxContainer
 var _slider: HSlider
@@ -56,6 +58,9 @@ func _ready() -> void:
 	_info_label.add_theme_color_override("font_color", Color(0.75, 0.78, 0.82))
 	_info_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	texts.add_child(_info_label)
+	_server_label = Label.new()
+	_server_label.add_theme_font_size_override("font_size", 12)
+	texts.add_child(_server_label)
 
 	_menu = PanelContainer.new()
 	_menu.name = "WeatherMenu"
@@ -71,11 +76,17 @@ func _ready() -> void:
 func _top_right(control: Control, top: float) -> void:
 	control.anchor_left = 1.0
 	control.anchor_right = 1.0
-	control.offset_left = -16.0
-	control.offset_right = -16.0
+	control.offset_left = -RIGHT_MARGIN
+	control.offset_right = -RIGHT_MARGIN
 	control.offset_top = top
 	control.offset_bottom = top
 	control.grow_horizontal = Control.GROW_DIRECTION_BEGIN
+
+# navigation_hud.gd makes room for the minimap in the same corner.
+func set_right_margin(margin: float) -> void:
+	for control: Control in [_panel, _menu]:
+		control.offset_left = -margin
+		control.offset_right = -margin
 
 func _style(color: Color) -> StyleBoxFlat:
 	var box := StyleBoxFlat.new()
@@ -101,6 +112,10 @@ func _process(delta: float) -> void:
 		return
 	_panel.visible = true
 	var s: Dictionary = sky.get_state()
+	_server_label.visible = bool(s.get("server_authoritative", false))
+	var status := str(s.get("server_status", ""))
+	_server_label.text = "World server" if status == "connected" else "World server: connecting" if status == "connecting" else "World server: disconnected"
+	_server_label.tooltip_text = status
 	_icon.icon = s["icon"]
 	_time_label.text = s["clock_text"]
 	var temperature := "-- °C"
@@ -134,6 +149,7 @@ func _rebuild_menu() -> void:
 	var s: Dictionary = sky.get_state()
 	_menu_box.add_child(_heading("Time of day"))
 	_slider = HSlider.new()
+	_slider.editable = not bool(s.get("server_authoritative", false))
 	_slider.min_value = 0.0
 	_slider.max_value = 24.0
 	_slider.step = 0.25

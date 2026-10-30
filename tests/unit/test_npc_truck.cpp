@@ -8,6 +8,25 @@
 #include <chrono>
 #include <thread>
 #include <cstdio>
+
+namespace {
+
+template<class Predicate>
+bool wait_for_snapshot(rg::Session& session, Predicate predicate,
+                       std::chrono::steady_clock::duration timeout,
+                       rg::FrameSnapshot* result) {
+ const auto deadline=std::chrono::steady_clock::now()+timeout;
+ do {
+  const rg::FrameSnapshot snapshot=session.snapshot();
+  if(predicate(snapshot)){*result=snapshot;return true;}
+  std::this_thread::sleep_for(std::chrono::milliseconds(1));
+ } while(std::chrono::steady_clock::now()<deadline);
+ *result=session.snapshot();
+ return false;
+}
+
+}
+
 TEST_CASE("Truck lanes honor one-way direction and rightmost through lanes", "[npc_truck]") {
  g2m::RoadGraphWay way;
  auto forward=rg::truck_lane(way,6.5,2,1),reverse=rg::truck_lane(way,6.5,2,-1);
@@ -39,16 +58,11 @@ TEST_CASE("NPC truck publishes moving collision body and reduces trailing airspe
  cfg.surface_table_path=std::string(RG_SOURCE_DIR)+"/external/physics_sim/data/surfaces/surfaces.json";
  cfg.chassis_initial_velocity={20,0,0};
  rg::Session session(cfg);session.request_npc_truck(true,70);session.start();
- bool active=false;
- const auto deadline=std::chrono::steady_clock::now()+std::chrono::seconds(3);
- while(std::chrono::steady_clock::now()<deadline) {
-  const auto& snapshot=session.snapshot();
-  active=snapshot.truck.active;
-  if(active&&snapshot.tick>80)break;
-  std::this_thread::sleep_for(std::chrono::milliseconds(5));
- }
- session.stop();REQUIRE(active);
- const auto frame=session.snapshot();
+ rg::FrameSnapshot frame{};
+ const bool spawned=wait_for_snapshot(session,[](const rg::FrameSnapshot& snapshot) {
+  return snapshot.truck.active&&snapshot.tick>80;
+ },std::chrono::seconds(3),&frame);
+ session.stop();REQUIRE(spawned);
  CHECK(frame.truck.speed_m_s>5);CHECK(frame.truck.pose.position.x>45);
  const auto air=session.world().vehicle_aero_telemetry(session.vehicle_id()).body_airspeed_m_s;
  const auto speed=session.world().get_motion(session.chassis_body()).linear.length();
@@ -56,14 +70,26 @@ TEST_CASE("NPC truck publishes moving collision body and reduces trailing airspe
  auto hit=session.world().backend().ray_cast(frame.truck.pose.position+ps::Vec3{-15,0,0},ps::Vec3::unit_x(),30);
  REQUIRE(hit.hit);
  // F preserves nearby traffic and its controller resumes instead of restarting a route worker.
- const auto before_flip=session.snapshot().truck.pose.position.x;
+ const auto before_flip=session.snapshot();
  session.request_flip_upright();session.start();
- std::this_thread::sleep_for(std::chrono::milliseconds(120));session.stop();
- REQUIRE(session.snapshot().truck.active);
- CHECK(session.snapshot().truck.pose.position.x>before_flip);
+ rg::FrameSnapshot flipped{};
+ const bool moved_after_flip=wait_for_snapshot(session,[&](const rg::FrameSnapshot& snapshot) {
+  return snapshot.tick>before_flip.tick&&snapshot.truck.active&&
+         snapshot.truck.pose.position.x>before_flip.truck.pose.position.x;
+ },std::chrono::seconds(3),&flipped);
+ session.stop();
+ REQUIRE(moved_after_flip);
+ REQUIRE(flipped.truck.active);
+ CHECK(flipped.truck.pose.position.x>before_flip.truck.pose.position.x);
+ const auto before_remove=session.snapshot();
  session.request_npc_truck(false,70);session.start();
- std::this_thread::sleep_for(std::chrono::milliseconds(40));session.stop();
- CHECK_FALSE(session.snapshot().truck.active);
+ rg::FrameSnapshot removed{};
+ const bool removal_published=wait_for_snapshot(session,[&](const rg::FrameSnapshot& snapshot) {
+  return snapshot.tick>before_remove.tick&&!snapshot.truck.active;
+ },std::chrono::seconds(3),&removed);
+ session.stop();
+ REQUIRE(removal_published);
+ CHECK_FALSE(removed.truck.active);
 }
 TEST_CASE("Truck route prepares the owner real-world spawn off the simulation thread", "[.][npc_truck_real]") {
  std::string error;auto cfg=rg::load_world_config(std::string(RG_SOURCE_DIR)+"/data/world/world_config.json",&error);REQUIRE(cfg);

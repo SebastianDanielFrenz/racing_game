@@ -5,6 +5,7 @@
 #pragma once
 
 #include "rg/time_weather.h"
+#include "rg/world_service_client.h"
 
 #include <godot_cpp/classes/ref_counted.hpp>
 #include <godot_cpp/variant/array.hpp>
@@ -49,6 +50,7 @@ protected:
 
 private:
     std::unique_ptr<rg::TimeWeather> tw_;
+    std::unique_ptr<rg::WorldServiceClient> remote_;
     godot::String error_;
     godot::String climate_error_;
 };

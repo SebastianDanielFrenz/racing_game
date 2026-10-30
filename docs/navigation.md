@@ -33,7 +33,7 @@ A* + ALT, `route_polyline`, `build_guidance`. `route_progress` gives the distanc
 tiles built from the same level-2 roads.graph tiles, flattened to session-metre polylines, on a worker.
 
 Godot: `RgNavigation` (binding), `game/scripts/navigation_hud.gd` (attaches only while a real world runs) and
-`minimap.gd` (heading-up drawing). Destination: F10 address search, button "Set as route destination".
+`minimap.gd` (heading-up drawing, around the drone in FPV drone mode). Destination: F10 address search, button "Set as route destination".
 
 ## Limits
 

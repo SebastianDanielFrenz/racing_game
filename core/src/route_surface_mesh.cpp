@@ -105,7 +105,7 @@ double length(Point2 a) { return std::hypot(a.e, a.n); }
 Point2 unit(Point2 a) { const double d = length(a); return d > 1e-8 ? scale(a, 1.0 / d) : Point2{}; }
 
 std::vector<Point2> round_path_corners(const std::vector<Point2>& source) {
-    if (source.size() < 3) return source;
+    if (source.size() < 2) return source;
     std::vector<Point2> rounded;
     rounded.reserve(source.size() * 3);
     rounded.push_back(source.front());
@@ -134,6 +134,8 @@ std::vector<Point2> round_path_corners(const std::vector<Point2>& source) {
     }
     rounded.push_back(source.back());
 
+    // Two-node OSM ways need the same terrain sampling as paths with corners.
+    // Returning their endpoints directly makes long floating triangles.
     std::vector<Point2> dense;
     dense.push_back(rounded.front());
     for (std::size_t i = 0; i + 1 < rounded.size(); ++i) {
@@ -331,7 +333,11 @@ void append_standalone_path_mesh(g2m::world::RoadRibbonTile& mesh, const g2m::Os
         if (!material->paved) route_flags |= kUnpaved;
         const float flags = static_cast<float>(route_flags);
         const float surface = static_cast<float>(material->surface);
+        double station = 0.0;
         for (std::size_t i = 0; i + 1 < path.size(); ++i) {
+            const double station0 = station;
+            station += length(sub(path[i + 1], path[i]));
+            const double station1 = station;
             const Point2 midpoint = scale(add(path[i], path[i + 1]), 0.5);
             if (!owned(key, midpoint.e, midpoint.n)) continue;
             const Point2 tangent = unit(sub(path[i + 1], path[i]));
@@ -359,15 +365,14 @@ void append_standalone_path_mesh(g2m::world::RoadRibbonTile& mesh, const g2m::Os
             }
             if (!has_ground) continue;
             const auto first = static_cast<std::int32_t>(mesh.vertices.size());
-            const double station0 = static_cast<double>(i), station1 = static_cast<double>(i + 1);
             const auto vertex = [&](Point2 p, double z, float lateral, double station) {
                 mesh.vertices.push_back({static_cast<float>(p.e - ox), static_cast<float>(p.n - oy),
                     static_cast<float>(z), lateral, static_cast<float>(station),
                     static_cast<float>(material->width_m), 1.0f, surface, 0.0f,
                     static_cast<float>(route_flags), 0.0f});
             };
-            vertex(left0, heights[0], 1.0f, station0); vertex(right0, heights[1], 0.0f, station0);
-            vertex(left1, heights[2], 1.0f, station1); vertex(right1, heights[3], 0.0f, station1);
+            vertex(left0, heights[0], static_cast<float>(half), station0); vertex(right0, heights[1], static_cast<float>(-half), station0);
+            vertex(left1, heights[2], static_cast<float>(half), station1); vertex(right1, heights[3], static_cast<float>(-half), station1);
             mesh.indices.insert(mesh.indices.end(), {first, first+1, first+2, first+1, first+3, first+2});
         }
     }

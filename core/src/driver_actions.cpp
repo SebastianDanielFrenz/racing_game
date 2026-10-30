@@ -246,7 +246,7 @@ SelectorShift selector_shift(const DriverSnapshot& snapshot, int up, int down) {
     int pos = selector_pos(snapshot);
     if (pos == PosD && snapshot.transmission_manual) return out; // tiptronic: the counters change gears in physics
     out.forward_counts = false;
-    // B above D (EV one-pedal regeneration; a hybrid in Electric mode). Physics steps D <-> B on the shift counters itself, so ONE
+    // B above D (EV one-pedal regeneration; a hybrid in Eco or Electric mode). Physics steps D <-> B on the shift counters itself, so ONE
     // press that only moves between D and B is forwarded as counters and writes no gear_request (no request value to lose to an
     // unchanged channel). Presses that go further (down past D) use the absolute request as before (B is the step above D: two presses down from B reach N).
     if (snapshot.b_available && (pos == PosD || pos == PosB) && !(up > 0 && down > 0)) {

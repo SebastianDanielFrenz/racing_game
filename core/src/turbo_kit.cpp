@@ -217,6 +217,26 @@ std::optional<TurboKitConfig> load_turbo_kit_config(const std::string& path, con
             return std::nullopt;
         }
         s.count = static_cast<int>(count);
+        if (k.contains("exducer_mm") && !read_num(k,"exducer_mm",s.exducer_mm,10,300,kw,err)) return std::nullopt;
+        if (k.contains("configuration")) {
+            std::string ref;
+            if (!detail::get_string(k,"configuration",ref) || ref.empty() || s.exducer_mm<=0) {
+                fail(err,kw,"configuration needs a path and exducer_mm");return std::nullopt;
+            }
+            const fs::path cp(ref);
+            s.configuration=(cp.is_absolute()?cp:fs::path(repo_root)/cp).lexically_normal().generic_string();
+            const auto contents=detail::read_text_file(s.configuration);
+            const auto doc=contents?detail::parse_json(*contents):std::nullopt;
+            std::string format,hardware;
+            double units=0;
+            if(!doc || !detail::get_string(*doc,"format",format) || format!="physics_sim.turbo_configuration/1" ||
+               !detail::get_number(*doc,"count",units) || units!=s.count || !detail::get_string(*doc,"turbo",hardware) || hardware.empty()) {
+                fail(err,kw,"configuration needs turbo_configuration/1, matching count and a turbo reference");return std::nullopt;
+            }
+            if(!detail::read_text_file((fs::path(s.configuration).parent_path()/hardware).lexically_normal().generic_string())) {
+                fail(err,kw,"configuration turbo hardware cannot be read");return std::nullopt;
+            }
+        }
         c.kits.push_back(std::move(s));
     }
     const auto geo = root->find("envelope");
@@ -285,7 +305,6 @@ std::string turbo_kit_refusal(const EngineFacts& f, const std::string& name) {
         return who + " is a torque-curve engine: its torque comes from a fixed curve with no air path for a turbo to "
                      "feed. Swap in a simulated engine to fit a turbo kit.";
     }
-    if (f.has_turbo) return who + " is turbocharged already: choose its turbo hardware under Turbo.";
     if (!f.has_cycle) {
         return who + " has authored maps and no cycle model, so the boosted maps a turbo needs cannot be generated.";
     }
@@ -329,7 +348,7 @@ TurboKitSizing size_turbo_kit(const TurboKitConfig& config, const TurboKitSpec& 
     const double vd = facts.displacement_l / 1000.0;
     z.demand_kg_s = rho * vd * limiter_rpm / 120.0 * config.volumetric_efficiency;
     z.flow_per_turbo_kg_s = z.demand_kg_s / spec.count * config.flow_margin;
-    z.scale = std::clamp(std::sqrt(z.flow_per_turbo_kg_s / a_flow), config.min_scale, config.max_scale);
+    z.scale = spec.exducer_mm > 0 ? spec.exducer_mm / config.anchor_exducer_mm : std::clamp(std::sqrt(z.flow_per_turbo_kg_s / a_flow), config.min_scale, config.max_scale);
     const double s = z.scale, s2 = s * s;
     z.exducer_mm = config.anchor_exducer_mm * s;
     z.reference_rpm = round_sig(a_rpm / s, 1000.0);
@@ -341,7 +360,24 @@ TurboKitSizing size_turbo_kit(const TurboKitConfig& config, const TurboKitSpec& 
     z.compressor_efficiency = std::clamp(a_ceff + config.efficiency_log_slope * std::log(s), config.efficiency_min, a_ceff);
     z.turbine_efficiency = std::clamp(a_teff + config.efficiency_log_slope * std::log(s), config.efficiency_min, a_teff);
     z.reference_head_bar = a_head;
-    z.compression_ratio = std::min(facts.compression_ratio, config.max_compression_ratio);
+    if(!spec.configuration.empty()) {
+        const auto config_text=detail::read_text_file(spec.configuration);
+        const auto fixed=config_text?detail::parse_json(*config_text):std::nullopt;
+        std::string ref;
+        if(!fixed || !detail::get_string(*fixed,"turbo",ref)) {z.error="Cannot read fixed turbo configuration";return z;}
+        const auto hardware_text=detail::read_text_file((fs::path(spec.configuration).parent_path()/ref).lexically_normal().generic_string());
+        const auto hardware=hardware_text?detail::parse_json(*hardware_text):std::nullopt;
+        if(!hardware) {z.error="Cannot read fixed turbo hardware";return z;}
+        const auto number=[&](const char* key,double& value){
+            return read_num(*hardware,key,value,0.0,1e12,spec.id,&z.error);
+        };
+        if(!number("reference_rpm",z.reference_rpm) || !number("max_mass_flow_kg_s",z.max_mass_flow_kg_s) ||
+           !number("rotor_inertia_kgm2",z.rotor_inertia_kgm2) || !number("turbine_area_m2",z.turbine_area_m2) ||
+           !number("wastegate_area_m2",z.wastegate_area_m2) || !number("shaft_loss_w_at_reference",z.shaft_loss_w) ||
+           !number("compressor_efficiency",z.compressor_efficiency) || !number("turbine_efficiency",z.turbine_efficiency) ||
+           !number("reference_head_bar",z.reference_head_bar)) return z;
+    }
+    z.compression_ratio = facts.has_turbo ? facts.compression_ratio : std::min(facts.compression_ratio, config.max_compression_ratio);
     z.torque_factor = pr;
     z.max_shaft_rpm = z.reference_rpm * config.max_shaft_speed_factor;
     z.unit_length_mm = config.unit_length_per_exducer * z.exducer_mm + config.unit_length_add_mm;
@@ -420,8 +456,9 @@ TurboKitBuild describe_turbo_kit(const TurboKitConfig& config, const TurboKitSpe
 std::string turbo_kit_detail(const TurboKitConfig& config, const TurboKitSpec& spec, const TurboKitSizing& z) {
     (void)config;
     char buf[200];
-    std::snprintf(buf, sizeof(buf), "%d x %.0f/%.0f mm compressor · %.2f kg/s per unit · %.1f bar start target · sized for this engine",
-                  spec.count, z.exducer_mm * 0.805, z.exducer_mm, z.max_mass_flow_kg_s, spec.target_boost_bar);
+    std::snprintf(buf, sizeof(buf), "%d x %.0f/%.0f mm compressor; %.2f kg/s per unit; %s",
+                  spec.count, z.exducer_mm * 66.0/82.0, z.exducer_mm, z.max_mass_flow_kg_s,
+                  spec.exducer_mm > 0.0 ? "fixed hardware" : "sized for this engine");
     return buf;
 }
 
@@ -439,9 +476,9 @@ std::string write_turbo_kit(const TurboKitConfig& config, const TurboKitSpec& sp
                   "[D] Turbo kit hardware generated by rg::size_turbo_kit (racing_game core/src/turbo_kit.cpp) for %s, kit %s: "
                   "the anchor %s scaled at constant tip speed by s = %.4f (wheel-diameter ratio; flow, throat, gate and shaft "
                   "loss x s^2, reference rpm / s, inertia x s^5, efficiencies by the log rule). Engine demand %.4f kg/s at the "
-                  "limiter and %.2f bar, x %.2f margin over %d unit(s). Not a measured map.",
+                  "limiter, x %.2f margin over %d unit(s). Not a measured map.",
                   engine_name.c_str(), spec.id.c_str(), fs::path(config.anchor_hardware).filename().string().c_str(), z.scale,
-                  z.demand_kg_s, spec.target_boost_bar, config.flow_margin, spec.count);
+                  z.demand_kg_s, config.flow_margin, spec.count);
     json hw = json::object();
     hw["format"] = "physics_sim.turbo/1";
     hw["name"] = "kit_" + spec.id;
@@ -457,7 +494,7 @@ std::string write_turbo_kit(const TurboKitConfig& config, const TurboKitSpec& sp
     hw["reference_head_bar"] = z.reference_head_bar;
     const std::string hw_text = hw.dump(2) + "\n";
     const std::string hw_path = (dir / ("kit_turbo_" + hex16(fnv1a(hw_text)) + ".json")).generic_string();
-    if (!write_once(hw_path, hw_text, err)) return {};
+    if (spec.configuration.empty() && !write_once(hw_path, hw_text, err)) return {};
 
     json cfg = json::object();
     cfg["format"] = "physics_sim.turbo_configuration/1";
@@ -476,6 +513,16 @@ std::string write_turbo_kit(const TurboKitConfig& config, const TurboKitSpec& sp
     cfg["boost_control"] = bc;
     cfg["source"] = std::string("Garage turbo kit \"") + spec.label + "\" for " + engine_name +
                     " (data/engines/turbo_kits.json, rg::size_turbo_kit).";
+    if (!spec.configuration.empty()) {
+        const auto text=detail::read_text_file(spec.configuration);
+        const auto original=text?detail::parse_json(*text):std::nullopt;
+        if(!original || original->value("format",std::string{})!="physics_sim.turbo_configuration/1" || original->value("count",0)!=spec.count) {
+            fail(err,spec.id,"invalid hardware configuration or count");return {};
+        }
+        cfg=*original;
+        cfg["turbo"]=(fs::path(spec.configuration).parent_path()/cfg.at("turbo").get<std::string>()).lexically_normal().generic_string();
+        cfg["target_boost_bar"]=spec.target_boost_bar;
+    }
     const std::string cfg_text = cfg.dump(2) + "\n";
     const std::string cfg_path = (dir / ("kit_" + spec.id + "_" + hex16(fnv1a(cfg_text)) + ".json")).generic_string();
     if (!write_once(cfg_path, cfg_text, err)) return {};

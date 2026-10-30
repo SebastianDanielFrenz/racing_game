@@ -13,6 +13,7 @@
 namespace rg {
 
 struct WorldConfig {
+    std::string server_url; // optional HTTP world service; empty = local stores
     struct UtmOrigin {
         int zone = 0;    // 1..60 (g2m::geo::UtmZone's own range)
         double e0 = 0.0; // metres
@@ -22,6 +23,7 @@ struct WorldConfig {
     struct SourceStore {
         std::string dir; // ${VAR}-expanded; NOT resolved against the repo root (an external cache/store path)
         std::string scope;
+        std::string elevation_layer = "g2m.src.elev.dgm1"; // optional imported source
         bool read_only = false;
     };
 
@@ -91,9 +93,10 @@ struct WorldConfig {
         int loader_workers = 2;
         // Look-ahead prefetch of the height-tile streamer (g2m::phys::StreamerConfig): the gate-radius square around
         // position + velocity * lookahead_s, that displacement capped at lookahead_cap_m, is requested like the
-        // prefetch square (never part of the gate).
-        double lookahead_s = 3.0;
-        double lookahead_cap_m = 510.0;
+        // prefetch square (never part of the gate). The cap is four physics tiles: the square then reaches two tiles
+        // past the prefetch square, which at 480 km/h is the 7 s of warning a slow tile fetch needs (vault RACE-035).
+        double lookahead_s = 6.0;
+        double lookahead_cap_m = 1020.0;
         // Background shape prefetch; both zero preserves the synchronous path.
         std::uint32_t prefetch_margin_tiles = 0;
         std::uint32_t prefetch_max_tiles = 0;

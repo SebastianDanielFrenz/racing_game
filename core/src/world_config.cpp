@@ -13,8 +13,10 @@
 // checked with .contains()/.is_*() before any .get<T>() call - no throw, no
 // catch, anywhere in this file.
 #include "rg/world_config.h"
+#include "rg/world_service_client.h"
 
 #include "g2m/core/geo/utm.h"
+#include "g2m/layer/layer_id.h"
 
 #include <nlohmann/json.hpp>
 
@@ -382,6 +384,17 @@ std::optional<WorldConfig> load_world_config(const std::string& path, std::strin
         return std::nullopt;
     }
 
+    if (source_store.contains("elevation_layer")) {
+        if (!get_string(source_store, "elevation_layer", path, "source_store", &cfg.source_store.elevation_layer, err))
+            return std::nullopt;
+        const auto& layer = cfg.source_store.elevation_layer;
+        if (!layer.starts_with(g2m::kSrcElevPrefix) || !g2m::is_valid_layer_name(layer) ||
+            layer.substr(g2m::kSrcElevPrefix.size()).find('.') != std::string::npos) {
+            fail(err, path, "source_store.elevation_layer must name g2m.src.elev.<source>");
+            return std::nullopt;
+        }
+    }
+
     // --- derived_store ---
     if (!root.contains("derived_store")) {
         fail(err, path, "missing required field \"derived_store\"");
@@ -712,6 +725,7 @@ std::optional<WorldConfig> load_world_config(const std::string& path, std::strin
     cfg.surface_map = resolved_surface_map.lexically_normal().string();
     cfg.palette = resolved_palette.lexically_normal().string();
 
+    cfg.server_url = world_server_url();
     return cfg;
 }
 

@@ -108,13 +108,26 @@ TEST_CASE("hybrid in Electric mode: the gear display shows E in D and B in B", "
     CHECK(rg::selector_display(h) == "E");
     h.b_active = true;
     CHECK(rg::selector_display(h) == "B");
-    // the shift keys step D <-> B there as well, whatever the gearbox (physics consumes the counters in Electric mode)
+    // The shift keys step D <-> B in Electric or Eco, whatever the gearbox.
     h.b_active = false;
     CHECK(rg::selector_shift(h, 1, 0).forward_counts);
-    // outside Electric mode a hybrid has no B: up from D forwards nothing
+    // Normal / Sport / Racing have no B: up from D forwards nothing
     h.hybrid_electric = false;
     h.b_available = false;
     CHECK_FALSE(rg::selector_shift(h, 1, 0).forward_counts);
+}
+
+TEST_CASE("hybrid Eco: the selector forwards D/B steps and displays B without showing Electric", "[b_mode][driver_actions]") {
+    rg::DriverSnapshot h;
+    h.hybrid_fitted = true;
+    h.transmission_selector = 1;
+    h.drive_mode_effective = 0;
+    h.b_available = true;
+    CHECK(rg::selector_display(h) == "D");
+    CHECK(rg::selector_shift(h, 1, 0).forward_counts);
+    h.b_active = true;
+    CHECK(rg::selector_display(h) == "B");
+    CHECK(rg::selector_shift(h, 0, 1).forward_counts);
 }
 
 TEST_CASE("electric_mode action toggles Electric (drive mode 4) and returns to the previous mode", "[b_mode][driver_actions]") {
@@ -352,6 +365,64 @@ TEST_CASE("hyper hybrid: E key enters Electric, shift keys step D and B, E key r
     r.run(1);
     CHECK_FALSE(r.pt().hybrid_electric_mode);
     CHECK_FALSE(r.pt().b_mode_active); // leaving Electric ends B
+}
+
+TEST_CASE("hybrid Eco: B regenerates through the real selector and exits safely", "[b_mode][eco_b][hybrid][long]") {
+    Fx f;
+    // Cover the original manual conversion and the owner's DCT configuration.
+    for (const std::string& box : {std::string{}, std::string{"hyper_7dct"}}) {
+        INFO(box);
+        Rig r(f, "car_hyper_n2o", box, box.empty() ? "t_eco_b_manual" : "t_eco_b_dct");
+        r.ses->set_control("assist.drive_mode", 0);
+        r.ses->set_control("gear_request", rg::kGearRequestDrive);
+        r.ses->set_control("throttle", 0.8);
+        r.run(5);
+        REQUIRE(r.pt().drive_mode_effective == 0);
+        REQUIRE(r.pt().b_mode_available);
+        CHECK_FALSE(r.pt().hybrid_electric_mode);
+        CHECK_FALSE(r.pt().b_mode_active);
+        REQUIRE(r.speed() > 3);
+        r.shift_keys(1, 0);
+        r.run(0.1);
+        REQUIRE(r.pt().b_mode_active);
+        CHECK(rg::selector_display(r.snapshot()) == "B");
+        const double speed = r.speed();
+        const double soc = r.pt().battery_soc;
+        r.ses->set_control("throttle", 0);
+        r.run(1);
+        CHECK(r.pt().b_power_command_w < 0);
+        CHECK(r.pt().electric_power_w < 0);
+        CHECK(r.pt().battery_soc > soc);
+        CHECK(r.speed() < speed);
+        CHECK(r.pt().engine_state != ps::drivetrain::EngineState::Running);
+        r.shift_keys(0, 1);
+        r.run(0.1);
+        CHECK_FALSE(r.pt().b_mode_active);
+        r.shift_keys(1, 0);
+        r.run(0.1);
+        REQUIRE(r.pt().b_mode_active);
+        // Eco <-> Electric preserves B; Normal clears it and cannot retain a stale request.
+        r.ses->set_control("assist.drive_mode", 4);
+        r.run(0.1);
+        CHECK(r.pt().b_mode_active);
+        r.ses->set_control("assist.drive_mode", 0);
+        r.run(0.1);
+        CHECK(r.pt().b_mode_active);
+        r.ses->set_control("assist.drive_mode", 1);
+        r.run(0.1);
+        CHECK_FALSE(r.pt().b_mode_available);
+        CHECK_FALSE(r.pt().b_mode_active);
+        r.ses->set_control("assist.drive_mode", 0);
+        r.run(0.1);
+        CHECK_FALSE(r.pt().b_mode_active);
+        r.shift_keys(1, 0);
+        r.run(0.1);
+        REQUIRE(r.pt().b_mode_active);
+        r.ses->set_control("gear_request", 0);
+        r.run(0.1);
+        CHECK_FALSE(r.pt().b_mode_active);
+        CHECK(rg::selector_display(r.snapshot()) == "N");
+    }
 }
 
 TEST_CASE("hyper hybrid: the full-pedal demand is derived, Sport at WOT asks for far more than the electric potential", "[b_mode][hybrid][powertrain_swap][long]") {
