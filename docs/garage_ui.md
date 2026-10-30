@@ -183,9 +183,20 @@ rotaries and lift-family engines are refused: `OptionView::unavailable_reason` (
 and Engine -> Turbo / Swaps -> Forced induction show that text instead of hiding the tile. Changing to an engine that
 cannot take a kit drops it (`Garage::drop_unavailable_values`).
 
+### Fixed generic sizes
+
+Engine -> Turbo offers generic single, twin and quad layouts in 30, 40, 50, 60, 70, 80, 100 and 120 mm
+compressor inducer diameters. Swaps -> Forced induction chooses the layout; Engine -> Turbo shows the hardware
+sizes for that layout. A size that does not fit the engine bay remains subject to the existing fit filter / Show all control.
+
+These entries specify a fixed `exducer_mm`, derived from the anchor's 66/82 inducer/exducer ratio. The diameter ratio
+to the anchor fixes flow (squared), inertia (fifth power), reference speed, housing dimensions and turbo mass. Engine
+demand, limiter and boost tuning cannot resize that hardware. The generic family is a similarity-scaled approximation,
+not a set of measured manufacturer maps. Existing saved kit IDs and the mapped 100/120 mm single options are retained.
+
 ### Sizing logic (owner on PR #21: count and boost are free choices)
 
-The kits in `data/engines/turbo_kits.json` (rg.turbo_kits/1) are shortcuts for a turbo COUNT and a STARTING boost:
+The legacy automatic presets in `data/engines/turbo_kits.json` (rg.turbo_kits/1) are shortcuts for a turbo COUNT and a STARTING boost:
 Street (1, 0.5 bar), Sport (1, 1.0 bar), Twin-turbo (2, 1.0 bar), Quad-turbo (4, 1.0 bar). Any count goes on any eligible
 engine (no cylinder rule); the boost slider (`turbo_boost_target`) then moves the target freely. One rule, applied to the
 kit's nominal sizing pressure, fixes the hardware dimensions. Boost tuning changes calibration without resizing it.
@@ -704,3 +715,19 @@ All pack factors are assumptions [AS] from typical cell classes (energy cells: m
 the other way round), not measured packs. A `scale_preset` option: `pointers` (patterns), `presets` [{id, label,
 subtitle?, image?, factors[one per pattern, in (0, 10)]}], optional `display` [{unit, multiplier, decimals}] for the
 card figures (an empty unit is left out); the value is the preset id, "stock" = the car's own part.
+
+### Driver assist upgrades and category visibility
+
+Appearance & assists opens Paint, Rims and Driver assists. Driver assists installs the native assist-unit choices,
+including their TC modes, ABS, ESC and combustion Launch Control where fitted. Sport/Racing LC units require a
+combustion engine; incompatible units are hidden by the usual parts-fit filter. Manual and dual-clutch gearboxes can
+arm the existing controller; converter automatics/CVTs do not arm it.
+
+Hybrid conversions retain the selected unit's grade and capabilities, including Launch Control. Hybrid TC tuning only
+adapts modes the unit offers. Sport/Racing permit LC; Eco/Normal/Electric disable it. While staging, wheel-path electric
+motors are held; on launch they respect the same launch torque ceiling as the engine. The crank generator and regen
+remain available. The default launch toggle is L (rebindable).
+
+Upgrade categories and subcategories with no editable options are hidden even with Show all enabled. Show all exposes
+parts that do not fit; it does not reintroduce unimplemented or empty categories. The standalone driver_assists_test.gd
+covers the real install flow and empty-category hiding in both Show all states.

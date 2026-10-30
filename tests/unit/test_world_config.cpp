@@ -653,8 +653,8 @@ TEST_CASE("load_world_config: physics absent defaults to radius_m 400", "[world_
     CHECK(cfg->physics.terrain_surface == "asphalt");
     CHECK(cfg->physics.max_tile_fills_per_tick == 1);
     CHECK(cfg->physics.loader_workers == 2);
-    CHECK(cfg->physics.lookahead_s == 3.0);
-    CHECK(cfg->physics.lookahead_cap_m == 510.0);
+    CHECK(cfg->physics.lookahead_s == 6.0);
+    CHECK(cfg->physics.lookahead_cap_m == 1020.0);
     CHECK(cfg->physics.spawn_clearance_m == 0.10);
     CHECK(cfg->physics.startup_timeout_s == 60.0);
     CHECK(cfg->physics.startup_max_s == 900.0);

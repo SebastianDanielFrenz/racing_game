@@ -1,9 +1,9 @@
 {
   "format": "rg.turbo_kits/1",
-  "source": "Shared replacement and conversion catalogue for compatible simulated engines, including factory-turbo engines. Stock hardware remains available separately. Generic family sizes are nominal installation sizes; boost tuning does not change hardware.",
+  "source": "Shared replacement and conversion catalogue for compatible simulated engines, including factory-turbo engines. Stock hardware remains available separately. Generic family sizes are nominal installation sizes; boost tuning does not change hardware. Generic fixed-size variants are labelled by compressor inducer diameter; exducer diameter follows the anchor 66/82 wheel ratio. Their similarity-scaled flow, inertia, mass and dimensions are fixed by the selected diameter, not by engine demand or boost. Generic estimates, not manufacturer performance maps.",
   "anchor_hardware": "external/physics_sim/data/turbos/hyper_turbo_approx.json",
   "anchor_exducer_mm": 82.0,
-  "anchor_exducer_source": "GTX3582R Gen II class compressor wheel 66/82 mm (the anchor file's rotor_inertia_source); only used for the card text.",
+  "anchor_exducer_source": "Reference compressor exducer for similarity scaling and card dimensions. Anchor wheel ratio: 66 mm inducer / 82 mm exducer (anchor rotor_inertia_source).",
   "cache_subdir": "turbo_kits",
   "sizing": {
     "volumetric_efficiency": 0.9,
@@ -59,6 +59,174 @@
       "target_boost_bar": 1.0
     },
     {
+      "id": "generic_single_30mm",
+      "label": "Generic single turbo - 30 mm inducer",
+      "count": 1,
+      "target_boost_bar": 1.0,
+      "exducer_mm": 37.27272727272727
+    },
+    {
+      "id": "generic_single_40mm",
+      "label": "Generic single turbo - 40 mm inducer",
+      "count": 1,
+      "target_boost_bar": 1.0,
+      "exducer_mm": 49.696969696969695
+    },
+    {
+      "id": "generic_single_50mm",
+      "label": "Generic single turbo - 50 mm inducer",
+      "count": 1,
+      "target_boost_bar": 1.0,
+      "exducer_mm": 62.121212121212125
+    },
+    {
+      "id": "generic_single_60mm",
+      "label": "Generic single turbo - 60 mm inducer",
+      "count": 1,
+      "target_boost_bar": 1.0,
+      "exducer_mm": 74.54545454545455
+    },
+    {
+      "id": "generic_single_70mm",
+      "label": "Generic single turbo - 70 mm inducer",
+      "count": 1,
+      "target_boost_bar": 1.0,
+      "exducer_mm": 86.96969696969697
+    },
+    {
+      "id": "generic_single_80mm",
+      "label": "Generic single turbo - 80 mm inducer",
+      "count": 1,
+      "target_boost_bar": 1.0,
+      "exducer_mm": 99.39393939393939
+    },
+    {
+      "id": "generic_single_100mm",
+      "label": "Generic single turbo - 100 mm inducer",
+      "count": 1,
+      "target_boost_bar": 1.0,
+      "exducer_mm": 124.24242424242425
+    },
+    {
+      "id": "generic_single_120mm",
+      "label": "Generic single turbo - 120 mm inducer",
+      "count": 1,
+      "target_boost_bar": 1.0,
+      "exducer_mm": 149.0909090909091
+    },
+    {
+      "id": "generic_twin_30mm",
+      "label": "Generic twin turbo - 30 mm inducer",
+      "count": 2,
+      "target_boost_bar": 1.0,
+      "exducer_mm": 37.27272727272727
+    },
+    {
+      "id": "generic_twin_40mm",
+      "label": "Generic twin turbo - 40 mm inducer",
+      "count": 2,
+      "target_boost_bar": 1.0,
+      "exducer_mm": 49.696969696969695
+    },
+    {
+      "id": "generic_twin_50mm",
+      "label": "Generic twin turbo - 50 mm inducer",
+      "count": 2,
+      "target_boost_bar": 1.0,
+      "exducer_mm": 62.121212121212125
+    },
+    {
+      "id": "generic_twin_60mm",
+      "label": "Generic twin turbo - 60 mm inducer",
+      "count": 2,
+      "target_boost_bar": 1.0,
+      "exducer_mm": 74.54545454545455
+    },
+    {
+      "id": "generic_twin_70mm",
+      "label": "Generic twin turbo - 70 mm inducer",
+      "count": 2,
+      "target_boost_bar": 1.0,
+      "exducer_mm": 86.96969696969697
+    },
+    {
+      "id": "generic_twin_80mm",
+      "label": "Generic twin turbo - 80 mm inducer",
+      "count": 2,
+      "target_boost_bar": 1.0,
+      "exducer_mm": 99.39393939393939
+    },
+    {
+      "id": "generic_twin_100mm",
+      "label": "Generic twin turbo - 100 mm inducer",
+      "count": 2,
+      "target_boost_bar": 1.0,
+      "exducer_mm": 124.24242424242425
+    },
+    {
+      "id": "generic_twin_120mm",
+      "label": "Generic twin turbo - 120 mm inducer",
+      "count": 2,
+      "target_boost_bar": 1.0,
+      "exducer_mm": 149.0909090909091
+    },
+    {
+      "id": "generic_quad_30mm",
+      "label": "Generic quad turbo - 30 mm inducer",
+      "count": 4,
+      "target_boost_bar": 1.0,
+      "exducer_mm": 37.27272727272727
+    },
+    {
+      "id": "generic_quad_40mm",
+      "label": "Generic quad turbo - 40 mm inducer",
+      "count": 4,
+      "target_boost_bar": 1.0,
+      "exducer_mm": 49.696969696969695
+    },
+    {
+      "id": "generic_quad_50mm",
+      "label": "Generic quad turbo - 50 mm inducer",
+      "count": 4,
+      "target_boost_bar": 1.0,
+      "exducer_mm": 62.121212121212125
+    },
+    {
+      "id": "generic_quad_60mm",
+      "label": "Generic quad turbo - 60 mm inducer",
+      "count": 4,
+      "target_boost_bar": 1.0,
+      "exducer_mm": 74.54545454545455
+    },
+    {
+      "id": "generic_quad_70mm",
+      "label": "Generic quad turbo - 70 mm inducer",
+      "count": 4,
+      "target_boost_bar": 1.0,
+      "exducer_mm": 86.96969696969697
+    },
+    {
+      "id": "generic_quad_80mm",
+      "label": "Generic quad turbo - 80 mm inducer",
+      "count": 4,
+      "target_boost_bar": 1.0,
+      "exducer_mm": 99.39393939393939
+    },
+    {
+      "id": "generic_quad_100mm",
+      "label": "Generic quad turbo - 100 mm inducer",
+      "count": 4,
+      "target_boost_bar": 1.0,
+      "exducer_mm": 124.24242424242425
+    },
+    {
+      "id": "generic_quad_120mm",
+      "label": "Generic quad turbo - 120 mm inducer",
+      "count": 4,
+      "target_boost_bar": 1.0,
+      "exducer_mm": 149.0909090909091
+    },
+    {
       "id": "single_100mm",
       "label": "Single turbo - 100 mm inducer",
       "count": 1,
@@ -75,7 +243,7 @@
       "configuration": "data/turbo_configurations/hyper_single_120mm.json"
     }
   ],
-  "kits_help": "Shared turbo hardware choices; factory equipment remains a stock option. Physical fit and engine model compatibility are checked. Boost target is adjusted separately without resizing the turbo.",
+  "kits_help": "Choose single, twin or quad induction in Swaps, then select a fixed compressor inducer size in mm under Engine > Turbo. Boost is adjusted separately in Tuning and never resizes installed hardware. Bay fit is checked; existing auto-sized saved kits remain supported.",
   "envelope": {
     "unit_length_per_exducer": 2.6,
     "unit_length_add_mm": 60.0,

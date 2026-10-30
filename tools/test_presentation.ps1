@@ -7,6 +7,15 @@ $gameDir = Join-Path $repoRoot 'game'
 $logPath = Join-Path $repoRoot 'out/presentation_test.log'
 $godotExe = Find-GodotConsoleExe
 Ensure-GodotProjectImported -GameDir $gameDir -GodotExe $godotExe
+$minimapLog = Join-Path $repoRoot 'out/minimap_drone_test.log'
+& $godotExe --headless --path $gameDir --quit-after 1000 --script res://scripts/minimap_drone_test.gd *> $minimapLog
+$testExit = $LASTEXITCODE
+Get-Content $minimapLog
+if ($testExit -ne 0 -or
+    (Select-String -Path $minimapLog -Pattern 'SCRIPT ERROR|^ERROR') -or
+    -not (Select-String -Path $minimapLog -Pattern 'RG_MINIMAP_TEST PASS')) {
+    throw 'Minimap drone test failed; see out/minimap_drone_test.log'
+}
 & $godotExe --headless --path $gameDir --quit-after 1000 --script res://scripts/test_presentation.gd *> $logPath
 $testExit = $LASTEXITCODE
 Get-Content $logPath

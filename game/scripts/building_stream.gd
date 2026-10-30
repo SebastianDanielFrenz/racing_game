@@ -32,6 +32,10 @@ func shutdown() -> void:
 	_mutex.unlock()
 	_wake.post()
 	if _thread.is_started():
+		# A RenderingServer call on the worker can wait for this thread, so keep serving those until the worker ends.
+		while _thread.is_alive():
+			RenderingServer.force_sync()
+			OS.delay_msec(1)
 		_thread.wait_to_finish()
 	set_process(false)
 func _exit_tree() -> void:
@@ -102,8 +106,8 @@ func _worker() -> void:
 		var data: Dictionary = view.get_building_mesh_tile(int(job.x),int(job.y),0.0 if job.full else threshold,float(settings.get("fallback_height_m",8.0)),float(settings.get("storey_height_m",3.0)),threshold)
 		var near_arrays: Array = data.get("near",_empty_arrays())
 		var tall_arrays: Array = data.get("tall",_empty_arrays())
-		# RenderingServer calls (including tangent readback) can wait for the main
-		# thread. Build outside the queue mutex: the main thread polls that mutex.
+		# A large tile takes 50 ms to encode, so the meshes stay off the main thread. Build outside the queue
+		# mutex: the main thread polls that mutex.
 		var near_mesh := _mesh(near_arrays)
 		var tall_mesh := _mesh(tall_arrays)
 		_mutex.lock()
@@ -125,11 +129,11 @@ func _mesh(surfaces: Array) -> ArrayMesh:
 		surface[Mesh.ARRAY_NORMAL] = arrays[1]
 		surface[Mesh.ARRAY_COLOR] = arrays[2]
 		surface[Mesh.ARRAY_TEX_UV] = arrays[3]
+		surface[Mesh.ARRAY_TANGENT] = arrays[4]
 		mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES,surface)
 		mesh.surface_set_material(mesh.get_surface_count()-1,_materials[int(record.material)])
 	if mesh.get_surface_count() == 0:
 		return null
-	mesh.regen_normal_maps()
 	return mesh
 func _upload(result: Dictionary) -> void:
 	var key: Vector2i = result.key

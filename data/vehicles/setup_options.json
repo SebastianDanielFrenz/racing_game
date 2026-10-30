@@ -144,6 +144,100 @@
       "help": "The drive unit of a hybrid's traction motor: its peak torque, power, top speed, mass and efficiency. The unit's reduction ratio is its whole motor-to-wheel ratio, so the hybrid's reduction gear is set to that ratio divided by the car's final drive. The crank generator is not changed and the motor layout stays as it is. Offered on hybrids (a combustion engine plus a traction motor); the battery must still deliver the power. All numbers are assumptions [AS], not OEM data."
     },
     {
+      "id": "hybrid_generator",
+      "label": "Charging generator",
+      "group": "Electric drive",
+      "area": "engine",
+      "unit": "",
+      "kind": "scale_preset",
+      "file": "vehicle",
+      "help": "Crank-mounted generator for charging the traction battery. Larger units raise generating power and torque capacity, with added mass and rotor inertia. Charging power is set separately in Tuning. Ratings are development assumptions, not OEM specifications.",
+      "pointers": [
+        "/powertrain/components/[type=electric_motor,crank_assist=true]/max_power_w",
+        "/powertrain/components/[type=electric_motor,crank_assist=true]/regen_torque_nm",
+        "/powertrain/components/[type=electric_motor,crank_assist=true]/peak_torque_nm",
+        "/powertrain/components/[type=electric_motor,crank_assist=true]/mass_kg",
+        "/powertrain/components/[type=electric_motor,crank_assist=true]/inertia_kgm2"
+      ],
+      "display": [
+        {
+          "unit": "kW",
+          "multiplier": 0.001,
+          "decimals": 0
+        },
+        {
+          "unit": "Nm",
+          "multiplier": 1,
+          "decimals": 0
+        },
+        {
+          "unit": "",
+          "multiplier": 1,
+          "decimals": 0
+        },
+        {
+          "unit": "kg",
+          "multiplier": 1,
+          "decimals": 0
+        },
+        {
+          "unit": "",
+          "multiplier": 1,
+          "decimals": 0
+        }
+      ],
+      "presets": [
+        {
+          "id": "performance",
+          "label": "Performance generator",
+          "subtitle": "Twice the generating capacity",
+          "factors": [
+            2,
+            2,
+            2,
+            1.5,
+            1.5
+          ]
+        },
+        {
+          "id": "heavy_duty",
+          "label": "Heavy-duty generator",
+          "subtitle": "Three times the generating capacity",
+          "factors": [
+            3,
+            3,
+            3,
+            2,
+            2
+          ]
+        },
+        {
+          "id": "race",
+          "label": "High-output generator",
+          "subtitle": "Four times the generating capacity",
+          "factors": [
+            4,
+            4,
+            4,
+            2.5,
+            2.5
+          ]
+        }
+      ]
+    },
+    {
+      "id": "hybrid_charge_power",
+      "label": "Charging power",
+      "group": "Electric drive",
+      "area": "engine",
+      "unit": "x",
+      "kind": "scale",
+      "slider": {"mapping": "linear", "abs_min": 5000, "abs_max": 200000, "factor": 0.001, "unit": "kW", "decimals": 0},
+      "file": "vehicle",
+      "pointers": ["/powertrain/components/[type=hybrid_control]/charge_power_w"],
+      "help": "Combustion-engine power requested while charging with the engine disconnected from the wheels. The controller chooses an efficient RPM and load that can produce this power. Generator, battery and engine limits can reduce the achievable power; battery charging power is lower because of generator losses and electric driving demand."
+    },
+    {
       "id": "ev_motor_output",
       "label": "Motor output",
       "group": "Electric drive",
@@ -428,11 +522,11 @@
       "insert_if_absent": {"array": "/controllers", "entry": {"id": "assists", "type": "electronics"}, "ref_key": "ref", "stock_label": "No assist unit"},
       "parts": [
         {"id": "assists_street", "label": "Street Assists", "path": "../../external/physics_sim/data/electronics/assist_unit_street.json", "detail": "Traction control: Off, On. No wing automation."},
-        {"id": "assists_sport", "label": "Sport Assists", "path": "../../external/physics_sim/data/electronics/assist_unit_sport.json", "detail": "Traction control: Off, On, Relaxed, Sport. No wing automation."},
-        {"id": "assists_racing", "label": "Racing Assists", "path": "../../external/physics_sim/data/electronics/assist_unit_racing.json", "detail": "Traction control: Off, On, Relaxed, Sport, Drift. Rear-wing automation."},
+        {"id": "assists_sport", "label": "Sport Assists", "path": "../../external/physics_sim/data/electronics/assist_unit_sport.json", "detail": "Traction control: Off, On, Relaxed, Sport. No wing automation. Launch control for combustion engines with manual or dual-clutch gearboxes."},
+        {"id": "assists_racing", "label": "Racing Assists", "path": "../../external/physics_sim/data/electronics/assist_unit_racing.json", "detail": "Traction control: Off, On, Relaxed, Sport, Drift. Rear-wing automation. Launch control for combustion engines with manual or dual-clutch gearboxes."},
         {"id": "assists_street_abs_esc", "label": "Street Assists + ABS/ESC", "path": "../electronics/assist_unit_street_abs_esc.json", "detail": "Traction control: Off, On. ABS, and stability control Off/On/Sport."},
-        {"id": "assists_sport_abs_esc", "label": "Sport Assists + ABS/ESC", "path": "../electronics/assist_unit_sport_abs_esc.json", "detail": "Traction control: Off, On, Relaxed, Sport. ABS, and stability control Off/On/Sport."},
-        {"id": "assists_racing_abs_esc", "label": "Racing Assists + ABS/ESC", "path": "../electronics/assist_unit_racing_abs_esc.json", "detail": "Traction control: Off, On, Relaxed, Sport, Drift. Rear-wing automation. ABS, and stability control Off/On/Sport."},
+        {"id": "assists_sport_abs_esc", "label": "Sport Assists + ABS/ESC", "path": "../electronics/assist_unit_sport_abs_esc.json", "detail": "Traction control: Off, On, Relaxed, Sport. ABS, and stability control Off/On/Sport. Launch control for combustion engines with manual or dual-clutch gearboxes."},
+        {"id": "assists_racing_abs_esc", "label": "Racing Assists + ABS/ESC", "path": "../electronics/assist_unit_racing_abs_esc.json", "detail": "Traction control: Off, On, Relaxed, Sport, Drift. Rear-wing automation. ABS, and stability control Off/On/Sport. Launch control for combustion engines with manual or dual-clutch gearboxes."},
         {"id": "assists_abs", "label": "ABS only", "path": "../electronics/assist_unit_abs.json", "detail": "Anti-lock braking. No stability control, no traction-control unit."},
         {"id": "assists_abs_esc", "label": "ABS + ESC", "path": "../../external/physics_sim/data/electronics/assist_unit_abs_esc.json", "detail": "Anti-lock braking, and stability control Off/On/Sport. No traction-control unit."},
         {"id": "assists_electric_abs_esc", "label": "Electric Assists + ABS/ESC", "path": "../electronics/assist_unit_electric_abs_esc.json", "detail": "Traction control: Off, On, Relaxed, Sport, Drift. ABS, and stability control Off/On/Sport."}
