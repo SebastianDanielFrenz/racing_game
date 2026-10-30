@@ -11,6 +11,7 @@
 #include "g2m/world/height_sampler.h"
 #include "g2m/world/building_mesh.h"
 #include "g2m/world/road_paint.h"
+#include "rg/flat_tangent.h"
 
 #include <godot_cpp/classes/rendering_server.hpp>
 #include <godot_cpp/classes/world3d.hpp>
@@ -19,15 +20,19 @@
 #include <godot_cpp/variant/array.hpp>
 #include <godot_cpp/variant/color.hpp>
 #include <godot_cpp/variant/packed_color_array.hpp>
+#include <godot_cpp/variant/packed_float32_array.hpp>
 #include <godot_cpp/variant/packed_int32_array.hpp>
 #include <godot_cpp/variant/packed_vector3_array.hpp>
 #include <godot_cpp/variant/packed_vector2_array.hpp>
 
 #include <algorithm>
+#include <array>
 #include <chrono>
 #include <cmath>
 #include <cstdlib>
+#include <cstring>
 #include <string>
+#include <vector>
 
 using godot::D_METHOD;
 using godot::String;
@@ -331,7 +336,7 @@ godot::Dictionary RgTerrainView::get_building_tile(int x,int y,double min_height
 godot::Dictionary RgTerrainView::get_building_mesh_tile(int x,int y,double min_height,double fallback,double storey,double skyline) {
     godot::Dictionary out;if(!terrain_)return out;
     const g2m::TileKey key{terrain_->frame().zone(),2,x,y};
-    godot::PackedVector3Array points[2][8],normals[2][8];godot::PackedColorArray colours[2][8];godot::PackedVector2Array uv[2][8];
+    godot::PackedVector3Array points[2][8],normals[2][8];godot::PackedColorArray colours[2][8];godot::PackedVector2Array uv[2][8];std::vector<float> tangents[2][8];
     std::int64_t unsupported=0,window_count=0,building_count=0,doors=0,chimneys=0,pitched=0,directed=0,directed_supported=0;
     g2m::world::BuildingMeshOptions options;options.origin_e=static_cast<double>(x)*1024;options.origin_n=static_cast<double>(y)*1024;options.storey_height_m=storey;
     for(const auto& b:terrain_->buildings_tile(key,min_height,fallback,storey)) {
@@ -339,16 +344,26 @@ godot::Dictionary RgTerrainView::get_building_mesh_tile(int x,int y,double min_h
         const auto mesh=g2m::world::build_building_mesh(b,options);unsupported+=mesh.unsupported_roof;window_count+=mesh.windows;doors+=mesh.doors;chimneys+=mesh.chimneys;pitched+=mesh.roof!=g2m::world::RoofForm::Flat;++building_count;
         if(!b.roof_direction.empty()){++directed;if(!mesh.unsupported_roof&&mesh.roof!=g2m::world::RoofForm::Flat)++directed_supported;}
         // Native CCW -> Godot clockwise; E/N/up -> -N/up/-E.
-        for(std::size_t i=0;i+2<mesh.vertices.size();i+=3)for(const auto j:{i,i+2,i+1}){
-            const auto& v=mesh.vertices[j];const auto material=static_cast<unsigned>(v.material);
-            points[tier][material].append({-v.position[1],v.position[2],-v.position[0]});
-            normals[tier][material].append({-v.normal[1],v.normal[2],-v.normal[0]});colours[tier][material].append({v.colour[0],v.colour[1],v.colour[2]});
-            uv[tier][material].append({v.uv[0],v.uv[1]});
+        const auto to_godot=[](const std::array<float,3>& p){return std::array<float,3>{-p[1],p[2],-p[0]};};
+        for(std::size_t i=0;i+2<mesh.vertices.size();i+=3){
+            const auto& a=mesh.vertices[i];const auto& b=mesh.vertices[i+2];const auto& c=mesh.vertices[i+1];
+            const rg::UvGradient gradient=rg::triangle_uv_gradient(to_godot(a.position),to_godot(b.position),to_godot(c.position),a.uv,b.uv,c.uv);
+            for(const auto* vertex:{&a,&b,&c}){
+                const auto& v=*vertex;const auto material=static_cast<unsigned>(v.material);
+                const auto p=to_godot(v.position);const auto n=to_godot(v.normal);
+                points[tier][material].append({p[0],p[1],p[2]});
+                normals[tier][material].append({n[0],n[1],n[2]});colours[tier][material].append({v.colour[0],v.colour[1],v.colour[2]});
+                uv[tier][material].append({v.uv[0],v.uv[1]});
+                const rg::VertexTangent tangent=rg::vertex_tangent(gradient,n);
+                tangents[tier][material].insert(tangents[tier][material].end(),{tangent.tangent[0],tangent.tangent[1],tangent.tangent[2],tangent.sign});
+            }
         }
     }
     for(int tier=0;tier<2;++tier){godot::Array surfaces;
         for(int material=0;material<8;++material){if(points[tier][material].is_empty())continue;
-            godot::Array arrays;arrays.append(points[tier][material]);arrays.append(normals[tier][material]);arrays.append(colours[tier][material]);arrays.append(uv[tier][material]);
+            godot::PackedFloat32Array packed_tangents;packed_tangents.resize(static_cast<std::int64_t>(tangents[tier][material].size()));
+            std::memcpy(packed_tangents.ptrw(),tangents[tier][material].data(),tangents[tier][material].size()*sizeof(float));
+            godot::Array arrays;arrays.append(points[tier][material]);arrays.append(normals[tier][material]);arrays.append(colours[tier][material]);arrays.append(uv[tier][material]);arrays.append(packed_tangents);
             godot::Dictionary surface;surface["material"]=material;surface["arrays"]=arrays;surfaces.append(surface);}
         out[tier==0?"near":"tall"]=surfaces;}
     out["origin_session"]=godot::Vector3(options.origin_e-terrain_->frame().e0_m(),options.origin_n-terrain_->frame().n0_m(),0);

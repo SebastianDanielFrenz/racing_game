@@ -37,6 +37,7 @@ add_executable(rg_unit_tests
   test_route_standalone_paths.cpp
   test_surface_layers.cpp
   test_fixed_rate_loop.cpp
+  test_flat_tangent.cpp
   test_terrain_view_streamer.cpp
   test_startup_watch.cpp
   test_render_focus.cpp
