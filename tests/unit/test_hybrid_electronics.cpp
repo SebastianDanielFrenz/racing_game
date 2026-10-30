@@ -1,9 +1,12 @@
 // test_hybrid_electronics.cpp - a hybrid conversion keeps the car's own electronics (PR #42 ready-gate). The conversion
 // used to drop every electronics controller but the parking brake and add the hybrid assist unit; with an ABS/ESC unit
 // on the car that left two units ("at most one assist_unit per vehicle") or no ABS at all. Now exactly one unit remains:
-// the car's own with the hybrid unit's traction control, no launch control, ABS/ESC/aero untouched.
+// the car's own with the hybrid unit's traction control, fitted capabilities and hybrid-tuned offered TC modes.
 //   rg_unit_tests "[hybrid_electronics]"
 #include "rg/engine_store.h"
+#include "rg/gearbox_catalog.h"
+#include "../../external/physics_sim/core/src/drivetrain/electric_drive.h"
+#include <catch2/catch_approx.hpp>
 #include "rg/garage.h"
 #include "rg/session.h"
 #include "rg/vehicle_catalog.h"
@@ -48,6 +51,9 @@ struct Fixture {
         auto store = rg::EngineStore::open(kRoot + "/data/engines/engine_catalog.json", kRoot, "", &err);
         REQUIRE(store != nullptr);
         ctx.engines = std::shared_ptr<const rg::EngineStore>(std::move(store));
+        auto boxes = rg::GearboxCatalog::open(kRoot + "/data/gearboxes/gearbox_catalog.json", kRoot, &err);
+        REQUIRE(boxes);
+        ctx.gearboxes = std::shared_ptr<const rg::GearboxCatalog>(std::move(boxes));
     }
     const rg::CatalogEntry& entry(const std::string& id) const {
         const rg::CatalogEntry* e = catalog.find(id);
@@ -81,7 +87,7 @@ ps::vehicle::AssistUnitDesc hybrid_unit() {
 }
 } // namespace
 
-TEST_CASE("hybrid conversions keep the car's ABS, ESC and aero control and drop its launch control", "[hybrid_electronics][powertrain_swap]") {
+TEST_CASE("hybrid conversions keep the car's ABS, ESC, aero and launch capabilities", "[hybrid_electronics][powertrain_swap]") {
     Fixture f;
     const auto hybrid = hybrid_unit();
     REQUIRE(hybrid.has_traction_control);
@@ -105,9 +111,9 @@ TEST_CASE("hybrid conversions keep the car's ABS, ESC and aero control and drop 
             CHECK(u.abs.has_value());
             CHECK(u.esc.has_value());
             CHECK(u.aero_control.has_value() == own.assist_unit->aero_control.has_value());
-            CHECK_FALSE(u.launch_control.has_value());
-            CHECK(u.has_traction_control);
-            CHECK(u.traction_control.modes_bits == hybrid.traction_control.modes_bits);
+            CHECK(u.launch_control.has_value() == own.assist_unit->launch_control.has_value());
+            CHECK(u.has_traction_control == own.assist_unit->has_traction_control);
+            CHECK(u.traction_control.modes_bits == own.assist_unit->traction_control.modes_bits);
             REQUIRE(d.drive_modes.has_value());
             CHECK(d.drive_modes->modes_bits == 31); // eco normal sport racing electric; the hybrid modes replace the car's own
         }
@@ -147,7 +153,7 @@ TEST_CASE("a hybrid setup survives save and reload and returning to ICE restores
         const auto hybrid = load_desc(a.vehicle_path);
         REQUIRE(hybrid.assist_unit.has_value());
         CHECK(hybrid.assist_unit->abs.has_value());
-        CHECK_FALSE(hybrid.assist_unit->launch_control.has_value());
+        CHECK(hybrid.assist_unit->launch_control.has_value() == own.assist_unit->launch_control.has_value());
         // back to ICE
         rg::ScopedWorkDir dir_b(f.ctx.work_root, "t_ice");
         const auto b = rg::materialise_setup(e, f.table, f.ctx, setup_of(car, "ice"), dir_b.path());
@@ -242,7 +248,7 @@ TEST_CASE("a hybrid-converted car's ABS keeps the wheels from locking and assist
         const Stop on = hybrid_stop(f, car, "hybrid_battery", -1, 100);
         REQUIRE(on.fitted_abs);
         CHECK(on.fitted_esc);
-        CHECK_FALSE(on.fitted_launch);
+        CHECK(on.fitted_launch == load_desc(f.entry(car).vehicle_path).assist_unit->launch_control.has_value());
         CHECK(on.fitted_aero == (std::string(car) == "car_hyper"));
         CHECK(on.abs_channel == 1.0);
         CHECK(on.lock_s < 0.05);
@@ -250,5 +256,116 @@ TEST_CASE("a hybrid-converted car's ABS keeps the wheels from locking and assist
         const Stop off = hybrid_stop(f, car, "hybrid_battery", 0.0, 100);
         CHECK(off.lock_s > 1.0);
         CHECK(on.distance_m < 0.95 * off.distance_m);
+    }
+}
+
+TEST_CASE("hybrid assist upgrades preserve the chosen grade and work without factory electronics", "[hybrid_electronics][driver_assist_upgrades]") {
+    Fixture f;
+    for (const char* car : {"car_hyper", "car_runabout"}) {
+        for (const char* unit : {"assists_street_abs_esc", "assists_racing_abs_esc", "assists_abs"}) {
+            INFO(car << " / " << unit);
+            auto setup = setup_of(car, "hybrid_battery");
+            setup.values["assist_unit"] = std::string(unit);
+            rg::ScopedWorkDir dir(f.ctx.work_root, "assist_choices");
+            const auto m = rg::materialise_setup(f.entry(car), f.table, f.ctx, setup, dir.path());
+            INFO(m.error); REQUIRE(m.ok);
+            const auto d = load_desc(m.vehicle_path);
+            REQUIRE(d.assist_unit);
+            CHECK(d.assist_unit->launch_control.has_value() == (std::string(unit) == "assists_racing_abs_esc"));
+            CHECK(d.assist_unit->has_traction_control == (std::string(unit) != "assists_abs"));
+            CHECK(d.assist_unit->abs.has_value());
+            if (std::string(unit) == "assists_street_abs_esc")
+                CHECK(d.assist_unit->traction_control.modes_bits == 3);
+        }
+    }
+}
+
+TEST_CASE("launch control holds electric traction and caps torque after the power corner", "[hybrid_electronics][driver_assist_upgrades]") {
+    using namespace ps::drivetrain;
+    NetworkBuilder builder;
+    const auto shaft = builder.add_node(0.25);
+    auto net = builder.build("hybrid-launch-motor");
+    BatteryDesc bd;
+    Battery battery(bd);
+    ElectricMotorDesc md;
+    md.peak_torque_nm = 1200;
+    md.max_power_w = 600000;
+    md.max_rpm = 20000;
+    md.inertia_kgm2 = 0.25;
+    ElectricMotor motor(shaft, md, battery);
+    ComponentSubstepCtx ctx;
+    ctx.h = 1.0 / 960;
+    ctx.electric_throttle = 1;
+    ctx.electric_direction = 1;
+    for (double omega : {200.0, 1500.0}) {
+        net.set_omega(shaft, omega);
+        ctx.launch_hold_clutch = false;
+        ctx.launch_throttle_ceiling = 1;
+        const double full = motor.drive_claim_j(ctx, net);
+        REQUIRE(full > 0);
+        ctx.launch_throttle_ceiling = 0.25;
+        CHECK(motor.drive_claim_j(ctx, net) == Catch::Approx(full * 0.25).epsilon(0.02));
+        ctx.launch_hold_clutch = true;
+        CHECK(motor.drive_claim_j(ctx, net) == 0);
+    }
+    md.crank_assist = true;
+    ElectricMotor starter(shaft, md, battery);
+    ctx.electric_charge = -1;
+    ctx.launch_throttle_ceiling = 1;
+    CHECK(starter.drive_claim_j(ctx, net) > 0); // launch staging cannot prevent ICE start
+}
+
+TEST_CASE("hybrid hypercar Launch Control arms and launches with manual and DCT gearboxes", "[hybrid_electronics][driver_assist_launch][long]") {
+    Fixture f;
+    for (const std::string& box : {std::string{}, std::string{"hyper_7dct"}}) {
+        INFO(box);
+        auto setup = setup_of("car_hyper", "hybrid_battery");
+        if (!box.empty()) setup.values["gearbox_install"] = box;
+        rg::ScopedWorkDir dir(f.ctx.work_root, "hybrid_launch");
+        const auto m = rg::materialise_setup(f.entry("car_hyper"), f.table, f.ctx, setup, dir.path());
+        INFO(m.error); REQUIRE(m.ok);
+        const auto& e = f.entry("car_hyper");
+        rg::SessionConfig c;
+        c.vehicle_json_path = m.vehicle_path;
+        c.surface_table_path = kRoot + "/data/surfaces/surfaces.json";
+        c.engine_map_cache_dir = f.ctx.engine_map_cache_dir;
+        c.chassis_mass_kg = e.chassis.mass_kg + m.compiled.chassis_mass_delta_kg;
+        c.chassis_half_extents = ps::Vec3{e.chassis.half_extents[0], e.chassis.half_extents[1], e.chassis.half_extents[2]};
+        c.chassis_z_m = e.chassis.spawn_z_m;
+        rg::Session ses(c);
+        ses.set_control("electric.ready", 1);
+        ses.set_control("ignition", 1);
+        ses.set_control("assist.auto_clutch", 1);
+        ses.set_control("assist.auto_shift", 1);
+        ses.set_control("gear_request", 99);
+        ses.set_control("assist.drive_mode", 2);
+        ses.set_control("brake", 1);
+        auto tick = [&] { while (!ses.try_step()) {} };
+        auto pt = [&]() -> const ps::drivetrain::PowertrainSnapshot& { return ses.world().powertrain_state(ses.vehicle_id()); };
+        for (int i = 0; i < 720; ++i) tick();
+        CHECK((pt().assist_fitted_bits & (1u << 4)) != 0);
+        INFO("lc policy=" << ses.vehicle_desc().drive_modes->params[2].launch_control_allowed
+             << " default=" << ses.vehicle_desc().drive_modes->params[2].launch_control_default.value_or(false));
+        ses.set_control("assist.drive_mode", 1);
+        tick();
+        ses.set_control("assist.drive_mode", 2);
+        for (int i = 0; i < 24; ++i) tick();
+        CHECK(ses.get_control("assist.launch_control") == 1);
+        ses.set_control("throttle", 1);
+        bool armed = false;
+        for (int i = 0; i < 960; ++i) { tick(); armed |= pt().launch_phase == 1; }
+        INFO("mode=" << pt().drive_mode_effective << " lc=" << ses.get_control("assist.launch_control")
+             << " auto=" << ses.get_control("assist.auto_clutch") << " engine=" << int(pt().engine_state)
+             << " rpm=" << pt().engine_rpm << " phase=" << int(pt().launch_phase)
+             << " speed=" << ses.world().get_motion(ses.chassis_body()).linear.length());
+        REQUIRE(armed);
+        ses.set_control("brake", 0);
+        bool launching = false;
+        for (int i = 0; i < 480; ++i) { tick(); launching |= pt().launch_phase == 2 || pt().launch_phase == 3; }
+        CHECK(launching);
+        CHECK(ses.world().get_motion(ses.chassis_body()).linear.length() > 1);
+        ses.set_control("assist.drive_mode", 0);
+        for (int i = 0; i < 24; ++i) tick();
+        CHECK((pt().assist_active_bits & (1u << 4)) == 0);
     }
 }
