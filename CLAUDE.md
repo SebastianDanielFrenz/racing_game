@@ -29,6 +29,7 @@ racing_game/
       terrain_mode.h                  rg::TerrainModeConfig (SessionConfig::terrain), rg::HeightTileSharedFetch (g2m::phys::IHeightTileFetch over a HeightTileFetchFn - WorldTerrain::height_tile_shared), make_terrain_mode(WorldConfig, WorldTerrain) + a pure (WorldConfig, SessionFrame, fetch) overload
       drive_script.h                  rg::DriveScript (header-only, Godot-free): tick-indexed sample-and-hold control events in DRIVE ticks (since spawn) plus an optional per-tick controller hook (the R5 autopilot's extension point); Session::set_drive_script
       fixed_rate_loop.h               rg::FixedRateLoop: fixed-rate wall-clock loop around a bool try_step() (frozen tick resyncs the deadline - no catch-up burst), LoopStats; runs Session::start()'s ticks
+      flat_tangent.h                  rg::triangle_uv_gradient, rg::vertex_tangent: tangents of an unindexed mesh from each triangle's edges and UVs (RgTerrainView::get_building_mesh_tile; game/scripts/terrain_port_test.gd cross-checks against Godot's MikkTSpace)
       world_config.h                  rg::WorldConfig, rg::load_world_config() - see "World config" below
       render_focus.h                  (2026-10-13, engine-neutral) rg::RenderFocusTracker/RenderFocusParams/rig_leads_focus: velocity-led render focus p + v_hat*min(|v|*1 s, 150 m), smoothed (tau 0.35 s); applied only while the active camera follows the car (chase/bumper/cockpit/orbit/xr_cockpit)
       terrain_stream.h                (2026-10-13) upload-throughput helpers: adaptive_upload_budget_ms (0.8 ms up to ~3 ms with the backlog), chunk_time_to_reach_s/sort_adds_by_urgency (finest level first, then time to reach), lod_coverage_ahead/grid_coverage_ahead (l0..l3_ahead_m instrumentation), chunk_surface_height/SampleWindow (visible-vs-physics ground check), reselect_distance_for_speed (reselect 64 m at >= 100 m/s)
@@ -636,7 +637,7 @@ PhysicsTileGrid` (the config's `SessionFrame`, 256 samples), a shared
 configs: workers block in the shared derive pool, so a cold gate wait scales with them, vault PHYS/RG stream ticket) over
 `TerrainModeConfig::fetch`, a `PhysicsTerrainStreamer` (default
 `StreamerConfig`: gate r_tm+1, prefetch r_tm+2, look-ahead `physics.lookahead_s`/
-`lookahead_cap_m` = 3 s / 510 m) and a
+`lookahead_cap_m` = 6 s / 1020 m) and a
 `g2m::ps_bridge::G2mTerrainSource` installed via `World::
 set_terrain_source(source, make_terrain_config(physics.radius_m,
 physics.max_tile_fills_per_tick))` (pool 49 at r = 400 m, one interest
