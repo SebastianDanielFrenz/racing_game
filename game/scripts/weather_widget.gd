@@ -10,6 +10,7 @@ extends CanvasLayer
 # air_temp_c (no world loaded).
 
 const BG := Color(0.08, 0.09, 0.11, 1.0)
+const RIGHT_MARGIN := 16.0
 var sky_controller: Node
 var simulation: Node
 
@@ -75,11 +76,17 @@ func _ready() -> void:
 func _top_right(control: Control, top: float) -> void:
 	control.anchor_left = 1.0
 	control.anchor_right = 1.0
-	control.offset_left = -16.0
-	control.offset_right = -16.0
+	control.offset_left = -RIGHT_MARGIN
+	control.offset_right = -RIGHT_MARGIN
 	control.offset_top = top
 	control.offset_bottom = top
 	control.grow_horizontal = Control.GROW_DIRECTION_BEGIN
+
+# navigation_hud.gd makes room for the minimap in the same corner.
+func set_right_margin(margin: float) -> void:
+	for control: Control in [_panel, _menu]:
+		control.offset_left = -margin
+		control.offset_right = -margin
 
 func _style(color: Color) -> StyleBoxFlat:
 	var box := StyleBoxFlat.new()
