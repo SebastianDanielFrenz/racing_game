@@ -7,6 +7,8 @@ extends CanvasLayer
 # main.gd only creates it. A destination comes from the F10 address search
 # ("Set as route destination") or set_destination().
 
+const WEATHER_CLEARANCE := 244.0 # weather_widget.gd moves this far from the screen edge, left of the minimap
+
 var main: Node
 var config_path := ""
 var _nav: Node
@@ -58,6 +60,8 @@ func set_destination(point: Vector2, label: String = "") -> void:
 func _set_shown(shown: bool) -> void:
 	_minimap.visible = shown
 	_label.visible = shown
+	if main != null and main.get("_weather_widget") != null:
+		main._weather_widget.set_right_margin(WEATHER_CLEARANCE if shown else main._weather_widget.RIGHT_MARGIN)
 
 func _plan() -> void:
 	if not _attached or _destination == null:
@@ -96,12 +100,18 @@ func _process(delta: float) -> void:
 		_minimap.radius_m = float(_nav.get_minimap_radius_m())
 		_set_shown(true)
 		_plan()
-	_minimap.set_car(car, float(pose.yaw_deg))
+	var focus := car
+	var drone: Dictionary = main._simulation.get_fpv_state()
+	if drone.is_empty():
+		_minimap.set_car(car, float(pose.yaw_deg))
+	else:
+		focus = _drone_session_xy(drone)
+		_minimap.set_drone(focus, rad_to_deg(float(drone.yaw_rad)), car, float(pose.yaw_deg))
 	_guidance_wait_s -= delta
 	if _guidance_wait_s > 0.0:
 		return
 	_guidance_wait_s = 0.1
-	_nav.request_map(car.x, car.y, _minimap.radius_m)
+	_nav.request_map(focus.x, focus.y, _minimap.radius_m)
 	if _nav.poll_map():
 		_minimap.set_map(_nav.get_map())
 	if _nav.poll_route():
@@ -109,6 +119,12 @@ func _process(delta: float) -> void:
 		_minimap.set_route(route.get("polyline", PackedVector2Array()))
 		print("RG_ROUTE %s length_m=%.0f duration_s=%.0f maneuvers=%d %s" % [route.status, float(route.length_m), float(route.duration_s), route.maneuvers.size(), route.message])
 	_label.text = _guidance_text(_nav.get_progress(car.x, car.y))
+
+# get_fpv_state's position is relative to the render origin, in Godot axes: session x = -z, session y = -x.
+func _drone_session_xy(drone: Dictionary) -> Vector2:
+	var origin: Vector3 = main._simulation.get_render_origin_session()
+	var position: Vector3 = drone.position
+	return Vector2(origin.x - position.z, origin.y - position.x)
 
 func _guidance_text(progress: Dictionary) -> String:
 	if not bool(progress.get("valid", false)):
