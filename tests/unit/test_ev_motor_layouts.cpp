@@ -807,3 +807,45 @@ TEST_CASE("ev motors: an old ev_motor_scale of 2.0 on a hybrid loads as Motor ou
     CHECK(component_of(b.vehicle, "conversion_motor")->at("max_power_w").get<double>() == Approx(200000.0));
     CHECK(component_of(b.vehicle, "conversion_battery")->at("max_discharge_w").get<double>() == Approx(300000.0));
 }
+
+TEST_CASE("Hybrid charging power is a persisted tuning setting in kW", "[vehicle_setup][hybrid_charge]") {
+    Fixture f;
+    const auto setup = setup_of("car_hyper_n2o", {{"powertrain_install", std::string("hybrid_battery")}});
+    const auto hybrid = rg::build_setup_model(f.entry("car_hyper_n2o"), f.table, f.ctx, &setup);
+    const auto* option = view_of(hybrid, "hybrid_charge_power");
+    REQUIRE(option != nullptr);
+    REQUIRE(option->available);
+    REQUIRE(option->def.slider.has_value());
+    CHECK(option->def.slider->unit == "kW");
+    const Built built = build(f, "car_hyper_n2o", {{"powertrain_install", std::string("hybrid_battery")}, {"hybrid_charge_power", 0.5}});
+    REQUIRE(built.m.ok);
+    const auto vehicle = read_json(built.m.vehicle_path);
+    bool found = false;
+    for (const auto& c : vehicle.at("powertrain").at("components")) if (c.value("type", "") == "hybrid_control") {
+        CHECK(c.at("charge_power_w").get<double>() == Approx(25000));found = true;
+    }
+    CHECK(found);
+    const auto pure_ev = rg::build_setup_model(f.entry("car_electric"), f.table, f.ctx);
+    const auto* ev_option = view_of(pure_ev, "hybrid_charge_power");
+    REQUIRE(ev_option != nullptr);CHECK_FALSE(ev_option->available);
+}
+
+TEST_CASE("Hybrid generator hardware upgrades capacity and mass separately from the charge target", "[vehicle_setup][hybrid_charge]") {
+    Fixture f;
+    const auto stock=build(f,"car_hyper_n2o",{{"powertrain_install",std::string("hybrid_battery")}});
+    const auto upgraded=build(f,"car_hyper_n2o",{{"powertrain_install",std::string("hybrid_battery")},
+        {"hybrid_generator",std::string("race")},{"hybrid_charge_power",2.0}});
+    bool found=false;
+    for(const auto& c:upgraded.vehicle.at("powertrain").at("components")) {
+        if(c.value("type","")=="electric_motor"&&c.value("crank_assist",false)) {
+            CHECK(c.at("max_power_w").get<double>()==Approx(200000));
+            CHECK(c.at("regen_torque_nm").get<double>()==Approx(800));
+            CHECK(c.at("mass_kg").get<double>()==Approx(75));found=true;
+        }
+        if(c.value("type","")=="hybrid_control")CHECK(c.at("charge_power_w").get<double>()==Approx(100000));
+    }
+    CHECK(found);
+    std::string error;
+    const auto saved=rg::parse_setup(R"({"format":"racing_game.vehicle_setup/1","vehicle":"car_hyper_n2o","options":{"hybrid_generator":"race","hybrid_charge_power":2.0}})",f.table,"saved hybrid",&error);
+    INFO(error);REQUIRE(saved.has_value());CHECK(std::get<double>(saved->values.at("hybrid_charge_power"))==2.0);
+}
