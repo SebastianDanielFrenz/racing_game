@@ -27,8 +27,9 @@ What the importer does:
 - vehicle file: a copy of the base vehicle file (`cars.json` `vehicle.base`) with the wheel positions of the model
   (wheelbase scaled keeping the base car's CoG fraction, track from the model) and a tyre whose radius matches the
   modelled wheel. The physics follows the art here because only four numbers change; the art is untouched.
-- rig `wheel_width_scale: "rig"`: `vehicle_visual.gd` / `garage_scene.gd` scale a wheel by
-  physics tyre width / the rig wheel's `tyre_width` (the stock tyre), so the stock tyre shows the art unscaled.
+- `vehicle_visual.gd` / `garage_scene.gd` scale a wheel of any rig by physics tyre width / the rig wheel's
+  `tyre_width` (the stock tyre), or its `width` where the rig has no `tyre_width`, so the stock tyre shows the art
+  unscaled. The rig key `wheel_width_scale: "rig"` is still written but no longer read.
 
 Checks (exit 1 on failure): four wheels, every pivot within 1 cm of its wheel's centre measured in the written
 file, round wheels, wheel bottoms on the ground plane (1 cm), attribution, licence and source hash in the asset,
