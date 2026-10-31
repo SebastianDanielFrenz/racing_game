@@ -19,7 +19,7 @@ What the importer does:
 - wheels: nodes named wheel/tire/tyre/rim (corner from the position), else geometric clustering (connected
   components that are round in side view, touch the ground and are narrower than tall, one per corner, plus every
   component inside it; such meshes are split into wheel and body meshes); each wheel goes under
-  `susp_<C>` / `steer_<C>` (front) / `wheel_<C>` with all three pivots at the wheel's bbox centre; brake parts
+  `susp_<C>` / `steer_<C>` (front) / `wheel_<C>` with all three pivots at the wheel's bbox centre (a model without `susp_<C>`, such as a tractor's rigid axles, is lined up by its wheel centres and the wheel carries the travel); brake parts
   (`brake_parts` regex, calipers) under `steer_<C>` / `susp_<C>` so they steer but do not spin;
 - baked shadow / ground planes are dropped; materials, textures and vertex data are reused byte for byte;
 - `asset.copyright` / `asset.extras` keep the original credit plus the source file's SHA-256 and the modification
