@@ -61,7 +61,7 @@ var _wing_flap: Node3D
 var _wing_lift: Node3D
 var _wing_rest_rotation := Vector3.ZERO
 var _wing_rest_position := Vector3.ZERO
-var _rig_wheel_width := {} # wheel node name -> modelled width (m), for rigs with "wheel_width_scale": "rig"
+var _rig_wheel_width := {} # wheel node name -> modelled width (m), from the rig
 
 func _ready() -> void:
 	_load_model()
@@ -181,7 +181,7 @@ func _load_model() -> void:
 	var rig_path := model_absolute_path.get_basename() + ".rig.json"
 	if FileAccess.file_exists(rig_path):
 		var rig_data = JSON.parse_string(FileAccess.get_file_as_string(rig_path))
-		if rig_data is Dictionary and rig_data.get("wheel_width_scale", "") == "rig":
+		if rig_data is Dictionary:
 			for node in rig_data.get("nodes", []):
 				if node.has("wheel"):
 					_rig_wheel_width[node["name"]] = float(node["wheel"].get("tyre_width", node["wheel"]["width"]))
