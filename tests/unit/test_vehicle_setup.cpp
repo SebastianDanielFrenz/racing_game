@@ -432,7 +432,12 @@ static void check_setup_touching_each_option(Fixture& f, const std::vector<std::
             // (test_engine_swap.cpp: every engine on every car, fuel kept or changed).
             if (!o.def.catalog.empty()) continue;
             switch (o.def.kind) {
-                case rg::OptionKind::Scale: s.values[o.def.id] = o.max; ++touched; break;
+                // "Spray from" at its maximum would equal "Spray up to" at its maximum (both 15000 rpm), which the
+                // controller rightly rejects (test_nitrous_tuning.cpp); it is touched at its minimum instead.
+                case rg::OptionKind::Scale:
+                    s.values[o.def.id] = o.def.id == "nitrous_rpm_min" ? o.min : o.max;
+                    ++touched;
+                    break;
                 case rg::OptionKind::ScaleList:
                     s.values[o.def.id] = std::vector<double>(static_cast<std::size_t>(o.list_size), 1.05);
                     ++touched;
@@ -619,6 +624,48 @@ TEST_CASE("engine calibration changes real parameters and rejects excessive limi
         setup_of("car_hyper", {{"engine_throttle_response", 0.0}})).ok);
 }
 
+
+// Owner 2026-10-23: a rev limit above the maps' rpm range must give new maps, not the old top node's values held above it.
+TEST_CASE("rev limit above the map grid extends the rpm axis (new maps), at most 8 added nodes", "[engine_setup][garage]") {
+    Fixture f;
+    const auto& e = f.entry("car_hyper");
+    auto grid_of = [&](double scale) {
+        rg::ScopedWorkDir dir(f.ctx.work_root, "t_rpmgrid");
+        const rg::MaterialisedSetup m = rg::materialise_setup(e, f.table, f.ctx, setup_of("car_hyper", {{"engine_rev_limit", scale}}), dir.path());
+        INFO(m.error);
+        REQUIRE(m.ok);
+        ps::io::EngineMapOptions options;
+        options.generate = false; // validate only: the axis is what is checked, not the generated maps
+        const ps::vehicle::VehicleDesc d = rg::load_vehicle(m.vehicle_path, options);
+        for (const auto& c : d.powertrain.components)
+            if (const auto* s = std::get_if<ps::drivetrain::SimulatedEngineDesc>(&c.params)) {
+                REQUIRE(s->cycle.has_value());
+                return std::vector<double>(s->cycle->grid_rpm.begin(), s->cycle->grid_rpm.end());
+            }
+        FAIL("car_hyper has no simulated engine");
+        return std::vector<double>{};
+    };
+    const std::vector<double> stock{950, 2000, 3000, 4000, 5000, 6000, 7000, 7500, 8000, 8250};
+    CHECK(grid_of(0.9) == stock); // inside the grid: unchanged, the cached maps stay valid
+    // 9075 rpm: the 250 rpm top spacing continued, the limit as the top node.
+    auto g = grid_of(1.1);
+    std::vector<double> want = stock;
+    for (double r : {8500.0, 8750.0, 9075.0}) want.push_back(r);
+    REQUIRE(g.size() == want.size());
+    for (std::size_t i = 0; i < g.size(); ++i) CHECK(g[i] == Catch::Approx(want[i]).epsilon(1e-12));
+    // 20000 rpm: the spacing widens so at most 8 nodes are added; strictly increasing, the limit on top.
+    g = grid_of(20000.0 / 8250.0);
+    CHECK(g.size() <= stock.size() + 8);
+    CHECK(g.back() == Catch::Approx(20000.0).epsilon(1e-12));
+    for (std::size_t i = 1; i < g.size(); ++i) CHECK(g[i] > g[i - 1]);
+    // The patch carries the axis only when it was extended.
+    const auto in = rg::compile_setup(e, f.table, f.ctx, setup_of("car_hyper", {{"engine_rev_limit", 0.9}}));
+    const auto out = rg::compile_setup(e, f.table, f.ctx, setup_of("car_hyper", {{"engine_rev_limit", 1.1}}));
+    REQUIRE(in.ok);
+    REQUIRE(out.ok);
+    CHECK(in.patches.at("engine:hyper_v8_one1_audio").find("grid_rpm") == std::string::npos);
+    CHECK(out.patches.at("engine:hyper_v8_one1_audio").find("grid_rpm") != std::string::npos);
+}
 
 TEST_CASE("engine parts: swaps tune the newly installed engine and keep other references", "[engine_parts][garage]") {
     Fixture f;
