@@ -568,6 +568,11 @@ func _build_scene(user_args: PackedStringArray) -> void:
 	var fpv_err: String = _simulation.set_fpv_drone_config(fpv_config_path)
 	if fpv_err != "":
 		push_warning("fpv drone config: " + fpv_err + " (built-in defaults)")
+	# Towing (rg/trailer.h): the config, and the file the player's trailer is kept in between worlds and runs.
+	_apply_user_dir_flag(user_args)
+	var trailer_err: String = _simulation.set_trailer_config(ProjectSettings.globalize_path("res://../data/trailers/trailers.json"), _user_dir().path_join("trailer.json"))
+	if trailer_err != "":
+		push_warning("trailer config: " + trailer_err + " (no towing)")
 	add_child(_simulation)
 	if fetch_delay_ms > 0:
 		_simulation.set_fetch_delay_ms(fetch_delay_ms)
@@ -588,6 +593,10 @@ func _build_scene(user_args: PackedStringArray) -> void:
 	var truck_visual := preload("res://scripts/npc_truck.gd").new()
 	truck_visual.simulation = _simulation
 	add_child(truck_visual)
+	_trailer_visual = preload("res://scripts/trailer_visual.gd").new()
+	_trailer_visual.name = "TrailerVisual"
+	_trailer_visual.simulation = _simulation
+	add_child(_trailer_visual)
 	add_child(_input_map)
 	var traffic := preload("res://scripts/npc_traffic.gd").new()
 	_traffic_visual = traffic
@@ -1725,6 +1734,14 @@ func _process_body(delta: float) -> void:
 	var truck_presses: int = _input_map.consume_npc_truck()
 	if in_drive and world_state == "running" and get_tree().get_nodes_in_group("address_teleport_open").is_empty() and truck_presses > 0:
 		_simulation.request_npc_truck(not Input.is_key_pressed(KEY_SHIFT), 70.0)
+	# Towing: F6 hooks the standing trailer on / unhooks a coupled one, F7 brings the trailer / stands it up (Shift removes it).
+	var hook_presses: int = _input_map.consume_trailer_hook()
+	var bring_presses: int = _input_map.consume_trailer_spawn()
+	if in_drive and world_state == "running" and get_tree().get_nodes_in_group("address_teleport_open").is_empty():
+		if hook_presses > 0:
+			trailer_hook_toggle()
+		if bring_presses > 0:
+			trailer_bring(Input.is_key_pressed(KEY_SHIFT))
 	var camera_presses: int = _input_map.consume_cycle_camera()
 	var view_presses: int = _input_map.consume_cycle_view()
 	if in_drive and not _vr_active:
@@ -2568,3 +2585,31 @@ func _record_drive_diag_sample() -> void:
 		_write_owner_mark(finished)
 	while not _drive_diag_history.is_empty() and sim_t - float(_drive_diag_history[0].get("sim_time_s", sim_t)) > DRIVE_DIAG_HISTORY_S:
 		_drive_diag_history.pop_front()
+
+# --- towing (rg/trailer.h); the logic is rg_core's, these only turn keys into requests ---
+
+var _trailer_visual: Node3D
+
+func get_trailer_visual() -> Node3D:
+	return _trailer_visual
+
+# F6: unhook a coupled trailer, hook a standing one on (the sim refuses with a reason when it is too far / too fast).
+func trailer_hook_toggle() -> void:
+	var state: Dictionary = _simulation.get_trailer_state()
+	if not bool(state.get("present", false)):
+		return
+	if str(state.get("state", "")) == "coupled":
+		_simulation.request_trailer_detach()
+	else:
+		_simulation.request_trailer_attach()
+
+# F7: no trailer -> put one behind the car (standing, not hooked); a trailer -> stand it upright behind the car again;
+# remove = true deletes it.
+func trailer_bring(remove: bool) -> void:
+	var state: Dictionary = _simulation.get_trailer_state()
+	if remove:
+		_simulation.request_trailer_remove()
+	elif bool(state.get("present", false)):
+		_simulation.request_trailer_recover()
+	else:
+		_simulation.request_trailer_spawn("", "", false)
