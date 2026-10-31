@@ -370,6 +370,11 @@ func _process_body(_delta: float) -> void:
 		lines.append("T: truck ahead | Shift+T: remove | %s | %.0f km/h" % [str(truck.get("message", "")), float(truck.get("speed_kph", 0))])
 		if bool(truck.get("active", false)):
 			lines.append("Draft: body dynamic pressure %.0f%% of undisturbed airflow" % (float(aero.get("wake_factor", 1.0)) * 100.0))
+		# Towing (rg/trailer.h): the keys, what the trailer is doing and the advice lines the ratings produce.
+		if _simulation.has_method("get_trailer_state"):
+			var trailer: Dictionary = _simulation.get_trailer_state()
+			if bool(trailer.get("enabled", false)):
+				lines.append_array(_trailer_lines(trailer))
 		var wheel_count: int = _simulation.get_vehicle_wheel_count(vehicle_name)
 		lines.append("wheel  load(N)  slip_ratio  slip_angle(deg)  surface")
 		for i in range(wheel_count):
@@ -385,3 +390,28 @@ func _process_body(_delta: float) -> void:
 		lines.append("(no vehicle spawned)")
 
 	_set_lines(lines)
+
+# The towing lines of the debug readout (get_trailer_state). Plain text from rg_core's numbers: the hook-up verdict,
+# the coupled loads and the configured advice sentences (data/trailers/trailers.json).
+func _trailer_lines(t: Dictionary) -> PackedStringArray:
+	var out := PackedStringArray()
+	var keys := "F6: hook up / unhook | F7: trailer (Shift: remove)"
+	if not bool(t.get("present", false)):
+		out.append("%s | no trailer | %s" % [keys, str(t.get("message", ""))])
+		return out
+	var state := str(t.get("state", "none"))
+	if state == "coupled":
+		out.append("%s | COUPLED %s (%s, %.0f kg)" % [keys, str(t.get("kind", "")), str(t.get("load", "")), float(t.get("mass_kg", 0.0))])
+		out.append("hitch %.1f kN of %.1f kN | tongue %.0f N | trailer brake %.0f %% | articulation yaw %+.1f pitch %+.1f roll %+.1f deg | socket error %.1f mm" % [
+			float(t.get("hitch_force_n", 0.0)) * 0.001, float(t.get("break_force_n", 0.0)) * 0.001, float(t.get("tongue_load_n", 0.0)),
+			float(t.get("tow_brake", 0.0)) * 100.0, float(t.get("yaw_deg", 0.0)), float(t.get("pitch_deg", 0.0)), float(t.get("roll_deg", 0.0)),
+			float(t.get("socket_error_m", 0.0)) * 1000.0])
+	else:
+		out.append("%s | standing trailer %s (%s) | hook-up: %.1f m, %s" % [keys, str(t.get("kind", "")), str(t.get("load", "")),
+			float(t.get("hookup_distance_m", 0.0)), str(t.get("hookup_verdict", ""))])
+	for finding in t.get("findings", []):
+		out.append("TOWING: %s" % str(finding))
+	var message := str(t.get("message", ""))
+	if message != "":
+		out.append("trailer: %s" % message)
+	return out

@@ -113,6 +113,8 @@ add_executable(rg_unit_tests
   test_wind_noise.cpp
   test_cinematic_obstacles.cpp
   test_render_pose.cpp
+  test_trailer.cpp
+  test_trailer_session.cpp
   test_deck_installer.cpp
   test_deck_install_perf.cpp
   test_stutter_perf.cpp

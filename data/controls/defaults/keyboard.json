@@ -33,6 +33,8 @@
     "toggle_nitrous": [{"type": "key", "key": "N"}],
     "flip_upright": [{"type": "key", "key": "F"}],
     "npc_truck": [{"type": "key", "key": "T"}],
+    "trailer_hook": [{"type": "key", "key": "F6"}],
+    "trailer_spawn": [{"type": "key", "key": "F7"}],
     "get_out": [{"type": "key", "key": "G"}],
     "cycle_view": [{"type": "key", "key": "B"}],
     "cycle_camera": [{"type": "key", "key": "Tab"}],

@@ -262,7 +262,7 @@ Session::Session(const SessionConfig& config)
     install_weather();
 }
 
-Session::~Session() { stop(); truck_cancel_.store(true); traffic_cancel_.store(true); if(truck_worker_.joinable())truck_worker_.join(); if(traffic_worker_.joinable())traffic_worker_.join(); }
+Session::~Session() { stop(); if (trailer_rig_ && world_) trailer_rig_->remove(*world_); truck_cancel_.store(true); traffic_cancel_.store(true); if(truck_worker_.joinable())truck_worker_.join(); if(traffic_worker_.joinable())traffic_worker_.join(); }
 
 void Session::build_world_contents(const SessionConfig& config) {
     traffic_stuck_.clear();traffic_stuck_summary_time_=0;
@@ -393,6 +393,22 @@ void Session::build_world_contents(const SessionConfig& config) {
     if(!vehicle_desc_.aero.fans.empty()&&config_.environment.fan_battery_energy_j>0)
         world_->credit_aero_fan_energy(vehicle_id_,config_.environment.fan_battery_energy_j);
     setup_damage();
+    if (config.trailer) {
+        trailer_rig_ = std::make_unique<TrailerRig>(config.trailer);
+        trailer_rig_->set_rolling_resistance_law(rolling_law);
+        // Pose history: [0] the chassis, [1] the trailer.
+        pose_history_scratch_.assign(2, ps::Pose{});
+        pose_history_teleport_.assign(2, 0);
+        if (config.trailer_restore.present) {
+            TrailerCommand c;
+            c.kind = TrailerCommand::Kind::Spawn;
+            c.trailer_kind = config.trailer_restore.kind;
+            c.load = config.trailer_restore.load;
+            c.coupled = config.trailer_restore.coupled;
+            trailer_commands_.push_back(std::move(c));
+            trailer_pending_.store(true, std::memory_order_release);
+        }
+    }
     spawn_tick_ = world_->tick();
     throw_if_cancelled();
     if(config.startup) config.startup->stage.store(StartupProgress::Done,std::memory_order_relaxed);
@@ -641,6 +657,10 @@ void Session::finish_relocation() {
     const RelocateTarget target = *relocation_;
     relocation_.reset();
 
+    // A coupled trailer is let go first (the physics refuses a teleport of a coupled vehicle) and parked beside the car
+    // through the priming ticks; it is hooked on again behind the car once the car stands on the ground.
+    if (trailer_rig_) trailer_rig_->begin_relocation(*world_, trailer_car());
+
     // Park the chassis far above the target (above the spawn rays' start, so
     // they never hit it), at rest.
     ps::Pose park;
@@ -649,6 +669,7 @@ void Session::finish_relocation() {
     const auto park_chassis = [&] {
         world_->backend().set_pose(chassis_body_, park);
         world_->backend().set_motion(chassis_body_, still);
+        if (trailer_rig_) trailer_rig_->park(*world_, park);
     };
     park_chassis();
 
@@ -681,6 +702,7 @@ void Session::finish_relocation() {
         status_.relocate_failures.fetch_add(1, std::memory_order_relaxed);
         std::fprintf(stderr, "rg::Session: relocation to (%.1f, %.1f) failed: no ground under (%.2f, %.2f)\n",
                      target.x, target.y, miss_x, miss_y);
+        if (trailer_rig_) trailer_rig_->abort_relocation(*world_);
         return;
     }
     world_->backend().set_pose(chassis_body_, pose);
@@ -696,6 +718,7 @@ void Session::finish_relocation() {
                             ? ps::drivetrain::EngineState::Off
                             : ps::drivetrain::EngineState::Running;
     world_->reset_vehicle(vehicle_id_, opts);
+    if (trailer_rig_) trailer_rig_->finish_relocation(*world_, trailer_car());
     if (walker_ && walker_->active()) walker_->halt(); // the priming ticks above stepped the World
     if (fpv_.active()) fpv_.halt();
     status_.relocations.fetch_add(1, std::memory_order_relaxed);
@@ -937,6 +960,7 @@ bool Session::step_once(bool from_loop) {
     // any relocation, so a spawn only ever happens with the car's terrain resident.
     process_walker_request();
     process_fpv_request();
+    process_trailer_requests();
     apply_weather_requests();
 
     if (have_vehicle_ && drive_script_) {
@@ -972,7 +996,9 @@ bool Session::step_once(bool from_loop) {
             world_->set_aero_fan_command(vehicle_id_,i,config_.environment.fan_command);
     }
     if (have_vehicle_) apply_damage_controls();
+    if (trailer_rig_ && have_vehicle_) trailer_rig_->before_step(*world_, trailer_car());
     world_->step();
+    if (trailer_rig_ && have_vehicle_) trailer_rig_->after_step(*world_, trailer_car(), 1.0 / config_.tick_rate_hz);
     adopt_physics_channel_writes();
     if (have_vehicle_) update_damage();
     spike.step_ms = lap();
@@ -1216,6 +1242,12 @@ void Session::post_step(bool from_loop) {
                 engine_audio_publisher_(frame.powertrain.engines.front(), frame.sim_time);
         }
         pose_history_scratch_[0] = frame.chassis_pose; // before publish(): the slot belongs to readers afterwards
+        if (trailer_rig_ && pose_history_scratch_.size() > 1) {
+            pose_history_scratch_[1] = frame.trailer.present ? frame.trailer.pose : frame.chassis_pose;
+            const std::uint64_t teleports = trailer_rig_->teleports();
+            pose_history_teleport_[1] = teleports != trailer_teleports_seen_ ? 1 : 0;
+            trailer_teleports_seen_ = teleports;
+        }
         const std::uint64_t published_tick = frame.tick;
         snapshot_buffer_.publish();
         // Nominal-clock pose history (session.h sample_render_poses). Only on the
@@ -1224,6 +1256,7 @@ void Session::post_step(bool from_loop) {
         if (loop_.running()) {
             const std::uint64_t relocations = status_.relocations.load(std::memory_order_relaxed);
             pose_history_teleport_[0] = relocations != pose_history_relocations_ ? 1 : 0;
+            if (pose_history_teleport_.size() > 1 && relocations != pose_history_relocations_) pose_history_teleport_[1] = 1;
             pose_history_relocations_ = relocations;
             pose_history_.push(loop_.tick_nominal_time(), published_tick, loop_.tick_clock_break(), pose_history_scratch_, pose_history_teleport_);
         }
@@ -1285,7 +1318,7 @@ bool Session::try_step() { return step_once(true); }
 
 void Session::start() {
     loop_started_ = Clock::now();
-    pose_history_.reset(1); // chassis only, before the loop thread exists
+    pose_history_.reset(pose_history_scratch_.size()); // [0] the chassis, [1] the trailer when a rig exists; before the loop thread exists
     pose_history_relocations_ = status_.relocations.load(std::memory_order_relaxed);
     have_last_attempt_ = false;
     spikes_.reserve(kTickSpikeCapacity);
@@ -1403,6 +1436,7 @@ FrameSnapshot Session::capture_frame_snapshot() const {
     for(const auto& actor:traffic_actors_)snap.traffic.actors.push_back({actor.id,actor.trip.truck,world_->get_pose(actor.body),actor.speed,actor.trip.destination});
     snap.truck=truck_state_;
     if(truck_state_.active)snap.truck.pose=world_->get_pose(truck_body_);
+    if(trailer_rig_)snap.trailer=trailer_rig_->snapshot(*world_,trailer_car());
     if(walker_&&walker_->active()) {
         const WalkerState& w=walker_->state();
         WalkerSnapshot& out=snap.walker;
@@ -1698,6 +1732,63 @@ void Session::remove_walker() {
     walker_->despawn();
     walker_active_.store(false, std::memory_order_release);
     walker_can_enter_ = false;
+}
+
+// ---- towing (rg/trailer.h) -------------------------------------------------------------------------------------------
+
+TrailerRig::Car Session::trailer_car() const { return TrailerRig::Car{vehicle_id_, chassis_body_, &vehicle_desc_}; }
+
+void Session::request_trailer_spawn(const std::string& kind, const std::string& load, bool coupled) {
+    if (!config_.trailer) return;
+    TrailerCommand c;
+    c.kind = TrailerCommand::Kind::Spawn;
+    c.trailer_kind = kind;
+    c.load = load;
+    c.coupled = coupled;
+    {
+        std::lock_guard<std::mutex> lock(trailer_mutex_);
+        trailer_commands_.push_back(std::move(c));
+    }
+    trailer_pending_.store(true, std::memory_order_release);
+}
+
+#define RG_TRAILER_SIMPLE_REQUEST(NAME, KIND)                                \
+    void Session::NAME() {                                                   \
+        if (!config_.trailer) return;                                        \
+        TrailerCommand c;                                                    \
+        c.kind = TrailerCommand::Kind::KIND;                                 \
+        {                                                                    \
+            std::lock_guard<std::mutex> lock(trailer_mutex_);                \
+            trailer_commands_.push_back(std::move(c));                       \
+        }                                                                    \
+        trailer_pending_.store(true, std::memory_order_release);             \
+    }
+RG_TRAILER_SIMPLE_REQUEST(request_trailer_attach, Attach)
+RG_TRAILER_SIMPLE_REQUEST(request_trailer_detach, Detach)
+RG_TRAILER_SIMPLE_REQUEST(request_trailer_remove, Remove)
+RG_TRAILER_SIMPLE_REQUEST(request_trailer_recover, Recover)
+#undef RG_TRAILER_SIMPLE_REQUEST
+
+void Session::process_trailer_requests() {
+    if (!trailer_rig_ || !have_vehicle_) return;
+    if (!trailer_pending_.exchange(false, std::memory_order_acq_rel)) return;
+    std::vector<TrailerCommand> commands;
+    {
+        std::lock_guard<std::mutex> lock(trailer_mutex_);
+        commands.swap(trailer_commands_);
+    }
+    const TrailerRig::Car car = trailer_car();
+    for (const TrailerCommand& c : commands) {
+        TrailerResult r;
+        switch (c.kind) {
+            case TrailerCommand::Kind::Spawn: r = trailer_rig_->spawn(*world_, car, c.trailer_kind, c.load, c.coupled); break;
+            case TrailerCommand::Kind::Attach: r = trailer_rig_->attach(*world_, car); break;
+            case TrailerCommand::Kind::Detach: r = trailer_rig_->detach(*world_, car); break;
+            case TrailerCommand::Kind::Remove: r = trailer_rig_->remove(*world_); break;
+            case TrailerCommand::Kind::Recover: r = trailer_rig_->recover(*world_, car); break;
+        }
+        if (!r.message.empty()) std::fprintf(stderr, "RG_TRAILER %s: %s\n", r.ok ? "ok" : "refused", r.message.c_str());
+    }
 }
 
 void Session::process_walker_request() {

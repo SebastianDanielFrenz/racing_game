@@ -1,0 +1,105 @@
+{
+  "format": "rg.trailers/1",
+  "source": "Trailer towing, farm attachment plan step A2 (farming_sim docs/farm/PLAN.md section 6, vault FARM-003). The coupling itself is physics_sim's (ps::machine, hitch classes, tow brake, articulation limits); this file is what the GAME decides on top: which hitch classes the player can couple, how close a hook-up has to be, how fast the vehicles may move, when a hitch lets go, the trailer kinds with their load states and the advice texts. Tags: [C] cited, [D] derived, [M] measured here, [AS] assumed (owner values go in the same keys).",
+
+  "default_trailer": "trailer_tipper",
+  "channel_scope": "trailer",
+  "channel_scope_help": "The trailer's control channels are \"trailer.brake\" and so on (World::vehicle_channel); the car keeps the bare names the whole game uses. The tow brake of the trailer file reads the car's \"brake\" channel in the car's own scope.",
+  "limit_policy": "../garage/limit_policy.json",
+  "limit_policy_help": "The physics_sim limit policy that grades the hitch ratings (TowedMass, TongueLoad: hitch_near_share / hitch_limiting_share / hitch_exceeded_share). The same file the garage advisor uses; the player's own layer is merged there.",
+
+  "hookup": {
+    "assist": true,
+    "assist_help": "true: a hook-up within reach_m puts the trailer where its eye meets the tow point (a shift in plan and a pitch about its axles, the way a person winds the jack and walks the trailer onto the ball) and then couples; false: the sockets must already be inside the hitch class's latch limits (ball 0.15 m, drawbar pin 0.10 m).",
+    "reach_m": 3.5,
+    "reach_source": "[AS] a person can walk a trailer on its jack wheel a few metres; a little more than spawn.gap_m, which leaves the ball-to-coupler height difference inside it.",
+    "max_heading_deg": 60.0,
+    "max_heading_source": "[AS] the trailer's nose points roughly the way the car does; a hitch's yaw stop is 75-90 degrees, the assist keeps well inside it.",
+    "max_speed_m_s": 0.5,
+    "max_speed_source": "[D] the hitch classes' own latch speed limit (data/hitch_classes/*.json, latch.max_speed_m_s 0.5) - the car, the trailer and their sockets.",
+    "max_vertical_m": 0.32,
+    "max_vertical_source": "[M] the stroke of the trailer's jack (external/physics_sim/data/models/trailer_tipper/trailer_tipper.rig.json, node jack: 0 to 0.32 m) - the nose height the assist may change."
+  },
+  "unhook": {
+    "max_speed_m_s": 1.0,
+    "max_speed_source": "[AS] a trailer is let go standing, not rolling; the car's speed above this refuses the request with a message."
+  },
+  "spawn": {
+    "gap_m": 3.0,
+    "gap_source": "[AS] a standing trailer is put with its eye this far behind the car's tow point: inside the hook-up reach, outside the bumper.",
+    "clearance_m": 0.03,
+    "ray_height_m": 6.0,
+    "ray_range_m": 60.0
+  },
+  "abandon": {
+    "distance_m": 250.0,
+    "distance_source": "[AS] the physics terrain around the car is 400 m; a standing trailer left further behind than this would fall through ground that is no longer there, so it is removed (a parked-trailer fleet is a later step).",
+    "below_m": 50.0,
+    "relocation_keep_m": 30.0,
+    "relocation_keep_source": "[AS] after a relocation (reset, flip, teleport) a coupled trailer comes along and is hooked on again behind the car; a standing one stays only if the car landed this close to it, else it is removed."
+  },
+  "park": {
+    "offset_x_m": 40.0
+  },
+  "brake_when_standing": 1.0,
+  "brake_when_standing_source": "[AS] a parking brake on a standing trailer; the physics has no breakaway brake (hitch.md), so a trailer that comes off in motion also gets it.",
+
+  "classes": [
+    {
+      "name": "ball",
+      "label": "tow ball",
+      "break_d_multiple": 4.0,
+      "break_hold_s": 0.05,
+      "source": "[AS] a car's tow ball. The hitch lets go when the force on it stays above 4 x the ISO 7641-1 D value of the pair for 50 ms (a coupling is tested at about 2 x D alternating; physics_sim's articulation limit can push 300-730 kN into the pair under brake plus lock - that is what this rule turns into an event instead of a number)."
+    },
+    {
+      "name": "drawbar_pin",
+      "label": "drawbar pin",
+      "break_d_multiple": 6.0,
+      "break_hold_s": 0.05,
+      "source": "[AS] a tractor's drawbar pin, heavier than a ball."
+    }
+  ],
+
+  "advice": {
+    "tow_mass": "The trailer ({mass}) is {severity} this car's towing rating of {limit_mass}.",
+    "tongue_load": "The nose weight ({tongue}) is {severity} this car's tongue rating of {limit_tongue}.",
+    "overload": "The hitch let go at {force}, over {break_force}.",
+    "hookup_ready": "Hitch {distance} behind the tow point: press the hook-up key.",
+    "hookup_far": "Hitch {distance} away: back the car closer than {reach}.",
+    "coupled": "Towing {trailer}, {mass}.",
+    "standing": "{trailer} standing.",
+    "severity_near": "close to",
+    "severity_limiting": "at",
+    "severity_exceeded": "over"
+  },
+
+  "trailers": [
+    {
+      "id": "trailer_tipper",
+      "title": "Tandem tipper trailer",
+      "vehicle": "../vehicles/trailer_tipper.json",
+      "model": "../../external/physics_sim/data/models/trailer_tipper/trailer_tipper.glb",
+      "chassis_half_extents": [2.5, 0.5, 0.3],
+      "chassis_half_extents_source": "[D] external/physics_sim/tests/unit/test_machine_coupling.cpp's tipper rig (2.5 x 0.5 x 0.3): inside the wheel envelope (wheels at |y| 0.67..1.23), 0.3 m half height about the chassis origin.",
+      "chassis_friction": 0.5,
+      "loads": [
+        {"id": "empty", "label": "empty", "mass_kg": 4500.0, "source": "[AS] a 14 t tandem rear tipper trailer with its bed and ram, unladen; 14 t gross is the rig's description."},
+        {"id": "half", "label": "half load", "mass_kg": 9250.0, "source": "[D] midway between empty and gross."},
+        {"id": "full", "label": "full load", "mass_kg": 14000.0, "source": "[M] the gross mass of external/physics_sim/data/models/trailer_tipper/trailer_tipper.rig.json (14 t) and its vehicle fixture's spring set."}
+      ],
+      "default_load": "empty",
+      "jack": {
+        "foot_local": [3.65, 0.0, -1.13],
+        "foot_source": "[D] rig jack pivot (4.1, 0, 0.27) with the leg 0.25 m down (the foot reaches the ground at 0.25), moved to the chassis origin with the visual's offset (x - 0.45, z - 1.13); 2 cm of preload below the empty trailer's rest height.",
+        "stiffness_n_m": 500000.0,
+        "damping_n_s_m": 100000.0,
+        "max_force_n": 60000.0,
+        "spec_source": "[AS] a parking leg: about 8 mm of give under the empty trailer's 4 kN nose weight."
+      },
+      "model_offset": [-0.45, 0.0, -1.13],
+      "model_offset_source": "[D] the rig origin (ground below the wheel centres, x midway between the axles) in the chassis frame: the wheel pivot (0.8, 0.95, 0.62) minus its attachment (0.35, 0.95, -0.51) in data/vehicles/trailer_tipper.json - the same arithmetic vehicle_visual.gd does for a car.",
+      "length_m": 7.7
+    }
+  ]
+}

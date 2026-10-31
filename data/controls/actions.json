@@ -33,6 +33,8 @@
     {"id": "toggle_nitrous", "label": "Nitrous arm on / off", "group": "driving", "kind": "button", "mode": "edge", "help": "Cars with a nitrous kit only", "modes": ["drive"]},
     {"id": "flip_upright", "label": "Flip the car upright", "group": "driving", "kind": "button", "mode": "edge", "modes": ["drive"]},
     {"id": "npc_truck", "label": "Truck ahead (Shift+T removes it)", "group": "driving", "kind": "button", "mode": "edge", "modes": ["drive"]},
+    {"id": "trailer_hook", "label": "Hook up / unhook the trailer", "group": "driving", "kind": "button", "mode": "edge", "help": "Hooks the standing trailer on when it is near and the car is nearly still; unhooks a coupled one", "modes": ["drive"]},
+    {"id": "trailer_spawn", "label": "Trailer: bring it / stand it up (Shift removes it)", "group": "driving", "kind": "button", "mode": "edge", "help": "Puts the tipper trailer behind the car; with one already there, stands it upright behind the car again", "modes": ["drive"]},
     {"id": "get_out", "label": "Get out of the car", "group": "driving", "kind": "button", "mode": "edge", "help": "Below 2 m/s; getting back in is Interact on foot", "modes": ["drive"]},
     {"id": "cycle_view", "label": "Next driving view", "group": "driving", "kind": "button", "mode": "edge", "help": "Chase, bumper, cockpit, orbit, cinematic", "modes": ["drive"]},
     {"id": "cycle_camera", "label": "Chase / cockpit view", "group": "camera", "kind": "button", "mode": "edge", "help": "First / third person on foot", "modes": ["drive", "on_foot"]},
