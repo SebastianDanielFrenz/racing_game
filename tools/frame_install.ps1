@@ -28,9 +28,10 @@
                    1 GB derived.sqlite3 are not copied). Map copies are incremental
                    and never delete on the device (the game writes its derived store
                    there).
-      4. REGISTER  the devkit shortcut (~/devkit-utils/steam-client-create-shortcut,
-                   same mechanism as the SteamOS devkit upload), once; -ReRegister
-                   repeats it.
+      4. REGISTER  the Steam shortcut by writing shortcuts.vdf on the headset
+                   (tools/steam_shortcut.py, staged next to start.sh). Only when the
+                   entry is missing or differs: steam.service is stopped for the
+                   write and started again (Steam rewrites the file on exit).
       5. VERIFY    a headless run ON the headset: `start.sh --desktop --headless
                    -- --bindings-test` and the scripted real-world drive smoke
                    (`-- --drive --drive-smoke`); the log is saved to out\frame\ and
@@ -50,12 +51,10 @@
 .PARAMETER Maps         Which stores: corridor (rhein-main-corridor-r2), home (home-r1). Default both.
 .PARAMETER Remote       ssh target (default steamos@frame; Developer Mode, key login).
 .PARAMETER RemoteDir    Install directory relative to the remote home (default devkit-game/racing_game).
-.PARAMETER GameId       Devkit game id / shortcut name (default racing_game).
-.PARAMETER CompatTool   Steam compatibility tool for the shortcut. Default: autodetected from the
-                        headset's installed SteamLinuxRuntime*arm64* directories (none found = the
-                        game runs natively without a container, which its glibc 2.31 baseline allows).
+.PARAMETER GameId       Devkit game id: a SteamOS devkit shortcut with this id is converted into
+                        the plain shortcut instead of leaving two entries (default racing_game).
+.PARAMETER ShortcutTitle Steam library name of the shortcut (default "Racing Game").
 .PARAMETER NoRegister   Upload only, no shortcut.
-.PARAMETER ReRegister   Create the shortcut again even if this script registered one before.
 .PARAMETER NoVerify     Skip the on-device headless run.
 .PARAMETER QemuCheck    Also run the bindings test locally under qemu-aarch64 with the glibc 2.31
                         sysroot on the staged tree (no headset needed).
@@ -69,9 +68,8 @@ param(
     [string]$Remote = 'steamos@frame',
     [string]$RemoteDir = 'devkit-game/racing_game',
     [string]$GameId = 'racing_game',
-    [string]$CompatTool = '',
+    [string]$ShortcutTitle = 'Racing Game',
     [switch]$NoRegister,
-    [switch]$ReRegister,
     [switch]$NoVerify,
     [switch]$QemuCheck
 )
@@ -208,8 +206,15 @@ if (-not $SkipBuild) {
     $build = @"
 set -e
 cd '$repoW'
-[ -f ~/build/racing_game/linux-arm64-release/CMakeCache.txt ] || cmake --preset linux-arm64-release
-cmake --build --preset linux-arm64-release
+# The preset's build dir belongs to whichever checkout configured it first; any
+# other checkout (a worktree) gets its own, or it would build that other tree.
+B=~/build/racing_game/linux-arm64-release
+if [ -f "`$B/CMakeCache.txt" ] && ! grep -qx "CMAKE_HOME_DIRECTORY:INTERNAL=`$PWD" "`$B/CMakeCache.txt"; then
+  B=~/build/`$(basename "`$PWD")/linux-arm64-release
+fi
+echo "build dir: `$B"
+[ -f "`$B/CMakeCache.txt" ] || cmake --preset linux-arm64-release -B "`$B"
+cmake --build "`$B" --target rg_godot
 "@
     $rc = Invoke-WslScript -Name 'build_arm64' -Text $build -TailLines 12
     if ($rc -ne 0) { throw "arm64 build failed (exit $rc), log: $workDir\build_arm64.log" }
@@ -252,7 +257,7 @@ $startSh = @'
 # Written by tools/frame_install.ps1; started by the Steam Library entry.
 #   start.sh                    OpenXR (VR) mode, game shell menus
 #   start.sh -- --drive         VR, straight into the real world
-#   start.sh --desktop [args]   flat-screen window, args go to Godot (e.g. --headless --quit-after 300 -- --bindings-test)
+#   start.sh --desktop [args]   flat-screen window, args go to Godot (e.g. --headless -- --bindings-test)
 # Map stores live in ./maps (rhein-main-corridor-r2, home-r1).
 HERE=$(cd "$(dirname "$0")" && pwd) || exit 1
 export RG_G2M_CACHE="${RG_G2M_CACHE:-$HERE/maps}"
@@ -272,6 +277,8 @@ fi
 exec "$GODOT" --path "$HERE/game" "$@"
 '@
 [System.IO.File]::WriteAllText((Join-Path $stageDir 'start.sh'), $startSh.Replace("`r`n", "`n"), (New-Object System.Text.UTF8Encoding($false)))
+# Runs on the headset in step 4 (Steam shortcut via shortcuts.vdf).
+Copy-Item -Force (Join-Path $PSScriptRoot 'steam_shortcut.py') (Join-Path $stageDir 'steam_shortcut.py')
 
 $sha     = (& git -C $repoRoot rev-parse HEAD | Select-Object -First 1)
 $subject = (& git -C $repoRoot log -1 --format=%s | Select-Object -First 1)
@@ -288,7 +295,7 @@ $releaseTxt = @(
     "godot      : $godotName (godotengine.org official release)",
     "", "start.sh                  VR (OpenXR) mode; maps in ./maps",
     "start.sh --desktop [args]  flat-screen window / headless runs",
-    "", "CONTENTS", ($copied | ForEach-Object { "  $_" }), "  godot/, start.sh, RELEASE.txt, maps/ (separate copy)"
+    "", "CONTENTS", ($copied | ForEach-Object { "  $_" }), "  godot/, start.sh, steam_shortcut.py, RELEASE.txt, maps/ (separate copy)"
 )
 [System.IO.File]::WriteAllText((Join-Path $stageDir 'RELEASE.txt'), (($releaseTxt | ForEach-Object { $_ }) -join "`n") + "`n", (New-Object System.Text.UTF8Encoding($false)))
 Write-Ok "stage tree $(Format-Size $stageBytes): $($copied.Count) trees + godot + start.sh"
@@ -305,7 +312,7 @@ cd '$stageW'
 export RG_G2M_CACHE='$stageW/maps' RG_G2M_HOME='$stageW/maps/home-r1'
 export XDG_DATA_HOME=/tmp/rg_qemu_xdg/data XDG_CONFIG_HOME=/tmp/rg_qemu_xdg/config XDG_CACHE_HOME=/tmp/rg_qemu_xdg/cache
 mkdir -p /tmp/rg_qemu_xdg/data /tmp/rg_qemu_xdg/config /tmp/rg_qemu_xdg/cache
-timeout 600 qemu-aarch64 -L "`$SR" './godot/$godotName' --headless --path game --quit-after 300 -- --bindings-test > '$qw/qemu_bindings.out' 2>&1
+timeout 600 qemu-aarch64 -L "`$SR" './godot/$godotName' --headless --path game -- --bindings-test > '$qw/qemu_bindings.out' 2>&1
 echo "exit=`$?"
 grep -c 'ERROR' '$qw/qemu_bindings.out'
 grep -E 'bindings test: ok|ERROR|RG_' '$qw/qemu_bindings.out' | head -20
@@ -434,45 +441,27 @@ Stop-Phase 'upload' $sw
 $installedLines | ForEach-Object { Write-Host "  $_" }
 
 # ---------------------------------------------------------------------------
-# 4. Steam shortcut
+# 4. Steam shortcut (shortcuts.vdf, owner 2026-10-24: always this route)
 # ---------------------------------------------------------------------------
 $registered = 'skipped (-NoRegister)'
 if (-not $NoRegister) {
-    Write-Step "Steam shortcut (devkit)"
-    $compat = $CompatTool
-    if (-not $compat) {
-        $arm = @($steamApps | Where-Object { $_ -match 'SteamLinuxRuntime' -and $_ -match 'arm64' })
-        $pick = @($arm | Where-Object { $_ -match 'sniper|_3' }) + @($arm) | Select-Object -First 1
-        if ($pick) { $compat = $pick }
-    }
-    Write-Host "  compat tool : $(if ($compat) { $compat } else { '(none - native, no container)' })"
-    $settings = [ordered]@{ steam_play = '0' }
-    if ($compat) { $settings['compat_tool'] = $compat }
-    $parms = [ordered]@{
-        gameid = $GameId; directory = $remoteAbs; argv = @("$remoteAbs/start.sh"); env = @{}
-        settings = $settings; clear_settings = $true; force_appid = ''; lepton_args = ''
-    }
-    $parmsJson = $parms | ConvertTo-Json -Compress -Depth 5
-    $parmsB64 = [Convert]::ToBase64String([System.Text.Encoding]::UTF8.GetBytes($parmsJson))
+    Write-Step "Steam shortcut (shortcuts.vdf)"
+    # steam_shortcut.py (staged next to start.sh) writes the entry only when it
+    # is missing or differs; Steam (steam.service) is then stopped for the write
+    # and started again, because it rewrites shortcuts.vdf on exit. An earlier
+    # devkit-tool entry for the same game id is converted, not duplicated. No
+    # compatibility tool: the game runs natively (glibc 2.31 baseline).
     $reg = @'
 D="$HOME/$1"
-B="$HOME/devkit-utils/steam-client-create-shortcut"
-MARK="$D/.rg_registered"
-PARMS=$(echo "$2" | base64 -d)
-if [ "$3" != "force" ] && [ -f "$MARK" ] && [ "$(cat "$MARK")" = "$PARMS" ]; then echo "register=already"; exit 0; fi
-if [ ! -x "$B" ]; then echo "register=missing-tool"; exit 0; fi
-"$B" --parms "$PARMS" 2>&1 | head -n 10 | sed 's/^/devkit: /'
-echo "$PARMS" > "$MARK"
-echo "register=done"
+python3 "$D/steam_shortcut.py" --exe "$D/start.sh" --start-dir "$D" --title "$2"   --openvr 0 --devkit-gameid "$3" --restart-steam 2>&1 | sed 's/^/  /'
 '@
-    $r = Invoke-Ssh -ScriptText $reg -ScriptArgs @($RemoteDir, $parmsB64, $(if ($ReRegister) { 'force' } else { 'normal' })) -TimeoutSec 60
-    ($r.Out -split "`n") | Where-Object { $_ -match '^devkit:' } | ForEach-Object { Write-Host "  $_" }
-    $state = (($r.Out -split "`n") | Where-Object { $_ -match '^register=' } | Select-Object -Last 1)
+    $r = Invoke-Ssh -ScriptText $reg -ScriptArgs @($RemoteDir, $ShortcutTitle, $GameId) -TimeoutSec 120
+    ($r.Out -split "`n") | Where-Object { $_.Trim() } | ForEach-Object { Write-Host "  $($_.Trim())" }
+    $state = (($r.Out -split "`n") | Where-Object { $_ -match 'shortcut=' } | Select-Object -Last 1)
     switch -Regex ($state) {
-        'done'         { $registered = 'created'; Write-Ok "shortcut created: Library > Non-Steam > 'Devkit Game: $GameId' (check on the headset; the devkit tool's exit state is only what it printed above)" }
-        'already'      { $registered = 'already registered by an earlier run'; Write-Ok $registered }
-        'missing-tool' { $registered = 'NOT created: ~/devkit-utils/steam-client-create-shortcut not found'; Write-Warn "$registered - add the game via the Steam devkit tab or re-run when SteamOS provides it" }
-        default        { $registered = "unknown ($($r.Err.Trim()))"; Write-Warn $registered }
+        'shortcut=(created|updated)' { $registered = "$($Matches[1]): Library > Non-Steam > '$ShortcutTitle'"; Write-Ok "shortcut $registered (Steam was restarted for the write)" }
+        'shortcut=unchanged'         { $registered = 'already up to date'; Write-Ok $registered }
+        default                      { $registered = "NOT written ($(($state + ' ' + $r.Err).Trim()))"; Write-Warn $registered }
     }
 }
 
@@ -490,7 +479,7 @@ mkdir -p .verify_home
 L1=.verify_home/bindings.log
 L2=.verify_home/drive.log
 echo "== bindings test"
-timeout 240 ./start.sh --desktop --headless --quit-after 300 -- --bindings-test > "$L1" 2>&1; rc1=$?
+timeout 240 ./start.sh --desktop --headless -- --bindings-test > "$L1" 2>&1; rc1=$?
 tail -n 12 "$L1"
 echo "== drive smoke (real world, home map)"
 timeout 600 ./start.sh --desktop --headless --quit-after 200000 -- --drive --drive-smoke > "$L2" 2>&1; rc2=$?

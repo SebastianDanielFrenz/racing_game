@@ -5,7 +5,8 @@ ORIGINAL_ARGS=("$@")
 REPO=https://github.com/SebastianDanielFrenz/racing_game.git
 INSTALL_DIR=${RG_INSTALL_DIR:-"$HOME/racing_game"}
 MAP_DIR=${RG_G2M_CACHE:-"$HOME/geo2map_cache"}
-MODE=vr
+MODE=
+COMMIT=
 JOBS=${RG_BUILD_JOBS:-4}
 STEAM_USER=
 STEAM_ONLY=0
@@ -13,12 +14,17 @@ NO_STEAM=0
 INSTALL_DEPS=0
 usage() {
     cat <<'HELP'
-Install/update GitHub main natively on Linux ARM64, under ~/racing_game.
+Install/update racing_game natively on Linux (ARM64 or x86_64), under ~/racing_game.
+Installs the latest GitHub main, or with --commit one specific commit on any branch.
 Usage: bash install_linux.sh [options]
+  --commit REV         Install this commit (full or abbreviated SHA; a full SHA may
+                       also be an unmerged pull-request commit) as a detached HEAD.
+                       Without it: the latest main (also switches back from a pin)
   --install-dir PATH   Dedicated checkout, must be inside your home
+                       (default $RG_INSTALL_DIR, else ~/racing_game)
   --map-dir PATH       Existing geo2map stores (default ~/geo2map_cache)
-  --desktop            Flat-screen launcher (default: OpenXR VR)
-  --vr                 OpenXR launcher
+  --desktop            Flat-screen launcher (default on x86_64)
+  --vr                 OpenXR launcher (default on ARM64)
   --jobs N             Compile workers (default 4; reduce on low-memory devices)
   --install-deps       Install build tools using apt/pacman and sudo
   --steam-user ID      Steam userdata account directory, for multiple accounts
@@ -32,10 +38,10 @@ HELP
 die() { echo "ERROR: $*" >&2; exit 1; }
 while (($#)); do
     case "$1" in
-        --install-dir|--map-dir|--jobs|--steam-user)
+        --install-dir|--map-dir|--jobs|--steam-user|--commit)
             (($# >= 2)) || die "Missing value after $1"
             case "$1" in
-                --install-dir) INSTALL_DIR=$2;; --map-dir) MAP_DIR=$2;;
+                --install-dir) INSTALL_DIR=$2;; --map-dir) MAP_DIR=$2;; --commit) COMMIT=$2;;
                 --jobs) JOBS=$2;; --steam-user) STEAM_USER=$2;;
             esac; shift 2;;
         --desktop) MODE=desktop; shift;; --vr) MODE=vr; shift;;
@@ -45,7 +51,12 @@ while (($#)); do
     esac
 done
 [[ $(uname -s) == Linux ]] || die "Run this on the Linux device, not Windows."
-[[ $(uname -m) == aarch64 || $(uname -m) == arm64 ]] || die "This installer requires native Linux ARM64."
+case $(uname -m) in
+    aarch64|arm64) ARCH=arm64; LIB_NAME=librg_godot.arm64; GODOT_ARCH=arm64; MODE=${MODE:-vr};;
+    x86_64|amd64) ARCH=x86_64; LIB_NAME=librg_godot; GODOT_ARCH=x86_64; MODE=${MODE:-desktop};;
+    *) die "Unsupported CPU $(uname -m): this installer supports Linux ARM64 and x86_64.";;
+esac
+[[ -z $COMMIT || $COMMIT =~ ^[0-9A-Za-z._/-]+$ ]] || die "--commit must be a commit ID"
 [[ $JOBS =~ ^[1-9][0-9]*$ ]] || die "--jobs must be a positive integer"
 [[ $EUID != 0 ]] || die "Run as your normal user, not root; --install-deps uses sudo separately."
 if ((INSTALL_DEPS)); then
@@ -53,9 +64,9 @@ if ((INSTALL_DEPS)); then
         die "SteamOS root is read-only. Provide build tools through a development environment; this script will not unlock the OS."
     elif command -v apt-get >/dev/null; then
         sudo apt-get update
-        sudo apt-get install -y git git-lfs build-essential cmake ninja-build curl python3 unzip pkg-config
+        sudo apt-get install -y git git-lfs build-essential clang cmake ninja-build curl python3 unzip pkg-config
     elif command -v pacman >/dev/null; then
-        sudo pacman -S --needed git git-lfs base-devel cmake ninja curl python unzip pkgconf
+        sudo pacman -S --needed git git-lfs base-devel clang cmake ninja curl python unzip pkgconf
     else
         die "Install Git/LFS, a C++20 compiler, CMake >=3.25, Ninja, curl, Python3, unzip and flock using your distro."
     fi
@@ -88,12 +99,22 @@ trap 'echo "Installation failed at line $LINENO; log: $LOG" >&2' ERR
 mkdir -p "$STATE_DIR/tools/bin"
 export PATH="$STATE_DIR/tools/bin:$PATH"
 if ((!STEAM_ONLY)); then
-    for program in cmake ninja curl unzip c++; do command -v "$program" >/dev/null || die "Missing $program (see --install-deps)"; done
+    for program in cmake ninja curl unzip; do command -v "$program" >/dev/null || die "Missing $program (see --install-deps)"; done
+    # The repos are built and CI-tested with clang under -Werror; GCC raises warnings
+    # clang does not (e.g. -Wparentheses in geo2map's musl math). Prefer clang.
+    if [[ -z ${CXX:-} ]] && command -v clang++ >/dev/null && command -v clang >/dev/null; then
+        export CXX=clang++ CC=clang
+    fi
+    command -v "${CXX:-c++}" >/dev/null || die "Missing a C++20 compiler (clang++ preferred; see --install-deps)"
+    echo "C++ compiler: $(command -v "${CXX:-c++}")"
     if ! git lfs version >/dev/null 2>&1; then
-        echo "Installing Git LFS 3.7.1 ARM64 locally (SteamOS is not modified)."
-        lfs_archive="$STATE_DIR/git-lfs-linux-arm64-v3.7.1.tar.gz"
-        curl --fail --location --retry 3 https://github.com/git-lfs/git-lfs/releases/download/v3.7.1/git-lfs-linux-arm64-v3.7.1.tar.gz -o "$lfs_archive"
-        printf '%s  %s\n' 73a9c90eeb4312133a63c3eaee0c38c019ea7bfa0953d174809d25b18588dd8d "$lfs_archive" | sha256sum --check
+        # sha256 from the release's sha256sums.asc
+        if [[ $ARCH == arm64 ]]; then lfs_name=git-lfs-linux-arm64-v3.7.1.tar.gz; lfs_sha=73a9c90eeb4312133a63c3eaee0c38c019ea7bfa0953d174809d25b18588dd8d
+        else lfs_name=git-lfs-linux-amd64-v3.7.1.tar.gz; lfs_sha=1c0b6ee5200ca708c5cebebb18fdeb0e1c98f1af5c1a9cba205a4c0ab5a5ec08; fi
+        echo "Installing Git LFS 3.7.1 ($ARCH) locally under $STATE_DIR (the system is not modified)."
+        lfs_archive="$STATE_DIR/$lfs_name"
+        curl --fail --location --retry 3 "https://github.com/git-lfs/git-lfs/releases/download/v3.7.1/$lfs_name" -o "$lfs_archive"
+        printf '%s  %s\n' "$lfs_sha" "$lfs_archive" | sha256sum --check
         python3 - "$lfs_archive" "$STATE_DIR/tools/bin/git-lfs" <<'LFS'
 import os,pathlib,sys,tarfile
 target=pathlib.Path(sys.argv[2])
@@ -113,7 +134,7 @@ LFS
         # .local-install already exists; clone into a temporary child, then move
         # only the new checkout entries. Never delete or overwrite user files.
         [[ $(find "$INSTALL_DIR" -mindepth 1 -maxdepth 1 ! -name .local-install | wc -l) == 0 ]] || die "Install directory contains unrelated files."
-        GIT_LFS_SKIP_SMUDGE=1 git clone --branch main --single-branch "$REPO" "$STATE_DIR/checkout"
+        GIT_LFS_SKIP_SMUDGE=1 git clone --branch main "$REPO" "$STATE_DIR/checkout"
         shopt -s dotglob
         mv "$STATE_DIR/checkout/"* "$INSTALL_DIR/"
         shopt -u dotglob
@@ -133,21 +154,45 @@ for proc in pathlib.Path('/proc').iterdir():
     except (OSError,PermissionError): pass
 PY
     [[ -z $(git -C "$INSTALL_DIR" status --porcelain --untracked-files=no) ]] || die "Tracked local changes found; preserve/commit them before updating."
-    [[ $(git -C "$INSTALL_DIR" branch --show-current) == main ]] || die "Checkout is not on main; refusing to switch your branch."
-    git -C "$INSTALL_DIR" fetch origin main
-    git -C "$INSTALL_DIR" merge --ff-only origin/main
-    [[ $(git -C "$INSTALL_DIR" rev-parse HEAD) == $(git -C "$INSTALL_DIR" rev-parse origin/main) ]] || die "Local main has extra commits; refusing to report it as GitHub main."
+    branch=$(git -C "$INSTALL_DIR" branch --show-current)
+    [[ -z $branch || $branch == main ]] || die "Checkout is on branch '$branch', not main; refusing to switch your branch."
+    # All branches, so a --commit on any of them resolves (older installs cloned main only).
+    git -C "$INSTALL_DIR" fetch --prune --tags origin '+refs/heads/*:refs/remotes/origin/*'
+    if [[ -n $COMMIT ]]; then
+        sha=$(git -C "$INSTALL_DIR" rev-parse --verify --quiet "$COMMIT^{commit}" || true)
+        if [[ -z $sha ]]; then
+            # On no branch (e.g. an unmerged pull request): GitHub serves a full SHA directly.
+            git -C "$INSTALL_DIR" fetch origin "$COMMIT" || true
+            sha=$(git -C "$INSTALL_DIR" rev-parse --verify --quiet 'FETCH_HEAD^{commit}' || true)
+        fi
+        [[ -n $sha ]] || die "Commit '$COMMIT' not found on GitHub (an abbreviated SHA must be on a branch; give the full SHA otherwise)."
+        git -C "$INSTALL_DIR" -c advice.detachedHead=false switch --detach "$sha"
+    else
+        if [[ -z $branch ]]; then
+            if git -C "$INSTALL_DIR" rev-parse --verify --quiet refs/heads/main >/dev/null; then
+                git -C "$INSTALL_DIR" switch main
+            else
+                git -C "$INSTALL_DIR" switch -c main --track origin/main
+            fi
+        fi
+        git -C "$INSTALL_DIR" merge --ff-only origin/main
+        [[ $(git -C "$INSTALL_DIR" rev-parse HEAD) == $(git -C "$INSTALL_DIR" rev-parse origin/main) ]] || die "Local main has extra commits; refusing to report it as GitHub main."
+    fi
     git -C "$INSTALL_DIR" submodule sync --recursive
     git -C "$INSTALL_DIR" submodule update --init --recursive
     git -C "$INSTALL_DIR" lfs install --local
     git -C "$INSTALL_DIR" lfs pull
     git -C "$INSTALL_DIR" lfs fsck
-    python3 "$INSTALL_DIR/tools/fetch_building_assets.py"
+    [[ -f "$INSTALL_DIR/CMakeLists.txt" && -f "$INSTALL_DIR/game/project.godot" ]] || die "Revision $(git -C "$INSTALL_DIR" rev-parse --short HEAD) has no buildable game (no CMakeLists.txt or game/project.godot); choose another commit."
+    # --commit can name a revision from before the building textures.
+    if [[ -f "$INSTALL_DIR/tools/fetch_building_assets.py" ]]; then
+        python3 "$INSTALL_DIR/tools/fetch_building_assets.py"
+    fi
     # Native build, deliberately not the x86-host ARM cross-compilation preset.
     cmake -S "$INSTALL_DIR" -B "$STATE_DIR/build" -G Ninja \
         -DCMAKE_BUILD_TYPE=Release -DRG_BUILD_TESTS=OFF \
-        -DRG_BUILD_GODOT_EXTENSION=ON -DRG_GODOT_OUTPUT_NAME=librg_godot.arm64 \
-        -DCMAKE_CXX_COMPILER="${CXX:-c++}"
+        -DRG_BUILD_GODOT_EXTENSION=ON -DRG_GODOT_OUTPUT_NAME="$LIB_NAME" \
+        -DCMAKE_CXX_COMPILER="${CXX:-c++}" ${CC:+-DCMAKE_C_COMPILER="$CC"}
     cmake --build "$STATE_DIR/build" --target rg_godot --parallel "$JOBS"
     # Use the same tested Godot version as the repo's Steam Frame installer.
     GODOT_VERSION=$(python3 - "$INSTALL_DIR/tools/frame_install.ps1" <<'PY'
@@ -157,7 +202,7 @@ if not m: raise SystemExit('Cannot determine tested Godot version from main')
 print(m[1])
 PY
 )
-    GODOT_NAME="Godot_v${GODOT_VERSION}-stable_linux.arm64"
+    GODOT_NAME="Godot_v${GODOT_VERSION}-stable_linux.${GODOT_ARCH}"
     GODOT="$STATE_DIR/godot/$GODOT_NAME"
     if [[ ! -x "$GODOT" ]]; then
         mkdir -p "$STATE_DIR/godot"
@@ -170,7 +215,7 @@ PY
     "$GODOT" --headless --path "$INSTALL_DIR/game" --editor --import 2>&1 | tee "$STATE_DIR/import.log"
     if grep -Eq '^(ERROR:|SCRIPT ERROR:)' "$STATE_DIR/import.log"; then die "Godot import reported errors"; fi
     XDG_DATA_HOME="$STATE_DIR/verify/data" XDG_CONFIG_HOME="$STATE_DIR/verify/config" XDG_CACHE_HOME="$STATE_DIR/verify/cache" \
-        timeout 180 "$GODOT" --headless --path "$INSTALL_DIR/game" --quit-after 300 -- --bindings-test 2>&1 | tee "$STATE_DIR/bindings.log"
+        timeout 180 "$GODOT" --headless --path "$INSTALL_DIR/game" -- --bindings-test 2>&1 | tee "$STATE_DIR/bindings.log"
     if grep -Eq '^(ERROR:|SCRIPT ERROR:)' "$STATE_DIR/bindings.log"; then die "Bindings verification reported errors"; fi
     grep -q 'bindings test: ok' "$STATE_DIR/bindings.log" || die "Bindings verification did not complete"
     # JSON config avoids shell interpolation of spaces, quotes or dollar signs.
@@ -195,17 +240,19 @@ xr=['--xr-mode','on','--rendering-method','mobile','--rendering-driver','vulkan'
 os.execv(config['godot'],[config['godot'],'--path',str(pathlib.Path(config['root'])/'game'),*xr,*args])
 PY
 chmod +x "$STATE_DIR/launch.py"
-python3 - "$STATE_DIR" "${BASH_SOURCE[0]}" <<'PY'
+python3 - "$STATE_DIR" "${BASH_SOURCE[0]}" "$COMMIT" <<'PY'
 import json,os,pathlib,shlex,sys
 state=pathlib.Path(sys.argv[1]); config=json.loads((state/'config.json').read_text())
 latest=pathlib.Path(config['root'])/'tools/install_linux.sh'
-source=latest if latest.exists() else pathlib.Path(sys.argv[2])
+# On main the checkout's copy is the newest installer; a pinned old commit may
+# predate this one (no --commit, ARM64 only), so keep the running installer then.
+source=latest if latest.exists() and not sys.argv[3] else pathlib.Path(sys.argv[2])
 temp=state/'installer.sh.new'; temp.write_bytes(source.read_bytes()); os.replace(temp,state/'installer.sh')
 cmd=['bash',str(state/'installer.sh'),'--install-dir',config['root'],'--map-dir',config['maps'],'--'+config['mode']]
 updater=state/'update.sh'; updater.write_text('#!/usr/bin/env bash\nexec '+shlex.join(cmd)+' "$@"\n'); updater.chmod(0o755)
 PY
 echo "Launcher: $STATE_DIR/launch.py (or add --desktop / --desktop --flat)"
-echo "Updater: bash $STATE_DIR/update.sh"
+echo "Updater: bash $STATE_DIR/update.sh   (latest main; add --commit SHA for a specific commit)"
 if [[ ! -d "$MAP_DIR/rhein-main-corridor-r2" ]]; then
     echo "Real-world map store not found in $MAP_DIR. Copy it separately; Flat World works without it."
 fi
@@ -272,7 +319,11 @@ print(json.load(open(sys.argv[1]))['godot'])
 PY
 )
 "$GODOT" --headless --path "$STATE_DIR/art_project" --script "$STATE_DIR/art_project/render.gd" -- "$STATE_DIR/artwork"
-if ((NO_STEAM)); then echo "Installed; Steam registration skipped."; exit 0; fi
+report_revision() {
+    if [[ -n $COMMIT ]]; then echo "Installed pinned revision: $(cat "$STATE_DIR/installed-commit")"
+    else echo "Installed main revision: $(cat "$STATE_DIR/installed-commit")"; fi
+}
+if ((NO_STEAM)); then echo "Steam registration skipped."; report_revision; exit 0; fi
 cat > "$STATE_DIR/register_steam.py" <<'STEAM'
 #!/usr/bin/env python3
 """Preserve binary KeyValues types/unknown fields; no third-party dependencies."""
@@ -390,4 +441,4 @@ def register(state,user=''):
 if __name__=='__main__': register(pathlib.Path(sys.argv[1]),sys.argv[2] if len(sys.argv)>2 else '')
 STEAM
 python3 "$STATE_DIR/register_steam.py" "$STATE_DIR" "$STEAM_USER"
-echo "Installed main revision: $(cat "$STATE_DIR/installed-commit")"
+report_revision
