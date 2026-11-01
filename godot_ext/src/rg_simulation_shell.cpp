@@ -279,4 +279,141 @@ void RgSimulation::set_damage_enabled(bool enabled) {
     if (session_) session_->set_damage_enabled(enabled);
 }
 
+
+// ---- towing (rg/trailer.h) -------------------------------------------------------------------------------------------
+
+namespace {
+const char* trailer_state_name(rg::TrailerState s) {
+    switch (s) {
+        case rg::TrailerState::None: return "none";
+        case rg::TrailerState::Standing: return "standing";
+        case rg::TrailerState::Coupled: return "coupled";
+    }
+    return "none";
+}
+const char* hookup_verdict_name(rg::HookupVerdict v) {
+    switch (v) {
+        case rg::HookupVerdict::Ok: return "ok";
+        case rg::HookupVerdict::NoPair: return "no_pair";
+        case rg::HookupVerdict::TooFar: return "too_far";
+        case rg::HookupVerdict::HeadingOff: return "heading_off";
+        case rg::HookupVerdict::TooFast: return "too_fast";
+        case rg::HookupVerdict::OutOfJackRange: return "out_of_jack_range";
+        case rg::HookupVerdict::NoGeometry: return "no_geometry";
+    }
+    return "no_geometry";
+}
+godot::String utf8(const std::string& s) { return godot::String::utf8(s.c_str()); }
+std::string std_utf8(const godot::String& s) { return std::string(s.utf8().get_data()); }
+} // namespace
+
+godot::String RgSimulation::set_trailer_config(const godot::String& config_path, const godot::String& state_path) {
+    trailer_config_.reset();
+    trailer_restore_ = rg::TrailerRecord{};
+    trailer_state_path_ = std_utf8(state_path);
+    const std::string path = std_utf8(config_path);
+    if (path.empty()) return godot::String();
+    std::string err;
+    auto cfg = rg::load_trailer_config(path, &err);
+    if (!cfg) return utf8(err.empty() ? std::string("trailer config not loaded") : err);
+    trailer_config_ = std::make_shared<const rg::TrailerConfig>(std::move(*cfg));
+    if (!trailer_state_path_.empty()) {
+        std::string rerr;
+        if (auto rec = rg::load_trailer_record(trailer_state_path_, &rerr)) trailer_restore_ = *rec; // a missing file = none
+    }
+    return godot::String();
+}
+
+void RgSimulation::capture_trailer_record() {
+    if (!session_ || trailer_config_ == nullptr) return;
+    const rg::FrameSnapshot& snap = session_->snapshot();
+    if (snap.tick == 0) return; // never stepped: the stored record (restore pending) stays as it is
+    const rg::TrailerSnapshot& t = snap.trailer;
+    rg::TrailerRecord rec;
+    rec.present = t.present;
+    rec.kind = t.kind_id;
+    rec.load = t.load_id;
+    rec.coupled = t.state == rg::TrailerState::Coupled;
+    trailer_restore_ = rec;
+    if (trailer_state_path_.empty()) return;
+    std::string err;
+    if (!rg::save_trailer_record(trailer_state_path_, rec, &err)) std::fprintf(stderr, "RG_TRAILER state not saved: %s\n", err.c_str());
+}
+
+void RgSimulation::request_trailer_spawn(const godot::String& kind, const godot::String& load, bool coupled) {
+    if (session_) session_->request_trailer_spawn(std_utf8(kind), std_utf8(load), coupled);
+}
+void RgSimulation::request_trailer_attach() { if (session_) session_->request_trailer_attach(); }
+void RgSimulation::request_trailer_detach() { if (session_) session_->request_trailer_detach(); }
+void RgSimulation::request_trailer_remove() { if (session_) session_->request_trailer_remove(); }
+void RgSimulation::request_trailer_recover() { if (session_) session_->request_trailer_recover(); }
+
+godot::Dictionary RgSimulation::get_trailer_state() const {
+    Dictionary d;
+    d["enabled"] = trailer_config_ != nullptr && session_ != nullptr && session_->trailer_config() != nullptr;
+    d["present"] = false;
+    d["state"] = godot::String("none");
+    if (!session_) return d;
+    const rg::TrailerSnapshot& t = frame_snapshot().trailer;
+    d["message"] = utf8(t.last_message);
+    if (!t.present) return d;
+    d["present"] = true;
+    d["state"] = godot::String(trailer_state_name(t.state));
+    d["kind"] = utf8(t.kind_id);
+    d["load"] = utf8(t.load_id);
+    d["name"] = utf8(t.vehicle_name);
+    d["serial"] = static_cast<std::int64_t>(t.serial);
+    d["mass_kg"] = t.mass_kg;
+    d["towed_mass_kg"] = t.towed_mass_kg;
+    d["tongue_load_n"] = t.tongue_load_n;
+    d["hitch_force_n"] = t.hitch_force_n;
+    d["break_force_n"] = t.break_force_n;
+    d["yaw_deg"] = t.yaw_deg;
+    d["pitch_deg"] = t.pitch_deg;
+    d["roll_deg"] = t.roll_deg;
+    d["socket_error_m"] = t.socket_error_m;
+    d["tow_brake"] = t.tow_brake;
+    d["latch_progress"] = t.latch_progress;
+    d["class"] = utf8(t.class_name);
+    d["hookup_distance_m"] = t.hookup_distance_m;
+    d["hookup_ok"] = t.hookup_verdict == rg::HookupVerdict::Ok;
+    d["hookup_verdict"] = godot::String(hookup_verdict_name(t.hookup_verdict));
+    d["jack_down"] = t.jack_down;
+    d["attaches"] = static_cast<std::int64_t>(t.attaches);
+    d["detaches"] = static_cast<std::int64_t>(t.detaches);
+    d["overloads"] = static_cast<std::int64_t>(t.overloads);
+    godot::Array findings;
+    for (const rg::TrailerFinding& f : t.findings) findings.push_back(utf8(f.text));
+    d["findings"] = findings;
+    godot::Array wheels;
+    for (std::size_t i = 0; i < t.wheels.size(); ++i) {
+        Dictionary w;
+        w["name"] = i < t.wheel_names.size() ? utf8(t.wheel_names[i]) : godot::String();
+        w["spin_angle"] = t.wheels[i].spin_angle;
+        w["compression"] = t.wheels[i].suspension_travel;
+        w["load"] = t.wheels[i].load;
+        w["steer_angle"] = t.wheels[i].steer_angle;
+        wheels.push_back(w);
+    }
+    d["wheels"] = wheels;
+    if (const rg::TrailerConfig* cfg = session_->trailer_config()) {
+        if (const rg::TrailerKind* kind = cfg->find_kind(t.kind_id)) {
+            d["model_offset"] = godot::Vector3(static_cast<float>(kind->model_offset.x), static_cast<float>(kind->model_offset.y),
+                                               static_cast<float>(kind->model_offset.z));
+            d["length_m"] = kind->length_m;
+        }
+    }
+    return d;
+}
+
+godot::Transform3D RgSimulation::get_trailer_transform() const {
+    if (!session_) return godot::Transform3D();
+    const rg::TrailerSnapshot& t = frame_snapshot().trailer;
+    if (!t.present) return godot::Transform3D();
+    ps::Pose pose = t.pose;
+    (void)render_chassis_pose(); // samples the frame's interpolated poses once (render_sample_)
+    if (render_sample_fresh_ && render_sample_.poses.size() >= 2) pose = render_sample_.poses[1];
+    return iso_to_godot_transform(pose, origin_rebase_ ? origin_rebase_->origin() : ps::Vec3{});
+}
+
 } // namespace rg_godot

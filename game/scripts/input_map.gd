@@ -68,6 +68,8 @@ var _jump_count: int = 0
 var _interact_count: int = 0
 var _get_out_key_count: int = 0
 var _npc_truck_count: int = 0
+var _trailer_hook_count: int = 0
+var _trailer_spawn_count: int = 0
 var _zoom_steps: float = 0.0 # mouse-wheel ticks since last consumed, + = zoom in
 var _cam_zoom_key: float = 0.0 # zoom-in binding (+1) / zoom-out binding (-1) held
 
@@ -347,6 +349,8 @@ func _clear_edges() -> void:
 	_interact_count = 0
 	_get_out_key_count = 0
 	_npc_truck_count = 0
+	_trailer_hook_count = 0
+	_trailer_spawn_count = 0
 	_zoom_steps = 0.0
 	_mouse_delta = Vector2.ZERO
 
@@ -426,6 +430,10 @@ func poll() -> void:
 		_cycle_drone_count += 1
 	if _edge("npc_truck", held.call("npc_truck")):
 		_npc_truck_count += 1
+	if _edge("trailer_hook", held.call("trailer_hook")):
+		_trailer_hook_count += 1
+	if _edge("trailer_spawn", held.call("trailer_spawn")):
+		_trailer_spawn_count += 1
 	# --- walking group edges (on foot) ---
 	if _edge("jump", held.call("jump")):
 		_jump_count += 1
@@ -612,3 +620,14 @@ func consume_log_marker() -> int:
 	var count := _log_marker_count
 	_log_marker_count = 0
 	return count
+
+# Towing: the hook / unhook key and the bring / stand-up / remove key (edge counts).
+func consume_trailer_hook() -> int:
+	var n := _trailer_hook_count
+	_trailer_hook_count = 0
+	return n
+
+func consume_trailer_spawn() -> int:
+	var n := _trailer_spawn_count
+	_trailer_spawn_count = 0
+	return n

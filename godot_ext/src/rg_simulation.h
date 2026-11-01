@@ -415,6 +415,26 @@ public:
     // Engine temperature for dashboards (rg::engine_thermal_hud); {present: false} for a car without a thermal model.
     [[nodiscard]] godot::Dictionary get_vehicle_thermal(const godot::String& vehicle_name) const;
     [[nodiscard]] float get_vehicle_ground_speed_mps(const godot::String& vehicle_name) const;
+    // --- Towing (rg/trailer.h, data/trailers/trailers.json). The logic is rg_core's; this is the thin binding.
+    // set_trailer_config: absolute path of trailers.json ("" = no trailer rig) plus the file the player's trailer is kept in
+    // between worlds and runs (<user dir>/trailer.json); applies to every Session created after the call.
+    // Returns "" on success, else the loader's message.
+    godot::String set_trailer_config(const godot::String& config_path, const godot::String& state_path);
+    [[nodiscard]] bool has_trailer_config() const { return trailer_config_ != nullptr; }
+    // Any thread; consumed by the sim on its next tick. The outcome is get_trailer_state()["message"].
+    void request_trailer_spawn(const godot::String& kind, const godot::String& load, bool coupled);
+    void request_trailer_attach();
+    void request_trailer_detach();
+    void request_trailer_remove();
+    void request_trailer_recover();
+    // {present, state ("none"|"standing"|"coupled"), kind, load, name, serial, wheels:[{name, spin_angle, compression,
+    // load, steer_angle}], mass_kg, towed_mass_kg, tongue_load_n, hitch_force_n, break_force_n, yaw/pitch/roll_deg,
+    // socket_error_m, tow_brake, latch_progress, class, hookup_distance_m, hookup_ok, hookup_verdict, message, findings:[text],
+    // model_offset (Vector3, ISO), model_file, jack_down, attaches, detaches, overloads}
+    [[nodiscard]] godot::Dictionary get_trailer_state() const;
+    // The trailer's render-interpolated transform (origin-relative like get_body_transform; identity without a trailer).
+    [[nodiscard]] godot::Transform3D get_trailer_transform() const;
+
 
 protected:
     static void _bind_methods();
@@ -434,6 +454,7 @@ private:
     ps::Pose render_chassis_pose() const;
     mutable ps_godot::RenderSample render_sample_;
     mutable ps::Pose render_chassis_pose_{};
+    mutable bool render_sample_fresh_ = false; // render_sample_ was taken this frame (render_chassis_pose)
     mutable std::uint64_t render_pose_frame_ = static_cast<std::uint64_t>(-1);
     double render_delay_ticks_ = 2.0;
     bool render_interpolation_ = true;
@@ -462,6 +483,11 @@ private:
     void save_damage(); // writes the running Session's damage state when its revision changed since the last write
     std::uint64_t damage_saved_revision_ = 0;
     std::chrono::steady_clock::time_point damage_saved_at_{};
+    // Trailer config and the record kept across worlds (rg_simulation_shell.cpp).
+    std::shared_ptr<const rg::TrailerConfig> trailer_config_;
+    rg::TrailerRecord trailer_restore_{};
+    std::string trailer_state_path_;
+    void capture_trailer_record(); // from the running Session, into trailer_restore_ and the state file
 
     struct SpawnOverride {
         double x = 0.0;

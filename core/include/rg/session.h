@@ -50,6 +50,7 @@
 #include "rg/player_mode.h"
 #include "rg/road_ahead.h"
 #include "rg/terrain_mode.h"
+#include "rg/trailer.h"
 #include "rg/fpv_drone.h"
 #include "rg/walker.h"
 
@@ -211,6 +212,14 @@ struct SessionConfig {
         bool enabled = true;
     };
     std::shared_ptr<const Damage> damage;
+
+    // Towing a trailer (rg/trailer.h, data/trailers/trailers.json). Null = no trailer rig: nothing is created, every hash and
+    // every code path stays as it was (hash_check). With a config the player (or a test) asks for a trailer through
+    // request_trailer_*; none exists until then.
+    std::shared_ptr<const TrailerConfig> trailer;
+    // A trailer to put behind the car on the first stepped tick (the one the player had when the world was left, or a
+    // test's). present false = none.
+    TrailerRecord trailer_restore;
 };
 
 // The damage model as of the last tick (Session::damage_report).
@@ -298,6 +307,8 @@ struct FrameSnapshot {
     WalkerSnapshot walker;
     // The FPV drone (state.active false = none). Positions session metres.
     FpvDroneState fpv;
+    // The trailer (present false = none, and always without SessionConfig::trailer).
+    TrailerSnapshot trailer;
     // The road under and ahead of the car (session coordinates, first point
     // = the car's projection onto its road), refreshed ~20 Hz, only while
     // set_road_ahead_wanted(true). Empty when not wanted, in the flat world,
@@ -683,6 +694,22 @@ public:
     // hashes are unaffected.
     void request_flip_upright();
 
+    // --- Towing (rg/trailer.h). Any thread; consumed in order by the next tick attempt past the terrain gate and any
+    // relocation (the physics wants attach/detach on the stepping thread between steps). No-ops without
+    // SessionConfig::trailer. The outcome of the last one is FrameSnapshot::trailer.last_message.
+    //  - spawn: a trailer of `kind` ("" = the config's default) loaded `load` ("" = the kind's default) behind the car,
+    //    standing (coupled false) or hooked on (true). One at a time: a second spawn replaces the first.
+    //  - attach: hook the standing trailer on (the assisted hook-up, when near and still); detach: let it go (car still).
+    //  - recover: put the trailer upright behind the car again and hook it on; remove: delete it.
+    void request_trailer_spawn(const std::string& kind, const std::string& load, bool coupled);
+    void request_trailer_attach();
+    void request_trailer_detach();
+    void request_trailer_remove();
+    void request_trailer_recover();
+    [[nodiscard]] const TrailerConfig* trailer_config() const { return config_.trailer.get(); }
+    // Stepping thread / tests only (not while running()): the attachment state machine, null without a config.
+    [[nodiscard]] const TrailerRig* trailer_rig() const { return trailer_rig_.get(); }
+
     // Replaces the drive script (rewound: every event already due at the
     // current drive tick is applied on the next stepped tick). While a
     // script is set it is the only control source of try_step()/step() and
@@ -819,6 +846,8 @@ private:
     // request (after the gate and any relocation); update: one controller tick
     // before World::step; spawn_walker places the body.
     void process_walker_request();
+    void process_trailer_requests();
+    [[nodiscard]] TrailerRig::Car trailer_car() const;
     void install_weather();
     void apply_weather_requests();
     WeatherSnapshot capture_weather() const;
@@ -902,6 +931,17 @@ private:
     std::atomic<bool> damage_repair_pending_{false};
     std::shared_ptr<ps::io::SurfaceTable> surface_table_;
     std::unique_ptr<ps::World> world_;
+    // Towing: declared right after the World so it is destroyed first (its parking-leg force element is registered in it).
+    std::unique_ptr<TrailerRig> trailer_rig_;
+    struct TrailerCommand {
+        enum class Kind : int { Spawn, Attach, Detach, Remove, Recover } kind = Kind::Attach;
+        std::string trailer_kind, load;
+        bool coupled = false;
+    };
+    std::mutex trailer_mutex_;
+    std::vector<TrailerCommand> trailer_commands_;
+    std::atomic<bool> trailer_pending_{false};
+    std::uint64_t trailer_teleports_seen_ = 0; // stepping thread
     // Built lazily by sync_road_decks; declared after world_ so it is destroyed first (its workers call into the World).
     std::unique_ptr<DeckInstaller> deck_installer_;
     ps::BodyId ground_body_{};

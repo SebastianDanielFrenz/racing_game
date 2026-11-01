@@ -135,6 +135,7 @@ RgSimulation::~RgSimulation() {
     reap_init_thread(/*wait=*/true);
     if (session_) session_->stop();
     save_damage(); // damage persists until repaired (owner rule)
+    capture_trailer_record();
     session_.reset(); // Session's own destructor stops its loop
     origin_rebase_ = nullptr;
 }
@@ -157,6 +158,7 @@ void RgSimulation::teardown_current() {
     reap_init_thread(/*wait=*/true); // joins any in-flight worker first (see its own doc comment)
     if (session_) session_->stop();
     save_damage(); // a world reload / Change car of the same car reloads it from this file
+    capture_trailer_record();
     session_.reset();
     damage_saved_revision_ = 0;
     origin_rebase_ = nullptr;
@@ -309,6 +311,8 @@ void RgSimulation::run_terrain_init_worker(std::string world_config_path, std::s
     configure_vehicle_chassis(config, overrides);
     reuse_vehicle_definition(config);
     config.fpv_drone = fpv_config_;
+    config.trailer = trailer_config_;
+    config.trailer_restore = trailer_restore_;
     config.rolling_resistance_model=rolling_resistance_model_;
     config.aero_map_selection_path=aero_map_selection_path_;
     config.surface_table_path = std::move(surface_table_path);
@@ -362,6 +366,8 @@ void RgSimulation::run_flat_init_worker(std::string vehicle_json_path, std::stri
     configure_vehicle_chassis(config, overrides);
     reuse_vehicle_definition(config);
     config.fpv_drone = fpv_config_;
+    config.trailer = trailer_config_;
+    config.trailer_restore = trailer_restore_;
     config.rolling_resistance_model = rolling_resistance_model_;
     config.aero_map_selection_path = aero_map_selection_path_;
     config.surface_table_path = std::move(surface_table_path);
@@ -658,12 +664,14 @@ ps::Pose RgSimulation::render_chassis_pose() const {
     const auto frame = static_cast<std::uint64_t>(godot::Engine::get_singleton()->get_process_frames());
     if (render_pose_frame_ == frame) return render_chassis_pose_;
     render_pose_frame_ = frame;
+    render_sample_fresh_ = false;
     // Nominal-clock sample (Session::sample_render_poses): at most one per rendered frame, so every
     // reader of the chassis pose in this frame (camera, model, audio listener) sees the same pose.
     if (render_interpolation_ && session_->running()) {
         const auto t = ps_godot::render_time_for(ps_godot::SimClock::now(), session_->tick_period_s(), render_delay_ticks_);
         if (session_->sample_render_poses(t, render_sample_) && render_sample_.valid && !render_sample_.poses.empty()) {
             render_chassis_pose_ = render_sample_.poses[0];
+            render_sample_fresh_ = true;
             return render_chassis_pose_;
         }
     }
@@ -1534,6 +1542,15 @@ void RgSimulation::_bind_methods() {
     godot::ClassDB::bind_method(D_METHOD("get_traffic_state"), &RgSimulation::get_traffic_state);
     godot::ClassDB::bind_method(D_METHOD("request_npc_truck","enabled","speed_kph"), &RgSimulation::request_npc_truck);
     godot::ClassDB::bind_method(D_METHOD("get_npc_truck_state"), &RgSimulation::get_npc_truck_state);
+    godot::ClassDB::bind_method(D_METHOD("set_trailer_config", "config_path", "state_path"), &RgSimulation::set_trailer_config);
+    godot::ClassDB::bind_method(D_METHOD("has_trailer_config"), &RgSimulation::has_trailer_config);
+    godot::ClassDB::bind_method(D_METHOD("request_trailer_spawn", "kind", "load", "coupled"), &RgSimulation::request_trailer_spawn);
+    godot::ClassDB::bind_method(D_METHOD("request_trailer_attach"), &RgSimulation::request_trailer_attach);
+    godot::ClassDB::bind_method(D_METHOD("request_trailer_detach"), &RgSimulation::request_trailer_detach);
+    godot::ClassDB::bind_method(D_METHOD("request_trailer_remove"), &RgSimulation::request_trailer_remove);
+    godot::ClassDB::bind_method(D_METHOD("request_trailer_recover"), &RgSimulation::request_trailer_recover);
+    godot::ClassDB::bind_method(D_METHOD("get_trailer_state"), &RgSimulation::get_trailer_state);
+    godot::ClassDB::bind_method(D_METHOD("get_trailer_transform"), &RgSimulation::get_trailer_transform);
     godot::ClassDB::bind_method(D_METHOD("get_steering_kinematics"), &RgSimulation::get_steering_kinematics);
     godot::ClassDB::bind_method(D_METHOD("get_body_speed_mps", "body_name"), &RgSimulation::get_body_speed_mps);
     godot::ClassDB::bind_method(D_METHOD("get_airspeed_mps"), &RgSimulation::get_airspeed_mps);

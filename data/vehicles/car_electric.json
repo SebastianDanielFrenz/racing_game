@@ -1,6 +1,8 @@
 {
   "format": "physics_sim.vehicle/2",
   "name": "car_electric",
+  "hitch_points": [{"name": "socket_tow_rear", "class": "../../external/physics_sim/data/hitch_classes/ball.json", "role": "towing", "position": [-2.22, 0.0, -0.09], "max_towed_mass_kg": 1500, "max_tongue_load_n": 736}],
+  "hitch_points_source": "racing_game [AS]: a tow ball on the rig's socket_tow_rear (data/models/*/*.rig.json) moved to the chassis origin the way vehicle_visual.gd places the model (rig position + the mean of wheel attachment - rig wheel pivot), centred on y = 0 where the rig's recovery eye sits off centre, and RAISED in z so the ball sits at the tipper's coupler height (0.50 m above the ground at rest; ball height per car measured by rg_unit_tests [trailer_diag]): a tandem trailer on four stiff wheels is pitch-stiff, and a ball lower than its coupler makes the hitch push the nose down and lift the car's rear [M: tongue load -4.3 kN behind the saloon with the ball at 0.33 m, +0.1 kN at 0.475 m]. Ratings are assumed for the body class (braked trailer mass, tongue load = 75 kg x g for a saloon, less for the small cars); the hitch ratings never refuse a hitch, they only grade the limit findings.",
   "source": "[AS] electric development sedan: two independent 300 kW axle motors, shared 90 kWh pack, fixed 9:1 reduction. Existing sedan body and suspension; authored test parameters, not a production-car claim.",
   "wheels": [
     {

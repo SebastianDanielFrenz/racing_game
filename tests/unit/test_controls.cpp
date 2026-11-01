@@ -130,7 +130,8 @@ float value(const Controls& c, const rg::ActionState& s, const std::string& acti
 TEST_CASE("controls: the shipped schema and default profiles load and are consistent", "[controls]") {
     Controls c = make_controls();
     CHECK(c.ready());
-    CHECK(c.schema().size() == 54);
+    CHECK(c.schema().size() == 56);
+    // sabotage: removing trailer_hook or trailer_spawn from data/controls/actions.json fails this count (and the frozen bindings below).
     // Every action has a label, every signed axis names both directions.
     for (const rg::ActionDef& a : c.schema().actions()) {
         CAPTURE(a.id);
@@ -184,7 +185,7 @@ TEST_CASE("controls: the default profiles equal the bindings the game had before
     const std::map<std::string, std::string> keyboard = {
         {"steer", "key:A:-1, key:D"}, {"throttle", "key:W"}, {"brake", "key:S"}, {"handbrake", "key:Space"}, {"clutch", "key:C"},
         {"shift_up", "key:E"}, {"shift_down", "key:Q"}, {"park", "key:P"}, {"start_stop", "key:F11"}, {"hazard", "key:F12"}, {"indicator_left", "key:Z"}, {"indicator_right", "key:X"}, {"horn", "key:J"}, {"lights", "key:O"}, {"main_beam", "key:Comma"}, {"ignition", "key:I"}, {"starter", "key:K"}, {"auto_shift", "key:F5"}, {"traction_control", "key:F4"}, {"drive_mode", "key:M"}, {"electric_mode", "key:U"}, {"toggle_aero", "key:H"}, {"toggle_launch_control", "key:L"}, {"toggle_abs", "key:F2"}, {"cycle_esc", "key:F3"}, {"manual_mode", "key:Y"},
-        {"toggle_nitrous", "key:N"}, {"flip_upright", "key:F"}, {"npc_truck", "key:T"}, {"get_out", "key:G"}, {"cycle_view", "key:B"},
+        {"toggle_nitrous", "key:N"}, {"flip_upright", "key:F"}, {"npc_truck", "key:T"}, {"trailer_hook", "key:F6"}, {"trailer_spawn", "key:F7"}, {"get_out", "key:G"}, {"cycle_view", "key:B"},
         {"cycle_camera", "key:Tab"}, {"cycle_drone_target", "key:N"}, {"cam_zoom_in", "key:PageUp"}, {"cam_zoom_out", "key:PageDown"},
         {"cam_move_x", "key:A:-1, key:D"}, {"cam_move_z", "key:S:-1, key:W"},
         {"cam_move_y", "key:Q:-1, key:Ctrl:-1, key:E, key:Space"}, {"cam_fast", "key:Shift"},
