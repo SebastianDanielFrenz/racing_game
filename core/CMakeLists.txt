@@ -90,6 +90,7 @@ add_library(rg_core STATIC
     src/credits.cpp
     src/settings.cpp
     src/lod_settings.cpp
+    src/ui_theme.cpp
     src/route_planner.cpp
     src/map_view.cpp
     src/spawn_presets.cpp

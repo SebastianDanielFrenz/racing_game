@@ -1,0 +1,12 @@
+{
+  "format": "rg.ui_game/1",
+  "source": "Which palettes this game offers, in menu order, and the one it starts with. The farm game keeps the same palettes and changes default_palette only.",
+  "section": { "id": "interface", "title": "Interface" },
+  "palette_setting": {
+    "key": "interface.palette",
+    "label": "Colour palette",
+    "help": "Changes every menu and HUD colour at once. High contrast is safe for colour-blind players."
+  },
+  "palettes": ["racing", "farm", "high_contrast"],
+  "default_palette": "racing"
+}

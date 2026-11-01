@@ -1,0 +1,6 @@
+{
+  "format": "rg.ui_colour_allowlist/1",
+  "source": "Scripts that may hold a literal colour: world colours, which are not UI (docs/design_language.md). tests/unit/test_ui_theme.cpp fails on any other colour in a script and on an entry here that no longer matches anything.",
+  "files": [],
+  "lines": []
+}

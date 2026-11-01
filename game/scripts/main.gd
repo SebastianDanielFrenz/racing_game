@@ -76,6 +76,7 @@ const DriverState := preload("res://scripts/driver_state.gd") # preloaded once: 
 # until the first load (the --bindings-test path and the catalog default).
 var VEHICLE_NAME := "car_hyper"
 const DriveModeTheme := preload("res://scripts/drive_mode_theme.gd")
+const UiTheme := preload("res://scripts/ui/ui_theme.gd")
 const WORLD_LABEL :={"flat": "flat test scene", "real_world": "real world"}
 
 # --- unified scene state (read by drive_smoke.gd / drive_tour.gd) ---
@@ -688,7 +689,7 @@ func _build_scene(user_args: PackedStringArray) -> void:
 	readout.name = "Readout"
 	readout.position = Vector2(16, 16)
 	readout.add_theme_font_size_override("font_size", 14)
-	readout.add_theme_color_override("font_outline_color", Color.BLACK)
+	UiTheme.bind_font(readout, &"text_outline", [&"font_outline_color"])
 	readout.add_theme_constant_override("outline_size", 4)
 	_hud.add_child(readout)
 	var banner := Label.new()
@@ -698,8 +699,8 @@ func _build_scene(user_args: PackedStringArray) -> void:
 	banner.position.y = 90
 	banner.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	banner.add_theme_font_size_override("font_size", 34)
-	banner.add_theme_color_override("font_color", Color(1.0, 0.85, 0.2))
-	banner.add_theme_color_override("font_outline_color", Color.BLACK)
+	UiTheme.bind_font(banner, &"warning_text")
+	UiTheme.bind_font(banner, &"text_outline", [&"font_outline_color"])
 	banner.add_theme_constant_override("outline_size", 8)
 	banner.visible = false
 	_hud.add_child(banner)
@@ -778,6 +779,14 @@ func _build_scene(user_args: PackedStringArray) -> void:
 		controls_shots.main = self
 		controls_shots.out_dir = user_args[controls_shots_index + 1]
 		add_child(controls_shots)
+	var palette_shots_index := user_args.find("--ui-palette-shots")
+	if palette_shots_index >= 0 and palette_shots_index + 1 < user_args.size():
+		var palette_shots := Node.new()
+		palette_shots.name = "UiPaletteShots"
+		palette_shots.set_script(load("res://scripts/ui_palette_shots.gd"))
+		palette_shots.main = self
+		palette_shots.out_dir = user_args[palette_shots_index + 1]
+		add_child(palette_shots)
 	var garage_shots_index := user_args.find("--garage-shots")
 	if garage_shots_index >= 0 and garage_shots_index + 1 < user_args.size():
 		var garage_shots := Node.new()
@@ -2424,6 +2433,10 @@ func _apply_setting(key: String) -> void:
 			OS.set_environment("RG_SERVER_URL", _server_env_override if _server_env_override != "" else str(value).strip_edges())
 		"map_data.store_dir":
 			_simulation.set_store_dir_override(str(value))
+		"interface.palette":
+			var refused := UiTheme.set_palette(str(value))
+			if refused != "":
+				push_warning("Settings: %s" % refused)
 		"lod.view_distance_m", "lod.terrain_detail", "lod.road_detail", "lod.map_detail":
 			var choice: Dictionary = _shell.get_lod_choice()
 			_world_view.set_view_lod(choice)
