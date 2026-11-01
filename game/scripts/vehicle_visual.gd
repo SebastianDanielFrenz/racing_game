@@ -61,7 +61,7 @@ var _wing_flap: Node3D
 var _wing_lift: Node3D
 var _wing_rest_rotation := Vector3.ZERO
 var _wing_rest_position := Vector3.ZERO
-var _rig_wheel_width := {} # wheel node name -> modelled width (m), for rigs with "wheel_width_scale": "rig"
+var _rig_wheel_width := {} # wheel node name -> modelled width (m), from the rig
 
 func _ready() -> void:
 	_load_model()
@@ -181,7 +181,7 @@ func _load_model() -> void:
 	var rig_path := model_absolute_path.get_basename() + ".rig.json"
 	if FileAccess.file_exists(rig_path):
 		var rig_data = JSON.parse_string(FileAccess.get_file_as_string(rig_path))
-		if rig_data is Dictionary and rig_data.get("wheel_width_scale", "") == "rig":
+		if rig_data is Dictionary:
 			for node in rig_data.get("nodes", []):
 				if node.has("wheel"):
 					_rig_wheel_width[node["name"]] = float(node["wheel"].get("tyre_width", node["wheel"]["width"]))
@@ -259,7 +259,7 @@ func _bind_wheel_nodes() -> void:
 			"susp": susp,
 			"steer": steer,
 			"wheel": wheel,
-			"rest_susp_pos": (susp.position if susp != null else Vector3.ZERO),
+			"rest_susp_pos": (susp.position if susp != null else _rest_wheel_centre(wheel)),
 			"is_front": simulation.get_wheel_is_front(vehicle_name, i),
 			"steered": simulation.get_wheel_steered(vehicle_name, i),
 		}
@@ -272,11 +272,25 @@ func _bind_wheel_nodes() -> void:
 				wheel.set_meta("stock_width_scale", wheel.scale.x)
 			wheel.scale.x = float(wheel.get_meta("stock_width_scale")) * simulation.get_wheel_width(vehicle_name,i) / reference
 		_wheel_nodes.append(entry)
-		if susp == null or wheel == null:
+		if wheel == null:
 			missing += 1
 	if missing > 0:
-		push_warning("vehicle_visual.gd: %d/%d wheel(s) missing a susp_*/wheel_* node in the model - those stay at their static rest position" % [missing, wheel_count])
+		push_warning("vehicle_visual.gd: %d/%d wheel(s) missing a wheel_* node in the model - those stay at their static rest position" % [missing, wheel_count])
 	_align_model_to_physics_wheels()
+
+# A model without susp_* nodes (a tractor's rigid axles): the wheel's centre below the model's
+# root, in the file's own gltf axes. Rig nodes have no rotation at rest, so positions add up.
+func _rest_wheel_centre(wheel: Node3D) -> Vector3:
+	if wheel == null:
+		return Vector3.ZERO
+	if not wheel.has_meta("rest_position"):
+		wheel.set_meta("rest_position", wheel.position)
+	var at: Vector3 = wheel.get_meta("rest_position")
+	var node := wheel.get_parent()
+	while node != _model_root and node is Node3D:
+		at += (node as Node3D).position
+		node = node.get_parent()
+	return at
 
 # Mount the model so its wheel centres coincide with the PHYSICS wheel
 # centres. The rig's origin is the ground point below the wheel centres
@@ -292,12 +306,13 @@ func _align_model_to_physics_wheels() -> void:
 	var diffs: Array = [] # ISO-local (dx, dy, dz) per wheel, or null
 	for i in range(_wheel_nodes.size()):
 		var w = _wheel_nodes[i]
-		if w["susp"] == null:
+		if w["susp"] == null and w["wheel"] == null:
 			diffs.append(null)
 			continue
 		var attach: Vector3 = simulation.get_wheel_attachment_local(vehicle_name, i)
 		# susp_* is a direct child of the model's body node at the origin,
-		# its position in the file's own gltf axes. gltf(x,y,z) = iso(y,z,x)
+		# its position in the file's own gltf axes (without one, the wheel's
+		# centre: _rest_wheel_centre). gltf(x,y,z) = iso(y,z,x)
 		# (car_sedan.rig.json "frame"), so re-permuting rest_susp_pos back
 		# into ISO gives (rest_susp_pos.z, rest_susp_pos.x, rest_susp_pos.y).
 		var rest_susp_pos: Vector3 = w["rest_susp_pos"]
@@ -368,6 +383,10 @@ func _process_body(delta: float) -> void:
 			var bias_iso: Vector3 = w.get("susp_bias", Vector3.ZERO)
 			var bias_gltf := Vector3(bias_iso.y, bias_iso.z, bias_iso.x)
 			w["susp"].position = w["rest_susp_pos"] + Vector3(0, compression, 0) + bias_gltf
+		elif w["wheel"] != null:
+			# No susp_* node: the wheel carries the travel itself.
+			var bias_iso: Vector3 = w.get("susp_bias", Vector3.ZERO)
+			w["wheel"].position = Vector3(w["wheel"].get_meta("rest_position")) + Vector3(0, compression, 0) + Vector3(bias_iso.y, bias_iso.z, bias_iso.x)
 
 		if w["steer"] != null and w["steered"]:
 			# Real simulated per-wheel steer angle (WheelState::steer_angle,

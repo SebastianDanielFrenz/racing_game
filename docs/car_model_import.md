@@ -19,7 +19,7 @@ What the importer does:
 - wheels: nodes named wheel/tire/tyre/rim (corner from the position), else geometric clustering (connected
   components that are round in side view, touch the ground and are narrower than tall, one per corner, plus every
   component inside it; such meshes are split into wheel and body meshes); each wheel goes under
-  `susp_<C>` / `steer_<C>` (front) / `wheel_<C>` with all three pivots at the wheel's bbox centre; brake parts
+  `susp_<C>` / `steer_<C>` (front) / `wheel_<C>` with all three pivots at the wheel's bbox centre (a model without `susp_<C>`, such as a tractor's rigid axles, is lined up by its wheel centres and the wheel carries the travel); brake parts
   (`brake_parts` regex, calipers) under `steer_<C>` / `susp_<C>` so they steer but do not spin;
 - baked shadow / ground planes are dropped; materials, textures and vertex data are reused byte for byte;
 - `asset.copyright` / `asset.extras` keep the original credit plus the source file's SHA-256 and the modification
@@ -27,8 +27,9 @@ What the importer does:
 - vehicle file: a copy of the base vehicle file (`cars.json` `vehicle.base`) with the wheel positions of the model
   (wheelbase scaled keeping the base car's CoG fraction, track from the model) and a tyre whose radius matches the
   modelled wheel. The physics follows the art here because only four numbers change; the art is untouched.
-- rig `wheel_width_scale: "rig"`: `vehicle_visual.gd` / `garage_scene.gd` scale a wheel by
-  physics tyre width / the rig wheel's `tyre_width` (the stock tyre), so the stock tyre shows the art unscaled.
+- `vehicle_visual.gd` / `garage_scene.gd` scale a wheel of any rig by physics tyre width / the rig wheel's
+  `tyre_width` (the stock tyre), or its `width` where the rig has no `tyre_width`, so the stock tyre shows the art
+  unscaled. The rig key `wheel_width_scale: "rig"` is still written but no longer read.
 
 Checks (exit 1 on failure): four wheels, every pivot within 1 cm of its wheel's centre measured in the written
 file, round wheels, wheel bottoms on the ground plane (1 cm), attribution, licence and source hash in the asset,
