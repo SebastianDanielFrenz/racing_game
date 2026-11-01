@@ -85,7 +85,9 @@
       { "id": "control_fill_hover", "meaning": "The same under the pointer." },
       { "id": "border_subtle", "meaning": "Hairline around a tile at rest." },
       { "id": "border_strong", "meaning": "Visible edge of a small swatch." },
-      { "id": "border_selected", "meaning": "Edge of the selected swatch." }
+      { "id": "border_selected", "meaning": "Edge of the selected swatch." },
+      { "id": "pointer_hover", "meaning": "Glow on a cockpit control under the pointer, in the 3D cabin." },
+      { "id": "pointer_dot", "meaning": "The laser dot of the headset pointer." }
     ] },
     { "id": "status", "title": "Status", "roles": [
       { "id": "good", "meaning": "On, healthy, fitted and working: lamps and fills." },
@@ -173,13 +175,15 @@
     { "fg": "text", "class": "text", "on": ["surface_screen", "surface_screen_glass", "surface_scrim", "surface_panel", "surface_panel_solid", "surface_card", "surface_card_focus", "surface_chip", "surface_note", "surface_inset", "surface_widget", "surface_cluster", "surface_cluster_strip"] },
     { "fg": "text", "class": "large_text", "on": ["surface_hud", "surface_inset_alert"] },
     { "fg": "text_control", "class": "text", "on": ["surface_control", "surface_control_hover", "surface_control_pressed", "surface_popup", "surface_popup_hover"] },
-    { "fg": "text_muted", "class": "text", "on": ["surface_screen", "surface_screen_glass", "surface_panel", "surface_panel_solid", "surface_card", "surface_note", "surface_widget"] },
+    { "fg": "text_muted", "class": "text", "on": ["surface_screen", "surface_screen_glass", "surface_panel", "surface_panel_solid", "surface_card", "surface_note", "surface_widget", "surface_cluster"] },
+    { "fg": "text_muted", "class": "large_text", "on": ["surface_hud"] },
     { "fg": "text_disabled", "class": "quiet", "on": ["surface_control", "surface_control_disabled", "surface_popup"] },
     { "fg": "text_on_scene", "class": "text", "on": ["text_outline"] },
     { "fg": "text_on_accent", "class": "text", "on": ["accent"] },
     { "fg": "text_on_status", "class": "text", "on": ["badge_good", "badge_danger", "badge_neutral"] },
     { "fg": "accent", "class": "text", "on": ["surface_panel", "surface_panel_solid", "surface_card"] },
-    { "fg": "accent", "class": "graphic", "on": ["surface_screen", "surface_screen_glass"] },
+    { "fg": "accent", "class": "text", "on": ["surface_screen", "surface_screen_glass"] },
+    { "fg": "pointer_dot", "class": "graphic", "on": ["surface_panel"] },
     { "fg": "accent_text", "class": "text", "on": ["surface_panel", "surface_panel_solid", "surface_screen", "surface_screen_glass", "surface_card", "surface_card_focus"] },
     { "fg": "focus_ring", "class": "graphic", "on": ["surface_control", "surface_card", "surface_panel"] },
     { "fg": "border_selected", "class": "graphic", "on": ["surface_panel", "surface_card"] },

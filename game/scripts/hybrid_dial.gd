@@ -4,11 +4,7 @@ extends RefCounted
 # traction_motor_rpm, battery_percent, battery_level, battery_label); this file only draws them, so the HUD gauge and the
 # digital cluster look the same.
 
-const COLOR_OK := Color(0.2, 0.95, 0.75)
-const COLOR_LOW := Color(1.0, 0.65, 0.15)
-const COLOR_CRITICAL := Color(1.0, 0.25, 0.16)
-const COLOR_TRACK := Color(0.15, 0.27, 0.34)
-const COLOR_MOTOR_NEEDLE := Color(0.35, 0.8, 1.0)
+const UiTheme := preload("res://scripts/ui/ui_theme.gd")
 
 static func is_hybrid(gauge_info: Dictionary) -> bool:
 	return str(gauge_info.get("tach_kind", "ice")) == "hybrid"
@@ -24,11 +20,11 @@ static func inner_ticks(max_rpm: float, tick_rpm: float) -> Array:
 		v += tick_rpm
 	return out
 
-static func battery_color(level: int, ok := COLOR_OK) -> Color:
+static func battery_color(level: int, ok := UiTheme.role(&"gauge_fill")) -> Color:
 	if level >= 2:
-		return COLOR_CRITICAL
+		return UiTheme.role(&"danger")
 	if level == 1:
-		return COLOR_LOW
+		return UiTheme.role(&"warning")
 	return ok
 
 static func has_battery(pt: Dictionary) -> bool:
@@ -36,7 +32,7 @@ static func has_battery(pt: Dictionary) -> bool:
 
 # "SoC 25%" and a small bar below it, both centred on `center_x`; `top_y` is the text baseline. Nothing for a car without a
 # traction battery. Returns the height used.
-static func draw_battery(canvas: CanvasItem, font: Font, center_x: float, top_y: float, pt: Dictionary, font_size: int, bar_size: Vector2, ok := COLOR_OK) -> float:
+static func draw_battery(canvas: CanvasItem, font: Font, center_x: float, top_y: float, pt: Dictionary, font_size: int, bar_size: Vector2, ok := UiTheme.role(&"gauge_fill")) -> float:
 	if not has_battery(pt):
 		return 0.0
 	var color := battery_color(int(pt.get("battery_level", 0)), ok)
@@ -46,6 +42,6 @@ static func draw_battery(canvas: CanvasItem, font: Font, center_x: float, top_y:
 	var bar_top := top_y + font_size * 0.35
 	var left := center_x - bar_size.x * 0.5
 	var fraction := clampf(float(pt.get("battery_percent", 0)) / 100.0, 0.0, 1.0)
-	canvas.draw_rect(Rect2(left, bar_top, bar_size.x, bar_size.y), COLOR_TRACK)
+	canvas.draw_rect(Rect2(left, bar_top, bar_size.x, bar_size.y), UiTheme.role(&"cluster_track"))
 	canvas.draw_rect(Rect2(left, bar_top, bar_size.x * fraction, bar_size.y), color)
 	return font_size * 0.35 + bar_size.y

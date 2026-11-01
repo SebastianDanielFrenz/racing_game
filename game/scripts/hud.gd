@@ -17,6 +17,7 @@ extends CanvasLayer
 
 # Key help removed (owner 2026-10-06): bindings live in Settings -> Controls (R5b).
 
+const UiTheme := preload("res://scripts/ui/ui_theme.gd")
 const DriveModeTheme := preload("res://scripts/drive_mode_theme.gd")
 const DriverState := preload("res://scripts/driver_state.gd")
 
@@ -35,7 +36,7 @@ var _streaming_label: Label
 var _prompt_label: Label
 var _message_text: String = ""
 var _message_until_ms: int = 0
-var _message_color: Color = Color.WHITE
+var _message_color: Color = UiTheme.role(&"text_on_scene")
 
 # Rolling one-second measurement window for the sim's own tick rate,
 # independent of Godot's render fps - same technique as the reference file.
@@ -66,7 +67,7 @@ func _ready() -> void:
 	_prompt_label.position.y = -90
 	_prompt_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_prompt_label.add_theme_font_size_override("font_size", 26)
-	_prompt_label.add_theme_color_override("font_outline_color", Color.BLACK)
+	UiTheme.bind_font(_prompt_label, &"text_outline", [&"font_outline_color"])
 	_prompt_label.add_theme_constant_override("outline_size", 6)
 	_prompt_label.visible = false
 	add_child(_prompt_label)
@@ -98,7 +99,7 @@ func _bar(value01: float, width: int = 20) -> String:
 
 # A short message on the prompt line (e.g. a refused get-out), for `seconds`, in `color` (the drive-mode theme colour
 # for a drive-mode change, white otherwise).
-func show_message(text: String, seconds: float = 3.0, color: Color = Color.WHITE) -> void:
+func show_message(text: String, seconds: float = 3.0, color: Color = UiTheme.role(&"text_on_scene")) -> void:
 	_message_text = text
 	_message_color = color
 	_message_until_ms = Time.get_ticks_msec() + int(seconds * 1000.0)
@@ -108,7 +109,7 @@ func _update_prompt(mode: Dictionary) -> void:
 	if _prompt_label == null:
 		return
 	var text := ""
-	var color := Color.WHITE
+	var color := UiTheme.role(&"text_on_scene")
 	if Time.get_ticks_msec() < _message_until_ms:
 		text = _message_text
 		color = _message_color
@@ -144,7 +145,7 @@ func _set_lines(lines: PackedStringArray) -> void:
 		line.position = Vector2(0.0, _line_labels.size() * _line_pitch)
 		line.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		line.add_theme_font_size_override("font_size", _label.get_theme_font_size("font_size"))
-		line.add_theme_color_override("font_outline_color", _label.get_theme_color("font_outline_color"))
+		UiTheme.bind_font(line, &"text_outline", [&"font_outline_color"])
 		line.add_theme_constant_override("outline_size", _label.get_theme_constant("outline_size"))
 		if _line_colour != null:
 			line.add_theme_color_override("font_color", _line_colour)
@@ -334,7 +335,7 @@ func _process_body(_delta: float) -> void:
 		if bool(controls["dm"]["fitted"]):
 			var dm_bits := int(assist_pt.get("drive_modes_available_bits", 0))
 			lines.append("drive mode %s (M%s)   offered: %s" % [str(controls["dm"]["label"]), ", U: electric" if (dm_bits >> 4) & 1 != 0 else "", _offered_drive_modes(dm_bits)])
-			_set_line_colour(DriveModeTheme.accent_state(controls["dm"], Color.WHITE).lerp(Color.WHITE, 0.55))
+			_set_line_colour(DriveModeTheme.accent_state(controls["dm"], UiTheme.role(&"text_on_scene")).lerp(UiTheme.role(&"text_on_scene"), UiTheme.token(&"state.readout_tint")))
 			themed_readout = true
 		if not themed_readout:
 			_set_line_colour(null)

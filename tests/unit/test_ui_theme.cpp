@@ -2,23 +2,27 @@
 // palette is complete and passes contrast, a broken one is refused with words,
 // roles and tokens answer, and a UI script cannot gain a hard-coded colour.
 //
-// Sabotages recorded (2026-11-01, each made the test below fail, then undone):
-//   S1 ui_theme.cpp validate_ui_palette: `if (worst < pair.min_ratio)` -> `if (false)`:
-//      "a palette with bad contrast is refused" and "translucent surfaces are judged
-//      over the scene" fail, the shipped-palette test does not (it is the check that
-//      fails on a palette, not the one that protects the rule).
-//   S2 ui_theme.cpp surface_over: return `on` with no scene composited: "translucent
-//      surfaces are judged over the scene" fails (ratio 19.8 against the expected refusal).
-//   S3 data/ui/palettes/farm.json: "text_muted" alpha lowered to #fbf7ea30: shipped palettes
-//      fails naming the pair and the ratio.
-//   S4 data/ui/palettes/racing.json: role "gauge_redline" removed: shipped palettes fails with
-//      `role "gauge_redline" has no colour`.
-//   S5 game/scripts/hud.gd: a line `var x := Color(1, 0, 0)` added: "no hard-coded colour"
-//      fails naming the file and line.
-//   S6 data/ui/colour_allowlist.json: an entry for a file that has no colour added: "no
-//      hard-coded colour" fails with the stale entry.
-//   S7 ui_theme.cpp ui_simulate_vision: returns `c` unchanged: "colour_blind_safe is checked
-//      under simulated vision" fails.
+// Sabotages recorded (2026-11-01, each run once, undone after, [ui_theme] green again: 122 assertions in 17 cases):
+//   S1 ui_theme.cpp validate_ui_palette: `if (worst < pair.min_ratio)` -> `if (false)`: 4 cases fail: "A palette with
+//      bad contrast", "Translucent surfaces", "Translucent text", "A surface is judged on what it sits on".
+//   S2 ui_theme.cpp surface_over_scene: `return ... : *own` with no scene behind it: "Translucent surfaces" and "A surface
+//      is judged on what it sits on" fail.
+//   S3 data/ui/palettes/farm.json: "text_muted" alpha down to #fbf7ea30: shipped palettes, the game-default case and "Loading
+//      refuses" fail: `"text_muted" on "surface_screen" over bright_field has contrast 1.79, text needs 4.50`.
+//   S4 data/ui/palettes/racing.json: "gauge_redline" removed: shipped palettes, the game-default case and "Role and token
+//      lookup" fail: `role "gauge_redline" has no colour (The red zone of a dial.)`.
+//   S5 game/scripts/hud.gd: `var sabotage_colour := Color(1, 0, 0)` added: "No hard-coded colour" fails.
+//   S6 data/ui/colour_allowlist.json: an entry for hud.gd, which holds no colour: "No hard-coded colour" fails on stale.empty().
+//   S7 ui_theme.cpp ui_simulate_vision: returns `c` unchanged: "colour_blind_safe is checked" fails.
+//   S8 ui_theme.cpp: the `sits_on` lookup replaced by `scene`: 5 cases fail, racing is refused, so the default falls to
+//      high_contrast ("high_contrast" == "racing").
+//   S9 ui_theme.cpp: the missing-role report off: "A palette with a missing role" and "Loading refuses" fail.
+//   S10 ui_theme.cpp: the unknown-role report off: "A palette with an unknown role" fails.
+//   S11 ui_theme.cpp: `if (difference < contract.min_lightness_difference)` -> `if (false)`: "Status colours" fails.
+//   S12 ui_theme.cpp: text alpha ignored in the ratio: "Translucent text" fails.
+//   S13 ui_theme.cpp ui_luminance: green weight 0.7152 -> 0.0722: 7 cases fail, "Colour arithmetic" among them.
+//   S14 ui_theme.cpp parse_ui_palette: the format check removed: "Malformed files" fails.
+//   S15 data/ui/palettes/high_contrast.json: `"claims": []`: "The high-contrast palette claims" fails.
 #include "rg/settings.h"
 #include "rg/ui_theme.h"
 
@@ -166,7 +170,8 @@ TEST_CASE("A surface is judged on what it sits on, not on the scene", "[ui_theme
     CHECK_THAT(words, ContainsSubstring("role to a role"));
 }
 
-TEST_CASE("Every shipped palette is complete and passes the role contract", "[ui_theme]") {    const rg::UiTheme theme = shipped_theme();
+TEST_CASE("Every shipped palette is complete and passes the role contract", "[ui_theme]") {
+    const rg::UiTheme theme = shipped_theme();
     REQUIRE(theme.game.palettes.size() >= 3);
     for (const std::string& id : theme.game.palettes) {
         std::string err;

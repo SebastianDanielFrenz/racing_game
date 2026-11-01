@@ -9,7 +9,7 @@ extends CanvasLayer
 # time and location, lifted to the car's altitude), else RgSky's own
 # air_temp_c (no world loaded).
 
-const BG := Color(0.08, 0.09, 0.11, 1.0)
+const UiTheme := preload("res://scripts/ui/ui_theme.gd")
 const RIGHT_MARGIN := 16.0
 var sky_controller: Node
 var simulation: Node
@@ -29,7 +29,7 @@ func _ready() -> void:
 	layer = 15
 	_panel = PanelContainer.new()
 	_panel.name = "WeatherPanel"
-	_panel.add_theme_stylebox_override("panel", _style(BG))
+	_panel.add_theme_stylebox_override("panel", _style())
 	_top_right(_panel, 12)
 	_panel.mouse_filter = Control.MOUSE_FILTER_STOP
 	_panel.tooltip_text = "Time and weather (click)"
@@ -42,7 +42,6 @@ func _ready() -> void:
 	_icon = Control.new()
 	_icon.set_script(load("res://scripts/weather_icon.gd"))
 	_icon.custom_minimum_size = Vector2(44, 44)
-	_icon.background = BG
 	_icon.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	row.add_child(_icon)
 	var texts := VBoxContainer.new()
@@ -55,7 +54,7 @@ func _ready() -> void:
 	texts.add_child(_time_label)
 	_info_label = Label.new()
 	_info_label.add_theme_font_size_override("font_size", 12)
-	_info_label.add_theme_color_override("font_color", Color(0.75, 0.78, 0.82))
+	UiTheme.text(_info_label, &"text_muted")
 	_info_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	texts.add_child(_info_label)
 	_server_label = Label.new()
@@ -64,7 +63,7 @@ func _ready() -> void:
 
 	_menu = PanelContainer.new()
 	_menu.name = "WeatherMenu"
-	_menu.add_theme_stylebox_override("panel", _style(Color(BG, 0.95)))
+	_menu.add_theme_stylebox_override("panel", _style())
 	_top_right(_menu, 76)
 	_menu.custom_minimum_size = Vector2(300, 0)
 	_menu.visible = false
@@ -88,9 +87,8 @@ func set_right_margin(margin: float) -> void:
 		control.offset_left = -margin
 		control.offset_right = -margin
 
-func _style(color: Color) -> StyleBoxFlat:
-	var box := StyleBoxFlat.new()
-	box.bg_color = color
+func _style() -> StyleBoxFlat:
+	var box := UiTheme.style(&"surface_widget")
 	box.set_corner_radius_all(6)
 	box.content_margin_left = 10
 	box.content_margin_right = 10
@@ -182,7 +180,7 @@ func _rebuild_menu() -> void:
 	note.autowrap_mode = TextServer.AUTOWRAP_WORD
 	note.custom_minimum_size = Vector2(260, 0)
 	note.add_theme_font_size_override("font_size", 11)
-	note.add_theme_color_override("font_color", Color(0.65, 0.68, 0.72))
+	UiTheme.text(note, &"text_muted")
 	note.visible = note.text != "Greyed out: "
 	_menu_box.add_child(note)
 
@@ -196,7 +194,7 @@ func _heading(text: String) -> Label:
 	var label := Label.new()
 	label.text = text
 	label.add_theme_font_size_override("font_size", 13)
-	label.add_theme_color_override("font_color", Color(1.0, 0.85, 0.4))
+	UiTheme.text(label, &"accent_text")
 	return label
 
 func _on_slider(value: float) -> void:

@@ -14,7 +14,7 @@ extends Node
 const DriverState := preload("res://scripts/driver_state.gd")
 const BUTTON_PRIMARY := 0
 const BUTTON_SECONDARY := 1
-const HOVER_COLOUR := Color(1.0, 0.85, 0.3, 0.35)
+const UiTheme := preload("res://scripts/ui/ui_theme.gd")
 const MENU_GROUPS := ["seat_adjustment_open", "traffic_settings_open", "address_teleport_open"]
 
 var simulation: Node
@@ -250,7 +250,7 @@ func _hover_box(index: int) -> MeshInstance3D:
 	var material := StandardMaterial3D.new()
 	material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 	material.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-	material.albedo_color = HOVER_COLOUR
+	UiTheme.bind(material, &"albedo_color", &"pointer_hover")
 	material.no_depth_test = true
 	material.render_priority = 10
 	box.material_override = material

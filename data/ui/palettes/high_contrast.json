@@ -44,6 +44,8 @@
     "border_subtle": "#ffffff4d",
     "border_strong": "#ffffff80",
     "border_selected": "#ffffff",
+    "pointer_hover": "#ffffff66",
+    "pointer_dot": "#f0e442",
     "good": "#8fd3f7",
     "warning": "#f0e442",
     "danger": "#e66100",
