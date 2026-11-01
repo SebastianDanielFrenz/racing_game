@@ -28,6 +28,7 @@ add_library(rg_godot SHARED
   src/rg_ring_streamer.cpp
   src/rg_steering_assist.cpp
   src/rg_address_search.cpp
+  src/rg_ui_theme.cpp
   src/rg_mark_tail.cpp
   src/rg_sky.cpp
   src/rg_assists.cpp

@@ -6,11 +6,9 @@ extends RefCounted
 # A car without a drive_modes part (drive_mode_fitted false) keeps its own look: every caller passes its own colour as
 # the fallback and gets it back unchanged.
 
-const ECO := Color(0.25, 0.55, 1.0)
-const NORMAL := Color(0.62, 0.64, 0.68)
-const SPORT := Color(1.0, 0.55, 0.12)
-const RACING := Color(0.92, 0.16, 0.18)
-const ELECTRIC := Color(0.18, 0.82, 0.5)
+const UiTheme := preload("res://scripts/ui/ui_theme.gd")
+
+const COLOUR_ROLES := {"eco":&"mode_eco","normal":&"mode_normal","sport":&"mode_sport","racing":&"mode_racing","electric":&"mode_electric"}
 
 const MODE_ECO := 0
 const MODE_NORMAL := 1
@@ -21,14 +19,14 @@ const MODE_ELECTRIC := 4
 # The theme colour of a drive-mode code (0 eco, 1 normal, 2 sport, 3 racing, 4 electric).
 static func color_for_mode(code: int) -> Color:
 	if code == MODE_ECO:
-		return ECO
+		return UiTheme.role(&"mode_eco")
 	if code == MODE_SPORT:
-		return SPORT
+		return UiTheme.role(&"mode_sport")
 	if code == MODE_RACING:
-		return RACING
+		return UiTheme.role(&"mode_racing")
 	if code == MODE_ELECTRIC:
-		return ELECTRIC
-	return NORMAL
+		return UiTheme.role(&"mode_electric")
+	return UiTheme.role(&"mode_normal")
 
 # True when the car has a drive_modes part (RgSimulation.get_vehicle_powertrain's snapshot dictionary).
 static func is_themed(pt: Dictionary) -> bool:
@@ -49,5 +47,4 @@ static func label(pt: Dictionary) -> String:
 # Display palette only; logical fitting/mode comes from the shared ControlState.
 static func accent_state(control: Dictionary, fallback: Color) -> Color:
 	if not bool(control.get("fitted",false)): return fallback
-	var palette := {"eco":ECO,"normal":NORMAL,"sport":SPORT,"racing":RACING,"electric":ELECTRIC}
-	return palette.get(str(control.get("colour_role","normal")),NORMAL)
+	return UiTheme.role(COLOUR_ROLES.get(str(control.get("colour_role","normal")),&"mode_normal"))

@@ -72,6 +72,7 @@ var _option_box: VBoxContainer                 # configurator: the rows of the a
 var _area_buttons: Dictionary = {}             # configurator: area id -> Button
 var _active_area: String = "overview"
 var _status_label: Label                       # configurator: the loader's verdict / save state
+const UiTheme := preload("res://scripts/ui/ui_theme.gd")
 const PAINT_PALETTE := ["#9aa0ac", "#e8e8ea", "#1b1d22", "#a8473f", "#c9262e", "#e8742a", "#e0b43a", "#3f7a4a", "#3f6b8f", "#2848a8", "#6b3fa0", "#7a8a99"]
 const RIM_PALETTE := ["#2b2d31", "#c4c8cf", "#e8e8ea", "#e8742a", "#c9262e", "#e0b43a", "#3f6b8f", "#111111"]
 
@@ -260,9 +261,9 @@ func _finish_boot() -> void:
 
 # ---- building blocks ---------------------------------------------------------
 
-func _backdrop(alpha: float) -> void:
+func _backdrop(fill: StringName) -> void:
 	var rect := ColorRect.new()
-	rect.color = Color(0.05, 0.07, 0.09, alpha)
+	UiTheme.bind(rect, &"color", fill)
 	rect.set_anchors_preset(Control.PRESET_FULL_RECT)
 	_root.add_child(rect)
 
@@ -273,7 +274,7 @@ func _label(text: String, font_size: int, align: int = HORIZONTAL_ALIGNMENT_CENT
 	label.horizontal_alignment = align
 	label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	if dim:
-		label.modulate = Color(1, 1, 1, 0.7)
+		UiTheme.text(label, &"text_muted")
 	return label
 
 func _centered_column(min_width: float) -> VBoxContainer:
@@ -349,7 +350,7 @@ func _attribution_footer(parent: Control) -> void:
 # ---- screens -----------------------------------------------------------------
 
 func _build_boot() -> void:
-	_backdrop(1.0)
+	_backdrop(&"surface_screen")
 	var column := _centered_column(760)
 	column.add_child(_label(TITLE, 56))
 	column.add_child(_label("Drive the real world", 22, HORIZONTAL_ALIGNMENT_CENTER, true))
@@ -358,13 +359,13 @@ func _build_boot() -> void:
 	column.add_child(_label("press any key", 16, HORIZONTAL_ALIGNMENT_CENTER, true))
 
 func _build_main_menu() -> void:
-	_backdrop(1.0)
+	_backdrop(&"surface_screen")
 	var column := _centered_column(420)
 	column.add_child(_label(TITLE, 48))
 	var error: String = str(shell.get_last_error())
 	if error != "":
 		var message := _label("The world did not load: " + error, 16)
-		message.add_theme_color_override("font_color", Color(1.0, 0.7, 0.3))
+		UiTheme.text(message, &"warning_text")
 		column.add_child(message)
 		shell.clear_last_error()
 	for item in shell.get_main_menu_items():
@@ -375,7 +376,7 @@ func _build_main_menu() -> void:
 	_focus_first()
 
 func _build_pause() -> void:
-	_backdrop(0.72)
+	_backdrop(&"surface_scrim")
 	var column := _centered_column(380)
 	column.add_child(_label("Paused", 40))
 	for item in shell.get_pause_menu_items():
@@ -384,7 +385,7 @@ func _build_pause() -> void:
 	_focus_first()
 
 func _build_spawn_picker() -> void:
-	_backdrop(1.0)
+	_backdrop(&"surface_screen")
 	var page := _page("Free roam", "Choose where the drive starts")
 	var body: VBoxContainer = page["body"]
 	for choice in shell.get_spawn_choices():
@@ -406,7 +407,7 @@ func _build_spawn_picker() -> void:
 	_focus_first()
 
 func _build_credits() -> void:
-	_backdrop(1.0)
+	_backdrop(&"surface_screen")
 	var page := _page("Credits", str(shell.get_attribution_line()))
 	var body: VBoxContainer = page["body"]
 	for section in shell.get_credits_sections():
@@ -433,7 +434,7 @@ func _build_credits() -> void:
 # ---- settings (built from RgShell.get_settings_schema) ---------------------------
 
 func _build_settings() -> void:
-	_backdrop(1.0)
+	_backdrop(&"surface_screen")
 	var page := _page("Settings", "Changes apply at once where marked; they are saved when you leave this screen")
 	var body: VBoxContainer = page["body"]
 	for section in shell.get_settings_schema():
@@ -518,7 +519,7 @@ func _setting_row(def: Dictionary) -> Control:
 		help += " (applies when the next world loads)"
 	holder.add_child(_label(help, 13, HORIZONTAL_ALIGNMENT_LEFT, true))
 	var note := _label("", 13, HORIZONTAL_ALIGNMENT_LEFT)
-	note.add_theme_color_override("font_color", Color(1.0, 0.7, 0.3))
+	UiTheme.text(note, &"warning_text")
 	note.visible = false
 	holder.add_child(note)
 	_setting_notes[key] = note
@@ -588,9 +589,7 @@ func _side_panel(on_left: bool, width: float) -> VBoxContainer:
 	spacer.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	var panel := PanelContainer.new()
 	panel.custom_minimum_size = Vector2(width, 0)
-	var style := StyleBoxFlat.new()
-	style.bg_color = Color(0.03, 0.04, 0.055, 0.82)
-	style.border_color = Color(0.91, 0.45, 0.17, 0.9)
+	var style := UiTheme.style(&"surface_panel", &"accent")
 	style.set_border_width_all(0)
 	style.border_width_left = 0 if on_left else 3
 	style.border_width_right = 3 if on_left else 0
@@ -739,7 +738,7 @@ func _open_garage_exit() -> void:
 	_garage_exit.mouse_filter = Control.MOUSE_FILTER_STOP
 	_root.add_child(_garage_exit)
 	var shade := ColorRect.new()
-	shade.color = Color(0.02,0.025,0.035,0.78)
+	UiTheme.bind(shade, &"color", &"surface_scrim")
 	shade.set_anchors_preset(Control.PRESET_FULL_RECT)
 	_garage_exit.add_child(shade)
 	var center := CenterContainer.new()
@@ -747,9 +746,7 @@ func _open_garage_exit() -> void:
 	_garage_exit.add_child(center)
 	var panel := PanelContainer.new()
 	panel.custom_minimum_size.x = minf(440.0,_root.size.x-48.0)
-	var style := StyleBoxFlat.new()
-	style.bg_color = Color(0.03,0.04,0.055,0.98)
-	style.border_color = Color(0.91,0.45,0.17)
+	var style := UiTheme.style(&"surface_panel_solid", &"accent")
 	style.set_border_width_all(2)
 	style.set_corner_radius_all(6)
 	style.set_content_margin_all(24)
@@ -894,7 +891,7 @@ func _draw_garage_options() -> void:
 
 # ---- garage: setup check (limit advisor) -------------------------------------------------------------------------
 
-const ADVICE_COLOURS := [Color(0.62, 0.78, 0.95), Color(0.98, 0.72, 0.22), Color(0.95, 0.32, 0.28)]
+const ADVICE_ROLES := [&"info_text", &"warning_text", &"danger_text"]
 # The setup-check band grows to fit its notes, up to this share of the column height the option list above and the band
 # share (canvas units after the UI scale, so the cap follows the window size and the scale). The option list keeps its own
 # minimum height either way.
@@ -955,7 +952,7 @@ func _refresh_advice() -> void:
 			text += " Â· %s" % str(items[0].get("title", ""))
 	_advice_status.text = text
 	_advice_status.tooltip_text = str(data.get("error", "")) if not busy else str(data.get("stage", ""))
-	_advice_status.modulate = ADVICE_COLOURS[worst] if (worst >= 0 and not busy) else Color(1, 1, 1, 0.7)
+	UiTheme.bind(_advice_status, &"modulate", ADVICE_ROLES[worst] if (worst >= 0 and not busy) else &"text_muted")
 	var signature := "%d|%s|%s|%d" % [int(data.get("revision", 0)), str(data.get("vehicle_id", "")), str(busy), 1 if bool(data.get("solving", false)) else 0]
 	for item in items:
 		signature += "|%s:%d" % [str(item.get("id", "")), int(item.get("remedy_state", 0))]
@@ -1005,18 +1002,16 @@ func _fit_advice_band() -> void:
 		_advice_scroll.custom_minimum_size.y = want
 
 func _advice_item_control(item: Dictionary, stale: bool, open_by_default: bool) -> Control:
-	var colour: Color = ADVICE_COLOURS[clampi(int(item.get("severity", 0)), 0, 2)]
+	var colour: StringName = ADVICE_ROLES[clampi(int(item.get("severity", 0)), 0, 2)]
 	var panel := PanelContainer.new()
 	panel.set_meta("advice_id", str(item.get("id", "")))
-	var style := StyleBoxFlat.new()
-	style.bg_color = Color(0.03, 0.04, 0.055, 0.82)
-	style.border_color = colour
+	var style := UiTheme.style(&"surface_panel", colour)
 	style.border_width_left = 4
 	style.set_content_margin_all(5)
 	style.content_margin_left = 10
 	panel.add_theme_stylebox_override("panel", style)
 	if stale:
-		panel.modulate = Color(1, 1, 1, 0.55)
+		panel.modulate.a = UiTheme.token(&"state.disabled_alpha")
 	var outer := VBoxContainer.new()
 	outer.add_theme_constant_override("separation", 2)
 	panel.add_child(outer)
@@ -1029,12 +1024,11 @@ func _advice_item_control(item: Dictionary, stale: bool, open_by_default: bool) 
 	title.text = ("â–¾ " if open else "â–¸ ") + str(item.get("title", ""))
 	title.add_theme_font_size_override("font_size", 15)
 	title.custom_minimum_size = Vector2.ZERO
-	for state_name in ["font_color", "font_hover_color", "font_pressed_color", "font_focus_color"]:
-		title.add_theme_color_override(state_name, colour)
+	UiTheme.bind_font(title, colour, [&"font_color", &"font_hover_color", &"font_pressed_color", &"font_focus_color"])
 	# One text line per closed note (the shell theme's tall button boxes would show only three notes).
 	for box_name in ["normal", "hover", "pressed", "focus", "hover_pressed"]:
-		var flat := StyleBoxFlat.new()
-		flat.bg_color = Color(1, 1, 1, 0.08) if box_name in ["hover", "focus", "hover_pressed"] else Color(0, 0, 0, 0)
+		var flat := UiTheme.style(&"hover_tint")
+		flat.draw_center = box_name in ["hover", "focus", "hover_pressed"]
 		flat.set_content_margin_all(0)
 		flat.content_margin_top = 1
 		flat.content_margin_bottom = 1
@@ -1059,7 +1053,7 @@ func _advice_item_control(item: Dictionary, stale: bool, open_by_default: bool) 
 	var remedy_text := str(item.get("remedy_text", ""))
 	if not remedy_text.is_empty() and state in [1, 4, 5]:
 		var fix_label := _label(remedy_text, 13, HORIZONTAL_ALIGNMENT_LEFT)
-		fix_label.add_theme_color_override("font_color", Color(0.55, 0.88, 0.6) if state != 5 else Color(0.98, 0.72, 0.22))
+		UiTheme.text(fix_label, &"good_text" if state != 5 else &"warning_text")
 		box.add_child(fix_label)
 	if bool(item.get("can_solve", false)) and state in [2, 3]:
 		var id := str(item.get("id", ""))
@@ -1465,7 +1459,7 @@ func _part_visible(part: Dictionary) -> bool:
 # A card of a part the car cannot fit (shown only with "show all"): greyed out, the reason as its text, not installable.
 func _grey_if_unfit(card: Control, part: Dictionary) -> void:
 	if bool(part.get("fits", true)): return
-	card.modulate = Color(1, 1, 1, 0.5)
+	card.modulate.a = UiTheme.token(&"state.disabled_alpha")
 	if card is BaseButton: card.disabled = true
 	card.tooltip_text = str(part.get("fit_reason", ""))
 
@@ -2003,18 +1997,14 @@ func _draw_wheel_parts() -> void:
 # text ("Install") is gone.
 const TILE_HEIGHT := 150.0
 const TILE_NAME_BAND := 40.0
-const BADGE_WORSE := Color(0.78, 0.16, 0.16, 0.85)
-const BADGE_BETTER := Color(0.16, 0.6, 0.25, 0.85)
-const BADGE_PENDING := Color(0.35, 0.35, 0.38, 0.85)
 
 func _make_component_card(presentation: Dictionary, action: String) -> Button:
 	var card := Button.new()
 	card.custom_minimum_size = Vector2(0, TILE_HEIGHT)
 	card.clip_contents = true
 	card.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	var focus_style := StyleBoxFlat.new()
-	focus_style.bg_color = Color(0,0,0,0)
-	focus_style.border_color = Color(1.0,0.55,0.2)
+	var focus_style := UiTheme.style(&"hover_tint", &"accent")
+	focus_style.draw_center = false
 	focus_style.set_border_width_all(3)
 	focus_style.set_corner_radius_all(4)
 	card.add_theme_stylebox_override("focus",focus_style)
@@ -2055,7 +2045,7 @@ func _make_component_card(presentation: Dictionary, action: String) -> Button:
 		mark.name = "Installed"
 		mark.autowrap_mode = TextServer.AUTOWRAP_OFF
 		mark.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		mark.add_theme_stylebox_override("normal", _chip_style(Color(0,0,0,0.6)))
+		mark.add_theme_stylebox_override("normal", _chip_style(&"surface_chip"))
 		mark.set_anchors_and_offsets_preset(Control.PRESET_TOP_LEFT)
 		mark.offset_left = 4
 		mark.offset_top = 4
@@ -2091,9 +2081,8 @@ func _make_component_card(presentation: Dictionary, action: String) -> Button:
 		card.mouse_exited.connect(hide_badges)
 	return card
 
-func _chip_style(color: Color, margin_x := 4, margin_y := 4) -> StyleBoxFlat:
-	var style := StyleBoxFlat.new()
-	style.bg_color = color
+func _chip_style(fill: StringName, margin_x := 4, margin_y := 4) -> StyleBoxFlat:
+	var style := UiTheme.style(fill)
 	style.set_corner_radius_all(4)
 	style.content_margin_left = margin_x
 	style.content_margin_right = margin_x
@@ -2125,7 +2114,8 @@ func _fill_badges(row: Container, option_id: String, edits: Dictionary) -> void:
 		var label := _label(str(badge["text"]), 11)
 		label.autowrap_mode = TextServer.AUTOWRAP_OFF
 		label.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		var chip := BADGE_PENDING if bool(badge.get("pending", false)) else (BADGE_WORSE if bool(badge["worse"]) else BADGE_BETTER)
+		var chip := &"badge_neutral" if bool(badge.get("pending", false)) else (&"badge_danger" if bool(badge["worse"]) else &"badge_good")
+		UiTheme.text(label, &"text_on_status")
 		label.add_theme_stylebox_override("normal", _chip_style(chip, 3, 1))
 		row.add_child(label)
 	if bool(hints.get("pending", false)) and is_inside_tree():
@@ -2356,10 +2346,10 @@ func _option_row(opt: Dictionary) -> Control:
 				sb.bg_color = Color.html(str(hex))
 				sb.set_corner_radius_all(4)
 				sb.set_border_width_all(2)
-				sb.border_color = Color(1, 1, 1, 0.25)
+				UiTheme.bind(sb, &"border_color", &"border_strong")
 				swatch.add_theme_stylebox_override("normal", sb)
 				var sbh := sb.duplicate() as StyleBoxFlat
-				sbh.border_color = Color(1, 1, 1, 0.9)
+				UiTheme.bind(sbh, &"border_color", &"border_selected")
 				swatch.add_theme_stylebox_override("hover", sbh)
 				swatch.add_theme_stylebox_override("pressed", sbh)
 				swatch.tooltip_text = str(hex)
@@ -2371,7 +2361,7 @@ func _option_row(opt: Dictionary) -> Control:
 	if help != "":
 		holder.add_child(_label(help, 12, HORIZONTAL_ALIGNMENT_LEFT, true))
 	var note := _label("", 13, HORIZONTAL_ALIGNMENT_LEFT)
-	note.add_theme_color_override("font_color", Color(1.0, 0.55, 0.3))
+	UiTheme.text(note, &"danger_text")
 	note.visible = false
 	holder.add_child(note)
 	_option_notes[id] = note
@@ -2537,13 +2527,13 @@ func _refresh_status() -> void:
 	var dirty: bool = garage.is_dirty()
 	if not ok:
 		_status_label.text = "Cannot save: " + str(verdict["message"])
-		_status_label.add_theme_color_override("font_color", Color(1.0, 0.5, 0.3))
+		UiTheme.text(_status_label, &"danger_text")
 	elif dirty:
 		_status_label.text = "Unsaved changes (valid)"
-		_status_label.add_theme_color_override("font_color", Color(0.75, 0.85, 1.0))
+		UiTheme.text(_status_label, &"info_text")
 	else:
 		_status_label.text = "Saved setup" if _has_changes() else "Stock setup"
-		_status_label.add_theme_color_override("font_color", Color(0.8, 0.8, 0.8))
+		UiTheme.text(_status_label, &"text_muted")
 	var save_button: Button = _buttons.get("save", null)
 	if save_button != null:
 		save_button.disabled = (not ok) or (not dirty)

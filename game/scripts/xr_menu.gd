@@ -1,5 +1,6 @@
 extends Node3D
 # Existing shell/garage canvases on a fixed, headset-visible interaction panel.
+const UiTheme := preload("res://scripts/ui/ui_theme.gd")
 const PIXELS := Vector2i(1920,1080)
 const METRES := Vector2(3.2,1.8)
 var main: Node
@@ -63,7 +64,7 @@ func _ready() -> void:
 	cursor.mesh = dot
 	var dot_material := StandardMaterial3D.new()
 	dot_material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-	dot_material.albedo_color = Color(1,0.65,0.15)
+	UiTheme.bind(dot_material, &"albedo_color", &"pointer_dot")
 	dot_material.no_depth_test = true
 	dot_material.render_priority = 127
 	cursor.material_override = dot_material

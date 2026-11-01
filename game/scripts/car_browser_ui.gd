@@ -31,7 +31,7 @@ const GAP := 12.0
 const COL_W := TILE_W + GAP
 const HEADER_H := 36.0
 const STATS_W := 400.0
-const ACCENT := Color(0.91, 0.45, 0.17)
+const UiTheme := preload("res://scripts/ui/ui_theme.gd")
 const OVERSCAN := 2
 const STICK_THRESHOLD := 0.6
 const STICK_REPEAT_S := 0.17
@@ -149,7 +149,7 @@ func set_sort(key: String, descending: bool) -> void:
 func _build() -> void:
 	_maxima = garage.browser_get_maxima()
 	var backdrop := ColorRect.new()
-	backdrop.color = Color(0.045, 0.06, 0.08, 0.97)
+	UiTheme.bind(backdrop, &"color", &"surface_screen_glass")
 	backdrop.set_anchors_preset(Control.PRESET_FULL_RECT)
 	backdrop.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(backdrop)
@@ -165,9 +165,7 @@ func _build() -> void:
 	# left: stats of the focused car
 	var stats_panel := PanelContainer.new()
 	stats_panel.custom_minimum_size = Vector2(STATS_W, 0)
-	var style := StyleBoxFlat.new()
-	style.bg_color = Color(0.03, 0.04, 0.055, 0.9)
-	style.border_color = ACCENT
+	var style := UiTheme.style(&"surface_panel", &"accent")
 	style.border_width_left = 3
 	style.set_corner_radius_all(6)
 	style.set_content_margin_all(18)
@@ -252,7 +250,7 @@ func _make_label(text: String, size: int, dim: bool) -> Label:
 	label.add_theme_font_size_override("font_size", size)
 	label.autowrap_mode = TextServer.AUTOWRAP_OFF
 	if dim:
-		label.modulate = Color(1, 1, 1, 0.7)
+		UiTheme.text(label, &"text_muted")
 	return label
 
 func _make_wrapped(text: String, size: int, dim: bool) -> Label:
@@ -322,7 +320,7 @@ func _refresh_view() -> void:
 		var h: Dictionary = wanted_headers[ci]
 		if not _headers.has(ci):
 			var label := _make_label("%s  (%d)" % [str(h["title"]), int(h["count"])], 20, false)
-			label.add_theme_color_override("font_color", Color(1.0, 0.72, 0.45))
+			UiTheme.text(label, &"accent_text")
 			label.mouse_filter = Control.MOUSE_FILTER_IGNORE
 			_headers[ci] = label
 			_grid.add_child(label)
@@ -435,11 +433,9 @@ func _on_thumbnail_ready(key: String) -> void:
 				_set_tile_texture(tile, tex)
 
 func _style_tile(tile: Control, focused: bool) -> void:
-	var style := StyleBoxFlat.new()
-	style.bg_color = Color(0.11, 0.13, 0.17, 1.0) if focused else Color(0.075, 0.09, 0.115, 1.0)
+	var style := UiTheme.style(&"surface_card_focus" if focused else &"surface_card", &"accent" if focused else &"border_subtle")
 	style.set_corner_radius_all(6)
 	style.set_border_width_all(3 if focused else 1)
-	style.border_color = ACCENT if focused else Color(1, 1, 1, 0.10)
 	(tile.get_node("Bg") as Panel).add_theme_stylebox_override("panel", style)
 
 func _mark_focus() -> void:
@@ -604,9 +600,7 @@ func _build_panel() -> void:
 	_panel.offset_right = -28
 	_panel.offset_top = 28
 	_panel.offset_bottom = -28
-	var style := StyleBoxFlat.new()
-	style.bg_color = Color(0.025, 0.033, 0.048, 0.98)
-	style.border_color = ACCENT
+	var style := UiTheme.style(&"surface_panel_solid", &"accent")
 	style.set_border_width_all(2)
 	style.set_corner_radius_all(8)
 	style.set_content_margin_all(20)
@@ -695,8 +689,7 @@ func _toggle(text: String, pressed: bool) -> Button:
 	b.button_pressed = pressed
 	b.add_theme_font_size_override("font_size", 17)
 	if pressed:
-		b.add_theme_color_override("font_color", Color(1.0, 0.62, 0.3))
-		b.add_theme_color_override("font_pressed_color", Color(1.0, 0.62, 0.3))
+		UiTheme.bind_font(b, &"accent_text", [&"font_color", &"font_pressed_color"])
 	return b
 
 func _focus_in_panel() -> void:

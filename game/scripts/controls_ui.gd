@@ -26,9 +26,7 @@ signal back_requested
 signal changed # a binding / tuning changed (main.gd re-syncs the menu actions; the file is saved on leaving)
 
 const SliderBox := preload("res://scripts/slider_box.gd")
-const ACCENT := Color(0.91, 0.45, 0.17)
-const WARN := Color(1.0, 0.7, 0.3)
-const DIM := Color(1, 1, 1, 0.7)
+const UiTheme := preload("res://scripts/ui/ui_theme.gd")
 const POLLED_PAD_BUTTONS := 48
 const POLLED_PAD_AXES := 10
 const MOUSE_BUTTONS := [1, 2, 3, 8, 9]
@@ -166,7 +164,7 @@ func _label(text: String, font_size: int, align: int = HORIZONTAL_ALIGNMENT_LEFT
 	label.horizontal_alignment = align
 	label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	if dim:
-		label.modulate = DIM
+		UiTheme.text(label, &"text_muted")
 	return label
 
 func _button(text: String, hook_id: String, callback: Callable, font_size: int = 15) -> Button:
@@ -182,8 +180,7 @@ func _button(text: String, hook_id: String, callback: Callable, font_size: int =
 func _panel(min_width: float) -> VBoxContainer:
 	var panel := PanelContainer.new()
 	panel.custom_minimum_size = Vector2(min_width, 0)
-	var style := StyleBoxFlat.new()
-	style.bg_color = Color(0.03, 0.04, 0.055, 0.85)
+	var style := UiTheme.style(&"surface_panel")
 	style.set_corner_radius_all(6)
 	style.set_content_margin_all(10)
 	panel.add_theme_stylebox_override("panel", style)
@@ -206,7 +203,7 @@ func _scroll(parent: Control) -> VBoxContainer:
 
 func _build() -> void:
 	var backdrop := ColorRect.new()
-	backdrop.color = Color(0.05, 0.07, 0.09, 1.0)
+	UiTheme.bind(backdrop, &"color", &"surface_screen")
 	backdrop.set_anchors_preset(Control.PRESET_FULL_RECT)
 	add_child(backdrop)
 	var margin := MarginContainer.new()
@@ -333,7 +330,7 @@ func _build_overlay() -> void:
 	_overlay.visible = false
 	add_child(_overlay)
 	var dim := ColorRect.new()
-	dim.color = Color(0, 0, 0, 0.72)
+	UiTheme.bind(dim, &"color", &"surface_scrim")
 	dim.set_anchors_preset(Control.PRESET_FULL_RECT)
 	dim.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_overlay.add_child(dim)
@@ -346,7 +343,7 @@ func _build_overlay() -> void:
 	_overlay_title = _label("", 26, HORIZONTAL_ALIGNMENT_CENTER)
 	column.add_child(_overlay_title)
 	_overlay_hint = _label("", 20, HORIZONTAL_ALIGNMENT_CENTER)
-	_overlay_hint.add_theme_color_override("font_color", ACCENT)
+	UiTheme.bind_font(_overlay_hint, &"accent")
 	column.add_child(_overlay_hint)
 	_overlay_extra = _label("", 14, HORIZONTAL_ALIGNMENT_CENTER, true)
 	column.add_child(_overlay_extra)
@@ -414,7 +411,7 @@ func _rebuild_devices() -> void:
 		button.add_theme_font_size_override("font_size", 14)
 		button.set_pressed_no_signal(key == _device_key)
 		if not bool(d["connected"]):
-			button.modulate = Color(1, 1, 1, 0.65)
+			button.modulate.a = UiTheme.token(&"state.disabled_alpha")
 		button.pressed.connect(func(): select_device(key))
 		button.focus_entered.connect(func(): _last_focus_hook = "device:" + key)
 		_device_box.add_child(button)
@@ -468,7 +465,7 @@ func _rebuild_rows() -> void:
 		if str(row["group_title"]) != group_title:
 			group_title = str(row["group_title"])
 			var heading := _label(group_title, 18)
-			heading.add_theme_color_override("font_color", ACCENT)
+			UiTheme.bind_font(heading, &"accent")
 			_rows_box.add_child(heading)
 		_rows_box.add_child(_action_row(row, key, connected, others.get(action, [])))
 	_add_fixed_keys()
@@ -515,10 +512,10 @@ func _action_row(row: Dictionary, key: String, connected: bool, others: Array) -
 	_row_resets[key] = reset
 	if not others.is_empty():
 		var note := _label("Also used by: " + ", ".join(PackedStringArray(others)), 12)
-		note.add_theme_color_override("font_color", WARN)
+		UiTheme.bind_font(note, &"warning_text")
 		holder.add_child(note)
 	if action == _selected_action and sign == _selected_sign:
-		name_label.add_theme_color_override("font_color", ACCENT)
+		UiTheme.bind_font(name_label, &"accent")
 	return holder
 
 # A key bound to one side of a signed axis is shown without the "(-)" / "(+)" tag: the row already says which side.
@@ -535,7 +532,7 @@ func _add_fixed_keys() -> void:
 	if not parsed is Dictionary:
 		return
 	var heading := _label("Fixed keys (not rebindable)", 18)
-	heading.add_theme_color_override("font_color", ACCENT)
+	UiTheme.bind_font(heading, &"accent")
 	_rows_box.add_child(heading)
 	for entry in parsed.get("entries", []):
 		var line := HBoxContainer.new()
@@ -553,12 +550,12 @@ func _select_row(action: String, sign: int) -> void:
 		return
 	var old := _row_key(_selected_action, _selected_sign)
 	if _row_labels.has(old):
-		(_row_labels[old] as Label).remove_theme_color_override("font_color")
+		UiTheme.unbind_font(_row_labels[old])
 	_selected_action = action
 	_selected_sign = sign
 	var key := _row_key(action, sign)
 	if _row_labels.has(key):
-		(_row_labels[key] as Label).add_theme_color_override("font_color", ACCENT)
+		UiTheme.bind_font((_row_labels[key] as Label), &"accent")
 	_rebuild_detail()
 
 func _restore_focus() -> void:
@@ -744,9 +741,9 @@ func _on_reset_device() -> void:
 func _set_status(text: String, warn: bool = false) -> void:
 	_status.text = text
 	if warn:
-		_status.add_theme_color_override("font_color", WARN)
+		UiTheme.bind_font(_status, &"warning_text")
 	else:
-		_status.remove_theme_color_override("font_color")
+		UiTheme.unbind_font(_status)
 
 # ---- capture ----------------------------------------------------------------------------------------------
 
