@@ -96,7 +96,7 @@ racing keeps its screens and layouts and takes only the language. The farm scree
 
 ### Components come from the owner's sketches
 
-`docs/farm/ui/hud_sketch.jpg` and `menu_sketch.jpg` on the farm branch ask for a panel with key prompts, a clock box, a round dial with a gear inset, icon tabs with the selected one highlighted, and a scrolling grid of image-only tiles. Hence `ui_panel`, `ui_key_prompt`, `ui_gauge`, `ui_tab_strip`, `ui_image_tile`. A clock box is a `ui_panel` on `surface_widget`.
+The owner's HUD and menu sketches for the farm game ask for a panel with key prompts, a clock box, a round dial with a gear inset, icon tabs with the selected one highlighted, and a scrolling grid of image-only tiles. Hence `ui_panel`, `ui_key_prompt`, `ui_gauge`, `ui_tab_strip`, `ui_image_tile`. A clock box is a `ui_panel` on `surface_widget`.
 
 The selected tab is a filled accent shape with a line under it, so it reads without hue. Focus is a ring in `focus_ring` for keyboard and gamepad, hover a brighter fill for the mouse; tabs and tiles are Buttons, so `ui_left`, `ui_right` and `ui_accept` work with no extra code.
 
