@@ -25,10 +25,12 @@ var _body: Label
 var _footer: Label
 var _attribution: Label
 
+const UiTheme := preload("res://scripts/ui/ui_theme.gd")
+
 func _ready() -> void:
 	layer = 10
 	_panel = ColorRect.new()
-	_panel.color = Color(0.05, 0.07, 0.09, 0.96)
+	UiTheme.bind(_panel, &"color", &"surface_screen_glass")
 	_panel.set_anchors_preset(Control.PRESET_FULL_RECT)
 	add_child(_panel)
 
@@ -71,7 +73,7 @@ func _ready() -> void:
 	_footer = Label.new()
 	_footer.add_theme_font_size_override("font_size", 16)
 	_footer.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	_footer.modulate = Color(1, 1, 1, 0.75)
+	UiTheme.text(_footer, &"text_muted")
 	box.add_child(_footer)
 
 	_attribution = Label.new()
@@ -83,7 +85,7 @@ func _ready() -> void:
 	_attribution.offset_left = 24
 	_attribution.offset_right = -24
 	_attribution.offset_bottom = -14
-	_attribution.modulate = Color(1, 1, 1, 0.7)
+	UiTheme.text(_attribution, &"text_muted")
 	_panel.add_child(_attribution)
 	visible = false
 

@@ -10,7 +10,7 @@ extends RefCounted
 # the option data; this helper is for sliders whose limits are the slider's own.
 
 const BOX_WIDTH := 78.0
-const REJECT_COLOUR := Color(1.0, 0.45, 0.35)
+const UiTheme := preload("res://scripts/ui/ui_theme.gd")
 
 static func attach(parent: Control, slider: HSlider, decimals: int = 2, scale: float = 1.0, unit: String = "", on_reject: Callable = Callable()) -> LineEdit:
 	var box := LineEdit.new()
@@ -32,7 +32,7 @@ static func attach(parent: Control, slider: HSlider, decimals: int = 2, scale: f
 			return
 		box.text = _format(v * scale, decimals)
 		box.set_meta("shown", box.text)
-		box.remove_theme_color_override("font_color")
+		UiTheme.unbind_font(box)
 		box.tooltip_text = normal_tip)
 	var commit := func(text: String):
 		var typed := text.strip_edges()
@@ -50,12 +50,12 @@ static func attach(parent: Control, slider: HSlider, decimals: int = 2, scale: f
 			else:
 				slider.value = clampf(value, slider.min_value, slider.max_value) # snaps to the step, runs value_changed
 		if reason != "":
-			box.add_theme_color_override("font_color", REJECT_COLOUR)
+			UiTheme.bind_font(box, &"danger_text")
 			box.tooltip_text = reason
 			if on_reject.is_valid():
 				on_reject.call(reason)
 		else:
-			box.remove_theme_color_override("font_color")
+			UiTheme.unbind_font(box)
 			box.tooltip_text = normal_tip
 		box.text = _format(slider.value * scale, decimals)
 		box.set_meta("shown", box.text)

@@ -29,10 +29,7 @@ var _marker: _CarMarker
 var _drone_marker: _DroneMarker
 var _mesh: ArrayMesh
 
-const ROAD_COLOURS := [Color(0.55, 0.55, 0.55), Color(0.85, 0.85, 0.85), Color(1.0, 0.8, 0.35)]
-const ROUTE_COLOUR := Color(0.25, 0.65, 1.0)
-const BACKGROUND := Color(0.05, 0.06, 0.08, 0.7)
-const DRONE_COLOUR := Color(0.35, 0.9, 1.0)
+const UiTheme := preload("res://scripts/ui/ui_theme.gd")
 const EDGE_MARGIN_PX := 10.0 # a car outside the view stops this far inside the minimap's edge
 const PINNED_ALPHA := 0.65 # ... and fades, so that it does not read as a position on the map
 
@@ -47,15 +44,16 @@ class _MapLayer extends Node2D:
 # The car, drawn over the lines. At the centre pointing up, except while flying.
 class _CarMarker extends Node2D:
 	func _draw() -> void:
-		draw_colored_polygon(PackedVector2Array([Vector2(0, -8), Vector2(6, 6), Vector2(-6, 6)]), Color(1, 0.3, 0.2))
+		draw_colored_polygon(PackedVector2Array([Vector2(0, -8), Vector2(6, 6), Vector2(-6, 6)]), UiTheme.role(&"map_self"))
 
 # The drone from above, at the centre with its nose up, only while flying.
 class _DroneMarker extends Node2D:
 	func _draw() -> void:
+		var drone := UiTheme.role(&"map_drone")
 		for rotor: Vector2 in [Vector2(-6, -6), Vector2(6, -6), Vector2(-6, 6), Vector2(6, 6)]:
-			draw_line(Vector2.ZERO, rotor, DRONE_COLOUR, 2.0)
-			draw_arc(rotor, 3.0, 0.0, TAU, 12, DRONE_COLOUR, 1.5)
-		draw_colored_polygon(PackedVector2Array([Vector2(0, -7), Vector2(3, -1), Vector2(-3, -1)]), DRONE_COLOUR)
+			draw_line(Vector2.ZERO, rotor, drone, 2.0)
+			draw_arc(rotor, 3.0, 0.0, TAU, 12, drone, 1.5)
+		draw_colored_polygon(PackedVector2Array([Vector2(0, -7), Vector2(3, -1), Vector2(-3, -1)]), drone)
 
 func _ready() -> void:
 	clip_contents = true
@@ -67,6 +65,8 @@ func _ready() -> void:
 	add_child(_marker)
 	_drone_marker = _DroneMarker.new()
 	add_child(_drone_marker)
+	for drawn: CanvasItem in [self, _layer, _marker, _drone_marker]:
+		UiTheme.follow(drawn)
 	resized.connect(_on_resized)
 	_on_resized()
 
@@ -93,7 +93,7 @@ func set_drone(session_xy: Vector2, yaw_deg: float, car_xy: Vector2, car_yaw_deg
 	_place_layer()
 
 func _draw() -> void:
-	draw_rect(Rect2(Vector2.ZERO, size), BACKGROUND)
+	draw_rect(Rect2(Vector2.ZERO, size), UiTheme.role(&"surface_map"))
 
 func _on_resized() -> void:
 	_redraw_layers()
@@ -147,12 +147,15 @@ func _draw_lines(layer: Node2D) -> void:
 	var s: float = max(_scale(), 1e-6)
 	var verts := PackedVector2Array()
 	var colours := PackedColorArray()
+	var minor := UiTheme.role(&"map_road_minor")
+	var major := UiTheme.role(&"map_road_major")
+	var motorway := UiTheme.role(&"map_road_motorway")
 	for line in _lines:
 		var rank: int = int(line["rank"])
-		var colour: Color = ROAD_COLOURS[0] if rank < 4 else (ROAD_COLOURS[1] if rank < 7 else ROAD_COLOURS[2])
+		var colour: Color = minor if rank < 4 else (major if rank < 7 else motorway)
 		_strip(line["points"], colour, (1.0 + rank * 0.25) / s, verts, colours)
 	if _route.size() >= 2:
-		_strip(_route, ROUTE_COLOUR, 3.0 / s, verts, colours)
+		_strip(_route, UiTheme.role(&"map_route"), 3.0 / s, verts, colours)
 	if verts.is_empty():
 		return
 	var arrays := []

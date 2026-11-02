@@ -62,6 +62,7 @@ add_executable(rg_unit_tests
   test_credits.cpp
   test_settings.cpp
   test_lod_settings.cpp
+  test_ui_theme.cpp
   test_route_planner.cpp
   test_spawn_presets.cpp
   test_shell_flow.cpp

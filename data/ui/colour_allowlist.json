@@ -1,0 +1,21 @@
+{
+  "format": "rg.ui_colour_allowlist/1",
+  "source": "Scripts that may hold a literal colour: world colours, which are not UI (docs/design_language.md). tests/unit/test_ui_theme.cpp fails on any other colour in a script and on an entry here that no longer matches anything.",
+  "files": [
+    { "path": "npc_traffic.gd", "why": "Traffic car paint and lamps: the world." },
+    { "path": "npc_truck.gd", "why": "Truck bodies and lamps: the world." },
+    { "path": "body_visuals.gd", "why": "Car body materials: the world." },
+    { "path": "vehicle_visual.gd", "why": "Vehicle body, glass and lamp materials: the world." },
+    { "path": "car_thumbnails.gd", "why": "The small stage a car's thumbnail is photographed on: the world, seen through a picture." },
+    { "path": "garage_scene.gd", "why": "The garage room and its lights: the world." },
+    { "path": "walker_visual.gd", "why": "The figure on foot: the world." },
+    { "path": "headlights.gd", "why": "Headlight beams: the world." },
+    { "path": "exterior_lamps.gd", "why": "Outer lamps of a car: the world." },
+    { "path": "weather_fx.gd", "why": "Rain, snow and lightning in the scene: the world." }
+  ],
+  "lines": [
+    { "path": "cockpit_common.gd", "contains": "material.emission = Color(float(rgb[0])", "why": "A physical cabin lamp: its colour comes from the car's own data, off is black." },
+    { "path": "shell_ui.gd", "contains": "sb.bg_color = Color.html(str(hex))", "why": "A swatch shows the paint it stands for, read from the paint and rim lists: the colour is the content." },
+    { "path": "ui/ui_theme.gd", "contains": "const MISSING := Color.MAGENTA", "why": "What an unknown role shows so that it cannot pass as black." }
+  ]
+}

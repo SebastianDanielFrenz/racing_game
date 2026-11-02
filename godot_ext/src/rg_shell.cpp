@@ -1,6 +1,7 @@
 #include "rg_shell.h"
 
 #include "rg/lod_settings.h"
+#include "rg/ui_theme.h"
 #include "rg/world_config.h"
 
 #include <godot_cpp/core/class_db.hpp>
@@ -147,6 +148,15 @@ godot::Dictionary RgShell::initialize(const String& data_dir, const String& user
     // In-game LOD settings (data/settings/lod_settings.json) join the schema before the file is read.
     if (auto lod = rg::load_lod_settings_spec(data + "/settings/lod_settings.json", &err)) {
         rg::install_lod_settings(*lod);
+    } else {
+        problems.push_back(from_std(err));
+    }
+    // The design language's palette setting (data/ui/game.json) likewise; a refused palette is not offered.
+    if (auto theme = rg::load_ui_theme(data, &err)) {
+        rg::install_ui_theme_settings(*theme);
+        for (const rg::UiRefusedPalette& refused : theme->refused) {
+            for (const std::string& problem : refused.problems) problems.push_back(from_std("palette " + refused.id + " refused: " + problem));
+        }
     } else {
         problems.push_back(from_std(err));
     }
